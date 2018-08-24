@@ -17,27 +17,34 @@
 #endif
 
 // Necessary to declare this class as a friend.
-namespace chromeos {
-class ChromeSessionManager;
+namespace arc {
+class ArcTermsOfServiceDefaultNegotiatorTest;
 }
 
 // Necessary to declare this class as a friend.
+namespace browser_sync {
+class ProfileSyncServiceStartupCrosTest;
+}
+
+// Necessary to declare these classes as friends.
+namespace chromeos {
+class ChromeSessionManager;
+class UserSessionManager;
+}
+
+// Necessary to declare this class as a friend.
+namespace file_manager {
+class MultiProfileFileManagerBrowserTest;
+}
+
+// Necessary to declare these classes as friends.
+class ArcSupportHostTest;
+class MultiProfileDownloadNotificationTest;
 class ProfileSyncServiceHarness;
-
-// Necessary to declare functions in identity_test_utils.h as friends.
-class FakeSigninManagerBase;
-class FakeSigninManager;
-
-#if defined(OS_CHROMEOS)
-using SigninManagerForTest = FakeSigninManagerBase;
-#else
-using SigninManagerForTest = FakeSigninManager;
-#endif  // OS_CHROMEOS
 
 namespace identity {
 
-// Primary client-side interface to the Identity Service, encapsulating a
-// connection to a remote implementation of mojom::IdentityManager. See
+// Gives access to information about the user's Google identities. See
 // ./README.md for detailed documentation.
 class IdentityManager : public SigninManagerBase::Observer,
 #if !defined(OS_CHROMEOS)
@@ -47,6 +54,12 @@ class IdentityManager : public SigninManagerBase::Observer,
  public:
   class Observer {
    public:
+    Observer() = default;
+    virtual ~Observer() = default;
+
+    Observer(const Observer&) = delete;
+    Observer& operator=(const Observer&) = delete;
+
     // Called when an account becomes the user's primary account.
     // This method is not called during a reauth.
     virtual void OnPrimaryAccountSet(const AccountInfo& primary_account_info) {}
@@ -58,23 +71,23 @@ class IdentityManager : public SigninManagerBase::Observer,
 
     // TODO(blundell): Eventually we might need a callback for failure to log in
     // to the primary account.
-
-   protected:
-    virtual ~Observer() {}
   };
 
   // Observer interface for classes that want to monitor status of various
   // requests. Mostly useful in tests and debugging contexts (e.g., WebUI).
   class DiagnosticsObserver {
    public:
+    DiagnosticsObserver() = default;
+    virtual ~DiagnosticsObserver() = default;
+
+    DiagnosticsObserver(const DiagnosticsObserver&) = delete;
+    DiagnosticsObserver& operator=(const DiagnosticsObserver&) = delete;
+
     // Called when receiving request for access token.
     virtual void OnAccessTokenRequested(
         const std::string& account_id,
         const std::string& consumer_id,
         const OAuth2TokenService::ScopeSet& scopes) {}
-
-   protected:
-    virtual ~DiagnosticsObserver() {}
   };
 
   IdentityManager(SigninManagerBase* signin_manager,
@@ -115,22 +128,28 @@ class IdentityManager : public SigninManagerBase::Observer,
  private:
   // These clients need to call SetPrimaryAccountSynchronouslyForTests().
   friend void MakePrimaryAccountAvailable(
-      SigninManagerForTest* signin_manager,
+      SigninManagerBase* signin_manager,
       ProfileOAuth2TokenService* token_service,
       IdentityManager* identity_manager,
       const std::string& email);
+  friend MultiProfileDownloadNotificationTest;
   friend ProfileSyncServiceHarness;
+  friend file_manager::MultiProfileFileManagerBrowserTest;
 
-  // This client needs to call SetPrimaryAccountSynchronously().
+  // These clients needs to call SetPrimaryAccountSynchronously().
+  friend ArcSupportHostTest;
+  friend arc::ArcTermsOfServiceDefaultNegotiatorTest;
   friend chromeos::ChromeSessionManager;
+  friend chromeos::UserSessionManager;
+  friend browser_sync::ProfileSyncServiceStartupCrosTest;
 
   // Sets the primary account info synchronously with both the IdentityManager
   // and its backing SigninManager/ProfileOAuth2TokenService instances.
   // Prefer using the methods in identity_test_{environment, utils}.h to using
   // this method directly.
-  void SetPrimaryAccountSynchronouslyForTests(std::string gaia_id,
-                                              std::string email_address,
-                                              std::string refresh_token);
+  void SetPrimaryAccountSynchronouslyForTests(const std::string& gaia_id,
+                                              const std::string& email_address,
+                                              const std::string& refresh_token);
 
   // Sets the primary account info synchronously with both the IdentityManager
   // and its backing SigninManager instance. If |refresh_token| is not empty,
@@ -138,16 +157,20 @@ class IdentityManager : public SigninManagerBase::Observer,
   // instance. This method should not be used directly; it exists only to serve
   // one legacy use case at this point.
   // TODO(https://crbug.com/814787): Eliminate the need for this method.
-  void SetPrimaryAccountSynchronously(std::string gaia_id,
-                                      std::string email_address,
-                                      std::string refresh_token);
+  void SetPrimaryAccountSynchronously(const std::string& gaia_id,
+                                      const std::string& email_address,
+                                      const std::string& refresh_token);
 
   // SigninManagerBase::Observer:
   void GoogleSigninSucceeded(const AccountInfo& account_info) override;
   void GoogleSignedOut(const AccountInfo& account_info) override;
 
 #if !defined(OS_CHROMEOS)
-  // SigninManagerBase::DiagnosticsClient:
+  // SigninManager::DiagnosticsClient:
+  // Override these to update |primary_account_info_| before any observers of
+  // SigninManager are notified of the signin state change, ensuring that any
+  // such observer flows that eventually interact with IdentityManager observe
+  // its state as being consistent with that of SigninManager.
   void WillFireGoogleSigninSucceeded(const AccountInfo& account_info) override;
   void WillFireGoogleSignedOut(const AccountInfo& account_info) override;
 #endif
@@ -163,16 +186,6 @@ class IdentityManager : public SigninManagerBase::Observer,
       const std::string& account_id,
       const OAuth2TokenService::ScopeSet& scopes,
       const std::string& access_token);
-
-  // Updates |primary_account_info_| and notifies observers. Invoked
-  // asynchronously from GoogleSigninSucceeded() to mimic the effect of
-  // receiving this call asynchronously from the Identity Service.
-  void HandleGoogleSigninSucceeded(const AccountInfo& account_info);
-
-  // Clears |primary_account_info_| and notifies observers. Invoked
-  // asynchronously from GoogleSignedOut() to mimic the effect of
-  // receiving this call asynchronously from the Identity Service.
-  void HandleGoogleSignedOut(const AccountInfo& account_info);
 
   // Notifies diagnostics observers. Invoked asynchronously from
   // OnAccessTokenRequested() to mimic the effect of receiving this call

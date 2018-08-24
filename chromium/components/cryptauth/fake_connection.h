@@ -15,13 +15,14 @@ class ConnectionObserver;
 // A fake implementation of Connection to use in tests.
 class FakeConnection : public Connection {
  public:
-  FakeConnection(const RemoteDevice& remote_device);
-  FakeConnection(const RemoteDevice& remote_device, bool should_auto_connect);
+  FakeConnection(RemoteDeviceRef remote_device);
+  FakeConnection(RemoteDeviceRef remote_device, bool should_auto_connect);
   ~FakeConnection() override;
 
   // Connection:
   void Connect() override;
   void Disconnect() override;
+  std::string GetDeviceAddress() override;
   void AddObserver(ConnectionObserver* observer) override;
   void RemoveObserver(ConnectionObserver* observer) override;
 

@@ -21,8 +21,7 @@ class CC_PAINT_EXPORT ScopedRasterFlags {
   ScopedRasterFlags(const PaintFlags* flags,
                     ImageProvider* image_provider,
                     const SkMatrix& ctm,
-                    uint8_t alpha,
-                    bool create_skia_shaders);
+                    uint8_t alpha);
   ~ScopedRasterFlags();
 
   // The usage of these flags should not extend beyond the lifetime of this
@@ -36,7 +35,7 @@ class CC_PAINT_EXPORT ScopedRasterFlags {
 
  private:
   void DecodeImageShader(const SkMatrix& ctm);
-  void DecodeRecordShader(const SkMatrix& ctm, bool create_skia_shader);
+  void DecodeRecordShader(const SkMatrix& ctm);
   void DecodeFilter();
 
   void AdjustStrokeIfNeeded(const SkMatrix& ctm);

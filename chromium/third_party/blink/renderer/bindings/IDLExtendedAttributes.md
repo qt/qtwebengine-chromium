@@ -135,7 +135,7 @@ Extended attributes are generally not inherited: only extended attributes on the
 These are defined in the [ECMAScript-specific extended attributes](http://heycam.github.io/webidl/#es-extended-attributes) section of the [Web IDL spec](http://heycam.github.io/webidl/), and alter the binding behavior.
 
 *** note
-Unsupported: `[ArrayClass]`, `[ImplicitThis]`, `[LenientThis]`, `[NamedPropertiesObject]`, `[TreatNonCallableAsNull]`
+Unsupported: `[ImplicitThis]`, `[LenientThis]`, `[NamedPropertiesObject]`, `[TreatNonCallableAsNull]`
 ***
 
 ### [CEReactions] _(m, a)_
@@ -1552,11 +1552,13 @@ V8PrivateProperty::getHTMLFooBarCachedAccessor().set(context, object, newValue);
 
 Summary: `[Affects=Nothing]` indicates that a function must not produce JS-observable side effects. Functions without this attribute are never invoked by V8 with throwOnSideEffect.
 
-Marked functions are allowed to be nondeterministic and throw exceptions, but must not set values, cache objects, or schedule execution that will be observable after the function completes. If a marked function calls into V8, it must properly handle cases when the V8 call returns an MaybeHandle.
+Marked functions are allowed to be nondeterministic, throw exceptions, force layout, and recalculate style, but must not set values, cache objects, or schedule execution that will be observable after the function completes. If a marked function calls into V8, it must properly handle cases when the V8 call returns an MaybeHandle.
+
+All DOM constructors are assumed to have side effects. However, an exception can be explicitly indicated when calling constructors using the V8 API method Function::NewInstanceWithSideEffectType().
 
 There is not yet support for marking SymbolKeyedMethodConfigurations as side-effect free. This requires additional support in V8 to whitelist Intrinsics.
 
-Usage: `[Affects=Nothing]` can be specified on a method, or on an attribute to indicate that its getter callback is side effect free:
+Usage for attributes and operations: `[Affects=Nothing]` can be specified on an operation, or on an attribute to indicate that its getter callback is side effect free:
 
 ```webidl
 interface HTMLFoo {

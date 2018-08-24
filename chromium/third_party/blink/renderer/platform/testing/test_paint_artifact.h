@@ -49,7 +49,7 @@ class TestPaintArtifact {
   TestPaintArtifact& Chunk(scoped_refptr<const TransformPaintPropertyNode>,
                            scoped_refptr<const ClipPaintPropertyNode>,
                            scoped_refptr<const EffectPaintPropertyNode>);
-  TestPaintArtifact& Chunk(const PaintChunkProperties&);
+  TestPaintArtifact& Chunk(const PropertyTreeState&);
   TestPaintArtifact& RectDrawing(const FloatRect& bounds, Color);
   TestPaintArtifact& ForeignLayer(const FloatPoint&,
                                   const IntSize&,
@@ -64,7 +64,7 @@ class TestPaintArtifact {
                            scoped_refptr<const TransformPaintPropertyNode>,
                            scoped_refptr<const ClipPaintPropertyNode>,
                            scoped_refptr<const EffectPaintPropertyNode>);
-  TestPaintArtifact& Chunk(DisplayItemClient&, const PaintChunkProperties&);
+  TestPaintArtifact& Chunk(DisplayItemClient&, const PropertyTreeState&);
   TestPaintArtifact& RectDrawing(DisplayItemClient&,
                                  const FloatRect& bounds,
                                  Color);
@@ -90,7 +90,7 @@ class TestPaintArtifact {
 
   // Exists if m_built is false.
   DisplayItemList display_item_list_;
-  Vector<PaintChunk> paint_chunks_;
+  PaintChunksAndRasterInvalidations paint_chunks_data_;
 
   // Exists if m_built is true.
   PaintArtifact paint_artifact_;

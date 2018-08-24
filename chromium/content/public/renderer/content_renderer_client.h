@@ -20,6 +20,7 @@
 #include "build/build_config.h"
 #include "content/public/common/content_client.h"
 #include "content/public/renderer/url_loader_throttle_provider.h"
+#include "content/public/renderer/websocket_handshake_throttle_provider.h"
 #include "media/base/decode_capabilities.h"
 #include "services/service_manager/public/mojom/service.mojom.h"
 #include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
@@ -38,16 +39,12 @@ class SingleThreadTaskRunner;
 }
 
 namespace blink {
-class WebAudioDevice;
-class WebAudioLatencyHint;
-class WebClipboard;
 class WebFrame;
 class WebLocalFrame;
 class WebMIDIAccessor;
 class WebMIDIAccessorClient;
 class WebPlugin;
 class WebPrescientNetworking;
-class WebSocketHandshakeThrottle;
 class WebSpeechSynthesizer;
 class WebSpeechSynthesizerClient;
 class WebThemeEngine;
@@ -167,23 +164,21 @@ class CONTENT_EXPORT ContentRendererClient {
   virtual std::unique_ptr<blink::WebMIDIAccessor> OverrideCreateMIDIAccessor(
       blink::WebMIDIAccessorClient* client);
 
-  // Allows the embedder to override creating a WebAudioDevice.  If it
-  // returns NULL the content layer will create the audio device.
-  virtual std::unique_ptr<blink::WebAudioDevice> OverrideCreateAudioDevice(
-      const blink::WebAudioLatencyHint& latency_hint);
-
-  // Allows the embedder to override the blink::WebClipboard used. If it
-  // returns NULL the content layer will handle clipboard interactions.
-  virtual blink::WebClipboard* OverrideWebClipboard();
-
   // Allows the embedder to override the WebThemeEngine used. If it returns NULL
   // the content layer will provide an engine.
   virtual blink::WebThemeEngine* OverrideThemeEngine();
 
   // Allows the embedder to provide a WebSocketHandshakeThrottle. If it returns
   // NULL then none will be used.
+  // TODO(nhiroki): Remove this once the off-main-thread WebSocket is enabled by
+  // default (https://crbug.com/825740).
   virtual std::unique_ptr<blink::WebSocketHandshakeThrottle>
   CreateWebSocketHandshakeThrottle();
+
+  // Allows the embedder to provide a WebSocketHandshakeThrottleProvider. If it
+  // returns NULL then none will be used.
+  virtual std::unique_ptr<WebSocketHandshakeThrottleProvider>
+  CreateWebSocketHandshakeThrottleProvider();
 
   // Allows the embedder to override the WebSpeechSynthesizer used.
   // If it returns NULL the content layer will provide an engine.
@@ -206,7 +201,7 @@ class CONTENT_EXPORT ContentRendererClient {
 
   // Returns true if the renderer process should allow task suspension
   // after the process has been backgrounded. Defaults to false.
-  virtual bool AllowStoppingWhenProcessBackgrounded();
+  virtual bool AllowFreezingWhenProcessBackgrounded();
 
   // Returns true if a popup window should be allowed.
   virtual bool AllowPopup();

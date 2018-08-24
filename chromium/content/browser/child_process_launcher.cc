@@ -4,6 +4,8 @@
 
 #include "content/browser/child_process_launcher.h"
 
+#include <utility>
+
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/file_util.h"
@@ -12,8 +14,8 @@
 #include "base/process/launch.h"
 #include "build/build_config.h"
 #include "content/public/browser/child_process_launcher_utils.h"
-#include "content/public/common/result_codes.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
+#include "services/service_manager/embedder/result_codes.h"
 
 namespace content {
 
@@ -29,12 +31,11 @@ ChildProcessLauncher::ChildProcessLauncher(
     const mojo::edk::ProcessErrorCallback& process_error_callback,
     bool terminate_on_shutdown)
     : client_(client),
-      termination_status_(base::TERMINATION_STATUS_NORMAL_TERMINATION),
-      exit_code_(RESULT_CODE_NORMAL_EXIT),
       starting_(true),
+      start_time_(base::TimeTicks::Now()),
 #if defined(ADDRESS_SANITIZER) || defined(LEAK_SANITIZER) ||  \
     defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER) || \
-    defined(UNDEFINED_SANITIZER)
+    defined(UNDEFINED_SANITIZER) || defined(CLANG_COVERAGE)
       terminate_child_on_shutdown_(false),
 #else
       terminate_child_on_shutdown_(terminate_on_shutdown),
@@ -80,7 +81,7 @@ void ChildProcessLauncher::Notify(
   if (process_.process.IsValid()) {
     client_->OnProcessLaunched();
   } else {
-    termination_status_ = base::TERMINATION_STATUS_LAUNCH_FAILED;
+    termination_info_.status = base::TERMINATION_STATUS_LAUNCH_FAILED;
 
     // NOTE: May delete |this|.
     client_->OnProcessLaunchFailed(error_code);
@@ -99,40 +100,39 @@ const base::Process& ChildProcessLauncher::GetProcess() const {
   return process_.process;
 }
 
-base::TerminationStatus ChildProcessLauncher::GetChildTerminationStatus(
-    bool known_dead,
-    int* exit_code) {
+ChildProcessTerminationInfo ChildProcessLauncher::GetChildTerminationInfo(
+    bool known_dead) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (!process_.process.IsValid()) {
     // Make sure to avoid using the default termination status if the process
     // hasn't even started yet.
-    if (IsStarting())
-      termination_status_ = base::TERMINATION_STATUS_STILL_RUNNING;
+    if (IsStarting()) {
+      termination_info_.status = base::TERMINATION_STATUS_STILL_RUNNING;
+      termination_info_.uptime = base::TimeTicks::Now() - start_time_;
+      DCHECK_LE(base::TimeDelta::FromSeconds(0), termination_info_.uptime);
+    }
 
-    // Process doesn't exist, so return the cached termination status.
-    if (exit_code)
-      *exit_code = exit_code_;
-    return termination_status_;
+    // Process doesn't exist, so return the cached termination info.
+    return termination_info_;
   }
 
-  termination_status_ =
-      helper_->GetTerminationStatus(process_, known_dead, &exit_code_);
-  if (exit_code)
-    *exit_code = exit_code_;
+  termination_info_ = helper_->GetTerminationInfo(process_, known_dead);
+  termination_info_.uptime = base::TimeTicks::Now() - start_time_;
+  DCHECK_LE(base::TimeDelta::FromSeconds(0), termination_info_.uptime);
 
   // POSIX: If the process crashed, then the kernel closed the socket for it and
   // so the child has already died by the time we get here. Since
-  // GetTerminationStatus called waitpid with WNOHANG, it'll reap the process.
-  // However, if GetTerminationStatus didn't reap the child (because it was
+  // GetTerminationInfo called waitpid with WNOHANG, it'll reap the process.
+  // However, if GetTerminationInfo didn't reap the child (because it was
   // still running), we'll need to Terminate via ProcessWatcher. So we can't
   // close the handle here.
-  if (termination_status_ != base::TERMINATION_STATUS_STILL_RUNNING) {
-    process_.process.Exited(exit_code_);
+  if (termination_info_.status != base::TERMINATION_STATUS_STILL_RUNNING) {
+    process_.process.Exited(termination_info_.exit_code);
     process_.process.Close();
   }
 
-  return termination_status_;
+  return termination_info_;
 }
 
 bool ChildProcessLauncher::Terminate(int exit_code) {
@@ -159,13 +159,6 @@ void ChildProcessLauncher::SetRegisteredFilesForService(
 void ChildProcessLauncher::ResetRegisteredFilesForTesting() {
   ChildProcessLauncherHelper::ResetRegisteredFilesForTesting();
 }
-
-#if defined(OS_ANDROID)
-// static
-size_t ChildProcessLauncher::GetNumberOfRendererSlots() {
-  return ChildProcessLauncherHelper::GetNumberOfRendererSlots();
-}
-#endif  // OS_ANDROID
 
 ChildProcessLauncher::Client* ChildProcessLauncher::ReplaceClientForTest(
     Client* client) {

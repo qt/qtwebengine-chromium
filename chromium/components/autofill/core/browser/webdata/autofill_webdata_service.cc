@@ -251,17 +251,24 @@ void AutofillWebDataService::RemoveOriginURLsModifiedBetween(
            autofill_backend_, delete_begin, delete_end));
 }
 
+void AutofillWebDataService::RemoveOrphanAutofillTableRows() {
+  wdbs_->ScheduleDBTask(
+      FROM_HERE,
+      Bind(&AutofillWebDataBackendImpl::RemoveOrphanAutofillTableRows,
+           autofill_backend_));
+}
+
 void AutofillWebDataService::AddObserver(
     AutofillWebDataServiceObserverOnDBSequence* observer) {
   DCHECK(db_task_runner_->RunsTasksInCurrentSequence());
-  if (autofill_backend_.get())
+  if (autofill_backend_)
     autofill_backend_->AddObserver(observer);
 }
 
 void AutofillWebDataService::RemoveObserver(
     AutofillWebDataServiceObserverOnDBSequence* observer) {
   DCHECK(db_task_runner_->RunsTasksInCurrentSequence());
-  if (autofill_backend_.get())
+  if (autofill_backend_)
     autofill_backend_->RemoveObserver(observer);
 }
 

@@ -120,14 +120,6 @@ bool ShouldRefetchEventTarget(const MouseEventWithHitTestResults& mev) {
          IsHTMLInputElement(ToShadowRoot(target_node)->host());
 }
 
-enum class UMATouchAdjustmentNodeRelation {
-  kSameNode = 0,
-  kTouchStartNodeIsDescendantOfTapNode = 1,
-  kTapNodeIsDescendantOfTouchStartNode = 2,
-  kOthers = 3,
-  kTouchAdjustmentNodeRelationCount = 4
-};
-
 }  // namespace
 
 using namespace HTMLNames;
@@ -160,6 +152,10 @@ EventHandler::EventHandler(LocalFrame& frame)
           &EventHandler::CursorUpdateTimerFired),
       event_handler_will_reset_capturing_mouse_events_node_(0),
       should_only_fire_drag_over_event_(false),
+      event_handler_registry_(
+          frame_->IsLocalRoot()
+              ? new EventHandlerRegistry(*frame_)
+              : &frame_->LocalFrameRoot().GetEventHandlerRegistry()),
       scroll_manager_(new ScrollManager(frame)),
       mouse_event_manager_(new MouseEventManager(frame, *scroll_manager_)),
       mouse_wheel_event_manager_(new MouseWheelEventManager(frame)),
@@ -184,6 +180,7 @@ void EventHandler::Trace(blink::Visitor* visitor) {
   visitor->Trace(last_scrollbar_under_mouse_);
   visitor->Trace(drag_target_);
   visitor->Trace(frame_set_being_resized_);
+  visitor->Trace(event_handler_registry_);
   visitor->Trace(scroll_manager_);
   visitor->Trace(mouse_event_manager_);
   visitor->Trace(mouse_wheel_event_manager_);
@@ -209,6 +206,7 @@ void EventHandler::Clear() {
   gesture_manager_->Clear();
   mouse_event_manager_->Clear();
   mouse_wheel_event_manager_->Clear();
+  last_show_press_timestamp_.reset();
   last_deferred_tap_element_ = nullptr;
   event_handler_will_reset_capturing_mouse_events_node_ = false;
   should_use_touch_event_adjusted_point_ = false;
@@ -227,7 +225,9 @@ void EventHandler::StartMiddleClickAutoscroll(LayoutObject* layout_object) {
   if (!controller)
     return;
   controller->StartMiddleClickAutoscroll(
-      layout_object->GetFrame(), mouse_event_manager_->LastKnownMousePosition(),
+      layout_object->GetFrame(),
+      frame_->GetPage()->GetVisualViewport().ViewportToRootFrame(
+          mouse_event_manager_->LastKnownMousePosition()),
       mouse_event_manager_->LastKnownMousePositionGlobal());
   mouse_event_manager_->InvalidateClick();
 }
@@ -235,7 +235,8 @@ void EventHandler::StartMiddleClickAutoscroll(LayoutObject* layout_object) {
 HitTestResult EventHandler::HitTestResultAtPoint(
     const LayoutPoint& point,
     HitTestRequest::HitTestRequestType hit_type,
-    const LayoutRectOutsets& padding) {
+    const LayoutRectOutsets& padding,
+    const LayoutObject* stop_node) {
   TRACE_EVENT0("blink", "EventHandler::hitTestResultAtPoint");
 
   DCHECK((hit_type & HitTestRequest::kListBased) || padding.IsZero());
@@ -258,7 +259,8 @@ HitTestResult EventHandler::HitTestResultAtPoint(
 
   // hitTestResultAtPoint is specifically used to hitTest into all frames, thus
   // it always allows child frame content.
-  HitTestRequest request(hit_type | HitTestRequest::kAllowChildFrameContent);
+  HitTestRequest request(hit_type | HitTestRequest::kAllowChildFrameContent,
+                         stop_node);
   HitTestResult result(request, point, padding);
 
   // LayoutView::hitTest causes a layout, and we don't want to hit that until
@@ -299,8 +301,9 @@ bool EventHandler::BubblingScroll(ScrollDirection direction,
       mouse_event_manager_->MousePressNode());
 }
 
-IntPoint EventHandler::LastKnownMousePosition() const {
-  return mouse_event_manager_->LastKnownMousePosition();
+IntPoint EventHandler::LastKnownMousePositionInRootFrame() const {
+  return frame_->GetPage()->GetVisualViewport().ViewportToRootFrame(
+      mouse_event_manager_->LastKnownMousePosition());
 }
 
 IntPoint EventHandler::DragDataTransferLocationForTesting() {
@@ -349,9 +352,9 @@ void EventHandler::UpdateCursor() {
 
   HitTestRequest request(HitTestRequest::kReadOnly |
                          HitTestRequest::kAllowChildFrameContent);
-  HitTestResult result(request,
-                       view->RootFrameToContents(
-                           mouse_event_manager_->LastKnownMousePosition()));
+  HitTestResult result(
+      request,
+      view->ViewportToContents(mouse_event_manager_->LastKnownMousePosition()));
   layout_view->HitTest(result);
 
   if (LocalFrame* frame = result.InnerNodeFrame()) {
@@ -544,9 +547,9 @@ EventHandler::OptionalCursor EventHandler::SelectCursor(
       return ZoomInCursor();
     case ECursor::kZoomOut:
       return ZoomOutCursor();
-    case ECursor::kWebkitGrab:
+    case ECursor::kGrab:
       return GrabCursor();
-    case ECursor::kWebkitGrabbing:
+    case ECursor::kGrabbing:
       return GrabbingCursor();
   }
   return PointerCursor();
@@ -977,6 +980,7 @@ WebInputEventResult EventHandler::HandleMouseReleaseEvent(
   if (last_scrollbar_under_mouse_) {
     mouse_event_manager_->InvalidateClick();
     last_scrollbar_under_mouse_->MouseUp(mouse_event);
+    frame_->LocalFrameRoot().Client()->SetMouseCapture(false);
     return DispatchMousePointerEvent(
         WebInputEvent::kPointerUp, mouse_event_manager_->GetNodeUnderMouse(),
         String(), mouse_event, Vector<WebMouseEvent>());
@@ -1068,9 +1072,9 @@ WebInputEventResult EventHandler::UpdateDragAndDrop(
 
   if (AutoscrollController* controller =
           scroll_manager_->GetAutoscrollController()) {
-    controller->UpdateDragAndDrop(
-        new_target, FlooredIntPoint(event.PositionInRootFrame()),
-        TimeTicksFromSeconds(event.TimeStampSeconds()));
+    controller->UpdateDragAndDrop(new_target,
+                                  FlooredIntPoint(event.PositionInRootFrame()),
+                                  event.TimeStamp());
   }
 
   if (drag_target_ != new_target) {
@@ -1322,6 +1326,9 @@ WebInputEventResult EventHandler::HandleGestureEvent(
   // jump directly to the inner most frame. This matches handleMousePressEvent
   // etc.
   DCHECK(!targeted_event.Event().IsScrollEvent());
+
+  if (targeted_event.Event().GetType() == WebInputEvent::kGestureShowPress)
+    last_show_press_timestamp_ = CurrentTimeTicks();
 
   // Update mouseout/leave/over/enter events before jumping directly to the
   // inner most frame.
@@ -1600,7 +1607,7 @@ void EventHandler::UpdateGestureTargetNodeForMouseEvent(
       WebPointerProperties::Button::kNoButton,
       /* clickCount */ 0,
       modifiers | WebInputEvent::Modifiers::kIsCompatibilityEventForTouch,
-      gesture_event.TimeStampSeconds());
+      gesture_event.TimeStamp());
 
   // Update the mouseout/mouseleave event
   size_t index_exited_frame_chain = exited_frame_chain.size();
@@ -1641,12 +1648,11 @@ GestureEventWithHitTestResults EventHandler::TargetGestureEvent(
   if (read_only) {
     hit_type |= HitTestRequest::kReadOnly;
   } else if (gesture_event.GetType() == WebInputEvent::kGestureTap &&
-             gesture_manager_->GetLastShowPressTimestamp()) {
+             last_show_press_timestamp_) {
     // If the Tap is received very shortly after ShowPress, we want to
     // delay clearing of the active state so that it's visible to the user
     // for at least a couple of frames.
-    active_interval = CurrentTimeTicks() -
-                      gesture_manager_->GetLastShowPressTimestamp().value();
+    active_interval = CurrentTimeTicks() - last_show_press_timestamp_.value();
     should_keep_active_for_min_interval =
         active_interval < kMinimumActiveInterval;
     if (should_keep_active_for_min_interval)
@@ -1657,9 +1663,10 @@ GestureEventWithHitTestResults EventHandler::TargetGestureEvent(
       HitTestResultForGestureEvent(gesture_event, hit_type);
   // Now apply hover/active state to the final target.
   HitTestRequest request(hit_type | HitTestRequest::kAllowChildFrameContent);
-  if (!request.ReadOnly())
+  if (!request.ReadOnly()) {
     UpdateGestureHoverActiveState(
         request, event_with_hit_test_results.GetHitTestResult().InnerElement());
+  }
 
   if (should_keep_active_for_min_interval) {
     last_deferred_tap_element_ =
@@ -1683,13 +1690,16 @@ GestureEventWithHitTestResults EventHandler::HitTestResultForGestureEvent(
   LayoutSize padding;
 
   if (ShouldApplyTouchAdjustment(gesture_event)) {
-    padding = LayoutSize(adjusted_event.TapAreaInRootFrame());
-    if (!padding.IsEmpty()) {
-      padding.Scale(1.f / 2);
-      // Apply the same bound as touchstart event to adjustment padding
-      if (RuntimeEnabledFeatures::UnifiedTouchAdjustmentEnabled())
-        padding = GetHitTestRectForAdjustment(FlooredIntSize(padding));
-      hit_type |= HitTestRequest::kListBased;
+    // If gesture_event unique id matches the stored touch event result, do
+    // point-base hit test. Otherwise add padding and do rect-based hit test.
+    if (GestureCorrespondsToAdjustedTouch(gesture_event)) {
+      adjusted_event.ApplyTouchAdjustment(
+          touch_adjustment_result_.adjusted_point);
+    } else {
+      padding = GetHitTestRectForAdjustment(
+          LayoutSize(adjusted_event.TapAreaInRootFrame()) * 0.5f);
+      if (!padding.IsEmpty())
+        hit_type |= HitTestRequest::kListBased;
     }
   }
   LayoutPoint hit_test_point(frame_->View()->RootFrameToContents(
@@ -1733,37 +1743,6 @@ GestureEventWithHitTestResults EventHandler::HitTestResultForGestureEvent(
     UMA_HISTOGRAM_COUNTS_100("Event.Touch.TouchAdjustment.AdjustDistance",
                              static_cast<int>(adjusted_distance));
   }
-  if (GestureCorrespondsToAdjustedTouch(gesture_event)) {
-    LayoutPoint stored_adjusted_point(frame_->View()->RootFrameToContents(
-        touch_adjustment_result_.adjusted_point));
-    HitTestResult point_base_result = HitTestResultAtPoint(
-        stored_adjusted_point,
-        (hit_type | HitTestRequest::kReadOnly) & ~HitTestRequest::kListBased);
-    if (gesture_event.GetType() == WebInputEvent::kGestureTap) {
-      if (hit_test_result.InnerNode() && point_base_result.InnerNode()) {
-        UMATouchAdjustmentNodeRelation relation =
-            UMATouchAdjustmentNodeRelation::kOthers;
-        if (hit_test_result.InnerNode() == point_base_result.InnerNode()) {
-          relation = UMATouchAdjustmentNodeRelation::kSameNode;
-        } else if (point_base_result.InnerNode()->IsDescendantOf(
-                       hit_test_result.InnerNode())) {
-          relation = UMATouchAdjustmentNodeRelation::
-              kTouchStartNodeIsDescendantOfTapNode;
-        } else if (hit_test_result.InnerNode()->IsDescendantOf(
-                       point_base_result.InnerNode())) {
-          relation = UMATouchAdjustmentNodeRelation::
-              kTapNodeIsDescendantOfTouchStartNode;
-        }
-        UMA_HISTOGRAM_ENUMERATION(
-            "Event.Touch.TouchAdjustment.AdjustedNode", relation,
-            UMATouchAdjustmentNodeRelation::kTouchAdjustmentNodeRelationCount);
-      }
-    }
-    adjusted_event.ApplyTouchAdjustment(
-        touch_adjustment_result_.adjusted_point);
-    return GestureEventWithHitTestResults(adjusted_event, point_base_result);
-  }
-
   return GestureEventWithHitTestResults(adjusted_event, hit_test_result);
 }
 
@@ -1926,7 +1905,7 @@ WebInputEventResult EventHandler::ShowNonLocatedContextMenu(
       WebFloatPoint(location_in_root_frame.X(), location_in_root_frame.Y()),
       WebFloatPoint(global_position.X(), global_position.Y()),
       WebPointerProperties::Button::kNoButton, /* clickCount */ 0,
-      WebInputEvent::kNoModifiers, CurrentTimeTicksInSeconds(), source_type);
+      WebInputEvent::kNoModifiers, CurrentTimeTicks(), source_type);
 
   // TODO(dtapuska): Transition the mouseEvent to be created really in viewport
   // coordinates instead of root frame coordinates.
@@ -1987,7 +1966,7 @@ void EventHandler::HoverTimerFired(TimerBase*) {
     if (LocalFrameView* view = frame_->View()) {
       HitTestRequest request(HitTestRequest::kMove);
       HitTestResult result(request,
-                           view->RootFrameToContents(
+                           view->ViewportToContents(
                                mouse_event_manager_->LastKnownMousePosition()));
       layout_object->HitTest(result);
       frame_->GetDocument()->UpdateHoverActiveState(request,
@@ -2097,12 +2076,23 @@ void EventHandler::CapsLockStateMayHaveChanged() {
 
 bool EventHandler::PassMousePressEventToScrollbar(
     MouseEventWithHitTestResults& mev) {
+  // Do not pass the mouse press to scrollbar if scrollbar pressed. If the
+  // user's left button is down, then the cursor moves outside the scrollbar
+  // and presses the middle button , we should not clear
+  // last_scrollbar_under_mouse_.
+  if (last_scrollbar_under_mouse_ &&
+      last_scrollbar_under_mouse_->PressedPart() != ScrollbarPart::kNoPart) {
+    return false;
+  }
+
   Scrollbar* scrollbar = mev.GetScrollbar();
   UpdateLastScrollbarUnderMouse(scrollbar, true);
 
   if (!scrollbar || !scrollbar->Enabled())
     return false;
   scrollbar->MouseDown(mev.Event());
+  if (scrollbar->PressedPart() == ScrollbarPart::kThumbPart)
+    frame_->LocalFrameRoot().Client()->SetMouseCapture(true);
   return true;
 }
 

@@ -15,6 +15,7 @@
 #include "content/renderer/media/stream/media_stream_constraints_util_sets.h"
 #include "content/renderer/media/stream/media_stream_video_source.h"
 #include "content/renderer/media/stream/processed_local_audio_source.h"
+#include "media/base/audio_parameters.h"
 #include "media/base/limits.h"
 #include "third_party/blink/public/platform/web_media_constraints.h"
 #include "third_party/blink/public/platform/web_string.h"
@@ -173,23 +174,9 @@ base::Optional<std::string> SelectOptionalString(
   return set.FirstElement();
 }
 
-bool SelectEnableSwEchoCancellation(
-    base::Optional<bool> echo_cancellation,
-    base::Optional<bool> goog_echo_cancellation,
-    const media::AudioParameters& audio_parameters,
-    bool default_audio_processing_value,
-    bool should_enable_experimental_hw_echo_cancellation) {
-  // If there is hardware echo cancellation, return false.
-  const bool has_hw_echo_canceller =
-      (audio_parameters.effects() & media::AudioParameters::ECHO_CANCELLER);
-  const bool has_experimental_hw_echo_canceller =
-      (audio_parameters.effects() &
-       media::AudioParameters::EXPERIMENTAL_ECHO_CANCELLER);
-  if (audio_parameters.IsValid() &&
-      (has_hw_echo_canceller ||
-       (has_experimental_hw_echo_canceller &&
-        should_enable_experimental_hw_echo_cancellation)))
-    return false;
+bool SelectUseEchoCancellation(base::Optional<bool> echo_cancellation,
+                               base::Optional<bool> goog_echo_cancellation,
+                               bool is_device_capture) {
   DCHECK(echo_cancellation && goog_echo_cancellation
              ? *echo_cancellation == *goog_echo_cancellation
              : true);
@@ -198,7 +185,22 @@ bool SelectEnableSwEchoCancellation(
   if (goog_echo_cancellation)
     return *goog_echo_cancellation;
 
-  return default_audio_processing_value;
+  // Echo cancellation is enabled by default for device capture and disabled by
+  // default for content capture.
+  return is_device_capture;
+}
+
+std::vector<std::string> GetEchoCancellationTypesFromParameters(
+    const media::AudioParameters& audio_parameters) {
+  if (audio_parameters.effects() &
+      (media::AudioParameters::EXPERIMENTAL_ECHO_CANCELLER |
+       media::AudioParameters::ECHO_CANCELLER)) {
+    // If the hardware supports echo cancellation, return both echo cancellers.
+    return {blink::kEchoCancellationTypeBrowser,
+            blink::kEchoCancellationTypeSystem};
+  }
+  // The browser echo canceller is always available.
+  return {blink::kEchoCancellationTypeBrowser};
 }
 
 // This class represents all the candidates settings for a single audio device.
@@ -214,8 +216,14 @@ class SingleDeviceCandidateSet {
       device_id_set_ = DiscreteSet<std::string>({capability.DeviceID()});
 
     MediaStreamAudioSource* source = capability.source();
-    if (!source)
+
+    // Set up echo cancellation types. Depending on if we have a source or not
+    // it's set up differently.
+    if (!source) {
+      echo_cancellation_type_set_ = DiscreteSet<std::string>(
+          GetEchoCancellationTypesFromParameters(parameters_));
       return;
+    }
 
     // Properties not related to audio processing.
     bool_sets_[HOTWORD_ENABLED] =
@@ -234,21 +242,34 @@ class SingleDeviceCandidateSet {
       properties.DisableDefaultProperties();
     }
 
-    bool echo_cancellation_enabled = false;
-    if (properties.enable_sw_echo_cancellation) {
-      echo_cancellation_enabled = true;
-    } else if (properties.disable_hw_echo_cancellation) {
-      // Software and hardware echo cancellation disabled.
-      echo_cancellation_enabled = false;
-    } else {
-      // Software echo cancellation disabled, but hardware echo cancellation
-      // allowed. In this case, look at device parameters.
-      echo_cancellation_enabled = source->device().input.effects() &
-                                  media::AudioParameters::ECHO_CANCELLER;
-    }
+    const bool experimental_hardware_cancellation_available =
+        properties.enable_experimental_hw_echo_cancellation &&
+        (parameters_.effects() &
+         media::AudioParameters::EXPERIMENTAL_ECHO_CANCELLER);
+
+    const bool hardware_echo_cancellation_available =
+        parameters_.effects() & media::AudioParameters::ECHO_CANCELLER;
+
+    const bool hardware_echo_cancellation_enabled =
+        !properties.disable_hw_echo_cancellation &&
+        (hardware_echo_cancellation_available ||
+         experimental_hardware_cancellation_available);
+
+    const bool echo_cancellation_enabled =
+        properties.enable_sw_echo_cancellation ||
+        hardware_echo_cancellation_enabled;
+
     bool_sets_[ECHO_CANCELLATION] =
         DiscreteSet<bool>({echo_cancellation_enabled});
     bool_sets_[GOOG_ECHO_CANCELLATION] = bool_sets_[ECHO_CANCELLATION];
+
+    if (properties.enable_sw_echo_cancellation) {
+      echo_cancellation_type_set_ =
+          DiscreteSet<std::string>({blink::kEchoCancellationTypeBrowser});
+    } else if (hardware_echo_cancellation_enabled) {
+      echo_cancellation_type_set_ =
+          DiscreteSet<std::string>({blink::kEchoCancellationTypeSystem});
+    }
 
     bool_sets_[GOOG_AUDIO_MIRRORING] =
         DiscreteSet<bool>({properties.goog_audio_mirroring});
@@ -319,6 +340,21 @@ class SingleDeviceCandidateSet {
           blink::WebMediaTrackConstraintSet().echo_cancellation.GetName();
       return;
     }
+
+    echo_cancellation_type_set_ = echo_cancellation_type_set_.Intersection(
+        StringSetFromConstraint(constraint_set.echo_cancellation_type));
+    if (echo_cancellation_type_set_.IsEmpty()) {
+      failed_constraint_name_ = constraint_set.echo_cancellation_type.GetName();
+      return;
+    }
+
+    // If echo cancellation constraint is not true, the type set should not have
+    // explicit elements.
+    if (!bool_sets_[ECHO_CANCELLATION].Contains(true) &&
+        constraint_set.echo_cancellation_type.HasExact()) {
+      failed_constraint_name_ = constraint_set.echo_cancellation_type.GetName();
+      return;
+    }
   }
 
   // Fitness function to support device selection. Based on
@@ -355,6 +391,20 @@ class SingleDeviceCandidateSet {
       }
     }
 
+    // If echo cancellation constraint is not set to true, the type shall be
+    // ignored.
+    if ((constraint_set.*kBlinkBoolConstraintFields[ECHO_CANCELLATION])
+            .Matches(true) &&
+        constraint_set.echo_cancellation_type.HasIdeal()) {
+      for (const blink::WebString& ideal_value :
+           constraint_set.echo_cancellation_type.Ideal()) {
+        if (echo_cancellation_type_set_.Contains(ideal_value.Utf8())) {
+          fitness += 1.0;
+          break;
+        }
+      }
+    }
+
     return fitness;
   }
 
@@ -364,8 +414,7 @@ class SingleDeviceCandidateSet {
       const blink::WebMediaTrackConstraintSet& basic_constraint_set,
       const std::string& default_device_id,
       const std::string& media_stream_source,
-      bool should_disable_hardware_noise_suppression,
-      bool should_enable_experimental_hw_echo_cancellation) const {
+      bool should_disable_hardware_noise_suppression) const {
     std::string device_id = SelectString(
         device_id_set_, basic_constraint_set.device_id, default_device_id);
     bool hotword_enabled =
@@ -384,8 +433,7 @@ class SingleDeviceCandidateSet {
     AudioProcessingProperties audio_processing_properties =
         SelectAudioProcessingProperties(
             basic_constraint_set, is_device_capture,
-            should_disable_hardware_noise_suppression,
-            should_enable_experimental_hw_echo_cancellation);
+            should_disable_hardware_noise_suppression);
 
     return AudioCaptureSettings(
         std::move(device_id), parameters_, hotword_enabled, disable_local_echo,
@@ -393,14 +441,60 @@ class SingleDeviceCandidateSet {
   }
 
  private:
+  void SelectEchoCancellationFlags(
+      const blink::StringConstraint& echo_cancellation_type,
+      const media::AudioParameters& audio_parameters,
+      AudioProcessingProperties* properties_out) const {
+    // Try to use an ideal candidate, if supplied.
+    base::Optional<std::string> selected_type;
+    if (echo_cancellation_type.HasIdeal()) {
+      for (const auto& ideal : echo_cancellation_type.Ideal()) {
+        std::string candidate = ideal.Utf8();
+        if (echo_cancellation_type_set_.Contains(candidate)) {
+          selected_type = candidate;
+          break;
+        }
+      }
+    }
+
+    // If no ideal, or none that worked, and the set contains only one value,
+    // pick that.
+    if (!selected_type) {
+      if (!echo_cancellation_type_set_.is_universal() &&
+          echo_cancellation_type_set_.elements().size() == 1) {
+        selected_type = echo_cancellation_type_set_.FirstElement();
+      }
+    }
+
+    // Set properties based the type selected.
+    if (selected_type == blink::kEchoCancellationTypeBrowser) {
+      properties_out->enable_sw_echo_cancellation = true;
+      properties_out->disable_hw_echo_cancellation = true;
+      properties_out->enable_experimental_hw_echo_cancellation = false;
+    } else if (selected_type == blink::kEchoCancellationTypeSystem) {
+      properties_out->enable_sw_echo_cancellation = false;
+      properties_out->disable_hw_echo_cancellation = false;
+      properties_out->enable_experimental_hw_echo_cancellation = true;
+    } else {
+      // If no type has been selected, choose 'system' if the device has the
+      // ECHO_CANCELLER flag set. Choose 'browser' otherwise. Never
+      // automatically enable an experimental hardware echo canceller.
+      const bool has_hw_echo_canceller =
+          audio_parameters.IsValid() &&
+          (audio_parameters.effects() & media::AudioParameters::ECHO_CANCELLER);
+      properties_out->enable_sw_echo_cancellation = !has_hw_echo_canceller;
+      properties_out->disable_hw_echo_cancellation = !has_hw_echo_canceller;
+      properties_out->enable_experimental_hw_echo_cancellation = false;
+    }
+  }
+
   // Returns the audio-processing properties supported by this
   // SingleDeviceCandidateSet that best satisfy the ideal values in
   // |basic_constraint_set|.
   AudioProcessingProperties SelectAudioProcessingProperties(
       const blink::WebMediaTrackConstraintSet& basic_constraint_set,
       bool is_device_capture,
-      bool should_disable_hardware_noise_suppression,
-      bool should_enable_experimental_hw_echo_cancellation) const {
+      bool should_disable_hardware_noise_suppression) const {
     DCHECK(!IsEmpty());
     base::Optional<bool> echo_cancellation = SelectOptionalBool(
         bool_sets_[ECHO_CANCELLATION], basic_constraint_set.echo_cancellation);
@@ -414,17 +508,19 @@ class SingleDeviceCandidateSet {
         SelectOptionalBool(bool_sets_[GOOG_ECHO_CANCELLATION],
                            basic_constraint_set.goog_echo_cancellation);
 
+    const bool use_echo_cancellation = SelectUseEchoCancellation(
+        echo_cancellation, goog_echo_cancellation, is_device_capture);
+
     AudioProcessingProperties properties;
-    properties.disable_hw_echo_cancellation =
-        (echo_cancellation && !*echo_cancellation) ||
-        (goog_echo_cancellation && !*goog_echo_cancellation);
-    properties.enable_experimental_hw_echo_cancellation =
-        should_enable_experimental_hw_echo_cancellation &&
-        !properties.disable_hw_echo_cancellation;
-    properties.enable_sw_echo_cancellation = SelectEnableSwEchoCancellation(
-        echo_cancellation, goog_echo_cancellation, parameters_,
-        default_audio_processing_value,
-        properties.enable_experimental_hw_echo_cancellation);
+    if (use_echo_cancellation) {
+      SelectEchoCancellationFlags(basic_constraint_set.echo_cancellation_type,
+                                  parameters_, &properties);
+    } else {
+      properties.enable_sw_echo_cancellation = false;
+      properties.disable_hw_echo_cancellation = true;
+      properties.enable_experimental_hw_echo_cancellation = false;
+    }
+
     properties.disable_hw_noise_suppression =
         should_disable_hardware_noise_suppression &&
         !properties.disable_hw_echo_cancellation;
@@ -482,6 +578,7 @@ class SingleDeviceCandidateSet {
   DiscreteSet<std::string> device_id_set_;
   std::array<DiscreteSet<bool>, NUM_BOOL_CONSTRAINTS> bool_sets_;
   DiscreteSet<std::string> goog_array_geometry_set_;
+  DiscreteSet<std::string> echo_cancellation_type_set_;
   media::AudioParameters parameters_;
 };
 
@@ -541,15 +638,13 @@ class AudioCaptureCandidates {
       const blink::WebMediaTrackConstraintSet& basic_constraint_set,
       const std::string& default_device_id,
       const std::string& media_stream_source,
-      bool should_disable_hardware_noise_suppression,
-      bool should_enable_experimental_hw_echo_cancellation) const {
+      bool should_disable_hardware_noise_suppression) const {
     const SingleDeviceCandidateSet* device_candidate_set =
         SelectBestDevice(basic_constraint_set, default_device_id);
     DCHECK(!device_candidate_set->IsEmpty());
     return device_candidate_set->SelectBestSettings(
         basic_constraint_set, default_device_id, media_stream_source,
-        should_disable_hardware_noise_suppression,
-        should_enable_experimental_hw_echo_cancellation);
+        should_disable_hardware_noise_suppression);
   }
 
  private:
@@ -610,8 +705,7 @@ const media::AudioParameters& AudioDeviceCaptureCapability::Parameters() const {
 AudioCaptureSettings SelectSettingsAudioCapture(
     const AudioDeviceCaptureCapabilities& capabilities,
     const blink::WebMediaConstraints& constraints,
-    bool should_disable_hardware_noise_suppression,
-    bool should_enable_experimental_hw_echo_cancellation) {
+    bool should_disable_hardware_noise_suppression) {
   std::string media_stream_source = GetMediaStreamSource(constraints);
   bool is_device_capture = media_stream_source.empty();
   if (capabilities.empty())
@@ -635,8 +729,7 @@ AudioCaptureSettings SelectSettingsAudioCapture(
 
   return candidates.SelectBestSettings(
       constraints.Basic(), default_device_id, media_stream_source,
-      should_disable_hardware_noise_suppression,
-      should_enable_experimental_hw_echo_cancellation);
+      should_disable_hardware_noise_suppression);
 }
 
 AudioCaptureSettings CONTENT_EXPORT
@@ -676,9 +769,8 @@ SelectSettingsAudioCapture(MediaStreamAudioSource* source,
       !(source->device().input.effects() &
         media::AudioParameters::NOISE_SUPPRESSION);
 
-  return SelectSettingsAudioCapture(
-      capabilities, constraints, should_disable_hardware_noise_suppression,
-      /* should_enable_experimental_hw_echo_cancellation */ false);
+  return SelectSettingsAudioCapture(capabilities, constraints,
+                                    should_disable_hardware_noise_suppression);
 }
 
 }  // namespace content

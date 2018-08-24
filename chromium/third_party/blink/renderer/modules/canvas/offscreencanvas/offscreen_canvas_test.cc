@@ -9,7 +9,6 @@
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
-#include "third_party/blink/renderer/core/loader/empty_clients.h"
 #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/modules/canvas/htmlcanvas/html_canvas_element_module.h"
@@ -61,9 +60,7 @@ void OffscreenCanvasTest::SetUp() {
   };
   SharedGpuContext::SetContextProviderFactoryForTesting(
       WTF::BindRepeating(factory, WTF::Unretained(&gl_)));
-  Page::PageClients page_clients;
-  FillWithEmptyClients(page_clients);
-  PageTestBase::SetupPageWithClients(&page_clients);
+  PageTestBase::SetUp();
   SetHtmlInnerHTML("<body><canvas id='c'></canvas></body>");
   canvas_element_ = ToHTMLCanvasElement(GetElementById("c"));
   DummyExceptionStateForTesting exception_state;
@@ -81,36 +78,6 @@ void OffscreenCanvasTest::TearDown() {
 
 TEST_F(OffscreenCanvasTest, AnimationNotInitiallySuspended) {
   ScriptState::Scope scope(GetScriptState());
-  EXPECT_FALSE(Dispatcher()->IsAnimationSuspended());
-}
-
-TEST_F(OffscreenCanvasTest, AnimationActiveAfterCommit) {
-  ScriptState::Scope scope(GetScriptState());
-  DummyExceptionStateForTesting exception_state;
-  EXPECT_FALSE(Dispatcher()->NeedsBeginFrame());
-  Context().commit(GetScriptState(), exception_state);
-  platform()->RunUntilIdle();
-  EXPECT_TRUE(Dispatcher()->NeedsBeginFrame());
-}
-
-TEST_F(OffscreenCanvasTest, AnimationSuspendedWhilePlaceholderHidden) {
-  ScriptState::Scope scope(GetScriptState());
-  DummyExceptionStateForTesting exception_state;
-
-  // Do a commit and run it to completion so that the frame dispatcher
-  // instance becomes known to OffscreenCanvas (async).
-  Context().commit(GetScriptState(), exception_state);  // necessary
-  platform()->RunUntilIdle();
-  EXPECT_FALSE(Dispatcher()->IsAnimationSuspended());
-
-  // Change visibility to hidden -> animation should be suspended
-  GetPage().SetVisibilityState(mojom::PageVisibilityState::kHidden, false);
-  platform()->RunUntilIdle();
-  EXPECT_TRUE(Dispatcher()->IsAnimationSuspended());
-
-  // Change visibility to visible -> animation should resume
-  GetPage().SetVisibilityState(mojom::PageVisibilityState::kVisible, false);
-  platform()->RunUntilIdle();
   EXPECT_FALSE(Dispatcher()->IsAnimationSuspended());
 }
 

@@ -14,12 +14,13 @@
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/strings/string_piece.h"
 #include "base/synchronization/lock.h"
 #include "mojo/edk/embedder/platform_handle.h"
-#include "mojo/edk/embedder/platform_shared_buffer.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/handle_signals_state.h"
 #include "mojo/edk/system/ports/name.h"
+#include "mojo/edk/system/ports/port_ref.h"
 #include "mojo/edk/system/system_impl_export.h"
 #include "mojo/edk/system/watch.h"
 #include "mojo/public/c/system/buffer.h"
@@ -36,6 +37,7 @@ class UserMessageEvent;
 }
 
 class Dispatcher;
+class PlatformSharedMemoryMapping;
 
 using DispatcherVector = std::vector<scoped_refptr<Dispatcher>>;
 
@@ -60,6 +62,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
     DATA_PIPE_CONSUMER,
     SHARED_BUFFER,
     WATCHER,
+    INVITATION,
 
     // "Private" types (not exposed via the public interface):
     PLATFORM_HANDLE = -1,
@@ -85,8 +88,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   ///////////// Message pipe API /////////////
 
   virtual MojoResult WriteMessage(
-      std::unique_ptr<ports::UserMessageEvent> message,
-      MojoWriteMessageFlags flags);
+      std::unique_ptr<ports::UserMessageEvent> message);
 
   virtual MojoResult ReadMessage(
       std::unique_ptr<ports::UserMessageEvent>* message);
@@ -103,20 +105,18 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   virtual MojoResult MapBuffer(
       uint64_t offset,
       uint64_t num_bytes,
-      MojoMapBufferFlags flags,
-      std::unique_ptr<PlatformSharedBufferMapping>* mapping);
+      std::unique_ptr<PlatformSharedMemoryMapping>* mapping);
 
   virtual MojoResult GetBufferInfo(MojoSharedBufferInfo* info);
 
   ///////////// Data pipe consumer API /////////////
 
-  virtual MojoResult ReadData(void* elements,
-                              uint32_t* num_bytes,
-                              MojoReadDataFlags flags);
+  virtual MojoResult ReadData(const MojoReadDataOptions& options,
+                              void* elements,
+                              uint32_t* num_bytes);
 
   virtual MojoResult BeginReadData(const void** buffer,
-                                   uint32_t* buffer_num_bytes,
-                                   MojoReadDataFlags flags);
+                                   uint32_t* buffer_num_bytes);
 
   virtual MojoResult EndReadData(uint32_t num_bytes_read);
 
@@ -124,37 +124,17 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
 
   virtual MojoResult WriteData(const void* elements,
                                uint32_t* num_bytes,
-                               MojoWriteDataFlags flags);
+                               const MojoWriteDataOptions& options);
 
-  virtual MojoResult BeginWriteData(void** buffer,
-                                    uint32_t* buffer_num_bytes,
-                                    MojoWriteDataFlags flags);
+  virtual MojoResult BeginWriteData(void** buffer, uint32_t* buffer_num_bytes);
 
   virtual MojoResult EndWriteData(uint32_t num_bytes_written);
 
-  ///////////// Wait set API /////////////
-
-  // Adds a dispatcher to wait on. When the dispatcher satisfies |signals|, it
-  // will be returned in the next call to |GetReadyDispatchers()|. If
-  // |dispatcher| has been added, it must be removed before adding again,
-  // otherwise |MOJO_RESULT_ALREADY_EXISTS| will be returned.
-  virtual MojoResult AddWaitingDispatcher(
-      const scoped_refptr<Dispatcher>& dispatcher,
-      MojoHandleSignals signals,
-      uintptr_t context);
-
-  // Removes a dispatcher to wait on. If |dispatcher| has not been added,
-  // |MOJO_RESULT_NOT_FOUND| will be returned.
-  virtual MojoResult RemoveWaitingDispatcher(
-      const scoped_refptr<Dispatcher>& dispatcher);
-
-  // Returns a set of ready dispatchers. |*count| is the maximum number of
-  // dispatchers to return, and will contain the number of dispatchers returned
-  // in |dispatchers| on completion.
-  virtual MojoResult GetReadyDispatchers(uint32_t* count,
-                                         DispatcherVector* dispatchers,
-                                         MojoResult* results,
-                                         uintptr_t* contexts);
+  // Invitation API.
+  virtual MojoResult AttachMessagePipe(base::StringPiece name,
+                                       ports::PortRef remote_peer_port);
+  virtual MojoResult ExtractMessagePipe(base::StringPiece name,
+                                        MojoHandle* message_pipe_handle);
 
   ///////////// General-purpose API for all handle types /////////
 
@@ -197,13 +177,13 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   // will close.
   //
   // NOTE: Transit MAY still fail after this call returns. Implementations
-  // should not assume PlatformHandle ownership has transferred until
+  // should not assume InternalPlatformHandle ownership has transferred until
   // CompleteTransitAndClose() is called. In other words, if CancelTransit() is
-  // called, the implementation should retain its PlatformHandles in working
-  // condition.
+  // called, the implementation should retain its InternalPlatformHandles in
+  // working condition.
   virtual bool EndSerialize(void* destination,
                             ports::PortName* ports,
-                            ScopedPlatformHandle* handles);
+                            ScopedInternalPlatformHandle* handles);
 
   // Does whatever is necessary to begin transit of the dispatcher.  This
   // should return |true| if transit is OK, or false if the underlying resource
@@ -226,7 +206,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
       size_t num_bytes,
       const ports::PortName* ports,
       size_t num_ports,
-      ScopedPlatformHandle* platform_handles,
+      ScopedInternalPlatformHandle* platform_handles,
       size_t platform_handle_count);
 
  protected:

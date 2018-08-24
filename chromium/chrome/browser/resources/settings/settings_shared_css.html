@@ -1,7 +1,5 @@
 <link rel="import" href="chrome://resources/cr_elements/paper_button_style_css.html">
-<link rel="import" href="chrome://resources/cr_elements/paper_checkbox_style_css.html">
 <link rel="import" href="chrome://resources/cr_elements/paper_input_style_css.html">
-<link rel="import" href="chrome://resources/cr_elements/paper_toggle_style_css.html">
 <link rel="import" href="chrome://resources/cr_elements/search_highlight_style_css.html">
 <link rel="import" href="chrome://resources/cr_elements/shared_vars_css.html">
 <link rel="import" href="chrome://resources/cr_elements/shared_style_css.html">
@@ -12,7 +10,7 @@
 <!-- Common styles for Material Design settings. -->
 <dom-module id="settings-shared">
   <template>
-    <style include="settings-icons paper-button-style paper-checkbox-style paper-input-style paper-toggle-style cr-shared-style search-highlight-style">
+    <style include="settings-icons paper-button-style paper-input-style cr-shared-style search-highlight-style">
       /* Prevent action-links from being selected to avoid accidental
        * selection when trying to click it. */
       a[is=action-link] {
@@ -69,24 +67,9 @@
         flex-direction: column;
       }
 
-      /* Customize the disabled state of paper buttons within a settings box. */
-      .settings-box paper-button {
-        --paper-button-disabled: {
-          background: none;
-          color: black;
-          opacity: 0.26;
-        };
-      }
-
       /* For "Advanced" toggle button. */
       paper-button[toggles][active] {
         background-color: var(--paper-grey-300);
-      }
-
-      /* If a button is at the end of the row, shift it to overlap the end of
-       * the row. */
-      .settings-box paper-button:last-of-type {
-        -webkit-margin-end: calc(var(--cr-button-edge-spacing) * -1);
       }
 
       /* Special case for buttons inside of toggle-buttons. */
@@ -97,29 +80,6 @@
       /* Space out multiple buttons in the same row. */
       .settings-box paper-button + paper-button {
         -webkit-margin-start: 16px;
-      }
-
-      /* Adjust the margin between the separator and the first button. Exclude
-       * .action-button since it has a background thus is visually different. */
-      .separator + paper-button:not(.action-button) {
-        -webkit-margin-start: calc(var(--cr-button-edge-spacing) * -1);
-      }
-
-      /* There are two settings button styles, .primary-button and normal
-       * buttons. The primary is the action button (e.g. "edit", "delete")
-       * while the normal (secondary-button) is often a "Cancel" button. */
-      .primary-button:not([disabled]) {
-        --paper-button-flat-keyboard-focus: {
-          background: rgba(51, 103, 214, .12);  /* --google-blue-700 */
-        };
-        color: var(--google-blue-500);
-      }
-
-      paper-toggle-button {
-        @apply --settings-actionable;
-        height: var(--settings-row-min-height);
-        user-select: none;  /* Prevents text selection while dragging. */
-        width: 36px;
       }
 
       span ~ a {
@@ -146,21 +106,17 @@
       }
 
       controlled-radio-button,
-      paper-radio-button {
-        --paper-radio-button-checked-color: var(--google-blue-500);
-        --paper-radio-button-label-spacing: 22px;
-        --paper-radio-button-radio-container: {
-          flex-shrink: 0;
-        };
-        --paper-radio-button-unchecked-color: var(--paper-grey-600);
-        -webkit-margin-start: 2px;
-        align-items: center;
-        display: flex;
+      cr-radio-button {
         min-height: var(--settings-row-min-height);
       }
 
       paper-radio-group {
         width: 100%;
+      }
+
+      paper-radio-group:focus {
+        background-color: var(--google-grey-300);
+        outline: none;
       }
 
       /* See also: .no-min-width below. */
@@ -260,6 +216,10 @@
         border-top: none;
       }
 
+      h2.first {
+        padding-top: 0;
+      }
+
       .settings-box.block {
         display: block;
       }
@@ -349,17 +309,10 @@
        * settings. */
       .separator {
         -webkit-border-start: var(--settings-separator-line);
-        -webkit-margin-end: var(--settings-box-row-padding);
-        -webkit-margin-start: var(--settings-box-row-padding);
         flex-shrink: 0;
-        --settings-separator-gaps: 9px;
-        height: calc(var(--settings-row-min-height) -
-            var(--settings-separator-gaps));
-      }
-
-      .two-line .separator {
-        height: calc(var(--settings-row-two-line-min-height) -
-            2 * var(--settings-separator-gaps));
+        /* Match paper-button's default height. */
+        height: 32px;
+        margin: 0 16px;
       }
 
       .favicon-image {
@@ -372,6 +325,17 @@
       .column-header {
         color: var(--paper-grey-600);
         font-weight: 500;
+      }
+
+      /* Error message that appears in a toast to indicate the success or
+       * failure of an operation. An example is when adding a printer. */
+      .error-message {
+        color: white;
+        font: 13px;
+        padding-bottom: 15px;
+        padding-top: 15px;
+        text-align: center;
+        white-space: normal;
       }
     </style>
   </template>

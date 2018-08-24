@@ -41,7 +41,6 @@
 #include "modules/audio_coding/neteq/sync_buffer.h"
 #include "modules/audio_coding/neteq/tick_timer.h"
 #include "modules/audio_coding/neteq/timestamp_scaler.h"
-#include "modules/include/module_common_types.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
@@ -102,11 +101,16 @@ NetEqImpl::NetEqImpl(const NetEq::Config& config,
       reset_decoder_(false),
       ssrc_(0),
       first_packet_(true),
-      background_noise_mode_(config.background_noise_mode),
       playout_mode_(config.playout_mode),
       enable_fast_accelerate_(config.enable_fast_accelerate),
       nack_enabled_(false),
-      enable_muted_state_(config.enable_muted_state) {
+      enable_muted_state_(config.enable_muted_state),
+      expand_uma_logger_("WebRTC.Audio.ExpandRatePercent",
+                         10,  // Report once every 10 s.
+                         tick_timer_.get()),
+      speech_expand_uma_logger_("WebRTC.Audio.SpeechExpandRatePercent",
+                                10,  // Report once every 10 s.
+                                tick_timer_.get()) {
   RTC_LOG(LS_INFO) << "NetEq config: " << config.ToString();
   int fs = config.sample_rate_hz;
   if (fs != 8000 && fs != 16000 && fs != 32000 && fs != 48000) {
@@ -837,6 +841,11 @@ int NetEqImpl::GetAudioInternal(AudioFrame* audio_frame, bool* muted) {
   last_decoded_timestamps_.clear();
   tick_timer_->Increment();
   stats_.IncreaseCounter(output_size_samples_, fs_hz_);
+  const auto lifetime_stats = stats_.GetLifetimeStatistics();
+  expand_uma_logger_.UpdateSampleCounter(lifetime_stats.concealed_samples,
+                                         fs_hz_);
+  speech_expand_uma_logger_.UpdateSampleCounter(
+      lifetime_stats.voice_concealed_samples, fs_hz_);
 
   // Check for muted state.
   if (enable_muted_state_ && expand_->Muted() && packet_buffer_->Empty()) {
@@ -1527,9 +1536,8 @@ int NetEqImpl::DecodeLoop(PacketList* packet_list, const Operations& operation,
 void NetEqImpl::DoNormal(const int16_t* decoded_buffer, size_t decoded_length,
                          AudioDecoder::SpeechType speech_type, bool play_dtmf) {
   assert(normal_.get());
-  assert(mute_factor_array_.get());
   normal_->Process(decoded_buffer, decoded_length, last_mode_,
-                   mute_factor_array_.get(), algorithm_buffer_.get());
+                   algorithm_buffer_.get());
   if (decoded_length != 0) {
     last_mode_ = kModeNormal;
   }
@@ -1549,10 +1557,8 @@ void NetEqImpl::DoNormal(const int16_t* decoded_buffer, size_t decoded_length,
 
 void NetEqImpl::DoMerge(int16_t* decoded_buffer, size_t decoded_length,
                         AudioDecoder::SpeechType speech_type, bool play_dtmf) {
-  assert(mute_factor_array_.get());
   assert(merge_.get());
   size_t new_length = merge_->Process(decoded_buffer, decoded_length,
-                                      mute_factor_array_.get(),
                                       algorithm_buffer_.get());
   // Correction can be negative.
   int expand_length_correction =
@@ -1794,9 +1800,8 @@ int NetEqImpl::DoRfc3389Cng(PacketList* packet_list, bool play_dtmf) {
 void NetEqImpl::DoCodecInternalCng(const int16_t* decoded_buffer,
                                    size_t decoded_length) {
   RTC_DCHECK(normal_.get());
-  RTC_DCHECK(mute_factor_array_.get());
   normal_->Process(decoded_buffer, decoded_length, last_mode_,
-                   mute_factor_array_.get(), algorithm_buffer_.get());
+                   algorithm_buffer_.get());
   last_mode_ = kModeCodecInternalCng;
   expand_->Reset();
 }
@@ -2056,12 +2061,6 @@ void NetEqImpl::SetSampleRateAndChannels(int fs_hz, size_t channels) {
 
   last_mode_ = kModeNormal;
 
-  // Create a new array of mute factors and set all to 1.
-  mute_factor_array_.reset(new int16_t[channels]);
-  for (size_t i = 0; i < channels; ++i) {
-    mute_factor_array_[i] = 16384;  // 1.0 in Q14.
-  }
-
   ComfortNoiseDecoder* cng_decoder = decoder_database_->GetActiveCngDecoder();
   if (cng_decoder)
     cng_decoder->Reset();
@@ -2078,7 +2077,6 @@ void NetEqImpl::SetSampleRateAndChannels(int fs_hz, size_t channels) {
 
   // Delete BackgroundNoise object and create a new one.
   background_noise_.reset(new BackgroundNoise(channels));
-  background_noise_->set_mode(background_noise_mode_);
 
   // Reset random vector.
   random_vector_.Reset();

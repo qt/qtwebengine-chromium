@@ -66,10 +66,6 @@ ConditionalCacheCountingHelper::CountAndDestroySelfWhenFinished(
   return weak_ptr_factory_.GetWeakPtr();
 }
 
-bool ConditionalCacheCountingHelper::IsFinished() {
-  return is_finished_;
-}
-
 void ConditionalCacheCountingHelper::Finished() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!is_finished_);
@@ -82,8 +78,8 @@ void ConditionalCacheCountingHelper::CountHttpCacheOnIOThread() {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   next_cache_state_ = CacheState::NONE;
   DCHECK_EQ(CacheState::NONE, next_cache_state_);
-  DCHECK(main_context_getter_.get());
-  DCHECK(media_context_getter_.get());
+  DCHECK(main_context_getter_);
+  DCHECK(media_context_getter_);
 
   next_cache_state_ = CacheState::CREATE_MAIN;
   DoCountCache(net::OK);

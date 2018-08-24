@@ -16,17 +16,22 @@ class TtsHandler : public SettingsPageUIHandler, public VoicesChangedDelegate {
   TtsHandler() = default;
   ~TtsHandler() override = default;
 
-  void HandleGetGoogleTtsVoiceData(const base::ListValue* args);
+  void HandleGetAllTtsVoiceData(const base::ListValue* args);
+  void HandleGetTtsExtensions(const base::ListValue* args);
+  void HandlePreviewTtsVoice(const base::ListValue* args);
 
   // SettingsPageUIHandler implementation.
   void RegisterMessages() override;
-  void OnJavascriptAllowed() override {}
-  void OnJavascriptDisallowed() override {}
+  void OnJavascriptAllowed() override;
+  void OnJavascriptDisallowed() override;
 
   // VoicesChangedDelegate implementation.
   void OnVoicesChanged() override;
 
  private:
+  int GetVoiceLangMatchScore(const VoiceData* voice,
+                             const std::string& app_locale);
+
   DISALLOW_COPY_AND_ASSIGN(TtsHandler);
 };
 

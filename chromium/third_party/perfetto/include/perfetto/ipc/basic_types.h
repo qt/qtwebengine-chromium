@@ -17,7 +17,9 @@
 #ifndef INCLUDE_PERFETTO_IPC_BASIC_TYPES_H_
 #define INCLUDE_PERFETTO_IPC_BASIC_TYPES_H_
 
+#include <stddef.h>
 #include <stdint.h>
+#include <sys/types.h>
 
 namespace google {
 namespace protobuf {
@@ -29,10 +31,16 @@ namespace perfetto {
 namespace ipc {
 
 using ProtoMessage = ::google::protobuf::MessageLite;
-using ServiceID = uint64_t;
-using MethodID = uint64_t;
+using ServiceID = uint32_t;
+using MethodID = uint32_t;
 using ClientID = uint64_t;
 using RequestID = uint64_t;
+
+// This determines the maximum size allowed for an IPC message. Trying to send
+// or receive a larger message will hit DCHECK(s) and auto-disconnect.
+constexpr size_t kIPCBufferSize = 128 * 1024;
+
+constexpr uid_t kInvalidUid = static_cast<uid_t>(-1);
 
 }  // namespace ipc
 }  // namespace perfetto

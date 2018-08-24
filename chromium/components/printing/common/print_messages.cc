@@ -73,12 +73,8 @@ namespace IPC {
 }  // namespace IPC
 
 PrintMsg_Print_Params::PrintMsg_Print_Params()
-    : page_size(),
-      content_size(),
-      printable_area(),
-      margin_top(0),
+    : margin_top(0),
       margin_left(0),
-      dpi(),
       scale_factor(1.0f),
       rasterize_pdf(false),
       document_cookie(0),
@@ -90,13 +86,10 @@ PrintMsg_Print_Params::PrintMsg_Print_Params()
       print_scaling_option(blink::kWebPrintScalingOptionSourceSize),
       print_to_pdf(false),
       display_header_footer(false),
-      title(),
-      url(),
-      header_template(),
-      footer_template(),
       should_print_backgrounds(false),
       printed_doc_type(printing::SkiaDocumentType::PDF),
-      prefer_css_page_size(false) {}
+      prefer_css_page_size(false),
+      num_pages_per_sheet(1) {}
 
 PrintMsg_Print_Params::PrintMsg_Print_Params(
     const PrintMsg_Print_Params& other) = default;
@@ -128,11 +121,10 @@ void PrintMsg_Print_Params::Reset() {
   should_print_backgrounds = false;
   printed_doc_type = printing::SkiaDocumentType::PDF;
   prefer_css_page_size = false;
+  num_pages_per_sheet = 1;
 }
 
-PrintMsg_PrintPages_Params::PrintMsg_PrintPages_Params()
-  : pages() {
-}
+PrintMsg_PrintPages_Params::PrintMsg_PrintPages_Params() {}
 
 PrintMsg_PrintPages_Params::PrintMsg_PrintPages_Params(
     const PrintMsg_PrintPages_Params& other) = default;

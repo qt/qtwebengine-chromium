@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/script/dynamic_module_resolver.h"
 
+#include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/referrer_script_info.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
@@ -26,7 +27,7 @@ class DynamicImportTreeClient final : public ModuleTreeClient {
     return new DynamicImportTreeClient(url, modulator, promise_resolver);
   }
 
-  void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   DynamicImportTreeClient(const KURL& url,
@@ -196,24 +197,24 @@ void DynamicModuleResolver::ResolveDynamically(
 
   // Step 2.3. "Let options be the descendant script fetch options for
   // referencing script's fetch options." [spec text]
-  // https://html.spec.whatwg.org/multipage/webappapis.html#descendant-script-fetch-options
   //
-  // Spec: For any given script fetch options options, the descendant script
-  // fetch options are a new script fetch options whose items all have the same
+  // <spec
+  // href="https://html.spec.whatwg.org/multipage/webappapis.html#descendant-script-fetch-options">
+  // For any given script fetch options options, the descendant script fetch
+  // options are a new script fetch options whose items all have the same
   // values, except for the integrity metadata, which is instead the empty
-  // string. [spec text]
+  // string.</spec>
   ScriptFetchOptions options(referrer_info.Nonce(), IntegrityMetadataSet(),
                              String(), referrer_info.ParserState(),
                              referrer_info.CredentialsMode());
-  ModuleScriptFetchRequest request(url, modulator_->GetReferrerPolicy(),
-                                   options);
 
   // Step 2.4. "Fetch a module script graph given url, settings object,
   // "script", and options. Wait until the algorithm asynchronously completes
   // with result."
-  auto tree_client =
+  auto* tree_client =
       DynamicImportTreeClient::Create(url, modulator_.Get(), promise_resolver);
-  modulator_->FetchTree(request, tree_client);
+  modulator_->FetchTree(url, WebURLRequest::kRequestContextScript, options,
+                        tree_client);
 
   // Steps 2.[5-8] are implemented at
   // DynamicImportTreeClient::NotifyModuleLoadFinished.

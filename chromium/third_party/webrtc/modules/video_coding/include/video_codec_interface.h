@@ -48,6 +48,7 @@ struct CodecSpecificInfoVP9 {
                              // coded frame(s).
   bool flexible_mode;
   bool ss_data_available;
+  bool non_ref_for_inter_layer_pred;
 
   // TODO(nisse): Used on receive side only. Move elsewhere?
   int tl0_pic_idx;  // Negative value to skip tl0PicIdx.
@@ -69,7 +70,7 @@ struct CodecSpecificInfoVP9 {
   uint8_t num_ref_pics;
   uint8_t p_diff[kMaxVp9RefPics];
 
-  bool end_of_superframe;
+  bool end_of_picture;
 };
 
 struct CodecSpecificInfoGeneric {

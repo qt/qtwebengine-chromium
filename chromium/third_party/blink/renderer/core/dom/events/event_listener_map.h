@@ -47,7 +47,7 @@ class EventTarget;
 
 using EventListenerVector = HeapVector<RegisteredEventListener, 1>;
 
-class CORE_EXPORT EventListenerMap {
+class CORE_EXPORT EventListenerMap final {
   DISALLOW_NEW();
 
  public:
@@ -73,7 +73,7 @@ class CORE_EXPORT EventListenerMap {
   void CopyEventListenersNotCreatedFromMarkupToTarget(EventTarget*);
 
   void Trace(blink::Visitor*);
-  void TraceWrappers(const ScriptWrappableVisitor*) const;
+  void TraceWrappers(ScriptWrappableVisitor*) const;
 
  private:
   friend class EventListenerIterator;

@@ -90,7 +90,6 @@ base::Value GetPrintPreviewTicket(bool is_pdf) {
   print_ticket.SetKey(kIsFirstRequest, base::Value(true));
   print_ticket.SetKey(kPreviewRequestID, base::Value(0));
   print_ticket.SetKey(kSettingPreviewModifiable, base::Value(is_pdf));
-  print_ticket.SetKey(kSettingGenerateDraftData, base::Value(true));
   print_ticket.RemoveKey(kSettingPageWidth);
   print_ticket.RemoveKey(kSettingPageHeight);
   print_ticket.RemoveKey(kSettingShowSystemDialog);
@@ -106,7 +105,6 @@ std::unique_ptr<base::ListValue> ConstructPreviewArgs(
   std::string json;
   base::JSONWriter::Write(print_ticket, &json);
   args.GetList().emplace_back(json);
-  args.GetList().emplace_back(-1);
   return base::ListValue::From(base::Value::ToUniquePtrValue(std::move(args)));
 }
 
@@ -188,8 +186,6 @@ class FakePrintPreviewUI : public PrintPreviewUI {
         sizeof(kTestData) - 1);
   }
 
-  int GetAvailableDraftPageCount() const override { return 1; }
-
   void OnPrintPreviewRequest(int request_id) override {}
   void OnCancelPendingPreviewRequest() override {}
   void OnHidePreviewDialog() override {}
@@ -248,11 +244,11 @@ class PrintPreviewHandlerTest : public testing::Test {
   PrintPreviewHandlerTest() {
     TestingProfile::Builder builder;
     profile_ = builder.Build();
-    initiator_web_contents_.reset(content::WebContents::Create(
-        content::WebContents::CreateParams(profile_.get())));
+    initiator_web_contents_ = content::WebContents::Create(
+        content::WebContents::CreateParams(profile_.get()));
     content::WebContents* initiator = initiator_web_contents_.get();
-    preview_web_contents_.reset(content::WebContents::Create(
-        content::WebContents::CreateParams(profile_.get())));
+    preview_web_contents_ = content::WebContents::Create(
+        content::WebContents::CreateParams(profile_.get()));
     printing::PrintViewManager::CreateForWebContents(initiator);
     printing::PrintViewManager::FromWebContents(initiator)->PrintPreviewNow(
         initiator->GetMainFrame(), false);

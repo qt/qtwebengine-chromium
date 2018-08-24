@@ -18,8 +18,6 @@ class CFX_DIBitmap : public CFX_DIBSource {
   template <typename T, typename... Args>
   friend RetainPtr<T> pdfium::MakeRetain(Args&&... args);
 
-  ~CFX_DIBitmap() override;
-
   bool Create(int width,
               int height,
               FXDIB_Format format,
@@ -111,6 +109,7 @@ class CFX_DIBitmap : public CFX_DIBSource {
  protected:
   CFX_DIBitmap();
   CFX_DIBitmap(const CFX_DIBitmap& src);
+  ~CFX_DIBitmap() override;
 
 #if defined _SKIA_SUPPORT_PATHS_
   enum class Format { kCleared, kPreMultiplied, kUnPreMultiplied };
@@ -124,6 +123,28 @@ class CFX_DIBitmap : public CFX_DIBSource {
  private:
   void ConvertBGRColorScale(uint32_t forecolor, uint32_t backcolor);
   void ConvertCMYKColorScale(uint32_t forecolor, uint32_t backcolor);
+  bool TransferWithUnequalFormats(FXDIB_Format dest_format,
+                                  int dest_left,
+                                  int dest_top,
+                                  int width,
+                                  int height,
+                                  const RetainPtr<CFX_DIBSource>& pSrcBitmap,
+                                  int src_left,
+                                  int src_top);
+  void TransferWithMultipleBPP(int dest_left,
+                               int dest_top,
+                               int width,
+                               int height,
+                               const RetainPtr<CFX_DIBSource>& pSrcBitmap,
+                               int src_left,
+                               int src_top);
+  void TransferEqualFormatsOneBPP(int dest_left,
+                                  int dest_top,
+                                  int width,
+                                  int height,
+                                  const RetainPtr<CFX_DIBSource>& pSrcBitmap,
+                                  int src_left,
+                                  int src_top);
 };
 
 #endif  // CORE_FXGE_DIB_CFX_DIBITMAP_H_

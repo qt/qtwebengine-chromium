@@ -4,11 +4,18 @@
 
 #include "media/base/cdm_context.h"
 
+#include "media/base/callback_registry.h"
+
 namespace media {
 
 CdmContext::CdmContext() = default;
 
 CdmContext::~CdmContext() = default;
+
+std::unique_ptr<CallbackRegistration> CdmContext::RegisterNewKeyCB(
+    base::RepeatingClosure new_key_cb) {
+  return nullptr;
+}
 
 Decryptor* CdmContext::GetDecryptor() {
   return nullptr;
@@ -29,10 +36,6 @@ MediaCryptoContext* CdmContext::GetMediaCryptoContext() {
   return nullptr;
 }
 #endif
-
-void* CdmContext::GetClassIdentifier() const {
-  return nullptr;
-}
 
 void IgnoreCdmAttached(bool /* success */) {}
 

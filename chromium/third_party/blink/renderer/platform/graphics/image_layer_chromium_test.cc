@@ -26,6 +26,7 @@
 #include "third_party/blink/renderer/platform/graphics/image.h"
 
 #include <memory>
+
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
 #include "third_party/blink/renderer/platform/testing/fake_graphics_layer.h"
@@ -129,11 +130,11 @@ TEST(ImageLayerChromiumTest, opaqueImages) {
 
   graphics_layer->SetContentsToImage(opaque_image.get(),
                                      Image::kUnspecifiedDecode);
-  ASSERT_TRUE(graphics_layer->ContentsLayer()->Opaque());
+  ASSERT_TRUE(graphics_layer->ContentsLayer()->contents_opaque());
 
   graphics_layer->SetContentsToImage(non_opaque_image.get(),
                                      Image::kUnspecifiedDecode);
-  ASSERT_FALSE(graphics_layer->ContentsLayer()->Opaque());
+  ASSERT_FALSE(graphics_layer->ContentsLayer()->contents_opaque());
 }
 
 }  // namespace blink

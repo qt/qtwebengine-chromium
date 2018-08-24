@@ -201,8 +201,8 @@ private:    // thread functions
     static DWORD WINAPI WSAPIRenderThread(LPVOID context);
     DWORD DoRenderThread();
 
-    void _Lock() { _critSect.Enter(); };
-    void _UnLock() { _critSect.Leave(); };
+    void _Lock();
+    void _UnLock();
 
     int SetDMOProperties();
 
@@ -307,8 +307,6 @@ private:
     AudioDeviceModule::WindowsDeviceType    _outputDevice;
     uint16_t                          _inputDeviceIndex;
     uint16_t                          _outputDeviceIndex;
-
-    uint16_t                          _playBufDelay;
 
     mutable char                            _str[512];
 };

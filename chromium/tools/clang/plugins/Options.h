@@ -9,9 +9,8 @@ namespace chrome_checker {
 
 struct Options {
   bool check_base_classes = false;
-  bool enforce_in_thirdparty_webkit = false;  // Use in Blink code itself
-  bool check_enum_max_value = false;
   bool check_ipc = false;
+  bool check_gmock_objects = false;
 };
 
 }  // namespace chrome_checker

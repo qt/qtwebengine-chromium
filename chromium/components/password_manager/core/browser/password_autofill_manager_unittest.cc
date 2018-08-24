@@ -93,7 +93,7 @@ class TestPasswordManagerClient : public StubPasswordManagerClient {
 class MockSyncService : public syncer::FakeSyncService {
  public:
   MockSyncService() {}
-  virtual ~MockSyncService() {}
+  ~MockSyncService() override {}
   MOCK_CONST_METHOD0(IsFirstSetupComplete, bool());
   MOCK_CONST_METHOD0(IsSyncActive, bool());
   MOCK_CONST_METHOD0(IsUsingSecondaryPassphrase, bool());
@@ -164,11 +164,6 @@ class PasswordAutofillManagerTest : public testing::Test {
  protected:
   int fill_data_id() { return fill_data_id_; }
   autofill::PasswordFormFillData& fill_data() { return fill_data_; }
-
-  void SetHttpWarningEnabled() {
-    scoped_feature_list_.InitAndEnableFeature(
-        security_state::kHttpFormWarningFeature);
-  }
 
   void SetManualFallbacksForFilling(bool enabled) {
     if (enabled) {
@@ -406,13 +401,6 @@ TEST_F(PasswordAutofillManagerTest, ExtractSuggestions) {
   base::string16 additional_username(base::ASCIIToUTF16("John Foo"));
   data.additional_logins[additional_username] = additional;
 
-  autofill::UsernamesCollectionKey usernames_key;
-  usernames_key.realm = "http://yetanother.net";
-  std::vector<base::string16> other_names;
-  base::string16 other_username(base::ASCIIToUTF16("John Different"));
-  other_names.push_back(other_username);
-  data.other_possible_usernames[usernames_key] = other_names;
-
   int dummy_key = 0;
   password_autofill_manager_->OnAddPasswordFormMapping(dummy_key, data);
 
@@ -424,35 +412,33 @@ TEST_F(PasswordAutofillManagerTest, ExtractSuggestions) {
                   element_bounds, _,
                   testing::AllOf(
                       SuggestionVectorValuesAre(testing::UnorderedElementsAre(
-                          test_username_, additional_username, other_username)),
+                          test_username_, additional_username)),
                       SuggestionVectorLabelsAre(testing::UnorderedElementsAre(
                           base::UTF8ToUTF16(data.preferred_realm),
-                          base::UTF8ToUTF16(additional.realm),
-                          base::UTF8ToUTF16(usernames_key.realm)))),
+                          base::UTF8ToUTF16(additional.realm)))),
                   _));
   password_autofill_manager_->OnShowPasswordSuggestions(
       dummy_key, base::i18n::RIGHT_TO_LEFT, base::string16(), false,
       element_bounds);
 
   // Now simulate displaying suggestions matching "John".
-  EXPECT_CALL(*autofill_client,
-              ShowAutofillPopup(
-                  element_bounds, _,
-                  SuggestionVectorValuesAre(testing::UnorderedElementsAre(
-                      additional_username,
-                      other_username)),
-                  _));
+  EXPECT_CALL(
+      *autofill_client,
+      ShowAutofillPopup(element_bounds, _,
+                        SuggestionVectorValuesAre(
+                            testing::UnorderedElementsAre(additional_username)),
+                        _));
   password_autofill_manager_->OnShowPasswordSuggestions(
       dummy_key, base::i18n::RIGHT_TO_LEFT, base::ASCIIToUTF16("John"), false,
       element_bounds);
 
   // Finally, simulate displaying all suggestions, without any prefix matching.
-  EXPECT_CALL(*autofill_client,
-              ShowAutofillPopup(
-                  element_bounds, _,
-                  SuggestionVectorValuesAre(testing::UnorderedElementsAre(
-                      test_username_, additional_username, other_username)),
-                  _));
+  EXPECT_CALL(
+      *autofill_client,
+      ShowAutofillPopup(element_bounds, _,
+                        SuggestionVectorValuesAre(testing::UnorderedElementsAre(
+                            test_username_, additional_username)),
+                        _));
   password_autofill_manager_->OnShowPasswordSuggestions(
       dummy_key, base::i18n::RIGHT_TO_LEFT, base::ASCIIToUTF16("xyz"), true,
       element_bounds);
@@ -476,24 +462,16 @@ TEST_F(PasswordAutofillManagerTest, PrettifiedAndroidRealmsAreShownAsLabels) {
   base::string16 additional_username(base::ASCIIToUTF16("John Foo"));
   data.additional_logins[additional_username] = additional;
 
-  autofill::UsernamesCollectionKey usernames_key;
-  usernames_key.realm = "android://hash@com.example3.android/";
-  std::vector<base::string16> other_names;
-  base::string16 other_username(base::ASCIIToUTF16("John Different"));
-  other_names.push_back(other_username);
-  data.other_possible_usernames[usernames_key] = other_names;
-
   const int dummy_key = 0;
   password_autofill_manager_->OnAddPasswordFormMapping(dummy_key, data);
 
-  EXPECT_CALL(
-      *autofill_client,
-      ShowAutofillPopup(
-          _, _, SuggestionVectorLabelsAre(testing::UnorderedElementsAre(
-                    base::ASCIIToUTF16("android://com.example1.android/"),
-                    base::ASCIIToUTF16("android://com.example2.android/"),
-                    base::ASCIIToUTF16("android://com.example3.android/"))),
-          _));
+  EXPECT_CALL(*autofill_client,
+              ShowAutofillPopup(
+                  _, _,
+                  SuggestionVectorLabelsAre(testing::UnorderedElementsAre(
+                      base::ASCIIToUTF16("android://com.example1.android/"),
+                      base::ASCIIToUTF16("android://com.example2.android/"))),
+                  _));
   password_autofill_manager_->OnShowPasswordSuggestions(
       dummy_key, base::i18n::RIGHT_TO_LEFT, base::string16(), false,
       gfx::RectF());
@@ -518,10 +496,6 @@ TEST_F(PasswordAutofillManagerTest, FillSuggestionPasswordField) {
 
   autofill::UsernamesCollectionKey usernames_key;
   usernames_key.realm = "http://yetanother.net";
-  std::vector<base::string16> other_names;
-  base::string16 other_username(base::ASCIIToUTF16("John Different"));
-  other_names.push_back(other_username);
-  data.other_possible_usernames[usernames_key] = other_names;
 
   int dummy_key = 0;
   password_autofill_manager_->OnAddPasswordFormMapping(dummy_key, data);
@@ -578,10 +552,6 @@ TEST_F(PasswordAutofillManagerTest, DisplaySuggestionsWithMatchingTokens) {
 
   autofill::UsernamesCollectionKey usernames_key;
   usernames_key.realm = "http://yetanother.net";
-  std::vector<base::string16> other_names;
-  base::string16 other_username(base::ASCIIToUTF16("example@foo.com"));
-  other_names.push_back(other_username);
-  data.other_possible_usernames[usernames_key] = other_names;
 
   int dummy_key = 0;
   password_autofill_manager_->OnAddPasswordFormMapping(dummy_key, data);
@@ -590,7 +560,7 @@ TEST_F(PasswordAutofillManagerTest, DisplaySuggestionsWithMatchingTokens) {
       *autofill_client,
       ShowAutofillPopup(element_bounds, _,
                         SuggestionVectorValuesAre(testing::UnorderedElementsAre(
-                            username, additional_username, other_username)),
+                            username, additional_username)),
                         _));
   password_autofill_manager_->OnShowPasswordSuggestions(
       dummy_key, base::i18n::RIGHT_TO_LEFT, base::ASCIIToUTF16("foo"), false,
@@ -623,10 +593,6 @@ TEST_F(PasswordAutofillManagerTest, NoSuggestionForNonPrefixTokenMatch) {
 
   autofill::UsernamesCollectionKey usernames_key;
   usernames_key.realm = "http://yetanother.net";
-  std::vector<base::string16> other_names;
-  base::string16 other_username(base::ASCIIToUTF16("example@foo.com"));
-  other_names.push_back(other_username);
-  data.other_possible_usernames[usernames_key] = other_names;
 
   int dummy_key = 0;
   password_autofill_manager_->OnAddPasswordFormMapping(dummy_key, data);
@@ -666,10 +632,6 @@ TEST_F(PasswordAutofillManagerTest,
 
   autofill::UsernamesCollectionKey usernames_key;
   usernames_key.realm = "http://yetanother.net";
-  std::vector<base::string16> other_names;
-  base::string16 other_username(base::ASCIIToUTF16("example@foo.com"));
-  other_names.push_back(other_username);
-  data.other_possible_usernames[usernames_key] = other_names;
 
   int dummy_key = 0;
   password_autofill_manager_->OnAddPasswordFormMapping(dummy_key, data);
@@ -713,10 +675,6 @@ TEST_F(PasswordAutofillManagerTest,
 
   autofill::UsernamesCollectionKey usernames_key;
   usernames_key.realm = "http://yetanother.net";
-  std::vector<base::string16> other_names;
-  base::string16 other_username(base::ASCIIToUTF16("example@foo.com"));
-  other_names.push_back(other_username);
-  data.other_possible_usernames[usernames_key] = other_names;
 
   int dummy_key = 0;
   password_autofill_manager_->OnAddPasswordFormMapping(dummy_key, data);
@@ -725,7 +683,7 @@ TEST_F(PasswordAutofillManagerTest,
       *autofill_client,
       ShowAutofillPopup(element_bounds, _,
                         SuggestionVectorValuesAre(testing::UnorderedElementsAre(
-                            other_username, username, additional_username)),
+                            username, additional_username)),
                         _));
   password_autofill_manager_->OnShowPasswordSuggestions(
       dummy_key, base::i18n::RIGHT_TO_LEFT, base::ASCIIToUTF16("foo"), false,
@@ -764,291 +722,6 @@ TEST_F(PasswordAutofillManagerTest, PreviewAndFillEmptyUsernameSuggestion) {
   password_autofill_manager_->DidAcceptSuggestion(
       no_username_string, autofill::POPUP_ITEM_ID_PASSWORD_ENTRY, 1);
   testing::Mock::VerifyAndClearExpectations(client->mock_driver());
-}
-
-// Tests that a standalone Form Not Secure warning shows up in the
-// autofill popup when PasswordAutofillManager::OnShowNotSecureWarning()
-// is called.
-TEST_F(PasswordAutofillManagerTest, ShowStandaloneNotSecureWarning) {
-  auto client = std::make_unique<TestPasswordManagerClient>();
-  auto autofill_client = std::make_unique<MockAutofillClient>();
-  InitializePasswordAutofillManager(client.get(), autofill_client.get());
-
-  gfx::RectF element_bounds;
-  autofill::PasswordFormFillData data;
-  data.username_field.value = test_username_;
-  data.password_field.value = test_password_;
-  data.origin = GURL("http://foo.test");
-
-  int dummy_key = 0;
-  password_autofill_manager_->OnAddPasswordFormMapping(dummy_key, data);
-
-  // String "Login not secure" shown as a warning messages if password form is
-  // on http sites.
-  const base::string16 warning_message =
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_LOGIN_HTTP_WARNING_MESSAGE);
-
-  SetHttpWarningEnabled();
-
-  auto elements = testing::ElementsAre(warning_message);
-
-  EXPECT_CALL(*autofill_client,
-              ShowAutofillPopup(element_bounds, _,
-                                SuggestionVectorValuesAre(elements), _));
-  password_autofill_manager_->OnShowNotSecureWarning(base::i18n::RIGHT_TO_LEFT,
-                                                     element_bounds);
-
-  // Accepting the warning message should trigger a call to open an explanation
-  // of the message and hide the popup.
-  EXPECT_CALL(
-      *autofill_client,
-      ExecuteCommand(autofill::POPUP_ITEM_ID_HTTP_NOT_SECURE_WARNING_MESSAGE));
-  EXPECT_CALL(*autofill_client, HideAutofillPopup());
-  password_autofill_manager_->DidAcceptSuggestion(
-      base::string16(), autofill::POPUP_ITEM_ID_HTTP_NOT_SECURE_WARNING_MESSAGE,
-      0);
-}
-
-TEST_F(PasswordAutofillManagerTest, NonSecurePasswordFieldHttpWarningMessage) {
-  auto client = std::make_unique<TestPasswordManagerClient>();
-  auto autofill_client = std::make_unique<MockAutofillClient>();
-  InitializePasswordAutofillManager(client.get(), autofill_client.get());
-
-  gfx::RectF element_bounds;
-  autofill::PasswordFormFillData data;
-  data.username_field.value = test_username_;
-  data.password_field.value = test_password_;
-  data.origin = GURL("http://foo.test");
-
-  int dummy_key = 0;
-  password_autofill_manager_->OnAddPasswordFormMapping(dummy_key, data);
-
-  // String "Login not secure" shown as a warning messages if password form is
-  // on http sites.
-  base::string16 warning_message =
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_LOGIN_HTTP_WARNING_MESSAGE);
-
-  // String "Use password for:" shown when displaying suggestions matching a
-  // username and specifying that the field is a password field.
-  base::string16 title =
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_PASSWORD_FIELD_SUGGESTIONS_TITLE);
-
-  base::string16 show_all_saved_row_text =
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_SHOW_ALL_SAVED_FALLBACK);
-  std::vector<base::string16> elements = {title, test_username_};
-  if (IsManualFallbackForFillingEnabled()) {
-#if !defined(OS_ANDROID)
-    elements.push_back(base::string16());
-#endif
-    elements.push_back(show_all_saved_row_text);
-  }
-
-  // Http warning message won't show with switch flag off.
-  EXPECT_CALL(
-      *autofill_client,
-      ShowAutofillPopup(
-          element_bounds, _,
-          SuggestionVectorValuesAre(testing::ElementsAreArray(elements)), _));
-  password_autofill_manager_->OnShowPasswordSuggestions(
-      dummy_key, base::i18n::RIGHT_TO_LEFT, test_username_,
-      autofill::IS_PASSWORD_FIELD, element_bounds);
-
-  SetHttpWarningEnabled();
-
-  // Http warning message shows for non-secure context and switch flag on, so
-  // there are 3 suggestions (+ 1 separator on desktop) in total, and the
-  // message comes first among suggestions.
-  elements = {
-    warning_message,
-#if !defined(OS_ANDROID)
-    base::string16(),
-#endif
-    title,
-    test_username_
-  };
-  if (IsManualFallbackForFillingEnabled()) {
-#if !defined(OS_ANDROID)
-    elements.push_back(base::string16());
-#endif
-    elements.push_back(show_all_saved_row_text);
-  }
-
-  EXPECT_CALL(
-      *autofill_client,
-      ShowAutofillPopup(
-          element_bounds, _,
-          SuggestionVectorValuesAre(testing::ElementsAreArray(elements)), _));
-  password_autofill_manager_->OnShowPasswordSuggestions(
-      dummy_key, base::i18n::RIGHT_TO_LEFT, test_username_,
-      autofill::IS_PASSWORD_FIELD, element_bounds);
-
-  // Accepting the warning message should trigger a call to open an explanation
-  // of the message and hide the popup.
-  EXPECT_CALL(
-      *autofill_client,
-      ExecuteCommand(autofill::POPUP_ITEM_ID_HTTP_NOT_SECURE_WARNING_MESSAGE));
-  EXPECT_CALL(*autofill_client, HideAutofillPopup());
-  password_autofill_manager_->DidAcceptSuggestion(
-      base::string16(), autofill::POPUP_ITEM_ID_HTTP_NOT_SECURE_WARNING_MESSAGE,
-      0);
-}
-
-// Tests that the "Login not secure" warning shows up in non-password
-// fields of login forms.
-TEST_F(PasswordAutofillManagerTest, NonSecureUsernameFieldHttpWarningMessage) {
-  auto client = std::make_unique<TestPasswordManagerClient>();
-  auto autofill_client = std::make_unique<MockAutofillClient>();
-  InitializePasswordAutofillManager(client.get(), autofill_client.get());
-
-  gfx::RectF element_bounds;
-  autofill::PasswordFormFillData data;
-  data.username_field.value = test_username_;
-  data.password_field.value = test_password_;
-  data.origin = GURL("http://foo.test");
-
-  int dummy_key = 0;
-  password_autofill_manager_->OnAddPasswordFormMapping(dummy_key, data);
-
-  // String "Login not secure" shown as a warning messages if password form is
-  // on http sites.
-  base::string16 warning_message =
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_LOGIN_HTTP_WARNING_MESSAGE);
-
-  // Http warning message won't show with switch flag off.
-  EXPECT_CALL(
-      *autofill_client,
-      ShowAutofillPopup(
-          element_bounds, _,
-          SuggestionVectorValuesAre(testing::ElementsAre(test_username_)), _));
-  password_autofill_manager_->OnShowPasswordSuggestions(
-      dummy_key, base::i18n::RIGHT_TO_LEFT, test_username_, 0, element_bounds);
-
-  SetHttpWarningEnabled();
-
-  // Http warning message shows for non-secure context and switch flag on, so
-  // there are 2 suggestions (+ 1 separator on desktop) in total, and the
-  // message comes first among suggestions.
-  auto elements = testing::ElementsAre(warning_message,
-#if !defined(OS_ANDROID)
-                                       base::string16(),
-#endif
-                                       test_username_);
-
-  EXPECT_CALL(*autofill_client,
-              ShowAutofillPopup(element_bounds, _,
-                                SuggestionVectorValuesAre(elements), _));
-  password_autofill_manager_->OnShowPasswordSuggestions(
-      dummy_key, base::i18n::RIGHT_TO_LEFT, test_username_, 0, element_bounds);
-
-  // Accepting the warning message should trigger a call to open an explanation
-  // of the message and hide the popup.
-  EXPECT_CALL(
-      *autofill_client,
-      ExecuteCommand(autofill::POPUP_ITEM_ID_HTTP_NOT_SECURE_WARNING_MESSAGE));
-  EXPECT_CALL(*autofill_client, HideAutofillPopup());
-  password_autofill_manager_->DidAcceptSuggestion(
-      base::string16(), autofill::POPUP_ITEM_ID_HTTP_NOT_SECURE_WARNING_MESSAGE,
-      0);
-}
-
-TEST_F(PasswordAutofillManagerTest, SecurePasswordFieldHttpWarningMessage) {
-  auto client = std::make_unique<TestPasswordManagerClient>();
-  auto autofill_client = std::make_unique<MockAutofillClient>();
-  InitializePasswordAutofillManager(client.get(), autofill_client.get());
-
-  gfx::RectF element_bounds;
-  autofill::PasswordFormFillData data;
-  data.username_field.value = test_username_;
-  data.password_field.value = test_password_;
-  data.origin = GURL("https://foo.test");
-
-  int dummy_key = 0;
-  password_autofill_manager_->OnAddPasswordFormMapping(dummy_key, data);
-
-  // String "Use password for:" shown when displaying suggestions matching a
-  // username and specifying that the field is a password field.
-  base::string16 title =
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_PASSWORD_FIELD_SUGGESTIONS_TITLE);
-
-  std::vector<base::string16> elements = {title, test_username_};
-  if (IsManualFallbackForFillingEnabled()) {
-    elements = {
-      title,
-      test_username_,
-#if !defined(OS_ANDROID)
-      base::string16(),
-#endif
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_SHOW_ALL_SAVED_FALLBACK)
-    };
-  }
-  // Http warning message won't show with switch flag off.
-  EXPECT_CALL(
-      *autofill_client,
-      ShowAutofillPopup(
-          element_bounds, _,
-          SuggestionVectorValuesAre(testing::ElementsAreArray(elements)), _));
-  password_autofill_manager_->OnShowPasswordSuggestions(
-      dummy_key, base::i18n::RIGHT_TO_LEFT, test_username_,
-      autofill::IS_PASSWORD_FIELD, element_bounds);
-
-  SetHttpWarningEnabled();
-
-  // Http warning message won't show for secure context, even with switch flag
-  // on.
-  EXPECT_CALL(
-      *autofill_client,
-      ShowAutofillPopup(
-          element_bounds, _,
-          SuggestionVectorValuesAre(testing::ElementsAreArray(elements)), _));
-  password_autofill_manager_->OnShowPasswordSuggestions(
-      dummy_key, base::i18n::RIGHT_TO_LEFT, test_username_,
-      autofill::IS_PASSWORD_FIELD, element_bounds);
-}
-
-// Tests that the Form-Not-Secure warning is recorded in UMA, at most once per
-// navigation.
-TEST_F(PasswordAutofillManagerTest, ShowedFormNotSecureHistogram) {
-  const char kHistogram[] =
-      "PasswordManager.ShowedFormNotSecureWarningOnCurrentNavigation";
-  base::HistogramTester histograms;
-  SetHttpWarningEnabled();
-
-  auto client = std::make_unique<TestPasswordManagerClient>();
-  auto autofill_client = std::make_unique<MockAutofillClient>();
-  InitializePasswordAutofillManager(client.get(), autofill_client.get());
-
-  // Test that the standalone warning (with no autofill suggestions) records the
-  // histogram.
-  gfx::RectF element_bounds;
-  EXPECT_CALL(*autofill_client, ShowAutofillPopup(element_bounds, _, _, _));
-  password_autofill_manager_->OnShowNotSecureWarning(base::i18n::RIGHT_TO_LEFT,
-                                                     element_bounds);
-  histograms.ExpectUniqueSample(kHistogram, true, 1);
-
-  // Simulate a navigation, because the histogram is recorded at most once per
-  // navigation.
-  password_autofill_manager_->DidNavigateMainFrame();
-
-  // Test that the warning, when included with the normal autofill dropdown,
-  // records the histogram.
-  int dummy_key = 0;
-  autofill::PasswordFormFillData data;
-  data.username_field.value = test_username_;
-  data.password_field.value = test_password_;
-  data.origin = GURL("http://foo.test");
-
-  password_autofill_manager_->OnAddPasswordFormMapping(dummy_key, data);
-  EXPECT_CALL(*autofill_client, ShowAutofillPopup(element_bounds, _, _, _));
-  password_autofill_manager_->OnShowPasswordSuggestions(
-      dummy_key, base::i18n::RIGHT_TO_LEFT, test_username_,
-      autofill::IS_PASSWORD_FIELD, element_bounds);
-  histograms.ExpectUniqueSample(kHistogram, true, 2);
-
-  // The histogram should not be recorded again on the same navigation.
-  EXPECT_CALL(*autofill_client, ShowAutofillPopup(element_bounds, _, _, _));
-  password_autofill_manager_->OnShowNotSecureWarning(base::i18n::RIGHT_TO_LEFT,
-                                                     element_bounds);
-  histograms.ExpectUniqueSample(kHistogram, true, 2);
 }
 
 // Tests that the "Show all passwords" suggestion isn't shown along with

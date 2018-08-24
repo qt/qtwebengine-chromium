@@ -29,6 +29,7 @@
 
 #include "third_party/blink/renderer/core/editing/selection_controller.h"
 
+#include "base/auto_reset.h"
 #include "third_party/blink/public/platform/web_menu_source_type.h"
 #include "third_party/blink/public/web/web_selection.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -38,9 +39,9 @@
 #include "third_party/blink/renderer/core/editing/editor.h"
 #include "third_party/blink/renderer/core/editing/ephemeral_range.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
+#include "third_party/blink/renderer/core/editing/inline_box_traversal.h"
 #include "third_party/blink/renderer/core/editing/iterators/text_iterator.h"
 #include "third_party/blink/renderer/core/editing/markers/document_marker_controller.h"
-#include "third_party/blink/renderer/core/editing/rendered_position.h"
 #include "third_party/blink/renderer/core/editing/selection_template.h"
 #include "third_party/blink/renderer/core/editing/set_selection_options.h"
 #include "third_party/blink/renderer/core/editing/suggestion/text_suggestion_controller.h"
@@ -54,7 +55,6 @@
 #include "third_party/blink/renderer/core/page/focus_controller.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 
 namespace blink {
 SelectionController* SelectionController::Create(LocalFrame& frame) {
@@ -461,7 +461,7 @@ static bool ShouldRespectSVGTextBoundaries(
 void SelectionController::UpdateSelectionForMouseDrag(
     const HitTestResult& hit_test_result,
     const LayoutPoint& drag_start_pos,
-    const IntPoint& last_known_mouse_position) {
+    const LayoutPoint& last_known_mouse_position) {
   if (!mouse_down_may_start_select_)
     return;
 
@@ -764,80 +764,6 @@ void SelectionController::SelectClosestWordOrLinkFromMouseEvent(
           .Build());
 }
 
-static SelectionInFlatTree AdjustEndpointsAtBidiBoundary(
-    const VisiblePositionInFlatTree& visible_base,
-    const VisiblePositionInFlatTree& visible_extent) {
-  DCHECK(visible_base.IsValid());
-  DCHECK(visible_extent.IsValid());
-
-  RenderedPosition base(visible_base);
-  RenderedPosition extent(visible_extent);
-
-  const SelectionInFlatTree& unchanged_selection =
-      SelectionInFlatTree::Builder()
-          .SetBaseAndExtent(visible_base.DeepEquivalent(),
-                            visible_extent.DeepEquivalent())
-          .Build();
-
-  if (base.IsNull() || extent.IsNull() || base.IsEquivalent(extent))
-    return unchanged_selection;
-
-  if (base.AtLeftBoundaryOfBidiRun()) {
-    if (!extent.AtRightBoundaryOfBidiRun(base.BidiLevelOnRight()) &&
-        base.IsEquivalent(
-            extent.LeftBoundaryOfBidiRun(base.BidiLevelOnRight()))) {
-      return SelectionInFlatTree::Builder()
-          .SetBaseAndExtent(
-              CreateVisiblePosition(
-                  ToPositionInFlatTree(base.PositionAtLeftBoundaryOfBiDiRun()))
-                  .DeepEquivalent(),
-              visible_extent.DeepEquivalent())
-          .Build();
-    }
-    return unchanged_selection;
-  }
-
-  if (base.AtRightBoundaryOfBidiRun()) {
-    if (!extent.AtLeftBoundaryOfBidiRun(base.BidiLevelOnLeft()) &&
-        base.IsEquivalent(
-            extent.RightBoundaryOfBidiRun(base.BidiLevelOnLeft()))) {
-      return SelectionInFlatTree::Builder()
-          .SetBaseAndExtent(
-              CreateVisiblePosition(
-                  ToPositionInFlatTree(base.PositionAtRightBoundaryOfBiDiRun()))
-                  .DeepEquivalent(),
-              visible_extent.DeepEquivalent())
-          .Build();
-    }
-    return unchanged_selection;
-  }
-
-  if (extent.AtLeftBoundaryOfBidiRun() &&
-      extent.IsEquivalent(
-          base.LeftBoundaryOfBidiRun(extent.BidiLevelOnRight()))) {
-    return SelectionInFlatTree::Builder()
-        .SetBaseAndExtent(
-            visible_base.DeepEquivalent(),
-            CreateVisiblePosition(
-                ToPositionInFlatTree(extent.PositionAtLeftBoundaryOfBiDiRun()))
-                .DeepEquivalent())
-        .Build();
-  }
-
-  if (extent.AtRightBoundaryOfBidiRun() &&
-      extent.IsEquivalent(
-          base.RightBoundaryOfBidiRun(extent.BidiLevelOnLeft()))) {
-    return SelectionInFlatTree::Builder()
-        .SetBaseAndExtent(
-            visible_base.DeepEquivalent(),
-            CreateVisiblePosition(
-                ToPositionInFlatTree(extent.PositionAtRightBoundaryOfBiDiRun()))
-                .DeepEquivalent())
-        .Build();
-  }
-  return unchanged_selection;
-}
-
 // TODO(yosin): We should take |granularity| and |handleVisibility| from
 // |newSelection|.
 // We should rename this function to appropriate name because
@@ -866,7 +792,7 @@ void SelectionController::SetNonDirectionalSelectionIfNeeded(
       CreateVisiblePosition(new_selection.Extent());
   const SelectionInFlatTree& adjusted_selection =
       endpoints_adjustment_mode == kAdjustEndpointsAtBidiBoundary
-          ? AdjustEndpointsAtBidiBoundary(base, extent)
+          ? BidiAdjustment::AdjustForRangeSelection(base, extent)
           : SelectionInFlatTree::Builder()
                 .SetBaseAndExtent(base.DeepEquivalent(),
                                   extent.DeepEquivalent())
@@ -1060,7 +986,7 @@ void SelectionController::HandleMouseDraggedEvent(
     const MouseEventWithHitTestResults& event,
     const IntPoint& mouse_down_pos,
     const LayoutPoint& drag_start_pos,
-    const IntPoint& last_known_mouse_position) {
+    const LayoutPoint& last_known_mouse_position) {
   TRACE_EVENT0("blink", "SelectionController::handleMouseDraggedEvent");
 
   if (!Selection().IsAvailable())
@@ -1079,7 +1005,7 @@ void SelectionController::HandleMouseDraggedEvent(
 
 void SelectionController::UpdateSelectionForMouseDrag(
     const LayoutPoint& drag_start_pos,
-    const IntPoint& last_known_mouse_position) {
+    const LayoutPoint& last_known_mouse_position) {
   LocalFrameView* view = frame_->View();
   if (!view)
     return;
@@ -1090,7 +1016,7 @@ void SelectionController::UpdateSelectionForMouseDrag(
   HitTestRequest request(HitTestRequest::kReadOnly | HitTestRequest::kActive |
                          HitTestRequest::kMove);
   HitTestResult result(request,
-                       view->RootFrameToContents(last_known_mouse_position));
+                       view->ViewportToContents(last_known_mouse_position));
   layout_view->HitTest(result);
   UpdateSelectionForMouseDrag(result, drag_start_pos,
                               last_known_mouse_position);
@@ -1258,7 +1184,7 @@ void SelectionController::SendContextMenuEvent(
     return;
 
   // Context menu events are always allowed to perform a selection.
-  AutoReset<bool> mouse_down_may_start_select_change(
+  base::AutoReset<bool> mouse_down_may_start_select_change(
       &mouse_down_may_start_select_, true);
 
   if (mev.Event().menu_source_type != kMenuSourceTouchHandle &&

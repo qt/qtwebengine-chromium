@@ -294,7 +294,7 @@ Polymer({
       }
     } else if (this.shouldShowSubpage_(
                    this.deviceState, this.networkStateList)) {
-      this.fire('show-networks', this.deviceState);
+      this.fire('show-networks', {type: this.deviceState.Type});
     } else if (this.activeNetworkState.GUID) {
       this.fire('show-detail', this.activeNetworkState);
     } else if (this.networkStateList.length > 0) {
@@ -327,13 +327,11 @@ Polymer({
    * @param {!Event} event
    * @private
    */
-  onDeviceEnabledTap_: function(event) {
+  onDeviceEnabledChange_: function(event) {
     const deviceIsEnabled = this.deviceIsEnabled_(this.deviceState);
     const type = this.deviceState ? this.deviceState.Type : '';
     this.fire(
         'device-enabled-toggled', {enabled: !deviceIsEnabled, type: type});
-    // Make sure this does not propagate to onDetailsTap_.
-    event.stopPropagation();
   },
 
   /**

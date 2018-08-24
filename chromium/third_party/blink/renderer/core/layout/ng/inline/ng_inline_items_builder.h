@@ -19,7 +19,6 @@ namespace blink {
 class ComputedStyle;
 class LayoutObject;
 class LayoutText;
-class NGInlineItem;
 
 // NGInlineItemsBuilder builds a string and a list of NGInlineItem from inlines.
 //
@@ -53,6 +52,12 @@ class CORE_TEMPLATE_CLASS_EXPORT NGInlineItemsBuilderTemplate {
   // Returns if the inline node has no content. For example:
   // <span></span> or <span><float></float></span>.
   bool IsEmptyInline() const { return is_empty_inline_; }
+
+  // Append existing items from an unchanged LayoutObject.
+  // Returns whether the existing items could be reused.
+  // NOTE: The state of the builder remains unchanged if the append operation
+  // fails (i.e. if it returns false).
+  bool Append(const String&, LayoutObject*, const Vector<NGInlineItem*>&);
 
   // Append a string.
   // When appending, spaces are collapsed according to CSS Text, The white space
@@ -148,6 +153,15 @@ class CORE_TEMPLATE_CLASS_EXPORT NGInlineItemsBuilderTemplate {
 
   void Exit(LayoutObject*);
 };
+
+template <>
+String NGInlineItemsBuilderTemplate<NGOffsetMappingBuilder>::ToString();
+
+template <>
+bool NGInlineItemsBuilderTemplate<NGOffsetMappingBuilder>::Append(
+    const String&,
+    LayoutObject*,
+    const Vector<NGInlineItem*>&);
 
 extern template class CORE_EXTERN_TEMPLATE_EXPORT
     NGInlineItemsBuilderTemplate<EmptyOffsetMappingBuilder>;

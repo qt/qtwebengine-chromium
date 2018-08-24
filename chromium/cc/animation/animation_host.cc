@@ -257,8 +257,6 @@ void AnimationHost::PushPropertiesToImplThread(AnimationHost* host_impl) {
   scroll_offset_animations_->PushPropertiesTo(
       host_impl->scroll_offset_animations_impl_.get());
   host_impl->main_thread_animations_count_ = main_thread_animations_count_;
-  host_impl->main_thread_compositable_animations_count_ =
-      main_thread_compositable_animations_count_;
   host_impl->current_frame_had_raf_ = current_frame_had_raf_;
   host_impl->next_frame_has_pending_raf_ = next_frame_has_pending_raf_;
 }
@@ -319,6 +317,7 @@ bool AnimationHost::TickAnimations(base::TimeTicks monotonic_time,
   bool did_animate = false;
 
   if (NeedsTickAnimations()) {
+    TRACE_EVENT_INSTANT0("cc", "NeedsTickAnimations", TRACE_EVENT_SCOPE_THREAD);
     AnimationsList ticking_animations_copy = ticking_animations_;
     for (auto& it : ticking_animations_copy)
       it->Tick(monotonic_time);
@@ -654,7 +653,6 @@ size_t AnimationHost::CompositedAnimationsCount() const {
 
 void AnimationHost::SetAnimationCounts(
     size_t total_animations_count,
-    size_t main_thread_compositable_animations_count,
     bool current_frame_had_raf,
     bool next_frame_has_pending_raf) {
   // If an animation is being run on the compositor, it will have a ticking
@@ -669,14 +667,6 @@ void AnimationHost::SetAnimationCounts(
     DCHECK_GE(main_thread_animations_count_, 0u);
     SetNeedsPushProperties();
   }
-  if (main_thread_compositable_animations_count_ !=
-      main_thread_compositable_animations_count) {
-    main_thread_compositable_animations_count_ =
-        main_thread_compositable_animations_count;
-    SetNeedsPushProperties();
-  }
-  DCHECK_GE(main_thread_animations_count_,
-            main_thread_compositable_animations_count_);
   if (current_frame_had_raf != current_frame_had_raf_) {
     current_frame_had_raf_ = current_frame_had_raf;
     SetNeedsPushProperties();
@@ -689,10 +679,6 @@ void AnimationHost::SetAnimationCounts(
 
 size_t AnimationHost::MainThreadAnimationsCount() const {
   return main_thread_animations_count_;
-}
-
-size_t AnimationHost::MainThreadCompositableAnimationsCount() const {
-  return main_thread_compositable_animations_count_;
 }
 
 bool AnimationHost::CurrentFrameHadRAF() const {

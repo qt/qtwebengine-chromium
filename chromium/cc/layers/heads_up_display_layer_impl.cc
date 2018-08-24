@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/numerics/safe_conversions.h"
+#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
@@ -28,6 +29,7 @@
 #include "components/viz/common/quads/solid_color_draw_quad.h"
 #include "components/viz/common/quads/texture_draw_quad.h"
 #include "components/viz/common/resources/bitmap_allocation.h"
+#include "components/viz/common/resources/platform_color.h"
 #include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "skia/ext/platform_canvas.h"
@@ -138,12 +140,12 @@ bool HeadsUpDisplayLayerImpl::WillDraw(
   if (draw_mode == DRAW_MODE_RESOURCELESS_SOFTWARE)
     return false;
 
+  int max_texture_size = layer_tree_impl()->max_texture_size();
   internal_contents_scale_ = GetIdealContentsScale();
   internal_content_bounds_ =
       gfx::ScaleToCeiledSize(bounds(), internal_contents_scale_);
   internal_content_bounds_.SetToMin(
-      gfx::Size(resource_provider->max_texture_size(),
-                resource_provider->max_texture_size()));
+      gfx::Size(max_texture_size, max_texture_size));
 
   return LayerImpl::WillDraw(draw_mode, resource_provider);
 }
@@ -185,17 +187,10 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
         layer_tree_impl()->task_runner_provider()->HasImplThread()
             ? layer_tree_impl()->task_runner_provider()->ImplThreadTaskRunner()
             : layer_tree_impl()->task_runner_provider()->MainThreadTaskRunner();
-    if (draw_mode == DRAW_MODE_HARDWARE) {
-      pool_ = std::make_unique<ResourcePool>(
-          resource_provider, std::move(task_runner),
-          ResourcePool::kDefaultExpirationDelay, ResourcePool::Mode::kGpu,
-          layer_tree_impl()->settings().disallow_non_exact_resource_reuse);
-    } else {
-      pool_ = std::make_unique<ResourcePool>(
-          resource_provider, std::move(task_runner),
-          ResourcePool::kDefaultExpirationDelay, ResourcePool::Mode::kSoftware,
-          layer_tree_impl()->settings().disallow_non_exact_resource_reuse);
-    }
+    pool_ = std::make_unique<ResourcePool>(
+        resource_provider, layer_tree_frame_sink->context_provider(),
+        std::move(task_runner), ResourcePool::kDefaultExpirationDelay,
+        layer_tree_impl()->settings().disallow_non_exact_resource_reuse);
   }
 
   // Return ownership of the previous frame's resource to the pool, so we
@@ -205,16 +200,19 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
   if (in_flight_resource_)
     pool_->ReleaseResource(std::move(in_flight_resource_));
 
-  ResourcePool::InUsePoolResource pool_resource = pool_->AcquireResource(
-      internal_content_bounds_, resource_provider->best_render_buffer_format(),
-      gfx::ColorSpace());
-
   // Allocate a backing for the resource if needed, either for gpu or software
   // compositing.
+  ResourcePool::InUsePoolResource pool_resource;
   if (draw_mode == DRAW_MODE_HARDWARE) {
     viz::ContextProvider* context_provider =
         layer_tree_impl()->context_provider();
     DCHECK(context_provider);
+
+    viz::ResourceFormat format =
+        viz::PlatformColor::BestSupportedRenderBufferFormat(
+            context_provider->ContextCapabilities());
+    pool_resource = pool_->AcquireResource(internal_content_bounds_, format,
+                                           gfx::ColorSpace());
 
     if (!pool_resource.gpu_backing()) {
       auto backing = std::make_unique<HudGpuBacking>();
@@ -244,6 +242,9 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
     }
   } else {
     DCHECK_EQ(draw_mode, DRAW_MODE_SOFTWARE);
+
+    pool_resource = pool_->AcquireResource(internal_content_bounds_,
+                                           viz::RGBA_8888, gfx::ColorSpace());
 
     if (!pool_resource.software_backing()) {
       auto backing = std::make_unique<HudSoftwareBacking>();

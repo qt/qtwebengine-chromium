@@ -98,7 +98,7 @@ class MODULES_EXPORT EventSource final
   // ScriptWrappable
   bool HasPendingActivity() const final;
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   EventSource(ExecutionContext*, const KURL&, const EventSourceInit&);
@@ -109,7 +109,7 @@ class MODULES_EXPORT EventSource final
                           const ResourceResponse&,
                           std::unique_ptr<WebDataConsumerHandle>) override;
   void DidReceiveData(const char*, unsigned) override;
-  void DidFinishLoading(unsigned long, double) override;
+  void DidFinishLoading(unsigned long) override;
   void DidFail(const ResourceError&) override;
   void DidFailRedirectCheck() override;
 
@@ -140,6 +140,7 @@ class MODULES_EXPORT EventSource final
 
   unsigned long long reconnect_delay_;
   String event_stream_origin_;
+  unsigned long resource_identifier_ = 0;
 };
 
 }  // namespace blink

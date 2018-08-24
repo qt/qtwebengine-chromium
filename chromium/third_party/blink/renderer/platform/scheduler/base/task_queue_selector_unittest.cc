@@ -22,8 +22,8 @@
 
 using testing::_;
 
-namespace blink {
-namespace scheduler {
+namespace base {
+namespace sequence_manager {
 namespace internal {
 // To avoid symbol collisions in jumbo builds.
 namespace task_queue_selector_unittest {
@@ -31,7 +31,7 @@ namespace task_queue_selector_unittest {
 class MockObserver : public TaskQueueSelector::Observer {
  public:
   MockObserver() = default;
-  virtual ~MockObserver() = default;
+  ~MockObserver() override = default;
 
   MOCK_METHOD1(OnTaskQueueEnabled, void(internal::TaskQueueImpl*));
 
@@ -44,13 +44,52 @@ class TaskQueueSelectorForTest : public TaskQueueSelector {
   using TaskQueueSelector::prioritizing_selector_for_test;
   using TaskQueueSelector::PrioritizingSelector;
   using TaskQueueSelector::SetImmediateStarvationCountForTest;
+
+  // Returns the number of highest priority tasks needed to starve high priority
+  // task.
+  static constexpr size_t NumberOfHighestPriorityToStarveHighPriority() {
+    return (kMaxHighPriorityStarvationScore +
+            kSmallScoreIncrementForHighPriorityStarvation - 1) /
+           kSmallScoreIncrementForHighPriorityStarvation;
+  }
+
+  // Returns the number of highest priority tasks needed to starve normal
+  // priority tasks.
+  static constexpr size_t NumberOfHighestPriorityToStarveNormalPriority() {
+    return (kMaxNormalPriorityStarvationScore +
+            kSmallScoreIncrementForNormalPriorityStarvation - 1) /
+           kSmallScoreIncrementForNormalPriorityStarvation;
+  }
+
+  // Returns the number of high priority tasks needed to starve normal priority
+  // tasks.
+  static constexpr size_t NumberOfHighPriorityToStarveNormalPriority() {
+    return (kMaxNormalPriorityStarvationScore +
+            kLargeScoreIncrementForNormalPriorityStarvation - 1) /
+           kLargeScoreIncrementForNormalPriorityStarvation;
+  }
+
+  // Returns the number of highest priority tasks needed to starve low priority
+  // ones.
+  static constexpr size_t NumberOfHighestPriorityToStarveLowPriority() {
+    return (kMaxLowPriorityStarvationScore +
+            kSmallScoreIncrementForLowPriorityStarvation - 1) /
+           kSmallScoreIncrementForLowPriorityStarvation;
+  }
+
+  // Returns the number of high/normal priority tasks needed to starve low
+  // priority ones.
+  static constexpr size_t NumberOfHighAndNormalPriorityToStarveLowPriority() {
+    return (kMaxLowPriorityStarvationScore +
+            kLargeScoreIncrementForLowPriorityStarvation - 1) /
+           kLargeScoreIncrementForLowPriorityStarvation;
+  }
 };
 
 class TaskQueueSelectorTest : public testing::Test {
  public:
   TaskQueueSelectorTest()
-      : test_closure_(
-            base::BindRepeating(&TaskQueueSelectorTest::TestFunction)) {}
+      : test_closure_(BindRepeating(&TaskQueueSelectorTest::TestFunction)) {}
   ~TaskQueueSelectorTest() override = default;
 
   TaskQueueSelectorForTest::PrioritizingSelector* prioritizing_selector() {
@@ -70,7 +109,7 @@ class TaskQueueSelectorTest : public testing::Test {
       changed_queue_set.insert(queue_indices[i]);
       task_queues_[queue_indices[i]]->immediate_work_queue()->Push(
           TaskQueueImpl::Task(TaskQueue::PostedTask(test_closure_, FROM_HERE),
-                              base::TimeTicks(), 0, i));
+                              TimeTicks(), 0, i));
     }
   }
 
@@ -82,7 +121,7 @@ class TaskQueueSelectorTest : public testing::Test {
       changed_queue_set.insert(queue_indices[i]);
       task_queues_[queue_indices[i]]->immediate_work_queue()->Push(
           TaskQueueImpl::Task(TaskQueue::PostedTask(test_closure_, FROM_HERE),
-                              base::TimeTicks(), 0, enqueue_orders[i]));
+                              TimeTicks(), 0, enqueue_orders[i]));
     }
   }
 
@@ -103,8 +142,8 @@ class TaskQueueSelectorTest : public testing::Test {
 
  protected:
   void SetUp() final {
-    virtual_time_domain_ = base::WrapUnique<VirtualTimeDomain>(
-        new VirtualTimeDomain(base::TimeTicks()));
+    virtual_time_domain_ = std::make_unique<VirtualTimeDomain>(
+        TimeTicks() + TimeDelta::FromSeconds(1));
     for (size_t i = 0; i < kTaskQueueCount; i++) {
       std::unique_ptr<TaskQueueImpl> task_queue =
           std::make_unique<TaskQueueImpl>(nullptr, virtual_time_domain_.get(),
@@ -117,7 +156,7 @@ class TaskQueueSelectorTest : public testing::Test {
           << i;
       queue_to_index_map_.insert(std::make_pair(task_queues_[i].get(), i));
     }
-    histogram_tester_.reset(new base::HistogramTester());
+    histogram_tester_.reset(new HistogramTester());
   }
 
   void TearDown() final {
@@ -136,12 +175,12 @@ class TaskQueueSelectorTest : public testing::Test {
   }
 
   const size_t kTaskQueueCount = 5;
-  base::RepeatingClosure test_closure_;
+  RepeatingClosure test_closure_;
   TaskQueueSelectorForTest selector_;
   std::unique_ptr<VirtualTimeDomain> virtual_time_domain_;
   std::vector<std::unique_ptr<TaskQueueImpl>> task_queues_;
   std::map<TaskQueueImpl*, size_t> queue_to_index_map_;
-  std::unique_ptr<base::HistogramTester> histogram_tester_;
+  std::unique_ptr<HistogramTester> histogram_tester_;
 };
 
 TEST_F(TaskQueueSelectorTest, TestDefaultPriority) {
@@ -530,6 +569,133 @@ TEST_F(TaskQueueSelectorTest, TestBestEffortGetsStarved) {
   }
 }
 
+TEST_F(TaskQueueSelectorTest,
+       TestHighPriorityStarvationScoreIncreasedOnlyWhenTasksArePresent) {
+  size_t queue_order[] = {0, 1};
+  PushTasks(queue_order, 2);
+  selector_.SetQueuePriority(task_queues_[0].get(),
+                             TaskQueue::kHighestPriority);
+  selector_.SetQueuePriority(task_queues_[1].get(),
+                             TaskQueue::kHighestPriority);
+
+  // Run a number of highest priority tasks needed to starve high priority
+  // tasks (when present).
+  for (size_t num_tasks = 0;
+       num_tasks <=
+       TaskQueueSelectorForTest::NumberOfHighestPriorityToStarveHighPriority();
+       num_tasks++) {
+    WorkQueue* chosen_work_queue = nullptr;
+    ASSERT_TRUE(selector_.SelectWorkQueueToService(&chosen_work_queue));
+    // Don't remove task from queue to simulate the queue is still full.
+  }
+
+  // Post a high priority task.
+  selector_.SetQueuePriority(task_queues_[1].get(), TaskQueue::kHighPriority);
+  WorkQueue* chosen_work_queue = nullptr;
+  ASSERT_TRUE(selector_.SelectWorkQueueToService(&chosen_work_queue));
+
+  // Check that the high priority task is not considered starved, and thus isn't
+  // processed.
+  EXPECT_NE(
+      static_cast<int>(
+          queue_to_index_map_.find(chosen_work_queue->task_queue())->second),
+      1);
+}
+
+TEST_F(TaskQueueSelectorTest,
+       TestNormalPriorityStarvationScoreIncreasedOnllWhenTasksArePresent) {
+  size_t queue_order[] = {0, 1};
+  PushTasks(queue_order, 2);
+  selector_.SetQueuePriority(task_queues_[0].get(),
+                             TaskQueue::kHighestPriority);
+  selector_.SetQueuePriority(task_queues_[1].get(),
+                             TaskQueue::kHighestPriority);
+
+  // Run a number of highest priority tasks needed to starve normal priority
+  // tasks (when present).
+  for (size_t num_tasks = 0;
+       num_tasks <= TaskQueueSelectorForTest::
+                        NumberOfHighestPriorityToStarveNormalPriority();
+       num_tasks++) {
+    WorkQueue* chosen_work_queue = nullptr;
+    ASSERT_TRUE(selector_.SelectWorkQueueToService(&chosen_work_queue));
+    // Don't remove task from queue to simulate the queue is still full.
+  }
+
+  selector_.SetQueuePriority(task_queues_[0].get(), TaskQueue::kHighPriority);
+  selector_.SetQueuePriority(task_queues_[1].get(), TaskQueue::kHighPriority);
+
+  // Run a number of high priority tasks needed to starve normal priority
+  // tasks (when present).
+  for (size_t num_tasks = 0;
+       num_tasks <=
+       TaskQueueSelectorForTest::NumberOfHighPriorityToStarveNormalPriority();
+       num_tasks++) {
+    WorkQueue* chosen_work_queue = nullptr;
+    ASSERT_TRUE(selector_.SelectWorkQueueToService(&chosen_work_queue));
+    // Don't remove task from queue to simulate the queue is still full.
+  }
+
+  // Post a normal priority task.
+  selector_.SetQueuePriority(task_queues_[1].get(), TaskQueue::kNormalPriority);
+  WorkQueue* chosen_work_queue = nullptr;
+  ASSERT_TRUE(selector_.SelectWorkQueueToService(&chosen_work_queue));
+
+  // Check that the normal priority task is not considered starved, and thus
+  // isn't processed.
+  EXPECT_NE(
+      static_cast<int>(
+          queue_to_index_map_.find(chosen_work_queue->task_queue())->second),
+      1);
+}
+
+TEST_F(TaskQueueSelectorTest,
+       TestLowPriorityTaskStarvationOnlyIncreasedWhenTasksArePresent) {
+  size_t queue_order[] = {0, 1};
+  PushTasks(queue_order, 2);
+  selector_.SetQueuePriority(task_queues_[0].get(),
+                             TaskQueue::kHighestPriority);
+  selector_.SetQueuePriority(task_queues_[1].get(),
+                             TaskQueue::kHighestPriority);
+
+  // Run a number of highest priority tasks needed to starve low priority
+  // tasks (when present).
+  for (size_t num_tasks = 0;
+       num_tasks <=
+       TaskQueueSelectorForTest::NumberOfHighestPriorityToStarveLowPriority();
+       num_tasks++) {
+    WorkQueue* chosen_work_queue = nullptr;
+    ASSERT_TRUE(selector_.SelectWorkQueueToService(&chosen_work_queue));
+    // Don't remove task from queue to simulate the queue is still full.
+  }
+
+  selector_.SetQueuePriority(task_queues_[0].get(), TaskQueue::kHighPriority);
+  selector_.SetQueuePriority(task_queues_[1].get(), TaskQueue::kNormalPriority);
+
+  // Run a number of high/normal priority tasks needed to starve low priority
+  // tasks (when present).
+  for (size_t num_tasks = 0;
+       num_tasks <= TaskQueueSelectorForTest::
+                        NumberOfHighAndNormalPriorityToStarveLowPriority();
+       num_tasks++) {
+    WorkQueue* chosen_work_queue = nullptr;
+    ASSERT_TRUE(selector_.SelectWorkQueueToService(&chosen_work_queue));
+    // Don't remove task from queue to simulate the queue is still full.
+  }
+
+  // Post a low  priority task.
+  selector_.SetQueuePriority(task_queues_[1].get(), TaskQueue::kLowPriority);
+  WorkQueue* chosen_work_queue = nullptr;
+  ASSERT_TRUE(selector_.SelectWorkQueueToService(&chosen_work_queue));
+
+  // Check that the low priority task is not considered starved, and thus
+  // isn't processed.
+  EXPECT_NE(
+      static_cast<int>(
+          queue_to_index_map_.find(chosen_work_queue->task_queue())->second),
+      1);
+}
+
 TEST_F(TaskQueueSelectorTest, AllEnabledWorkQueuesAreEmpty) {
   EXPECT_TRUE(selector_.AllEnabledWorkQueuesAreEmpty());
   size_t queue_order[] = {0, 1};
@@ -560,9 +726,8 @@ TEST_F(TaskQueueSelectorTest, ChooseOldestWithPriority_Empty) {
 }
 
 TEST_F(TaskQueueSelectorTest, ChooseOldestWithPriority_OnlyDelayed) {
-  task_queues_[0]->delayed_work_queue()->Push(
-      TaskQueueImpl::Task(TaskQueue::PostedTask(test_closure_, FROM_HERE),
-                          base::TimeTicks(), 0, 0));
+  task_queues_[0]->delayed_work_queue()->Push(TaskQueueImpl::Task(
+      TaskQueue::PostedTask(test_closure_, FROM_HERE), TimeTicks(), 0, 0));
 
   WorkQueue* chosen_work_queue = nullptr;
   bool chose_delayed_over_immediate = false;
@@ -574,9 +739,8 @@ TEST_F(TaskQueueSelectorTest, ChooseOldestWithPriority_OnlyDelayed) {
 }
 
 TEST_F(TaskQueueSelectorTest, ChooseOldestWithPriority_OnlyImmediate) {
-  task_queues_[0]->immediate_work_queue()->Push(
-      TaskQueueImpl::Task(TaskQueue::PostedTask(test_closure_, FROM_HERE),
-                          base::TimeTicks(), 0, 0));
+  task_queues_[0]->immediate_work_queue()->Push(TaskQueueImpl::Task(
+      TaskQueue::PostedTask(test_closure_, FROM_HERE), TimeTicks(), 0, 0));
 
   WorkQueue* chosen_work_queue = nullptr;
   bool chose_delayed_over_immediate = false;
@@ -601,7 +765,7 @@ TEST_F(TaskQueueSelectorTest, TestObserverWithOneBlockedQueue) {
   selector.DisableQueue(task_queue.get());
 
   TaskQueueImpl::Task task(TaskQueue::PostedTask(test_closure_, FROM_HERE),
-                           base::TimeTicks(), 0);
+                           TimeTicks(), 0);
   task.set_enqueue_order(0);
   task_queue->immediate_work_queue()->Push(std::move(task));
 
@@ -632,9 +796,9 @@ TEST_F(TaskQueueSelectorTest, TestObserverWithTwoBlockedQueues) {
   selector.SetQueuePriority(task_queue2.get(), TaskQueue::kControlPriority);
 
   TaskQueueImpl::Task task1(TaskQueue::PostedTask(test_closure_, FROM_HERE),
-                            base::TimeTicks(), 0);
+                            TimeTicks(), 0);
   TaskQueueImpl::Task task2(TaskQueue::PostedTask(test_closure_, FROM_HERE),
-                            base::TimeTicks(), 1);
+                            TimeTicks(), 1);
   task1.set_enqueue_order(0);
   task2.set_enqueue_order(1);
   task_queue->immediate_work_queue()->Push(std::move(task1));
@@ -680,15 +844,15 @@ class ChooseOldestWithPriorityTest
       public testing::WithParamInterface<ChooseOldestWithPriorityTestParam> {};
 
 TEST_P(ChooseOldestWithPriorityTest, RoundRobinTest) {
-  task_queues_[0]->immediate_work_queue()->Push(TaskQueueImpl::Task(
-      TaskQueue::PostedTask(test_closure_, FROM_HERE), base::TimeTicks(),
-      GetParam().immediate_task_enqueue_order,
-      GetParam().immediate_task_enqueue_order));
+  task_queues_[0]->immediate_work_queue()->Push(
+      TaskQueueImpl::Task(TaskQueue::PostedTask(test_closure_, FROM_HERE),
+                          TimeTicks(), GetParam().immediate_task_enqueue_order,
+                          GetParam().immediate_task_enqueue_order));
 
-  task_queues_[0]->delayed_work_queue()->Push(TaskQueueImpl::Task(
-      TaskQueue::PostedTask(test_closure_, FROM_HERE), base::TimeTicks(),
-      GetParam().delayed_task_enqueue_order,
-      GetParam().delayed_task_enqueue_order));
+  task_queues_[0]->delayed_work_queue()->Push(
+      TaskQueueImpl::Task(TaskQueue::PostedTask(test_closure_, FROM_HERE),
+                          TimeTicks(), GetParam().delayed_task_enqueue_order,
+                          GetParam().delayed_task_enqueue_order));
 
   selector_.SetImmediateStarvationCountForTest(
       GetParam().immediate_starvation_count);
@@ -710,5 +874,5 @@ INSTANTIATE_TEST_CASE_P(ChooseOldestWithPriorityTest,
 
 }  // namespace task_queue_selector_unittest
 }  // namespace internal
-}  // namespace scheduler
-}  // namespace blink
+}  // namespace sequence_manager
+}  // namespace base

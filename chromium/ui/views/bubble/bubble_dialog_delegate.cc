@@ -16,6 +16,7 @@
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/layout/layout_manager.h"
 #include "ui/views/layout/layout_provider.h"
+#include "ui/views/view_properties.h"
 #include "ui/views/view_tracker.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/widget.h"
@@ -26,9 +27,29 @@
 #include "ui/base/win/shell.h"
 #endif
 
+#if defined(OS_MACOSX)
+#include "ui/views/widget/widget_utils_mac.h"
+#endif
+
 namespace views {
 
 namespace {
+
+// The frame view for bubble dialog widgets. These are not user-sizable so have
+// simplified logic for minimum and maximum sizes to avoid repeated calls to
+// CalculatePreferredSize().
+class BubbleDialogFrameView : public BubbleFrameView {
+ public:
+  explicit BubbleDialogFrameView(const gfx::Insets& title_margins)
+      : BubbleFrameView(title_margins, gfx::Insets()) {}
+
+  // View:
+  gfx::Size GetMinimumSize() const override { return gfx::Size(); }
+  gfx::Size GetMaximumSize() const override { return gfx::Size(); }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(BubbleDialogFrameView);
+};
 
 // Create a widget to host the bubble.
 Widget* CreateBubbleWidget(BubbleDialogDelegateView* bubble) {
@@ -113,7 +134,7 @@ ClientView* BubbleDialogDelegateView::CreateClientView(Widget* widget) {
 
 NonClientFrameView* BubbleDialogDelegateView::CreateNonClientFrameView(
     Widget* widget) {
-  BubbleFrameView* frame = new BubbleFrameView(title_margins_, gfx::Insets());
+  BubbleFrameView* frame = new BubbleDialogFrameView(title_margins_);
 
   frame->set_footnote_margins(
       LayoutProvider::Get()->GetInsetsMetric(INSETS_DIALOG_SUBSECTION));
@@ -218,6 +239,16 @@ void BubbleDialogDelegateView::OnAnchorBoundsChanged() {
   SizeToContents();
 }
 
+void BubbleDialogDelegateView::EnableFocusTraversalFromAnchorView() {
+  DCHECK(GetWidget());
+  DCHECK(GetAnchorView());
+  GetWidget()->SetFocusTraversableParent(
+      anchor_widget()->GetFocusTraversable());
+  GetWidget()->SetFocusTraversableParentView(GetAnchorView());
+  GetAnchorView()->SetProperty(kAnchoredDialogKey,
+                               static_cast<BubbleDialogDelegateView*>(this));
+}
+
 BubbleDialogDelegateView::BubbleDialogDelegateView()
     : BubbleDialogDelegateView(nullptr, BubbleBorder::TOP_LEFT) {}
 
@@ -266,6 +297,17 @@ ax::mojom::Role BubbleDialogDelegateView::GetAccessibleWindowRole() const {
   return ax::mojom::Role::kAlertDialog;
 }
 
+gfx::Size BubbleDialogDelegateView::GetMinimumSize() const {
+  // Note that although BubbleDialogFrameView will never invoke this, a subclass
+  // may override CreateNonClientFrameView() to provide a NonClientFrameView
+  // that does. See http://crbug.com/844359.
+  return gfx::Size();
+}
+
+gfx::Size BubbleDialogDelegateView::GetMaximumSize() const {
+  return gfx::Size();
+}
+
 void BubbleDialogDelegateView::OnNativeThemeChanged(
     const ui::NativeTheme* theme) {
   UpdateColorsFromTheme(theme);
@@ -274,6 +316,9 @@ void BubbleDialogDelegateView::OnNativeThemeChanged(
 void BubbleDialogDelegateView::Init() {}
 
 void BubbleDialogDelegateView::SetAnchorView(View* anchor_view) {
+  if (GetAnchorView())
+    GetAnchorView()->ClearProperty(kAnchoredDialogKey);
+
   // When the anchor view gets set the associated anchor widget might
   // change as well.
   if (!anchor_view || anchor_widget() != anchor_view->GetWidget()) {
@@ -305,7 +350,16 @@ void BubbleDialogDelegateView::SetAnchorRect(const gfx::Rect& rect) {
 }
 
 void BubbleDialogDelegateView::SizeToContents() {
-  GetWidget()->SetBounds(GetBubbleBounds());
+  gfx::Rect bubble_bounds = GetBubbleBounds();
+#if defined(OS_MACOSX)
+  // GetBubbleBounds() doesn't take the Mac NativeWindow's style mask into
+  // account, so we need to adjust the size.
+  gfx::Size actual_size =
+      GetWindowSizeForClientSize(GetWidget(), bubble_bounds.size());
+  bubble_bounds.set_size(actual_size);
+#endif
+
+  GetWidget()->SetBounds(bubble_bounds);
 }
 
 BubbleFrameView* BubbleDialogDelegateView::GetBubbleFrameView() const {

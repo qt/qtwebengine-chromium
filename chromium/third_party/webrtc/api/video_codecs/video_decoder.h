@@ -18,11 +18,9 @@
 #include "api/video/video_frame.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "common_video/include/video_frame.h"
-#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
-class RTPFragmentationHeader;
 // TODO(pbos): Expose these through a public (root) header or change these APIs.
 struct CodecSpecificInfo;
 class VideoCodec;
@@ -58,9 +56,8 @@ class VideoDecoder {
 
   virtual int32_t Decode(const EncodedImage& input_image,
                          bool missing_frames,
-                         const RTPFragmentationHeader* fragmentation,
-                         const CodecSpecificInfo* codec_specific_info = NULL,
-                         int64_t render_time_ms = -1) = 0;
+                         const CodecSpecificInfo* codec_specific_info,
+                         int64_t render_time_ms) = 0;
 
   virtual int32_t RegisterDecodeCompleteCallback(
       DecodedImageCallback* callback) = 0;

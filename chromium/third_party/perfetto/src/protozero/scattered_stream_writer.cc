@@ -34,7 +34,7 @@ ScatteredStreamWriter::~ScatteredStreamWriter() {}
 void ScatteredStreamWriter::Reset(ContiguousMemoryRange range) {
   cur_range_ = range;
   write_ptr_ = range.begin;
-  PERFETTO_DCHECK(write_ptr_ < cur_range_.end);
+  PERFETTO_DCHECK(!write_ptr_ || write_ptr_ < cur_range_.end);
 }
 
 void ScatteredStreamWriter::Extend() {
@@ -65,8 +65,8 @@ uint8_t* ScatteredStreamWriter::ReserveBytes(size_t size) {
   }
   uint8_t* begin = write_ptr_;
   write_ptr_ += size;
-#ifndef NDEBUG
-  memset(begin, '\xFF', size);
+#if PERFETTO_DCHECK_IS_ON()
+  memset(begin, 0, size);
 #endif
   return begin;
 }

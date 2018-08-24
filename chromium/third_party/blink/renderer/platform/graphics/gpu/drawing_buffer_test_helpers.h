@@ -6,6 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_GPU_DRAWING_BUFFER_TEST_HELPERS_H_
 
 #include "build/build_config.h"
+#include "cc/test/stub_decode_cache.h"
 #include "gpu/command_buffer/common/capabilities.h"
 #include "gpu/config/gpu_feature_info.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -51,11 +52,13 @@ class WebGraphicsContext3DProviderForTests
   viz::GLHelper* GetGLHelper() override { return nullptr; }
   void SetLostContextCallback(base::Closure) override {}
   void SetErrorMessageCallback(
-      base::RepeatingCallback<void(const char*, int32_t id)>) {}
-  void SignalQuery(uint32_t, base::OnceClosure) override {}
-  cc::ImageDecodeCache* ImageDecodeCache() override { return nullptr; }
+      base::RepeatingCallback<void(const char*, int32_t id)>) override {}
+  cc::ImageDecodeCache* ImageDecodeCache() override {
+    return &image_decode_cache_;
+  }
 
  private:
+  cc::StubDecodeCache image_decode_cache_;
   std::unique_ptr<gpu::gles2::GLES2Interface> gl_;
   gpu::Capabilities capabilities_;
   gpu::GpuFeatureInfo gpu_feature_info_;
@@ -108,12 +111,12 @@ class GLES2InterfaceForTests : public gpu::gles2::GLES2InterfaceStub,
     state_.renderbuffer_binding = renderbuffer;
   }
 
-  void Enable(GLenum cap) {
+  void Enable(GLenum cap) override {
     if (cap == GL_SCISSOR_TEST)
       state_.scissor_enabled = true;
   }
 
-  void Disable(GLenum cap) {
+  void Disable(GLenum cap) override {
     if (cap == GL_SCISSOR_TEST)
       state_.scissor_enabled = false;
   }
@@ -232,7 +235,7 @@ class GLES2InterfaceForTests : public gpu::gles2::GLES2InterfaceStub,
   }
 
   MOCK_METHOD1(DestroyImageMock, void(GLuint imageId));
-  void DestroyImageCHROMIUM(GLuint image_id) {
+  void DestroyImageCHROMIUM(GLuint image_id) override {
     image_sizes_.erase(image_id);
     // No textures should be bound to this.
     CHECK(image_to_texture_map_.find(image_id) == image_to_texture_map_.end());
@@ -241,7 +244,7 @@ class GLES2InterfaceForTests : public gpu::gles2::GLES2InterfaceStub,
   }
 
   MOCK_METHOD1(BindTexImage2DMock, void(GLint imageId));
-  void BindTexImage2DCHROMIUM(GLenum target, GLint image_id) {
+  void BindTexImage2DCHROMIUM(GLenum target, GLint image_id) override {
     if (target == ImageCHROMIUMTextureTarget()) {
       texture_sizes_.Set(bound_textures_[target],
                          image_sizes_.find(image_id)->value);
@@ -251,7 +254,7 @@ class GLES2InterfaceForTests : public gpu::gles2::GLES2InterfaceStub,
   }
 
   MOCK_METHOD1(ReleaseTexImage2DMock, void(GLint imageId));
-  void ReleaseTexImage2DCHROMIUM(GLenum target, GLint image_id) {
+  void ReleaseTexImage2DCHROMIUM(GLenum target, GLint image_id) override {
     if (target == ImageCHROMIUMTextureTarget()) {
       image_sizes_.Set(current_image_id_, IntSize());
       image_to_texture_map_.erase(image_id);

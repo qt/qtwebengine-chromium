@@ -58,8 +58,6 @@ enum FeaturePolicyFeature {
   kDocumentCookie,
   // Contols access to document.domain attribute.
   kDocumentDomain,
-  // Controls access to document.write and document.writeln methods.
-  kDocumentWrite,
   // Controls whether synchronous script elements will run.
   kSyncScript,
   // Controls use of synchronous XMLHTTPRequest API.
@@ -81,10 +79,22 @@ enum FeaturePolicyFeature {
   // Controls the layout size of intrinsically sized images and videos. When
   // disabled, default size (300 x 150) is used to prevent relayout.
   kUnsizedMedia,
+  // Controls which image formats are allowed to be used in the document.
+  kLegacyImageFormats,
+  // When disallowed, requires images to have a reasonable byte-to-pixel ratio.
+  kImageCompression,
+  kAnimations,
+  // When disallowed, restricts source image size to be no more 2x larger than
+  // the image's containing block.
+  kMaxDownscalingImage,
   // Controls access to Picture-in-Picture.
   kPictureInPicture,
   // Controls the ability to block and interfere with vertical scrolling.
   kVerticalScroll,
+  // Controls the ability of the document to use several dynamic markup API
+  // which interfere with document's input stream (document.write(),
+  // document.close(), etc.).
+  kDocumentStreamInsertion,
 };
 
 // This struct holds feature policy whitelist data that needs to be replicated

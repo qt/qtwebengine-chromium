@@ -30,7 +30,6 @@
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_current_time_display_element.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_download_button_element.h"
-#include "third_party/blink/renderer/modules/media_controls/elements/media_control_mute_button_element.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_overflow_menu_list_element.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_remaining_time_display_element.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_timeline_element.h"
@@ -188,14 +187,16 @@ class MediaControlsImplTest : public PageTestBase,
   MediaControlsImplTest() : ScopedMediaCastOverlayButtonForTest(true) {}
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     original_time_function_ =
         SetTimeFunctionsForTesting([] { return g_current_time; });
 
     InitializePage();
   }
 
-  void TearDown() { SetTimeFunctionsForTesting(original_time_function_); }
+  void TearDown() override {
+    SetTimeFunctionsForTesting(original_time_function_);
+  }
 
   void InitializePage() {
     Page::PageClients clients;
@@ -265,7 +266,7 @@ class MediaControlsImplTest : public PageTestBase,
 
   void ClickOverflowButton() {
     MediaControls()
-        .mute_button_->OverflowElementForTests()
+        .download_button_->OverflowElementForTests()
         ->DispatchSimulatedClick(nullptr, kSendNoEvents,
                                  SimulatedClickCreationScope::kFromUserAgent);
   }
@@ -610,6 +611,8 @@ TEST_F(MediaControlsImplPictureInPictureTest, PictureInPictureButtonVisible) {
 
   MediaControls().MediaElement().SetSrc("https://example.com/foo.mp4");
   test::RunPendingTasks();
+  SetReady();
+  test::RunPendingTasks();
   SimulateLoadedMetadata();
   ASSERT_TRUE(IsElementVisible(*picture_in_picture_button));
 
@@ -621,6 +624,8 @@ TEST_F(MediaControlsImplPictureInPictureTest, PictureInPictureButtonVisible) {
   MediaControls().MediaElement().SetBooleanAttribute(
       HTMLNames::disablepictureinpictureAttr, true);
   MediaControls().MediaElement().SetSrc("https://example.com/foo.mp4");
+  test::RunPendingTasks();
+  SetReady();
   test::RunPendingTasks();
   SimulateLoadedMetadata();
   ASSERT_FALSE(IsElementVisible(*picture_in_picture_button));
@@ -1222,6 +1227,7 @@ TEST_F(MediaControlsImplTest, OverflowMenuMetricsTimeToAction) {
   ToggleOverflowMenu();
   AdvanceClock(90);
   ClickOverflowButton();
+
   GetHistogramTester().ExpectBucketCount(kTimeToActionHistogramName, 90, 1);
   GetHistogramTester().ExpectTotalCount(kTimeToActionHistogramName, 2);
 
@@ -1319,7 +1325,7 @@ TEST_F(MediaControlsImplTest, CastOverlayShowsOnSomeEvents) {
   SimulateHideMediaControlsTimerFired();
   EXPECT_FALSE(IsElementVisible(*cast_overlay_button));
 
-  for (const auto& event_name :
+  for (auto* const event_name :
        {"gesturetap", "click", "pointerover", "pointermove"}) {
     overlay_enclosure->DispatchEvent(Event::Create(event_name));
     EXPECT_TRUE(IsElementVisible(*cast_overlay_button));

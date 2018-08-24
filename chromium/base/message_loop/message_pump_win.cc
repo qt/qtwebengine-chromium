@@ -11,7 +11,6 @@
 
 #include "base/debug/alias.h"
 #include "base/memory/ptr_util.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
@@ -126,6 +125,10 @@ void MessagePumpForUI::ScheduleWork() {
 void MessagePumpForUI::ScheduleDelayedWork(const TimeTicks& delayed_work_time) {
   delayed_work_time_ = delayed_work_time;
   RescheduleTimer();
+}
+
+void MessagePumpForUI::EnableWmQuit() {
+  enable_wm_quit_ = true;
 }
 
 //-----------------------------------------------------------------------------
@@ -351,9 +354,17 @@ bool MessagePumpForUI::ProcessMessageHelper(const MSG& msg) {
   TRACE_EVENT1("base", "MessagePumpForUI::ProcessMessageHelper",
                "message", msg.message);
   if (WM_QUIT == msg.message) {
+    if (enable_wm_quit_) {
+      // Repost the QUIT message so that it will be retrieved by the primary
+      // GetMessage() loop.
+      state_->should_quit = true;
+      PostQuitMessage(static_cast<int>(msg.wParam));
+      return false;
+    }
+
     // WM_QUIT is the standard way to exit a GetMessage() loop. Our MessageLoop
     // has its own quit mechanism, so WM_QUIT is unexpected and should be
-    // ignored.
+    // ignored when |enable_wm_quit_| is set to false.
     UMA_HISTOGRAM_ENUMERATION("Chrome.MessageLoopProblem",
                               RECEIVED_WM_QUIT_ERROR, MESSAGE_LOOP_PROBLEM_MAX);
     return true;

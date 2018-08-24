@@ -14,8 +14,10 @@ namespace {
 constexpr int kDeviceId = 0;
 }  // namespace
 
-VideoCaptureClient::VideoCaptureClient(media::mojom::VideoCaptureHostPtr host)
-    : video_capture_host_(std::move(host)),
+VideoCaptureClient::VideoCaptureClient(const media::VideoCaptureParams& params,
+                                       media::mojom::VideoCaptureHostPtr host)
+    : params_(params),
+      video_capture_host_(std::move(host)),
       binding_(this),
       weak_factory_(this) {
   DCHECK(video_capture_host_);
@@ -36,8 +38,7 @@ void VideoCaptureClient::Start(FrameDeliverCallback deliver_callback,
 
   media::mojom::VideoCaptureObserverPtr observer;
   binding_.Bind(mojo::MakeRequest(&observer));
-  video_capture_host_->Start(kDeviceId, 0, media::VideoCaptureParams(),
-                             std::move(observer));
+  video_capture_host_->Start(kDeviceId, 0, params_, std::move(observer));
 }
 
 void VideoCaptureClient::Stop() {
@@ -63,7 +64,7 @@ void VideoCaptureClient::Resume(FrameDeliverCallback deliver_callback) {
     return;
   }
   frame_deliver_callback_ = std::move(deliver_callback);
-  video_capture_host_->Resume(kDeviceId, 0, media::VideoCaptureParams());
+  video_capture_host_->Resume(kDeviceId, 0, params_);
 }
 
 void VideoCaptureClient::RequestRefreshFrame() {
@@ -100,15 +101,15 @@ void VideoCaptureClient::OnStateChanged(media::mojom::VideoCaptureState state) {
   }
 }
 
-void VideoCaptureClient::OnBufferCreated(
+void VideoCaptureClient::OnNewBuffer(
     int32_t buffer_id,
-    mojo::ScopedSharedBufferHandle handle) {
+    media::mojom::VideoBufferHandlePtr buffer_handle) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  DCHECK(handle.is_valid());
   DVLOG(3) << __func__ << ": buffer_id=" << buffer_id;
+  DCHECK(buffer_handle->is_shared_buffer_handle());
 
-  const auto insert_result =
-      client_buffers_.emplace(std::make_pair(buffer_id, std::move(handle)));
+  const auto insert_result = client_buffers_.emplace(std::make_pair(
+      buffer_id, std::move(buffer_handle->get_shared_buffer_handle())));
   DCHECK(insert_result.second);
 }
 
@@ -118,13 +119,11 @@ void VideoCaptureClient::OnBufferReady(int32_t buffer_id,
   DVLOG(3) << __func__ << ": buffer_id=" << buffer_id;
 
   bool consume_buffer = !frame_deliver_callback_.is_null();
-  if ((info->pixel_format != media::PIXEL_FORMAT_I420 &&
-       info->pixel_format != media::PIXEL_FORMAT_Y16) ||
-      info->storage_type != media::VideoPixelStorage::CPU) {
+  if (info->pixel_format != media::PIXEL_FORMAT_I420 &&
+      info->pixel_format != media::PIXEL_FORMAT_Y16) {
     consume_buffer = false;
-    LOG(DFATAL) << "Wrong pixel format or storage, got pixel format:"
-                << VideoPixelFormatToString(info->pixel_format)
-                << ", storage:" << static_cast<int>(info->storage_type);
+    LOG(DFATAL) << "Wrong pixel format, got pixel format:"
+                << VideoPixelFormatToString(info->pixel_format);
   }
   if (!consume_buffer) {
     video_capture_host_->ReleaseBuffer(kDeviceId, buffer_id, -1.0);

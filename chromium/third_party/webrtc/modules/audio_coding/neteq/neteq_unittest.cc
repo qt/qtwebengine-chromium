@@ -20,12 +20,12 @@
 #include <string>
 #include <vector>
 
+#include "api/audio/audio_frame.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "modules/audio_coding/codecs/pcm16b/pcm16b.h"
 #include "modules/audio_coding/neteq/tools/audio_loop.h"
 #include "modules/audio_coding/neteq/tools/rtp_file_source.h"
-#include "modules/include/module_common_types.h"
 #include "rtc_base/ignore_wundef.h"
 #include "rtc_base/messagedigest.h"
 #include "rtc_base/numerics/safe_conversions.h"
@@ -463,18 +463,18 @@ TEST_F(NetEqDecodingTest, MAYBE_TestBitExactness) {
       webrtc::test::ResourcePath("audio_coding/neteq_universal_new", "rtp");
 
   const std::string output_checksum = PlatformChecksum(
-      "09fa7646e2ad032a0b156177b95f09012430f81f",
-      "1c64eb8b55ce8878676c6a1e6ddd78f48de0668b",
+      "0c6dc227f781c81a229970f8fceda1a012498cba",
+      "15c4a2202877a414515e218bdb7992f0ad53e5af",
       "not used",
-      "09fa7646e2ad032a0b156177b95f09012430f81f",
-      "759fef89a5de52bd17e733dc255c671ce86be909");
+      "0c6dc227f781c81a229970f8fceda1a012498cba",
+      "25fc4c863caa499aa447a5b8d059f5452cbcc500");
 
   const std::string network_stats_checksum =
-      PlatformChecksum("5b4262ca328e5f066af5d34f3380521583dd20de",
-                       "80235b6d727281203acb63b98f9a9e85d95f7ec0",
+      PlatformChecksum("4b2370f5c794741d2a46be5c7935c66ef3fb53e9",
+                       "e339cb2adf5ab3dfc21cb7205d670a34751e8336",
                        "not used",
-                       "5b4262ca328e5f066af5d34f3380521583dd20de",
-                       "5b4262ca328e5f066af5d34f3380521583dd20de");
+                       "4b2370f5c794741d2a46be5c7935c66ef3fb53e9",
+                       "4b2370f5c794741d2a46be5c7935c66ef3fb53e9");
 
   const std::string rtcp_stats_checksum = PlatformChecksum(
       "b8880bf9fed2487efbddcb8d94b9937a29ae521d",
@@ -502,18 +502,18 @@ TEST_F(NetEqDecodingTest, MAYBE_TestOpusBitExactness) {
       webrtc::test::ResourcePath("audio_coding/neteq_opus", "rtp");
 
   const std::string output_checksum = PlatformChecksum(
-      "7ea28d7edf9395f4ac8e8d8dd3a9e5c620b1bf48",
-      "5b1e691ab1c4465c742d6d944bc71e3b1c0e4c0e",
-      "b096114dd8c233eaf2b0ce9802ac95af13933772",
-      "7ea28d7edf9395f4ac8e8d8dd3a9e5c620b1bf48",
-      "7ea28d7edf9395f4ac8e8d8dd3a9e5c620b1bf48");
+      "14a63b3c7b925c82296be4bafc71bec85f2915c2",
+      "b7b7ed802b0e18ee416973bf3b9ae98599b0181d",
+      "5876e52dda90d5ca433c3726555b907b97c86374",
+      "14a63b3c7b925c82296be4bafc71bec85f2915c2",
+      "14a63b3c7b925c82296be4bafc71bec85f2915c2");
 
   const std::string network_stats_checksum =
-      PlatformChecksum("9e72233c78baf685e500dd6c94212b30a4c5f27d",
-                       "9a37270e4242fbd31e80bb47dc5e7ab82cf2d557",
-                       "4f1e9734bc80a290faaf9d611efcb8d7802dbc4f",
-                       "9e72233c78baf685e500dd6c94212b30a4c5f27d",
-                       "9e72233c78baf685e500dd6c94212b30a4c5f27d");
+      PlatformChecksum("adb3272498e436d1c019cbfd71610e9510c54497",
+                       "fa935a91abc7291db47428a2d7c5361b98713a92",
+                       "42106aa5267300f709f63737707ef07afd9dac61",
+                       "adb3272498e436d1c019cbfd71610e9510c54497",
+                       "adb3272498e436d1c019cbfd71610e9510c54497");
 
   const std::string rtcp_stats_checksum = PlatformChecksum(
       "e37c797e3de6a64dda88c9ade7a013d022a2e1e0",
@@ -950,9 +950,6 @@ TEST_F(NetEqDecodingTest, GetAudioBeforeInsertPacket) {
 
 class NetEqBgnTest : public NetEqDecodingTest {
  protected:
-  virtual void TestCondition(double sum_squared_noise,
-                             bool should_be_faded) = 0;
-
   void CheckBgn(int sampling_rate_hz) {
     size_t expected_samples_per_channel = 0;
     uint8_t payload_type = 0xFF;  // Invalid.
@@ -1044,7 +1041,7 @@ class NetEqBgnTest : public NetEqDecodingTest {
         for (size_t k = 0;
              k < output.num_channels_ * output.samples_per_channel_; ++k)
           sum_squared += output_data[k] * output_data[k];
-        TestCondition(sum_squared, n > kFadingThreshold);
+        EXPECT_EQ(0, sum_squared);
       } else {
         EXPECT_EQ(AudioFrame::kPLC, output.speech_type_);
       }
@@ -1053,53 +1050,7 @@ class NetEqBgnTest : public NetEqDecodingTest {
   }
 };
 
-class NetEqBgnTestOn : public NetEqBgnTest {
- protected:
-  NetEqBgnTestOn() : NetEqBgnTest() {
-    config_.background_noise_mode = NetEq::kBgnOn;
-  }
-
-  void TestCondition(double sum_squared_noise, bool /*should_be_faded*/) {
-    EXPECT_NE(0, sum_squared_noise);
-  }
-};
-
-class NetEqBgnTestOff : public NetEqBgnTest {
- protected:
-  NetEqBgnTestOff() : NetEqBgnTest() {
-    config_.background_noise_mode = NetEq::kBgnOff;
-  }
-
-  void TestCondition(double sum_squared_noise, bool /*should_be_faded*/) {
-    EXPECT_EQ(0, sum_squared_noise);
-  }
-};
-
-class NetEqBgnTestFade : public NetEqBgnTest {
- protected:
-  NetEqBgnTestFade() : NetEqBgnTest() {
-    config_.background_noise_mode = NetEq::kBgnFade;
-  }
-
-  void TestCondition(double sum_squared_noise, bool should_be_faded) {
-    if (should_be_faded)
-      EXPECT_EQ(0, sum_squared_noise);
-  }
-};
-
-TEST_F(NetEqBgnTestOn, RunTest) {
-  CheckBgn(8000);
-  CheckBgn(16000);
-  CheckBgn(32000);
-}
-
-TEST_F(NetEqBgnTestOff, RunTest) {
-  CheckBgn(8000);
-  CheckBgn(16000);
-  CheckBgn(32000);
-}
-
-TEST_F(NetEqBgnTestFade, RunTest) {
+TEST_F(NetEqBgnTest, RunTest) {
   CheckBgn(8000);
   CheckBgn(16000);
   CheckBgn(32000);

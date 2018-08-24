@@ -351,7 +351,8 @@ OverlayPlane ScreenManager::GetModesetBuffer(
 
   gfx::BufferFormat format = display::DisplaySnapshot::PrimaryFormat();
   uint32_t fourcc_format = ui::GetFourCCFormatForOpaqueFramebuffer(format);
-  const auto& modifiers = controller->GetFormatModifiers(fourcc_format);
+  const auto& modifiers =
+      controller->GetFormatModifiersForModesetting(fourcc_format);
   if (window) {
     const OverlayPlane* primary = window->GetLastModesetBuffer();
     const DrmDevice* drm = controller->GetAllocationDrmDevice().get();
@@ -377,11 +378,11 @@ OverlayPlane ScreenManager::GetModesetBuffer(
     LOG(ERROR) << "Failed to create scanout buffer";
     return OverlayPlane(nullptr, 0, gfx::OVERLAY_TRANSFORM_INVALID, gfx::Rect(),
                         gfx::RectF(), /* enable_blend */ true,
-                        base::kInvalidPlatformFile);
+                        /* gpu_fence */ nullptr);
   }
 
   FillModesetBuffer(drm, controller, buffer.get());
-  return OverlayPlane(buffer, base::kInvalidPlatformFile);
+  return OverlayPlane(buffer, nullptr);
 }
 
 bool ScreenManager::EnableController(HardwareDisplayController* controller) {

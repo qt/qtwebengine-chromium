@@ -182,9 +182,15 @@ class MockVideoCaptureDeviceClient : public VideoCaptureDevice::Client {
                     base::TimeTicks,
                     base::TimeDelta,
                     int));
-  MOCK_METHOD4(
-      ReserveOutputBuffer,
-      Buffer(const gfx::Size&, VideoPixelFormat, VideoPixelStorage, int));
+  MOCK_METHOD6(OnIncomingCapturedGfxBuffer,
+               void(gfx::GpuMemoryBuffer* buffer,
+                    const media::VideoCaptureFormat& frame_format,
+                    int clockwise_rotation,
+                    base::TimeTicks reference_time,
+                    base::TimeDelta timestamp,
+                    int frame_feedback_id));
+  MOCK_METHOD3(ReserveOutputBuffer,
+               Buffer(const gfx::Size&, VideoPixelFormat, int));
   void OnIncomingCapturedBuffer(Buffer buffer,
                                 const VideoCaptureFormat& frame_format,
                                 base::TimeTicks reference_time,
@@ -202,9 +208,8 @@ class MockVideoCaptureDeviceClient : public VideoCaptureDevice::Client {
     DoOnIncomingCapturedVideoFrame();
   }
   MOCK_METHOD0(DoOnIncomingCapturedVideoFrame, void(void));
-  MOCK_METHOD4(
-      ResurrectLastOutputBuffer,
-      Buffer(const gfx::Size&, VideoPixelFormat, VideoPixelStorage, int));
+  MOCK_METHOD3(ResurrectLastOutputBuffer,
+               Buffer(const gfx::Size&, VideoPixelFormat, int));
   MOCK_METHOD2(OnError,
                void(const base::Location& from_here,
                     const std::string& reason));

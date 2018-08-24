@@ -18,6 +18,10 @@ if (is_android) {
   import("//build/config/android/rules.gni")
 }
 
+declare_args() {
+  cast_test_extra_flags = ""
+}
+
 config("playready_config") {
   if (use_playready) {
     defines = [ "PLAYREADY_CDM_AVAILABLE" ]
@@ -93,7 +97,10 @@ cast_test_group("cast_tests") {
   }
 
   if (is_linux || is_fuchsia) {
-    tests += [ "//chromecast/media/cma/backend:cast_audio_backend_unittests" ]
+    tests += [
+      "//chromecast/media/cma/backend:cast_audio_backend_unittests",
+      "//chromecast/media/cma/backend:cast_av_sync_backend_unittests",
+    ]
   }
 
   if (!is_android) {
@@ -198,8 +205,11 @@ cast_test_group("cast_tests") {
     gtest_excludes = []
     if (target_os == "linux") {
       if (is_cast_desktop_build) {
-        # Disable PartitionAllocTest.RepeatedReturnNullDirect (b/67975693)
-        gtest_excludes += [ "PartitionAllocTest.RepeatedReturnNullDirect" ]
+        # Disable PartitionAllocReturnNullTest.RepeatedReturnNullDirect (b/67975693)
+        gtest_excludes += [
+          "PartitionAllocReturnNullTest.RepeatedReturnNullDirect",
+          "PartitionReallocReturnNullTest.RepeatedReturnNullDirect",
+        ]
       } else {
         # Disable ProcessMetricsTest.GetNumberOfThreads (b/15610509)
         # Disable ProcessUtilTest.* (need to define OS_ANDROID)
@@ -361,7 +371,9 @@ cast_test_group_list("cast_test_lists") {
   runtime_deps_path = "$root_out_dir/tests/runtime_deps.json"
   run_list_path = "$root_out_dir/tests/run_test_list.txt"
 
-  additional_options = [ "--ozone-platform=headless --test-launcher-bot-mode" ]
+  additional_options = [
+    "--ozone-platform=headless --test-launcher-bot-mode $cast_test_extra_flags",
+  ]
 
   test_groups = [ ":cast_tests" ]
 
@@ -496,11 +508,13 @@ repack("cast_shell_pak") {
 
   if (enable_chromecast_extensions) {
     sources += [
+      "$root_gen_dir/chromecast/renderer/extensions_renderer_resources.pak",
       "$root_gen_dir/extensions/extensions_renderer_resources.pak",
       "$root_gen_dir/extensions/extensions_resources.pak",
       "$root_gen_dir/extensions/shell/app_shell_resources.pak",
     ]
     deps += [
+      "//chromecast/renderer:extensions_resources",
       "//extensions:extensions_resources",
       "//extensions/shell:resources",
     ]

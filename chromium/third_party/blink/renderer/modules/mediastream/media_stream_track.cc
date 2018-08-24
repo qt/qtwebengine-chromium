@@ -35,6 +35,7 @@
 #include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/deprecation.h"
+#include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/modules/imagecapture/image_capture.h"
 #include "third_party/blink/renderer/modules/mediastream/apply_constraints_request.h"
 #include "third_party/blink/renderer/modules/mediastream/media_constraints_impl.h"
@@ -318,6 +319,8 @@ void MediaStreamTrack::getCapabilities(MediaTrackCapabilities& capabilities) {
 
   auto platform_capabilities = component_->Source()->GetCapabilities();
   capabilities.setDeviceId(platform_capabilities.device_id);
+  if (!platform_capabilities.group_id.IsNull())
+    capabilities.setGroupId(platform_capabilities.group_id);
 
   if (component_->Source()->GetType() == MediaStreamSource::kTypeAudio) {
     Vector<bool> echo_cancellation, auto_gain_control, noise_suppression;
@@ -330,6 +333,10 @@ void MediaStreamTrack::getCapabilities(MediaTrackCapabilities& capabilities) {
     for (bool value : platform_capabilities.noise_suppression)
       noise_suppression.push_back(value);
     capabilities.setNoiseSuppression(noise_suppression);
+    Vector<String> echo_cancellation_type;
+    for (String value : platform_capabilities.echo_cancellation_type)
+      echo_cancellation_type.push_back(value);
+    capabilities.setEchoCancellationType(echo_cancellation_type);
   }
 
   if (component_->Source()->GetType() == MediaStreamSource::kTypeVideo) {
@@ -435,6 +442,8 @@ void MediaStreamTrack::getSettings(MediaTrackSettings& settings) {
       settings.setFocalLengthY(platform_settings.focal_length_y);
   }
   settings.setDeviceId(platform_settings.device_id);
+  if (!platform_settings.group_id.IsNull())
+    settings.setGroupId(platform_settings.group_id);
   if (platform_settings.HasFacingMode()) {
     switch (platform_settings.facing_mode) {
       case WebMediaStreamTrack::FacingMode::kUser:
@@ -461,6 +470,11 @@ void MediaStreamTrack::getSettings(MediaTrackSettings& settings) {
     settings.setAutoGainControl(*platform_settings.auto_gain_control);
   if (platform_settings.noise_supression)
     settings.setNoiseSuppression(*platform_settings.noise_supression);
+  if (OriginTrials::experimentalHardwareEchoCancellationEnabled(
+          GetExecutionContext()) &&
+      !platform_settings.echo_cancellation_type.IsNull()) {
+    settings.setEchoCancellationType(platform_settings.echo_cancellation_type);
+  }
 
   if (image_capture_)
     image_capture_->GetMediaTrackSettings(settings);

@@ -79,6 +79,7 @@ public:
 	void release();
 	void* lock(int x, int y, int z);
 	void unlock();
+	bool targetRequiresSync() const;
 
 private:
 	int width;
@@ -144,6 +145,8 @@ public:
 
 	// Back buffer from client buffer
 	static Image *create(const egl::ClientBuffer& clientBuffer);
+
+	static size_t size(int width, int height, int depth, int border, int samples, GLint internalformat);
 
 	GLsizei getWidth() const
 	{
@@ -247,7 +250,7 @@ inline GLenum GLPixelFormatFromAndroid(int halFormat)
 #ifdef GRALLOC_MODULE_API_VERSION_0_2
 	case HAL_PIXEL_FORMAT_YCbCr_420_888: return SW_YV12_BT601;
 #endif
-#if PLATFORM_SDK_VERSION >= 26
+#if ANDROID_PLATFORM_SDK_VERSION >= 26
 	case HAL_PIXEL_FORMAT_RGBA_FP16: return GL_RGBA16F;
 #endif
 	case HAL_PIXEL_FORMAT_RGB_888:   // Unsupported.

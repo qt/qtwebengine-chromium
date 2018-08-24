@@ -92,12 +92,14 @@ egl::Error OffscreenSurfaceVk::querySurfacePointerANGLE(EGLint /*attribute*/, vo
     return egl::EglBadCurrentSurface();
 }
 
-egl::Error OffscreenSurfaceVk::bindTexImage(gl::Texture * /*texture*/, EGLint /*buffer*/)
+egl::Error OffscreenSurfaceVk::bindTexImage(const gl::Context * /*context*/,
+                                            gl::Texture * /*texture*/,
+                                            EGLint /*buffer*/)
 {
     return egl::NoError();
 }
 
-egl::Error OffscreenSurfaceVk::releaseTexImage(EGLint /*buffer*/)
+egl::Error OffscreenSurfaceVk::releaseTexImage(const gl::Context * /*context*/, EGLint /*buffer*/)
 {
     return egl::NoError();
 }
@@ -237,7 +239,7 @@ vk::Error WindowSurfaceVk::initializeImpl(RendererVk *renderer)
 
     uint32_t presentQueue = 0;
     ANGLE_TRY_RESULT(renderer->selectPresentQueueForSurface(mSurface), presentQueue);
-    UNUSED_VARIABLE(presentQueue);
+    ANGLE_UNUSED_VARIABLE(presentQueue);
 
     const VkPhysicalDevice &physicalDevice = renderer->getPhysicalDevice();
 
@@ -396,8 +398,8 @@ vk::Error WindowSurfaceVk::initializeImpl(RendererVk *renderer)
     {
         SwapchainImage &member = mSwapchainImages[imageIndex];
         member.image.init2DWeakReference(swapchainImages[imageIndex], extents, format, 1);
-        member.image.initImageView(device, VK_IMAGE_ASPECT_COLOR_BIT, gl::SwizzleState(),
-                                   &member.imageView);
+        member.image.initImageView(device, gl::TextureType::_2D, VK_IMAGE_ASPECT_COLOR_BIT,
+                                   gl::SwizzleState(), &member.imageView, 1);
 
         // Set transfer dest layout, and clear the image to black.
         member.image.clearColor(transparentBlack, commandBuffer);
@@ -418,7 +420,8 @@ vk::Error WindowSurfaceVk::initializeImpl(RendererVk *renderer)
             (VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
              VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 
-        ANGLE_TRY(mDepthStencilImage.init2D(device, extents, dsFormat, 1, usage));
+        ANGLE_TRY(
+            mDepthStencilImage.init(device, gl::TextureType::_2D, extents, dsFormat, 1, usage, 1));
         ANGLE_TRY(mDepthStencilImage.initMemory(device, renderer->getMemoryProperties(),
                                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
 
@@ -431,8 +434,8 @@ vk::Error WindowSurfaceVk::initializeImpl(RendererVk *renderer)
         // Set transfer dest layout, and clear the image.
         mDepthStencilImage.clearDepthStencil(aspect, depthStencilClearValue, commandBuffer);
 
-        ANGLE_TRY(mDepthStencilImage.initImageView(device, aspect, gl::SwizzleState(),
-                                                   &mDepthStencilImageView));
+        ANGLE_TRY(mDepthStencilImage.initImageView(device, gl::TextureType::_2D, aspect,
+                                                   gl::SwizzleState(), &mDepthStencilImageView, 1));
 
         mDepthStencilRenderTarget.resource  = this;
         mDepthStencilRenderTarget.image     = &mDepthStencilImage;
@@ -520,12 +523,14 @@ egl::Error WindowSurfaceVk::querySurfacePointerANGLE(EGLint attribute, void **va
     return egl::EglBadCurrentSurface();
 }
 
-egl::Error WindowSurfaceVk::bindTexImage(gl::Texture *texture, EGLint buffer)
+egl::Error WindowSurfaceVk::bindTexImage(const gl::Context *context,
+                                         gl::Texture *texture,
+                                         EGLint buffer)
 {
     return egl::NoError();
 }
 
-egl::Error WindowSurfaceVk::releaseTexImage(EGLint buffer)
+egl::Error WindowSurfaceVk::releaseTexImage(const gl::Context *context, EGLint buffer)
 {
     return egl::NoError();
 }

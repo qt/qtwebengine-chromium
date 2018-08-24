@@ -52,9 +52,10 @@ CompilerImpl *ContextGL::createCompiler()
 
 ShaderImpl *ContextGL::createShader(const gl::ShaderState &data)
 {
-    return new ShaderGL(data, getFunctions(), getWorkaroundsGL(),
-                        getExtensions().webglCompatibility,
-                        mRenderer->getMultiviewImplementationType());
+    const FunctionsGL *functions = getFunctions();
+    GLuint shader                = functions->createShader(ToGLenum(data.getShaderType()));
+
+    return new ShaderGL(data, shader, mRenderer->getMultiviewImplementationType());
 }
 
 ProgramImpl *ContextGL::createProgram(const gl::ProgramState &data)
@@ -65,14 +66,24 @@ ProgramImpl *ContextGL::createProgram(const gl::ProgramState &data)
 
 FramebufferImpl *ContextGL::createFramebuffer(const gl::FramebufferState &data)
 {
-    return new FramebufferGL(data, getFunctions(), getStateManager(), getWorkaroundsGL(),
-                             mRenderer->getBlitter(), mRenderer->getMultiviewClearer(), false);
+    const FunctionsGL *funcs = getFunctions();
+
+    GLuint fbo = 0;
+    funcs->genFramebuffers(1, &fbo);
+
+    return new FramebufferGL(data, fbo, false);
 }
 
 TextureImpl *ContextGL::createTexture(const gl::TextureState &state)
 {
-    return new TextureGL(state, getFunctions(), getWorkaroundsGL(), getStateManager(),
-                         mRenderer->getBlitter());
+    const FunctionsGL *functions = getFunctions();
+    StateManagerGL *stateManager = getStateManager();
+
+    GLuint texture = 0;
+    functions->genTextures(1, &texture);
+    stateManager->bindTexture(state.getType(), texture);
+
+    return new TextureGL(state, texture);
 }
 
 RenderbufferImpl *ContextGL::createRenderbuffer(const gl::RenderbufferState &state)
@@ -91,11 +102,11 @@ VertexArrayImpl *ContextGL::createVertexArray(const gl::VertexArrayState &data)
     return new VertexArrayGL(data, getFunctions(), getStateManager());
 }
 
-QueryImpl *ContextGL::createQuery(GLenum type)
+QueryImpl *ContextGL::createQuery(gl::QueryType type)
 {
     switch (type)
     {
-        case GL_COMMANDS_COMPLETED_CHROMIUM:
+        case gl::QueryType::CommandsCompleted:
             return new SyncQueryGL(type, getFunctions(), getStateManager());
 
         default:
@@ -410,6 +421,16 @@ StateManagerGL *ContextGL::getStateManager()
 const WorkaroundsGL &ContextGL::getWorkaroundsGL() const
 {
     return mRenderer->getWorkarounds();
+}
+
+BlitGL *ContextGL::getBlitter() const
+{
+    return mRenderer->getBlitter();
+}
+
+ClearMultiviewGL *ContextGL::getMultiviewClearer() const
+{
+    return mRenderer->getMultiviewClearer();
 }
 
 gl::Error ContextGL::dispatchCompute(const gl::Context *context,

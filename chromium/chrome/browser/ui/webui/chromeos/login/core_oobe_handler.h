@@ -77,6 +77,9 @@ class CoreOobeHandler : public BaseWebUIHandler,
   // false.
   void UpdateShutdownAndRebootVisibility(bool reboot_on_shutdown);
 
+  // Notify WebUI of the user count on the views login screen.
+  void SetLoginUserCount(int user_count);
+
  private:
   // CoreOobeView implementation:
   void ShowSignInError(int login_attempts,
@@ -130,6 +133,7 @@ class CoreOobeHandler : public BaseWebUIHandler,
   void HandleHeaderBarVisible();
   void HandleSetOobeBootstrappingSlave();
   void HandleGetPrimaryDisplayNameForTesting(const base::ListValue* args);
+  void HandleSetupDemoMode();
 
   // When keyboard_utils.js arrow key down event is reached, raise it
   // to tab/shift-tab event.

@@ -38,9 +38,9 @@
 #include "third_party/blink/renderer/core/paint/object_paint_invalidator.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/style/shadow_list.h"
-#include "third_party/blink/renderer/platform/geometry/transform_state.h"
 #include "third_party/blink/renderer/platform/length_functions.h"
 #include "third_party/blink/renderer/platform/scroll/main_thread_scrolling_reason.h"
+#include "third_party/blink/renderer/platform/transforms/transform_state.h"
 
 namespace blink {
 
@@ -306,10 +306,11 @@ void LayoutBoxModelObject::StyleDidChange(StyleDifference diff,
     }
   }
 
-  if (old_style && (old_style->CanContainFixedPositionObjects() !=
-                        StyleRef().CanContainFixedPositionObjects() ||
-                    old_style->GetPosition() != StyleRef().GetPosition() ||
-                    had_layer != HasLayer())) {
+  if (old_style &&
+      (old_style->CanContainFixedPositionObjects(IsDocumentElement()) !=
+           StyleRef().CanContainFixedPositionObjects(IsDocumentElement()) ||
+       old_style->GetPosition() != StyleRef().GetPosition() ||
+       had_layer != HasLayer())) {
     // This may affect paint properties of the current object, and descendants
     // even if paint properties of the current object won't change. E.g. the
     // stacking context and/or containing block of descendants may change.
@@ -430,11 +431,30 @@ void LayoutBoxModelObject::StyleDidChange(StyleDifference diff,
   }
 
   if (old_style && RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
-      old_style->BackfaceVisibility() != StyleRef().BackfaceVisibility() &&
-      HasLayer()) {
-    // We need to repaint the layer to update the backface visibility value of
-    // the paint chunk.
-    Layer()->SetNeedsRepaint();
+      HasLayer() && !Layer()->NeedsRepaint()) {
+    if (old_style->BackfaceVisibility() != StyleRef().BackfaceVisibility()) {
+      // We need to repaint the layer to update the backface visibility value of
+      // the paint chunk.
+      Layer()->SetNeedsRepaint();
+    } else if (diff.TransformChanged() &&
+               (RuntimeEnabledFeatures::SlimmingPaintV2Enabled() ||
+                !Layer()->HasStyleDeterminedDirectCompositingReasons())) {
+      // PaintLayerPainter::PaintLayerWithAdjustedRoot skips painting of a layer
+      // whose transform is not invertible, so we need to repaint the layer when
+      // invertible status changes.
+      TransformationMatrix old_transform;
+      TransformationMatrix new_transform;
+      old_style->ApplyTransform(
+          old_transform, LayoutSize(), ComputedStyle::kExcludeTransformOrigin,
+          ComputedStyle::kExcludeMotionPath,
+          ComputedStyle::kIncludeIndependentTransformProperties);
+      StyleRef().ApplyTransform(
+          new_transform, LayoutSize(), ComputedStyle::kExcludeTransformOrigin,
+          ComputedStyle::kExcludeMotionPath,
+          ComputedStyle::kIncludeIndependentTransformProperties);
+      if (old_transform.IsInvertible() != new_transform.IsInvertible())
+        Layer()->SetNeedsRepaint();
+    }
   }
 }
 
@@ -677,13 +697,12 @@ bool LayoutBoxModelObject::HasAutoHeightOrContainingBlockWithAutoHeight()
   if (logical_height_length.IsPercentOrCalc() && cb && IsBox())
     cb->AddPercentHeightDescendant(const_cast<LayoutBox*>(ToLayoutBox(this)));
   if (this_box && this_box->IsFlexItem()) {
-    LayoutFlexibleBox& flex_box = ToLayoutFlexibleBox(*Parent());
-    if (flex_box.ChildLogicalHeightForPercentageResolution(*this_box) !=
-        LayoutUnit(-1))
+    const LayoutFlexibleBox& flex_box = ToLayoutFlexibleBox(*Parent());
+    if (flex_box.UseOverrideLogicalHeightForPerentageResolution(*this_box))
       return false;
   }
   if (this_box && this_box->IsGridItem() &&
-      this_box->HasOverrideContainingBlockLogicalHeight())
+      this_box->HasOverrideContainingBlockContentLogicalHeight())
     return false;
   if (logical_height_length.IsAuto() &&
       !IsOutOfFlowPositionedWithImplicitHeight(this))
@@ -711,8 +730,8 @@ LayoutSize LayoutBoxModelObject::RelativePositionOffset() const {
   // don't use containingBlockLogicalWidthForContent() here, but instead
   // explicitly call availableWidth on our containing block.
   // https://drafts.csswg.org/css-position-3/#rel-pos
-  Optional<LayoutUnit> left;
-  Optional<LayoutUnit> right;
+  base::Optional<LayoutUnit> left;
+  base::Optional<LayoutUnit> right;
   if (!Style()->Left().IsAuto())
     left = ValueForLength(Style()->Left(), containing_block->AvailableWidth());
   if (!Style()->Right().IsAuto())
@@ -753,8 +772,8 @@ LayoutSize LayoutBoxModelObject::RelativePositionOffset() const {
   // the percent offset based on this height.
   // See <https://bugs.webkit.org/show_bug.cgi?id=26396>.
 
-  Optional<LayoutUnit> top;
-  Optional<LayoutUnit> bottom;
+  base::Optional<LayoutUnit> top;
+  base::Optional<LayoutUnit> bottom;
   if (!Style()->Top().IsAuto() &&
       (!containing_block->HasAutoHeightOrContainingBlockWithAutoHeight() ||
        !Style()->Top().IsPercentOrCalc() ||
@@ -812,18 +831,19 @@ void LayoutBoxModelObject::UpdateStickyPositionConstraints() const {
   while (containing_block->IsAnonymous()) {
     containing_block = containing_block->ContainingBlock();
   }
-  MapCoordinatesFlags flags = kIgnoreStickyOffset;
+
+  // The sticky position constraint rects should be independent of the current
+  // scroll position therefore we should ignore the scroll offset when
+  // calculating the quad.
+  MapCoordinatesFlags flags = kIgnoreScrollOffset | kIgnoreStickyOffset;
   skipped_containers_offset =
       ToFloatSize(location_container
                       ->LocalToAncestorQuadWithoutTransforms(
                           FloatQuad(), containing_block, flags)
                       .BoundingBox()
                       .Location());
-  LayoutBox* scroll_ancestor =
-      Layer()->AncestorOverflowLayer()->IsRootLayer() &&
-              !RuntimeEnabledFeatures::RootLayerScrollingEnabled()
-          ? nullptr
-          : &ToLayoutBox(Layer()->AncestorOverflowLayer()->GetLayoutObject());
+  LayoutBox& scroll_ancestor =
+      ToLayoutBox(Layer()->AncestorOverflowLayer()->GetLayoutObject());
 
   LayoutUnit max_container_width =
       containing_block->IsLayoutView()
@@ -840,29 +860,15 @@ void LayoutBoxModelObject::UpdateStickyPositionConstraints() const {
   // transforms.
   FloatRect scroll_container_relative_padding_box_rect(
       containing_block->LayoutOverflowRect());
-  FloatSize scroll_container_border_offset;
-  if (scroll_ancestor) {
-    scroll_container_border_offset =
-        FloatSize(scroll_ancestor->BorderLeft(), scroll_ancestor->BorderTop());
-  }
-  if (containing_block != scroll_ancestor) {
+  FloatSize scroll_container_border_offset =
+      FloatSize(scroll_ancestor.BorderLeft(), scroll_ancestor.BorderTop());
+  if (containing_block != &scroll_ancestor) {
     FloatQuad local_quad(FloatRect(containing_block->PaddingBoxRect()));
     scroll_container_relative_padding_box_rect =
         containing_block
-            ->LocalToAncestorQuadWithoutTransforms(local_quad, scroll_ancestor,
+            ->LocalToAncestorQuadWithoutTransforms(local_quad, &scroll_ancestor,
                                                    flags)
             .BoundingBox();
-
-    // The sticky position constraint rects should be independent of the current
-    // scroll position, so after mapping we add in the scroll position to get
-    // the container's position within the ancestor scroller's unscrolled layout
-    // overflow.
-    ScrollOffset scroll_offset(
-        scroll_ancestor
-            ? ToFloatSize(
-                  scroll_ancestor->GetScrollableArea()->ScrollPosition())
-            : FloatSize());
-    scroll_container_relative_padding_box_rect.Move(scroll_offset);
   }
   // Remove top-left border offset from overflow scroller.
   scroll_container_relative_padding_box_rect.Move(

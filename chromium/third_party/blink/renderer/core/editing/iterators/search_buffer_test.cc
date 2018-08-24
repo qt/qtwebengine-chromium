@@ -71,7 +71,7 @@ TEST_F(SearchBufferTest, FindPlainTextInvalidTarget) {
 
   static const UChar* invalid_u_strings[] = {kInvalid1, kInvalid2, kInvalid3};
 
-  for (size_t i = 0; i < WTF_ARRAY_LENGTH(invalid_u_strings); ++i) {
+  for (size_t i = 0; i < arraysize(invalid_u_strings); ++i) {
     String invalid_target(invalid_u_strings[i]);
     EphemeralRange found_range =
         FindPlainText(EphemeralRange(range), invalid_target, 0);
@@ -79,6 +79,27 @@ TEST_F(SearchBufferTest, FindPlainTextInvalidTarget) {
         GetDocument(), found_range.StartPosition(), found_range.EndPosition());
     EXPECT_TRUE(AreRangesEqual(expected_range, actual_range));
   }
+}
+
+TEST_F(SearchBufferTest, DisplayInline) {
+  SetBodyContent("<span>fi</span>nd");
+  GetDocument().UpdateStyleAndLayout();
+  auto match_range = FindPlainText(EphemeralRange(GetBodyRange()), "find", 0);
+  EXPECT_FALSE(match_range.IsCollapsed());
+}
+
+TEST_F(SearchBufferTest, DisplayBlock) {
+  SetBodyContent("<div>fi</div>nd");
+  GetDocument().UpdateStyleAndLayout();
+  auto match_range = FindPlainText(EphemeralRange(GetBodyRange()), "find", 0);
+  EXPECT_TRUE(match_range.IsCollapsed());
+}
+
+TEST_F(SearchBufferTest, DisplayContents) {
+  SetBodyContent("<div style='display: contents'>fi</div>nd");
+  GetDocument().UpdateStyleAndLayout();
+  auto match_range = FindPlainText(EphemeralRange(GetBodyRange()), "find", 0);
+  EXPECT_FALSE(match_range.IsCollapsed());
 }
 
 }  // namespace blink

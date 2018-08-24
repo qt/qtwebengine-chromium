@@ -6,7 +6,9 @@
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/containers/span.h"
 #include "base/run_loop.h"
+#include "base/stl_util.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "net/base/load_timing_info.h"
@@ -21,6 +23,7 @@
 #include "net/socket/socket_tag.h"
 #include "net/socket/socket_test_util.h"
 #include "net/test/gtest_util.h"
+#include "net/test/test_with_scoped_task_environment.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -70,7 +73,7 @@ scoped_refptr<SOCKSSocketParams> CreateSOCKSv5Params() {
                                TRAFFIC_ANNOTATION_FOR_TESTS);
 }
 
-class SOCKSClientSocketPoolTest : public testing::Test {
+class SOCKSClientSocketPoolTest : public TestWithScopedTaskEnvironment {
  protected:
   class SOCKS5MockData {
    public:
@@ -87,8 +90,8 @@ class SOCKSClientSocketPoolTest : public testing::Test {
       reads_[1] = MockRead(mode, kSOCKS5OkResponse, kSOCKS5OkResponseLength);
       reads_[2] = MockRead(mode, 0);
 
-      data_.reset(new StaticSocketDataProvider(reads_.get(), 3,
-                                               writes_.get(), 3));
+      data_.reset(new StaticSocketDataProvider(
+          base::make_span(reads_.get(), 3), base::make_span(writes_.get(), 3)));
     }
 
     SocketDataProvider* data_provider() { return data_.get(); }
@@ -247,8 +250,7 @@ TEST_F(SOCKSClientSocketPoolTest, SOCKSConnectError) {
   MockRead failed_read[] = {
     MockRead(SYNCHRONOUS, 0),
   };
-  StaticSocketDataProvider socket_data(
-      failed_read, arraysize(failed_read), NULL, 0);
+  StaticSocketDataProvider socket_data(failed_read, base::span<MockWrite>());
   socket_data.set_connect_data(MockConnect(SYNCHRONOUS, OK));
   transport_client_socket_factory_.AddSocketDataProvider(&socket_data);
 
@@ -267,8 +269,7 @@ TEST_F(SOCKSClientSocketPoolTest, AsyncSOCKSConnectError) {
   MockRead failed_read[] = {
     MockRead(ASYNC, 0),
   };
-  StaticSocketDataProvider socket_data(
-        failed_read, arraysize(failed_read), NULL, 0);
+  StaticSocketDataProvider socket_data(failed_read, base::span<MockWrite>());
   socket_data.set_connect_data(MockConnect(SYNCHRONOUS, OK));
   transport_client_socket_factory_.AddSocketDataProvider(&socket_data);
 

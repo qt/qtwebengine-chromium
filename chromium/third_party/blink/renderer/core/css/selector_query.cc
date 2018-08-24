@@ -111,7 +111,7 @@ inline bool SelectorMatches(const CSSSelector& selector,
 bool SelectorQuery::Matches(Element& target_element) const {
   QUERY_STATS_RESET();
   if (needs_updated_distribution_)
-    target_element.UpdateDistribution();
+    target_element.UpdateDistributionForFlatTreeTraversal();
   return SelectorListMatches(target_element, target_element);
 }
 
@@ -120,7 +120,7 @@ Element* SelectorQuery::Closest(Element& target_element) const {
   if (selectors_.IsEmpty())
     return nullptr;
   if (needs_updated_distribution_)
-    target_element.UpdateDistribution();
+    target_element.UpdateDistributionForFlatTreeTraversal();
 
   for (Element* current_element = &target_element; current_element;
        current_element = current_element->parentElement()) {
@@ -285,7 +285,7 @@ void SelectorQuery::ExecuteForTraverseRoot(
 
 bool SelectorQuery::SelectorListMatches(ContainerNode& root_node,
                                         Element& element) const {
-  for (const auto& selector : selectors_) {
+  for (auto* const selector : selectors_) {
     if (SelectorMatches(*selector, element, root_node))
       return true;
   }
@@ -419,7 +419,7 @@ void SelectorQuery::Execute(
 
   if (use_slow_scan_) {
     if (needs_updated_distribution_)
-      root_node.UpdateDistribution();
+      root_node.UpdateDistributionForFlatTreeTraversal();
     if (uses_deep_combinator_or_shadow_pseudo_) {
       ExecuteSlowTraversingShadowTree<SelectorQueryTrait>(root_node, output);
     } else {
@@ -535,8 +535,10 @@ SelectorQuery* SelectorQueryCache::Add(const AtomicString& selectors,
 
   CSSSelectorList selector_list = CSSParser::ParseSelector(
       CSSParserContext::Create(
-          document, document.BaseURL(), document.GetReferrerPolicy(),
-          WTF::TextEncoding(), CSSParserContext::kStaticProfile),
+          document, document.BaseURL(),
+          false /* is_opaque_response_from_service_worker */,
+          document.GetReferrerPolicy(), WTF::TextEncoding(),
+          CSSParserContext::kSnapshotProfile),
       nullptr, selectors);
 
   if (!selector_list.First()) {

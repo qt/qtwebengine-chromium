@@ -48,6 +48,7 @@ class Transform;
 }
 
 namespace ui {
+enum class DomCode;
 class Layer;
 namespace mojom {
 enum class EventTargetingPolicy;
@@ -217,11 +218,6 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // LayoutManager may adjust the bounds.
   void SetBounds(const gfx::Rect& new_bounds);
 
-  // Explicitly set a device scale factor for the window. Note that the
-  // window's device scale factor is also set when adding its ui::Layer to the
-  // layer tree of a ui::Compositor.
-  void SetDeviceScaleFactor(float device_scale_factor);
-
   // Changes the bounds of the window in the screen coordinates.
   // If present, the window's parent's LayoutManager may adjust the bounds.
   void SetBoundsInScreen(const gfx::Rect& new_bounds_in_screen_coords,
@@ -345,11 +341,11 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   bool HasCapture();
 
   // Requests that |keys| be intercepted at the platform level and routed
-  // directly to the web content.  If |keys| has no value, all keys will be
+  // directly to the web content.  If |codes| has no value, all keys will be
   // intercepted.  Returns a ScopedKeyboardHook instance which stops capturing
   // system key events when destroyed.
   std::unique_ptr<ScopedKeyboardHook> CaptureSystemKeyEvents(
-      base::Optional<base::flat_set<int>> keys);
+      base::Optional<base::flat_set<ui::DomCode>> codes);
 
   // Suppresses painting window content by disgarding damaged rect and ignoring
   // new paint requests. This is a one way operation and there is no way to
@@ -401,6 +397,13 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
 
   // Gets the current viz::LocalSurfaceId.
   const viz::LocalSurfaceId& GetLocalSurfaceId() const;
+
+  // Sets the current viz::LocalSurfaceId, in cases where the embedded client
+  // has allocated one. Also sets child sequence number component of the
+  // viz::LocalSurfaceId allocator.
+  void UpdateLocalSurfaceIdFromEmbeddedClient(
+      const base::Optional<viz::LocalSurfaceId>&
+          embedded_client_local_surface_id);
 
   // Returns the FrameSinkId. In LOCAL mode, this returns a valid FrameSinkId
   // only if a LayerTreeFrameSink has been created. In MUS mode, this always

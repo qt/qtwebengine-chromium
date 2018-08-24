@@ -72,6 +72,9 @@ void MaybeEmitNamedBoolean(StringBuilder& builder,
 
 }  // namespace
 
+const char kEchoCancellationTypeBrowser[] = "browser";
+const char kEchoCancellationTypeSystem[] = "system";
+
 class WebMediaConstraintsPrivate final
     : public ThreadSafeRefCounted<WebMediaConstraintsPrivate> {
  public:
@@ -352,6 +355,7 @@ WebMediaTrackConstraintSet::WebMediaTrackConstraintSet()
       sample_rate("sampleRate"),
       sample_size("sampleSize"),
       echo_cancellation("echoCancellation"),
+      echo_cancellation_type("echoCancellationType"),
       latency("latency"),
       channel_count("channelCount"),
       device_id("deviceId"),
@@ -415,6 +419,7 @@ std::vector<const BaseConstraint*> WebMediaTrackConstraintSet::AllConstraints()
                                   &sample_rate,
                                   &sample_size,
                                   &echo_cancellation,
+                                  &echo_cancellation_type,
                                   &latency,
                                   &channel_count,
                                   &device_id,
@@ -469,7 +474,7 @@ std::vector<const BaseConstraint*> WebMediaTrackConstraintSet::AllConstraints()
 }
 
 bool WebMediaTrackConstraintSet::IsEmpty() const {
-  for (const auto& constraint : AllConstraints()) {
+  for (auto* const constraint : AllConstraints()) {
     if (!constraint->IsEmpty())
       return false;
   }
@@ -479,7 +484,7 @@ bool WebMediaTrackConstraintSet::IsEmpty() const {
 bool WebMediaTrackConstraintSet::HasMandatoryOutsideSet(
     const std::vector<std::string>& good_names,
     std::string& found_name) const {
-  for (const auto& constraint : AllConstraints()) {
+  for (auto* const constraint : AllConstraints()) {
     if (constraint->HasMandatory()) {
       if (std::find(good_names.begin(), good_names.end(),
                     constraint->GetName()) == good_names.end()) {
@@ -499,7 +504,7 @@ bool WebMediaTrackConstraintSet::HasMandatory() const {
 WebString WebMediaTrackConstraintSet::ToString() const {
   StringBuilder builder;
   bool first = true;
-  for (const auto& constraint : AllConstraints()) {
+  for (auto* const constraint : AllConstraints()) {
     if (!constraint->IsEmpty()) {
       if (!first)
         builder.Append(", ");

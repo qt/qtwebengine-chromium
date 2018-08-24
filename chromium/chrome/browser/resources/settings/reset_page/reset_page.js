@@ -21,6 +21,9 @@ Polymer({
   behaviors: [settings.RouteObserverBehavior],
 
   properties: {
+    /** Preferences state. */
+    prefs: Object,
+
     // <if expr="chromeos">
     /** @private */
     showPowerwashDialog_: Boolean,
@@ -33,14 +36,6 @@ Polymer({
     },
 
     // <if expr="_google_chrome and is_win">
-    /** @private */
-    userInitiatedCleanupsEnabled_: {
-      type: Boolean,
-      value: function() {
-        return loadTimeData.getBoolean('userInitiatedCleanupsEnabled');
-      },
-    },
-
     /** @private */
     showIncompatibleApplications_: {
       type: Boolean,

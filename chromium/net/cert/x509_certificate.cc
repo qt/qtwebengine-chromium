@@ -318,8 +318,8 @@ CertificateList X509Certificate::CreateCertificateListFromBytes(
     // formats other than PEM are acceptable, check to see if the decoded
     // data is one of the accepted formats.
     if (format & ~FORMAT_PEM_CERT_SEQUENCE) {
-      for (size_t i = 0; certificates.empty() &&
-           i < arraysize(kFormatDecodePriority); ++i) {
+      for (size_t i = 0;
+           certificates.empty() && i < base::size(kFormatDecodePriority); ++i) {
         if (format & kFormatDecodePriority[i]) {
           certificates = CreateCertBuffersFromBytes(
               decoded.c_str(), decoded.size(), kFormatDecodePriority[i]);
@@ -337,8 +337,8 @@ CertificateList X509Certificate::CreateCertificateListFromBytes(
   // Try each of the formats, in order of parse preference, to see if |data|
   // contains the binary representation of a Format, if it failed to parse
   // as a PEM certificate/chain.
-  for (size_t i = 0; certificates.empty() &&
-       i < arraysize(kFormatDecodePriority); ++i) {
+  for (size_t i = 0;
+       certificates.empty() && i < base::size(kFormatDecodePriority); ++i) {
     if (format & kFormatDecodePriority[i])
       certificates =
           CreateCertBuffersFromBytes(data, length, kFormatDecodePriority[i]);
@@ -435,14 +435,14 @@ bool X509Certificate::HasExpired() const {
   return base::Time::Now() > valid_expiry();
 }
 
-bool X509Certificate::Equals(const X509Certificate* other) const {
+bool X509Certificate::EqualsExcludingChain(const X509Certificate* other) const {
   return x509_util::CryptoBufferEqual(cert_buffer_.get(),
                                       other->cert_buffer_.get());
 }
 
 bool X509Certificate::EqualsIncludingChain(const X509Certificate* other) const {
   if (intermediate_ca_certs_.size() != other->intermediate_ca_certs_.size() ||
-      !Equals(other)) {
+      !EqualsExcludingChain(other)) {
     return false;
   }
   for (size_t i = 0; i < intermediate_ca_certs_.size(); ++i) {

@@ -53,6 +53,8 @@ Options:
                       updating any file. If not specified,
                       'tools/traffic_annotation/summary/annotations.xml' might
                       get updated.
+  --errors-file       Optional file path for possible errors. If not specified,
+                      errors are dumped to LOG(ERROR).
   --no-missing-error  Optional argument, resulting in just issuing a warning for
                       functions that miss annotation and not an error.
   --summary-file      Optional path to the output file with all annotations.
@@ -286,7 +288,9 @@ int wmain(int argc, wchar_t* argv[]) {
 #else
 int main(int argc, char* argv[]) {
 #endif
-  printf("Starting traffic annotation auditor. This may take a few minutes.\n");
+  printf(
+      "Starting traffic annotation auditor. This may take from a few "
+      "minutes to a few hours based on the scope of the test.\n");
 
   // Parse switches.
   base::CommandLine command_line = base::CommandLine(argc, argv);
@@ -303,6 +307,7 @@ int main(int argc, char* argv[]) {
       command_line.GetSwitchValuePath("extractor-output");
   base::FilePath extractor_input =
       command_line.GetSwitchValuePath("extractor-input");
+  base::FilePath errors_file = command_line.GetSwitchValuePath("errors-file");
   bool filter_files = !command_line.HasSwitch("no-filtering");
   bool all_files = command_line.HasSwitch("all-files");
   bool test_only = command_line.HasSwitch("test-only");
@@ -344,16 +349,6 @@ int main(int argc, char* argv[]) {
   if (tool_path.empty())
     tool_path = command_line.GetProgram().DirName();
 
-  // If source path is not provided, guess it using build path or current
-  // directory.
-  if (source_path.empty()) {
-    if (build_path.empty())
-      base::GetCurrentDirectory(&source_path);
-    else
-      source_path = build_path.Append(base::FilePath::kParentDirectory)
-                        .Append(base::FilePath::kParentDirectory);
-  }
-
   // Get build directory, if it is empty issue an error.
   if (build_path.empty()) {
     LOG(ERROR)
@@ -363,12 +358,18 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
+  // If source path is not provided, guess it using build path.
+  if (source_path.empty()) {
+    source_path = build_path.Append(base::FilePath::kParentDirectory)
+                      .Append(base::FilePath::kParentDirectory);
+  }
+
   TrafficAnnotationAuditor auditor(source_path, build_path, tool_path);
 
   // Extract annotations.
   if (extractor_input.empty()) {
     if (!auditor.RunClangTool(path_filters, filter_files, all_files,
-                              !error_resilient)) {
+                              !error_resilient, errors_file)) {
       LOG(ERROR) << "Failed to run clang tool.";
       return error_value;
     }

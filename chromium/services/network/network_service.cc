@@ -7,6 +7,7 @@
 #include <map>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
@@ -14,18 +15,23 @@
 #include "base/task_scheduler/post_task.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "components/certificate_transparency/sth_distributor.h"
+#include "components/certificate_transparency/sth_observer.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/base/logging_network_change_observer.h"
 #include "net/base/network_change_notifier.h"
+#include "net/cert/ct_log_response_parser.h"
+#include "net/cert/signed_tree_head.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/mapped_host_resolver.h"
-#include "net/log/file_net_log_observer.h"
 #include "net/log/net_log.h"
 #include "net/log/net_log_util.h"
 #include "net/nqe/network_quality_estimator.h"
 #include "net/nqe/network_quality_estimator_params.h"
 #include "net/url_request/url_request_context_builder.h"
+#include "services/network/mojo_net_log.h"
 #include "services/network/network_context.h"
+#include "services/network/network_usage_accumulator.h"
 #include "services/network/public/cpp/network_switches.h"
 #include "services/network/url_request_context_builder_mojo.h"
 
@@ -76,38 +82,6 @@ std::unique_ptr<net::HostResolver> CreateHostResolver() {
 }
 
 }  // namespace
-
-class NetworkService::MojoNetLog : public net::NetLog {
- public:
-  MojoNetLog() {}
-
-  // If specified by the command line, stream network events (NetLog) to a
-  // file on disk. This will last for the duration of the process.
-  void ProcessCommandLine(const base::CommandLine& command_line) {
-    if (!command_line.HasSwitch(switches::kLogNetLog))
-      return;
-
-    base::FilePath log_path =
-        command_line.GetSwitchValuePath(switches::kLogNetLog);
-
-    // TODO(eroman): Should get capture mode from the command line.
-    net::NetLogCaptureMode capture_mode =
-        net::NetLogCaptureMode::IncludeCookiesAndCredentials();
-
-    file_net_log_observer_ =
-        net::FileNetLogObserver::CreateUnbounded(log_path, nullptr);
-    file_net_log_observer_->StartObserving(this, capture_mode);
-  }
-
-  ~MojoNetLog() override {
-    if (file_net_log_observer_)
-      file_net_log_observer_->StopObserving(nullptr, base::OnceClosure());
-  }
-
- private:
-  std::unique_ptr<net::FileNetLogObserver> file_net_log_observer_;
-  DISALLOW_COPY_AND_ASSIGN(MojoNetLog);
-};
 
 NetworkService::NetworkService(
     std::unique_ptr<service_manager::BinderRegistry> registry,
@@ -183,14 +157,19 @@ NetworkService::NetworkService(
 #endif
 
   host_resolver_ = CreateHostResolver();
+
+  network_usage_accumulator_ = std::make_unique<NetworkUsageAccumulator>();
+  sth_distributor_ =
+      std::make_unique<certificate_transparency::STHDistributor>();
 }
 
 NetworkService::~NetworkService() {
-  // Call each Network and ask it to release its net::URLRequestContext, as they
-  // may have references to shared objects owned by the NetworkService. The
-  // NetworkContexts deregister themselves in Cleanup(), so have to be careful.
-  while (!network_contexts_.empty())
-    (*network_contexts_.begin())->Cleanup();
+  // Destroy owned network contexts.
+  owned_network_contexts_.clear();
+
+  // All NetworkContexts (Owned and unowned) must have been deleted by this
+  // point.
+  DCHECK(network_contexts_.empty());
 }
 
 std::unique_ptr<NetworkService> NetworkService::Create(
@@ -208,7 +187,7 @@ NetworkService::CreateNetworkContextWithBuilder(
   std::unique_ptr<NetworkContext> network_context =
       std::make_unique<NetworkContext>(this, std::move(request),
                                        std::move(params), std::move(builder));
-  *url_request_context = network_context->GetURLRequestContext();
+  *url_request_context = network_context->url_request_context();
   return network_context;
 }
 
@@ -229,6 +208,14 @@ void NetworkService::DeregisterNetworkContext(NetworkContext* network_context) {
   network_contexts_.erase(network_context);
 }
 
+void NetworkService::CreateNetLogEntriesForActiveObjects(
+    net::NetLog::ThreadSafeObserver* observer) {
+  std::set<net::URLRequestContext*> contexts;
+  for (NetworkContext* nc : network_contexts_)
+    contexts.insert(nc->url_request_context());
+  return net::CreateNetLogEntriesForActiveObjects(contexts, observer);
+}
+
 void NetworkService::SetClient(mojom::NetworkServiceClientPtr client) {
   client_ = std::move(client);
 }
@@ -236,9 +223,10 @@ void NetworkService::SetClient(mojom::NetworkServiceClientPtr client) {
 void NetworkService::CreateNetworkContext(
     mojom::NetworkContextRequest request,
     mojom::NetworkContextParamsPtr params) {
-  // The NetworkContext will destroy itself on connection error, or when the
-  // service is destroyed.
-  new NetworkContext(this, std::move(request), std::move(params));
+  owned_network_contexts_.emplace(std::make_unique<NetworkContext>(
+      this, std::move(request), std::move(params),
+      base::BindOnce(&NetworkService::OnNetworkContextConnectionClosed,
+                     base::Unretained(this))));
 }
 
 void NetworkService::DisableQuic() {
@@ -274,11 +262,31 @@ void NetworkService::GetNetworkChangeManager(
   network_change_manager_->AddRequest(std::move(request));
 }
 
+void NetworkService::GetTotalNetworkUsages(
+    mojom::NetworkService::GetTotalNetworkUsagesCallback callback) {
+  std::move(callback).Run(network_usage_accumulator_->GetTotalNetworkUsages());
+}
+
+void NetworkService::UpdateSignedTreeHead(const net::ct::SignedTreeHead& sth) {
+  sth_distributor_->NewSTHObserved(sth);
+}
+
+certificate_transparency::STHReporter* NetworkService::sth_reporter() {
+  return sth_distributor_.get();
+}
+
 void NetworkService::OnBindInterface(
     const service_manager::BindSourceInfo& source_info,
     const std::string& interface_name,
     mojo::ScopedMessagePipeHandle interface_pipe) {
   registry_->BindInterface(interface_name, std::move(interface_pipe));
+}
+
+void NetworkService::OnNetworkContextConnectionClosed(
+    NetworkContext* network_context) {
+  auto it = owned_network_contexts_.find(network_context);
+  DCHECK(it != owned_network_contexts_.end());
+  owned_network_contexts_.erase(it);
 }
 
 void NetworkService::Bind(mojom::NetworkServiceRequest request) {

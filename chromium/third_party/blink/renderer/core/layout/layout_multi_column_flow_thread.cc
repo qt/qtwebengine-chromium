@@ -106,7 +106,7 @@ static inline bool CanContainSpannerInParentFragmentationContext(
     return false;
   const LayoutBlockFlow& block_flow = ToLayoutBlockFlow(object);
   return !block_flow.CreatesNewFormattingContext() &&
-         !block_flow.HasTransformRelatedProperty() &&
+         !block_flow.StyleRef().CanContainFixedPositionObjects(false) &&
          block_flow.GetPaginationBreakability() != LayoutBox::kForbidBreaks &&
          !IsMultiColumnContainer(block_flow);
 }
@@ -1169,8 +1169,8 @@ static inline bool NeedsToReinsertIntoFlowThread(
   // re-evaluate the need for column sets. There may be out-of-flow descendants
   // further down that become part of the flow thread, or cease to be part of
   // the flow thread, because of this change.
-  if (old_style.HasTransformRelatedProperty() !=
-      new_style.HasTransformRelatedProperty())
+  if (old_style.CanContainFixedPositionObjects(false) !=
+      new_style.CanContainFixedPositionObjects(false))
     return true;
   return (old_style.HasInFlowPosition() &&
           new_style.GetPosition() == EPosition::kStatic) ||
@@ -1459,6 +1459,47 @@ MultiColumnLayoutState LayoutMultiColumnFlowThread::GetMultiColumnLayoutState()
 void LayoutMultiColumnFlowThread::RestoreMultiColumnLayoutState(
     const MultiColumnLayoutState& state) {
   last_set_worked_on_ = state.ColumnSet();
+}
+
+unsigned LayoutMultiColumnFlowThread::CalculateActualColumnCountAllowance()
+    const {
+  // To avoid performance problems, limit the maximum number of columns. Try to
+  // identify legitimate reasons for creating many columns, and allow many
+  // columns in such cases. The amount of "content" will determine the
+  // allowance.
+  unsigned allowance = 0;
+
+  // This isn't a particularly clever algorithm. For example, we don't account
+  // for parallel flows (absolute positioning, floats, visible overflow, table
+  // cells, flex items). We just generously add everything together.
+  for (const LayoutObject* descendant = this; descendant;) {
+    bool examine_children = false;
+    if (descendant->IsBox() && !descendant->IsInline() &&
+        !ToLayoutBox(descendant)->IsWritingModeRoot()) {
+      // Give one point to any kind of block level content.
+      allowance++;
+      if (descendant->IsLayoutBlockFlow() && descendant->ChildrenInline()) {
+        // It's a block-level block container in the same writing mode, and it
+        // has inline children. Count the lines and add it to the allowance.
+        allowance += ToLayoutBlockFlow(descendant)->LineCount();
+      } else {
+        // We could examine other types of layout modes (tables, flexbox, etc.)
+        // as well, but then again, that might be overkill. Just enter and see
+        // what we find.
+        examine_children = true;
+      }
+    }
+
+    if (allowance >= ColumnCountClampMax())
+      return ColumnCountClampMax();
+
+    descendant = examine_children
+                     ? descendant->NextInPreOrder(this)
+                     : descendant->NextInPreOrderAfterChildren(this);
+  }
+
+  DCHECK_LE(allowance, ColumnCountClampMax());
+  return std::max(allowance, ColumnCountClampMin());
 }
 
 }  // namespace blink

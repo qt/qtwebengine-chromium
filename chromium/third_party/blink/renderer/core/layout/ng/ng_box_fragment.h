@@ -12,7 +12,6 @@
 
 namespace blink {
 
-class NGPhysicalBoxFragment;
 struct NGBaselineRequest;
 struct NGLineHeightMetrics;
 
@@ -31,8 +30,7 @@ class CORE_EXPORT NGBoxFragment final : public NGFragment {
   // not have any baselines, while the other version synthesize the baseline
   // from the box.
   NGLineHeightMetrics BaselineMetricsWithoutSynthesize(
-      const NGBaselineRequest&,
-      const NGConstraintSpace&) const;
+      const NGBaselineRequest&) const;
   NGLineHeightMetrics BaselineMetrics(const NGBaselineRequest&,
                                       const NGConstraintSpace&) const;
 };

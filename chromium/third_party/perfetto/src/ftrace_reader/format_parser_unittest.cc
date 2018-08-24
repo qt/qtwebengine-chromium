@@ -17,7 +17,6 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "perfetto/ftrace_reader/ftrace_to_proto.h"
 
 namespace perfetto {
 namespace {
@@ -25,7 +24,7 @@ namespace {
 using testing::ElementsAre;
 using testing::Eq;
 
-TEST(FtraceEventParser, HappyPath) {
+TEST(FtraceEventParserTest, HappyPath) {
   const std::string input = R"(name: the_name
 ID: 42
 format:
@@ -44,7 +43,7 @@ print fmt: "client_name=%s heap_name=%s len=%zu mask=0x%x flags=0x%x", REC->clie
   EXPECT_TRUE(ParseFtraceEvent(input));
   EXPECT_TRUE(ParseFtraceEvent(input, &output));
   EXPECT_EQ(output.name, "the_name");
-  EXPECT_EQ(output.id, 42);
+  EXPECT_EQ(output.id, 42u);
   EXPECT_THAT(
       output.fields,
       ElementsAre(
@@ -60,7 +59,7 @@ print fmt: "client_name=%s heap_name=%s len=%zu mask=0x%x flags=0x%x", REC->clie
           Eq(FtraceEvent::Field{"int common_pid", 4, 4, true})));
 }
 
-TEST(FtraceEventParser, MissingName) {
+TEST(FtraceEventParserTest, MissingName) {
   const std::string input = R"(ID: 42
 format:
 	field:unsigned short common_type;	offset:0;	size:2;	signed:0;
@@ -74,7 +73,7 @@ print fmt: "client_name=%s heap_name=%s len=%zu mask=0x%x flags=0x%x", REC->clie
   EXPECT_FALSE(ParseFtraceEvent(input));
 }
 
-TEST(FtraceEventParser, MissingID) {
+TEST(FtraceEventParserTest, MissingID) {
   const std::string input = R"(name: the_name
 format:
 	field:unsigned short common_type;	offset:0;	size:2;	signed:0;
@@ -88,7 +87,7 @@ print fmt: "client_name=%s heap_name=%s len=%zu mask=0x%x flags=0x%x", REC->clie
   EXPECT_FALSE(ParseFtraceEvent(input));
 }
 
-TEST(FtraceEventParser, NoFields) {
+TEST(FtraceEventParserTest, NoFields) {
   const std::string input = R"(name: the_name
 ID: 10
 print fmt: "client_name=%s heap_name=%s len=%zu mask=0x%x flags=0x%x", REC->client_name, REC->heap_name, REC->len, REC->mask, REC->flags
@@ -97,7 +96,7 @@ print fmt: "client_name=%s heap_name=%s len=%zu mask=0x%x flags=0x%x", REC->clie
   EXPECT_FALSE(ParseFtraceEvent(input));
 }
 
-TEST(FtraceEventParser, BasicFuzzing) {
+TEST(FtraceEventParserTest, BasicFuzzing) {
   const std::string input = R"(name: the_name
 ID: 42
 format:
@@ -122,6 +121,25 @@ print fmt: "client_name=%s heap_name=%s len=%zu mask=0x%x flags=0x%x", REC->clie
       ParseFtraceEvent(copy);
     }
   }
+}
+
+TEST(FtraceEventParserTest, GetNameFromTypeAndName) {
+  EXPECT_EQ(GetNameFromTypeAndName("int foo"), "foo");
+  EXPECT_EQ(GetNameFromTypeAndName("int foo_bar"), "foo_bar");
+  EXPECT_EQ(GetNameFromTypeAndName("const char * foo"), "foo");
+  EXPECT_EQ(GetNameFromTypeAndName("const char foo[64]"), "foo");
+  EXPECT_EQ(GetNameFromTypeAndName("char[] foo[16]"), "foo");
+  EXPECT_EQ(GetNameFromTypeAndName("u8 foo[(int)sizeof(struct blah)]"), "foo");
+
+  EXPECT_EQ(GetNameFromTypeAndName(""), "");
+  EXPECT_EQ(GetNameFromTypeAndName("]"), "");
+  EXPECT_EQ(GetNameFromTypeAndName("["), "");
+  EXPECT_EQ(GetNameFromTypeAndName(" "), "");
+  EXPECT_EQ(GetNameFromTypeAndName(" []"), "");
+  EXPECT_EQ(GetNameFromTypeAndName(" ]["), "");
+  EXPECT_EQ(GetNameFromTypeAndName("char"), "");
+  EXPECT_EQ(GetNameFromTypeAndName("char *"), "");
+  EXPECT_EQ(GetNameFromTypeAndName("char 42"), "");
 }
 
 }  // namespace

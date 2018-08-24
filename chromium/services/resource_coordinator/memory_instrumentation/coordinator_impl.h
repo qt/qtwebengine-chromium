@@ -65,6 +65,7 @@ class CoordinatorImpl : public Coordinator,
       RequestGlobalMemoryDumpCallback) override;
   void RequestGlobalMemoryDumpForPid(
       base::ProcessId,
+      const std::vector<std::string>& allocator_dump_names,
       RequestGlobalMemoryDumpForPidCallback) override;
   void RequestGlobalMemoryDumpAndAppendToTrace(
       base::trace_event::MemoryDumpType,
@@ -86,8 +87,7 @@ class CoordinatorImpl : public Coordinator,
   ~CoordinatorImpl() override;
 
  private:
-  using OSMemDumpMap =
-      std::unordered_map<base::ProcessId, mojom::RawOSMemDumpPtr>;
+  using OSMemDumpMap = base::flat_map<base::ProcessId, mojom::RawOSMemDumpPtr>;
   using RequestGlobalMemoryDumpInternalCallback =
       base::OnceCallback<void(bool, uint64_t, mojom::GlobalMemoryDumpPtr)>;
   friend std::default_delete<CoordinatorImpl>;  // For testing

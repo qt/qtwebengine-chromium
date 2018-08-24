@@ -14,7 +14,6 @@
 #include "base/android/scoped_java_ref.h"
 #include "base/bind.h"
 #include "base/lazy_instance.h"
-#include "base/message_loop/message_loop.h"
 #include "cc/layers/layer.h"
 #include "content/public/browser/android/compositor.h"
 #include "content/public/browser/android/content_view_layer_renderer.h"
@@ -112,6 +111,12 @@ void ContentViewRenderView::SetOverlayVideoMode(
   compositor_->SetRequiresAlphaChannel(enabled);
   compositor_->SetBackgroundColor(enabled ? SK_ColorTRANSPARENT
                                           : SK_ColorWHITE);
+  compositor_->SetNeedsComposite();
+}
+
+void ContentViewRenderView::SetNeedsComposite(
+    JNIEnv* env,
+    const base::android::JavaParamRef<jobject>& obj) {
   compositor_->SetNeedsComposite();
 }
 

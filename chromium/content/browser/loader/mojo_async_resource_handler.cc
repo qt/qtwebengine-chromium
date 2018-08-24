@@ -12,9 +12,9 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/time/time.h"
 #include "content/browser/loader/downloaded_temp_file_impl.h"
-#include "content/browser/loader/navigation_metrics.h"
 #include "content/browser/loader/resource_controller.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/loader/resource_request_info_impl.h"
@@ -40,9 +40,24 @@ constexpr size_t kMinAllocationSize = 2 * net::kMaxBytesToSniff;
 
 constexpr size_t kMaxChunkSize = 32 * 1024;
 
-void NotReached(network::mojom::URLLoaderRequest mojo_request,
-                network::mojom::URLLoaderClientPtr url_loader_client) {
-  NOTREACHED();
+// Records histograms for the time spent between several events in the
+// MojoAsyncResourceHandler for a navigation.
+// - |response_started| is when the response's headers and metadata are
+//   available. Loading is paused at this time.
+// - |proceed_with_response| is when loading is resumed.
+// - |first_read_completed| is when the first part of the body has been read.
+void RecordNavigationResourceHandlerMetrics(
+    base::TimeTicks response_started,
+    base::TimeTicks proceed_with_response,
+    base::TimeTicks first_read_completed) {
+  UMA_HISTOGRAM_TIMES(
+      "Navigation.ResourceHandler."
+      "ResponseStartedUntilProceedWithResponse",
+      proceed_with_response - response_started);
+  UMA_HISTOGRAM_TIMES(
+      "Navigation.ResourceHandler."
+      "ProceedWithResponseUntilFirstReadCompleted",
+      first_read_completed - proceed_with_response);
 }
 
 }  // namespace
@@ -120,13 +135,6 @@ MojoAsyncResourceHandler::MojoAsyncResourceHandler(
   // the callback will never be called after |this| is destroyed.
   binding_.set_connection_error_with_reason_handler(base::BindOnce(
       &MojoAsyncResourceHandler::Cancel, base::Unretained(this)));
-
-  if (IsResourceTypeFrame(resource_type)) {
-    GetRequestInfo()->set_on_transfer(base::Bind(
-        &MojoAsyncResourceHandler::OnTransfer, weak_factory_.GetWeakPtr()));
-  } else {
-    GetRequestInfo()->set_on_transfer(base::Bind(&NotReached));
-  }
 }
 
 MojoAsyncResourceHandler::~MojoAsyncResourceHandler() {
@@ -256,7 +264,7 @@ void MojoAsyncResourceHandler::OnWillRead(
     first_call = true;
     MojoCreateDataPipeOptions options;
     options.struct_size = sizeof(MojoCreateDataPipeOptions);
-    options.flags = MOJO_CREATE_DATA_PIPE_OPTIONS_FLAG_NONE;
+    options.flags = MOJO_CREATE_DATA_PIPE_FLAG_NONE;
     options.element_num_bytes = 1;
     options.capacity_num_bytes = g_allocation_size;
     mojo::ScopedDataPipeProducerHandle producer;
@@ -381,7 +389,11 @@ void MojoAsyncResourceHandler::OnDataDownloaded(int bytes_downloaded) {
                                        CalculateRecentlyReceivedBytes());
 }
 
-void MojoAsyncResourceHandler::FollowRedirect() {
+void MojoAsyncResourceHandler::FollowRedirect(
+    const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
+  DCHECK(!modified_request_headers.has_value()) << "Redirect with modified "
+                                                   "headers was not supported "
+                                                   "yet. crbug.com/845683";
   if (!request()->status().is_success()) {
     DVLOG(1) << "FollowRedirect for invalid request";
     return;
@@ -492,6 +504,20 @@ void MojoAsyncResourceHandler::OnResponseCompleted(
     net::NetErrorDetails details;
     request()->PopulateNetErrorDetails(&details);
     loader_status.extended_error_code = details.quic_connection_error;
+  } else if (error_code == net::ERR_BLOCKED_BY_CLIENT ||
+             error_code == net::ERR_BLOCKED_BY_RESPONSE) {
+    ResourceRequestInfoImpl* resource_request_info =
+        ResourceRequestInfoImpl::ForRequest(request());
+    auto maybe_reason =
+        resource_request_info->GetResourceRequestBlockedReason();
+    // Ideally, every blocked by client / blocked by response error
+    // would be annotated with a blocked reason, but we can't guarantee it
+    // here, so sometimes we won't populate extended_error_code which
+    // corresonds ResourceRequestBlockedReason::kOther.
+    if (maybe_reason) {
+      loader_status.extended_error_code =
+          static_cast<int>(maybe_reason.value());
+    }
   }
   loader_status.exists_in_cache = request()->response_info().was_cached;
   loader_status.completion_time = base::TimeTicks::Now();
@@ -635,16 +661,6 @@ MojoAsyncResourceHandler::CreateUploadProgressTracker(
     network::UploadProgressTracker::UploadProgressReportCallback callback) {
   return std::make_unique<network::UploadProgressTracker>(
       from_here, std::move(callback), request());
-}
-
-void MojoAsyncResourceHandler::OnTransfer(
-    network::mojom::URLLoaderRequest mojo_request,
-    network::mojom::URLLoaderClientPtr url_loader_client) {
-  binding_.Unbind();
-  binding_.Bind(std::move(mojo_request));
-  binding_.set_connection_error_with_reason_handler(base::BindOnce(
-      &MojoAsyncResourceHandler::Cancel, base::Unretained(this)));
-  url_loader_client_ = std::move(url_loader_client);
 }
 
 void MojoAsyncResourceHandler::SendUploadProgress(

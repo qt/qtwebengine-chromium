@@ -20,7 +20,7 @@ TEST(CXFA_FMParserTest, Empty) {
 
   CXFA_FMToJavaScriptDepth::Reset();
   CFX_WideTextBuf buf;
-  EXPECT_TRUE(ast->ToJavaScript(buf));
+  EXPECT_TRUE(ast->ToJavaScript(&buf));
   // TODO(dsinclair): This is a little weird .....
   EXPECT_EQ(L"// comments only", buf.AsStringView());
 }
@@ -35,13 +35,23 @@ TEST(CXFA_FMParserTest, CommentOnlyIsError) {
 
   CXFA_FMToJavaScriptDepth::Reset();
   CFX_WideTextBuf buf;
-  EXPECT_TRUE(ast->ToJavaScript(buf));
+  EXPECT_TRUE(ast->ToJavaScript(&buf));
   EXPECT_EQ(L"// comments only", buf.AsStringView());
 }
 
 TEST(CXFA_FMParserTest, CommentThenValue) {
   const wchar_t ret[] =
       L"(function() {\n"
+      L"let pfm_method_runner = function(obj, cb) {\n"
+      L"  if (pfm_rt.is_ary(obj)) {\n"
+      L"    let pfm_method_return = null;\n"
+      L"    for (var idx = obj.length -1; idx > 1; idx--) {\n"
+      L"      pfm_method_return = cb(obj[idx]);\n"
+      L"    }\n"
+      L"    return pfm_method_return;\n"
+      L"  }\n"
+      L"  return cb(obj);\n"
+      L"};\n"
       L"var pfm_ret = null;\n"
       L"pfm_ret = 12;\n"
       L"return pfm_rt.get_val(pfm_ret);\n"
@@ -54,7 +64,7 @@ TEST(CXFA_FMParserTest, CommentThenValue) {
 
   CXFA_FMToJavaScriptDepth::Reset();
   CFX_WideTextBuf buf;
-  EXPECT_TRUE(ast->ToJavaScript(buf));
+  EXPECT_TRUE(ast->ToJavaScript(&buf));
   EXPECT_EQ(ret, buf.AsStringView());
 }
 
@@ -75,6 +85,16 @@ TEST(CXFA_FMParserTest, Parse) {
 
   const wchar_t ret[] =
       L"(function() {\n"
+      L"let pfm_method_runner = function(obj, cb) {\n"
+      L"  if (pfm_rt.is_ary(obj)) {\n"
+      L"    let pfm_method_return = null;\n"
+      L"    for (var idx = obj.length -1; idx > 1; idx--) {\n"
+      L"      pfm_method_return = cb(obj[idx]);\n"
+      L"    }\n"
+      L"    return pfm_method_return;\n"
+      L"  }\n"
+      L"  return cb(obj);\n"
+      L"};\n"
       L"var pfm_ret = null;\n"
       L"if (pfm_rt.is_obj(this))\n{\n"
       L"pfm_rt.asgn_val_op(this, pfm_rt.Avg(pfm_rt.neg_op(3), 5, "
@@ -123,7 +143,7 @@ TEST(CXFA_FMParserTest, Parse) {
 
   CXFA_FMToJavaScriptDepth::Reset();
   CFX_WideTextBuf buf;
-  EXPECT_TRUE(ast->ToJavaScript(buf));
+  EXPECT_TRUE(ast->ToJavaScript(&buf));
   EXPECT_EQ(ret, buf.AsStringView());
 }
 
@@ -159,6 +179,16 @@ TEST(CXFA_FMParserTest, ParseFuncWithParams) {
 
   const wchar_t ret[] = {
       L"(function() {\n"
+      L"let pfm_method_runner = function(obj, cb) {\n"
+      L"  if (pfm_rt.is_ary(obj)) {\n"
+      L"    let pfm_method_return = null;\n"
+      L"    for (var idx = obj.length -1; idx > 1; idx--) {\n"
+      L"      pfm_method_return = cb(obj[idx]);\n"
+      L"    }\n"
+      L"    return pfm_method_return;\n"
+      L"  }\n"
+      L"  return cb(obj);\n"
+      L"};\n"
       L"var pfm_ret = null;\n"
       L"function MyFunction(param1, param2) {\n"
       L"var pfm_ret = null;\n"
@@ -175,7 +205,7 @@ TEST(CXFA_FMParserTest, ParseFuncWithParams) {
 
   CXFA_FMToJavaScriptDepth::Reset();
   CFX_WideTextBuf buf;
-  EXPECT_TRUE(ast->ToJavaScript(buf));
+  EXPECT_TRUE(ast->ToJavaScript(&buf));
   EXPECT_EQ(ret, buf.AsStringView());
 }
 
@@ -187,6 +217,16 @@ TEST(CXFA_FMParserTest, ParseFuncWithoutParams) {
 
   const wchar_t ret[] = {
       L"(function() {\n"
+      L"let pfm_method_runner = function(obj, cb) {\n"
+      L"  if (pfm_rt.is_ary(obj)) {\n"
+      L"    let pfm_method_return = null;\n"
+      L"    for (var idx = obj.length -1; idx > 1; idx--) {\n"
+      L"      pfm_method_return = cb(obj[idx]);\n"
+      L"    }\n"
+      L"    return pfm_method_return;\n"
+      L"  }\n"
+      L"  return cb(obj);\n"
+      L"};\n"
       L"var pfm_ret = null;\n"
       L"function MyFunction() {\n"
       L"var pfm_ret = null;\n"
@@ -203,7 +243,7 @@ TEST(CXFA_FMParserTest, ParseFuncWithoutParams) {
 
   CXFA_FMToJavaScriptDepth::Reset();
   CFX_WideTextBuf buf;
-  EXPECT_TRUE(ast->ToJavaScript(buf));
+  EXPECT_TRUE(ast->ToJavaScript(&buf));
   EXPECT_EQ(ret, buf.AsStringView());
 }
 
@@ -256,4 +296,78 @@ TEST(CXFA_FMParserTest, ParseDepthWithWideTree) {
     ASSERT_TRUE(ast == nullptr);
     EXPECT_TRUE(parser->HasError());
   }
+}
+
+TEST(CXFA_FMParserTest, ParseCallSmall) {
+  const wchar_t input[] = {L"i.f(O)"};
+  const wchar_t ret[] = {
+      L"(function() {\n"
+      L"let pfm_method_runner = function(obj, cb) {\n"
+      L"  if (pfm_rt.is_ary(obj)) {\n"
+      L"    let pfm_method_return = null;\n"
+      L"    for (var idx = obj.length -1; idx > 1; idx--) {\n"
+      L"      pfm_method_return = cb(obj[idx]);\n"
+      L"    }\n"
+      L"    return pfm_method_return;\n"
+      L"  }\n"
+      L"  return cb(obj);\n"
+      L"};\n"
+      L"var pfm_ret = null;\n"
+      L"pfm_ret = pfm_rt.get_val((function() {\n"
+      L"  return pfm_method_runner(i, function(obj) {\n"
+      L"    return obj.f(pfm_rt.get_val(O));\n"
+      L"  });\n"
+      L"}).call(this));\n"
+      L"return pfm_rt.get_val(pfm_ret);\n"
+      L"}).call(this);"};
+
+  auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+  std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
+  EXPECT_FALSE(parser->HasError());
+
+  CXFA_FMToJavaScriptDepth::Reset();
+  CFX_WideTextBuf buf;
+  EXPECT_TRUE(ast->ToJavaScript(&buf));
+  EXPECT_EQ(ret, buf.AsStringView());
+}
+
+TEST(CXFA_FMParserTest, ParseCallBig) {
+  const wchar_t input[] = {L"i.f(O.e(O.e(O)))"};
+  const wchar_t ret[] = {
+      L"(function() {\n"
+      L"let pfm_method_runner = function(obj, cb) {\n"
+      L"  if (pfm_rt.is_ary(obj)) {\n"
+      L"    let pfm_method_return = null;\n"
+      L"    for (var idx = obj.length -1; idx > 1; idx--) {\n"
+      L"      pfm_method_return = cb(obj[idx]);\n"
+      L"    }\n"
+      L"    return pfm_method_return;\n"
+      L"  }\n"
+      L"  return cb(obj);\n"
+      L"};\n"
+      L"var pfm_ret = null;\n"
+      L"pfm_ret = pfm_rt.get_val((function() {\n"
+      L"  return pfm_method_runner(i, function(obj) {\n"
+      L"    return obj.f(pfm_rt.get_val((function() {\n"
+      L"  return pfm_method_runner(O, function(obj) {\n"
+      L"    return obj.e(pfm_rt.get_val((function() {\n"
+      L"  return pfm_method_runner(O, function(obj) {\n"
+      L"    return obj.e(pfm_rt.get_val(O));\n"
+      L"  });\n"
+      L"}).call(this)));\n"
+      L"  });\n"
+      L"}).call(this)));\n"
+      L"  });\n"
+      L"}).call(this));\n"
+      L"return pfm_rt.get_val(pfm_ret);\n"
+      L"}).call(this);"};
+
+  auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+  std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
+  EXPECT_FALSE(parser->HasError());
+
+  CXFA_FMToJavaScriptDepth::Reset();
+  CFX_WideTextBuf buf;
+  EXPECT_TRUE(ast->ToJavaScript(&buf));
+  EXPECT_EQ(ret, buf.AsStringView());
 }

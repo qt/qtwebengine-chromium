@@ -110,6 +110,8 @@ class MockCustomProcessing : public CustomProcessing {
   virtual ~MockCustomProcessing() {}
   MOCK_METHOD2(Initialize, void(int sample_rate_hz, int num_channels));
   MOCK_METHOD1(Process, void(AudioBuffer* audio));
+  MOCK_METHOD1(SetRuntimeSetting,
+               void(AudioProcessing::RuntimeSetting setting));
   MOCK_CONST_METHOD0(ToString, std::string());
 };
 
@@ -168,6 +170,7 @@ class MockAudioProcessing : public testing::NiceMock<AudioProcessing> {
   MOCK_CONST_METHOD0(num_output_channels, size_t());
   MOCK_CONST_METHOD0(num_reverse_channels, size_t());
   MOCK_METHOD1(set_output_will_be_muted, void(bool muted));
+  MOCK_METHOD1(SetRuntimeSetting, void(RuntimeSetting setting));
   MOCK_METHOD1(ProcessStream, int(AudioFrame* frame));
   MOCK_METHOD7(ProcessStream, int(const float* const* src,
                                   size_t samples_per_channel,

@@ -7,6 +7,7 @@ module device.mojom;
 import "mojo/public/mojom/base/time.mojom";
 import "gpu/ipc/common/mailbox_holder.mojom";
 import "gpu/ipc/common/sync_token.mojom";
+import "ui/display/mojo/display.mojom";
 import "ui/gfx/geometry/mojo/geometry.mojom";
 import "ui/gfx/mojo/gpu_fence_handle.mojom";
 import "ui/gfx/mojo/transform.mojom";
@@ -81,13 +82,25 @@ struct VRPose {
   // For WebXR sessions only, reports the state of all active input devices
   // synced with the head pose.
   array<XRInputSourceState>? input_state;
+
+  // Indicates that a reset pose event was triggered, either by device specific
+  // UI or by some other method, and handled on the browser side, and the
+  // renderer should now bubble up an event to the WebXRDevice API.
+  bool pose_reset;
 };
 
 struct VRDisplayCapabilities {
   bool hasPosition;
   bool hasExternalDisplay;
+
   // Indicates whether the display can actively show imagery on a headset.
   bool canPresent;
+
+  // If true, this is an AR display that can provide a background image along
+  // with each pose. Clients who want them should send a frame image request
+  // via getFrameData instead of getPose.
+  // TODO(https://crbug.com/836349): this may need to change.
+  bool can_provide_pass_through_images;
 };
 
 // Information about the optical properties for an eye in a VRDisplay.
@@ -157,6 +170,22 @@ struct VRDisplayFrameTransportOptions {
   bool wait_for_transfer_notification;
   bool wait_for_render_notification;
   bool wait_for_gpu_fence;
+};
+
+// The data needed for each frame for a magic window experience
+// that uses a background image / projection matrix instead of
+// just a VRPose - ex: non-exclusive AR needs a camera image and
+// to get a projection matrix directly from the backend rather than
+// FOV values to support features like focus.
+struct VRMagicWindowFrameData {
+  VRPose pose;
+  gpu.mojom.MailboxHolder buffer_holder;
+  gfx.mojom.Size buffer_size;
+  // TODO(https://crbug.com/838515): Is this delta since the last
+  // frame? OR an unspecified origin? Something else?
+  mojo_base.mojom.TimeDelta time_delta;
+  array<float, 16> projection_matrix;
+
 };
 
 enum VRDisplayEventReason {
@@ -232,10 +261,24 @@ interface VRDisplayHost {
   ExitPresent();
 };
 
-// Provides the necessary functionality for a non-presenting WebVR page to draw
-// magic window content.
+// Provides the necessary functionality for a non-presenting WebXR session to
+// draw magic window content.
+// This interface is hosted in the Browser process, but will move to a sandboxed
+// utility process on Windows.  The render process communicates with it.
+// For AR displays (VRDisplayCapabilities.can_provide_pass_through_images
+// is true), clients can use GetFrameData to get images.
+// TODO(836478): rename VRMagicWindowProvider to NonExclusiveWindowProvider or
+// similar.
 interface VRMagicWindowProvider {
   GetPose() => (VRPose? pose);
+
+  // Different devices can have different native orientations - 0
+  // is the native orientation, and then increments of 90 degrees
+  // from there.
+  // TODO(https://crbug.com/837944): frame_data should not be optional.
+  GetFrameData(gfx.mojom.Size frame_size,
+      display.mojom.Rotation display_rotation) =>
+      (VRMagicWindowFrameData? frame_data);
 };
 
 // Provides the necessary functionality for a presenting WebVR page to draw

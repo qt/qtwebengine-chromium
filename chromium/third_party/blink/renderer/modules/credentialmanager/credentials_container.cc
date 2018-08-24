@@ -83,7 +83,7 @@ class ScopedPromiseResolver {
     //  so go out on a limb and try to provide an actionable error message.
     resolver_->Reject(DOMException::Create(
         kNotSupportedError,
-        "The user agent either does not implement a password store or does"
+        "The user agent either does not implement a password store or does "
         "not support public key credentials."));
   }
 
@@ -356,6 +356,9 @@ void OnMakePublicKeyCredentialComplete(
     DCHECK(credential);
     DCHECK(!credential->info->client_data_json.IsEmpty());
     DCHECK(!credential->attestation_object.IsEmpty());
+    UseCounter::Count(
+        resolver->GetExecutionContext(),
+        WebFeature::kCredentialManagerMakePublicKeyCredentialSuccess);
     DOMArrayBuffer* client_data_buffer =
         VectorToDOMArrayBuffer(std::move(credential->info->client_data_json));
     DOMArrayBuffer* raw_id =
@@ -379,7 +382,7 @@ void OnGetAssertionComplete(
     std::unique_ptr<ScopedPromiseResolver> scoped_resolver,
     AuthenticatorStatus status,
     GetAssertionAuthenticatorResponsePtr credential) {
-  auto resolver = scoped_resolver->Release();
+  auto* resolver = scoped_resolver->Release();
   const auto required_origin_type = RequiredOriginType::kSecure;
 
   AssertSecurityRequirementsBeforeResponse(resolver, required_origin_type);
@@ -387,6 +390,9 @@ void OnGetAssertionComplete(
     DCHECK(credential);
     DCHECK(!credential->signature.IsEmpty());
     DCHECK(!credential->authenticator_data.IsEmpty());
+    UseCounter::Count(
+        resolver->GetExecutionContext(),
+        WebFeature::kCredentialManagerGetPublicKeyCredentialSuccess);
     DOMArrayBuffer* client_data_buffer =
         VectorToDOMArrayBuffer(std::move(credential->info->client_data_json));
     DOMArrayBuffer* raw_id =
@@ -399,7 +405,7 @@ void OnGetAssertionComplete(
     DOMArrayBuffer* user_handle =
         credential->user_handle
             ? VectorToDOMArrayBuffer(std::move(*credential->user_handle))
-            : DOMArrayBuffer::Create(nullptr, 0);
+            : nullptr;
     AuthenticatorAssertionResponse* authenticator_response =
         AuthenticatorAssertionResponse::Create(client_data_buffer,
                                                authenticator_buffer,
@@ -435,22 +441,33 @@ ScriptPromise CredentialsContainer::get(
     return promise;
 
   if (options.hasPublicKey()) {
+    UseCounter::Count(resolver->GetExecutionContext(),
+                      WebFeature::kCredentialManagerGetPublicKeyCredential);
+
     const String& relying_party_id = options.publicKey().rpId();
     if (!CheckPublicKeySecurityRequirements(resolver, relying_party_id))
       return promise;
 
-    if (options.publicKey().hasExtensions() &&
-        options.publicKey().extensions().hasAppid()) {
-      const auto& appid = options.publicKey().extensions().appid();
-      if (!appid.IsEmpty()) {
-        KURL appid_url(appid);
-        if (!appid_url.IsValid()) {
-          resolver->Reject(
-              DOMException::Create(kSyntaxError,
-                                   "The `appid` extension value is neither "
-                                   "empty/null nor a valid URL"));
-          return promise;
+    if (options.publicKey().hasExtensions()) {
+      if (options.publicKey().extensions().hasAppid()) {
+        const auto& appid = options.publicKey().extensions().appid();
+        if (!appid.IsEmpty()) {
+          KURL appid_url(appid);
+          if (!appid_url.IsValid()) {
+            resolver->Reject(
+                DOMException::Create(kSyntaxError,
+                                     "The `appid` extension value is neither "
+                                     "empty/null nor a valid URL"));
+            return promise;
+          }
         }
+      }
+      if (options.publicKey().extensions().hasCableRegistration()) {
+        resolver->Reject(DOMException::Create(
+            kNotSupportedError,
+            "The 'cableRegistration' extension is only valid when creating "
+            "a credential"));
+        return promise;
       }
     }
 
@@ -586,18 +603,29 @@ ScriptPromise CredentialsContainer::create(
         FederatedCredential::Create(options.federated(), exception_state));
   } else {
     DCHECK(options.hasPublicKey());
+    UseCounter::Count(resolver->GetExecutionContext(),
+                      WebFeature::kCredentialManagerCreatePublicKeyCredential);
+
     const String& relying_party_id = options.publicKey().rp().id();
     if (!CheckPublicKeySecurityRequirements(resolver, relying_party_id))
       return promise;
 
-    if (options.publicKey().hasExtensions() &&
-        options.publicKey().extensions().hasAppid()) {
-      resolver->Reject(DOMException::Create(
-          kNotSupportedError,
-          "The 'appid' extension is only valid when requesting an assertion "
-          "for a pre-existing credential that was registered using the "
-          "legacy FIDO U2F API."));
-      return promise;
+    if (options.publicKey().hasExtensions()) {
+      if (options.publicKey().extensions().hasAppid()) {
+        resolver->Reject(DOMException::Create(
+            kNotSupportedError,
+            "The 'appid' extension is only valid when requesting an assertion "
+            "for a pre-existing credential that was registered using the "
+            "legacy FIDO U2F API."));
+        return promise;
+      }
+      if (options.publicKey().extensions().hasCableAuthenticationData()) {
+        resolver->Reject(DOMException::Create(
+            kNotSupportedError,
+            "The 'cableAuthentication' extension is only valid when requesting "
+            "an assertion"));
+        return promise;
+      }
     }
 
     auto mojo_options =

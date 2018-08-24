@@ -37,7 +37,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_script_runner.h"
 #include "third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/workers/worker_or_worklet_global_scope.h"
 #include "third_party/blink/renderer/platform/bindings/v8_dom_wrapper.h"
@@ -82,7 +82,7 @@ v8::Local<v8::Value> V8WorkerOrWorkletEventListener::CallListenerFunction(
   v8::Local<v8::Value> parameters[1] = {js_event};
   v8::MaybeLocal<v8::Value> maybe_result = V8ScriptRunner::CallFunction(
       handler_function, ToExecutionContext(script_state->GetContext()),
-      receiver, WTF_ARRAY_LENGTH(parameters), parameters, GetIsolate());
+      receiver, arraysize(parameters), parameters, GetIsolate());
 
   v8::Local<v8::Value> result;
   if (!maybe_result.ToLocal(&result))

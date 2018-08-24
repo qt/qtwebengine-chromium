@@ -16,6 +16,8 @@
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #endif
 
+#include <iosfwd>
+
 namespace blink {
 
 class ClipPaintPropertyNode;
@@ -114,9 +116,9 @@ class PaintPropertyNode : public RefCounted<NodeType> {
 
  protected:
   PaintPropertyNode(scoped_refptr<const NodeType> parent)
-      : parent_(std::move(parent)), changed_(false) {}
+      : parent_(std::move(parent)) {}
 
-  bool Update(scoped_refptr<const NodeType> parent) {
+  bool SetParent(scoped_refptr<const NodeType> parent) {
     DCHECK(!IsRoot());
     DCHECK(parent != this);
     if (parent == parent_)
@@ -131,7 +133,7 @@ class PaintPropertyNode : public RefCounted<NodeType> {
 
  private:
   scoped_refptr<const NodeType> parent_;
-  mutable bool changed_;
+  mutable bool changed_ = true;
 
 #if DCHECK_IS_ON()
   String debug_name_;

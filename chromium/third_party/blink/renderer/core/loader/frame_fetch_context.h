@@ -31,6 +31,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_LOADER_FRAME_FETCH_CONTEXT_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LOADER_FRAME_FETCH_CONTEXT_H_
 
+#include "base/optional.h"
 #include "base/single_thread_task_runner.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
@@ -78,6 +79,14 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
 
   void AddAdditionalRequestHeaders(ResourceRequest&,
                                    FetchResourceType) override;
+  base::Optional<ResourceRequestBlockedReason> CanRequest(
+      Resource::Type type,
+      const ResourceRequest& resource_request,
+      const KURL& url,
+      const ResourceLoaderOptions& options,
+      SecurityViolationReportingPolicy reporting_policy,
+      FetchParameters::OriginRestriction origin_restriction,
+      ResourceRequest::RedirectStatus redirect_status) const override;
   mojom::FetchCacheMode ResourceRequestCachePolicy(
       const ResourceRequest&,
       Resource::Type,
@@ -112,7 +121,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   void DispatchDidDownloadToBlob(unsigned long identifier,
                                  BlobDataHandle*) override;
   void DispatchDidFinishLoading(unsigned long identifier,
-                                double finish_time,
+                                TimeTicks finish_time,
                                 int64_t encoded_data_length,
                                 int64_t decoded_body_length,
                                 bool blocked_cross_site_document) override;
@@ -211,6 +220,8 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   void CountUsage(WebFeature) const override;
   void CountDeprecation(WebFeature) const override;
   bool ShouldBlockWebSocketByMixedContentCheck(const KURL&) const override;
+  std::unique_ptr<WebSocketHandshakeThrottle> CreateWebSocketHandshakeThrottle()
+      override;
   bool ShouldBlockFetchByMixedContentCheck(
       WebURLRequest::RequestContext,
       network::mojom::RequestContextFrameType,
@@ -224,7 +235,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   String GetOutgoingReferrer() const override;
   const KURL& Url() const override;
   const SecurityOrigin* GetParentSecurityOrigin() const override;
-  Optional<mojom::IPAddressSpace> GetAddressSpace() const override;
+  base::Optional<mojom::IPAddressSpace> GetAddressSpace() const override;
   const ContentSecurityPolicy* GetContentSecurityPolicy() const override;
   void AddConsoleMessage(ConsoleMessage*) const override;
 

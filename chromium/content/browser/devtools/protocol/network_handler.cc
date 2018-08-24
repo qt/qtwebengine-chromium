@@ -17,14 +17,21 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
+#include "content/browser/background_sync/background_sync_manager.h"
 #include "content/browser/devtools/devtools_interceptor_controller.h"
+#include "content/browser/devtools/devtools_io_context.h"
 #include "content/browser/devtools/devtools_session.h"
+#include "content/browser/devtools/devtools_stream_pipe.h"
 #include "content/browser/devtools/devtools_url_loader_interceptor.h"
 #include "content/browser/devtools/protocol/page.h"
 #include "content/browser/devtools/protocol/security.h"
+#include "content/browser/devtools/service_worker_devtools_agent_host.h"
+#include "content/browser/devtools/service_worker_devtools_manager.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/navigation_request.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
+#include "content/browser/storage_partition_impl.h"
+#include "content/browser/web_package/signed_exchange_header.h"
 #include "content/common/navigation_params.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -61,6 +68,7 @@
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/resource_response.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
+#include "third_party/blink/public/platform/resource_request_blocked_reason.h"
 #include "third_party/boringssl/src/include/openssl/ssl.h"
 
 namespace content {
@@ -620,34 +628,45 @@ net::Error NetErrorFromString(const std::string& error, bool* ok) {
     return net::ERR_INTERNET_DISCONNECTED;
   if (error == Network::ErrorReasonEnum::AddressUnreachable)
     return net::ERR_ADDRESS_UNREACHABLE;
+  if (error == Network::ErrorReasonEnum::BlockedByClient)
+    return net::ERR_BLOCKED_BY_CLIENT;
+  if (error == Network::ErrorReasonEnum::BlockedByResponse)
+    return net::ERR_BLOCKED_BY_RESPONSE;
   *ok = false;
   return net::ERR_FAILED;
 }
 
 String NetErrorToString(int net_error) {
-  if (net_error == net::ERR_ABORTED)
-    return Network::ErrorReasonEnum::Aborted;
-  if (net_error == net::ERR_TIMED_OUT)
-    return Network::ErrorReasonEnum::TimedOut;
-  if (net_error == net::ERR_ACCESS_DENIED)
-    return Network::ErrorReasonEnum::AccessDenied;
-  if (net_error == net::ERR_CONNECTION_CLOSED)
-    return Network::ErrorReasonEnum::ConnectionClosed;
-  if (net_error == net::ERR_CONNECTION_RESET)
-    return Network::ErrorReasonEnum::ConnectionReset;
-  if (net_error == net::ERR_CONNECTION_REFUSED)
-    return Network::ErrorReasonEnum::ConnectionRefused;
-  if (net_error == net::ERR_CONNECTION_ABORTED)
-    return Network::ErrorReasonEnum::ConnectionAborted;
-  if (net_error == net::ERR_CONNECTION_FAILED)
-    return Network::ErrorReasonEnum::ConnectionFailed;
-  if (net_error == net::ERR_NAME_NOT_RESOLVED)
-    return Network::ErrorReasonEnum::NameNotResolved;
-  if (net_error == net::ERR_INTERNET_DISCONNECTED)
-    return Network::ErrorReasonEnum::InternetDisconnected;
-  if (net_error == net::ERR_ADDRESS_UNREACHABLE)
-    return Network::ErrorReasonEnum::AddressUnreachable;
-  return Network::ErrorReasonEnum::Failed;
+  switch (net_error) {
+    case net::ERR_ABORTED:
+      return Network::ErrorReasonEnum::Aborted;
+    case net::ERR_TIMED_OUT:
+      return Network::ErrorReasonEnum::TimedOut;
+    case net::ERR_ACCESS_DENIED:
+      return Network::ErrorReasonEnum::AccessDenied;
+    case net::ERR_CONNECTION_CLOSED:
+      return Network::ErrorReasonEnum::ConnectionClosed;
+    case net::ERR_CONNECTION_RESET:
+      return Network::ErrorReasonEnum::ConnectionReset;
+    case net::ERR_CONNECTION_REFUSED:
+      return Network::ErrorReasonEnum::ConnectionRefused;
+    case net::ERR_CONNECTION_ABORTED:
+      return Network::ErrorReasonEnum::ConnectionAborted;
+    case net::ERR_CONNECTION_FAILED:
+      return Network::ErrorReasonEnum::ConnectionFailed;
+    case net::ERR_NAME_NOT_RESOLVED:
+      return Network::ErrorReasonEnum::NameNotResolved;
+    case net::ERR_INTERNET_DISCONNECTED:
+      return Network::ErrorReasonEnum::InternetDisconnected;
+    case net::ERR_ADDRESS_UNREACHABLE:
+      return Network::ErrorReasonEnum::AddressUnreachable;
+    case net::ERR_BLOCKED_BY_CLIENT:
+      return Network::ErrorReasonEnum::BlockedByClient;
+    case net::ERR_BLOCKED_BY_RESPONSE:
+      return Network::ErrorReasonEnum::BlockedByResponse;
+    default:
+      return Network::ErrorReasonEnum::Failed;
+  }
 }
 
 bool AddInterceptedResourceType(
@@ -857,16 +876,75 @@ std::string StripFragment(const GURL& url) {
 
 }  // namespace
 
-NetworkHandler::NetworkHandler(const std::string& host_id)
+class BackgroundSyncRestorer {
+ public:
+  BackgroundSyncRestorer(const std::string& host_id,
+                         StoragePartition* storage_partition)
+      : host_id_(host_id), storage_partition_(storage_partition) {
+    SetServiceWorkerOffline(true);
+  }
+
+  ~BackgroundSyncRestorer() { SetServiceWorkerOffline(false); }
+
+  void SetStoragePartition(StoragePartition* storage_partition) {
+    storage_partition_ = storage_partition;
+  }
+
+ private:
+  void SetServiceWorkerOffline(bool offline) {
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
+    scoped_refptr<DevToolsAgentHost> host =
+        DevToolsAgentHost::GetForId(host_id_);
+    if (!host || !storage_partition_ ||
+        host->GetType() != DevToolsAgentHost::kTypeServiceWorker) {
+      return;
+    }
+    scoped_refptr<ServiceWorkerDevToolsAgentHost> service_worker_host =
+        static_cast<ServiceWorkerDevToolsAgentHost*>(host.get());
+    scoped_refptr<BackgroundSyncContext> sync_context =
+        static_cast<StoragePartitionImpl*>(storage_partition_)
+            ->GetBackgroundSyncContext();
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::BindOnce(
+            &SetServiceWorkerOfflineOnIO, sync_context,
+            base::RetainedRef(static_cast<ServiceWorkerContextWrapper*>(
+                storage_partition_->GetServiceWorkerContext())),
+            service_worker_host->version_id(), offline));
+  }
+
+  static void SetServiceWorkerOfflineOnIO(
+      scoped_refptr<BackgroundSyncContext> sync_context,
+      scoped_refptr<ServiceWorkerContextWrapper> swcontext,
+      int64_t version_id,
+      bool offline) {
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
+    ServiceWorkerVersion* version = swcontext.get()->GetLiveVersion(version_id);
+    if (!version)
+      return;
+    sync_context->background_sync_manager()->EmulateServiceWorkerOffline(
+        version->registration_id(), offline);
+  }
+
+  std::string host_id_;
+  StoragePartition* storage_partition_;
+
+  DISALLOW_COPY_AND_ASSIGN(BackgroundSyncRestorer);
+};
+
+NetworkHandler::NetworkHandler(const std::string& host_id,
+                               DevToolsIOContext* io_context)
     : DevToolsDomainHandler(Network::Metainfo::domainName),
+      host_id_(host_id),
+      io_context_(io_context),
       browser_context_(nullptr),
       storage_partition_(nullptr),
       host_(nullptr),
       enabled_(false),
-      host_id_(host_id),
       bypass_service_worker_(false),
       cache_disabled_(false),
       weak_factory_(this) {
+  DCHECK(io_context_);
   static bool have_configured_service_worker_context = false;
   if (have_configured_service_worker_context)
     return;
@@ -902,6 +980,8 @@ void NetworkHandler::SetRenderer(int render_process_host_id,
     browser_context_ = nullptr;
   }
   host_ = frame_host;
+  if (background_sync_restorer_)
+    background_sync_restorer_->SetStoragePartition(storage_partition_);
 }
 
 Response NetworkHandler::Enable(Maybe<int> max_total_size,
@@ -1405,6 +1485,36 @@ std::unique_ptr<Network::Response> BuildResponse(
 
   return response;
 }
+
+String blockedReason(blink::ResourceRequestBlockedReason reason) {
+  switch (reason) {
+    case blink::ResourceRequestBlockedReason::kCSP:
+      return protocol::Network::BlockedReasonEnum::Csp;
+    case blink::ResourceRequestBlockedReason::kMixedContent:
+      return protocol::Network::BlockedReasonEnum::MixedContent;
+    case blink::ResourceRequestBlockedReason::kOrigin:
+      return protocol::Network::BlockedReasonEnum::Origin;
+    case blink::ResourceRequestBlockedReason::kInspector:
+      return protocol::Network::BlockedReasonEnum::Inspector;
+    case blink::ResourceRequestBlockedReason::kSubresourceFilter:
+      return protocol::Network::BlockedReasonEnum::SubresourceFilter;
+    case blink::ResourceRequestBlockedReason::kContentType:
+      return protocol::Network::BlockedReasonEnum::ContentType;
+    case blink::ResourceRequestBlockedReason::kOther:
+      return protocol::Network::BlockedReasonEnum::Other;
+  }
+  NOTREACHED();
+  return protocol::Network::BlockedReasonEnum::Other;
+}
+
+Maybe<String> GetBlockedReasonFor(
+    const network::URLLoaderCompletionStatus& status) {
+  if (status.error_code != net::ERR_BLOCKED_BY_CLIENT &&
+      status.error_code != net::ERR_BLOCKED_BY_RESPONSE)
+    return Maybe<String>();
+  return blockedReason(static_cast<blink::ResourceRequestBlockedReason>(
+      status.extended_error_code));
+}
 }  // namespace
 
 void NetworkHandler::NavigationRequestWillBeSent(
@@ -1478,12 +1588,17 @@ void NetworkHandler::NavigationRequestWillBeSent(
 void NetworkHandler::RequestSent(const std::string& request_id,
                                  const std::string& loader_id,
                                  const network::ResourceRequest& request,
-                                 const char* initiator_type) {
+                                 const char* initiator_type,
+                                 const base::Optional<GURL>& initiator_url) {
   if (!enabled_)
     return;
   std::unique_ptr<DictionaryValue> headers_dict(DictionaryValue::create());
   for (net::HttpRequestHeaders::Iterator it(request.headers); it.GetNext();)
     headers_dict->setString(it.name(), it.value());
+  std::unique_ptr<Network::Initiator> initiator =
+      Network::Initiator::Create().SetType(initiator_type).Build();
+  if (initiator_url)
+    initiator->SetUrl(initiator_url->spec());
   frontend_->RequestWillBeSent(
       request_id, loader_id, StripFragment(request.url),
       Network::Request::Create()
@@ -1495,8 +1610,7 @@ void NetworkHandler::RequestSent(const std::string& request_id,
           .Build(),
       base::TimeTicks::Now().ToInternalValue() /
           static_cast<double>(base::Time::kMicrosecondsPerSecond),
-      base::Time::Now().ToDoubleT(),
-      Network::Initiator::Create().SetType(initiator_type).Build(),
+      base::Time::Now().ToDoubleT(), std::move(initiator),
       std::unique_ptr<Network::Response>(),
       std::string(Page::ResourceTypeEnum::Other),
       Maybe<std::string>() /* frame_id */, request.has_user_gesture);
@@ -1531,7 +1645,8 @@ void NetworkHandler::LoadingComplete(
         base::TimeTicks::Now().ToInternalValue() /
             static_cast<double>(base::Time::kMicrosecondsPerSecond),
         resource_type, net::ErrorToString(status.error_code),
-        status.error_code == net::Error::ERR_ABORTED);
+        status.error_code == net::Error::ERR_ABORTED,
+        GetBlockedReasonFor(status));
     return;
   }
   frontend_->LoadingFinished(
@@ -1541,52 +1656,58 @@ void NetworkHandler::LoadingComplete(
       status.encoded_data_length);
 }
 
-void NetworkHandler::NavigationFailed(NavigationRequest* navigation_request) {
+void NetworkHandler::OnSignedExchangeReceived(
+    base::Optional<const base::UnguessableToken> devtools_navigation_token,
+    const GURL& outer_request_url,
+    const network::ResourceResponseHead& outer_response,
+    const base::Optional<SignedExchangeHeader>& header,
+    const base::Optional<net::SSLInfo>& ssl_info,
+    const std::vector<std::string>& error_messages) {
   if (!enabled_)
     return;
+  std::unique_ptr<Network::SignedExchangeInfo> signed_exchange_info =
+      Network::SignedExchangeInfo::Create()
+          .SetOuterResponse(BuildResponse(outer_request_url, outer_response))
+          .Build();
 
-  static int next_id = 0;
-  std::string request_id = base::IntToString(base::GetCurrentProcId()) + "." +
-                           base::IntToString(++next_id);
-  std::string error_string =
-      net::ErrorToString(navigation_request->net_error());
-  bool cancelled = navigation_request->net_error() == net::Error::ERR_ABORTED;
+  if (header) {
+    std::unique_ptr<DictionaryValue> headers_dict(DictionaryValue::create());
+    for (const auto it : header->response_headers())
+      headers_dict->setString(it.first, it.second);
 
-  std::unique_ptr<DictionaryValue> headers_dict(DictionaryValue::create());
-  net::HttpRequestHeaders headers;
-  headers.AddHeadersFromString(navigation_request->begin_params()->headers);
-  for (net::HttpRequestHeaders::Iterator it(headers); it.GetNext();)
-    headers_dict->setString(it.name(), it.value());
-  frontend_->RequestWillBeSent(
-      request_id, "" /* loader_id */,
-      StripFragment(navigation_request->common_params().url),
-      Network::Request::Create()
-          .SetUrl(StripFragment(navigation_request->common_params().url))
-          .SetMethod(navigation_request->common_params().method)
-          .SetHeaders(Object::fromValue(headers_dict.get(), nullptr))
-          // Note: the priority value is copied from
-          // ResourceDispatcherHostImpl::BeginNavigationRequest but there isn't
-          // a good way of sharing this.
-          .SetInitialPriority(resourcePriority(net::HIGHEST))
-          .SetReferrerPolicy(referrerPolicy(
-              navigation_request->common_params().referrer.policy))
-          .Build(),
-      base::TimeTicks::Now().ToInternalValue() /
-          static_cast<double>(base::Time::kMicrosecondsPerSecond),
-      base::Time::Now().ToDoubleT(),
-      Network::Initiator::Create()
-          .SetType(Network::Initiator::TypeEnum::Parser)
-          .Build(),
-      std::unique_ptr<Network::Response>(),
-      std::string(Page::ResourceTypeEnum::Document),
-      Maybe<std::string>() /* frame_id */,
-      navigation_request->common_params().has_user_gesture);
+    const SignedExchangeHeaderParser::Signature& sig = header->signature();
+    std::unique_ptr<Array<Network::SignedExchangeSignature>> signatures =
+        Array<Network::SignedExchangeSignature>::create();
+    signatures->addItem(Network::SignedExchangeSignature::Create()
+                            .SetLabel(sig.label)
+                            .SetIntegrity(sig.integrity)
+                            .SetCertUrl(sig.cert_url.spec())
+                            .SetValidityUrl(sig.validity_url.spec())
+                            .SetDate(sig.date)
+                            .SetExpires(sig.expires)
+                            .Build());
 
-  frontend_->LoadingFailed(
-      request_id,
-      base::TimeTicks::Now().ToInternalValue() /
-          static_cast<double>(base::Time::kMicrosecondsPerSecond),
-      Page::ResourceTypeEnum::Document, error_string, cancelled);
+    signed_exchange_info->SetHeader(
+        Network::SignedExchangeHeader::Create()
+            .SetRequestUrl(header->request_url().spec())
+            .SetRequestMethod(header->request_method())
+            .SetResponseCode(header->response_code())
+            .SetResponseHeaders(Object::fromValue(headers_dict.get(), nullptr))
+            .SetSignatures(std::move(signatures))
+            .Build());
+  }
+  if (ssl_info)
+    signed_exchange_info->SetSecurityDetails(BuildSecurityDetails(*ssl_info));
+  if (error_messages.size()) {
+    std::unique_ptr<Array<String>> errors = Array<String>::create();
+    for (const auto& message : error_messages)
+      errors->addItem(message);
+    signed_exchange_info->SetErrors(std::move(errors));
+  }
+
+  frontend_->SignedExchangeReceived(
+      devtools_navigation_token ? devtools_navigation_token->ToString() : "",
+      std::move(signed_exchange_info));
 }
 
 DispatchResponse NetworkHandler::SetRequestInterception(
@@ -1723,6 +1844,38 @@ void NetworkHandler::GetResponseBodyForInterception(
   interceptor->GetResponseBody(interception_id, std::move(callback));
 }
 
+void NetworkHandler::TakeResponseBodyForInterceptionAsStream(
+    const String& interception_id,
+    std::unique_ptr<TakeResponseBodyForInterceptionAsStreamCallback> callback) {
+  if (url_loader_interceptor_) {
+    url_loader_interceptor_->TakeResponseBodyPipe(
+        interception_id,
+        base::BindOnce(&NetworkHandler::OnResponseBodyPipeTaken,
+                       weak_factory_.GetWeakPtr(), std::move(callback)));
+    return;
+  }
+  callback->sendFailure(Response::Error(
+      "Network.takeResponseBodyForInterceptionAsStream is only "
+      "currently supported with --enable-features=NetworkService"));
+}
+
+void NetworkHandler::OnResponseBodyPipeTaken(
+    std::unique_ptr<TakeResponseBodyForInterceptionAsStreamCallback> callback,
+    Response response,
+    mojo::ScopedDataPipeConsumerHandle pipe,
+    const std::string& mime_type) {
+  DCHECK_EQ(response.isSuccess(), pipe.is_valid());
+  if (!response.isSuccess()) {
+    callback->sendFailure(std::move(response));
+    return;
+  }
+  // The pipe stream is owned only by io_context after we return.
+  bool is_binary = !DevToolsIOContext::IsTextMimeType(mime_type);
+  auto stream =
+      DevToolsStreamPipe::Create(io_context_, std::move(pipe), is_binary);
+  callback->sendSuccess(stream->handle());
+}
+
 // static
 GURL NetworkHandler::ClearUrlRef(const GURL& url) {
   if (!url.has_ref())
@@ -1806,10 +1959,11 @@ bool NetworkHandler::ShouldCancelNavigation(
 bool NetworkHandler::MaybeCreateProxyForInterception(
     const base::UnguessableToken& frame_token,
     int process_id,
+    bool is_download,
     network::mojom::URLLoaderFactoryRequest* target_factory_request) {
   return url_loader_interceptor_ &&
          url_loader_interceptor_->CreateProxyForInterception(
-             frame_token, process_id, target_factory_request);
+             frame_token, process_id, is_download, target_factory_request);
 }
 
 void NetworkHandler::ApplyOverrides(net::HttpRequestHeaders* headers,
@@ -1879,9 +2033,9 @@ void NetworkHandler::RequestIntercepted(
   frontend_->RequestIntercepted(
       info->interception_id, std::move(info->network_request),
       info->frame_id.ToString(), ResourceTypeToString(info->resource_type),
-      info->is_navigation, std::move(info->redirect_url),
-      std::move(info->auth_challenge), std::move(error_reason),
-      std::move(info->http_response_status_code),
+      info->is_navigation, std::move(info->is_download),
+      std::move(info->redirect_url), std::move(info->auth_challenge),
+      std::move(error_reason), std::move(info->http_response_status_code),
       std::move(info->response_headers));
 }
 
@@ -1891,7 +2045,14 @@ void NetworkHandler::SetNetworkConditions(
     return;
   network::mojom::NetworkContext* context =
       storage_partition_->GetNetworkContext();
+  bool offline = conditions ? conditions->offline : false;
   context->SetNetworkConditions(host_id_, std::move(conditions));
+
+  if (offline == !!background_sync_restorer_)
+    return;
+  background_sync_restorer_.reset(
+      offline ? new BackgroundSyncRestorer(host_id_, storage_partition_)
+              : nullptr);
 }
 
 }  // namespace protocol

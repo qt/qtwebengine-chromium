@@ -11,12 +11,12 @@
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/dom/events/event_target.h"
+#include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 
 namespace blink {
 
-class LocalFrame;
 class ScriptPromiseResolver;
 class ScriptState;
 class USBDevice;
@@ -30,9 +30,9 @@ class USB final : public EventTargetWithInlineData,
   USING_PRE_FINALIZER(USB, Dispose);
 
  public:
-  static USB* Create(LocalFrame& frame) { return new USB(frame); }
+  static USB* Create(ExecutionContext& context) { return new USB(context); }
 
-  virtual ~USB();
+  ~USB() override;
 
   void Dispose();
 
@@ -61,13 +61,13 @@ class USB final : public EventTargetWithInlineData,
                        device::mojom::blink::UsbDeviceInfoPtr);
 
   // DeviceManagerClient implementation.
-  void OnDeviceAdded(device::mojom::blink::UsbDeviceInfoPtr);
-  void OnDeviceRemoved(device::mojom::blink::UsbDeviceInfoPtr);
+  void OnDeviceAdded(device::mojom::blink::UsbDeviceInfoPtr) override;
+  void OnDeviceRemoved(device::mojom::blink::UsbDeviceInfoPtr) override;
 
   void OnDeviceManagerConnectionError();
   void OnChooserServiceConnectionError();
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  protected:
   // EventTarget protected overrides.
@@ -75,9 +75,12 @@ class USB final : public EventTargetWithInlineData,
                           RegisteredEventListener&) override;
 
  private:
-  explicit USB(LocalFrame& frame);
+  explicit USB(ExecutionContext&);
 
   void EnsureDeviceManagerConnection();
+
+  bool IsContextSupported() const;
+  bool IsFeatureEnabled() const;
 
   device::mojom::blink::UsbDeviceManagerPtr device_manager_;
   HeapHashSet<Member<ScriptPromiseResolver>> device_manager_requests_;

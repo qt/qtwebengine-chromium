@@ -16,7 +16,7 @@
 #include "net/http/proxy_connect_redirect_http_stream.h"
 #include "net/log/net_log_source.h"
 #include "net/log/net_log_source_type.h"
-#include "net/spdy/chromium/spdy_http_utils.h"
+#include "net/spdy/spdy_http_utils.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 
 namespace net {
@@ -92,7 +92,7 @@ NextProto QuicProxyClientSocket::GetProxyNegotiatedProtocol() const {
 // ERR_TUNNEL_CONNECTION_FAILED will be returned for any other status.
 // In any of these cases, Read() may be called to retrieve the HTTP
 // response body.  Any other return values should be considered fatal.
-int QuicProxyClientSocket::Connect(const CompletionCallback& callback) {
+int QuicProxyClientSocket::Connect(CompletionOnceCallback callback) {
   DCHECK(connect_callback_.is_null());
   if (!stream_->IsOpen())
     return ERR_CONNECTION_CLOSED;
@@ -102,7 +102,7 @@ int QuicProxyClientSocket::Connect(const CompletionCallback& callback) {
 
   int rv = DoLoop(OK);
   if (rv == ERR_IO_PENDING)
-    connect_callback_ = callback;
+    connect_callback_ = std::move(callback);
   return rv;
 }
 
@@ -128,14 +128,6 @@ bool QuicProxyClientSocket::IsConnectedAndIdle() const {
 
 const NetLogWithSource& QuicProxyClientSocket::NetLog() const {
   return net_log_;
-}
-
-void QuicProxyClientSocket::SetSubresourceSpeculation() {
-  // TODO(rch): what should this implementation be?
-}
-
-void QuicProxyClientSocket::SetOmniboxSpeculation() {
-  // TODO(rch): what should this implementation be?
 }
 
 bool QuicProxyClientSocket::WasEverUsed() const {
@@ -170,7 +162,7 @@ void QuicProxyClientSocket::ApplySocketTag(const SocketTag& tag) {
 
 int QuicProxyClientSocket::Read(IOBuffer* buf,
                                 int buf_len,
-                                const CompletionCallback& callback) {
+                                CompletionOnceCallback callback) {
   DCHECK(connect_callback_.is_null());
   DCHECK(read_callback_.is_null());
   DCHECK(!read_buf_);
@@ -187,7 +179,7 @@ int QuicProxyClientSocket::Read(IOBuffer* buf,
                                         weak_factory_.GetWeakPtr()));
 
   if (rv == ERR_IO_PENDING) {
-    read_callback_ = callback;
+    read_callback_ = std::move(callback);
     read_buf_ = buf;
   } else if (rv == 0) {
     net_log_.AddByteTransferEvent(NetLogEventType::SOCKET_BYTES_RECEIVED, 0,
@@ -210,14 +202,14 @@ void QuicProxyClientSocket::OnReadComplete(int rv) {
                                     read_buf_->data());
     }
     read_buf_ = nullptr;
-    base::ResetAndReturn(&read_callback_).Run(rv);
+    std::move(read_callback_).Run(rv);
   }
 }
 
 int QuicProxyClientSocket::Write(
     IOBuffer* buf,
     int buf_len,
-    const CompletionCallback& callback,
+    CompletionOnceCallback callback,
     const NetworkTrafficAnnotationTag& traffic_annotation) {
   DCHECK(connect_callback_.is_null());
   DCHECK(write_callback_.is_null());
@@ -236,7 +228,7 @@ int QuicProxyClientSocket::Write(
     return buf_len;
 
   if (rv == ERR_IO_PENDING) {
-    write_callback_ = callback;
+    write_callback_ = std::move(callback);
     write_buf_len_ = buf_len;
   }
 
@@ -248,7 +240,7 @@ void QuicProxyClientSocket::OnWriteComplete(int rv) {
     if (rv == OK)
       rv = write_buf_len_;
     write_buf_len_ = 0;
-    base::ResetAndReturn(&write_callback_).Run(rv);
+    std::move(write_callback_).Run(rv);
   }
 }
 
@@ -270,19 +262,13 @@ int QuicProxyClientSocket::GetLocalAddress(IPEndPoint* address) const {
                        : ERR_SOCKET_NOT_CONNECTED;
 }
 
-void QuicProxyClientSocket::LogBlockedTunnelResponse() const {
-  ProxyClientSocket::LogBlockedTunnelResponse(
-      response_.headers->response_code(),
-      /* is_https_proxy = */ true);
-}
-
 void QuicProxyClientSocket::OnIOComplete(int result) {
   DCHECK_NE(STATE_DISCONNECTED, next_state_);
   int rv = DoLoop(result);
   if (rv != ERR_IO_PENDING) {
     // Connect() finished (successfully or unsuccessfully).
     DCHECK(!connect_callback_.is_null());
-    base::ResetAndReturn(&connect_callback_).Run(rv);
+    std::move(connect_callback_).Run(rv);
   }
 }
 
@@ -363,7 +349,7 @@ int QuicProxyClientSocket::DoSendRequest() {
       base::Bind(&HttpRequestHeaders::NetLogCallback,
                  base::Unretained(&request_.extra_headers), &request_line));
 
-  SpdyHeaderBlock headers;
+  spdy::SpdyHeaderBlock headers;
   CreateSpdyHeadersFromHttpRequest(request_, request_.extra_headers, &headers);
 
   return stream_->WriteHeaders(std::move(headers), false, nullptr);
@@ -419,10 +405,8 @@ int QuicProxyClientSocket::DoReadReplyComplete(int result) {
     case 302:  // Found / Moved Temporarily
       // Try to return a sanitized response so we can follow auth redirects.
       // If we can't, fail the tunnel connection.
-      if (!SanitizeProxyRedirect(&response_)) {
-        LogBlockedTunnelResponse();
+      if (!SanitizeProxyRedirect(&response_))
         return ERR_TUNNEL_CONNECTION_FAILED;
-      }
       redirect_has_load_timing_info_ =
           GetLoadTimingInfo(&redirect_load_timing_info_);
       next_state_ = STATE_DISCONNECTED;
@@ -430,22 +414,19 @@ int QuicProxyClientSocket::DoReadReplyComplete(int result) {
 
     case 407:  // Proxy Authentication Required
       next_state_ = STATE_CONNECT_COMPLETE;
-      if (!SanitizeProxyAuth(&response_)) {
-        LogBlockedTunnelResponse();
+      if (!SanitizeProxyAuth(&response_))
         return ERR_TUNNEL_CONNECTION_FAILED;
-      }
       return HandleProxyAuthChallenge(auth_.get(), &response_, net_log_);
 
     default:
       // Ignore response to avoid letting the proxy impersonate the target
       // server.  (See http://crbug.com/137891.)
-      LogBlockedTunnelResponse();
       return ERR_TUNNEL_CONNECTION_FAILED;
   }
 }
 
 void QuicProxyClientSocket::OnReadResponseHeadersComplete(int result) {
-  // Convert the now-populated SpdyHeaderBlock to HttpResponseInfo
+  // Convert the now-populated spdy::SpdyHeaderBlock to HttpResponseInfo
   if (result > 0)
     result = ProcessResponseHeaders(response_header_block_);
 
@@ -454,7 +435,7 @@ void QuicProxyClientSocket::OnReadResponseHeadersComplete(int result) {
 }
 
 int QuicProxyClientSocket::ProcessResponseHeaders(
-    const SpdyHeaderBlock& headers) {
+    const spdy::SpdyHeaderBlock& headers) {
   if (!SpdyHeadersToHttpResponse(headers, &response_)) {
     DLOG(WARNING) << "Invalid headers";
     return ERR_QUIC_PROTOCOL_ERROR;

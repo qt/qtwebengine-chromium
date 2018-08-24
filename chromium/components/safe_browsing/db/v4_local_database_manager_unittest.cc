@@ -9,18 +9,19 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_current.h"
 #include "base/run_loop.h"
+#include "base/sequenced_task_runner.h"
 #include "base/test/test_simple_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "components/safe_browsing/db/v4_database.h"
 #include "components/safe_browsing/db/v4_protocol_manager_util.h"
 #include "components/safe_browsing/db/v4_test_util.h"
-#include "content/public/common/weak_wrapper_shared_url_loader_factory.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
 #include "crypto/sha2.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
 #include "services/network/test/test_url_loader_factory.h"
 #include "testing/platform_test.h"
 
@@ -105,7 +106,7 @@ class FakeV4Database : public V4Database {
       bool stores_available) {
     // Mimics V4Database::Create
     const scoped_refptr<base::SingleThreadTaskRunner>& callback_task_runner =
-        base::MessageLoop::current()->task_runner();
+        base::MessageLoopCurrent::Get()->task_runner();
     db_task_runner->PostTask(
         FROM_HERE, base::BindOnce(&FakeV4Database::CreateOnTaskRunner,
                                   db_task_runner, std::move(store_map),
@@ -285,7 +286,7 @@ class V4LocalDatabaseManagerTest : public PlatformTest {
     PlatformTest::SetUp();
 
     test_shared_loader_factory_ =
-        base::MakeRefCounted<content::WeakWrapperSharedURLLoaderFactory>(
+        base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
             &test_url_loader_factory_);
 
     ASSERT_TRUE(base_dir_.CreateUniqueTempDir());

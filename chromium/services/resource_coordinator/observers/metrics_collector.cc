@@ -217,14 +217,14 @@ bool MetricsCollector::IsCollectingCPUUsageForUkm(
     const CoordinationUnitID& page_cu_id) {
   const UkmCollectionState& state = ukm_collection_state_map_[page_cu_id];
 
-  return state.ukm_source_id > ukm::kInvalidSourceId &&
+  return state.ukm_source_id != ukm::kInvalidSourceId &&
          state.num_cpu_usage_measurements < max_ukm_cpu_usage_measurements_;
 }
 
 bool MetricsCollector::IsCollectingExpectedQueueingTimeForUkm(
     const CoordinationUnitID& page_cu_id) {
   UkmCollectionState& state = ukm_collection_state_map_[page_cu_id];
-  return state.ukm_source_id > ukm::kInvalidSourceId &&
+  return state.ukm_source_id != ukm::kInvalidSourceId &&
          ++state.num_unreported_eqt_measurements >= frequency_ukm_eqt_reported_;
 }
 
@@ -235,7 +235,6 @@ void MetricsCollector::RecordCPUUsageForUkm(
   UkmCollectionState& state = ukm_collection_state_map_[page_cu_id];
 
   ukm::builders::CPUUsageMeasurement(state.ukm_source_id)
-      .SetTick(state.num_cpu_usage_measurements++)
       .SetCPUUsage(cpu_usage)
       .SetNumberOfCoresidentTabs(num_coresident_tabs)
       .Record(coordination_unit_manager().ukm_recorder());

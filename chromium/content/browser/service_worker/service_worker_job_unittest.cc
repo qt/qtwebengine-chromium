@@ -140,7 +140,7 @@ class ServiceWorkerJobTest : public testing::Test {
   scoped_refptr<ServiceWorkerRegistration> FindRegistrationForPattern(
       const GURL& pattern,
       ServiceWorkerStatusCode expected_status = SERVICE_WORKER_OK);
-  std::unique_ptr<ServiceWorkerProviderHost> CreateControllee();
+  ServiceWorkerProviderHost* CreateControllee();
 
   TestBrowserThreadBundle browser_thread_bundle_;
   std::unique_ptr<EmbeddedWorkerTestHelper> helper_;
@@ -189,29 +189,32 @@ ServiceWorkerJobTest::FindRegistrationForPattern(
   return registration;
 }
 
-std::unique_ptr<ServiceWorkerProviderHost>
-ServiceWorkerJobTest::CreateControllee() {
+ServiceWorkerProviderHost* ServiceWorkerJobTest::CreateControllee() {
+  static int s_next_provider_id = 1;
   remote_endpoints_.emplace_back();
   std::unique_ptr<ServiceWorkerProviderHost> host = CreateProviderHostForWindow(
-      33 /* dummy render process id */, 1 /* dummy provider_id */,
+      33 /* dummy render process id */, s_next_provider_id++,
       true /* is_parent_frame_secure */, helper_->context()->AsWeakPtr(),
       &remote_endpoints_.back());
-  return host;
+  auto* host_ptr = host.get();
+  helper_->context()->AddProviderHost(std::move(host));
+  return host_ptr;
 }
 
 TEST_F(ServiceWorkerJobTest, SameDocumentSameRegistration) {
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/");
+  options.scope = GURL("https://www.example.com/");
   scoped_refptr<ServiceWorkerRegistration> original_registration =
-      RunRegisterJob(GURL("http://www.example.com/service_worker.js"), options);
+      RunRegisterJob(GURL("https://www.example.com/service_worker.js"),
+                     options);
   bool called;
   scoped_refptr<ServiceWorkerRegistration> registration1;
   storage()->FindRegistrationForDocument(
-      GURL("http://www.example.com/"),
+      GURL("https://www.example.com/"),
       SaveFoundRegistration(SERVICE_WORKER_OK, &called, &registration1));
   scoped_refptr<ServiceWorkerRegistration> registration2;
   storage()->FindRegistrationForDocument(
-      GURL("http://www.example.com/"),
+      GURL("https://www.example.com/"),
       SaveFoundRegistration(SERVICE_WORKER_OK, &called, &registration2));
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(called);
@@ -223,22 +226,23 @@ TEST_F(ServiceWorkerJobTest, SameDocumentSameRegistration) {
 TEST_F(ServiceWorkerJobTest, SameMatchSameRegistration) {
   bool called;
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/");
+  options.scope = GURL("https://www.example.com/");
   scoped_refptr<ServiceWorkerRegistration> original_registration =
-      RunRegisterJob(GURL("http://www.example.com/service_worker.js"), options);
+      RunRegisterJob(GURL("https://www.example.com/service_worker.js"),
+                     options);
   ASSERT_NE(static_cast<ServiceWorkerRegistration*>(nullptr),
             original_registration.get());
 
   scoped_refptr<ServiceWorkerRegistration> registration1;
   storage()->FindRegistrationForDocument(
-      GURL("http://www.example.com/one"),
+      GURL("https://www.example.com/one"),
       SaveFoundRegistration(SERVICE_WORKER_OK, &called, &registration1));
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(called);
 
   scoped_refptr<ServiceWorkerRegistration> registration2;
   storage()->FindRegistrationForDocument(
-      GURL("http://www.example.com/two"),
+      GURL("https://www.example.com/two"),
       SaveFoundRegistration(SERVICE_WORKER_OK, &called, &registration2));
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(called);
@@ -249,18 +253,18 @@ TEST_F(ServiceWorkerJobTest, SameMatchSameRegistration) {
 TEST_F(ServiceWorkerJobTest, DifferentMatchDifferentRegistration) {
   bool called1;
   blink::mojom::ServiceWorkerRegistrationOptions options1;
-  options1.scope = GURL("http://www.example.com/one/");
+  options1.scope = GURL("https://www.example.com/one/");
   scoped_refptr<ServiceWorkerRegistration> original_registration1;
   job_coordinator()->Register(
-      GURL("http://www.example.com/service_worker.js"), options1,
+      GURL("https://www.example.com/service_worker.js"), options1,
       SaveRegistration(SERVICE_WORKER_OK, &called1, &original_registration1));
 
   bool called2;
   blink::mojom::ServiceWorkerRegistrationOptions options2;
-  options2.scope = GURL("http://www.example.com/two/");
+  options2.scope = GURL("https://www.example.com/two/");
   scoped_refptr<ServiceWorkerRegistration> original_registration2;
   job_coordinator()->Register(
-      GURL("http://www.example.com/service_worker.js"), options2,
+      GURL("https://www.example.com/service_worker.js"), options2,
       SaveRegistration(SERVICE_WORKER_OK, &called2, &original_registration2));
 
   EXPECT_FALSE(called1);
@@ -271,11 +275,11 @@ TEST_F(ServiceWorkerJobTest, DifferentMatchDifferentRegistration) {
 
   scoped_refptr<ServiceWorkerRegistration> registration1;
   storage()->FindRegistrationForDocument(
-      GURL("http://www.example.com/one/"),
+      GURL("https://www.example.com/one/"),
       SaveFoundRegistration(SERVICE_WORKER_OK, &called1, &registration1));
   scoped_refptr<ServiceWorkerRegistration> registration2;
   storage()->FindRegistrationForDocument(
-      GURL("http://www.example.com/two/"),
+      GURL("https://www.example.com/two/"),
       SaveFoundRegistration(SERVICE_WORKER_OK, &called2, &registration2));
 
   base::RunLoop().RunUntilIdle();
@@ -287,9 +291,9 @@ TEST_F(ServiceWorkerJobTest, DifferentMatchDifferentRegistration) {
 // Make sure basic registration is working.
 TEST_F(ServiceWorkerJobTest, Register) {
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/");
-  scoped_refptr<ServiceWorkerRegistration> registration =
-      RunRegisterJob(GURL("http://www.example.com/service_worker.js"), options);
+  options.scope = GURL("https://www.example.com/");
+  scoped_refptr<ServiceWorkerRegistration> registration = RunRegisterJob(
+      GURL("https://www.example.com/service_worker.js"), options);
 
   EXPECT_TRUE(registration);
   EXPECT_EQ(EmbeddedWorkerTestHelper::Event::Install,
@@ -301,9 +305,9 @@ TEST_F(ServiceWorkerJobTest, Register) {
 // Make sure registrations are cleaned up when they are unregistered.
 TEST_F(ServiceWorkerJobTest, Unregister) {
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/");
-  scoped_refptr<ServiceWorkerRegistration> registration =
-      RunRegisterJob(GURL("http://www.example.com/service_worker.js"), options);
+  options.scope = GURL("https://www.example.com/");
+  scoped_refptr<ServiceWorkerRegistration> registration = RunRegisterJob(
+      GURL("https://www.example.com/service_worker.js"), options);
   scoped_refptr<ServiceWorkerVersion> version = registration->active_version();
 
   ServiceWorkerProviderHost* provider_host =
@@ -334,7 +338,7 @@ TEST_F(ServiceWorkerJobTest, Unregister) {
 }
 
 TEST_F(ServiceWorkerJobTest, Unregister_NothingRegistered) {
-  GURL pattern("http://www.example.com/");
+  GURL pattern("https://www.example.com/");
 
   RunUnregisterJob(pattern, SERVICE_WORKER_ERROR_NOT_FOUND);
 }
@@ -343,10 +347,10 @@ TEST_F(ServiceWorkerJobTest, Unregister_NothingRegistered) {
 // existing registration.
 TEST_F(ServiceWorkerJobTest, RegisterNewScript) {
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/");
+  options.scope = GURL("https://www.example.com/");
 
-  scoped_refptr<ServiceWorkerRegistration> old_registration =
-      RunRegisterJob(GURL("http://www.example.com/service_worker.js"), options);
+  scoped_refptr<ServiceWorkerRegistration> old_registration = RunRegisterJob(
+      GURL("https://www.example.com/service_worker.js"), options);
 
   scoped_refptr<ServiceWorkerRegistration> old_registration_by_pattern =
       FindRegistrationForPattern(options.scope);
@@ -355,7 +359,7 @@ TEST_F(ServiceWorkerJobTest, RegisterNewScript) {
   old_registration_by_pattern = nullptr;
 
   scoped_refptr<ServiceWorkerRegistration> new_registration = RunRegisterJob(
-      GURL("http://www.example.com/service_worker_new.js"), options);
+      GURL("https://www.example.com/service_worker_new.js"), options);
 
   ASSERT_EQ(old_registration, new_registration);
 
@@ -368,9 +372,9 @@ TEST_F(ServiceWorkerJobTest, RegisterNewScript) {
 // Make sure that when registering a duplicate pattern+script_url
 // combination, that the same registration is used.
 TEST_F(ServiceWorkerJobTest, RegisterDuplicateScript) {
-  GURL script_url("http://www.example.com/service_worker.js");
+  GURL script_url("https://www.example.com/service_worker.js");
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/");
+  options.scope = GURL("https://www.example.com/");
 
   scoped_refptr<ServiceWorkerRegistration> old_registration =
       RunRegisterJob(script_url, options);
@@ -471,7 +475,6 @@ class FailToStartWorkerTestHelper : public EmbeddedWorkerTestHelper {
       bool pause_after_download,
       mojom::ServiceWorkerEventDispatcherRequest dispatcher_request,
       mojom::ControllerServiceWorkerRequest controller_request,
-      blink::mojom::ServiceWorkerHostAssociatedPtrInfo service_worker_host,
       mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
       mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
       blink::mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info)
@@ -487,9 +490,9 @@ TEST_F(ServiceWorkerJobTest, Register_FailToStartWorker) {
   helper_.reset(new FailToStartWorkerTestHelper);
 
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/");
+  options.scope = GURL("https://www.example.com/");
   scoped_refptr<ServiceWorkerRegistration> registration =
-      RunRegisterJob(GURL("http://www.example.com/service_worker.js"), options,
+      RunRegisterJob(GURL("https://www.example.com/service_worker.js"), options,
                      SERVICE_WORKER_ERROR_START_WORKER_FAILED);
 
   ASSERT_EQ(scoped_refptr<ServiceWorkerRegistration>(nullptr), registration);
@@ -498,9 +501,9 @@ TEST_F(ServiceWorkerJobTest, Register_FailToStartWorker) {
 // Register and then unregister the pattern, in parallel. Job coordinator should
 // process jobs until the last job.
 TEST_F(ServiceWorkerJobTest, ParallelRegUnreg) {
-  GURL script_url("http://www.example.com/service_worker.js");
+  GURL script_url("https://www.example.com/service_worker.js");
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/");
+  options.scope = GURL("https://www.example.com/");
 
   bool registration_called = false;
   scoped_refptr<ServiceWorkerRegistration> registration;
@@ -529,9 +532,9 @@ TEST_F(ServiceWorkerJobTest, ParallelRegUnreg) {
 // registration should win, and the old registration should have been
 // shutdown.
 TEST_F(ServiceWorkerJobTest, ParallelRegNewScript) {
-  GURL pattern("http://www.example.com/");
+  GURL pattern("https://www.example.com/");
 
-  GURL script_url1("http://www.example.com/service_worker1.js");
+  GURL script_url1("https://www.example.com/service_worker1.js");
   bool registration1_called = false;
   scoped_refptr<ServiceWorkerRegistration> registration1;
   job_coordinator()->Register(
@@ -541,7 +544,7 @@ TEST_F(ServiceWorkerJobTest, ParallelRegNewScript) {
       SaveRegistration(SERVICE_WORKER_OK, &registration1_called,
                        &registration1));
 
-  GURL script_url2("http://www.example.com/service_worker2.js");
+  GURL script_url2("https://www.example.com/service_worker2.js");
   bool registration2_called = false;
   scoped_refptr<ServiceWorkerRegistration> registration2;
   job_coordinator()->Register(
@@ -568,9 +571,9 @@ TEST_F(ServiceWorkerJobTest, ParallelRegNewScript) {
 // object.
 TEST_F(ServiceWorkerJobTest, ParallelRegSameScript) {
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/");
+  options.scope = GURL("https://www.example.com/");
 
-  GURL script_url("http://www.example.com/service_worker1.js");
+  GURL script_url("https://www.example.com/service_worker1.js");
   bool registration1_called = false;
   scoped_refptr<ServiceWorkerRegistration> registration1;
   job_coordinator()->Register(
@@ -601,9 +604,9 @@ TEST_F(ServiceWorkerJobTest, ParallelRegSameScript) {
 
 // Call simulataneous unregister calls.
 TEST_F(ServiceWorkerJobTest, ParallelUnreg) {
-  GURL pattern("http://www.example.com/");
+  GURL pattern("https://www.example.com/");
 
-  GURL script_url("http://www.example.com/service_worker.js");
+  GURL script_url("https://www.example.com/service_worker.js");
   bool unregistration1_called = false;
   job_coordinator()->Unregister(
       pattern,
@@ -632,13 +635,13 @@ TEST_F(ServiceWorkerJobTest, ParallelUnreg) {
 }
 
 TEST_F(ServiceWorkerJobTest, AbortAll_Register) {
-  GURL script_url1("http://www1.example.com/service_worker.js");
-  GURL script_url2("http://www2.example.com/service_worker.js");
+  GURL script_url1("https://www1.example.com/service_worker.js");
+  GURL script_url2("https://www2.example.com/service_worker.js");
 
   blink::mojom::ServiceWorkerRegistrationOptions options1;
-  options1.scope = GURL("http://www1.example.com/");
+  options1.scope = GURL("https://www1.example.com/");
   blink::mojom::ServiceWorkerRegistrationOptions options2;
-  options2.scope = GURL("http://www2.example.com/");
+  options2.scope = GURL("https://www2.example.com/");
 
   bool registration_called1 = false;
   scoped_refptr<ServiceWorkerRegistration> registration1;
@@ -680,8 +683,8 @@ TEST_F(ServiceWorkerJobTest, AbortAll_Register) {
 }
 
 TEST_F(ServiceWorkerJobTest, AbortAll_Unregister) {
-  GURL pattern1("http://www1.example.com/");
-  GURL pattern2("http://www2.example.com/");
+  GURL pattern1("https://www1.example.com/");
+  GURL pattern2("https://www2.example.com/");
 
   bool unregistration_called1 = false;
   scoped_refptr<ServiceWorkerRegistration> registration1;
@@ -706,9 +709,9 @@ TEST_F(ServiceWorkerJobTest, AbortAll_Unregister) {
 }
 
 TEST_F(ServiceWorkerJobTest, AbortAll_RegUnreg) {
-  GURL script_url("http://www.example.com/service_worker.js");
+  GURL script_url("https://www.example.com/service_worker.js");
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/");
+  options.scope = GURL("https://www.example.com/");
 
   bool registration_called = false;
   scoped_refptr<ServiceWorkerRegistration> registration;
@@ -739,9 +742,9 @@ TEST_F(ServiceWorkerJobTest, AbortAll_RegUnreg) {
 // Tests that the waiting worker enters the 'redundant' state upon
 // unregistration.
 TEST_F(ServiceWorkerJobTest, UnregisterWaitingSetsRedundant) {
-  GURL script_url("http://www.example.com/service_worker.js");
+  GURL script_url("https://www.example.com/service_worker.js");
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/");
+  options.scope = GURL("https://www.example.com/");
   scoped_refptr<ServiceWorkerRegistration> registration =
       RunRegisterJob(script_url, options);
   ASSERT_TRUE(registration.get());
@@ -763,7 +766,7 @@ TEST_F(ServiceWorkerJobTest, UnregisterWaitingSetsRedundant) {
   EXPECT_EQ(EmbeddedWorkerStatus::RUNNING, version->running_status());
   EXPECT_EQ(ServiceWorkerVersion::INSTALLED, version->status());
 
-  RunUnregisterJob(GURL("http://www.example.com/"));
+  RunUnregisterJob(GURL("https://www.example.com/"));
 
   // The version should be stopped since there is no controllee after
   // unregistration.
@@ -775,16 +778,16 @@ TEST_F(ServiceWorkerJobTest, UnregisterWaitingSetsRedundant) {
 // unregistration.
 TEST_F(ServiceWorkerJobTest, UnregisterActiveSetsRedundant) {
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/");
-  scoped_refptr<ServiceWorkerRegistration> registration =
-      RunRegisterJob(GURL("http://www.example.com/service_worker.js"), options);
+  options.scope = GURL("https://www.example.com/");
+  scoped_refptr<ServiceWorkerRegistration> registration = RunRegisterJob(
+      GURL("https://www.example.com/service_worker.js"), options);
   ASSERT_TRUE(registration.get());
 
   scoped_refptr<ServiceWorkerVersion> version = registration->active_version();
   EXPECT_EQ(EmbeddedWorkerStatus::RUNNING, version->running_status());
   EXPECT_EQ(ServiceWorkerVersion::ACTIVATED, version->status());
 
-  RunUnregisterJob(GURL("http://www.example.com/"));
+  RunUnregisterJob(GURL("https://www.example.com/"));
 
   // The version should be stopped since there is no controllee after
   // unregistration.
@@ -797,25 +800,25 @@ TEST_F(ServiceWorkerJobTest, UnregisterActiveSetsRedundant) {
 TEST_F(ServiceWorkerJobTest,
        UnregisterActiveSetsRedundant_WaitForNoControllee) {
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/");
-  scoped_refptr<ServiceWorkerRegistration> registration =
-      RunRegisterJob(GURL("http://www.example.com/service_worker.js"), options);
+  options.scope = GURL("https://www.example.com/");
+  scoped_refptr<ServiceWorkerRegistration> registration = RunRegisterJob(
+      GURL("https://www.example.com/service_worker.js"), options);
   ASSERT_TRUE(registration.get());
 
-  std::unique_ptr<ServiceWorkerProviderHost> host = CreateControllee();
-  registration->active_version()->AddControllee(host.get());
+  ServiceWorkerProviderHost* host = CreateControllee();
+  registration->active_version()->AddControllee(host);
 
   scoped_refptr<ServiceWorkerVersion> version = registration->active_version();
   EXPECT_EQ(EmbeddedWorkerStatus::RUNNING, version->running_status());
   EXPECT_EQ(ServiceWorkerVersion::ACTIVATED, version->status());
 
-  RunUnregisterJob(GURL("http://www.example.com/"));
+  RunUnregisterJob(GURL("https://www.example.com/"));
 
   // The version should be running since there is still a controllee.
   EXPECT_EQ(EmbeddedWorkerStatus::RUNNING, version->running_status());
   EXPECT_EQ(ServiceWorkerVersion::ACTIVATED, version->status());
 
-  registration->active_version()->RemoveControllee(host.get());
+  registration->active_version()->RemoveControllee(host->client_uuid());
   base::RunLoop().RunUntilIdle();
 
   // The version should be stopped since there is no controllee.
@@ -825,8 +828,8 @@ TEST_F(ServiceWorkerJobTest,
 
 namespace {  // Helpers for the update job tests.
 
-const GURL kNoChangeOrigin("http://nochange/");
-const GURL kNewVersionOrigin("http://newversion/");
+const GURL kNoChangeOrigin("https://nochange/");
+const GURL kNewVersionOrigin("https://newversion/");
 const std::string kScope("scope/");
 const std::string kScript("script.js");
 
@@ -935,7 +938,6 @@ class UpdateJobTestHelper
       bool pause_after_download,
       mojom::ServiceWorkerEventDispatcherRequest dispatcher_request,
       mojom::ControllerServiceWorkerRequest controller_request,
-      blink::mojom::ServiceWorkerHostAssociatedPtrInfo service_worker_host,
       mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
       mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
       blink::mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info)
@@ -997,8 +999,8 @@ class UpdateJobTestHelper
     EmbeddedWorkerTestHelper::OnStartWorker(
         embedded_worker_id, version_id, scope, script, pause_after_download,
         std::move(dispatcher_request), std::move(controller_request),
-        std::move(service_worker_host), std::move(instance_host),
-        std::move(provider_info), std::move(installed_scripts_info));
+        std::move(instance_host), std::move(provider_info),
+        std::move(installed_scripts_info));
   }
 
   void OnStopWorker(int embedded_worker_id) override {
@@ -1073,7 +1075,6 @@ class EvictIncumbentVersionHelper : public UpdateJobTestHelper {
       bool pause_after_download,
       mojom::ServiceWorkerEventDispatcherRequest dispatcher_request,
       mojom::ControllerServiceWorkerRequest controller_request,
-      blink::mojom::ServiceWorkerHostAssociatedPtrInfo service_worker_host,
       mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
       mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
       blink::mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info)
@@ -1092,8 +1093,8 @@ class EvictIncumbentVersionHelper : public UpdateJobTestHelper {
     UpdateJobTestHelper::OnStartWorker(
         embedded_worker_id, version_id, scope, script, pause_after_download,
         std::move(dispatcher_request), std::move(controller_request),
-        std::move(service_worker_host), std::move(instance_host),
-        std::move(provider_info), std::move(installed_scripts_info));
+        std::move(instance_host), std::move(provider_info),
+        std::move(installed_scripts_info));
   }
 
   void OnRegistrationFailed(ServiceWorkerRegistration* registration) override {
@@ -1287,15 +1288,15 @@ TEST_F(ServiceWorkerJobTest, Update_NewVersion) {
 TEST_F(ServiceWorkerJobTest, Update_ScriptUrlChanged) {
   // Create a registration with an active version.
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/one/");
-  scoped_refptr<ServiceWorkerRegistration> registration =
-      RunRegisterJob(GURL("http://www.example.com/service_worker.js"), options);
+  options.scope = GURL("https://www.example.com/one/");
+  scoped_refptr<ServiceWorkerRegistration> registration = RunRegisterJob(
+      GURL("https://www.example.com/service_worker.js"), options);
 
   // Queue an Update. When this runs, it will use the waiting version's script.
   job_coordinator()->Update(registration.get(), false);
 
   // Add a waiting version with a new script.
-  GURL new_script("http://www.example.com/new_worker.js");
+  GURL new_script("https://www.example.com/new_worker.js");
   scoped_refptr<ServiceWorkerVersion> version = new ServiceWorkerVersion(
       registration.get(), new_script, 2L /* dummy version id */,
       helper_->context()->AsWeakPtr());
@@ -1344,16 +1345,16 @@ TEST_F(ServiceWorkerJobTest, Update_EvictedIncumbent) {
 
 TEST_F(ServiceWorkerJobTest, Update_UninstallingRegistration) {
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/one/");
+  options.scope = GURL("https://www.example.com/one/");
   bool called;
-  scoped_refptr<ServiceWorkerRegistration> registration =
-      RunRegisterJob(GURL("http://www.example.com/service_worker.js"), options);
+  scoped_refptr<ServiceWorkerRegistration> registration = RunRegisterJob(
+      GURL("https://www.example.com/service_worker.js"), options);
 
   // Add a controllee and queue an unregister to force the uninstalling state.
-  std::unique_ptr<ServiceWorkerProviderHost> host = CreateControllee();
+  ServiceWorkerProviderHost* host = CreateControllee();
   ServiceWorkerVersion* active_version = registration->active_version();
-  active_version->AddControllee(host.get());
-  job_coordinator()->Unregister(GURL("http://www.example.com/one/"),
+  active_version->AddControllee(host);
+  job_coordinator()->Unregister(GURL("https://www.example.com/one/"),
                                 SaveUnregistration(SERVICE_WORKER_OK, &called));
 
   // Update should abort after it starts and sees uninstalling.
@@ -1371,10 +1372,10 @@ TEST_F(ServiceWorkerJobTest, Update_UninstallingRegistration) {
 }
 
 TEST_F(ServiceWorkerJobTest, RegisterWhileUninstalling) {
-  GURL script1("http://www.example.com/service_worker.js");
-  GURL script2("http://www.example.com/service_worker.js?new");
+  GURL script1("https://www.example.com/service_worker.js");
+  GURL script2("https://www.example.com/service_worker.js?new");
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/one/");
+  options.scope = GURL("https://www.example.com/one/");
 
   scoped_refptr<ServiceWorkerRegistration> registration =
       RunRegisterJob(script1, options);
@@ -1383,10 +1384,10 @@ TEST_F(ServiceWorkerJobTest, RegisterWhileUninstalling) {
   registration->SetTaskRunnerForTest(runner);
 
   // Add a controllee and queue an unregister to force the uninstalling state.
-  std::unique_ptr<ServiceWorkerProviderHost> host = CreateControllee();
+  ServiceWorkerProviderHost* host = CreateControllee();
   scoped_refptr<ServiceWorkerVersion> old_version =
       registration->active_version();
-  old_version->AddControllee(host.get());
+  old_version->AddControllee(host);
   RunUnregisterJob(options.scope);
 
   // Register another script.
@@ -1404,7 +1405,7 @@ TEST_F(ServiceWorkerJobTest, RegisterWhileUninstalling) {
   EXPECT_EQ(EmbeddedWorkerStatus::RUNNING, new_version->running_status());
   EXPECT_EQ(ServiceWorkerVersion::INSTALLED, new_version->status());
 
-  old_version->RemoveControllee(host.get());
+  old_version->RemoveControllee(host->client_uuid());
   base::RunLoop().RunUntilIdle();
 
   EXPECT_FALSE(registration->is_uninstalling());
@@ -1423,19 +1424,19 @@ TEST_F(ServiceWorkerJobTest, RegisterWhileUninstalling) {
 }
 
 TEST_F(ServiceWorkerJobTest, RegisterAndUnregisterWhileUninstalling) {
-  GURL script1("http://www.example.com/service_worker.js");
-  GURL script2("http://www.example.com/service_worker.js?new");
+  GURL script1("https://www.example.com/service_worker.js");
+  GURL script2("https://www.example.com/service_worker.js?new");
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/one/");
+  options.scope = GURL("https://www.example.com/one/");
 
   scoped_refptr<ServiceWorkerRegistration> registration =
       RunRegisterJob(script1, options);
 
   // Add a controllee and queue an unregister to force the uninstalling state.
-  std::unique_ptr<ServiceWorkerProviderHost> host = CreateControllee();
+  ServiceWorkerProviderHost* host = CreateControllee();
   scoped_refptr<ServiceWorkerVersion> old_version =
       registration->active_version();
-  old_version->AddControllee(host.get());
+  old_version->AddControllee(host);
   RunUnregisterJob(options.scope);
 
   EXPECT_EQ(registration, RunRegisterJob(script2, options));
@@ -1459,7 +1460,7 @@ TEST_F(ServiceWorkerJobTest, RegisterAndUnregisterWhileUninstalling) {
   EXPECT_EQ(EmbeddedWorkerStatus::RUNNING, new_version->running_status());
   EXPECT_EQ(ServiceWorkerVersion::INSTALLED, new_version->status());
 
-  old_version->RemoveControllee(host.get());
+  old_version->RemoveControllee(host->client_uuid());
   base::RunLoop().RunUntilIdle();
 
   EXPECT_FALSE(registration->is_uninstalling());
@@ -1472,10 +1473,10 @@ TEST_F(ServiceWorkerJobTest, RegisterAndUnregisterWhileUninstalling) {
 }
 
 TEST_F(ServiceWorkerJobTest, RegisterSameScriptMultipleTimesWhileUninstalling) {
-  GURL script1("http://www.example.com/service_worker.js");
-  GURL script2("http://www.example.com/service_worker.js?new");
+  GURL script1("https://www.example.com/service_worker.js");
+  GURL script2("https://www.example.com/service_worker.js?new");
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/one/");
+  options.scope = GURL("https://www.example.com/one/");
 
   scoped_refptr<ServiceWorkerRegistration> registration =
       RunRegisterJob(script1, options);
@@ -1484,10 +1485,10 @@ TEST_F(ServiceWorkerJobTest, RegisterSameScriptMultipleTimesWhileUninstalling) {
   registration->SetTaskRunnerForTest(runner);
 
   // Add a controllee and queue an unregister to force the uninstalling state.
-  std::unique_ptr<ServiceWorkerProviderHost> host = CreateControllee();
+  ServiceWorkerProviderHost* host = CreateControllee();
   scoped_refptr<ServiceWorkerVersion> old_version =
       registration->active_version();
-  old_version->AddControllee(host.get());
+  old_version->AddControllee(host);
   RunUnregisterJob(options.scope);
 
   EXPECT_EQ(registration, RunRegisterJob(script2, options));
@@ -1505,7 +1506,7 @@ TEST_F(ServiceWorkerJobTest, RegisterSameScriptMultipleTimesWhileUninstalling) {
   EXPECT_FALSE(registration->is_uninstalling());
   EXPECT_EQ(new_version, registration->waiting_version());
 
-  old_version->RemoveControllee(host.get());
+  old_version->RemoveControllee(host->client_uuid());
   base::RunLoop().RunUntilIdle();
 
   EXPECT_FALSE(registration->is_uninstalling());
@@ -1524,11 +1525,11 @@ TEST_F(ServiceWorkerJobTest, RegisterSameScriptMultipleTimesWhileUninstalling) {
 }
 
 TEST_F(ServiceWorkerJobTest, RegisterMultipleTimesWhileUninstalling) {
-  GURL script1("http://www.example.com/service_worker.js?first");
-  GURL script2("http://www.example.com/service_worker.js?second");
-  GURL script3("http://www.example.com/service_worker.js?third");
+  GURL script1("https://www.example.com/service_worker.js?first");
+  GURL script2("https://www.example.com/service_worker.js?second");
+  GURL script3("https://www.example.com/service_worker.js?third");
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/one/");
+  options.scope = GURL("https://www.example.com/one/");
 
   scoped_refptr<ServiceWorkerRegistration> registration =
       RunRegisterJob(script1, options);
@@ -1537,10 +1538,10 @@ TEST_F(ServiceWorkerJobTest, RegisterMultipleTimesWhileUninstalling) {
   registration->SetTaskRunnerForTest(runner);
 
   // Add a controllee and queue an unregister to force the uninstalling state.
-  std::unique_ptr<ServiceWorkerProviderHost> host = CreateControllee();
+  ServiceWorkerProviderHost* host = CreateControllee();
   scoped_refptr<ServiceWorkerVersion> first_version =
       registration->active_version();
-  first_version->AddControllee(host.get());
+  first_version->AddControllee(host);
   RunUnregisterJob(options.scope);
 
   EXPECT_EQ(registration, RunRegisterJob(script2, options));
@@ -1562,7 +1563,7 @@ TEST_F(ServiceWorkerJobTest, RegisterMultipleTimesWhileUninstalling) {
   EXPECT_FALSE(registration->is_uninstalling());
   EXPECT_EQ(ServiceWorkerVersion::REDUNDANT, second_version->status());
 
-  first_version->RemoveControllee(host.get());
+  first_version->RemoveControllee(host->client_uuid());
   base::RunLoop().RunUntilIdle();
 
   EXPECT_FALSE(registration->is_uninstalling());
@@ -1629,25 +1630,25 @@ TEST_F(ServiceWorkerJobTest, RemoveControlleeDuringInstall) {
   EventCallbackHelper* helper = new EventCallbackHelper;
   helper_.reset(helper);
 
-  GURL script1("http://www.example.com/service_worker.js");
-  GURL script2("http://www.example.com/service_worker.js?new");
+  GURL script1("https://www.example.com/service_worker.js");
+  GURL script2("https://www.example.com/service_worker.js?new");
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/one/");
+  options.scope = GURL("https://www.example.com/one/");
 
   scoped_refptr<ServiceWorkerRegistration> registration =
       RunRegisterJob(script1, options);
 
   // Add a controllee and queue an unregister to force the uninstalling state.
-  std::unique_ptr<ServiceWorkerProviderHost> host = CreateControllee();
+  ServiceWorkerProviderHost* host = CreateControllee();
   scoped_refptr<ServiceWorkerVersion> old_version =
       registration->active_version();
-  old_version->AddControllee(host.get());
+  old_version->AddControllee(host);
   RunUnregisterJob(options.scope);
 
   // Register another script. While installing, old_version loses controllee.
   helper->set_install_callback(
-      base::Bind(&ServiceWorkerVersion::RemoveControllee,
-                 old_version, host.get()));
+      base::BindRepeating(&ServiceWorkerVersion::RemoveControllee, old_version,
+                          host->client_uuid()));
   EXPECT_EQ(registration, RunRegisterJob(script2, options));
 
   EXPECT_FALSE(registration->is_uninstalling());
@@ -1670,26 +1671,26 @@ TEST_F(ServiceWorkerJobTest, RemoveControlleeDuringRejectedInstall) {
   EventCallbackHelper* helper = new EventCallbackHelper;
   helper_.reset(helper);
 
-  GURL script1("http://www.example.com/service_worker.js");
-  GURL script2("http://www.example.com/service_worker.js?new");
+  GURL script1("https://www.example.com/service_worker.js");
+  GURL script2("https://www.example.com/service_worker.js?new");
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/one/");
+  options.scope = GURL("https://www.example.com/one/");
 
   scoped_refptr<ServiceWorkerRegistration> registration =
       RunRegisterJob(script1, options);
 
   // Add a controllee and queue an unregister to force the uninstalling state.
-  std::unique_ptr<ServiceWorkerProviderHost> host = CreateControllee();
+  ServiceWorkerProviderHost* host = CreateControllee();
   scoped_refptr<ServiceWorkerVersion> old_version =
       registration->active_version();
-  old_version->AddControllee(host.get());
+  old_version->AddControllee(host);
   RunUnregisterJob(options.scope);
 
   // Register another script that fails to install. While installing,
   // old_version loses controllee.
   helper->set_install_callback(
-      base::Bind(&ServiceWorkerVersion::RemoveControllee,
-                 old_version, host.get()));
+      base::BindRepeating(&ServiceWorkerVersion::RemoveControllee, old_version,
+                          host->client_uuid()));
   helper->set_install_event_result(
       blink::mojom::ServiceWorkerEventStatus::REJECTED);
   EXPECT_EQ(registration, RunRegisterJob(script2, options));
@@ -1708,26 +1709,26 @@ TEST_F(ServiceWorkerJobTest, RemoveControlleeDuringInstall_RejectActivate) {
   EventCallbackHelper* helper = new EventCallbackHelper;
   helper_.reset(helper);
 
-  GURL script1("http://www.example.com/service_worker.js");
-  GURL script2("http://www.example.com/service_worker.js?new");
+  GURL script1("https://www.example.com/service_worker.js");
+  GURL script2("https://www.example.com/service_worker.js?new");
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/one/");
+  options.scope = GURL("https://www.example.com/one/");
 
   scoped_refptr<ServiceWorkerRegistration> registration =
       RunRegisterJob(script1, options);
 
   // Add a controllee and queue an unregister to force the uninstalling state.
-  std::unique_ptr<ServiceWorkerProviderHost> host = CreateControllee();
+  ServiceWorkerProviderHost* host = CreateControllee();
   scoped_refptr<ServiceWorkerVersion> old_version =
       registration->active_version();
-  old_version->AddControllee(host.get());
+  old_version->AddControllee(host);
   RunUnregisterJob(options.scope);
 
   // Register another script that fails to activate. While installing,
   // old_version loses controllee.
   helper->set_install_callback(
-      base::Bind(&ServiceWorkerVersion::RemoveControllee,
-                 old_version, host.get()));
+      base::BindRepeating(&ServiceWorkerVersion::RemoveControllee, old_version,
+                          host->client_uuid()));
   helper->set_activate_event_result(
       blink::mojom::ServiceWorkerEventStatus::REJECTED);
   EXPECT_EQ(registration, RunRegisterJob(script2, options));
@@ -1746,9 +1747,9 @@ TEST_F(ServiceWorkerJobTest, HasFetchHandler) {
   EventCallbackHelper* helper = new EventCallbackHelper;
   helper_.reset(helper);
 
-  GURL script("http://www.example.com/service_worker.js");
+  GURL script("https://www.example.com/service_worker.js");
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/");
+  options.scope = GURL("https://www.example.com/");
   scoped_refptr<ServiceWorkerRegistration> registration;
 
   helper->set_has_fetch_handler(true);
@@ -1823,9 +1824,9 @@ TEST_F(ServiceWorkerJobTest, Update_PauseAfterDownload) {
 TEST_F(ServiceWorkerJobTest, ActivateCancelsOnShutdown) {
   UpdateJobTestHelper* update_helper = new UpdateJobTestHelper;
   helper_.reset(update_helper);
-  GURL script("http://www.example.com/service_worker.js");
+  GURL script("https://www.example.com/service_worker.js");
   blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = GURL("http://www.example.com/");
+  options.scope = GURL("https://www.example.com/");
 
   scoped_refptr<ServiceWorkerRegistration> registration =
       RunRegisterJob(script, options);
@@ -1834,10 +1835,10 @@ TEST_F(ServiceWorkerJobTest, ActivateCancelsOnShutdown) {
   registration->SetTaskRunnerForTest(runner);
 
   // Add a controllee.
-  std::unique_ptr<ServiceWorkerProviderHost> host = CreateControllee();
+  ServiceWorkerProviderHost* host = CreateControllee();
   scoped_refptr<ServiceWorkerVersion> first_version =
       registration->active_version();
-  first_version->AddControllee(host.get());
+  first_version->AddControllee(host);
 
   // Update. The new version should be waiting.
   registration->AddListener(update_helper);
@@ -1857,7 +1858,7 @@ TEST_F(ServiceWorkerJobTest, ActivateCancelsOnShutdown) {
 
   // Remove the controllee. The new version should be activating, and delayed
   // until the runner runs again.
-  first_version->RemoveControllee(host.get());
+  first_version->RemoveControllee(host->client_uuid());
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(new_version.get(), registration->active_version());
   EXPECT_EQ(ServiceWorkerVersion::ACTIVATING, new_version->status());
@@ -1874,6 +1875,44 @@ TEST_F(ServiceWorkerJobTest, ActivateCancelsOnShutdown) {
   EXPECT_EQ(new_version.get(), registration->active_version());
   EXPECT_EQ(ServiceWorkerVersion::ACTIVATING, new_version->status());
   registration->RemoveListener(update_helper);
+  // Dispatch Mojo messages for those Mojo interfaces bound on |runner| to avoid
+  // possible memory leak.
+  runner->RunUntilIdle();
+}
+
+// Test that clients are alerted of new registrations if they are
+// in-scope, so that Clients.claim() or ServiceWorkerContainer.ready work
+// correctly.
+TEST_F(ServiceWorkerJobTest, AddRegistrationToMatchingProviderHosts) {
+  GURL scope("https://www.example.com/scope/");
+  GURL in_scope("https://www.example.com/scope/page");
+  GURL out_scope("https://www.example.com/page");
+
+  // Make an in-scope client.
+  ServiceWorkerProviderHost* client = CreateControllee();
+  client->SetDocumentUrl(in_scope);
+
+  // Make an in-scope reserved client.
+  base::WeakPtr<ServiceWorkerProviderHost> reserved_client =
+      ServiceWorkerProviderHost::PreCreateNavigationHost(
+          helper_->context()->AsWeakPtr(), true /* are_ancestors_secure */,
+          {} /* web_contents_getter */);
+  reserved_client->SetDocumentUrl(in_scope);
+
+  // Make an out-scope client.
+  ServiceWorkerProviderHost* out_scope_client = CreateControllee();
+  out_scope_client->SetDocumentUrl(out_scope);
+
+  // Make a new registration.
+  GURL script("https://www.example.com/service_worker.js");
+  blink::mojom::ServiceWorkerRegistrationOptions options;
+  options.scope = scope;
+  scoped_refptr<ServiceWorkerRegistration> registration =
+      RunRegisterJob(script, options);
+
+  EXPECT_EQ(registration.get(), client->MatchRegistration());
+  EXPECT_EQ(registration.get(), reserved_client->MatchRegistration());
+  EXPECT_NE(registration.get(), out_scope_client->MatchRegistration());
 }
 
 }  // namespace content

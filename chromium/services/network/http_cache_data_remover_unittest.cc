@@ -75,7 +75,7 @@ class HttpCacheDataRemoverTest : public testing::Test {
   void SetUp() override {
     InitNetworkContext();
 
-    net::HttpCache* cache = network_context_->GetURLRequestContext()
+    net::HttpCache* cache = network_context_->url_request_context()
                                 ->http_transaction_factory()
                                 ->GetCache();
     ASSERT_TRUE(cache);
@@ -104,15 +104,14 @@ class HttpCacheDataRemoverTest : public testing::Test {
               static_cast<size_t>(backend_->GetEntryCount()));
   }
 
-  void RemoveData(mojom::ClearCacheUrlFilterPtr filter,
+  void RemoveData(mojom::ClearDataFilterPtr filter,
                   base::Time start_time,
                   base::Time end_time) {
     base::RunLoop run_loop;
     std::unique_ptr<HttpCacheDataRemover> data_remover =
         HttpCacheDataRemover::CreateAndStart(
-            network_context_->url_request_context_getter()
-                ->GetURLRequestContext(),
-            std::move(filter), start_time, end_time,
+            network_context_->url_request_context(), std::move(filter),
+            start_time, end_time,
             MakeHttpCacheDataRemoverCallback(run_loop.QuitClosure()));
     run_loop.Run();
   }
@@ -144,10 +143,7 @@ class HttpCacheDataRemoverTest : public testing::Test {
   std::unique_ptr<NetworkService> network_service_;
   std::unique_ptr<NetworkContext> network_context_;
 
-  // Stores the NetworkContextPtr of the most recently created NetworkContext,
-  // since destroying this before the NetworkContext itself triggers deletion of
-  // the NetworkContext. These tests are probably fine anyways, since the
-  // message loop must be spun for that to happen.
+  // Stores the NetworkContextPtr of the most recently created NetworkContext.
   mojom::NetworkContextPtr network_context_ptr_;
   disk_cache::Backend* backend_ = nullptr;
 };
@@ -159,8 +155,8 @@ TEST_F(HttpCacheDataRemoverTest, ClearAll) {
 }
 
 TEST_F(HttpCacheDataRemoverTest, FilterDeleteByDomain) {
-  mojom::ClearCacheUrlFilterPtr filter = mojom::ClearCacheUrlFilter::New();
-  filter->type = mojom::ClearCacheUrlFilter_Type::DELETE_MATCHES;
+  mojom::ClearDataFilterPtr filter = mojom::ClearDataFilter::New();
+  filter->type = mojom::ClearDataFilter_Type::DELETE_MATCHES;
   filter->domains.push_back("wikipedia.com");
   filter->domains.push_back("google.com");
   RemoveData(std::move(filter), base::Time(), base::Time());
@@ -172,8 +168,8 @@ TEST_F(HttpCacheDataRemoverTest, FilterDeleteByDomain) {
 }
 
 TEST_F(HttpCacheDataRemoverTest, FilterKeepByDomain) {
-  mojom::ClearCacheUrlFilterPtr filter = mojom::ClearCacheUrlFilter::New();
-  filter->type = mojom::ClearCacheUrlFilter_Type::KEEP_MATCHES;
+  mojom::ClearDataFilterPtr filter = mojom::ClearDataFilter::New();
+  filter->type = mojom::ClearDataFilter_Type::KEEP_MATCHES;
   filter->domains.push_back("wikipedia.com");
   filter->domains.push_back("google.com");
   RemoveData(std::move(filter), base::Time(), base::Time());
@@ -185,8 +181,8 @@ TEST_F(HttpCacheDataRemoverTest, FilterKeepByDomain) {
 }
 
 TEST_F(HttpCacheDataRemoverTest, FilterDeleteByOrigin) {
-  mojom::ClearCacheUrlFilterPtr filter = mojom::ClearCacheUrlFilter::New();
-  filter->type = mojom::ClearCacheUrlFilter_Type::DELETE_MATCHES;
+  mojom::ClearDataFilterPtr filter = mojom::ClearDataFilter::New();
+  filter->type = mojom::ClearDataFilter_Type::DELETE_MATCHES;
   filter->origins.push_back(url::Origin::Create(GURL("http://www.google.com")));
   filter->origins.push_back(url::Origin::Create(GURL("http://localhost:1234")));
   RemoveData(std::move(filter), base::Time(), base::Time());
@@ -196,8 +192,8 @@ TEST_F(HttpCacheDataRemoverTest, FilterDeleteByOrigin) {
 }
 
 TEST_F(HttpCacheDataRemoverTest, FilterKeepByOrigin) {
-  mojom::ClearCacheUrlFilterPtr filter = mojom::ClearCacheUrlFilter::New();
-  filter->type = mojom::ClearCacheUrlFilter_Type::KEEP_MATCHES;
+  mojom::ClearDataFilterPtr filter = mojom::ClearDataFilter::New();
+  filter->type = mojom::ClearDataFilter_Type::KEEP_MATCHES;
   filter->origins.push_back(url::Origin::Create(GURL("http://www.google.com")));
   filter->origins.push_back(url::Origin::Create(GURL("http://localhost:1234")));
   RemoveData(std::move(filter), base::Time(), base::Time());
@@ -207,8 +203,8 @@ TEST_F(HttpCacheDataRemoverTest, FilterKeepByOrigin) {
 }
 
 TEST_F(HttpCacheDataRemoverTest, FilterDeleteByDomainAndOrigin) {
-  mojom::ClearCacheUrlFilterPtr filter = mojom::ClearCacheUrlFilter::New();
-  filter->type = mojom::ClearCacheUrlFilter_Type::DELETE_MATCHES;
+  mojom::ClearDataFilterPtr filter = mojom::ClearDataFilter::New();
+  filter->type = mojom::ClearDataFilter_Type::DELETE_MATCHES;
   filter->domains.push_back("wikipedia.com");
   filter->origins.push_back(url::Origin::Create(GURL("http://localhost:1234")));
   RemoveData(std::move(filter), base::Time(), base::Time());
@@ -219,8 +215,8 @@ TEST_F(HttpCacheDataRemoverTest, FilterDeleteByDomainAndOrigin) {
 }
 
 TEST_F(HttpCacheDataRemoverTest, FilterKeepByDomainAndOrigin) {
-  mojom::ClearCacheUrlFilterPtr filter = mojom::ClearCacheUrlFilter::New();
-  filter->type = mojom::ClearCacheUrlFilter_Type::KEEP_MATCHES;
+  mojom::ClearDataFilterPtr filter = mojom::ClearDataFilter::New();
+  filter->type = mojom::ClearDataFilter_Type::KEEP_MATCHES;
   filter->domains.push_back("wikipedia.com");
   filter->origins.push_back(url::Origin::Create(GURL("http://localhost:1234")));
   RemoveData(std::move(filter), base::Time(), base::Time());
@@ -265,8 +261,8 @@ TEST_F(HttpCacheDataRemoverTest, FilterByDateRange) {
 }
 
 TEST_F(HttpCacheDataRemoverTest, FilterDeleteByDomainAndDate) {
-  mojom::ClearCacheUrlFilterPtr filter = mojom::ClearCacheUrlFilter::New();
-  filter->type = mojom::ClearCacheUrlFilter_Type::DELETE_MATCHES;
+  mojom::ClearDataFilterPtr filter = mojom::ClearDataFilter::New();
+  filter->type = mojom::ClearDataFilter_Type::DELETE_MATCHES;
   filter->domains.push_back("google.com");
   filter->domains.push_back("wikipedia.com");
 
@@ -283,8 +279,8 @@ TEST_F(HttpCacheDataRemoverTest, FilterDeleteByDomainAndDate) {
 }
 
 TEST_F(HttpCacheDataRemoverTest, FilterKeepByDomainAndDate) {
-  mojom::ClearCacheUrlFilterPtr filter = mojom::ClearCacheUrlFilter::New();
-  filter->type = mojom::ClearCacheUrlFilter_Type::KEEP_MATCHES;
+  mojom::ClearDataFilterPtr filter = mojom::ClearDataFilter::New();
+  filter->type = mojom::ClearDataFilter_Type::KEEP_MATCHES;
   filter->domains.push_back("google.com");
   filter->domains.push_back("wikipedia.com");
 
@@ -303,8 +299,7 @@ TEST_F(HttpCacheDataRemoverTest, DeleteHttpRemover) {
   bool callback_invoked = false;
   std::unique_ptr<HttpCacheDataRemover> data_remover =
       HttpCacheDataRemover::CreateAndStart(
-          network_context_->url_request_context_getter()
-              ->GetURLRequestContext(),
+          network_context_->url_request_context(),
           /*url_filter=*/nullptr, base::Time(), base::Time(),
           MakeHttpCacheDataRemoverCallback(base::BindOnce(
               [](bool* callback_invoked) { *callback_invoked = true; },
@@ -323,8 +318,7 @@ TEST_F(HttpCacheDataRemoverTest, TestDelayedBackend) {
   // call to clear the cache does it.
   InitNetworkContext();
 
-  net::HttpCache* http_cache = network_context_->url_request_context_getter()
-                                   ->GetURLRequestContext()
+  net::HttpCache* http_cache = network_context_->url_request_context()
                                    ->http_transaction_factory()
                                    ->GetCache();
   ASSERT_TRUE(http_cache);

@@ -230,10 +230,6 @@ error::Error DoGetAttachedShaders(GLuint program,
 error::Error DoGetAttribLocation(GLuint program,
                                  const char* name,
                                  GLint* result);
-error::Error DoGetBufferSubDataAsyncCHROMIUM(GLenum target,
-                                             GLintptr offset,
-                                             GLsizeiptr size,
-                                             uint8_t* mem);
 error::Error DoGetBooleanv(GLenum pname,
                            GLsizei bufsize,
                            GLsizei* length,
@@ -731,7 +727,7 @@ error::Error DoGenVertexArraysOES(GLsizei n, volatile GLuint* arrays);
 error::Error DoDeleteVertexArraysOES(GLsizei n, const volatile GLuint* arrays);
 error::Error DoIsVertexArrayOES(GLuint array, uint32_t* result);
 error::Error DoBindVertexArrayOES(GLuint array);
-error::Error DoSwapBuffers();
+error::Error DoSwapBuffers(uint64_t swap_id, GLbitfield flags);
 error::Error DoGetMaxValueInBufferCHROMIUM(GLuint buffer_id,
                                            GLsizei count,
                                            GLenum type,
@@ -764,12 +760,16 @@ error::Error DoGetUniformsES3CHROMIUM(GLuint program,
                                       std::vector<uint8_t>* data);
 error::Error DoGetTranslatedShaderSourceANGLE(GLuint shader,
                                               std::string* source);
-error::Error DoSwapBuffersWithBoundsCHROMIUM(GLsizei count,
-                                             const volatile GLint* rects);
-error::Error DoPostSubBufferCHROMIUM(GLint x,
+error::Error DoSwapBuffersWithBoundsCHROMIUM(uint64_t swap_id,
+                                             GLsizei count,
+                                             const volatile GLint* rects,
+                                             GLbitfield flags);
+error::Error DoPostSubBufferCHROMIUM(uint64_t swap_id,
+                                     GLint x,
                                      GLint y,
                                      GLint width,
-                                     GLint height);
+                                     GLint height,
+                                     GLbitfield flags);
 error::Error DoCopyTextureCHROMIUM(GLuint source_id,
                                    GLint source_level,
                                    GLenum dest_target,
@@ -841,7 +841,8 @@ error::Error DoScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
                                             GLfloat uv_x,
                                             GLfloat uv_y,
                                             GLfloat uv_width,
-                                            GLfloat uv_height);
+                                            GLfloat uv_height,
+                                            GLuint gpu_fence_id);
 error::Error DoScheduleCALayerSharedStateCHROMIUM(GLfloat opacity,
                                                   GLboolean is_clipped,
                                                   const GLfloat* clip_rect,
@@ -867,8 +868,9 @@ error::Error DoScheduleDCLayerCHROMIUM(
     GLuint background_color,
     GLuint edge_aa_mask,
     GLenum filter,
-    const GLfloat* bounds_rect);
-error::Error DoCommitOverlayPlanesCHROMIUM();
+    const GLfloat* bounds_rect,
+    bool is_protected_video);
+error::Error DoCommitOverlayPlanesCHROMIUM(uint64_t swap_id, GLbitfield flags);
 error::Error DoSetColorSpaceMetadataCHROMIUM(GLuint texture_id,
                                              gfx::ColorSpace color_space);
 error::Error DoFlushDriverCachesCHROMIUM();
@@ -1011,7 +1013,12 @@ error::Error DoBeginRasterCHROMIUM(GLuint texture_id,
                                    GLboolean can_use_lcd_text,
                                    GLint color_type,
                                    GLuint color_space_transfer_cache_id);
-error::Error DoRasterCHROMIUM(GLsizeiptr size, const void* list);
+error::Error DoRasterCHROMIUM(GLuint raster_shm_id,
+                              GLuint raster_shm_offset,
+                              GLsizeiptr raster_shm_size,
+                              GLuint font_shm_id,
+                              GLuint font_shm_offset,
+                              GLsizeiptr font_shm_size);
 error::Error DoEndRasterCHROMIUM();
 error::Error DoCreateTransferCacheEntryINTERNAL(GLuint entry_type,
                                                 GLuint entry_id,

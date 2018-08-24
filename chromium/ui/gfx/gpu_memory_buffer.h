@@ -20,9 +20,15 @@
 #include "ui/gfx/native_pixmap_handle.h"
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
 #include "ui/gfx/mac/io_surface.h"
+#elif defined(OS_WIN)
+#include "ipc/ipc_platform_file.h"  // nogncheck
 #endif
 
 extern "C" typedef struct _ClientBuffer* ClientBuffer;
+
+#if defined(OS_ANDROID)
+extern "C" typedef struct AHardwareBuffer AHardwareBuffer;
+#endif
 
 namespace gfx {
 
@@ -54,6 +60,10 @@ struct GFX_EXPORT GpuMemoryBufferHandle {
   NativePixmapHandle native_pixmap_handle;
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
   ScopedRefCountedIOSurfaceMachPort mach_port;
+#elif defined(OS_WIN)
+  IPC::PlatformFileForTransit dxgi_handle;
+#elif defined(OS_ANDROID)
+  AHardwareBuffer* android_hardware_buffer = nullptr;
 #endif
 };
 

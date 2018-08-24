@@ -46,15 +46,17 @@
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if (defined(OS_POSIX) && !defined(OS_MACOSX)) || defined(OS_FUCHSIA)
 #include "base/posix/global_descriptors.h"
 #endif
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
 #include "content/public/browser/posix_file_descriptor_info.h"
 #endif
 
 class GURL;
+using LoginAuthRequiredCallback =
+    base::OnceCallback<void(const base::Optional<net::AuthCredentials>&)>;
 
 namespace base {
 class CommandLine;
@@ -151,10 +153,12 @@ class RenderFrameHost;
 class RenderProcessHost;
 class RenderViewHost;
 class ResourceContext;
+class ServiceManagerConnection;
 class SiteInstance;
 class SpeechRecognitionManagerDelegate;
 class StoragePartition;
 class TracingDelegate;
+class URLLoaderRequestInterceptor;
 class URLLoaderThrottle;
 class VpnServiceProxy;
 class WebContents;
@@ -365,6 +369,9 @@ class CONTENT_EXPORT ContentBrowserClient {
       SiteInstance* site_instance,
       const GURL& current_url,
       const GURL& new_url);
+
+  // Returns true if error page should be isolated in its own process.
+  virtual bool ShouldIsolateErrorPage(bool in_main_frame);
 
   // Returns true if the passed in URL should be assigned as the site of the
   // current SiteInstance, if it does not yet have a site.
@@ -816,8 +823,11 @@ class CONTENT_EXPORT ContentBrowserClient {
       std::map<std::string, service_manager::EmbeddedServiceInfo>;
 
   // Registers services to be loaded in the browser process by the Service
-  // Manager.
-  virtual void RegisterInProcessServices(StaticServiceMap* services) {}
+  // Manager. |connection| is the ServiceManagerConnection service are
+  // registered with.
+  virtual void RegisterInProcessServices(StaticServiceMap* services,
+                                         ServiceManagerConnection* connection) {
+  }
 
   virtual void OverrideOnBindInterface(
       const service_manager::BindSourceInfo& remote_info,
@@ -924,18 +934,23 @@ class CONTENT_EXPORT ContentBrowserClient {
   // will be used.
   virtual std::unique_ptr<media::AudioManager> CreateAudioManager(
       media::AudioLogFactory* audio_log_factory);
+
+  // Returns true if (and only if) CreateAudioManager() is implemented and
+  // returns a non-null value.
+  virtual bool OverridesAudioManager();
+
   // Creates and returns a factory used for creating CDM instances for playing
   // protected content.
   virtual std::unique_ptr<media::CdmFactory> CreateCdmFactory();
 
   // Populates |mappings| with all files that need to be mapped before launching
   // a child process.
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if (defined(OS_POSIX) && !defined(OS_MACOSX)) || defined(OS_FUCHSIA)
   virtual void GetAdditionalMappedFilesForChildProcess(
       const base::CommandLine& command_line,
       int child_process_id,
       content::PosixFileDescriptorInfo* mappings) {}
-#endif  // defined(OS_POSIX) && !defined(OS_MACOSX)
+#endif  // defined(OS_POSIX) && !defined(OS_MACOSX) || defined(OS_FUCHSIA)
 
 #if defined(OS_WIN)
   // This is called on the PROCESS_LAUNCHER thread before the renderer process
@@ -984,20 +999,23 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Allows the embedder to register per-scheme URLLoaderFactory implementations
   // to handle navigation URL requests for schemes not handled by the Network
   // Service. Only called when the Network Service is enabled.
+  // Note that a RenderFrameHost or RenderProcessHost aren't passed in because
+  // these can change during a navigation (e.g. depending on redirects).
   using NonNetworkURLLoaderFactoryMap =
       std::map<std::string, std::unique_ptr<network::mojom::URLLoaderFactory>>;
   virtual void RegisterNonNetworkNavigationURLLoaderFactories(
-      RenderFrameHost* frame_host,
+      int frame_tree_node_id,
       NonNetworkURLLoaderFactoryMap* factories);
 
   // Allows the embedder to register per-scheme URLLoaderFactory implementations
   // to handle subresource URL requests for schemes not handled by the Network
-  // Service. The factories added to this map will only be used to service
-  // subresource requests from |frame_host| as long as it's navigated to
-  // |frame_url|. Only called when the Network Service is enabled.
+  // Service. This function can also be used to make a factory for other
+  // non-subresource requests, such as for the service worker script when
+  // starting a service worker. In that case, the frame id will be
+  // MSG_ROUTING_NONE.
   virtual void RegisterNonNetworkSubresourceURLLoaderFactories(
-      RenderFrameHost* frame_host,
-      const GURL& frame_url,
+      int render_process_id,
+      int render_frame_id,
       NonNetworkURLLoaderFactoryMap* factories);
 
   // Allows the embedder to intercept URLLoaderFactory interfaces used for
@@ -1014,6 +1032,15 @@ class CONTENT_EXPORT ContentBrowserClient {
       RenderFrameHost* frame,
       bool is_navigation,
       network::mojom::URLLoaderFactoryRequest* factory_request);
+
+  // Allows the embedder to returns a list of request interceptors that can
+  // intercept a navigation request.
+  //
+  // Always called on the IO thread and only when the Network Service is
+  // enabled.
+  virtual std::vector<std::unique_ptr<URLLoaderRequestInterceptor>>
+  WillCreateURLLoaderRequestInterceptors(NavigationUIData* navigation_ui_data,
+                                         int frame_tree_node_id);
 
   // Creates a NetworkContext for a BrowserContext's StoragePartition. If the
   // network service is enabled, it must return a NetworkContext using the
@@ -1144,11 +1171,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual scoped_refptr<LoginDelegate> CreateLoginDelegate(
       net::AuthChallengeInfo* auth_info,
       content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
-      bool is_main_frame,
+      bool is_request_for_main_frame,
       const GURL& url,
       bool first_auth_attempt,
-      const base::Callback<void(const base::Optional<net::AuthCredentials>&)>&
-          auth_required_callback);
+      LoginAuthRequiredCallback auth_required_callback);
 
   // Launches the url for the given tab. Returns true if an attempt to handle
   // the url was made, e.g. by launching an app. Note that this does not

@@ -315,6 +315,19 @@ webrtc_fuzzer_test("audio_decoder_opus_redundant_fuzzer") {
   ]
 }
 
+webrtc_fuzzer_test("audio_encoder_opus_fuzzer") {
+  sources = [
+    "audio_encoder_opus_fuzzer.cc",
+  ]
+  deps = [
+    ":fuzz_data_helper",
+    "../../api:array_view",
+    "../../api/audio_codecs/opus:audio_encoder_opus",
+    "../../rtc_base:checks",
+    "../../rtc_base:rtc_base_approved",
+  ]
+}
+
 webrtc_fuzzer_test("turn_unwrap_fuzzer") {
   sources = [
     "turn_unwrap_fuzzer.cc",
@@ -377,6 +390,7 @@ webrtc_fuzzer_test("sdp_parser_fuzzer") {
     "../../pc:libjingle_peerconnection",
   ]
   seed_corpus = "corpora/sdp-corpus"
+  libfuzzer_options = [ "max_len=16384" ]
 }
 
 webrtc_fuzzer_test("stun_parser_fuzzer") {
@@ -430,7 +444,7 @@ rtc_static_library("audio_processing_fuzzer_helper") {
   deps = [
     ":fuzz_data_helper",
     "../../api:optional",
-    "../../modules:module_api",
+    "../../api/audio:audio_frame_api",
     "../../modules/audio_processing",
     "../../rtc_base:checks",
     "../../rtc_base:rtc_base_approved",
@@ -475,4 +489,27 @@ rtc_static_library("fuzz_data_helper") {
     "../../modules/rtp_rtcp:rtp_rtcp_format",
   ]
   visibility = [ ":*" ]  # Only targets in this file can depend on this.
+}
+
+webrtc_fuzzer_test("rtp_frame_reference_finder_fuzzer") {
+  sources = [
+    "rtp_frame_reference_finder_fuzzer.cc",
+  ]
+  deps = [
+    "../../modules/video_coding/",
+    "../../rtc_base:ptr_util",
+    "../../system_wrappers",
+  ]
+  libfuzzer_options = [ "max_len=20000" ]
+}
+
+webrtc_fuzzer_test("frame_buffer2_fuzzer") {
+  sources = [
+    "frame_buffer2_fuzzer.cc",
+  ]
+  deps = [
+    "../../modules/video_coding/",
+    "../../system_wrappers:system_wrappers",
+  ]
+  libfuzzer_options = [ "max_len=10000" ]
 }

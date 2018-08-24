@@ -17,12 +17,12 @@ dictionary MediaTrackSettings {
     boolean echoCancellation;
     boolean autoGainControl;
     boolean noiseSuppression;
+    [OriginTrialEnabled=ExperimentalHardwareEchoCancellation] DOMString echoCancellationType;
     // latency and channelCount are not implemented.
     // double latency;
     // long channelCount;
     DOMString deviceId;
-    // groupId is not implemented.
-    // DOMString groupId;
+    DOMString groupId;
     // Media Capture Depth Stream Extensions
     // https://w3c.github.io/mediacapture-depth/#mediatracksettings-dictionary
     // TODO(aleksandar.stojiljkovic): videoKind, depthNear, depthFar,

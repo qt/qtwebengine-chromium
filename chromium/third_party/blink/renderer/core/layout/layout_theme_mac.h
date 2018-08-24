@@ -69,9 +69,6 @@ class LayoutThemeMac final : public LayoutTheme {
                   float& font_size,
                   AtomicString& font_family) const override;
 
-  bool NeedsHackForTextControlWithFontFamily(
-      const AtomicString& family) const override;
-
   int MinimumMenuListSize(const ComputedStyle&) const override;
 
   void AdjustSliderThumbSize(ComputedStyle&) const override;
@@ -80,7 +77,7 @@ class LayoutThemeMac final : public LayoutTheme {
   int SliderTickOffsetFromTrackCenter() const override;
 
   int PopupInternalPaddingStart(const ComputedStyle&) const override;
-  int PopupInternalPaddingEnd(const PlatformChromeClient*,
+  int PopupInternalPaddingEnd(const ChromeClient*,
                               const ComputedStyle&) const override;
   int PopupInternalPaddingTop(const ComputedStyle&) const override;
   int PopupInternalPaddingBottom(const ComputedStyle&) const override;
@@ -97,7 +94,7 @@ class LayoutThemeMac final : public LayoutTheme {
 
   bool SupportsSelectionForegroundColors() const override { return false; }
 
-  virtual bool IsModalColorChooser() const { return false; }
+  bool IsModalColorChooser() const override { return false; }
 
  protected:
   LayoutThemeMac();

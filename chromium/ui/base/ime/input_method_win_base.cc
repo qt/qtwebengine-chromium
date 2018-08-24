@@ -11,10 +11,15 @@
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/memory/ptr_util.h"
+#include "base/win/windows_version.h"
 #include "ui/base/ime/ime_bridge.h"
 #include "ui/base/ime/ime_engine_handler_interface.h"
 #include "ui/base/ime/text_input_client.h"
+#include "ui/base/ime/win/on_screen_keyboard_display_manager_input_pane.h"
+#include "ui/base/ime/win/on_screen_keyboard_display_manager_tab_tip.h"
 #include "ui/base/ime/win/tsf_input_scope.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/display/win/screen_win.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
@@ -29,11 +34,25 @@ namespace {
 // is returned to IME for improving conversion accuracy.
 constexpr size_t kExtraNumberOfChars = 20;
 
+std::unique_ptr<InputMethodKeyboardController> CreateKeyboardController(
+    HWND toplevel_window_handle) {
+  if (base::FeatureList::IsEnabled(features::kInputPaneOnScreenKeyboard) &&
+      base::win::GetVersion() >= base::win::VERSION_WIN10_RS1) {
+    return std::make_unique<OnScreenKeyboardDisplayManagerInputPane>(
+        toplevel_window_handle);
+  } else if (base::win::GetVersion() >= base::win::VERSION_WIN8) {
+    return std::make_unique<OnScreenKeyboardDisplayManagerTabTip>(
+        toplevel_window_handle);
+  }
+  return nullptr;
+}
+
 }  // namespace
 
 InputMethodWinBase::InputMethodWinBase(internal::InputMethodDelegate* delegate,
                                        HWND toplevel_window_handle)
-    : InputMethodBase(delegate),
+    : InputMethodBase(delegate,
+                      CreateKeyboardController(toplevel_window_handle)),
       toplevel_window_handle_(toplevel_window_handle) {}
 
 InputMethodWinBase::~InputMethodWinBase() {}
@@ -61,7 +80,7 @@ LRESULT InputMethodWinBase::OnChar(HWND window_handle,
                                    UINT message,
                                    WPARAM wparam,
                                    LPARAM lparam,
-                                   const PlatformEvent& event,
+                                   const MSG& event,
                                    BOOL* handled) {
   *handled = TRUE;
 
@@ -79,7 +98,7 @@ LRESULT InputMethodWinBase::OnChar(HWND window_handle,
     // Conditionally ignore '\r' events to work around https://crbug.com/319100.
     // TODO(yukawa, IME): Figure out long-term solution.
     if (ch != kCarriageReturn || accept_carriage_return_) {
-      ui::KeyEvent char_event(event);
+      ui::KeyEvent char_event = ui::KeyEventFromMSG(event);
       GetTextInputClient()->InsertChar(char_event);
     }
   }

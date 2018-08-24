@@ -122,7 +122,7 @@ class AnimationCompositorAnimationsTest : public RenderingTest {
     timeline_->ResetForTesting();
     element_ = GetDocument().CreateElementForBinding("test");
 
-    helper_.Initialize(nullptr, nullptr, nullptr, &ConfigureSettings);
+    helper_.Initialize(nullptr, nullptr, nullptr);
     base_url_ = "http://www.test.com/";
   }
 
@@ -137,7 +137,8 @@ class AnimationCompositorAnimationsTest : public RenderingTest {
     // snapshot the effect to make those available.
     // TODO(crbug.com/725385): Remove once compositor uses InterpolationTypes.
     auto style = ComputedStyle::Create();
-    effect.SnapshotAllCompositorKeyframes(*element_.Get(), *style, nullptr);
+    effect.SnapshotAllCompositorKeyframesIfNecessary(*element_.Get(), *style,
+                                                     nullptr);
     return CompositorAnimations::CheckCanStartEffectOnCompositor(
                timing, *element_.Get(), nullptr, effect, 1)
         .Ok();
@@ -153,7 +154,7 @@ class AnimationCompositorAnimationsTest : public RenderingTest {
       StringKeyframeEffectModel& effect,
       Vector<std::unique_ptr<CompositorKeyframeModel>>& keyframe_models,
       double animation_playback_rate) {
-    CompositorAnimations::GetAnimationOnCompositor(timing, 0, WTF::nullopt, 0,
+    CompositorAnimations::GetAnimationOnCompositor(timing, 0, base::nullopt, 0,
                                                    effect, keyframe_models,
                                                    animation_playback_rate);
   }
@@ -276,8 +277,10 @@ class AnimationCompositorAnimationsTest : public RenderingTest {
   }
 
   void SimulateFrame(double time) {
-    GetAnimationClock().UpdateTime(time);
-    GetPendingAnimations().Update(Optional<CompositorElementIdSet>(), false);
+    GetAnimationClock().UpdateTime(base::TimeTicks() +
+                                   base::TimeDelta::FromSecondsD(time));
+    GetPendingAnimations().Update(base::Optional<CompositorElementIdSet>(),
+                                  false);
     timeline_->ServiceAnimations(kTimingUpdateForAnimationFrame);
   }
 
@@ -288,7 +291,8 @@ class AnimationCompositorAnimationsTest : public RenderingTest {
     // snapshot the effect to make those available.
     // TODO(crbug.com/725385): Remove once compositor uses InterpolationTypes.
     auto style = ComputedStyle::Create();
-    effect.SnapshotAllCompositorKeyframes(*element_.Get(), *style, nullptr);
+    effect.SnapshotAllCompositorKeyframesIfNecessary(*element_.Get(), *style,
+                                                     nullptr);
 
     Vector<std::unique_ptr<CompositorKeyframeModel>> result;
     GetAnimationOnCompositor(timing_, effect, result, animation_playback_rate);
@@ -326,16 +330,15 @@ class AnimationCompositorAnimationsTest : public RenderingTest {
 
   LocalFrame* GetFrame() const { return helper_.LocalMainFrame()->GetFrame(); }
 
-  void BeginFrame() { helper_.GetWebView()->BeginFrame(WTF::CurrentTime()); }
+  void BeginFrame() {
+    helper_.GetWebView()->BeginFrame(WTF::CurrentTimeTicks());
+  }
 
   void ForceFullCompositingUpdate() {
     helper_.GetWebView()->UpdateAllLifecyclePhases();
   }
 
  private:
-  static void ConfigureSettings(WebSettings* settings) {
-    settings->SetAcceleratedCompositingEnabled(true);
-  }
   FrameTestHelpers::WebViewHelper helper_;
   std::string base_url_;
 };
@@ -350,7 +353,9 @@ class LayoutObjectProxy : public LayoutObject {
 
   const char* GetName() const override { return nullptr; }
   void UpdateLayout() override {}
-  FloatRect LocalBoundingBoxRectForAccessibility() const { return FloatRect(); }
+  FloatRect LocalBoundingBoxRectForAccessibility() const override {
+    return FloatRect();
+  }
 
  private:
   explicit LayoutObjectProxy(Node* node) : LayoutObject(node) {}
@@ -1198,8 +1203,8 @@ TEST_F(AnimationCompositorAnimationsTest,
       KeyframeEffect::Create(element.Get(), animation_effect1, timing);
   Animation* animation1 = timeline_->Play(keyframe_effect1);
   auto style = ComputedStyle::Create();
-  animation_effect1->SnapshotAllCompositorKeyframes(*element_.Get(), *style,
-                                                    nullptr);
+  animation_effect1->SnapshotAllCompositorKeyframesIfNecessary(*element_.Get(),
+                                                               *style, nullptr);
   EXPECT_TRUE(CompositorAnimations::CheckCanStartEffectOnCompositor(
                   timing, *element.Get(), animation1, *animation_effect1, 1)
                   .Ok());
@@ -1215,8 +1220,8 @@ TEST_F(AnimationCompositorAnimationsTest,
   KeyframeEffect* keyframe_effect2 =
       KeyframeEffect::Create(element.Get(), animation_effect2, timing);
   Animation* animation2 = timeline_->Play(keyframe_effect2);
-  animation_effect2->SnapshotAllCompositorKeyframes(*element_.Get(), *style,
-                                                    nullptr);
+  animation_effect2->SnapshotAllCompositorKeyframesIfNecessary(*element_.Get(),
+                                                               *style, nullptr);
   EXPECT_FALSE(CompositorAnimations::CheckCanStartEffectOnCompositor(
                    timing, *element.Get(), animation2, *animation_effect2, 1)
                    .Ok());
@@ -1244,17 +1249,17 @@ namespace {
 
 void UpdateDummyTransformNode(ObjectPaintProperties& properties,
                               CompositingReasons reasons) {
+  TransformPaintPropertyNode::State state;
+  state.direct_compositing_reasons = reasons;
   properties.UpdateTransform(TransformPaintPropertyNode::Root(),
-                             TransformationMatrix(), FloatPoint3D(), false, 0,
-                             reasons);
+                             std::move(state));
 }
 
 void UpdateDummyEffectNode(ObjectPaintProperties& properties,
                            CompositingReasons reasons) {
-  properties.UpdateEffect(
-      EffectPaintPropertyNode::Root(), TransformPaintPropertyNode::Root(),
-      ClipPaintPropertyNode::Root(), kColorFilterNone,
-      CompositorFilterOperations(), 1.0, SkBlendMode::kSrcOver, reasons);
+  EffectPaintPropertyNode::State state;
+  state.direct_compositing_reasons = reasons;
+  properties.UpdateEffect(EffectPaintPropertyNode::Root(), std::move(state));
 }
 
 }  // namespace
@@ -1393,23 +1398,21 @@ TEST_F(AnimationCompositorAnimationsTest, canStartElementOnCompositorEffect) {
   Element* target = document->getElementById("target");
   const ObjectPaintProperties* properties =
       target->GetLayoutObject()->FirstFragment().PaintProperties();
-  EXPECT_TRUE(properties->Transform()->HasDirectCompositingReasons());
+  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+    EXPECT_TRUE(properties->Transform()->HasDirectCompositingReasons());
   CompositorAnimations::FailureCode code =
       CompositorAnimations::CheckCanStartElementOnCompositor(*target);
   EXPECT_EQ(code, CompositorAnimations::FailureCode::None());
   EXPECT_EQ(document->Timeline().PendingAnimationsCount(), 1u);
-  EXPECT_EQ(document->Timeline().MainThreadCompositableAnimationsCount(), 0u);
   CompositorAnimationHost* host =
       document->View()->GetCompositorAnimationHost();
   EXPECT_EQ(host->GetMainThreadAnimationsCountForTesting(), 0u);
-  EXPECT_EQ(host->GetMainThreadCompositableAnimationsCountForTesting(), 0u);
   EXPECT_EQ(host->GetCompositedAnimationsCountForTesting(), 1u);
 }
 
 // Regression test for https://crbug.com/781305. When we have a transform
 // animation on a SVG element, the effect can be started on compositor but the
-// element itself cannot. The animation should not be a main thread compositable
-// animation.
+// element itself cannot.
 TEST_F(AnimationCompositorAnimationsTest,
        cannotStartElementOnCompositorEffectSVG) {
   LoadTestData("transform-animation-on-svg.html");
@@ -1420,82 +1423,9 @@ TEST_F(AnimationCompositorAnimationsTest,
   EXPECT_EQ(code, CompositorAnimations::FailureCode::NonActionable(
                       "Element does not paint into own backing"));
   EXPECT_EQ(document->Timeline().PendingAnimationsCount(), 4u);
-  EXPECT_EQ(document->Timeline().MainThreadCompositableAnimationsCount(), 0u);
   CompositorAnimationHost* host =
       document->View()->GetCompositorAnimationHost();
   EXPECT_EQ(host->GetMainThreadAnimationsCountForTesting(), 4u);
-  EXPECT_EQ(host->GetMainThreadCompositableAnimationsCountForTesting(), 0u);
-  EXPECT_EQ(host->GetCompositedAnimationsCountForTesting(), 0u);
-}
-
-// A helper function for the next two tests to avoid duplicate code
-void CanStartOpacityTestHelper(CompositorAnimations::FailureCode code,
-                               Document* document,
-                               size_t composited_animations_count) {
-  EXPECT_EQ(code, CompositorAnimations::FailureCode::None());
-  EXPECT_EQ(document->Timeline().PendingAnimationsCount(), 1u);
-  EXPECT_EQ(document->Timeline().MainThreadCompositableAnimationsCount(), 0u);
-  CompositorAnimationHost* host =
-      document->View()->GetCompositorAnimationHost();
-  EXPECT_EQ(host->GetMainThreadAnimationsCountForTesting(), 0u);
-  EXPECT_EQ(host->GetMainThreadCompositableAnimationsCountForTesting(), 0u);
-  EXPECT_EQ(host->GetCompositedAnimationsCountForTesting(),
-            composited_animations_count);
-}
-
-// Regression tests for https://crbug.com/818809. When an element has an
-// animation that will be composited regardless of an experiment (such as
-// will-change: transform), then an opacity animation on this element will be
-// composited as well.
-TEST_F(AnimationCompositorAnimationsTest,
-       canStartOpacityWithWillChangeWithRuntimeFeature) {
-  ScopedTurnOff2DAndOpacityCompositorAnimationsForTest
-      turn_off_2d_and_opacity_compositors_animation(true);
-  LoadTestData("opacity-with-will-change-transform.html");
-  Document* document = GetFrame()->GetDocument();
-  Element* target = document->getElementById("target");
-  CompositorAnimations::FailureCode code =
-      CompositorAnimations::CheckCanStartElementOnCompositor(*target);
-  CanStartOpacityTestHelper(code, document, 1u);
-}
-
-TEST_F(AnimationCompositorAnimationsTest,
-       canStartOpacityWith3DTransformWithRuntimeFeature) {
-  ScopedTurnOff2DAndOpacityCompositorAnimationsForTest
-      turn_off_2d_and_opacity_compositors_animation(true);
-  LoadTestData("opacity-with-3d-transform.html");
-  Document* document = GetFrame()->GetDocument();
-  Element* target = document->getElementById("target");
-  CompositorAnimations::FailureCode code =
-      CompositorAnimations::CheckCanStartElementOnCompositor(*target);
-  CanStartOpacityTestHelper(code, document, 2u);
-}
-
-TEST_F(AnimationCompositorAnimationsTest,
-       cannotStartAnimationOnCompositorWithRuntimeFeature) {
-  ScopedTurnOff2DAndOpacityCompositorAnimationsForTest
-      turn_off_2d_and_opacity_compositors_animation(true);
-  LoadTestData("transform-animation.html");
-  Document* document = GetFrame()->GetDocument();
-  Element* target = document->getElementById("target");
-  const ObjectPaintProperties* properties =
-      target->GetLayoutObject()->FirstFragment().PaintProperties();
-  EXPECT_TRUE(properties->Transform()->HasDirectCompositingReasons());
-  LayoutObject* layout_object = target->GetLayoutObject();
-  DCHECK(layout_object && layout_object->PaintingLayer());
-  // LoadTestData calls ForceFullCompositingUpdate, which have called
-  // CheckCanStartAnimationOnCompositor on the target element. In this test,
-  // there is one single transform animation, and it should not be composited
-  // because the runtime flag is on.
-  CompositingReasons compositing_reasons =
-      layout_object->PaintingLayer()->GetCompositingReasons();
-  EXPECT_EQ(compositing_reasons, CompositingReason::kNone);
-  EXPECT_EQ(document->Timeline().PendingAnimationsCount(), 1u);
-  EXPECT_EQ(document->Timeline().MainThreadCompositableAnimationsCount(), 1u);
-  CompositorAnimationHost* host =
-      document->View()->GetCompositorAnimationHost();
-  EXPECT_EQ(host->GetMainThreadAnimationsCountForTesting(), 1u);
-  EXPECT_EQ(host->GetMainThreadCompositableAnimationsCountForTesting(), 1u);
   EXPECT_EQ(host->GetCompositedAnimationsCountForTesting(), 0u);
 }
 

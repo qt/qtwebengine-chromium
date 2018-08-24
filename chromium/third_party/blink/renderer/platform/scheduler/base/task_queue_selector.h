@@ -16,8 +16,8 @@
 #include "third_party/blink/renderer/platform/scheduler/base/task_queue_selector_logic.h"
 #include "third_party/blink/renderer/platform/scheduler/base/work_queue_sets.h"
 
-namespace blink {
-namespace scheduler {
+namespace base {
+namespace sequence_manager {
 namespace internal {
 
 // TaskQueueSelector is used by the SchedulerHelper to enable prioritization
@@ -54,7 +54,7 @@ class PLATFORM_EXPORT TaskQueueSelector {
   bool SelectWorkQueueToService(WorkQueue** out_work_queue);
 
   // Serialize the selector state for tracing.
-  void AsValueInto(base::trace_event::TracedValue* state) const;
+  void AsValueInto(trace_event::TracedValue* state) const;
 
   class PLATFORM_EXPORT Observer {
    public:
@@ -147,18 +147,6 @@ class PLATFORM_EXPORT TaskQueueSelector {
     return &prioritizing_selector_;
   }
 
- private:
-  // Returns the priority which is next after |priority|.
-  static TaskQueue::QueuePriority NextPriority(
-      TaskQueue::QueuePriority priority);
-
-  bool SelectWorkQueueToServiceInternal(WorkQueue** out_work_queue);
-
-  // Called whenever the selector chooses a task queue for execution with the
-  // priority |priority|.
-  void DidSelectQueueWithPriority(TaskQueue::QueuePriority priority,
-                                  bool chose_delayed_over_immediate);
-
   // Maximum score to accumulate before high priority tasks are run even in
   // the presence of highest priority tasks.
   static const size_t kMaxHighPriorityStarvationScore = 3;
@@ -206,7 +194,21 @@ class PLATFORM_EXPORT TaskQueueSelector {
   static const size_t kMaxDelayedStarvationTasks = 3;
 
  private:
-  base::ThreadChecker main_thread_checker_;
+  // Returns the priority which is next after |priority|.
+  static TaskQueue::QueuePriority NextPriority(
+      TaskQueue::QueuePriority priority);
+
+  bool SelectWorkQueueToServiceInternal(WorkQueue** out_work_queue);
+
+  // Called whenever the selector chooses a task queue for execution with the
+  // priority |priority|.
+  void DidSelectQueueWithPriority(TaskQueue::QueuePriority priority,
+                                  bool chose_delayed_over_immediate);
+
+  // Returns true if there are pending tasks with priority |priority|.
+  bool HasTasksWithPriority(TaskQueue::QueuePriority priority);
+
+  ThreadChecker main_thread_checker_;
 
   PrioritizingSelector prioritizing_selector_;
   size_t immediate_starvation_count_;
@@ -219,7 +221,7 @@ class PLATFORM_EXPORT TaskQueueSelector {
 };
 
 }  // namespace internal
-}  // namespace scheduler
-}  // namespace blink
+}  // namespace sequence_manager
+}  // namespace base
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCHEDULER_BASE_TASK_QUEUE_SELECTOR_H_

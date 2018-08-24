@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "base/containers/flat_map.h"
+#include "base/metrics/histogram_macros.h"
 #include "ui/display/types/display_constants.h"
 #include "ui/display/types/display_mode.h"
 #include "ui/display/util/edid_parser.h"
@@ -24,6 +25,13 @@ namespace {
 
 static const size_t kDefaultCursorWidth = 64;
 static const size_t kDefaultCursorHeight = 64;
+
+// Used in the GetColorSpaceFromEdid function to collect data on whether the
+// color space extracted from an EDID blob passed the sanity checks.
+void EmitEdidColorSpaceChecksOutcomeUma(EdidColorSpaceChecksOutcome outcome) {
+  UMA_HISTOGRAM_ENUMERATION("DrmUtil.GetColorSpaceFromEdid.ChecksOutcome",
+                            outcome);
+}
 
 bool IsCrtcInUse(
     uint32_t crtc,
@@ -185,16 +193,18 @@ int ConnectorIndex(int device_index, int display_index) {
   return ((device_index << 4) + display_index) & 0xFF;
 }
 
-bool HasColorCorrectionMatrix(int fd, drmModeCrtc* crtc) {
-  ScopedDrmObjectPropertyPtr crtc_props(
-      drmModeObjectGetProperties(fd, crtc->crtc_id, DRM_MODE_OBJECT_CRTC));
+bool HasPerPlaneColorCorrectionMatrix(const int fd, drmModeCrtc* crtc) {
+  ScopedDrmPlaneResPtr plane_resources(drmModeGetPlaneResources(fd));
+  DCHECK(plane_resources);
+  for (uint32_t i = 0; i < plane_resources->count_planes; ++i) {
+    ScopedDrmObjectPropertyPtr plane_props(drmModeObjectGetProperties(
+        fd, plane_resources->planes[i], DRM_MODE_OBJECT_PLANE));
+    DCHECK(plane_props);
 
-  for (uint32_t i = 0; i < crtc_props->count_props; ++i) {
-    ScopedDrmPropertyPtr property(drmModeGetProperty(fd, crtc_props->props[i]));
-    if (property && !strcmp(property->name, "CTM"))
-      return true;
+    if (!FindDrmProperty(fd, plane_props.get(), "PLANE_CTM"))
+      return false;
   }
-  return false;
+  return true;
 }
 
 bool AreDisplayModesEqual(const DisplayMode_Params& lhs,
@@ -204,6 +214,23 @@ bool AreDisplayModesEqual(const DisplayMode_Params& lhs,
 }
 
 }  // namespace
+
+ScopedDrmPropertyPtr FindDrmProperty(int fd,
+                                     drmModeObjectProperties* properties,
+                                     const char* name) {
+  for (uint32_t i = 0; i < properties->count_props; ++i) {
+    ScopedDrmPropertyPtr property(drmModeGetProperty(fd, properties->props[i]));
+    if (property && !strcmp(property->name, name))
+      return property;
+  }
+  return nullptr;
+}
+
+bool HasColorCorrectionMatrix(int fd, drmModeCrtc* crtc) {
+  ScopedDrmObjectPropertyPtr crtc_props(
+      drmModeObjectGetProperties(fd, crtc->crtc_id, DRM_MODE_OBJECT_CRTC));
+  return !!FindDrmProperty(fd, crtc_props.get(), "CTM");
+}
 
 DisplayMode_Params GetDisplayModeParams(const display::DisplayMode& mode) {
   DisplayMode_Params params;
@@ -388,7 +415,8 @@ std::unique_ptr<display::DisplaySnapshot> CreateDisplaySnapshot(
   const bool is_aspect_preserving_scaling =
       IsAspectPreserving(fd, info->connector());
   const bool has_color_correction_matrix =
-      HasColorCorrectionMatrix(fd, info->crtc());
+      HasColorCorrectionMatrix(fd, info->crtc()) ||
+      HasPerPlaneColorCorrectionMatrix(fd, info->crtc());
   const gfx::Size maximum_cursor_size = GetMaximumCursorSize(fd);
 
   std::string display_name;
@@ -402,6 +430,8 @@ std::unique_ptr<display::DisplaySnapshot> CreateDisplaySnapshot(
 
   ScopedDrmPropertyBlobPtr edid_blob(
       GetDrmPropertyBlob(fd, info->connector(), "EDID"));
+  UMA_HISTOGRAM_BOOLEAN("DrmUtil.CreateDisplaySnapshot.HasEdidBlob",
+                        !!edid_blob);
   std::vector<uint8_t> edid;
   if (edid_blob) {
     edid.assign(static_cast<uint8_t*>(edid_blob->data),
@@ -642,6 +672,8 @@ gfx::ColorSpace GetColorSpaceFromEdid(const display::EdidParser& edid_parser) {
   // Rx, to guarantee that the R, G and B colors are each in the correct region.
   if (!(primaries.fBX <= primaries.fRX && primaries.fGX <= primaries.fRX &&
         primaries.fBY <= primaries.fRY && primaries.fRY <= primaries.fGY)) {
+    EmitEdidColorSpaceChecksOutcomeUma(
+        EdidColorSpaceChecksOutcome::kErrorBadCoordinates);
     return gfx::ColorSpace();
   }
 
@@ -652,8 +684,11 @@ gfx::ColorSpace GetColorSpaceFromEdid(const display::EdidParser& edid_parser) {
       (primaries.fRX * primaries.fGY) + (primaries.fBX * primaries.fRY) +
       (primaries.fGX * primaries.fBY) - (primaries.fBX * primaries.fGY) -
       (primaries.fGX * primaries.fRY) - (primaries.fRX * primaries.fBY);
-  if (primaries_area_twice < kBT709PrimariesArea)
+  if (primaries_area_twice < kBT709PrimariesArea) {
+    EmitEdidColorSpaceChecksOutcomeUma(
+        EdidColorSpaceChecksOutcome::kErrorPrimariesAreaTooSmall);
     return gfx::ColorSpace();
+  }
 
   // Sanity check: https://crbug.com/809909, the blue primary coordinates should
   // not be too far left/upwards of the expected location (namely [0.15, 0.06]
@@ -665,18 +700,28 @@ gfx::ColorSpace GetColorSpaceFromEdid(const display::EdidParser& edid_parser) {
   const bool is_blue_primary_broken =
       (std::abs(primaries.fBX - kExpectedBluePrimaryX) > kBluePrimaryXDelta) ||
       (std::abs(primaries.fBY - kExpectedBluePrimaryY) > kBluePrimaryYDelta);
-  if (is_blue_primary_broken)
+  if (is_blue_primary_broken) {
+    EmitEdidColorSpaceChecksOutcomeUma(
+        EdidColorSpaceChecksOutcome::kErrorBluePrimaryIsBroken);
     return gfx::ColorSpace();
+  }
 
   SkMatrix44 color_space_as_matrix;
-  if (!primaries.toXYZD50(&color_space_as_matrix))
+  if (!primaries.toXYZD50(&color_space_as_matrix)) {
+    EmitEdidColorSpaceChecksOutcomeUma(
+        EdidColorSpaceChecksOutcome::kErrorCannotExtractToXYZD50);
     return gfx::ColorSpace();
+  }
 
   const double gamma = edid_parser.gamma();
-  if (gamma < 1.0)
+  if (gamma < 1.0) {
+    EmitEdidColorSpaceChecksOutcomeUma(
+        EdidColorSpaceChecksOutcome::kErrorBadGamma);
     return gfx::ColorSpace();
+  }
 
   SkColorSpaceTransferFn transfer = {gamma, 1.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+  EmitEdidColorSpaceChecksOutcomeUma(EdidColorSpaceChecksOutcome::kSuccess);
   return gfx::ColorSpace::CreateCustom(color_space_as_matrix, transfer);
 }
 

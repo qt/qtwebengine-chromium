@@ -26,15 +26,15 @@ OverlayStrategyUnderlayCast::~OverlayStrategyUnderlayCast() {}
 
 bool OverlayStrategyUnderlayCast::Attempt(
     const SkMatrix44& output_color_matrix,
-    cc::DisplayResourceProvider* resource_provider,
+    DisplayResourceProvider* resource_provider,
     RenderPass* render_pass,
-    cc::OverlayCandidateList* candidate_list,
+    OverlayCandidateList* candidate_list,
     std::vector<gfx::Rect>* content_bounds) {
   QuadList& quad_list = render_pass->quad_list;
   bool found_underlay = false;
   gfx::Rect content_rect;
   for (const auto* quad : base::Reversed(quad_list)) {
-    if (cc::OverlayCandidate::IsInvisibleQuad(quad))
+    if (OverlayCandidate::IsInvisibleQuad(quad))
       continue;
 
     const auto& transform = quad->shared_quad_state->quad_to_target_transform;
@@ -43,8 +43,8 @@ bool OverlayStrategyUnderlayCast::Attempt(
 
     bool is_underlay = false;
     if (!found_underlay) {
-      cc::OverlayCandidate candidate;
-      is_underlay = cc::OverlayCandidate::FromDrawQuad(
+      OverlayCandidate candidate;
+      is_underlay = OverlayCandidate::FromDrawQuad(
           resource_provider, output_color_matrix, quad, &candidate);
       found_underlay = is_underlay;
     }
@@ -63,9 +63,17 @@ bool OverlayStrategyUnderlayCast::Attempt(
   }
 
   if (found_underlay) {
+    // If the primary plane shows up in the candidates list make sure it isn't
+    // opaque otherwise the video underlay won't be visible.
+    if (!candidate_list->empty()) {
+      DCHECK_EQ(1u, candidate_list->size());
+      DCHECK(candidate_list->front().use_output_surface_for_resource);
+      candidate_list->front().is_opaque = false;
+    }
+
     for (auto it = quad_list.begin(); it != quad_list.end(); ++it) {
-      cc::OverlayCandidate candidate;
-      if (!cc::OverlayCandidate::FromDrawQuad(
+      OverlayCandidate candidate;
+      if (!OverlayCandidate::FromDrawQuad(
               resource_provider, output_color_matrix, *it, &candidate)) {
         continue;
       }
@@ -87,6 +95,10 @@ bool OverlayStrategyUnderlayCast::Attempt(
     content_bounds->push_back(content_rect);
   }
   return found_underlay;
+}
+
+OverlayProcessor::StrategyType OverlayStrategyUnderlayCast::GetUMAEnum() const {
+  return OverlayProcessor::StrategyType::kUnderlayCast;
 }
 
 // static

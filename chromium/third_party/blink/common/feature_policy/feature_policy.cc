@@ -105,20 +105,6 @@ std::unique_ptr<FeaturePolicy> FeaturePolicy::CreateFromParentPolicy(
                                 GetDefaultFeatureList());
 }
 
-// static
-std::unique_ptr<FeaturePolicy> FeaturePolicy::CreateFromPolicyWithOrigin(
-    const FeaturePolicy& policy,
-    const url::Origin& origin) {
-  std::unique_ptr<FeaturePolicy> new_policy =
-      base::WrapUnique(new FeaturePolicy(origin, policy.feature_list_));
-  new_policy->inherited_policies_ = policy.inherited_policies_;
-  for (const auto& feature : policy.allowlists_) {
-    new_policy->allowlists_[feature.first] =
-        base::WrapUnique(new Allowlist(*feature.second));
-  }
-  return new_policy;
-}
-
 bool FeaturePolicy::IsFeatureEnabled(
     mojom::FeaturePolicyFeature feature) const {
   return IsFeatureEnabledForOrigin(feature, origin_);
@@ -248,58 +234,67 @@ void FeaturePolicy::AddContainerPolicy(
 }
 
 // static
-// See third_party/WebKit/public/common/feature_policy/feature_policy.h for
+// See third_party/blink/public/common/feature_policy/feature_policy.h for
 // status of each feature (in spec, implemented, etc).
 const FeaturePolicy::FeatureList& FeaturePolicy::GetDefaultFeatureList() {
-  CR_DEFINE_STATIC_LOCAL(FeatureList, default_feature_list,
-                         ({{mojom::FeaturePolicyFeature::kAutoplay,
-                            FeaturePolicy::FeatureDefault::EnableForSelf},
-                           {mojom::FeaturePolicyFeature::kCamera,
-                            FeaturePolicy::FeatureDefault::EnableForSelf},
-                           {mojom::FeaturePolicyFeature::kEncryptedMedia,
-                            FeaturePolicy::FeatureDefault::EnableForSelf},
-                           {mojom::FeaturePolicyFeature::kFullscreen,
-                            FeaturePolicy::FeatureDefault::EnableForSelf},
-                           {mojom::FeaturePolicyFeature::kGeolocation,
-                            FeaturePolicy::FeatureDefault::EnableForSelf},
-                           {mojom::FeaturePolicyFeature::kMicrophone,
-                            FeaturePolicy::FeatureDefault::EnableForSelf},
-                           {mojom::FeaturePolicyFeature::kMidiFeature,
-                            FeaturePolicy::FeatureDefault::EnableForSelf},
-                           {mojom::FeaturePolicyFeature::kPayment,
-                            FeaturePolicy::FeatureDefault::EnableForSelf},
-                           {mojom::FeaturePolicyFeature::kSpeaker,
-                            FeaturePolicy::FeatureDefault::EnableForSelf},
-                           {mojom::FeaturePolicyFeature::kDocumentCookie,
-                            FeaturePolicy::FeatureDefault::EnableForAll},
-                           {mojom::FeaturePolicyFeature::kDocumentDomain,
-                            FeaturePolicy::FeatureDefault::EnableForAll},
-                           {mojom::FeaturePolicyFeature::kDocumentWrite,
-                            FeaturePolicy::FeatureDefault::EnableForAll},
-                           {mojom::FeaturePolicyFeature::kSyncScript,
-                            FeaturePolicy::FeatureDefault::EnableForAll},
-                           {mojom::FeaturePolicyFeature::kSyncXHR,
-                            FeaturePolicy::FeatureDefault::EnableForAll},
-                           {mojom::FeaturePolicyFeature::kUsb,
-                            FeaturePolicy::FeatureDefault::EnableForSelf},
-                           {mojom::FeaturePolicyFeature::kAccessibilityEvents,
-                            FeaturePolicy::FeatureDefault::EnableForSelf},
-                           {mojom::FeaturePolicyFeature::kWebVr,
-                            FeaturePolicy::FeatureDefault::EnableForSelf},
-                           {mojom::FeaturePolicyFeature::kAccelerometer,
-                            FeaturePolicy::FeatureDefault::EnableForSelf},
-                           {mojom::FeaturePolicyFeature::kAmbientLightSensor,
-                            FeaturePolicy::FeatureDefault::EnableForSelf},
-                           {mojom::FeaturePolicyFeature::kGyroscope,
-                            FeaturePolicy::FeatureDefault::EnableForSelf},
-                           {mojom::FeaturePolicyFeature::kMagnetometer,
-                            FeaturePolicy::FeatureDefault::EnableForSelf},
-                           {mojom::FeaturePolicyFeature::kUnsizedMedia,
-                            FeaturePolicy::FeatureDefault::EnableForAll},
-                           {mojom::FeaturePolicyFeature::kPictureInPicture,
-                            FeaturePolicy::FeatureDefault::EnableForAll},
-                           {mojom::FeaturePolicyFeature::kVerticalScroll,
-                            FeaturePolicy::FeatureDefault::EnableForAll}}));
+  CR_DEFINE_STATIC_LOCAL(
+      FeatureList, default_feature_list,
+      ({{mojom::FeaturePolicyFeature::kAccelerometer,
+         FeaturePolicy::FeatureDefault::EnableForSelf},
+        {mojom::FeaturePolicyFeature::kAccessibilityEvents,
+         FeaturePolicy::FeatureDefault::EnableForSelf},
+        {mojom::FeaturePolicyFeature::kAmbientLightSensor,
+         FeaturePolicy::FeatureDefault::EnableForSelf},
+        {mojom::FeaturePolicyFeature::kAnimations,
+         FeaturePolicy::FeatureDefault::EnableForAll},
+        {mojom::FeaturePolicyFeature::kAutoplay,
+         FeaturePolicy::FeatureDefault::EnableForSelf},
+        {mojom::FeaturePolicyFeature::kCamera,
+         FeaturePolicy::FeatureDefault::EnableForSelf},
+        {mojom::FeaturePolicyFeature::kDocumentCookie,
+         FeaturePolicy::FeatureDefault::EnableForAll},
+        {mojom::FeaturePolicyFeature::kDocumentDomain,
+         FeaturePolicy::FeatureDefault::EnableForAll},
+        {mojom::FeaturePolicyFeature::kDocumentStreamInsertion,
+         FeaturePolicy::FeatureDefault::EnableForAll},
+        {mojom::FeaturePolicyFeature::kEncryptedMedia,
+         FeaturePolicy::FeatureDefault::EnableForSelf},
+        {mojom::FeaturePolicyFeature::kFullscreen,
+         FeaturePolicy::FeatureDefault::EnableForSelf},
+        {mojom::FeaturePolicyFeature::kGeolocation,
+         FeaturePolicy::FeatureDefault::EnableForSelf},
+        {mojom::FeaturePolicyFeature::kGyroscope,
+         FeaturePolicy::FeatureDefault::EnableForSelf},
+        {mojom::FeaturePolicyFeature::kImageCompression,
+         FeaturePolicy::FeatureDefault::EnableForAll},
+        {mojom::FeaturePolicyFeature::kLegacyImageFormats,
+         FeaturePolicy::FeatureDefault::EnableForAll},
+        {mojom::FeaturePolicyFeature::kMagnetometer,
+         FeaturePolicy::FeatureDefault::EnableForSelf},
+        {mojom::FeaturePolicyFeature::kMaxDownscalingImage,
+         FeaturePolicy::FeatureDefault::EnableForAll},
+        {mojom::FeaturePolicyFeature::kMicrophone,
+         FeaturePolicy::FeatureDefault::EnableForSelf},
+        {mojom::FeaturePolicyFeature::kMidiFeature,
+         FeaturePolicy::FeatureDefault::EnableForSelf},
+        {mojom::FeaturePolicyFeature::kPayment,
+         FeaturePolicy::FeatureDefault::EnableForSelf},
+        {mojom::FeaturePolicyFeature::kPictureInPicture,
+         FeaturePolicy::FeatureDefault::EnableForAll},
+        {mojom::FeaturePolicyFeature::kSpeaker,
+         FeaturePolicy::FeatureDefault::EnableForSelf},
+        {mojom::FeaturePolicyFeature::kSyncScript,
+         FeaturePolicy::FeatureDefault::EnableForAll},
+        {mojom::FeaturePolicyFeature::kSyncXHR,
+         FeaturePolicy::FeatureDefault::EnableForAll},
+        {mojom::FeaturePolicyFeature::kUnsizedMedia,
+         FeaturePolicy::FeatureDefault::EnableForAll},
+        {mojom::FeaturePolicyFeature::kUsb,
+         FeaturePolicy::FeatureDefault::EnableForSelf},
+        {mojom::FeaturePolicyFeature::kVerticalScroll,
+         FeaturePolicy::FeatureDefault::EnableForAll},
+        {mojom::FeaturePolicyFeature::kWebVr,
+         FeaturePolicy::FeatureDefault::EnableForSelf}}));
   return default_feature_list;
 }
 

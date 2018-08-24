@@ -40,16 +40,23 @@ FXDIB_Format XFA_GetDIBFormat(FXCODEC_IMAGE_TYPE type,
                               int32_t iBitsPerComponent) {
   FXDIB_Format dibFormat = FXDIB_Argb;
   switch (type) {
-    case FXCODEC_IMAGE_BMP:
     case FXCODEC_IMAGE_JPG:
-    case FXCODEC_IMAGE_TIF: {
+#ifdef PDF_ENABLE_XFA_BMP
+    case FXCODEC_IMAGE_BMP:
+#endif  // PDF_ENABLE_XFA_BMP
+#ifdef PDF_ENABLE_XFA_TIFF
+    case FXCODEC_IMAGE_TIFF:
+#endif  // PDF_ENABLE_XFA_TIFF
+    {
       dibFormat = FXDIB_Rgb32;
       int32_t bpp = iComponents * iBitsPerComponent;
       if (bpp <= 24) {
         dibFormat = FXDIB_Rgb;
       }
     } break;
+#ifdef PDF_ENABLE_XFA_PNG
     case FXCODEC_IMAGE_PNG:
+#endif  // PDF_ENABLE_XFA_PNG
     default:
       break;
   }
@@ -74,8 +81,7 @@ void XFA_DrawImage(CXFA_Graphics* pGS,
                    const CFX_Matrix& matrix,
                    const RetainPtr<CFX_DIBitmap>& pDIBitmap,
                    XFA_AttributeEnum iAspect,
-                   int32_t iImageXDpi,
-                   int32_t iImageYDpi,
+                   const CFX_Size& dpi,
                    XFA_AttributeEnum iHorzAlign,
                    XFA_AttributeEnum iVertAlign) {
   if (rtImage.IsEmpty())
@@ -83,10 +89,9 @@ void XFA_DrawImage(CXFA_Graphics* pGS,
   if (!pDIBitmap || !pDIBitmap->GetBuffer())
     return;
 
-  CFX_RectF rtFit(
-      rtImage.TopLeft(),
-      XFA_UnitPx2Pt((float)pDIBitmap->GetWidth(), (float)iImageXDpi),
-      XFA_UnitPx2Pt((float)pDIBitmap->GetHeight(), (float)iImageYDpi));
+  CFX_RectF rtFit(rtImage.TopLeft(),
+                  XFA_UnitPx2Pt(pDIBitmap->GetWidth(), dpi.width),
+                  XFA_UnitPx2Pt(pDIBitmap->GetHeight(), dpi.height));
   switch (iAspect) {
     case XFA_AttributeEnum::Fit: {
       float f1 = rtImage.height / rtFit.height;
@@ -211,12 +216,12 @@ RetainPtr<CFX_DIBitmap> XFA_LoadImageFromBuffer(
   return pBitmap;
 }
 
-void XFA_RectWithoutMargin(CFX_RectF& rt, const CXFA_Margin* margin, bool bUI) {
+void XFA_RectWithoutMargin(CFX_RectF* rt, const CXFA_Margin* margin) {
   if (!margin)
     return;
 
-  rt.Deflate(margin->GetLeftInset(), margin->GetTopInset(),
-             margin->GetRightInset(), margin->GetBottomInset());
+  rt->Deflate(margin->GetLeftInset(), margin->GetTopInset(),
+              margin->GetRightInset(), margin->GetBottomInset());
 }
 
 CXFA_FFWidget* XFA_GetWidgetFromLayoutItem(CXFA_LayoutItem* pLayoutItem) {
@@ -300,8 +305,7 @@ void CXFA_FFWidget::RenderWidget(CXFA_Graphics* pGS,
 
   CFX_RectF rtBorder = GetRectWithoutRotate();
   CXFA_Margin* margin = border->GetMarginIfExists();
-  if (margin)
-    XFA_RectWithoutMargin(rtBorder, margin);
+  XFA_RectWithoutMargin(&rtBorder, margin);
 
   rtBorder.Normalize();
   DrawBorder(pGS, border, rtBorder, matrix);
@@ -498,6 +502,10 @@ void CXFA_FFWidget::SelectAll() {}
 void CXFA_FFWidget::Delete() {}
 
 void CXFA_FFWidget::DeSelect() {}
+
+WideString CXFA_FFWidget::GetText() {
+  return WideString();
+}
 
 FormFieldType CXFA_FFWidget::GetFormFieldType() {
   return FormFieldType::kXFA;

@@ -337,17 +337,13 @@ void ServiceWorkerContextWatcher::OnReportConsoleMessage(
 void ServiceWorkerContextWatcher::OnControlleeAdded(
     int64_t version_id,
     const std::string& uuid,
-    int process_id,
-    int route_id,
-    const base::Callback<WebContents*(void)>& web_contents_getter,
-    blink::mojom::ServiceWorkerProviderType type) {
+    const ServiceWorkerClientInfo& info) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   auto it = version_info_map_.find(version_id);
   if (it == version_info_map_.end())
     return;
   ServiceWorkerVersionInfo* version = it->second.get();
-  version->clients[uuid] = ServiceWorkerVersionInfo::ClientInfo(
-      process_id, route_id, web_contents_getter, type);
+  version->clients[uuid] = info;
   SendVersionInfo(*version);
 }
 
@@ -362,8 +358,9 @@ void ServiceWorkerContextWatcher::OnControlleeRemoved(int64_t version_id,
   SendVersionInfo(*version);
 }
 
-void ServiceWorkerContextWatcher::OnRegistrationStored(int64_t registration_id,
-                                                       const GURL& pattern) {
+void ServiceWorkerContextWatcher::OnRegistrationCompleted(
+    int64_t registration_id,
+    const GURL& pattern) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   SendRegistrationInfo(registration_id, pattern,
                        ServiceWorkerRegistrationInfo::IS_NOT_DELETED);

@@ -25,6 +25,7 @@
 #include "ui/accelerated_widget_mac/accelerated_widget_mac.h"
 #include "ui/accelerated_widget_mac/display_link_mac.h"
 #include "ui/base/cocoa/remote_layer_api.h"
+#include "ui/events/gesture_detection/filtered_gesture_provider.h"
 
 namespace content {
 class CursorManager;
@@ -36,6 +37,7 @@ class WebCursor;
 }
 
 namespace ui {
+enum class DomCode;
 class ScopedPasswordInputEnabler;
 }
 
@@ -66,6 +68,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
       public RenderWidgetHostNSViewClient,
       public BrowserCompositorMacClient,
       public TextInputManager::Observer,
+      public ui::GestureProviderClient,
       public ui::AcceleratedWidgetMacNSView,
       public IPC::Sender {
  public:
@@ -104,8 +107,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void SetActive(bool active) override;
   void ShowDefinitionForSelection() override;
   void SpeakSelection() override;
-  void SetBackgroundColor(SkColor color) override;
-  SkColor background_color() const override;
   void SetNeedsBeginFrames(bool needs_begin_frames) override;
   void GetScreenInfo(ScreenInfo* screen_info) const override;
   void SetWantsAnimateOnlyBeginFrames() override;
@@ -119,6 +120,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void UpdateCursor(const WebCursor& cursor) override;
   void DisplayCursor(const WebCursor& cursor) override;
   CursorManager* GetCursorManager() override;
+  void OnDidNavigateMainFrameToNewPage() override;
   void SetIsLoading(bool is_loading) override;
   void RenderProcessGone(base::TerminationStatus status,
                          int error_code) override;
@@ -126,11 +128,13 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void SetTooltipText(const base::string16& tooltip_text) override;
   void DisplayTooltipText(const base::string16& tooltip_text) override;
   gfx::Size GetRequestedRendererSize() const override;
+  uint32_t GetCaptureSequenceNumber() const override;
   bool IsSurfaceAvailableForCopy() const override;
   void CopyFromSurface(
       const gfx::Rect& src_rect,
       const gfx::Size& output_size,
       base::OnceCallback<void(const SkBitmap&)> callback) override;
+  void EnsureSurfaceSynchronizedForLayoutTest() override;
   void FocusedNodeChanged(bool is_editable_node,
                           const gfx::Rect& node_bounds_in_screen) override;
   void DidCreateNewRendererCompositorFrameSink(
@@ -139,26 +143,33 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void SubmitCompositorFrame(
       const viz::LocalSurfaceId& local_surface_id,
       viz::CompositorFrame frame,
-      viz::mojom::HitTestRegionListPtr hit_test_region_list) override;
+      base::Optional<viz::HitTestRegionList> hit_test_region_list) override;
   void OnDidNotProduceFrame(const viz::BeginFrameAck& ack) override;
   void ClearCompositorFrame() override;
+  bool RequestRepaintForTesting() override;
   BrowserAccessibilityManager* CreateBrowserAccessibilityManager(
       BrowserAccessibilityDelegate* delegate, bool for_root_frame) override;
   gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds) override;
   gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget() override;
+  base::Optional<SkColor> GetBackgroundColor() const override;
 
   bool ShouldContinueToPauseForFrame() override;
-  gfx::Vector2d GetOffsetFromRootSurface() override;
+  void SetParentUiLayer(ui::Layer* parent_ui_layer) override;
+  void TransformPointToRootSurface(gfx::PointF* point) override;
   gfx::Rect GetBoundsInRootWindow() override;
-  viz::ScopedSurfaceIdAllocator ResizeDueToAutoResize(
-      const gfx::Size& new_size,
-      uint64_t sequence_number) override;
+  viz::ScopedSurfaceIdAllocator DidUpdateVisualProperties(
+      const cc::RenderFrameMetadata& metadata) override;
   void DidNavigate() override;
 
   bool LockMouse() override;
   void UnlockMouse() override;
+  bool LockKeyboard(base::Optional<base::flat_set<ui::DomCode>> codes) override;
+  void UnlockKeyboard() override;
+  bool IsKeyboardLocked() override;
   void GestureEventAck(const blink::WebGestureEvent& event,
                        InputEventAckState ack_result) override;
+  void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
+                              InputEventAckState ack_result) override;
 
   void DidOverscroll(const ui::DidOverscrollParams& params) override;
 
@@ -177,13 +188,20 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // consumer, such as PDF or maps, wants to intercept them and implement a
   // custom behavior.
   void SendGesturePinchEvent(blink::WebGestureEvent* event);
-  bool TransformPointToLocalCoordSpace(const gfx::PointF& point,
-                                       const viz::SurfaceId& original_surface,
-                                       gfx::PointF* transformed_point) override;
+
+  // Inject synthetic touch events.
+  void InjectTouchEvent(const blink::WebTouchEvent& event,
+                        const ui::LatencyInfo& latency_info) override;
+
+  bool TransformPointToLocalCoordSpaceLegacy(
+      const gfx::PointF& point,
+      const viz::SurfaceId& original_surface,
+      gfx::PointF* transformed_point) override;
   bool TransformPointToCoordSpaceForView(
       const gfx::PointF& point,
       RenderWidgetHostViewBase* target_view,
-      gfx::PointF* transformed_point) override;
+      gfx::PointF* transformed_point,
+      viz::EventSource source = viz::EventSource::ANY) override;
   viz::FrameSinkId GetRootFrameSinkId() override;
   viz::SurfaceId GetCurrentSurfaceId() const override;
 
@@ -202,14 +220,14 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void OnTextSelectionChanged(TextInputManager* text_input_manager,
                               RenderWidgetHostViewBase* updated_view) override;
 
+  // ui::GestureProviderClient implementation.
+  void OnGestureEvent(const ui::GestureEventData& gesture) override;
+
   // RenderFrameMetadataProvider::Observer
   void OnRenderFrameMetadataChanged() override;
 
   // IPC::Sender implementation.
   bool Send(IPC::Message* message) override;
-
-  // Forwards the mouse event to the renderer.
-  void ForwardMouseEvent(const blink::WebMouseEvent& event);
 
   void SetTextInputActive(bool active);
 
@@ -254,7 +272,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // Delegated frame management and compositor interface.
   std::unique_ptr<BrowserCompositorMac> browser_compositor_;
-  BrowserCompositorMac* BrowserCompositorForTesting() const {
+  BrowserCompositorMac* BrowserCompositor() const {
     return browser_compositor_.get();
   }
 
@@ -304,7 +322,8 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
       const blink::WebMouseEvent& web_event) override;
   void OnNSViewForwardWheelEvent(
       const blink::WebMouseWheelEvent& web_event) override;
-  void OnNSViewGestureBegin(blink::WebGestureEvent begin_event) override;
+  void OnNSViewGestureBegin(blink::WebGestureEvent begin_event,
+                            bool is_synthetically_injected) override;
   void OnNSViewGestureUpdate(blink::WebGestureEvent update_event) override;
   void OnNSViewGestureEnd(blink::WebGestureEvent end_event) override;
   void OnNSViewSmartMagnify(
@@ -323,8 +342,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
       const gfx::PointF& root_point) override;
   void OnNSViewLookUpDictionaryOverlayFromRange(
       const gfx::Range& range) override;
-  void OnNSViewSyncGetTextInputType(
-      ui::TextInputType* text_input_type) override;
   void OnNSViewSyncGetCharacterIndexAtPoint(const gfx::PointF& root_point,
                                             uint32_t* index) override;
   void OnNSViewSyncGetFirstRectForRange(const gfx::Range& requested_range,
@@ -350,13 +367,11 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void OnFrameTokenChanged(uint32_t frame_token) override;
   void DidReceiveFirstFrameAfterNavigation() override;
   void DestroyCompositorForShutdown() override;
-  void WasResized() override;
+  bool SynchronizeVisualProperties() override;
 
   // AcceleratedWidgetMacNSView implementation.
   NSView* AcceleratedWidgetGetNSView() const override;
-  void AcceleratedWidgetGetVSyncParameters(
-      base::TimeTicks* timebase, base::TimeDelta* interval) const override;
-  void AcceleratedWidgetSwapCompleted() override;
+  void AcceleratedWidgetCALayerParamsUpdated() override;
 
   void SetShowingContextMenu(bool showing) override;
 
@@ -417,6 +432,8 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // collide with FrameSinkIds used by RenderWidgetHostImpls.
   static viz::FrameSinkId AllocateFrameSinkIdForGuestViewHack();
 
+  MouseWheelPhaseHandler* GetMouseWheelPhaseHandler() override;
+
   // Shuts down the render_widget_host_.  This is a separate function so we can
   // invoke it from the message loop.
   void ShutdownHost();
@@ -431,14 +448,17 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
       blink::WebMouseWheelEvent wheel_event,
       bool should_route_event);
 
-  void OnResizeDueToAutoResizeComplete(const gfx::Size& new_size,
-                                       uint64_t sequence_number);
+  void OnDidUpdateVisualPropertiesComplete(
+      const cc::RenderFrameMetadata& metadata);
 
   void OnGotStringForDictionaryOverlay(
       int32_t targetWidgetProcessId,
       int32_t targetWidgetRoutingId,
       const mac::AttributedStringCoder::EncodedString& encodedString,
       gfx::Point baselinePoint);
+
+  // RenderWidgetHostViewBase:
+  void UpdateBackgroundColor() override;
 
   // Gets a textual view of the page's contents, and passes it to the callback
   // provided.
@@ -450,6 +470,10 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // State tracked by Show/Hide/IsShowing.
   bool is_visible_ = false;
+
+  // Set to true if |this| has ever been displayed via a parent ui::Layer (in
+  // which case its NSView will only ever be used for input, not display).
+  bool display_only_using_parent_ui_layer_ = false;
 
   // The bounds of the view in its NSWindow's coordinate system (with origin
   // in the upper-left).
@@ -497,7 +521,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // The background color of the last frame that was swapped. This is not
   // applied until the swap completes (see comments in
-  // AcceleratedWidgetSwapCompleted).
+  // AcceleratedWidgetCALayerParamsUpdated).
   SkColor last_frame_root_background_color_ = SK_ColorTRANSPARENT;
 
   int tab_show_sequence_ = 0;
@@ -506,6 +530,10 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // Used to track active password input sessions.
   std::unique_ptr<ui::ScopedPasswordInputEnabler> password_input_enabler_;
+
+  // Provides gesture synthesis given a stream of touch events and touch event
+  // acks. This is for generating gesture events from injected touch events.
+  ui::FilteredGestureProvider gesture_provider_;
 
   // Used to ensure that a consistent RenderWidgetHost is targeted throughout
   // the duration of a keyboard event.
@@ -532,6 +560,14 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // one.
   bool pinch_has_reached_zoom_threshold_ = false;
   float pinch_unused_amount_ = 1.f;
+
+  // Tracks whether keyboard lock is active.
+  bool is_keyboard_locked_ = false;
+
+  // Latest capture sequence number which is incremented when the caller
+  // requests surfaces be synchronized via
+  // EnsureSurfaceSynchronizedForLayoutTest().
+  uint32_t latest_capture_sequence_number_ = 0u;
 
   // Factory used to safely scope delayed calls to ShutdownHost().
   base::WeakPtrFactory<RenderWidgetHostViewMac> weak_factory_;

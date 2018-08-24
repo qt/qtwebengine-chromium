@@ -10,7 +10,6 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
-#include "net/cookies/canonical_cookie.h"
 #include "url/origin.h"
 
 using net::registry_controlled_domains::GetDomainAndRegistry;
@@ -54,38 +53,6 @@ bool MatchesURL(
 
   return ((found_domain || found_origin) ==
           (mode == BrowsingDataFilterBuilder::WHITELIST));
-}
-
-// True if no domains can see the given cookie and we're a blacklist, or any
-// domains can see the cookie and we're a whitelist.
-// The whitelist or blacklist is represented as |domains_and_ips| and |mode|.
-bool MatchesCookieForRegisterableDomainsAndIPs(
-    const std::set<std::string>& domains_and_ips,
-    BrowsingDataFilterBuilder::Mode mode,
-    const net::CanonicalCookie& cookie) {
-  if (domains_and_ips.empty())
-    return mode == BrowsingDataFilterBuilder::BLACKLIST;
-  std::string cookie_domain = cookie.Domain();
-  if (cookie.IsDomainCookie())
-    cookie_domain = cookie_domain.substr(1);
-  std::string parsed_cookie_domain =
-      GetDomainAndRegistry(cookie_domain, INCLUDE_PRIVATE_REGISTRIES);
-  // This means we're an IP address or an internal hostname.
-  if (parsed_cookie_domain.empty())
-    parsed_cookie_domain = cookie_domain;
-  return (mode == BrowsingDataFilterBuilder::WHITELIST) ==
-      (domains_and_ips.find(parsed_cookie_domain) != domains_and_ips.end());
-}
-
-// True if none of the supplied domains matches this Channel ID's server ID
-// and we're a blacklist, or one of them does and we're a whitelist.
-// The whitelist or blacklist is represented as |domains_and_ips| and |mode|.
-bool MatchesChannelIDForRegisterableDomainsAndIPs(
-    const std::set<std::string>& domains_and_ips,
-    BrowsingDataFilterBuilder::Mode mode,
-    const std::string& channel_id_server_id) {
-  return ((mode == BrowsingDataFilterBuilder::WHITELIST) ==
-      (domains_and_ips.find(channel_id_server_id) != domains_and_ips.end()));
 }
 
 // True if none of the supplied domains matches this plugin's |site| and we're
@@ -159,13 +126,13 @@ BrowsingDataFilterBuilderImpl::BuildGeneralFilter() const {
   return base::BindRepeating(&MatchesURL, origins_, domains_, mode_);
 }
 
-network::mojom::ClearCacheUrlFilterPtr
-BrowsingDataFilterBuilderImpl::BuildClearCacheUrlFilter() const {
-  network::mojom::ClearCacheUrlFilterPtr filter =
-      network::mojom::ClearCacheUrlFilter::New();
+network::mojom::ClearDataFilterPtr
+BrowsingDataFilterBuilderImpl::BuildNetworkServiceFilter() const {
+  network::mojom::ClearDataFilterPtr filter =
+      network::mojom::ClearDataFilter::New();
   filter->type = (mode_ == Mode::WHITELIST)
-                     ? network::mojom::ClearCacheUrlFilter::Type::DELETE_MATCHES
-                     : network::mojom::ClearCacheUrlFilter::Type::KEEP_MATCHES;
+                     ? network::mojom::ClearDataFilter::Type::DELETE_MATCHES
+                     : network::mojom::ClearDataFilter::Type::KEEP_MATCHES;
   filter->origins.insert(filter->origins.begin(), origins_.begin(),
                          origins_.end());
   filter->domains.insert(filter->domains.begin(), domains_.begin(),
@@ -173,22 +140,24 @@ BrowsingDataFilterBuilderImpl::BuildClearCacheUrlFilter() const {
   return filter;
 }
 
-base::RepeatingCallback<bool(const net::CanonicalCookie& cookie)>
-BrowsingDataFilterBuilderImpl::BuildCookieFilter() const {
-  DCHECK(origins_.empty()) <<
-      "Origin-based deletion is not suitable for cookies. Please use "
-      "different scoping, such as RegistrableDomainFilterBuilder.";
-  return base::BindRepeating(&MatchesCookieForRegisterableDomainsAndIPs,
-                             domains_, mode_);
-}
+network::mojom::CookieDeletionFilterPtr
+BrowsingDataFilterBuilderImpl::BuildCookieDeletionFilter() const {
+  DCHECK(origins_.empty())
+      << "Origin-based deletion is not suitable for cookies. Please use "
+         "different scoping, such as RegistrableDomainFilterBuilder.";
+  auto deletion_filter = network::mojom::CookieDeletionFilter::New();
 
-base::RepeatingCallback<bool(const std::string& channel_id_server_id)>
-BrowsingDataFilterBuilderImpl::BuildChannelIDFilter() const {
-  DCHECK(origins_.empty()) <<
-      "Origin-based deletion is not suitable for channel IDs. Please use "
-      "different scoping, such as RegistrableDomainFilterBuilder.";
-  return base::BindRepeating(&MatchesChannelIDForRegisterableDomainsAndIPs,
-                             domains_, mode_);
+  switch (mode_) {
+    case WHITELIST:
+      deletion_filter->including_domains.emplace(domains_.begin(),
+                                                 domains_.end());
+      break;
+    case BLACKLIST:
+      deletion_filter->excluding_domains.emplace(domains_.begin(),
+                                                 domains_.end());
+      break;
+  }
+  return deletion_filter;
 }
 
 base::RepeatingCallback<bool(const std::string& site)>

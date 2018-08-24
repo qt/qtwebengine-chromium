@@ -55,7 +55,7 @@
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/shared_buffer.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 
@@ -156,7 +156,7 @@ class ScheduledURLNavigation : public ScheduledNavigation {
         IsLocationChange() ? ScheduledNavigationType::kScheduledFrameNavigation
                            : ScheduledNavigationType::kScheduledURLNavigation;
     MaybeLogScheduledNavigationClobber(type, frame);
-    frame->Loader().Load(request);
+    frame->Loader().StartNavigation(request);
   }
 
   KURL Url() const override { return url_; }
@@ -196,7 +196,7 @@ class ScheduledRedirect final : public ScheduledURLNavigation {
     request.SetClientRedirect(ClientRedirectPolicy::kClientRedirect);
     MaybeLogScheduledNavigationClobber(
         ScheduledNavigationType::kScheduledRedirect, frame);
-    frame->Loader().Load(request);
+    frame->Loader().StartNavigation(request);
   }
 
  private:
@@ -259,14 +259,14 @@ class ScheduledReload final : public ScheduledNavigation {
     std::unique_ptr<UserGestureIndicator> gesture_indicator =
         CreateUserGestureIndicator();
     ResourceRequest resource_request = frame->Loader().ResourceRequestForReload(
-        kFrameLoadTypeReload, KURL(), ClientRedirectPolicy::kClientRedirect);
+        kFrameLoadTypeReload, ClientRedirectPolicy::kClientRedirect);
     if (resource_request.IsNull())
       return;
     FrameLoadRequest request = FrameLoadRequest(nullptr, resource_request);
     request.SetClientRedirect(ClientRedirectPolicy::kClientRedirect);
     MaybeLogScheduledNavigationClobber(
         ScheduledNavigationType::kScheduledReload, frame);
-    frame->Loader().Load(request, kFrameLoadTypeReload);
+    frame->Loader().StartNavigation(request, kFrameLoadTypeReload);
   }
 
   KURL Url() const override { return frame_->GetDocument()->Url(); }
@@ -331,7 +331,7 @@ class ScheduledFormSubmission final : public ScheduledNavigation {
     frame_request.SetReplacesCurrentItem(ReplacesCurrentItem());
     MaybeLogScheduledNavigationClobber(
         ScheduledNavigationType::kScheduledFormSubmission, frame);
-    frame->Loader().Load(frame_request);
+    frame->Loader().StartNavigation(frame_request);
   }
 
   KURL Url() const override { return submission_->RequestURL(); }
@@ -360,19 +360,9 @@ class ScheduledFormSubmission final : public ScheduledNavigation {
   Member<FormSubmission> submission_;
 };
 
-NavigationScheduler::NavigationScheduler(LocalFrame* frame)
-    : frame_(frame),
-      frame_type_(frame_->IsMainFrame()
-                      ? scheduler::WebMainThreadScheduler::NavigatingFrameType::
-                            kMainFrame
-                      : scheduler::WebMainThreadScheduler::NavigatingFrameType::
-                            kChildFrame) {}
+NavigationScheduler::NavigationScheduler(LocalFrame* frame) : frame_(frame) {}
 
 NavigationScheduler::~NavigationScheduler() {
-  if (navigate_task_handle_.IsActive()) {
-    Platform::Current()->CurrentThread()->Scheduler()->RemovePendingNavigation(
-        frame_type_);
-  }
 }
 
 bool NavigationScheduler::LocationChangePending() {
@@ -470,7 +460,7 @@ void NavigationScheduler::ScheduleFrameNavigation(Document* origin_document,
       request.SetReplacesCurrentItem(replaces_current_item);
       if (replaces_current_item)
         request.SetClientRedirect(ClientRedirectPolicy::kClientRedirect);
-      frame_->Loader().Load(request);
+      frame_->Loader().StartNavigation(request);
       return;
     }
   }
@@ -501,9 +491,6 @@ void NavigationScheduler::ScheduleReload() {
 }
 
 void NavigationScheduler::NavigateTask() {
-  Platform::Current()->CurrentThread()->Scheduler()->RemovePendingNavigation(
-      frame_type_);
-
   if (!frame_->GetPage())
     return;
   if (frame_->GetPage()->Paused()) {
@@ -550,9 +537,6 @@ void NavigationScheduler::StartTimer() {
   if (!redirect_->ShouldStartTimer(frame_))
     return;
 
-  WebScheduler* scheduler = Platform::Current()->CurrentThread()->Scheduler();
-  scheduler->AddPendingNavigation(frame_type_);
-
   // wrapWeakPersistent(this) is safe because a posted task is canceled when the
   // task handle is destroyed on the dtor of this NavigationScheduler.
   navigate_task_handle_ = PostDelayedCancellableTask(
@@ -566,8 +550,6 @@ void NavigationScheduler::StartTimer() {
 
 void NavigationScheduler::Cancel() {
   if (navigate_task_handle_.IsActive()) {
-    Platform::Current()->CurrentThread()->Scheduler()->RemovePendingNavigation(
-        frame_type_);
     probe::frameClearedScheduledNavigation(frame_);
   }
   navigate_task_handle_.Cancel();

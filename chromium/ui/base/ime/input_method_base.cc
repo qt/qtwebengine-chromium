@@ -6,11 +6,11 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "ui/base/ime/ime_bridge.h"
 #include "ui/base/ime/input_method_delegate.h"
+#include "ui/base/ime/input_method_keyboard_controller_stub.h"
 #include "ui/base/ime/input_method_observer.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/events/event.h"
@@ -24,9 +24,15 @@ ui::IMEEngineHandlerInterface* InputMethodBase::GetEngine() {
 }
 
 InputMethodBase::InputMethodBase(internal::InputMethodDelegate* delegate)
+    : InputMethodBase(delegate, nullptr) {}
+
+InputMethodBase::InputMethodBase(
+    internal::InputMethodDelegate* delegate,
+    std::unique_ptr<InputMethodKeyboardController> keyboard_controller)
     : sending_key_event_(false),
       delegate_(delegate),
-      text_input_client_(nullptr) {}
+      text_input_client_(nullptr),
+      keyboard_controller_(std::move(keyboard_controller)) {}
 
 InputMethodBase::~InputMethodBase() {
   for (InputMethodObserver& observer : observer_list_)
@@ -115,9 +121,15 @@ bool InputMethodBase::CanComposeInline() const {
   return client ? client->CanComposeInline() : true;
 }
 
+bool InputMethodBase::GetClientShouldDoLearning() {
+  TextInputClient* client = GetTextInputClient();
+  return client && client->ShouldDoLearning();
+}
+
 void InputMethodBase::ShowImeIfNeeded() {
   for (InputMethodObserver& observer : observer_list_)
     observer.OnShowImeIfNeeded();
+  GetInputMethodKeyboardController()->DisplayVirtualKeyboard();
 }
 
 void InputMethodBase::AddObserver(InputMethodObserver* observer) {
@@ -126,6 +138,14 @@ void InputMethodBase::AddObserver(InputMethodObserver* observer) {
 
 void InputMethodBase::RemoveObserver(InputMethodObserver* observer) {
   observer_list_.RemoveObserver(observer);
+}
+
+InputMethodKeyboardController*
+InputMethodBase::GetInputMethodKeyboardController() {
+  if (!keyboard_controller_)
+    keyboard_controller_ =
+        std::make_unique<InputMethodKeyboardControllerStub>();
+  return keyboard_controller_.get();
 }
 
 bool InputMethodBase::IsTextInputClientFocused(const TextInputClient* client) {

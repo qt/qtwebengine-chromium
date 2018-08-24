@@ -119,6 +119,8 @@ struct GPU_EXPORT GPUInfo {
   // The currently active gpu.
   const GPUDevice& active_gpu() const;
 
+  bool IsInitialized() const;
+
   // The amount of time taken to get from the process starting to the message
   // loop being pumped.
   base::TimeDelta initialization_time;
@@ -226,6 +228,12 @@ struct GPU_EXPORT GPUInfo {
 
   // True if the GPU driver supports Vulkan.
   bool supports_vulkan = false;
+
+  // The supported d3d feature level in the gpu driver;
+  uint32_t d3d12_feature_level = 0;
+
+  // The support Vulkan API version in the gpu driver;
+  uint32_t vulkan_version = 0;
 #endif
 
   VideoDecodeAcceleratorCapabilities video_decode_accelerator_capabilities;

@@ -28,10 +28,12 @@ class SyncConsentScreenHandler : public BaseScreenHandler,
   void Bind(SyncConsentScreen* screen) override;
   void Show() override;
   void Hide() override;
+  void SetThrobberVisible(bool visible) override;
 
  private:
   // BaseScreenHandler:
   void Initialize() override;
+  void GetAdditionalParameters(base::DictionaryValue* parameters) override;
 
   SyncConsentScreen* screen_ = nullptr;
 

@@ -174,6 +174,25 @@ void CreateTestAddressFormData(FormData* form,
   types->push_back(type_set);
 }
 
+void CreateTestPersonalInformationFormData(FormData* form) {
+  form->name = ASCIIToUTF16("MyForm");
+  form->origin = GURL("http://myform.com/form.html");
+  form->action = GURL("http://myform.com/submit.html");
+  form->main_frame_origin =
+      url::Origin::Create(GURL("https://myform_root.com/form.html"));
+
+  FormFieldData field;
+  ServerFieldTypeSet type_set;
+  test::CreateTestFormField("First Name", "firstname", "", "text", &field);
+  form->fields.push_back(field);
+  test::CreateTestFormField("Middle Name", "middlename", "", "text", &field);
+  form->fields.push_back(field);
+  test::CreateTestFormField("Last Name", "lastname", "", "text", &field);
+  form->fields.push_back(field);
+  test::CreateTestFormField("Email", "email", "", "email", &field);
+  form->fields.push_back(field);
+}
+
 inline void check_and_set(
     FormGroup* profile, ServerFieldType type, const char* value) {
   if (value)
@@ -181,7 +200,7 @@ inline void check_and_set(
 }
 
 AutofillProfile GetFullValidProfileForCanada() {
-  AutofillProfile profile(base::GenerateGUID(), "http://www.example.com/");
+  AutofillProfile profile(base::GenerateGUID(), kEmptyOrigin);
   SetProfileInfo(&profile, "Alice", "", "Wonderland", "alice@wonderland.ca",
                  "Fiction", "666 Notre-Dame Ouest", "Apt 8", "Montreal", "QC",
                  "H3B 2T9", "CA", "15141112233");
@@ -189,7 +208,7 @@ AutofillProfile GetFullValidProfileForCanada() {
 }
 
 AutofillProfile GetFullValidProfileForChina() {
-  AutofillProfile profile(base::GenerateGUID(), "http://www.example.com/");
+  AutofillProfile profile(base::GenerateGUID(), kEmptyOrigin);
   SetProfileInfo(&profile, "John", "H.", "Doe", "johndoe@google.cn", "Google",
                  "100 Century Avenue", "", "赫章县", "毕节地区", "贵州省",
                  "200120", "CN", "+86-21-6133-7666");
@@ -197,7 +216,7 @@ AutofillProfile GetFullValidProfileForChina() {
 }
 
 AutofillProfile GetFullProfile() {
-  AutofillProfile profile(base::GenerateGUID(), "http://www.example.com/");
+  AutofillProfile profile(base::GenerateGUID(), kEmptyOrigin);
   SetProfileInfo(&profile,
                  "John",
                  "H.",
@@ -214,7 +233,7 @@ AutofillProfile GetFullProfile() {
 }
 
 AutofillProfile GetFullProfile2() {
-  AutofillProfile profile(base::GenerateGUID(), "https://www.example.com/");
+  AutofillProfile profile(base::GenerateGUID(), kEmptyOrigin);
   SetProfileInfo(&profile,
                  "Jane",
                  "A.",
@@ -231,7 +250,7 @@ AutofillProfile GetFullProfile2() {
 }
 
 AutofillProfile GetFullCanadianProfile() {
-  AutofillProfile profile(base::GenerateGUID(), "http://www.example.com/");
+  AutofillProfile profile(base::GenerateGUID(), kEmptyOrigin);
   SetProfileInfo(&profile, "Wayne", "", "Gretzky", "wayne@hockey.com", "NHL",
                  "123 Hockey rd.", "Apt 8", "Moncton", "New Brunswick",
                  "E1A 0A6", "CA", "15068531212");
@@ -239,7 +258,7 @@ AutofillProfile GetFullCanadianProfile() {
 }
 
 AutofillProfile GetIncompleteProfile1() {
-  AutofillProfile profile(base::GenerateGUID(), "https://www.example.com/");
+  AutofillProfile profile(base::GenerateGUID(), kEmptyOrigin);
   SetProfileInfo(&profile, "John", "H.", "Doe", "jsmith@example.com", "ACME",
                  "123 Main Street", "Unit 1", "Greensdale", "MI", "48838", "US",
                  "");
@@ -247,7 +266,7 @@ AutofillProfile GetIncompleteProfile1() {
 }
 
 AutofillProfile GetIncompleteProfile2() {
-  AutofillProfile profile(base::GenerateGUID(), "https://www.example.com/");
+  AutofillProfile profile(base::GenerateGUID(), kEmptyOrigin);
   SetProfileInfo(&profile, "", "", "", "jsmith@example.com", "", "", "", "", "",
                  "", "", "");
   return profile;
@@ -266,14 +285,14 @@ AutofillProfile GetVerifiedProfile2() {
 }
 
 CreditCard GetCreditCard() {
-  CreditCard credit_card(base::GenerateGUID(), "http://www.example.com");
+  CreditCard credit_card(base::GenerateGUID(), kEmptyOrigin);
   SetCreditCardInfo(&credit_card, "Test User", "4111111111111111" /* Visa */,
                     "11", "2022", "1");
   return credit_card;
 }
 
 CreditCard GetCreditCard2() {
-  CreditCard credit_card(base::GenerateGUID(), "https://www.example.com");
+  CreditCard credit_card(base::GenerateGUID(), kEmptyOrigin);
   SetCreditCardInfo(&credit_card, "Someone Else", "378282246310005" /* AmEx */,
                     "07", "2022", "1");
   return credit_card;
@@ -326,7 +345,7 @@ CreditCard GetRandomCreditCard(CreditCard::RecordType record_type) {
 
   CreditCard credit_card =
       (record_type == CreditCard::LOCAL_CARD)
-          ? CreditCard(base::GenerateGUID(), "http://www.example.com")
+          ? CreditCard(base::GenerateGUID(), kEmptyOrigin)
           : CreditCard(record_type, base::GenerateGUID().substr(24));
   test::SetCreditCardInfo(
       &credit_card, "Justin Thyme", GetRandomCardNumber().c_str(),
@@ -488,6 +507,11 @@ void GenerateTestAutofillPopup(
   std::vector<Suggestion> suggestions;
   suggestions.push_back(Suggestion(base::ASCIIToUTF16("Test suggestion")));
   autofill_external_delegate->OnSuggestionsReturned(query_id, suggestions);
+}
+
+std::string ObfuscatedCardDigitsAsUTF8(const std::string& str) {
+  return base::UTF16ToUTF8(
+      internal::GetObfuscatedStringForCardDigits(base::ASCIIToUTF16(str)));
 }
 
 }  // namespace test

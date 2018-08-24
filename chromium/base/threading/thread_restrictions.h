@@ -74,6 +74,7 @@ namespace leveldb {
 class LevelDBMojoProxy;
 }
 namespace media {
+class AudioInputDevice;
 class BlockingUrlProtocol;
 }
 namespace midi {
@@ -109,6 +110,10 @@ class AutoThread;
 
 namespace resource_coordinator {
 class TabManagerDelegate;
+}
+
+namespace service_manager {
+class ServiceProcessLauncher;
 }
 
 namespace shell_integration {
@@ -217,6 +222,7 @@ class BASE_EXPORT ScopedAllowBlocking {
   friend class content::BrowserProcessSubThread;
   friend class cronet::CronetPrefsManager;
   friend class cronet::CronetURLRequestContext;
+  friend class media::AudioInputDevice;
   friend class mojo::CoreLibraryInitializer;
   friend class resource_coordinator::TabManagerDelegate;  // crbug.com/778703
   friend class ui::MaterialDesignController;
@@ -281,6 +287,7 @@ class BASE_EXPORT ScopedAllowBaseSyncPrimitives {
   FRIEND_TEST_ALL_PREFIXES(ThreadRestrictionsTest,
                            ScopedAllowBaseSyncPrimitivesWithBlockingDisallowed);
   friend class base::GetAppOutputScopedAllowBaseSyncPrimitives;
+  friend class content::BrowserProcessSubThread;
   friend class content::SessionStorageDatabase;
   friend class functions::ExecScriptScopedAllowBaseSyncPrimitives;
   friend class leveldb::LevelDBMojoProxy;
@@ -316,6 +323,8 @@ class BASE_EXPORT ScopedAllowBaseSyncPrimitivesOutsideBlockingScope {
   friend class content::SynchronousCompositorHost;
   friend class content::SynchronousCompositorSyncCallBridge;
   friend class midi::TaskService;  // https://crbug.com/796830
+  // Not used in production yet, https://crbug.com/844078.
+  friend class service_manager::ServiceProcessLauncher;
 
   ScopedAllowBaseSyncPrimitivesOutsideBlockingScope()
       EMPTY_BODY_IF_DCHECK_IS_OFF;

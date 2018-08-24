@@ -25,12 +25,6 @@ CustomLayoutFragment* CustomLayoutFragmentRequest::PerformLayout() {
   LayoutBox* box = child_->GetLayoutBox();
   const ComputedStyle& style = box->StyleRef();
 
-  // TODO(ikilpatrick): At the moment we just pretend that we are being sized
-  // off something which is 0x0. Additional fields inside the constraints
-  // object will allow the developer to override this.
-  box->SetOverrideContainingBlockContentLogicalWidth(LayoutUnit());
-  box->SetOverrideContainingBlockContentLogicalHeight(LayoutUnit());
-
   DCHECK(box->Parent());
   DCHECK(box->Parent()->IsLayoutCustom());
   DCHECK(box->Parent() == box->ContainingBlock());
@@ -42,35 +36,43 @@ CustomLayoutFragment* CustomLayoutFragmentRequest::PerformLayout() {
 
   if (options_.hasFixedInlineSize()) {
     if (is_parallel_writing_mode) {
-      box->SetOverrideLogicalContentWidth(
-          (LayoutUnit::FromDoubleRound(options_.fixedInlineSize()) -
-           box->BorderAndPaddingLogicalWidth())
-              .ClampNegativeToZero());
+      box->SetOverrideLogicalWidth(
+          LayoutUnit::FromDoubleRound(options_.fixedInlineSize()));
     } else {
-      box->SetOverrideLogicalContentHeight(
-          (LayoutUnit::FromDoubleRound(options_.fixedInlineSize()) -
-           box->BorderAndPaddingLogicalHeight())
-              .ClampNegativeToZero());
+      box->SetOverrideLogicalHeight(
+          LayoutUnit::FromDoubleRound(options_.fixedInlineSize()));
+    }
+  } else {
+    if (is_parallel_writing_mode) {
+      box->SetOverrideContainingBlockContentLogicalWidth(
+          LayoutUnit::FromDoubleRound(options_.availableInlineSize()));
+    } else {
+      box->SetOverrideContainingBlockContentLogicalHeight(
+          LayoutUnit::FromDoubleRound(options_.availableInlineSize()));
     }
   }
 
   if (options_.hasFixedBlockSize()) {
     if (is_parallel_writing_mode) {
-      box->SetOverrideLogicalContentHeight(
-          (LayoutUnit::FromDoubleRound(options_.fixedBlockSize()) -
-           box->BorderAndPaddingLogicalHeight())
-              .ClampNegativeToZero());
+      box->SetOverrideLogicalHeight(
+          LayoutUnit::FromDoubleRound(options_.fixedBlockSize()));
     } else {
-      box->SetOverrideLogicalContentWidth(
-          (LayoutUnit::FromDoubleRound(options_.fixedBlockSize()) -
-           box->BorderAndPaddingLogicalWidth())
-              .ClampNegativeToZero());
+      box->SetOverrideLogicalWidth(
+          LayoutUnit::FromDoubleRound(options_.fixedBlockSize()));
+    }
+  } else {
+    if (is_parallel_writing_mode) {
+      box->SetOverrideContainingBlockContentLogicalHeight(
+          LayoutUnit::FromDoubleRound(options_.availableBlockSize()));
+    } else {
+      box->SetOverrideContainingBlockContentLogicalWidth(
+          LayoutUnit::FromDoubleRound(options_.availableBlockSize()));
     }
   }
 
   box->ForceLayout();
 
-  box->ClearContainingBlockOverrideSize();
+  box->ClearOverrideContainingBlockContentSize();
   box->ClearOverrideSize();
 
   LayoutUnit fragment_inline_size =

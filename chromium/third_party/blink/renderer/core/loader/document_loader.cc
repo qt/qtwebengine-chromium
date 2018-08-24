@@ -30,8 +30,10 @@
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 
 #include <memory>
+#include "base/auto_reset.h"
 #include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_network_provider.h"
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/public/web/web_history_commit_type.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/document_parser.h"
@@ -50,8 +52,8 @@
 #include "third_party/blink/renderer/core/html/parser/css_preload_scanner.h"
 #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
 #include "third_party/blink/renderer/core/html/parser/text_resource_decoder.h"
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/inspector/main_thread_debugger.h"
 #include "third_party/blink/renderer/core/loader/appcache/application_cache_host.h"
 #include "third_party/blink/renderer/core/loader/frame_fetch_context.h"
@@ -73,9 +75,9 @@
 #include "third_party/blink/renderer/core/timing/dom_window_performance.h"
 #include "third_party/blink/renderer/core/timing/window_performance.h"
 #include "third_party/blink/renderer/platform/feature_policy/feature_policy.h"
+#include "third_party/blink/renderer/platform/loader/cors/cors.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_initiator_type_names.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_parameters.h"
-#include "third_party/blink/renderer/platform/loader/fetch/fetch_utils.h"
 #include "third_party/blink/renderer/platform/loader/fetch/memory_cache.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
@@ -92,7 +94,6 @@
 #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
 #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
@@ -211,6 +212,7 @@ Resource* DocumentLoader::StartPreload(Resource::Type type,
       resource = ImageResource::Fetch(params, Fetcher());
       break;
     case Resource::kScript:
+      params.SetRequestContext(WebURLRequest::kRequestContextScript);
       resource = ScriptResource::Fetch(params, Fetcher(), nullptr);
       break;
     case Resource::kCSSStyleSheet:
@@ -336,7 +338,7 @@ void DocumentLoader::UpdateForSameDocumentNavigation(
   frame_->GetFrameScheduler()->DidCommitProvisionalLoad(
       commit_type == kHistoryInertCommit, type == kFrameLoadTypeReload,
       frame_->IsLocalRoot());
-  GetLocalFrameClient().DispatchDidNavigateWithinPage(
+  GetLocalFrameClient().DidFinishSameDocumentNavigation(
       history_item_.Get(), commit_type, initiating_document);
   probe::didNavigateWithinDocument(frame_);
 }
@@ -395,7 +397,7 @@ void DocumentLoader::NotifyFinished(Resource* resource) {
   DCHECK(GetResource());
 
   if (!resource->ErrorOccurred() && !resource->WasCanceled()) {
-    FinishedLoading(TimeTicksFromSeconds(resource->LoadFinishTime()));
+    FinishedLoading(resource->LoadFinishTime());
     return;
   }
 
@@ -572,7 +574,7 @@ void DocumentLoader::CancelLoadAfterCSPDenied(
   // https://crbug.com/555418.
   ClearResource();
   content_security_policy_.Clear();
-  KURL blocked_url = SecurityOrigin::UrlWithUniqueSecurityOrigin();
+  KURL blocked_url = SecurityOrigin::UrlWithUniqueOpaqueOrigin();
   original_request_.SetURL(blocked_url);
   request_.SetURL(blocked_url);
   redirect_chain_.pop_back();
@@ -662,7 +664,7 @@ void DocumentLoader::ResponseReceived(
   }
 
   if (frame_->Owner() && response_.IsHTTP() &&
-      !FetchUtils::IsOkStatus(response_.HttpStatusCode()))
+      !CORS::IsOkStatus(response_.HttpStatusCode()))
     frame_->Owner()->RenderFallbackContent();
 }
 
@@ -760,7 +762,7 @@ void DocumentLoader::DataReceived(Resource* resource,
     return;
   }
 
-  AutoReset<bool> reentrancy_protector(&in_data_received_, true);
+  base::AutoReset<bool> reentrancy_protector(&in_data_received_, true);
   ProcessData(data, length);
   ProcessDataBuffer();
 }
@@ -880,13 +882,8 @@ void DocumentLoader::StartLoading() {
     return;
 
   DCHECK(!GetTiming().NavigationStart().is_null());
-
-  // PlzNavigate:
-  // The fetch has already started in the browser. Don't mark it again.
-  if (!frame_->GetSettings()->GetBrowserSideNavigationEnabled()) {
-    DCHECK(GetTiming().FetchStart().is_null());
-    GetTiming().MarkFetchStart();
-  }
+  // The fetch has already started in the browser,
+  // so we don't MarkFetchStart here.
 
   ResourceLoaderOptions options;
   options.data_buffering_policy = kDoNotBufferData;
@@ -1003,6 +1000,10 @@ void DocumentLoader::DidCommitNavigation(
   // Report legacy Symantec certificates after Page::DidCommitLoad, because the
   // latter clears the console.
   if (response_.IsLegacySymantecCert()) {
+    UseCounter::Count(
+        frame_, frame_->Tree().Parent()
+                    ? WebFeature::kLegacySymantecCertInSubframeMainResource
+                    : WebFeature::kLegacySymantecCertMainFrameResource);
     GetLocalFrameClient().ReportLegacySymantecCert(response_.Url(),
                                                    false /* did_fail */);
   }
@@ -1174,7 +1175,7 @@ void DocumentLoader::ResumeParser() {
 
   if (committed_data_buffer_ && !committed_data_buffer_->IsEmpty()) {
     // Don't recursively process data.
-    AutoReset<bool> reentrancy_protector(&in_data_received_, true);
+    base::AutoReset<bool> reentrancy_protector(&in_data_received_, true);
 
     // Append data to the parser that may have been received while the parser
     // was blocked.

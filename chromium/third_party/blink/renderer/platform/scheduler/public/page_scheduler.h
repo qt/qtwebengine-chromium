@@ -94,6 +94,11 @@ class PLATFORM_EXPORT PageScheduler {
     kDeterministicLoading,
   };
 
+  // This is used to set initial Date.now() while in virtual time mode.
+  virtual void SetInitialVirtualTime(base::Time time) = 0;
+
+  // This is used for cross origin navigations to account for virtual time
+  // advancing in the previous renderer.
   virtual void SetInitialVirtualTimeOffset(base::TimeDelta offset) = 0;
 
   // Sets the virtual time policy, which is applied imemdiatly to all child
@@ -136,7 +141,7 @@ class PLATFORM_EXPORT PageScheduler {
 
   virtual void AudioStateChanged(bool is_audio_playing) = 0;
 
-  virtual bool IsPlayingAudio() const = 0;
+  virtual bool IsAudioPlaying() const = 0;
 
   // Returns true if the page should be exempted from aggressive throttling
   // (e.g. due to a page maintaining an active connection).

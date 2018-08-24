@@ -9,13 +9,14 @@
 #define CONTENT_PUBLIC_COMMON_COMMON_PARAM_TRAITS_MACROS_H_
 
 #include "build/build_config.h"
+#include "cc/input/touch_action.h"
 #include "content/public/common/console_message_level.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/web_preferences.h"
 #include "content/public/common/webplugininfo_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 #include "net/base/network_change_notifier.h"
-#include "services/network/public/cpp/network_param_ipc_traits.h"
+#include "services/network/public/cpp/network_ipc_param_traits.h"
 #include "third_party/blink/public/platform/modules/permissions/permission_status.mojom.h"
 #include "third_party/blink/public/platform/web_history_scroll_restoration_type.h"
 #include "third_party/blink/public/platform/web_point.h"
@@ -55,6 +56,7 @@ IPC_ENUM_TRAITS_MAX_VALUE(blink::WebHistoryScrollRestorationType,
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebSecurityStyle, blink::kWebSecurityStyleLast)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::mojom::PermissionStatus,
                           blink::mojom::PermissionStatus::LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(cc::TouchAction, cc::kTouchActionMax)
 IPC_ENUM_TRAITS_MAX_VALUE(content::EditingBehavior,
                           content::EDITING_BEHAVIOR_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(WindowOpenDisposition,
@@ -125,6 +127,8 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(xss_auditor_enabled)
   IPC_STRUCT_TRAITS_MEMBER(dns_prefetching_enabled)
   IPC_STRUCT_TRAITS_MEMBER(data_saver_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(data_saver_holdback_web_api_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(data_saver_holdback_media_api_enabled)
   IPC_STRUCT_TRAITS_MEMBER(local_storage_enabled)
   IPC_STRUCT_TRAITS_MEMBER(databases_enabled)
   IPC_STRUCT_TRAITS_MEMBER(application_cache_enabled)

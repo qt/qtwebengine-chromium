@@ -13,6 +13,7 @@
 #include "media/base/mock_media_log.h"
 #include "media/base/stream_parser.h"
 #include "media/base/test_data_util.h"
+#include "media/base/test_helpers.h"
 #include "media/base/text_track_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -91,7 +92,7 @@ class WebMStreamParserTest : public testing::Test {
 };
 
 TEST_F(WebMStreamParserTest, VerifyMediaTrackMetadata) {
-  EXPECT_MEDIA_LOG(testing::HasSubstr("Estimating WebM block duration"))
+  EXPECT_MEDIA_LOG(WebMSimpleBlockDurationEstimatedAny())
       .Times(testing::AnyNumber());
   StreamParser::InitParameters params(kInfiniteDuration);
   params.detected_audio_track_count = 1;
@@ -118,7 +119,7 @@ TEST_F(WebMStreamParserTest, VerifyMediaTrackMetadata) {
 }
 
 TEST_F(WebMStreamParserTest, VerifyDetectedTrack_AudioOnly) {
-  EXPECT_MEDIA_LOG(testing::HasSubstr("Estimating WebM block duration"))
+  EXPECT_MEDIA_LOG(WebMSimpleBlockDurationEstimatedAny())
       .Times(testing::AnyNumber());
   StreamParser::InitParameters params(kInfiniteDuration);
   params.detected_audio_track_count = 1;
@@ -140,7 +141,7 @@ TEST_F(WebMStreamParserTest, VerifyDetectedTrack_VideoOnly) {
 }
 
 TEST_F(WebMStreamParserTest, VerifyDetectedTracks_AVText) {
-  EXPECT_MEDIA_LOG(testing::HasSubstr("Estimating WebM block duration"))
+  EXPECT_MEDIA_LOG(WebMSimpleBlockDurationEstimatedAny())
       .Times(testing::AnyNumber());
   StreamParser::InitParameters params(kInfiniteDuration);
   params.detected_audio_track_count = 1;
@@ -153,7 +154,7 @@ TEST_F(WebMStreamParserTest, VerifyDetectedTracks_AVText) {
 }
 
 TEST_F(WebMStreamParserTest, ColourElement) {
-  EXPECT_MEDIA_LOG(testing::HasSubstr("Estimating WebM block duration"))
+  EXPECT_MEDIA_LOG(WebMSimpleBlockDurationEstimatedAny())
       .Times(testing::AnyNumber());
   StreamParser::InitParameters params(kInfiniteDuration);
   params.detected_audio_track_count = 0;
@@ -190,6 +191,29 @@ TEST_F(WebMStreamParserTest, ColourElement) {
   EXPECT_FLOAT_EQ(mmdata.white_point.y(), 0.2f);
   EXPECT_EQ(mmdata.luminance_max, 40);
   EXPECT_EQ(mmdata.luminance_min, 30);
+}
+
+TEST_F(WebMStreamParserTest, ColourElementWithUnspecifiedRange) {
+  EXPECT_MEDIA_LOG(WebMSimpleBlockDurationEstimatedAny())
+      .Times(testing::AnyNumber());
+  StreamParser::InitParameters params(kInfiniteDuration);
+  params.detected_audio_track_count = 0;
+  params.detected_video_track_count = 1;
+  params.detected_text_track_count = 0;
+  ParseWebMFile("colour_unspecified_range.webm", params);
+  EXPECT_EQ(media_tracks_->tracks().size(), 1u);
+
+  const auto& video_track = media_tracks_->tracks()[0];
+  EXPECT_EQ(video_track->type(), MediaTrack::Video);
+
+  const VideoDecoderConfig& video_config =
+      media_tracks_->getVideoConfig(video_track->bytestream_track_id());
+
+  VideoColorSpace expected_color_space(VideoColorSpace::PrimaryID::SMPTEST428_1,
+                                       VideoColorSpace::TransferID::LOG,
+                                       VideoColorSpace::MatrixID::RGB,
+                                       gfx::ColorSpace::RangeID::INVALID);
+  EXPECT_EQ(video_config.color_space_info(), expected_color_space);
 }
 
 }  // namespace media

@@ -14,21 +14,22 @@
  * limitations under the License.
  */
 
-#include "ftrace_procfs.h"
+#include "src/ftrace_reader/ftrace_procfs.h"
 
-#include <fcntl.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #include <fstream>
 #include <sstream>
 #include <string>
 
+#include "perfetto/base/file_utils.h"
 #include "perfetto/base/logging.h"
 #include "perfetto/base/utils.h"
 
 namespace perfetto {
-namespace {
 
 // Reading /trace produces human readable trace output.
 // Writing to this file clears all trace buffers for all CPUS.
@@ -40,33 +41,26 @@ namespace {
 // Disabling tracing with this file prevents further writes but
 // does not clear the buffer.
 
-char ReadOneCharFromFile(const std::string& path) {
-  base::ScopedFile fd = base::OpenFile(path.c_str(), O_RDONLY);
-  PERFETTO_CHECK(fd);
-  char result = '\0';
-  ssize_t bytes = PERFETTO_EINTR(read(fd.get(), &result, 1));
-  PERFETTO_CHECK(bytes == 1 || bytes == -1);
-  return result;
-}
+namespace {
 
-std::string ReadFileIntoString(std::string path) {
-  std::ifstream fin(path, std::ios::in);
-  if (!fin) {
-    PERFETTO_DLOG("Could not read '%s'", path.c_str());
-    return "";
-  }
-
-  std::string str;
-  // You can't seek or stat the procfs files on Android.
-  // The vast majority (884/886) of format files are under 4k.
-  str.reserve(4096);
-  str.assign(std::istreambuf_iterator<char>(fin),
-             std::istreambuf_iterator<char>());
-
-  return str;
+void KernelLogWrite(const char* s) {
+  PERFETTO_DCHECK(*s && s[strlen(s) - 1] == '\n');
+  if (FtraceProcfs::g_kmesg_fd != -1)
+    base::ignore_result(write(FtraceProcfs::g_kmesg_fd, s, strlen(s)));
 }
 
 }  // namespace
+
+// static
+int FtraceProcfs::g_kmesg_fd = -1;  // Set by ProbesMain() in probes.cc .
+
+// static
+std::unique_ptr<FtraceProcfs> FtraceProcfs::Create(const std::string& root) {
+  if (!CheckRootPath(root)) {
+    return nullptr;
+  }
+  return std::unique_ptr<FtraceProcfs>(new FtraceProcfs(root));
+}
 
 FtraceProcfs::FtraceProcfs(const std::string& root) : root_(root) {}
 FtraceProcfs::~FtraceProcfs() = default;
@@ -94,20 +88,24 @@ std::string FtraceProcfs::ReadEventFormat(const std::string& group,
   return ReadFileIntoString(path);
 }
 
-std::string FtraceProcfs::ReadAvailableEvents() const {
-  std::string path = root_ + "available_events";
+std::string FtraceProcfs::ReadPageHeaderFormat() const {
+  std::string path = root_ + "events/header_page";
+  return ReadFileIntoString(path);
+}
+
+std::string FtraceProcfs::ReadCpuStats(size_t cpu) const {
+  std::string path = root_ + "per_cpu/cpu" + std::to_string(cpu) + "/stats";
   return ReadFileIntoString(path);
 }
 
 size_t FtraceProcfs::NumberOfCpus() const {
-  static size_t num_cpus = sysconf(_SC_NPROCESSORS_CONF);
+  static size_t num_cpus = static_cast<size_t>(sysconf(_SC_NPROCESSORS_CONF));
   return num_cpus;
 }
 
 void FtraceProcfs::ClearTrace() {
   std::string path = root_ + "trace";
-  base::ScopedFile fd = base::OpenFile(path.c_str(), O_WRONLY | O_TRUNC);
-  PERFETTO_CHECK(fd);  // Could not clear.
+  PERFETTO_CHECK(ClearFile(path));  // Could not clear.
 }
 
 bool FtraceProcfs::WriteTraceMarker(const std::string& str) {
@@ -115,14 +113,29 @@ bool FtraceProcfs::WriteTraceMarker(const std::string& str) {
   return WriteToFile(path, str);
 }
 
+bool FtraceProcfs::SetCpuBufferSizeInPages(size_t pages) {
+  if (pages * base::kPageSize > 1 * 1024 * 1024 * 1024) {
+    PERFETTO_ELOG("Tried to set the per CPU buffer size to more than 1gb.");
+    return false;
+  }
+  std::string path = root_ + "buffer_size_kb";
+  return WriteNumberToFile(path, pages * (base::kPageSize / 1024ul));
+}
+
 bool FtraceProcfs::EnableTracing() {
+  KernelLogWrite("perfetto: enabled ftrace\n");
   std::string path = root_ + "tracing_on";
   return WriteToFile(path, "1");
 }
 
 bool FtraceProcfs::DisableTracing() {
+  KernelLogWrite("perfetto: disabled ftrace\n");
   std::string path = root_ + "tracing_on";
   return WriteToFile(path, "0");
+}
+
+bool FtraceProcfs::SetTracingOn(bool enable) {
+  return enable ? EnableTracing() : DisableTracing();
 }
 
 bool FtraceProcfs::IsTracingEnabled() {
@@ -130,9 +143,69 @@ bool FtraceProcfs::IsTracingEnabled() {
   return ReadOneCharFromFile(path) == '1';
 }
 
+bool FtraceProcfs::SetClock(const std::string& clock_name) {
+  std::string path = root_ + "trace_clock";
+  return WriteToFile(path, clock_name);
+}
+
+std::string FtraceProcfs::GetClock() {
+  std::string path = root_ + "trace_clock";
+  std::string s = ReadFileIntoString(path);
+
+  size_t start = s.find('[');
+  if (start == std::string::npos)
+    return "";
+
+  size_t end = s.find(']', start);
+  if (end == std::string::npos)
+    return "";
+
+  return s.substr(start + 1, end - start - 1);
+}
+
+std::set<std::string> FtraceProcfs::AvailableClocks() {
+  std::string path = root_ + "trace_clock";
+  std::string s = ReadFileIntoString(path);
+  std::set<std::string> names;
+
+  size_t start = 0;
+  size_t end = 0;
+
+  while (true) {
+    end = s.find(' ', start);
+    if (end == std::string::npos)
+      end = s.size();
+    if (start == end)
+      break;
+
+    std::string name = s.substr(start, end - start);
+
+    if (name[0] == '[')
+      name = name.substr(1, name.size() - 2);
+
+    names.insert(name);
+
+    if (end == s.size())
+      break;
+
+    start = end + 1;
+  }
+
+  return names;
+}
+
+bool FtraceProcfs::WriteNumberToFile(const std::string& path, size_t value) {
+  // 2^65 requires 20 digits to write.
+  char buf[21];
+  int res = snprintf(buf, 21, "%zu", value);
+  if (res < 0 || res >= 21)
+    return false;
+  return WriteToFile(path, std::string(buf));
+}
+
 bool FtraceProcfs::WriteToFile(const std::string& path,
                                const std::string& str) {
-  base::ScopedFile fd = base::OpenFile(path.c_str(), O_WRONLY);
+  base::ScopedFile fd = base::OpenFile(path, O_WRONLY);
   if (!fd)
     return false;
   ssize_t written = PERFETTO_EINTR(write(fd.get(), str.c_str(), str.length()));
@@ -145,7 +218,37 @@ bool FtraceProcfs::WriteToFile(const std::string& path,
 base::ScopedFile FtraceProcfs::OpenPipeForCpu(size_t cpu) {
   std::string path =
       root_ + "per_cpu/cpu" + std::to_string(cpu) + "/trace_pipe_raw";
-  return base::OpenFile(path.c_str(), O_RDONLY | O_NONBLOCK);
+  return base::OpenFile(path, O_RDONLY | O_NONBLOCK);
+}
+
+char FtraceProcfs::ReadOneCharFromFile(const std::string& path) {
+  base::ScopedFile fd = base::OpenFile(path, O_RDONLY);
+  PERFETTO_CHECK(fd);
+  char result = '\0';
+  ssize_t bytes = PERFETTO_EINTR(read(fd.get(), &result, 1));
+  PERFETTO_CHECK(bytes == 1 || bytes == -1);
+  return result;
+}
+
+bool FtraceProcfs::ClearFile(const std::string& path) {
+  base::ScopedFile fd = base::OpenFile(path, O_WRONLY | O_TRUNC);
+  return !!fd;
+}
+
+std::string FtraceProcfs::ReadFileIntoString(const std::string& path) const {
+  // You can't seek or stat the procfs files on Android.
+  // The vast majority (884/886) of format files are under 4k.
+  std::string str;
+  str.reserve(4096);
+  if (!base::ReadFile(path, &str))
+    return "";
+  return str;
+}
+
+// static
+bool FtraceProcfs::CheckRootPath(const std::string& root) {
+  base::ScopedFile fd = base::OpenFile(root + "trace", O_RDONLY);
+  return static_cast<bool>(fd);
 }
 
 }  // namespace perfetto

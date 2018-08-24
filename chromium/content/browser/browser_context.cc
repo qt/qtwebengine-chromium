@@ -24,6 +24,7 @@
 #include "base/rand_util.h"
 #include "base/task_scheduler/post_task.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/unguessable_token.h"
 #include "build/build_config.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
 #include "content/browser/browsing_data/browsing_data_remover_impl.h"
@@ -338,26 +339,6 @@ void BrowserContext::CreateMemoryBackedBlob(BrowserContext* browser_context,
 }
 
 // static
-void BrowserContext::CreateFileBackedBlob(
-    BrowserContext* browser_context,
-    const base::FilePath& path,
-    int64_t offset,
-    int64_t size,
-    const base::Time& expected_modification_time,
-    BlobCallback callback) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-
-  ChromeBlobStorageContext* blob_context =
-      ChromeBlobStorageContext::GetFor(browser_context);
-  BrowserThread::PostTaskAndReplyWithResult(
-      BrowserThread::IO, FROM_HERE,
-      base::BindOnce(&ChromeBlobStorageContext::CreateFileBackedBlob,
-                     base::WrapRefCounted(blob_context), path, offset, size,
-                     expected_modification_time),
-      std::move(callback));
-}
-
-// static
 BrowserContext::BlobContextGetter BrowserContext::GetBlobStorageContext(
     BrowserContext* browser_context) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -535,14 +516,12 @@ void BrowserContext::Initialize(
     connection->Start();
   }
 
-#if BUILDFLAG(ENABLE_WEBRTC)
   if (!browser_context->IsOffTheRecord()) {
     WebRtcEventLogger* const logger = WebRtcEventLogger::Get();
     if (logger) {
       logger->EnableForBrowserContext(browser_context);
     }
   }
-#endif
 }
 
 // static
@@ -583,7 +562,7 @@ ServiceManagerConnection* BrowserContext::GetServiceManagerConnectionFor(
 }
 
 BrowserContext::BrowserContext()
-    : media_device_id_salt_(CreateRandomMediaDeviceIDSalt()) {}
+    : unique_id_(base::UnguessableToken::Create().ToString()) {}
 
 BrowserContext::~BrowserContext() {
   CHECK(GetUserData(kMojoWasInitialized))
@@ -595,12 +574,10 @@ BrowserContext::~BrowserContext() {
 
   DCHECK(was_notify_will_be_destroyed_called_);
 
-#if BUILDFLAG(ENABLE_WEBRTC)
   WebRtcEventLogger* const logger = WebRtcEventLogger::Get();
   if (logger) {
     logger->DisableForBrowserContext(this);
   }
-#endif
 
   RemoveBrowserContextFromUserIdMap(this);
 
@@ -614,15 +591,16 @@ void BrowserContext::ShutdownStoragePartitions() {
 }
 
 std::string BrowserContext::GetMediaDeviceIDSalt() {
-  return media_device_id_salt_;
+  return unique_id_;
 }
 
 // static
 std::string BrowserContext::CreateRandomMediaDeviceIDSalt() {
-  std::string salt;
-  base::Base64Encode(base::RandBytesAsString(16), &salt);
-  DCHECK(!salt.empty());
-  return salt;
+  return base::UnguessableToken::Create().ToString();
+}
+
+const std::string& BrowserContext::UniqueId() const {
+  return unique_id_;
 }
 
 media::VideoDecodePerfHistory* BrowserContext::GetVideoDecodePerfHistory() {

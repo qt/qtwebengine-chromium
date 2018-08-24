@@ -77,7 +77,7 @@ assess its flakiness. While not foolproof, this approach gives you some
 confidence, and giving up CPU cycles for mental energy is a pretty good trade.
 
 ```bash
-third_party/WebKit/Tools/Scripts/run-webkit-tests path/to/test.html --repeat-each=100
+third_party/blink/tools/run_web_tests.py path/to/test.html --repeat-each=100
 ```
 
 The
@@ -107,7 +107,7 @@ valid markup (no parsing errors).
 
 Tests should provide as much relevant information as possible when failing.
 `testharness.js` tests should prefer
-[rich assert_ functions](https://github.com/w3c/testharness.js/blob/master/docs/api.md#list-of-assertions)
+[rich assert_ functions](https://github.com/w3c/web-platform-tests/blob/master/docs/_writing-tests/testharness-api.md#list-of-assertions)
 to combining `assert_true()` with a boolean operator. Using appropriate
 `assert_` functions results in better diagnostic output when the assertion
 fails.

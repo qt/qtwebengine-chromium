@@ -50,26 +50,23 @@
 #include "base/timer/timer.h"
 #include "media/audio/agc_audio_stream.h"
 #include "media/audio/audio_io.h"
-#include "media/audio/audio_manager.h"
+#include "media/audio/mac/audio_manager_mac.h"
 #include "media/base/audio_block_fifo.h"
 #include "media/base/audio_parameters.h"
 
 namespace media {
 
-class AudioManagerMac;
-
 class MEDIA_EXPORT AUAudioInputStream
     : public AgcAudioStream<AudioInputStream> {
  public:
-  enum class VoiceProcessingMode { DISABLED = 0, ENABLED = 1 };
-
   // The ctor takes all the usual parameters, plus |manager| which is the
   // the audio manager who is creating this object.
-  AUAudioInputStream(AudioManagerMac* manager,
-                     const AudioParameters& input_params,
-                     AudioDeviceID audio_device_id,
-                     const AudioManager::LogCallback& log_callback,
-                     VoiceProcessingMode voice_processing_mode);
+  AUAudioInputStream(
+      AudioManagerMac* manager,
+      const AudioParameters& input_params,
+      AudioDeviceID audio_device_id,
+      const AudioManager::LogCallback& log_callback,
+      AudioManagerBase::VoiceProcessingMode voice_processing_mode);
   // The dtor is typically called by the AudioManager only and it is usually
   // triggered by calling AudioInputStream::Close().
   ~AUAudioInputStream() override;
@@ -83,6 +80,7 @@ class MEDIA_EXPORT AUAudioInputStream
   void SetVolume(double volume) override;
   double GetVolume() override;
   bool IsMuted() override;
+  void SetOutputDeviceForAec(const std::string& output_device_id) override;
 
   // Returns the current hardware sample rate for the default input device.
   static int HardwareSampleRate();
@@ -149,6 +147,9 @@ class MEDIA_EXPORT AUAudioInputStream
 
   // Uninitializes the audio unit if needed.
   void CloseAudioUnit();
+
+  // Reinitializes the AudioUnit to use a new output device.
+  void SwitchVoiceProcessingOutputDevice(AudioDeviceID output_device_id);
 
   // Adds extra UMA stats when it has been detected that startup failed.
   void AddHistogramsForFailedStartup();
@@ -254,6 +255,9 @@ class MEDIA_EXPORT AUAudioInputStream
   // voice processing component that provides echo cancellation, ducking
   // and gain control on Sierra and later.
   const bool use_voice_processing_;
+
+  // The of the output device to cancel echo from.
+  AudioDeviceID output_device_id_for_aec_;
 
   // Stores the timestamp of the previous audio buffer provided by the OS.
   // We use this in combination with |last_number_of_frames_| to detect when

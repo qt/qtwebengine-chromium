@@ -6,7 +6,7 @@
 
 #import "base/mac/scoped_nsobject.h"
 #import "base/mac/scoped_sending_event.h"
-#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_current.h"
 #import "base/message_loop/message_pump_mac.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
@@ -15,9 +15,6 @@
 #import "content/browser/renderer_host/render_widget_host_view_cocoa.h"
 #include "content/browser/renderer_host/render_widget_host_view_mac.h"
 #include "content/browser/renderer_host/webmenurunner_mac.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 #import "ui/base/cocoa/base_view.h"
 
 namespace content {
@@ -31,18 +28,14 @@ bool g_allow_showing_popup_menus = true;
 PopupMenuHelper::PopupMenuHelper(Delegate* delegate,
                                  RenderFrameHost* render_frame_host)
     : delegate_(delegate),
+      observer_(this),
       render_frame_host_(static_cast<RenderFrameHostImpl*>(render_frame_host)),
       menu_runner_(nil),
       popup_was_hidden_(false),
       weak_ptr_factory_(this) {
-  notification_registrar_.Add(
-      this, NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED,
-      Source<RenderWidgetHost>(
-          render_frame_host->GetRenderViewHost()->GetWidget()));
-  notification_registrar_.Add(
-      this, NOTIFICATION_RENDER_WIDGET_VISIBILITY_CHANGED,
-      Source<RenderWidgetHost>(
-          render_frame_host->GetRenderViewHost()->GetWidget()));
+  RenderWidgetHost* widget_host =
+      render_frame_host->GetRenderViewHost()->GetWidget();
+  observer_.Add(widget_host);
 }
 
 PopupMenuHelper::~PopupMenuHelper() {
@@ -85,8 +78,7 @@ void PopupMenuHelper::ShowPopupMenu(
 
   {
     // Make sure events can be pumped while the menu is up.
-    base::MessageLoop::ScopedNestableTaskAllower allow(
-        base::MessageLoop::current());
+    base::MessageLoopCurrent::ScopedNestableTaskAllower allow;
 
     // One of the events that could be pumped is |window.close()|.
     // User-initiated event-tracking loops protect against this by
@@ -150,23 +142,16 @@ RenderWidgetHostViewMac* PopupMenuHelper::GetRenderWidgetHostView() const {
           ->GetView());
 }
 
-void PopupMenuHelper::Observe(int type,
-                              const NotificationSource& source,
-                              const NotificationDetails& details) {
-  DCHECK_EQ(Source<RenderWidgetHost>(source).ptr(),
-            render_frame_host_->GetRenderViewHost()->GetWidget());
-  switch (type) {
-    case NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED: {
-      render_frame_host_ = NULL;
-      break;
-    }
-    case NOTIFICATION_RENDER_WIDGET_VISIBILITY_CHANGED: {
-      bool is_visible = *Details<bool>(details).ptr();
-      if (!is_visible)
-        Hide();
-      break;
-    }
-  }
+void PopupMenuHelper::RenderWidgetHostVisibilityChanged(
+    RenderWidgetHost* widget_host,
+    bool became_visible) {
+  if (!became_visible)
+    Hide();
+}
+
+void PopupMenuHelper::RenderWidgetHostDestroyed(RenderWidgetHost* widget_host) {
+  render_frame_host_ = nullptr;
+  observer_.Remove(widget_host);
 }
 
 }  // namespace content

@@ -1,9 +1,9 @@
 # Please consult components/viz/README.md about allowable dependencies.
 
 include_rules = [
-  "+cc/ipc",
   "+components/viz/common/features.h",
   "-components/viz/common/switches.h",
+  "+media/base/video_types.h",
   "+gpu/command_buffer/client",
   "+gpu/command_buffer/common",
   "+gpu/ipc/client",
@@ -13,6 +13,8 @@ include_rules = [
   "+services/viz/privileged/interfaces",
   "+services/viz/public/interfaces",
   "+services/viz/public/interfaces/hit_test",
+  "+skia",
+  "+third_party/skia",
 ]
 
 specific_include_rules = {

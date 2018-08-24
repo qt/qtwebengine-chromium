@@ -55,9 +55,14 @@ class StyleSheetCSSRuleList final : public CSSRuleList {
     return new StyleSheetCSSRuleList(sheet);
   }
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(style_sheet_);
     CSSRuleList::Trace(visitor);
+  }
+
+  void TraceWrappers(ScriptWrappableVisitor* visitor) const override {
+    visitor->TraceWrappers(style_sheet_);
+    CSSRuleList::TraceWrappers(visitor);
   }
 
  private:
@@ -70,7 +75,7 @@ class StyleSheetCSSRuleList final : public CSSRuleList {
 
   CSSStyleSheet* GetStyleSheet() const override { return style_sheet_; }
 
-  Member<CSSStyleSheet> style_sheet_;
+  TraceWrapperMember<CSSStyleSheet> style_sheet_;
 };
 
 #if DCHECK_IS_ON()
@@ -155,6 +160,7 @@ CSSStyleSheet* CSSStyleSheet::CreateInline(Node& owner_node,
                                            const WTF::TextEncoding& encoding) {
   CSSParserContext* parser_context = CSSParserContext::Create(
       owner_node.GetDocument(), owner_node.GetDocument().BaseURL(),
+      false /* is_opaque_response_from_service_worker */,
       owner_node.GetDocument().GetReferrerPolicy(), encoding);
   StyleSheetContents* sheet =
       StyleSheetContents::Create(base_url.GetString(), parser_context);
@@ -238,6 +244,23 @@ void CSSStyleSheet::DidMutate() {
         ownerNode()->GetTreeScope());
 }
 
+void CSSStyleSheet::EnableRuleAccessForInspector() {
+  enable_rule_access_for_inspector_ = true;
+}
+void CSSStyleSheet::DisableRuleAccessForInspector() {
+  enable_rule_access_for_inspector_ = false;
+}
+
+CSSStyleSheet::InspectorMutationScope::InspectorMutationScope(
+    CSSStyleSheet* sheet)
+    : style_sheet_(sheet) {
+  style_sheet_->EnableRuleAccessForInspector();
+}
+
+CSSStyleSheet::InspectorMutationScope::~InspectorMutationScope() {
+  style_sheet_->DisableRuleAccessForInspector();
+}
+
 void CSSStyleSheet::ReattachChildRuleCSSOMWrappers() {
   for (unsigned i = 0; i < child_rule_cssom_wrappers_.size(); ++i) {
     if (!child_rule_cssom_wrappers_[i])
@@ -299,6 +322,14 @@ void CSSStyleSheet::ClearOwnerNode() {
 }
 
 bool CSSStyleSheet::CanAccessRules() const {
+  if (enable_rule_access_for_inspector_)
+    return true;
+
+  // Opaque responses should never be accessible, mod DevTools. See comments for
+  // IsOpaqueResponseFromServiceWorker().
+  if (contents_->IsOpaqueResponseFromServiceWorker())
+    return false;
+
   if (is_inline_stylesheet_)
     return true;
   KURL base_url = contents_->BaseURL();
@@ -306,8 +337,6 @@ bool CSSStyleSheet::CanAccessRules() const {
     return true;
   Document* document = OwnerDocument();
   if (!document)
-    return true;
-  if (document->GetStyleEngine().InspectorStyleSheet() == this)
     return true;
   if (document->GetSecurityOrigin()->CanReadContent(base_url))
     return true;
@@ -558,6 +587,15 @@ void CSSStyleSheet::Trace(blink::Visitor* visitor) {
   visitor->Trace(child_rule_cssom_wrappers_);
   visitor->Trace(rule_list_cssom_wrapper_);
   StyleSheet::Trace(visitor);
+}
+
+void CSSStyleSheet::TraceWrappers(
+    blink::ScriptWrappableVisitor* visitor) const {
+  for (auto& rule : child_rule_cssom_wrappers_) {
+    visitor->TraceWrappers(rule);
+  }
+  visitor->TraceWrappers(rule_list_cssom_wrapper_);
+  StyleSheet::TraceWrappers(visitor);
 }
 
 }  // namespace blink

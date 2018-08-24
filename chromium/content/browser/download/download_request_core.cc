@@ -203,12 +203,6 @@ DownloadRequestCore::DownloadRequestCore(
     is_partial_request_ = save_info_->offset > 0;
   } else {
     save_info_.reset(new download::DownloadSaveInfo);
-    ResourceRequestInfoImpl* request_info =
-        ResourceRequestInfoImpl::ForRequest(request_);
-    if (request_info && request_info->suggested_filename().has_value()) {
-      save_info_->suggested_name =
-          base::UTF8ToUTF16(*request_info->suggested_filename());
-    }
   }
 }
 
@@ -216,7 +210,7 @@ DownloadRequestCore::~DownloadRequestCore() {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // Remove output stream callback if a stream exists.
   if (stream_writer_)
-    stream_writer_->RegisterCallback(base::Closure());
+    stream_writer_->RegisterCallback(base::RepeatingClosure());
 }
 
 std::unique_ptr<download::DownloadCreateInfo>
@@ -286,7 +280,7 @@ bool DownloadRequestCore::OnResponseStarted(
                    download::GetDownloadTaskRunner(), kDownloadByteStreamSize,
                    &stream_writer_, &stream_reader);
   stream_writer_->RegisterCallback(
-      base::Bind(&DownloadRequestCore::ResumeRequest, AsWeakPtr()));
+      base::BindRepeating(&DownloadRequestCore::ResumeRequest, AsWeakPtr()));
 
   if (!override_mime_type.empty())
     create_info->mime_type = override_mime_type;

@@ -27,14 +27,29 @@ source_set("protozero") {
     "../base",
   ]
   sources = [
+    "message.cc",
+    "message_handle.cc",
     "proto_utils.cc",
-    "protozero_message.cc",
-    "protozero_message_handle.cc",
+    "scattered_stream_null_delegate.cc",
     "scattered_stream_writer.cc",
   ]
 }
 
-source_set("protozero_unittests") {
+source_set("test_support") {
+  testonly = true
+  deps = [
+    "../../gn:default_deps",
+  ]
+  public_deps = [
+    ":protozero",
+  ]
+  sources = [
+    "scattered_stream_delegate_for_testing.cc",
+    "scattered_stream_delegate_for_testing.h",
+  ]
+}
+
+source_set("unittests") {
   testonly = true
   deps = [
     ":protozero",
@@ -45,9 +60,9 @@ source_set("protozero_unittests") {
     "../base",
   ]
   sources = [
+    "message_handle_unittest.cc",
+    "message_unittest.cc",
     "proto_utils_unittest.cc",
-    "protozero_message_handle_unittest.cc",
-    "protozero_message_unittest.cc",
     "scattered_stream_writer_unittest.cc",
     "test/fake_scattered_buffer.cc",
     "test/fake_scattered_buffer.h",
@@ -67,12 +82,13 @@ testing_proto_sources = [
 protozero_library("testing_messages_zero") {
   sources = testing_proto_sources
   proto_in_dir = perfetto_root_path
-  proto_out_dir = "protos_zero"
+  proto_out_dir = perfetto_root_path
   generator_plugin_options = "wrapper_namespace=pbzero"
 }
 
 proto_library("testing_messages_lite") {
+  generate_python = false
   sources = testing_proto_sources
   proto_in_dir = perfetto_root_path
-  proto_out_dir = "protos_lite"
+  proto_out_dir = perfetto_root_path
 }

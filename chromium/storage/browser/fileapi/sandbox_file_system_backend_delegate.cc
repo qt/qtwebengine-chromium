@@ -179,18 +179,18 @@ SandboxFileSystemBackendDelegate::SandboxFileSystemBackendDelegate(
     base::SequencedTaskRunner* file_task_runner,
     const base::FilePath& profile_path,
     storage::SpecialStoragePolicy* special_storage_policy,
-    const FileSystemOptions& file_system_options)
+    const FileSystemOptions& file_system_options,
+    leveldb::Env* env_override)
     : file_task_runner_(file_task_runner),
       quota_manager_proxy_(quota_manager_proxy),
       sandbox_file_util_(new AsyncFileUtilAdapter(
           new ObfuscatedFileUtil(special_storage_policy,
                                  profile_path.Append(kFileSystemDirectory),
-                                 file_system_options.env_override(),
-                                 file_task_runner,
+                                 env_override,
                                  base::Bind(&GetTypeStringForURL),
                                  GetKnownTypeStrings(),
                                  this))),
-      file_system_usage_cache_(new FileSystemUsageCache(file_task_runner)),
+      file_system_usage_cache_(std::make_unique<FileSystemUsageCache>()),
       quota_observer_(new SandboxQuotaObserver(quota_manager_proxy,
                                                file_task_runner,
                                                obfuscated_file_util(),
@@ -702,12 +702,10 @@ ObfuscatedFileUtil* SandboxFileSystemBackendDelegate::obfuscated_file_util() {
 ObfuscatedFileUtil* ObfuscatedFileUtil::CreateForTesting(
     storage::SpecialStoragePolicy* special_storage_policy,
     const base::FilePath& file_system_directory,
-    leveldb::Env* env_override,
-    base::SequencedTaskRunner* file_task_runner) {
+    leveldb::Env* env_override) {
   return new ObfuscatedFileUtil(special_storage_policy,
                                 file_system_directory,
                                 env_override,
-                                file_task_runner,
                                 base::Bind(&GetTypeStringForURL),
                                 GetKnownTypeStrings(),
                                 NULL);

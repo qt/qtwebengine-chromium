@@ -62,7 +62,7 @@ class CORE_EXPORT HTMLImageElement final
                                                   unsigned height);
 
   ~HTMLImageElement() override;
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
   unsigned width();
   unsigned height();
@@ -208,6 +208,7 @@ class CORE_EXPORT HTMLImageElement final
   unsigned form_was_set_by_parser_ : 1;
   unsigned element_created_by_parser_ : 1;
   unsigned is_fallback_image_ : 1;
+  bool should_invert_color_;
 
   ReferrerPolicy referrer_policy_;
 };

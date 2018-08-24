@@ -5,6 +5,8 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_LOADER_TESTING_MOCK_FETCH_CONTEXT_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_LOADER_TESTING_MOCK_FETCH_CONTEXT_H_
 
+#include "base/optional.h"
+#include "base/single_thread_task_runner.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_url_loader_factory.h"
 #include "third_party/blink/renderer/platform/exported/wrapped_resource_request.h"
@@ -14,7 +16,6 @@
 #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/test/fake_frame_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/test/fake_task_runner.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 
 #include <memory>
 
@@ -51,7 +52,7 @@ class MockFetchContext : public FetchContext {
   }
 
   // The last ResourceRequest passed to DispatchWillSendRequest.
-  WTF::Optional<ResourceRequest> RequestFromWillSendRequest() const {
+  base::Optional<ResourceRequest> RequestFromWillSendRequest() const {
     return will_send_request_;
   }
 
@@ -67,7 +68,7 @@ class MockFetchContext : public FetchContext {
   bool AllowImage(bool images_enabled, const KURL&) const override {
     return true;
   }
-  ResourceRequestBlockedReason CanRequest(
+  base::Optional<ResourceRequestBlockedReason> CanRequest(
       Resource::Type,
       const ResourceRequest&,
       const KURL&,
@@ -75,20 +76,20 @@ class MockFetchContext : public FetchContext {
       SecurityViolationReportingPolicy,
       FetchParameters::OriginRestriction,
       ResourceRequest::RedirectStatus redirect_status) const override {
-    return ResourceRequestBlockedReason::kNone;
+    return base::nullopt;
   }
-  ResourceRequestBlockedReason CheckCSPForRequest(
+  base::Optional<ResourceRequestBlockedReason> CheckCSPForRequest(
       WebURLRequest::RequestContext,
       const KURL& url,
       const ResourceLoaderOptions& options,
       SecurityViolationReportingPolicy reporting_policy,
       ResourceRequest::RedirectStatus redirect_status) const override {
-    return ResourceRequestBlockedReason::kNone;
+    return base::nullopt;
   }
-  virtual ResourceRequestBlockedReason CheckResponseNosniff(
+  base::Optional<ResourceRequestBlockedReason> CheckResponseNosniff(
       WebURLRequest::RequestContext,
-      const ResourceResponse&) const {
-    return ResourceRequestBlockedReason::kNone;
+      const ResourceResponse&) const override {
+    return base::nullopt;
   }
   bool ShouldLoadNewResource(Resource::Type) const override {
     return load_policy_ == kShouldLoadNewResource;
@@ -158,7 +159,7 @@ class MockFetchContext : public FetchContext {
   std::unique_ptr<WebURLLoaderFactory> url_loader_factory_;
   bool complete_;
   long long transfer_size_;
-  WTF::Optional<ResourceRequest> will_send_request_;
+  base::Optional<ResourceRequest> will_send_request_;
 };
 
 }  // namespace blink

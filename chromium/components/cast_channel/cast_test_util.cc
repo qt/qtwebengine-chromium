@@ -30,8 +30,7 @@ MockCastSocketObserver::MockCastSocketObserver() {}
 MockCastSocketObserver::~MockCastSocketObserver() {}
 
 MockCastSocketService::MockCastSocketService(
-    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner)
-    : CastSocketService() {
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner) {
   SetTaskRunnerForTest(task_runner);
 }
 MockCastSocketService::~MockCastSocketService() {}
@@ -50,7 +49,7 @@ net::IPEndPoint CreateIPEndPointForTest() {
 
 MockCastMessageHandler::MockCastMessageHandler(
     MockCastSocketService* socket_service)
-    : CastMessageHandler(socket_service, "userAgent", "1.2.3.4") {}
+    : CastMessageHandler(socket_service, "userAgent", "1.2.3.4", "en-US") {}
 
 MockCastMessageHandler::~MockCastMessageHandler() = default;
 

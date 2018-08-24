@@ -21,6 +21,18 @@ Polymer({
      */
     syncStatus: Object,
 
+    // String to be used as a title when the promo has an account.
+    promoLabelWithAccount: String,
+
+    // String to be used as title of the promo has no account.
+    promoLabelWithNoAccount: String,
+
+    // String to be used as a subtitle when the promo has an account.
+    promoSecondaryLabelWithAccount: String,
+
+    // String to be used as subtitle of the promo has no account.
+    promoSecondaryLabelWithNoAccount: String,
+
     /**
      * Proxy variable for syncStatus.signedIn to shield observer from being
      * triggered multiple times whenever syncStatus changes.
@@ -44,9 +56,12 @@ Polymer({
       reflectToAttribute: true,
     },
 
-    promoLabel: String,
-
-    promoSecondaryLabel: String,
+    // This property should be set by the parent only and should not change
+    // after the element is created.
+    alwaysShowPromo: {
+      type: Boolean,
+      reflectToAttribute: true,
+    },
 
     /** @private {boolean} */
     shouldShowAvatarRow_: {
@@ -108,6 +123,11 @@ Polymer({
 
   /** @private */
   onSignedInChanged_: function() {
+    if (this.alwaysShowPromo) {
+      this.showingPromo = true;
+      return;
+    }
+
     if (!this.showingPromo && !this.syncStatus.signedIn &&
         this.syncBrowserProxy_.getPromoImpressionCount() <
             settings.MAX_SIGNIN_PROMO_IMPRESSION) {
@@ -119,6 +139,16 @@ Polymer({
     }
     if (!this.syncStatus.signedIn && this.shownAccount_ !== undefined)
       this.recordImpressionUserActions_();
+  },
+
+  /**
+   * @param {string} labelWithAccount
+   * @param {string} labelWithNoAccount
+   * @return {string}
+   * @private
+   */
+  getLabel_: function(labelWithAccount, labelWithNoAccount) {
+    return this.shownAccount_ ? labelWithAccount : labelWithNoAccount;
   },
 
   /**

@@ -60,6 +60,9 @@ class CC_ANIMATION_EXPORT KeyframeModel {
       int group_id,
       int target_property_id);
 
+  std::unique_ptr<KeyframeModel> CreateImplInstance(
+      RunState initial_run_state) const;
+
   virtual ~KeyframeModel();
 
   int id() const { return id_; }
@@ -91,9 +94,6 @@ class CC_ANIMATION_EXPORT KeyframeModel {
   void set_time_offset(base::TimeDelta monotonic_time) {
     time_offset_ = monotonic_time;
   }
-
-  void Suspend(base::TimeTicks monotonic_time);
-  void Resume(base::TimeTicks monotonic_time);
 
   Direction direction() { return direction_; }
   void set_direction(Direction direction) { direction_ = direction; }
@@ -139,11 +139,6 @@ class CC_ANIMATION_EXPORT KeyframeModel {
   // of iterations, returns the relative time in the current iteration.
   base::TimeDelta TrimTimeToCurrentIteration(
       base::TimeTicks monotonic_time) const;
-
-  base::TimeTicks ConvertFromActiveTime(base::TimeDelta active_time) const;
-
-  std::unique_ptr<KeyframeModel> CloneAndInitialize(
-      RunState initial_run_state) const;
 
   void set_is_controlling_instance_for_test(bool is_controlling_instance) {
     is_controlling_instance_ = is_controlling_instance;
@@ -203,11 +198,6 @@ class CC_ANIMATION_EXPORT KeyframeModel {
 
   bool needs_synchronized_start_time_;
   bool received_finished_event_;
-
-  // When a keyframe model is suspended, it behaves as if it is paused and it
-  // also ignores all run state changes until it is resumed. This is used for
-  // testing purposes.
-  bool suspended_;
 
   // These are used in TrimTimeToCurrentIteration to account for time
   // spent while paused. This is not included in AnimationState since it

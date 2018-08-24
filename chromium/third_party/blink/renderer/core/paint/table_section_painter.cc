@@ -15,6 +15,7 @@
 #include "third_party/blink/renderer/core/paint/collapsed_border_painter.h"
 #include "third_party/blink/renderer/core/paint/object_painter.h"
 #include "third_party/blink/renderer/core/paint/paint_info.h"
+#include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/table_cell_painter.h"
 #include "third_party/blink/renderer/core/paint/table_row_painter.h"
 #include "third_party/blink/renderer/platform/graphics/paint/display_item_cache_skipper.h"
@@ -26,10 +27,7 @@ void TableSectionPainter::PaintRepeatingHeaderGroup(
     const PaintInfo& paint_info,
     const LayoutPoint& paint_offset,
     ItemToPaint item_to_paint) {
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
-      // TODO(wangxianzhu): Use the PaintPropertyTreeBuilder path for printing.
-      (!paint_info.IsPrinting() ||
-       layout_table_section_.FirstFragment().NextFragment()))
+  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
     return;
 
   if (!layout_table_section_.IsRepeatingHeaderGroup())
@@ -97,10 +95,7 @@ void TableSectionPainter::PaintRepeatingFooterGroup(
     const PaintInfo& paint_info,
     const LayoutPoint& paint_offset,
     ItemToPaint item_to_paint) {
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
-      // TODO(wangxianzhu): Use the PaintPropertyTreeBuilder path for printing.
-      (!paint_info.IsPrinting() ||
-       layout_table_section_.FirstFragment().NextFragment()))
+  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
     return;
 
   if (!layout_table_section_.IsRepeatingFooterGroup())
@@ -181,6 +176,33 @@ void TableSectionPainter::Paint(const PaintInfo& paint_info,
   if (paint_info.phase == PaintPhase::kMask)
     return;
 
+  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
+    // If the section has multiple fragments, it should repeatedly paint the
+    // fragments by itself if:
+    // - It's not a self-painting layer (otherwise PaintLayerPainter should
+    //   initiate painting of the multiple fragments);
+    // - the table doesn't have multiple fragments (otherwise the table's
+    //   containing painting layer should initiate painting of the fragments).
+    bool should_paint_fragments_by_itself =
+        layout_table_section_.FirstFragment().NextFragment() &&
+        !layout_table_section_.HasSelfPaintingLayer() &&
+        !layout_table_section_.Table()->FirstFragment().NextFragment();
+
+    if (!should_paint_fragments_by_itself) {
+      PaintSection(paint_info, paint_offset);
+      return;
+    }
+
+    for (const auto* fragment = &layout_table_section_.FirstFragment();
+         fragment; fragment = fragment->NextFragment()) {
+      PaintInfo fragment_paint_info = paint_info;
+      fragment_paint_info.SetFragmentLogicalTopInFlowThread(
+          fragment->LogicalTopInFlowThread());
+      PaintSection(fragment_paint_info, paint_offset);
+    }
+    return;
+  }
+
   PaintSection(paint_info, paint_offset);
   LayoutTable* table = layout_table_section_.Table();
   if (table->Header() == layout_table_section_) {
@@ -209,7 +231,7 @@ void TableSectionPainter::PaintSection(const PaintInfo& paint_info,
   auto adjusted_paint_offset = adjustment.AdjustedPaintOffset();
 
   if (local_paint_info.phase != PaintPhase::kSelfOutlineOnly) {
-    Optional<BoxClipper> box_clipper;
+    base::Optional<BoxClipper> box_clipper;
     if (local_paint_info.phase != PaintPhase::kSelfBlockBackgroundOnly) {
       box_clipper.emplace(layout_table_section_, local_paint_info,
                           adjusted_paint_offset, kForceContentsClip);
@@ -226,6 +248,32 @@ void TableSectionPainter::PaintSection(const PaintInfo& paint_info,
 void TableSectionPainter::PaintCollapsedBorders(
     const PaintInfo& paint_info,
     const LayoutPoint& paint_offset) {
+  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
+    // If the section has multiple fragments, it should repeatedly paint the
+    // fragments for collapsed borders by itself if the table doesn't have
+    // multiple fragments (otherwise the table's containing painting layer
+    // should initiate painting of the fragments). The condition here is
+    // different from that in Paint() because the table always initiate painting
+    // of collapsed borders regardless of self-painting status of the section.
+    bool should_paint_fragments_by_itself =
+        layout_table_section_.FirstFragment().NextFragment() &&
+        !layout_table_section_.Table()->FirstFragment().NextFragment();
+
+    if (!should_paint_fragments_by_itself) {
+      PaintCollapsedSectionBorders(paint_info, paint_offset);
+      return;
+    }
+
+    for (const auto* fragment = &layout_table_section_.FirstFragment();
+         fragment; fragment = fragment->NextFragment()) {
+      PaintInfo fragment_paint_info = paint_info;
+      fragment_paint_info.SetFragmentLogicalTopInFlowThread(
+          fragment->LogicalTopInFlowThread());
+      PaintCollapsedSectionBorders(fragment_paint_info, paint_offset);
+    }
+    return;
+  }
+
   PaintCollapsedSectionBorders(paint_info, paint_offset);
   LayoutTable* table = layout_table_section_.Table();
   if (table->Header() == layout_table_section_) {
@@ -443,7 +491,8 @@ void TableSectionPainter::PaintBackgroundsBehindCell(
     const PaintInfo& paint_info_for_cells,
     const LayoutPoint& paint_offset) {
   LayoutPoint cell_point =
-      layout_table_section_.FlipForWritingModeForChild(&cell, paint_offset);
+      layout_table_section_.FlipForWritingModeForChildForPaint(&cell,
+                                                               paint_offset);
 
   // We need to handle painting a stack of backgrounds. This stack (from bottom
   // to top) consists of the column group, column, row group, row, and then the
@@ -483,7 +532,8 @@ void TableSectionPainter::PaintCell(const LayoutTableCell& cell,
                                     const LayoutPoint& paint_offset) {
   if (!cell.HasSelfPaintingLayer() && !cell.Row()->HasSelfPaintingLayer()) {
     LayoutPoint cell_point =
-        layout_table_section_.FlipForWritingModeForChild(&cell, paint_offset);
+        layout_table_section_.FlipForWritingModeForChildForPaint(&cell,
+                                                                 paint_offset);
     cell.Paint(paint_info_for_cells, cell_point);
   }
 }

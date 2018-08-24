@@ -4,6 +4,7 @@
 
 #include "gpu/ipc/service/gles2_command_buffer_stub.h"
 
+#include <memory>
 #include <utility>
 
 #include "base/bind.h"
@@ -21,6 +22,7 @@
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/common/gpu_memory_buffer_support.h"
 #include "gpu/command_buffer/common/mailbox.h"
+#include "gpu/command_buffer/common/swap_buffers_flags.h"
 #include "gpu/command_buffer/service/gl_context_virtual.h"
 #include "gpu/command_buffer/service/gl_state_restorer_impl.h"
 #include "gpu/command_buffer/service/image_manager.h"
@@ -334,7 +336,7 @@ gpu::ContextResult GLES2CommandBufferStub::Initialize(
   }
 
   if (manager->gpu_preferences().enable_gpu_service_logging) {
-    gles2_decoder_->set_log_commands(true);
+    gles2_decoder_->SetLogCommands(true);
   }
 
   const size_t kSharedStateSize = sizeof(CommandBufferSharedState);
@@ -382,6 +384,8 @@ void GLES2CommandBufferStub::DidCreateAcceleratedSurfaceChildWindow(
 
 void GLES2CommandBufferStub::DidSwapBuffersComplete(
     SwapBuffersCompleteParams params) {
+  params.swap_response.swap_id = pending_swap_completed_params_.front().swap_id;
+  pending_swap_completed_params_.pop_front();
   Send(new GpuCommandBufferMsg_SwapBuffersCompleted(route_id_, params));
 }
 
@@ -398,16 +402,17 @@ void GLES2CommandBufferStub::SetSnapshotRequestedCallback(
   snapshot_requested_callback_ = callback;
 }
 
-void GLES2CommandBufferStub::UpdateVSyncParameters(base::TimeTicks timebase,
-                                                   base::TimeDelta interval) {
-  Send(new GpuCommandBufferMsg_UpdateVSyncParameters(route_id_, timebase,
-                                                     interval));
-}
-
 void GLES2CommandBufferStub::BufferPresented(
-    uint64_t swap_id,
     const gfx::PresentationFeedback& feedback) {
-  Send(new GpuCommandBufferMsg_BufferPresented(route_id_, swap_id, feedback));
+  SwapBufferParams params = pending_presented_params_.front();
+  pending_presented_params_.pop_front();
+
+  if (params.flags & gpu::SwapBuffersFlags::kPresentationFeedback ||
+      (params.flags & gpu::SwapBuffersFlags::kVSyncParams &&
+       feedback.flags & gfx::PresentationFeedback::kVSync)) {
+    Send(new GpuCommandBufferMsg_BufferPresented(route_id_, params.swap_id,
+                                                 feedback));
+  }
 }
 
 void GLES2CommandBufferStub::AddFilter(IPC::MessageFilter* message_filter) {
@@ -431,6 +436,11 @@ void GLES2CommandBufferStub::OnTakeFrontBuffer(const Mailbox& mailbox) {
 void GLES2CommandBufferStub::OnReturnFrontBuffer(const Mailbox& mailbox,
                                                  bool is_lost) {
   gles2_decoder_->ReturnFrontBuffer(mailbox, is_lost);
+}
+
+void GLES2CommandBufferStub::OnSwapBuffers(uint64_t swap_id, uint32_t flags) {
+  pending_swap_completed_params_.push_back({swap_id, flags});
+  pending_presented_params_.push_back({swap_id, flags});
 }
 
 }  // namespace gpu

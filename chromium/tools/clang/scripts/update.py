@@ -27,7 +27,7 @@ import zipfile
 # Do NOT CHANGE this if you don't know what you're doing -- see
 # https://chromium.googlesource.com/chromium/src/+/master/docs/updating_clang.md
 # Reverting problematic clang rolls is safe, though.
-CLANG_REVISION = '328716'
+CLANG_REVISION = '332838'
 
 use_head_revision = bool(os.environ.get('LLVM_FORCE_HEAD_REVISION', '0')
                          in ('1', 'YES'))
@@ -35,7 +35,7 @@ if use_head_revision:
   CLANG_REVISION = 'HEAD'
 
 # This is incremented when pushing a new build of Clang at the same revision.
-CLANG_SUB_REVISION=2
+CLANG_SUB_REVISION=1
 
 PACKAGE_VERSION = "%s-%s" % (CLANG_REVISION, CLANG_SUB_REVISION)
 
@@ -236,16 +236,12 @@ def CopyFile(src, dst):
   shutil.copy(src, dst)
 
 
-def CopyDirectoryContents(src, dst, filename_filter=None):
-  """Copy the files from directory src to dst
-  with an optional filename filter."""
+def CopyDirectoryContents(src, dst):
+  """Copy the files from directory src to dst."""
   dst = os.path.realpath(dst)  # realpath() in case dst ends in /..
   EnsureDirExists(dst)
-  for root, _, files in os.walk(src):
-    for f in files:
-      if filename_filter and not re.match(filename_filter, f):
-        continue
-      CopyFile(os.path.join(root, f), dst)
+  for f in os.listdir(src):
+    CopyFile(os.path.join(src, f), dst)
 
 
 def Checkout(name, url, dir):
@@ -521,6 +517,7 @@ def UpdateClang(args):
   base_cmake_args = ['-GNinja',
                      '-DCMAKE_BUILD_TYPE=Release',
                      '-DLLVM_ENABLE_ASSERTIONS=ON',
+                     '-DLLVM_ENABLE_TERMINFO=OFF',
                      # Statically link MSVCRT to avoid DLL dependencies.
                      '-DLLVM_USE_CRT_RELEASE=MT',
                      ]
@@ -750,9 +747,8 @@ def UpdateClang(args):
   asan_rt_lib_dst_dir = os.path.join(LLVM_BUILD_DIR, 'lib', 'clang',
                                      VERSION, 'lib', platform)
   # Blacklists:
-  CopyDirectoryContents(os.path.join(asan_rt_lib_src_dir, '..', '..'),
-                        os.path.join(asan_rt_lib_dst_dir, '..', '..'),
-                        r'^.*blacklist\.txt$')
+  CopyDirectoryContents(os.path.join(asan_rt_lib_src_dir, '..', '..', 'share'),
+                        os.path.join(asan_rt_lib_dst_dir, '..', '..', 'share'))
   # Headers:
   if sys.platform != 'win32':
     CopyDirectoryContents(

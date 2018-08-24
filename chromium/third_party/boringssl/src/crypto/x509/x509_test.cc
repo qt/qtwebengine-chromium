@@ -20,8 +20,8 @@
 
 #include <openssl/bio.h>
 #include <openssl/bytestring.h>
-#include <openssl/curve25519.h>
 #include <openssl/crypto.h>
+#include <openssl/curve25519.h>
 #include <openssl/digest.h>
 #include <openssl/err.h>
 #include <openssl/pem.h>
@@ -30,6 +30,7 @@
 #include <openssl/x509v3.h>
 
 #include "../internal.h"
+#include "../test/test_util.h"
 
 
 std::string GetTestData(const char *path);
@@ -709,7 +710,7 @@ TEST(X509Test, ZeroLengthsWithX509PARAM) {
 
   std::vector<X509_CRL *> empty_crls;
 
-  struct Test {
+  struct X509Test {
     const char *correct_value;
     size_t correct_value_len;
     const char *incorrect_value;
@@ -717,7 +718,7 @@ TEST(X509Test, ZeroLengthsWithX509PARAM) {
     int (*func)(X509_VERIFY_PARAM *, const char *, size_t);
     int mismatch_error;
   };
-  const std::vector<Test> kTests = {
+  const std::vector<X509Test> kTests = {
       {kHostname, strlen(kHostname), kWrongHostname, strlen(kWrongHostname),
        X509_VERIFY_PARAM_set1_host, X509_V_ERR_HOSTNAME_MISMATCH},
       {kEmail, strlen(kEmail), kWrongEmail, strlen(kWrongEmail),
@@ -726,7 +727,7 @@ TEST(X509Test, ZeroLengthsWithX509PARAM) {
 
   for (size_t i = 0; i < kTests.size(); i++) {
     SCOPED_TRACE(i);
-    const Test &test = kTests[i];
+    const X509Test &test = kTests[i];
 
     // The correct value should work.
     ASSERT_EQ(X509_V_OK,
@@ -1256,6 +1257,89 @@ TEST(X509Test, PrettyPrintIntegers) {
       bssl::UniquePtr<char> out(i2s_ASN1_ENUMERATED(nullptr, asn1.get()));
       ASSERT_TRUE(out.get());
       EXPECT_STREQ(in, out.get());
+    }
+  }
+}
+
+TEST(X509Test, X509NameSet) {
+  bssl::UniquePtr<X509_NAME> name(X509_NAME_new());
+  EXPECT_TRUE(X509_NAME_add_entry_by_txt(
+      name.get(), "C", MBSTRING_ASC, reinterpret_cast<const uint8_t *>("US"),
+      -1, -1, 0));
+  EXPECT_EQ(X509_NAME_entry_count(name.get()), 1);
+  EXPECT_TRUE(X509_NAME_add_entry_by_txt(
+      name.get(), "C", MBSTRING_ASC, reinterpret_cast<const uint8_t *>("CA"),
+      -1, -1, 0));
+  EXPECT_EQ(X509_NAME_entry_count(name.get()), 2);
+  EXPECT_TRUE(X509_NAME_add_entry_by_txt(
+      name.get(), "C", MBSTRING_ASC, reinterpret_cast<const uint8_t *>("UK"),
+      -1, -1, 0));
+  EXPECT_EQ(X509_NAME_entry_count(name.get()), 3);
+  EXPECT_TRUE(X509_NAME_add_entry_by_txt(
+      name.get(), "C", MBSTRING_ASC, reinterpret_cast<const uint8_t *>("JP"),
+      -1, 1, 0));
+  EXPECT_EQ(X509_NAME_entry_count(name.get()), 4);
+
+  // Check that the correct entries get incremented when inserting new entry.
+  EXPECT_EQ(X509_NAME_ENTRY_set(X509_NAME_get_entry(name.get(), 1)), 1);
+  EXPECT_EQ(X509_NAME_ENTRY_set(X509_NAME_get_entry(name.get(), 2)), 2);
+}
+
+TEST(X509Test, StringDecoding) {
+  static const struct {
+    std::vector<uint8_t> in;
+    int type;
+    const char *expected;
+  } kTests[] = {
+      // Non-minimal, two-byte UTF-8.
+      {{0xc0, 0x81}, V_ASN1_UTF8STRING, nullptr},
+      // Non-minimal, three-byte UTF-8.
+      {{0xe0, 0x80, 0x81}, V_ASN1_UTF8STRING, nullptr},
+      // Non-minimal, four-byte UTF-8.
+      {{0xf0, 0x80, 0x80, 0x81}, V_ASN1_UTF8STRING, nullptr},
+      // Truncated, four-byte UTF-8.
+      {{0xf0, 0x80, 0x80}, V_ASN1_UTF8STRING, nullptr},
+      // Low-surrogate value.
+      {{0xed, 0xa0, 0x80}, V_ASN1_UTF8STRING, nullptr},
+      // High-surrogate value.
+      {{0xed, 0xb0, 0x81}, V_ASN1_UTF8STRING, nullptr},
+      // Initial BOMs should be rejected from UCS-2 and UCS-4.
+      {{0xfe, 0xff, 0, 88}, V_ASN1_BMPSTRING, nullptr},
+      {{0, 0, 0xfe, 0xff, 0, 0, 0, 88}, V_ASN1_UNIVERSALSTRING, nullptr},
+      // Otherwise, BOMs should pass through.
+      {{0, 88, 0xfe, 0xff}, V_ASN1_BMPSTRING, "X\xef\xbb\xbf"},
+      {{0, 0, 0, 88, 0, 0, 0xfe, 0xff}, V_ASN1_UNIVERSALSTRING,
+       "X\xef\xbb\xbf"},
+      // The maximum code-point should pass though.
+      {{0, 16, 0xff, 0xfd}, V_ASN1_UNIVERSALSTRING, "\xf4\x8f\xbf\xbd"},
+      // Values outside the Unicode space should not.
+      {{0, 17, 0, 0}, V_ASN1_UNIVERSALSTRING, nullptr},
+      // Non-characters should be rejected.
+      {{0, 1, 0xff, 0xff}, V_ASN1_UNIVERSALSTRING, nullptr},
+      {{0, 1, 0xff, 0xfe}, V_ASN1_UNIVERSALSTRING, nullptr},
+      {{0, 0, 0xfd, 0xd5}, V_ASN1_UNIVERSALSTRING, nullptr},
+      // BMPString is UCS-2, not UTF-16, so surrogate pairs are invalid.
+      {{0xd8, 0, 0xdc, 1}, V_ASN1_BMPSTRING, nullptr},
+  };
+
+  for (size_t i = 0; i < OPENSSL_ARRAY_SIZE(kTests); i++) {
+    SCOPED_TRACE(i);
+    const auto& test = kTests[i];
+    ASN1_STRING s;
+    s.type = test.type;
+    s.data = const_cast<uint8_t*>(test.in.data());
+    s.length = test.in.size();
+
+    uint8_t *utf8;
+    const int utf8_len = ASN1_STRING_to_UTF8(&utf8, &s);
+    EXPECT_EQ(utf8_len < 0, test.expected == nullptr);
+    if (utf8_len >= 0) {
+      if (test.expected != nullptr) {
+        EXPECT_EQ(Bytes(test.expected), Bytes(utf8, utf8_len));
+      }
+      OPENSSL_free(utf8);
+    } else {
+      ERR_clear_error();
     }
   }
 }

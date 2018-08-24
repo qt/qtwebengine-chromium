@@ -13,6 +13,8 @@ import shutil
 import sys
 import zipfile
 
+import finalize_apk
+
 from util import build_utils
 
 
@@ -48,6 +50,8 @@ def _ParseArgs(args):
                       required=True)
   parser.add_argument('--apk-pak-info-path',
                       help='Path to the *.apk.pak.info file')
+  parser.add_argument('--apk-res-info-path',
+                      help='Path to the *.apk.res.info file')
   parser.add_argument('--dex-file',
                       help='Path to the classes.dex to use')
   parser.add_argument('--native-libs',
@@ -68,15 +72,32 @@ def _ParseArgs(args):
   parser.add_argument('--native-lib-placeholders',
                       help='GYP-list of native library placeholders to add.',
                       default='[]')
-  parser.add_argument('--uncompress-shared-libraries',
-                      action='store_true',
-                      help='Uncompress shared libraries')
+  parser.add_argument('--secondary-native-lib-placeholders',
+                      help='GYP-list of native library placeholders to add '
+                           'for the secondary ABI',
+                      default='[]')
+  parser.add_argument('--uncompress-shared-libraries', default='False',
+      choices=['true', 'True', 'false', 'False'],
+      help='Whether to uncompress native shared libraries. Argument must be '
+           'a boolean value.')
+  parser.add_argument('--apksigner-path', required=True,
+                      help='Path to the apksigner executable.')
+  parser.add_argument('--zipalign-path', required=True,
+                      help='Path to the zipalign executable.')
+  parser.add_argument('--key-path', required=True,
+                      help='Path to keystore for signing.')
+  parser.add_argument('--key-passwd', required=True,
+                      help='Keystore password')
+  parser.add_argument('--key-name', required=True,
+                      help='Keystore name')
   options = parser.parse_args(args)
   options.assets = build_utils.ParseGnList(options.assets)
   options.uncompressed_assets = build_utils.ParseGnList(
       options.uncompressed_assets)
   options.native_lib_placeholders = build_utils.ParseGnList(
       options.native_lib_placeholders)
+  options.secondary_native_lib_placeholders = build_utils.ParseGnList(
+      options.secondary_native_lib_placeholders)
   options.java_resources = build_utils.ParseGnList(options.java_resources)
   all_libs = []
   for gyp_list in options.native_libs:
@@ -87,11 +108,14 @@ def _ParseArgs(args):
     secondary_libs.extend(build_utils.ParseGnList(gyp_list))
   options.secondary_native_libs = secondary_libs
 
+  options.uncompress_shared_libraries = \
+      options.uncompress_shared_libraries in [ 'true', 'True' ]
 
   if not options.android_abi and (options.native_libs or
                                   options.native_lib_placeholders):
     raise Exception('Must specify --android-abi with --native-libs')
-  if not options.secondary_android_abi and options.secondary_native_libs:
+  if not options.secondary_android_abi and (options.secondary_native_libs or
+      options.secondary_native_lib_placeholders):
     raise Exception('Must specify --secondary-android-abi with'
                     ' --secondary-native-libs')
   return options
@@ -186,6 +210,11 @@ def _AddNativeLibraries(out_apk, native_libs, android_abi, uncompress):
                                  compress=compress)
 
 
+def _MergeResInfoFiles(res_info_path, resource_apk):
+  resource_apk_info_path = resource_apk + '.info'
+  shutil.copy(resource_apk_info_path, res_info_path)
+
+
 def _MergePakInfoFiles(pak_info_path, asset_list):
   lines = set()
   for asset_details in asset_list:
@@ -218,7 +247,8 @@ def main(args):
 
   input_strings = [options.android_abi,
                    options.native_lib_placeholders,
-                   options.uncompress_shared_libraries]
+                   options.secondary_native_lib_placeholders,
+                   str(options.uncompress_shared_libraries)]
 
   if options.secondary_android_abi:
     input_strings.append(options.secondary_android_abi)
@@ -238,6 +268,8 @@ def main(args):
   output_paths = [options.output_apk]
   if options.apk_pak_info_path:
     output_paths.append(options.apk_pak_info_path)
+  if options.apk_res_info_path:
+    output_paths.append(options.apk_res_info_path)
 
   def on_stale_md5():
     tmp_apk = options.output_apk + '.tmp'
@@ -295,6 +327,13 @@ def main(args):
           apk_path = 'lib/%s/%s' % (options.android_abi, name)
           build_utils.AddToZipHermetic(out_apk, apk_path, data='')
 
+        for name in sorted(options.secondary_native_lib_placeholders):
+          # Note: Empty libs files are ignored by md5check (can cause issues
+          # with stale builds when the only change is adding/removing
+          # placeholders).
+          apk_path = 'lib/%s/%s' % (options.secondary_android_abi, name)
+          build_utils.AddToZipHermetic(out_apk, apk_path, data='')
+
         # 5. Resources
         for info in resource_infos[1:]:
           copy_resource(info)
@@ -320,8 +359,13 @@ def main(args):
         if options.apk_pak_info_path:
           _MergePakInfoFiles(options.apk_pak_info_path,
                              options.assets + options.uncompressed_assets)
+        if options.apk_res_info_path:
+          _MergeResInfoFiles(options.apk_res_info_path, options.resource_apk)
 
-      shutil.move(tmp_apk, options.output_apk)
+      finalize_apk.FinalizeApk(options.apksigner_path, options.zipalign_path,
+                               tmp_apk, options.output_apk,
+                               options.key_path, options.key_passwd,
+                               options.key_name)
     finally:
       if os.path.exists(tmp_apk):
         os.unlink(tmp_apk)

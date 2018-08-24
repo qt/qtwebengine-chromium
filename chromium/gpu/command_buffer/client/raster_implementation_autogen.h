@@ -65,12 +65,6 @@ void UnpremultiplyAndDitherCopyCHROMIUM(GLuint source_id,
 
 GLenum GetGraphicsResetStatusKHR() override;
 
-void InitializeDiscardableTextureCHROMIUM(GLuint texture_id) override;
-
-void UnlockDiscardableTextureCHROMIUM(GLuint texture_id) override;
-
-bool LockDiscardableTextureCHROMIUM(GLuint texture_id) override;
-
 void EndRasterCHROMIUM() override;
 
 GLuint CreateTexture(bool use_buffer,
@@ -108,5 +102,10 @@ void CopySubTexture(GLuint source_id,
                     GLint y,
                     GLsizei width,
                     GLsizei height) override;
+
+void TraceBeginCHROMIUM(const char* category_name,
+                        const char* trace_name) override;
+
+void TraceEndCHROMIUM() override;
 
 #endif  // GPU_COMMAND_BUFFER_CLIENT_RASTER_IMPLEMENTATION_AUTOGEN_H_

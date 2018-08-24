@@ -12,7 +12,6 @@
 #import "base/mac/scoped_nsobject.h"
 #import "base/mac/scoped_objc_class_swizzler.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -109,7 +108,7 @@ class BridgedNativeWidgetTestApi {
     ca_layer_params.pixel_size = size;
     ca_layer_params.scale_factor = kScaleFactor;
     ca_layer_frame_sink->UpdateCALayerTree(ca_layer_params);
-    bridge_->AcceleratedWidgetSwapCompleted();
+    bridge_->AcceleratedWidgetCALayerParamsUpdated();
   }
 
   NSAnimation* show_animation() {
@@ -455,7 +454,7 @@ TEST_F(NativeWidgetMacTest, DISABLED_OrderFrontAfterMiniaturize) {
   // Wait and check that child is really visible.
   // TODO(kirr): remove the fixed delay.
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-      FROM_HERE, base::MessageLoop::QuitWhenIdleClosure(),
+      FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated(),
       base::TimeDelta::FromSeconds(2));
   base::RunLoop().Run();
 

@@ -22,7 +22,7 @@
 #include "url/url_file.h"
 #include "url/url_util.h"
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
 #include "base/path_service.h"
 #endif
 
@@ -101,8 +101,10 @@ void PrepareStringForFileOps(const base::FilePath& text,
 #if defined(OS_WIN)
   base::TrimWhitespace(text.value(), base::TRIM_ALL, output);
   replace(output->begin(), output->end(), '/', '\\');
-#else
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   TrimWhitespaceUTF8(text.value(), base::TRIM_ALL, output);
+#else
+#error Unsupported platform
 #endif
 }
 
@@ -122,7 +124,7 @@ bool ValidPathForFile(const base::FilePath::StringType& text,
   return true;
 }
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
 // Given a path that starts with ~, return a path that starts with an
 // expanded-out /user/foobar directory.
 std::string FixupHomedir(const std::string& text) {
@@ -133,7 +135,7 @@ std::string FixupHomedir(const std::string& text) {
     if (home_directory_override)
       file_path = base::FilePath(home_directory_override);
     else
-      PathService::Get(base::DIR_HOME, &file_path);
+      base::PathService::Get(base::DIR_HOME, &file_path);
 
     // We'll probably break elsewhere if $HOME is undefined, but check here
     // just in case.
@@ -176,7 +178,7 @@ std::string FixupPath(const std::string& text) {
   // Fixup Windows-style drive letters, where "C:" gets rewritten to "C|".
   if (filename.length() > 1 && filename[1] == '|')
     filename[1] = ':';
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   base::FilePath input_path(text);
   PrepareStringForFileOps(input_path, &filename);
   if (filename.length() > 0 && filename[0] == '~')
@@ -402,20 +404,20 @@ std::string SegmentURLInternal(std::string* text, url::Parsed* parts) {
   if (trimmed.empty())
     return std::string();  // Nothing to segment.
 
+  std::string scheme;
 #if defined(OS_WIN)
   int trimmed_length = static_cast<int>(trimmed.length());
   if (url::DoesBeginWindowsDriveSpec(trimmed.data(), 0, trimmed_length) ||
       url::DoesBeginUNCPath(trimmed.data(), 0, trimmed_length, true))
-    return url::kFileScheme;
-#elif defined(OS_POSIX)
+    scheme = url::kFileScheme;
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   if (base::FilePath::IsSeparator(trimmed.data()[0]) ||
       trimmed.data()[0] == '~')
-    return url::kFileScheme;
+    scheme = url::kFileScheme;
 #endif
 
   // Otherwise, we need to look at things carefully.
-  std::string scheme;
-  if (!GetValidScheme(*text, &parts->scheme, &scheme)) {
+  if (scheme.empty() && !GetValidScheme(*text, &parts->scheme, &scheme)) {
     // Try again if there is a ';' in the text. If changing it to a ':' results
     // in a standard scheme, "about", "chrome" or "file" scheme being found,
     // continue processing with the modified text.
@@ -442,24 +444,26 @@ std::string SegmentURLInternal(std::string* text, url::Parsed* parts) {
 
   // Proceed with about and chrome schemes, but not file or nonstandard schemes.
   if ((scheme != url::kAboutScheme) && (scheme != kChromeUIScheme) &&
-      ((scheme == url::kFileScheme) ||
-       !url::IsStandard(
-           scheme.c_str(),
-           url::Component(0, static_cast<int>(scheme.length()))))) {
+      !url::IsStandard(scheme.c_str(),
+                       url::Component(0, static_cast<int>(scheme.length())))) {
+    return scheme;
+  }
+
+  int text_length = static_cast<int>(text->length());
+  if (scheme == url::kFileScheme) {
+    url::ParseFileURL(text->data(), text_length, parts);
     return scheme;
   }
 
   if (scheme == url::kFileSystemScheme) {
     // Have the GURL parser do the heavy lifting for us.
-    url::ParseFileSystemURL(text->data(), static_cast<int>(text->length()),
-                            parts);
+    url::ParseFileSystemURL(text->data(), text_length, parts);
     return scheme;
   }
 
   if (parts->scheme.is_valid()) {
     // Have the GURL parser do the heavy lifting for us.
-    url::ParseStandardURL(text->data(), static_cast<int>(text->length()),
-                          parts);
+    url::ParseStandardURL(text->data(), text_length, parts);
     return scheme;
   }
 
@@ -623,7 +627,7 @@ GURL FixupRelativeFile(const base::FilePath& base_dir,
         base::WideToUTF8(trimmed),
         net::UnescapeRule::SPACES | net::UnescapeRule::PATH_SEPARATORS |
             net::UnescapeRule::URL_SPECIAL_CHARS_EXCEPT_PATH_SEPARATORS));
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
     std::string unescaped = net::UnescapeURLComponent(
         trimmed,
         net::UnescapeRule::SPACES | net::UnescapeRule::PATH_SEPARATORS |
@@ -650,7 +654,7 @@ GURL FixupRelativeFile(const base::FilePath& base_dir,
 // Fall back on regular fixup for this input.
 #if defined(OS_WIN)
   std::string text_utf8 = base::WideToUTF8(text.value());
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   std::string text_utf8 = text.value();
 #endif
   return FixupURL(text_utf8, std::string());

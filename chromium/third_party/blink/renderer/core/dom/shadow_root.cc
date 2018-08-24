@@ -183,7 +183,10 @@ void ShadowRoot::AttachLayoutTree(AttachContext& context) {
 void ShadowRoot::DetachLayoutTree(const AttachContext& context) {
   Node::AttachContext children_context(context);
   children_context.clear_invalidation = true;
-  GetDocument().GetStyleEngine().GetStyleInvalidator().ClearInvalidation(*this);
+  GetDocument()
+      .GetStyleEngine()
+      .GetPendingNodeInvalidations()
+      .ClearInvalidation(*this);
   DocumentFragment::DetachLayoutTree(children_context);
 }
 
@@ -227,8 +230,10 @@ void ShadowRoot::RemovedFrom(ContainerNode* insertion_point) {
       registered_with_parent_shadow_root_ = false;
     }
     if (NeedsStyleInvalidation()) {
-      GetDocument().GetStyleEngine().GetStyleInvalidator().ClearInvalidation(
-          *this);
+      GetDocument()
+          .GetStyleEngine()
+          .GetPendingNodeInvalidations()
+          .ClearInvalidation(*this);
     }
   }
 
@@ -294,7 +299,7 @@ void ShadowRoot::Trace(blink::Visitor* visitor) {
   DocumentFragment::Trace(visitor);
 }
 
-void ShadowRoot::TraceWrappers(const ScriptWrappableVisitor* visitor) const {
+void ShadowRoot::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(style_sheet_list_);
   DocumentFragment::TraceWrappers(visitor);
 }

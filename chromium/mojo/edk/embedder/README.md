@@ -1,5 +1,5 @@
 # Mojo Embedder Development Kit (EDK)
-This document is a subset of the [Mojo documentation](/mojo).
+This document is a subset of the [Mojo documentation](/mojo/README.md).
 
 [TOC]
 
@@ -112,7 +112,7 @@ getting the other end into the remote process.
 // argument to indicate its numeric value). Returns the handle of the new
 // process.
 base::ProcessHandle LaunchCoolChildProcess(
-    mojo::edk::ScopedPlatformHandle channel);
+    mojo::edk::ScopedInternalPlatformHandle channel);
 
 int main(int argc, char** argv) {
   mojo::edk::Init();
@@ -154,9 +154,9 @@ connected, and might look something like:
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/edk/embedder/scoped_ipc_support.h"
 
-// You write this. It acquires the ScopedPlatformHandle that was passed by
+// You write this. It acquires the ScopedInternalPlatformHandle that was passed by
 // whomever launched this process (i.e. LaunchCoolChildProcess above).
-mojo::edk::ScopedPlatformHandle GetChannelHandle();
+mojo::edk::ScopedInternalPlatformHandle GetChannelHandle();
 
 int main(int argc, char** argv) {
   mojo::edk::Init();
@@ -204,7 +204,7 @@ We can modify our existing sample code as follows:
 
 base::ProcessHandle LaunchCoolChildProcess(
     const base::CommandLine& command_line,
-    mojo::edk::ScopedPlatformHandle channel);
+    mojo::edk::ScopedInternalPlatformHandle channel);
 
 int main(int argc, char** argv) {
   mojo::edk::Init();
@@ -261,7 +261,7 @@ and for the launched process:
 #include "mojo/public/cpp/system/message_pipe.h"
 #include "local/foo.mojom.h"  // You provide this
 
-mojo::edk::ScopedPlatformHandle GetChannelHandle();
+mojo::edk::ScopedInternalPlatformHandle GetChannelHandle();
 
 class FooImpl : local::mojom::Foo {
  public:
@@ -321,15 +321,5 @@ Once you've bootstrapped your process connection with a real mojom interface,
 you can avoid any further mucking around with EDK APIs or raw message pipe
 handles, as everything beyond this point - including the passing of other
 interface pipes - can be handled eloquently using
-[public bindings APIs](/mojo#High_Level-Bindings-APIs).
-
-## Setting System Properties
-
-The public Mojo C System API exposes a
-[**`MojoGetProperty`**](/mojo/public/c/system#MojoGetProperty) function for
-querying global, embedder-defined property values. These can be set by calling:
-
-```
-mojo::edk::SetProperty(MojoPropertyType type, const void* value)
-```
+[public bindings APIs](/mojo/README.md#High_Level-Bindings-APIs).
 

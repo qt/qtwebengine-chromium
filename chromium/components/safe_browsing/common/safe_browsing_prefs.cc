@@ -174,22 +174,18 @@ const char kSafeBrowsingScoutGroupSelected[] =
     "safebrowsing.scout_group_selected";
 const char kSafeBrowsingScoutReportingEnabled[] =
     "safebrowsing.scout_reporting_enabled";
+const char kSafeBrowsingTriggerEventTimestamps[] =
+    "safebrowsing.trigger_event_timestamps";
 const char kSafeBrowsingUnhandledSyncPasswordReuses[] =
     "safebrowsing.unhandled_sync_password_reuses";
 const char kSafeBrowsingWhitelistDomains[] =
     "safebrowsing.safe_browsing_whitelist_domains";
 const char kPasswordProtectionChangePasswordURL[] =
     "safebrowsing.password_protection_change_password_url";
-const char kPasswordProtectionEnterpriseName[] =
-    "safebrowsing.password_protection_enterprise_name";
-const char kPasswordProtectionEnterpriseEmailDomain[] =
-    "safebrowsing.password_protection_enterprise_email_domain";
 const char kPasswordProtectionLoginURLs[] =
     "safebrowsing.password_protection_login_urls";
 const char kPasswordProtectionWarningTrigger[] =
     "safebrowsing.password_protection_warning_trigger";
-const char kPasswordProtectionRiskTrigger[] =
-    "safebrowsing.password_protection_risk_trigger";
 }  // namespace prefs
 
 namespace safe_browsing {
@@ -385,14 +381,13 @@ void RegisterProfilePrefs(PrefRegistrySimple* registry) {
       prefs::kSafeBrowsingUnhandledSyncPasswordReuses);
   registry->RegisterListPref(prefs::kSafeBrowsingWhitelistDomains);
   registry->RegisterStringPref(prefs::kPasswordProtectionChangePasswordURL, "");
-  registry->RegisterStringPref(prefs::kPasswordProtectionEnterpriseName, "");
-  registry->RegisterStringPref(prefs::kPasswordProtectionEnterpriseEmailDomain,
-                               "");
   registry->RegisterListPref(prefs::kPasswordProtectionLoginURLs);
   registry->RegisterIntegerPref(prefs::kPasswordProtectionWarningTrigger,
                                 PASSWORD_PROTECTION_OFF);
-  registry->RegisterIntegerPref(prefs::kPasswordProtectionRiskTrigger,
-                                PASSWORD_PROTECTION_OFF);
+}
+
+void RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
+  registry->RegisterDictionaryPref(prefs::kSafeBrowsingTriggerEventTimestamps);
 }
 
 void SetExtendedReportingPrefAndMetric(
@@ -536,10 +531,9 @@ void CanonicalizeDomainList(
 bool IsURLWhitelistedByPolicy(const GURL& url,
                               StringListPrefMember* pref_member) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
-  if (!pref_member ||
-      !base::FeatureList::IsEnabled(kEnterprisePasswordProtectionV1)) {
+  if (!pref_member)
     return false;
-  }
+
   std::vector<std::string> sb_whitelist_domains = pref_member->GetValue();
   return std::find_if(sb_whitelist_domains.begin(), sb_whitelist_domains.end(),
                       [&url](const std::string& domain) {
@@ -549,9 +543,6 @@ bool IsURLWhitelistedByPolicy(const GURL& url,
 
 bool IsURLWhitelistedByPolicy(const GURL& url, const PrefService& pref) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (!base::FeatureList::IsEnabled(kEnterprisePasswordProtectionV1))
-    return false;
-
   if (!pref.HasPrefPath(prefs::kSafeBrowsingWhitelistDomains))
     return false;
   const base::ListValue* whitelist =

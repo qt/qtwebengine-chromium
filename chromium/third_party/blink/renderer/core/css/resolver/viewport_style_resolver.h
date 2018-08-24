@@ -33,10 +33,12 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/rule_set.h"
 #include "third_party/blink/renderer/core/css_property_names.h"
+#include "third_party/blink/renderer/core/dom/viewport_description.h"
 #include "third_party/blink/renderer/platform/length.h"
 
 namespace blink {
 
+class ComputedStyle;
 class Document;
 class DocumentStyleSheetCollection;
 class MutableCSSPropertyValueSet;
@@ -49,6 +51,7 @@ class CORE_EXPORT ViewportStyleResolver
     return new ViewportStyleResolver(document);
   }
 
+  void InitialStyleChanged();
   void InitialViewportChanged();
   void SetNeedsCollectRules();
   bool NeedsUpdate() const { return needs_update_; }
@@ -76,10 +79,12 @@ class CORE_EXPORT ViewportStyleResolver
 
   float ViewportArgumentValue(CSSPropertyID) const;
   Length ViewportLengthValue(CSSPropertyID);
+  ViewportDescription::ViewportFit ViewportFitValue() const;
 
   Member<Document> document_;
   Member<MutableCSSPropertyValueSet> property_set_;
   Member<MediaQueryEvaluator> initial_viewport_medium_;
+  scoped_refptr<ComputedStyle> initial_style_;
   MediaQueryResultList viewport_dependent_media_query_results_;
   MediaQueryResultList device_dependent_media_query_results_;
   bool has_author_style_ = false;

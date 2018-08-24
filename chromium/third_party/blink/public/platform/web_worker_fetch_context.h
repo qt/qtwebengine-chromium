@@ -11,6 +11,7 @@
 #include "third_party/blink/public/platform/web_application_cache_host.h"
 #include "third_party/blink/public/platform/web_document_subresource_filter.h"
 #include "third_party/blink/public/platform/web_url.h"
+#include "third_party/blink/public/platform/websocket_handshake_throttle.h"
 
 namespace base {
 class WaitableEvent;
@@ -30,6 +31,11 @@ class WebDocumentSubresourceFilter;
 class WebWorkerFetchContext {
  public:
   virtual ~WebWorkerFetchContext() = default;
+
+  // Used to copy a worker fetch context between worker threads.
+  virtual std::unique_ptr<WebWorkerFetchContext> CloneForNestedWorker() {
+    return nullptr;
+  }
 
   // Set a raw pointer of a WaitableEvent which will be signaled from the main
   // thread when the worker's GlobalScope is terminated, which will terminate
@@ -91,6 +97,12 @@ class WebWorkerFetchContext {
   // This method should only be called once.
   virtual std::unique_ptr<WebDocumentSubresourceFilter>
   TakeSubresourceFilter() {
+    return nullptr;
+  }
+
+  // Creates a WebSocketHandshakeThrottle on the worker thread.
+  virtual std::unique_ptr<blink::WebSocketHandshakeThrottle>
+  CreateWebSocketHandshakeThrottle() {
     return nullptr;
   }
 };

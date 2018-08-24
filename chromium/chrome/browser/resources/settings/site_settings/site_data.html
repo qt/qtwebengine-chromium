@@ -3,6 +3,7 @@
 <link rel="import" href="chrome://resources/html/assert.html">
 <link rel="import" href="chrome://resources/html/cr/ui/focus_without_ink.html">
 <link rel="import" href="chrome://resources/html/i18n_behavior.html">
+<link rel="import" href="chrome://resources/html/list_property_update_behavior.html">
 <link rel="import" href="chrome://resources/html/web_ui_listener_behavior.html">
 <link rel="import" href="chrome://resources/cr_elements/cr_dialog/cr_dialog.html">
 <link rel="import" href="chrome://resources/cr_elements/icons.html">
@@ -50,7 +51,7 @@
         [[computeRemoveLabel_(filter)]]
       </paper-button>
     </div>
-    <iron-list id="list" items="[[sites]]"
+    <iron-list id="list" items="[[sites]]" preserve-focus
         scroll-target="[[subpageScrollTarget]]">
       <template>
         <div class="settings-box two-line site-item" first$="[[!index]]"

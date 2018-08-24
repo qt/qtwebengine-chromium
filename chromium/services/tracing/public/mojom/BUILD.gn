@@ -10,14 +10,11 @@ mojom_component("mojom") {
 
   sources = [
     "constants.mojom",
+    "perfetto_service.mojom",
     "tracing.mojom",
   ]
 
   public_deps = [
-    "//mojo/common:common_custom_types",
     "//mojo/public/mojom/base",
   ]
-
-  # TODO(crbug.com/714018): Convert the implementation to use OnceCallback.
-  use_once_callback = false
 }

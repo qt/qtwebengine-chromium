@@ -34,6 +34,7 @@
 #include <memory>
 
 #include "base/feature_list.h"
+#include "base/optional.h"
 #include "services/network/public/mojom/request_context_frame_type.mojom-blink.h"
 #include "third_party/blink/public/common/client_hints/client_hints.h"
 #include "third_party/blink/public/common/device_memory/approximated_device_memory.h"
@@ -43,6 +44,10 @@
 #include "third_party/blink/public/platform/web_application_cache_host.h"
 #include "third_party/blink/public/platform/web_effective_connection_type.h"
 #include "third_party/blink/public/platform/web_insecure_request_policy.h"
+#include "third_party/blink/public/platform/websocket_handshake_throttle.h"
+#include "third_party/blink/public/web/web_frame.h"
+#include "third_party/blink/public/web/web_frame_client.h"
+#include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -57,10 +62,9 @@
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
 #include "third_party/blink/renderer/core/html/imports/html_imports_controller.h"
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/inspector/identifiers_factory.h"
-#include "third_party/blink/renderer/core/leak_detector/blink_leak_detector.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/loader/appcache/application_cache_host.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
@@ -95,7 +99,6 @@
 #include "third_party/blink/renderer/platform/network/network_state_notifier.h"
 #include "third_party/blink/renderer/platform/network/network_utils.h"
 #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
@@ -127,6 +130,15 @@ void MaybeRecordCTPolicyComplianceUseCounter(
           ? WebFeature::kCertificateTransparencyNonCompliantResourceInSubframe
           : WebFeature::
                 kCertificateTransparencyNonCompliantSubresourceInMainFrame);
+}
+
+void RecordLegacySymantecCertUseCounter(LocalFrame* frame,
+                                        Resource::Type resource_type) {
+  // Main resources are counted in DocumentLoader.
+  if (resource_type == Resource::kMainResource) {
+    return;
+  }
+  UseCounter::Count(frame, WebFeature::kLegacySymantecCertInSubresource);
 }
 
 // Determines FetchCacheMode for a main resource, or FetchCacheMode that is
@@ -211,7 +223,7 @@ struct FrameFetchContext::FrozenState final
               const KURL& url,
               scoped_refptr<const SecurityOrigin> security_origin,
               scoped_refptr<const SecurityOrigin> parent_security_origin,
-              const Optional<mojom::IPAddressSpace>& address_space,
+              const base::Optional<mojom::IPAddressSpace>& address_space,
               const ContentSecurityPolicy* content_security_policy,
               KURL site_for_cookies,
               scoped_refptr<const SecurityOrigin> requestor_origin,
@@ -240,7 +252,7 @@ struct FrameFetchContext::FrozenState final
   const KURL url;
   const scoped_refptr<const SecurityOrigin> security_origin;
   const scoped_refptr<const SecurityOrigin> parent_security_origin;
-  const Optional<mojom::IPAddressSpace> address_space;
+  const base::Optional<mojom::IPAddressSpace> address_space;
   const Member<const ContentSecurityPolicy> content_security_policy;
   const KURL site_for_cookies;
   const scoped_refptr<const SecurityOrigin> requestor_origin;
@@ -259,7 +271,6 @@ ResourceFetcher* FrameFetchContext::CreateFetcher(DocumentLoader* loader,
                                                   Document* document) {
   FrameFetchContext* context = new FrameFetchContext(loader, document);
   ResourceFetcher* fetcher = ResourceFetcher::Create(context);
-  BlinkLeakDetector::Instance().RegisterResourceFetcher(fetcher);
 
   if (loader && context->GetSettings()->GetSavePreviousDocumentResources() !=
                     SavePreviousDocumentResources::kNever) {
@@ -277,7 +288,8 @@ ResourceFetcher* FrameFetchContext::CreateFetcher(DocumentLoader* loader,
 FrameFetchContext::FrameFetchContext(DocumentLoader* loader, Document* document)
     : document_loader_(loader),
       document_(document),
-      save_data_enabled_(GetNetworkStateNotifier().SaveDataEnabled()) {
+      save_data_enabled_(GetNetworkStateNotifier().SaveDataEnabled() &&
+                         !GetSettings()->GetDataSaverHoldbackWebApi()) {
   DCHECK(GetFrame());
 }
 
@@ -520,7 +532,7 @@ void FrameFetchContext::DispatchWillSendRequest(
     InteractiveDetector* interactive_detector(
         InteractiveDetector::From(*document_));
     if (interactive_detector) {
-      interactive_detector->OnResourceLoadBegin(WTF::nullopt);
+      interactive_detector->OnResourceLoadBegin(base::nullopt);
     }
   }
 }
@@ -589,6 +601,7 @@ void FrameFetchContext::DispatchDidReceiveResponse(
   }
 
   if (response.IsLegacySymantecCert()) {
+    RecordLegacySymantecCertUseCounter(GetFrame(), resource->GetType());
     GetLocalFrameClient()->ReportLegacySymantecCert(response.Url(),
                                                     false /* did_fail */);
   }
@@ -648,7 +661,7 @@ void FrameFetchContext::DispatchDidDownloadToBlob(unsigned long identifier,
 
 void FrameFetchContext::DispatchDidFinishLoading(
     unsigned long identifier,
-    double finish_time,
+    TimeTicks finish_time,
     int64_t encoded_data_length,
     int64_t decoded_body_length,
     bool blocked_cross_site_document) {
@@ -664,8 +677,7 @@ void FrameFetchContext::DispatchDidFinishLoading(
     InteractiveDetector* interactive_detector(
         InteractiveDetector::From(*document_));
     if (interactive_detector) {
-      interactive_detector->OnResourceLoadEnd(
-          TimeTicksFromSeconds(finish_time));
+      interactive_detector->OnResourceLoadEnd(finish_time);
     }
   }
 }
@@ -699,7 +711,7 @@ void FrameFetchContext::DispatchDidFail(const KURL& url,
     if (interactive_detector) {
       // We have not yet recorded load_finish_time. Pass nullopt here; we will
       // call CurrentTimeTicksInSeconds lazily when we need it.
-      interactive_detector->OnResourceLoadEnd(WTF::nullopt);
+      interactive_detector->OnResourceLoadEnd(base::nullopt);
     }
   }
   // Notification to FrameConsole should come AFTER InspectorInstrumentation
@@ -1124,6 +1136,20 @@ bool FrameFetchContext::ShouldBlockWebSocketByMixedContentCheck(
   return !MixedContentChecker::IsWebSocketAllowed(GetFrame(), url);
 }
 
+std::unique_ptr<WebSocketHandshakeThrottle>
+FrameFetchContext::CreateWebSocketHandshakeThrottle() {
+  if (IsDetached()) {
+    // TODO(yhirano): Implement the detached case.
+    return nullptr;
+  }
+  if (!GetFrame())
+    return nullptr;
+  return WebFrame::FromFrame(GetFrame())
+      ->ToWebLocalFrame()
+      ->Client()
+      ->CreateWebSocketHandshakeThrottle();
+}
+
 bool FrameFetchContext::ShouldBlockFetchByMixedContentCheck(
     WebURLRequest::RequestContext request_context,
     network::mojom::RequestContextFrameType frame_type,
@@ -1202,13 +1228,14 @@ const SecurityOrigin* FrameFetchContext::GetParentSecurityOrigin() const {
   return parent->GetSecurityContext()->GetSecurityOrigin();
 }
 
-Optional<mojom::IPAddressSpace> FrameFetchContext::GetAddressSpace() const {
+base::Optional<mojom::IPAddressSpace> FrameFetchContext::GetAddressSpace()
+    const {
   if (IsDetached())
     return frozen_state_->address_space;
   if (!document_)
-    return WTF::nullopt;
+    return base::nullopt;
   ExecutionContext* context = document_;
-  return WTF::make_optional(context->GetSecurityContext().AddressSpace());
+  return base::make_optional(context->GetSecurityContext().AddressSpace());
 }
 
 const ContentSecurityPolicy* FrameFetchContext::GetContentSecurityPolicy()
@@ -1446,6 +1473,26 @@ ResourceLoadPriority FrameFetchContext::ModifyPriorityForExperiments(
   if (priority >= ResourceLoadPriority::kHigh)
     return ResourceLoadPriority::kLow;
   return ResourceLoadPriority::kLowest;
+}
+
+base::Optional<ResourceRequestBlockedReason> FrameFetchContext::CanRequest(
+    Resource::Type type,
+    const ResourceRequest& resource_request,
+    const KURL& url,
+    const ResourceLoaderOptions& options,
+    SecurityViolationReportingPolicy reporting_policy,
+    FetchParameters::OriginRestriction origin_restriction,
+    ResourceRequest::RedirectStatus redirect_status) const {
+  if (document_ && document_->IsFreezingInProgress() &&
+      !resource_request.GetKeepalive()) {
+    AddErrorConsoleMessage(
+        "Only fetch keepalive is allowed during onfreeze: " + url.GetString(),
+        kJSSource);
+    return ResourceRequestBlockedReason::kOther;
+  }
+  return BaseFetchContext::CanRequest(type, resource_request, url, options,
+                                      reporting_policy, origin_restriction,
+                                      redirect_status);
 }
 
 }  // namespace blink

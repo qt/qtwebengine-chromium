@@ -41,6 +41,7 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/browser/web_package/signed_exchange_header.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -54,6 +55,7 @@
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_request_headers.h"
+#include "net/ssl/ssl_info.h"
 #include "services/network/public/cpp/features.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 
@@ -215,12 +217,62 @@ void RenderFrameDevToolsAgentHost::OnNavigationResponseReceived(
 // static
 void RenderFrameDevToolsAgentHost::OnNavigationRequestFailed(
     const NavigationRequest& nav_request,
-    int error_code) {
+    const network::URLLoaderCompletionStatus& status) {
   FrameTreeNode* ftn = nav_request.frame_tree_node();
   std::string id = nav_request.devtools_navigation_token().ToString();
   DispatchToAgents(ftn, &protocol::NetworkHandler::LoadingComplete, id,
-                   protocol::Page::ResourceTypeEnum::Document,
-                   network::URLLoaderCompletionStatus(error_code));
+                   protocol::Page::ResourceTypeEnum::Document, status);
+}
+
+// static
+void RenderFrameDevToolsAgentHost::OnSignedExchangeReceived(
+    FrameTreeNode* frame_tree_node,
+    base::Optional<const base::UnguessableToken> devtools_navigation_token,
+    const GURL& outer_request_url,
+    const network::ResourceResponseHead& outer_response,
+    const base::Optional<SignedExchangeHeader>& header,
+    const base::Optional<net::SSLInfo>& ssl_info,
+    const std::vector<std::string>& error_messages) {
+  DispatchToAgents(frame_tree_node,
+                   &protocol::NetworkHandler::OnSignedExchangeReceived,
+                   devtools_navigation_token, outer_request_url, outer_response,
+                   header, ssl_info, error_messages);
+}
+
+// static
+void RenderFrameDevToolsAgentHost::OnSignedExchangeCertificateRequestSent(
+    FrameTreeNode* frame_tree_node,
+    const base::UnguessableToken& request_id,
+    const base::UnguessableToken& loader_id,
+    const network::ResourceRequest& request,
+    const GURL& signed_exchange_url) {
+  DispatchToAgents(frame_tree_node, &protocol::NetworkHandler::RequestSent,
+                   request_id.ToString(), loader_id.ToString(), request,
+                   protocol::Network::Initiator::TypeEnum::SignedExchange,
+                   signed_exchange_url);
+}
+
+// static
+void RenderFrameDevToolsAgentHost::OnSignedExchangeCertificateResponseReceived(
+    FrameTreeNode* frame_tree_node,
+    const base::UnguessableToken& request_id,
+    const base::UnguessableToken& loader_id,
+    const GURL& url,
+    const network::ResourceResponseHead& head) {
+  DispatchToAgents(frame_tree_node, &protocol::NetworkHandler::ResponseReceived,
+                   request_id.ToString(), loader_id.ToString(), url,
+                   protocol::Page::ResourceTypeEnum::Other, head,
+                   protocol::Maybe<std::string>());
+}
+
+// static
+void RenderFrameDevToolsAgentHost::OnSignedExchangeCertificateRequestCompleted(
+    FrameTreeNode* frame_tree_node,
+    const base::UnguessableToken& request_id,
+    const network::URLLoaderCompletionStatus& status) {
+  DispatchToAgents(frame_tree_node, &protocol::NetworkHandler::LoadingComplete,
+                   request_id.ToString(),
+                   protocol::Page::ResourceTypeEnum::Other, status);
 }
 
 // static
@@ -296,6 +348,7 @@ void RenderFrameDevToolsAgentHost::ApplyOverrides(
 bool RenderFrameDevToolsAgentHost::WillCreateURLLoaderFactory(
     RenderFrameHostImpl* rfh,
     bool is_navigation,
+    bool is_download,
     network::mojom::URLLoaderFactoryRequest* target_factory_request) {
   FrameTreeNode* frame_tree_node = rfh->frame_tree_node();
   base::UnguessableToken frame_token = frame_tree_node->devtools_frame_token();
@@ -304,9 +357,10 @@ bool RenderFrameDevToolsAgentHost::WillCreateURLLoaderFactory(
   if (!agent_host)
     return false;
   int process_id = is_navigation ? 0 : rfh->GetProcess()->GetID();
+  DCHECK(!is_download || is_navigation);
   for (auto* network : protocol::NetworkHandler::ForAgentHost(agent_host)) {
-    if (network->MaybeCreateProxyForInterception(frame_token, process_id,
-                                                 target_factory_request)) {
+    if (network->MaybeCreateProxyForInterception(
+            frame_token, process_id, is_download, target_factory_request)) {
       return true;
     }
   }
@@ -384,7 +438,8 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
   session->AddHandler(base::WrapUnique(new protocol::IOHandler(
       GetIOContext())));
   session->AddHandler(base::WrapUnique(new protocol::MemoryHandler()));
-  session->AddHandler(base::WrapUnique(new protocol::NetworkHandler(GetId())));
+  session->AddHandler(
+      base::WrapUnique(new protocol::NetworkHandler(GetId(), GetIOContext())));
   session->AddHandler(base::WrapUnique(new protocol::SchemaHandler()));
   session->AddHandler(base::WrapUnique(new protocol::ServiceWorkerHandler()));
   session->AddHandler(base::WrapUnique(new protocol::StorageHandler()));

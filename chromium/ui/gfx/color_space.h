@@ -158,6 +158,7 @@ class COLOR_SPACE_EXPORT ColorSpace {
 
   // Generates a process global unique ID that can be used to key a color space.
   static int GetNextId();
+  static int kInvalidId;
 
   bool operator==(const ColorSpace& other) const;
   bool operator!=(const ColorSpace& other) const;
@@ -171,13 +172,25 @@ class COLOR_SPACE_EXPORT ColorSpace {
   // Returns true if the encoded values can be outside of the 0.0-1.0 range.
   bool FullRangeEncodedValues() const;
 
+  // Returns true if this color space is parametric (or a sufficiently accurate
+  // approximation of its ICCProfile that we can use it directly).
+  bool IsParametricAccurate() const;
+
   // Return a parametric approximation of this color space (if it is not already
   // parametric).
   ColorSpace GetParametricApproximation() const;
 
+  // Return this color space with any YUV to RGB conversion stripped off.
+  ColorSpace GetAsRGB() const;
+
   // Return this color space with any range adjust or YUV to RGB conversion
   // stripped off.
   ColorSpace GetAsFullRangeRGB() const;
+
+  // Return a color space where all values are bigger/smaller by the given
+  // factor. If you convert colors from SRGB to SRGB.GetScaledColorSpace(2.0)
+  // everything will be half as bright in linear lumens.
+  ColorSpace GetScaledColorSpace(float factor) const;
 
   // If |this| is the final output color space, return the color space that
   // would be appropriate for rasterization.
@@ -193,7 +206,7 @@ class COLOR_SPACE_EXPORT ColorSpace {
 
   // For YUV color spaces, return the closest SkYUVColorSpace.
   // Returns true if a close match is found.
-  bool ToSkYUVColorSpace(SkYUVColorSpace* out);
+  bool ToSkYUVColorSpace(SkYUVColorSpace* out) const;
 
   void GetPrimaryMatrix(SkMatrix44* to_XYZD50) const;
   bool GetTransferFunction(SkColorSpaceTransferFn* fn) const;

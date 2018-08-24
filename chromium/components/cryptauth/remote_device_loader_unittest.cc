@@ -21,7 +21,6 @@ namespace {
 // Prefixes for RemoteDevice fields.
 const char kDeviceNamePrefix[] = "device";
 const char kPublicKeyPrefix[] = "pk";
-const char kBluetoothAddressPrefix[] = "11:22:33:44:55:0";
 
 // The id of the user who the remote devices belong to.
 const char kUserId[] = "example@gmail.com";
@@ -40,8 +39,6 @@ cryptauth::ExternalDeviceInfo CreateDeviceInfo(const std::string& suffix) {
   cryptauth::ExternalDeviceInfo device_info;
   device_info.set_friendly_device_name(std::string(kDeviceNamePrefix) + suffix);
   device_info.set_public_key(std::string(kPublicKeyPrefix) + suffix);
-  device_info.set_bluetooth_address(std::string(kBluetoothAddressPrefix) +
-                                   suffix);
   device_info.add_beacon_seeds();
   BeaconSeed* beacon_seed = device_info.mutable_beacon_seeds(0);
   beacon_seed->set_start_time_millis(kBeaconSeedStartTimeMs);
@@ -62,7 +59,7 @@ class CryptAuthRemoteDeviceLoaderTest : public testing::Test {
   ~CryptAuthRemoteDeviceLoaderTest() {}
 
   void OnRemoteDevicesLoaded(
-      const std::vector<cryptauth::RemoteDevice>& remote_devices) {
+      const cryptauth::RemoteDeviceList& remote_devices) {
     remote_devices_ = remote_devices;
     LoadCompleted();
   }
@@ -79,7 +76,7 @@ class CryptAuthRemoteDeviceLoaderTest : public testing::Test {
   std::string user_private_key_;
 
   // Stores the result of the RemoteDeviceLoader.
-  std::vector<cryptauth::RemoteDevice> remote_devices_;
+  cryptauth::RemoteDeviceList remote_devices_;
 
   DISALLOW_COPY_AND_ASSIGN(CryptAuthRemoteDeviceLoaderTest);
 };
@@ -89,7 +86,6 @@ TEST_F(CryptAuthRemoteDeviceLoaderTest, LoadZeroDevices) {
   RemoteDeviceLoader loader(device_infos, user_private_key_, kUserId,
                             std::move(secure_message_delegate_));
 
-  std::vector<cryptauth::RemoteDevice> result;
   EXPECT_CALL(*this, LoadCompleted());
   loader.Load(
       false, base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
@@ -104,7 +100,6 @@ TEST_F(CryptAuthRemoteDeviceLoaderTest, LoadOneDeviceWithBeaconSeeds) {
   RemoteDeviceLoader loader(device_infos, user_private_key_, kUserId,
                             std::move(secure_message_delegate_));
 
-  std::vector<cryptauth::RemoteDevice> result;
   EXPECT_CALL(*this, LoadCompleted());
   loader.Load(
       true, base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
@@ -166,7 +161,6 @@ TEST_F(CryptAuthRemoteDeviceLoaderTest, BooleanAttributes) {
   RemoteDeviceLoader loader(device_infos, user_private_key_, kUserId,
                             std::move(secure_message_delegate_));
 
-  std::vector<cryptauth::RemoteDevice> result;
   EXPECT_CALL(*this, LoadCompleted());
   loader.Load(
       false, base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
@@ -195,7 +189,6 @@ TEST_F(CryptAuthRemoteDeviceLoaderTest, LastUpdateTimeMillis) {
   RemoteDeviceLoader loader(device_infos, user_private_key_, kUserId,
                             std::move(secure_message_delegate_));
 
-  std::vector<cryptauth::RemoteDevice> result;
   EXPECT_CALL(*this, LoadCompleted());
   loader.Load(
       false, base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
@@ -208,73 +201,36 @@ TEST_F(CryptAuthRemoteDeviceLoaderTest, LastUpdateTimeMillis) {
   EXPECT_EQ(2000, remote_devices_[1].last_update_time_millis);
 }
 
-TEST_F(CryptAuthRemoteDeviceLoaderTest, LoadOneDeviceWithAddress) {
-  std::vector<cryptauth::ExternalDeviceInfo> device_infos(1,
-                                                         CreateDeviceInfo("0"));
+TEST_F(CryptAuthRemoteDeviceLoaderTest, SoftwareFeatures) {
+  const std::vector<SoftwareFeature> kSupportedSoftwareFeatures{
+      BETTER_TOGETHER_HOST, BETTER_TOGETHER_CLIENT};
+  const std::vector<SoftwareFeature> kEnabledSoftwareFeatures{
+      BETTER_TOGETHER_HOST};
+
+  cryptauth::ExternalDeviceInfo first = CreateDeviceInfo("0");
+  for (const auto& software_feature : kSupportedSoftwareFeatures)
+    first.add_supported_software_features(software_feature);
+  for (const auto& software_feature : kEnabledSoftwareFeatures)
+    first.add_enabled_software_features(software_feature);
+
+  std::vector<cryptauth::ExternalDeviceInfo> device_infos{first};
+
   RemoteDeviceLoader loader(device_infos, user_private_key_, kUserId,
                             std::move(secure_message_delegate_));
 
-  std::vector<cryptauth::RemoteDevice> result;
   EXPECT_CALL(*this, LoadCompleted());
   loader.Load(
       false, base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
                         base::Unretained(this)));
 
   EXPECT_EQ(1u, remote_devices_.size());
-  EXPECT_FALSE(remote_devices_[0].persistent_symmetric_key.empty());
-  EXPECT_EQ(device_infos[0].friendly_device_name(), remote_devices_[0].name);
-  EXPECT_EQ(device_infos[0].public_key(), remote_devices_[0].public_key);
-  EXPECT_EQ(device_infos[0].bluetooth_address(),
-            remote_devices_[0].bluetooth_address);
-  EXPECT_EQ(0u, remote_devices_[0].beacon_seeds.size());
-}
 
-TEST_F(CryptAuthRemoteDeviceLoaderTest, LoadOneDeviceWithoutAddress) {
-  std::vector<cryptauth::ExternalDeviceInfo> device_infos(1,
-                                                         CreateDeviceInfo("0"));
-  device_infos[0].set_bluetooth_address(std::string());
-  RemoteDeviceLoader loader(device_infos, user_private_key_, kUserId,
-                            std::move(secure_message_delegate_));
-
-  std::vector<cryptauth::RemoteDevice> result;
-  EXPECT_CALL(*this, LoadCompleted());
-  loader.Load(
-      false, base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
-                        base::Unretained(this)));
-
-  EXPECT_EQ(1u, remote_devices_.size());
-  EXPECT_FALSE(remote_devices_[0].persistent_symmetric_key.empty());
-  EXPECT_EQ(device_infos[0].friendly_device_name(), remote_devices_[0].name);
-  EXPECT_EQ(device_infos[0].public_key(), remote_devices_[0].public_key);
-  EXPECT_EQ("", remote_devices_[0].bluetooth_address);
-}
-
-TEST_F(CryptAuthRemoteDeviceLoaderTest, LoadThreeRemoteDevices) {
-  std::vector<cryptauth::ExternalDeviceInfo> device_infos;
-  device_infos.push_back(CreateDeviceInfo("0"));
-  device_infos.push_back(CreateDeviceInfo("1"));
-  device_infos.push_back(CreateDeviceInfo("2"));
-
-  // Devices 0 and 1 do not have a Bluetooth address, but device 2 does.
-  device_infos[0].set_bluetooth_address(std::string());
-  device_infos[1].set_bluetooth_address(std::string());
-
-  RemoteDeviceLoader loader(device_infos, user_private_key_, kUserId,
-                            std::move(secure_message_delegate_));
-
-  EXPECT_CALL(*this, LoadCompleted());
-  loader.Load(
-      false, base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
-                        base::Unretained(this)));
-
-  EXPECT_EQ(3u, remote_devices_.size());
-  for (size_t i = 0; i < 3; ++i) {
-    EXPECT_FALSE(remote_devices_[i].persistent_symmetric_key.empty());
-    EXPECT_EQ(device_infos[i].friendly_device_name(), remote_devices_[i].name);
-    EXPECT_EQ(device_infos[i].public_key(), remote_devices_[i].public_key);
-    EXPECT_EQ(device_infos[i].bluetooth_address(),
-              remote_devices_[i].bluetooth_address);
-  }
+  EXPECT_EQ(SoftwareFeatureState::kSupported,
+            remote_devices_[0].software_features[BETTER_TOGETHER_CLIENT]);
+  EXPECT_EQ(SoftwareFeatureState::kEnabled,
+            remote_devices_[0].software_features[BETTER_TOGETHER_HOST]);
+  EXPECT_EQ(SoftwareFeatureState::kNotSupported,
+            remote_devices_[0].software_features[MAGIC_TETHER_HOST]);
 }
 
 }  // namespace cryptauth

@@ -12,6 +12,7 @@
 #include "base/files/file_util.h"
 #include "base/pickle.h"
 #include "base/sha1.h"
+#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -540,17 +541,17 @@ TEST(X509CertificateTest, ParseSubjectAltNames) {
   static const uint8_t kIPv4Address[] = {
       0x7F, 0x00, 0x00, 0x02
   };
-  ASSERT_EQ(arraysize(kIPv4Address), ip_addresses[0].size());
+  ASSERT_EQ(base::size(kIPv4Address), ip_addresses[0].size());
   EXPECT_EQ(0, memcmp(ip_addresses[0].data(), kIPv4Address,
-                      arraysize(kIPv4Address)));
+                      base::size(kIPv4Address)));
 
   static const uint8_t kIPv6Address[] = {
       0xFE, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01
   };
-  ASSERT_EQ(arraysize(kIPv6Address), ip_addresses[1].size());
+  ASSERT_EQ(base::size(kIPv6Address), ip_addresses[1].size());
   EXPECT_EQ(0, memcmp(ip_addresses[1].data(), kIPv6Address,
-                      arraysize(kIPv6Address)));
+                      base::size(kIPv6Address)));
 
   // Ensure the subjectAltName dirName has not influenced the handling of
   // the subject commonName.
@@ -739,9 +740,9 @@ TEST(X509CertificateTest, Equals) {
   ASSERT_EQ(4u, certs.size());
 
   // Comparing X509Certificates with no intermediates.
-  EXPECT_TRUE(certs[0]->Equals(certs[0].get()));
-  EXPECT_FALSE(certs[1]->Equals(certs[0].get()));
-  EXPECT_FALSE(certs[0]->Equals(certs[1].get()));
+  EXPECT_TRUE(certs[0]->EqualsExcludingChain(certs[0].get()));
+  EXPECT_FALSE(certs[1]->EqualsExcludingChain(certs[0].get()));
+  EXPECT_FALSE(certs[0]->EqualsExcludingChain(certs[1].get()));
   EXPECT_TRUE(certs[0]->EqualsIncludingChain(certs[0].get()));
   EXPECT_FALSE(certs[1]->EqualsIncludingChain(certs[0].get()));
   EXPECT_FALSE(certs[0]->EqualsIncludingChain(certs[1].get()));
@@ -756,8 +757,8 @@ TEST(X509CertificateTest, Equals) {
 
   // Comparing X509Certificate with one intermediate to X509Certificate with no
   // intermediates.
-  EXPECT_TRUE(certs[0]->Equals(cert0_with_intermediate.get()));
-  EXPECT_TRUE(cert0_with_intermediate->Equals(certs[0].get()));
+  EXPECT_TRUE(certs[0]->EqualsExcludingChain(cert0_with_intermediate.get()));
+  EXPECT_TRUE(cert0_with_intermediate->EqualsExcludingChain(certs[0].get()));
   EXPECT_FALSE(certs[0]->EqualsIncludingChain(cert0_with_intermediate.get()));
   EXPECT_FALSE(cert0_with_intermediate->EqualsIncludingChain(certs[0].get()));
 
@@ -771,8 +772,10 @@ TEST(X509CertificateTest, Equals) {
 
   // Comparing X509Certificate with one intermediate to X509Certificate with
   // one different intermediate.
-  EXPECT_TRUE(cert0_with_intermediate2->Equals(cert0_with_intermediate.get()));
-  EXPECT_TRUE(cert0_with_intermediate->Equals(cert0_with_intermediate2.get()));
+  EXPECT_TRUE(cert0_with_intermediate2->EqualsExcludingChain(
+      cert0_with_intermediate.get()));
+  EXPECT_TRUE(cert0_with_intermediate->EqualsExcludingChain(
+      cert0_with_intermediate2.get()));
   EXPECT_FALSE(cert0_with_intermediate2->EqualsIncludingChain(
       cert0_with_intermediate.get()));
   EXPECT_FALSE(cert0_with_intermediate->EqualsIncludingChain(
@@ -802,10 +805,10 @@ TEST(X509CertificateTest, Equals) {
 
   // Comparing X509Certificate with two intermediates to X509Certificate with
   // same two intermediates but in reverse order
-  EXPECT_TRUE(
-      cert0_with_intermediates21->Equals(cert0_with_intermediates12.get()));
-  EXPECT_TRUE(
-      cert0_with_intermediates12->Equals(cert0_with_intermediates21.get()));
+  EXPECT_TRUE(cert0_with_intermediates21->EqualsExcludingChain(
+      cert0_with_intermediates12.get()));
+  EXPECT_TRUE(cert0_with_intermediates12->EqualsExcludingChain(
+      cert0_with_intermediates21.get()));
   EXPECT_FALSE(cert0_with_intermediates21->EqualsIncludingChain(
       cert0_with_intermediates12.get()));
   EXPECT_FALSE(cert0_with_intermediates12->EqualsIncludingChain(
@@ -824,10 +827,10 @@ TEST(X509CertificateTest, Equals) {
 
   // Comparing X509Certificate with two intermediates to X509Certificate with
   // same two intermediates in same order.
-  EXPECT_TRUE(
-      cert0_with_intermediates12->Equals(cert0_with_intermediates12b.get()));
-  EXPECT_TRUE(
-      cert0_with_intermediates12b->Equals(cert0_with_intermediates12.get()));
+  EXPECT_TRUE(cert0_with_intermediates12->EqualsExcludingChain(
+      cert0_with_intermediates12b.get()));
+  EXPECT_TRUE(cert0_with_intermediates12b->EqualsExcludingChain(
+      cert0_with_intermediates12.get()));
   EXPECT_TRUE(cert0_with_intermediates12->EqualsIncludingChain(
       cert0_with_intermediates12b.get()));
   EXPECT_TRUE(cert0_with_intermediates12b->EqualsIncludingChain(
@@ -1066,13 +1069,12 @@ TEST_P(X509CertificateParseTest, CanParseFormat) {
   CertificateList certs = CreateCertificateListFromFile(
       certs_dir, test_data_.file_name, test_data_.format);
   ASSERT_FALSE(certs.empty());
-  ASSERT_LE(certs.size(), arraysize(test_data_.chain_fingerprints));
+  ASSERT_LE(certs.size(), base::size(test_data_.chain_fingerprints));
   CheckGoogleCert(certs.front(), google_parse_fingerprint,
                   kGoogleParseValidFrom, kGoogleParseValidTo);
 
-  size_t i;
-  for (i = 0; i < arraysize(test_data_.chain_fingerprints); ++i) {
-    if (test_data_.chain_fingerprints[i] == NULL) {
+  for (size_t i = 0; i < base::size(test_data_.chain_fingerprints); ++i) {
+    if (!test_data_.chain_fingerprints[i]) {
       // No more test certificates expected - make sure no more were
       // returned before marking this test a success.
       EXPECT_EQ(i, certs.size());

@@ -28,7 +28,7 @@
 #include <utility>
 
 #include "build/build_config.h"
-#include "third_party/blink/public/platform/web_overscroll_behavior.h"
+#include "cc/input/overscroll_behavior.h"
 #include "third_party/blink/renderer/core/animation/css/css_animation_data.h"
 #include "third_party/blink/renderer/core/animation/css/css_transition_data.h"
 #include "third_party/blink/renderer/core/css/css_paint_value.h"
@@ -61,6 +61,7 @@
 #include "third_party/blink/renderer/platform/geometry/float_rounded_rect.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/length_functions.h"
+#include "third_party/blink/renderer/platform/text/capitalize.h"
 #include "third_party/blink/renderer/platform/transforms/rotate_transform_operation.h"
 #include "third_party/blink/renderer/platform/transforms/scale_transform_operation.h"
 #include "third_party/blink/renderer/platform/transforms/translate_transform_operation.h"
@@ -405,19 +406,6 @@ bool ComputedStyle::operator==(const ComputedStyle& o) const {
 
 bool ComputedStyle::IsStyleAvailable() const {
   return this != StyleResolver::StyleNotYetAvailable();
-}
-
-bool ComputedStyle::HasUniquePseudoStyle() const {
-  if (!cached_pseudo_styles_ || StyleType() != kPseudoIdNone)
-    return false;
-
-  for (size_t i = 0; i < cached_pseudo_styles_->size(); ++i) {
-    const ComputedStyle& pseudo_style = *cached_pseudo_styles_->at(i);
-    if (pseudo_style.Unique())
-      return true;
-  }
-
-  return false;
 }
 
 ComputedStyle* ComputedStyle::GetCachedPseudoStyle(PseudoId pid) const {
@@ -1412,6 +1400,24 @@ bool ComputedStyle::ShouldUseTextIndent(bool is_first_line,
                                                         : !should_use;
 }
 
+void ComputedStyle::ApplyTextTransform(String* text,
+                                       UChar previous_character) const {
+  switch (TextTransform()) {
+    case ETextTransform::kNone:
+      return;
+    case ETextTransform::kCapitalize:
+      *text = Capitalize(*text, previous_character);
+      return;
+    case ETextTransform::kUppercase:
+      *text = text->UpperUnicode(Locale());
+      return;
+    case ETextTransform::kLowercase:
+      *text = text->LowerUnicode(Locale());
+      return;
+  }
+  NOTREACHED();
+}
+
 const AtomicString& ComputedStyle::TextEmphasisMarkString() const {
   switch (GetTextEmphasisMark()) {
     case TextEmphasisMark::kNone:
@@ -1533,6 +1539,16 @@ FontSelectionValue ComputedStyle::GetFontWeight() const {
 }
 FontSelectionValue ComputedStyle::GetFontStretch() const {
   return GetFontDescription().Stretch();
+}
+
+FontBaseline ComputedStyle::GetFontBaseline() const {
+  // TODO(kojii): Incorporate 'dominant-baseline' when we support it.
+  // https://www.w3.org/TR/css-inline-3/#dominant-baseline-property
+
+  // Vertical flow (except 'text-orientation: sideways') uses ideographic
+  // baseline. https://drafts.csswg.org/css-writing-modes-3/#intro-baselines
+  return !GetFontDescription().IsVerticalAnyUpright() ? kAlphabeticBaseline
+                                                      : kIdeographicBaseline;
 }
 
 TextDecoration ComputedStyle::TextDecorationsInEffect() const {
@@ -2135,11 +2151,11 @@ bool ComputedStyle::ShadowListHasCurrentColor(const ShadowList* shadow_list) {
   return false;
 }
 
-STATIC_ASSERT_ENUM(WebOverscrollBehavior::kOverscrollBehaviorTypeAuto,
+STATIC_ASSERT_ENUM(cc::OverscrollBehavior::kOverscrollBehaviorTypeAuto,
                    EOverscrollBehavior::kAuto);
-STATIC_ASSERT_ENUM(WebOverscrollBehavior::kOverscrollBehaviorTypeContain,
+STATIC_ASSERT_ENUM(cc::OverscrollBehavior::kOverscrollBehaviorTypeContain,
                    EOverscrollBehavior::kContain);
-STATIC_ASSERT_ENUM(WebOverscrollBehavior::kOverscrollBehaviorTypeNone,
+STATIC_ASSERT_ENUM(cc::OverscrollBehavior::kOverscrollBehaviorTypeNone,
                    EOverscrollBehavior::kNone);
 
 }  // namespace blink

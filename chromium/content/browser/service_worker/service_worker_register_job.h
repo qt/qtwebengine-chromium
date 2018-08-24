@@ -10,6 +10,7 @@
 
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "base/scoped_observer.h"
 #include "base/time/time.h"
 #include "content/browser/service_worker/embedded_worker_instance.h"
 #include "content/browser/service_worker/service_worker_register_job_base.h"
@@ -139,6 +140,7 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase,
 
   // EmbeddedWorkerInstance::Listener implementation:
   void OnScriptLoaded() override;
+  void OnDestroyed() override;
 
   void BumpLastUpdateCheckTimeIfNeeded();
 
@@ -160,6 +162,8 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase,
   ServiceWorkerStatusCode promise_resolved_status_;
   std::string promise_resolved_status_message_;
   scoped_refptr<ServiceWorkerRegistration> promise_resolved_registration_;
+  ScopedObserver<EmbeddedWorkerInstance, EmbeddedWorkerInstance::Listener>
+      observer_;
   base::WeakPtrFactory<ServiceWorkerRegisterJob> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerRegisterJob);

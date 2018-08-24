@@ -86,6 +86,7 @@ class MODULES_EXPORT AXLayoutObject : public AXNodeObject {
   // Check object state.
   bool IsFocused() const override;
   AccessibilitySelectedState IsSelected() const override;
+  bool IsSelectedFromFocus() const override;
 
   // Whether objects are ignored, i.e. not included in the tree.
   AXObjectInclusion DefaultObjectInclusion(
@@ -96,12 +97,13 @@ class MODULES_EXPORT AXLayoutObject : public AXNodeObject {
   const AtomicString& AccessKey() const override;
   RGBA32 ComputeBackgroundColor() const final;
   RGBA32 GetColor() const final;
-  String FontFamily() const final;
+  AtomicString FontFamily() const final;
   // Font size is in pixels.
   float FontSize() const final;
   String ImageDataUrl(const IntSize& max_size) const final;
   String GetText() const override;
   AccessibilityTextDirection GetTextDirection() const final;
+  AXTextPosition GetTextPosition() const final;
   int TextLength() const override;
   TextStyle GetTextStyle() const final;
   KURL Url() const override;
@@ -118,7 +120,7 @@ class MODULES_EXPORT AXLayoutObject : public AXNodeObject {
   void AriaDescribedbyElements(AXObjectVector&) const override;
   void AriaOwnsElements(AXObjectVector&) const override;
 
-  bool AriaHasPopup() const override;
+  AXHasPopup HasPopup() const override;
   bool SupportsARIADragging() const override;
   bool SupportsARIADropping() const override;
   bool SupportsARIAFlowTo() const override;
@@ -169,9 +171,13 @@ class MODULES_EXPORT AXLayoutObject : public AXNodeObject {
 
   // DOM and layout tree access.
   Node* GetNode() const override;
+  // If this is an anonymous block, returns the node of its containing layout
+  // block, otherwise returns the node of this layout object.
+  Node* GetNodeOrContainingBlockNode() const;
   Document* GetDocument() const override;
   LocalFrameView* DocumentFrameView() const override;
   Element* AnchorElement() const override;
+  AtomicString Language() const override;
 
   // Notifications that this object may have changed.
   void HandleActiveDescendantChanged() override;
@@ -195,7 +201,6 @@ class MODULES_EXPORT AXLayoutObject : public AXNodeObject {
   AXObject* RemoteSVGElementHitTest(const IntPoint&) const;
   void OffsetBoundingBoxForRemoteSVGElement(LayoutRect&) const;
   void AddHiddenChildren();
-  void AddTextFieldChildren();
   void AddImageMapChildren();
   void AddCanvasChildren();
   void AddPopupChildren();

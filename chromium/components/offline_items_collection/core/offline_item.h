@@ -110,6 +110,9 @@ struct OfflineItem {
   // Whether this item should show up as a suggested item for the user.
   bool is_suggested;
 
+  // Whether this item is going through accelerated download.
+  bool is_accelerated;
+
   // TODO(dtrainor): Build out custom per-item icon support.
 
   // Content Metadata.
@@ -177,6 +180,10 @@ struct OfflineItem {
   // represents an unknown time remaining.  This field is not used if |state| is
   // COMPLETE.
   int64_t time_remaining_ms;
+
+  // Whether the download might be dangerous and will require additional
+  // validation from user.
+  bool is_dangerous;
 };
 
 // This struct holds any potentially expensive visuals for an OfflineItem.  If

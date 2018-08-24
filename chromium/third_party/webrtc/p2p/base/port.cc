@@ -115,6 +115,22 @@ webrtc::IceCandidateNetworkType ConvertNetworkType(rtc::AdapterType type) {
   return webrtc::IceCandidateNetworkType::kUnknown;
 }
 
+rtc::PacketInfoProtocolType ConvertProtocolTypeToPacketInfoProtocolType(
+    cricket::ProtocolType type) {
+  switch (type) {
+    case cricket::ProtocolType::PROTO_UDP:
+      return rtc::PacketInfoProtocolType::kUdp;
+    case cricket::ProtocolType::PROTO_TCP:
+      return rtc::PacketInfoProtocolType::kTcp;
+    case cricket::ProtocolType::PROTO_SSLTCP:
+      return rtc::PacketInfoProtocolType::kSsltcp;
+    case cricket::ProtocolType::PROTO_TLS:
+      return rtc::PacketInfoProtocolType::kTls;
+    default:
+      return rtc::PacketInfoProtocolType::kUnknown;
+  }
+}
+
 // We will restrict RTT estimates (when used for determining state) to be
 // within a reasonable range.
 const int MINIMUM_RTT = 100;   // 0.1 seconds
@@ -774,6 +790,8 @@ void Port::SendBindingResponse(StunMessage* request,
   rtc::ByteBufferWriter buf;
   response.Write(&buf);
   rtc::PacketOptions options(DefaultDscpValue());
+  options.info_signaled_after_sent.packet_type =
+      rtc::PacketType::kIceConnectivityCheckResponse;
   auto err = SendTo(buf.Data(), buf.Length(), addr, options, false);
   if (err < 0) {
     RTC_LOG(LS_ERROR) << ToString()
@@ -825,6 +843,8 @@ void Port::SendBindingErrorResponse(StunMessage* request,
   rtc::ByteBufferWriter buf;
   response.Write(&buf);
   rtc::PacketOptions options(DefaultDscpValue());
+  options.info_signaled_after_sent.packet_type =
+      rtc::PacketType::kIceConnectivityCheckResponse;
   SendTo(buf.Data(), buf.Length(), addr, options, false);
   RTC_LOG(LS_INFO) << ToString()
                    << ": Sending STUN binding error: reason=" << reason
@@ -924,6 +944,11 @@ void Port::Destroy() {
 
 const std::string Port::username_fragment() const {
   return ice_username_fragment_;
+}
+
+void Port::CopyPortInformationToPacketInfo(rtc::PacketInfo* info) const {
+  info->protocol = ConvertProtocolTypeToPacketInfoProtocolType(GetProtocol());
+  info->network_id = Network()->id();
 }
 
 // A ConnectionRequest is a simple STUN ping used to determine writability.
@@ -1110,8 +1135,21 @@ void Connection::set_write_state(WriteState value) {
 }
 
 void Connection::UpdateReceiving(int64_t now) {
-  bool receiving =
-      last_received() > 0 && now <= last_received() + receiving_timeout();
+  bool receiving;
+  if (last_ping_sent() < last_ping_response_received()) {
+    // We consider any candidate pair that has its last connectivity check
+    // acknowledged by a response as receiving, particularly for backup
+    // candidate pairs that send checks at a much slower pace than the selected
+    // one. Otherwise, a backup candidate pair constantly becomes not receiving
+    // as a side effect of a long ping interval, since we do not have a separate
+    // receiving timeout for backup candidate pairs. See
+    // IceConfig.ice_backup_candidate_pair_ping_interval,
+    // IceConfig.ice_connection_receiving_timeout and their default value.
+    receiving = true;
+  } else {
+    receiving =
+        last_received() > 0 && now <= last_received() + receiving_timeout();
+  }
   if (receiving_ == receiving) {
     return;
   }
@@ -1159,6 +1197,8 @@ int Connection::receiving_timeout() const {
 void Connection::OnSendStunPacket(const void* data, size_t size,
                                   StunRequest* req) {
   rtc::PacketOptions options(port_->DefaultDscpValue());
+  options.info_signaled_after_sent.packet_type =
+      rtc::PacketType::kIceConnectivityCheck;
   auto err = port_->SendTo(
       data, size, remote_candidate_.address(), options, false);
   if (err < 0) {
@@ -1540,19 +1580,24 @@ std::string Connection::ToString() const {
     "S",  // STATE_SUCCEEDED
     "F"   // STATE_FAILED
   };
+  const std::string SELECTED_STATE_ABBREV[2] = {
+      "-",  // candidate pair not selected (false)
+      "S",  // selected (true)
+  };
   const Candidate& local = local_candidate();
   const Candidate& remote = remote_candidate();
   std::stringstream ss;
   ss << "Conn[" << ToDebugId() << ":" << port_->content_name() << ":"
-     << local.id() << ":" << local.component() << ":" << local.generation()
-     << ":" << local.type() << ":" << local.protocol() << ":"
-     << local.address().ToSensitiveString() << "->" << remote.id() << ":"
-     << remote.component() << ":" << remote.priority() << ":" << remote.type()
-     << ":" << remote.protocol() << ":" << remote.address().ToSensitiveString()
-     << "|" << CONNECT_STATE_ABBREV[connected()]
-     << RECEIVE_STATE_ABBREV[receiving()] << WRITE_STATE_ABBREV[write_state()]
-     << ICESTATE[static_cast<int>(state())] << "|" << remote_nomination() << "|"
-     << nomination() << "|" << priority() << "|";
+     << port_->Network()->ToString() << ":" << local.id() << ":"
+     << local.component() << ":" << local.generation() << ":" << local.type()
+     << ":" << local.protocol() << ":" << local.address().ToSensitiveString()
+     << "->" << remote.id() << ":" << remote.component() << ":"
+     << remote.priority() << ":" << remote.type() << ":" << remote.protocol()
+     << ":" << remote.address().ToSensitiveString() << "|"
+     << CONNECT_STATE_ABBREV[connected()] << RECEIVE_STATE_ABBREV[receiving()]
+     << WRITE_STATE_ABBREV[write_state()] << ICESTATE[static_cast<int>(state())]
+     << "|" << SELECTED_STATE_ABBREV[selected()] << "|" << remote_nomination()
+     << "|" << nomination() << "|" << priority() << "|";
   if (rtt_ < DEFAULT_RTT) {
     ss << rtt_ << "]";
   } else {

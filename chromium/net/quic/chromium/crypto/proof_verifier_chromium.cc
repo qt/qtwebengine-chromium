@@ -16,7 +16,6 @@
 #include "crypto/signature_verifier.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
-#include "net/cert/asn1_util.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/cert/cert_verifier.h"
 #include "net/cert/ct_policy_enforcer.h"
@@ -24,8 +23,8 @@
 #include "net/cert/ct_verifier.h"
 #include "net/cert/x509_util.h"
 #include "net/http/transport_security_state.h"
-#include "net/quic/core/crypto/crypto_protocol.h"
 #include "net/ssl/ssl_config_service.h"
+#include "net/third_party/quic/core/crypto/crypto_protocol.h"
 
 using base::StringPrintf;
 using std::string;
@@ -391,7 +390,7 @@ int ProofVerifierChromium::Job::DoVerifyCertComplete(int result) {
   if (enforce_policy_checking_ &&
       (result == OK ||
        (IsCertificateError(result) && IsCertStatusMinorError(cert_status)))) {
-    SCTList verified_scts = ct::SCTsMatchingStatus(
+    ct::SCTList verified_scts = ct::SCTsMatchingStatus(
         verify_details_->ct_verify_result.scts, ct::SCT_STATUS_OK);
 
     verify_details_->ct_verify_result.policy_compliance =
@@ -399,7 +398,9 @@ int ProofVerifierChromium::Job::DoVerifyCertComplete(int result) {
             cert_verify_result.verified_cert.get(), verified_scts, net_log_);
     if (verify_details_->cert_verify_result.cert_status & CERT_STATUS_IS_EV) {
       if (verify_details_->ct_verify_result.policy_compliance !=
-          ct::CTPolicyCompliance::CT_POLICY_COMPLIES_VIA_SCTS) {
+              ct::CTPolicyCompliance::CT_POLICY_COMPLIES_VIA_SCTS &&
+          verify_details_->ct_verify_result.policy_compliance !=
+              ct::CTPolicyCompliance::CT_POLICY_BUILD_NOT_TIMELY) {
         verify_details_->cert_verify_result.cert_status |=
             CERT_STATUS_CT_COMPLIANCE_FAILED;
         verify_details_->cert_verify_result.cert_status &= ~CERT_STATUS_IS_EV;
@@ -512,12 +513,6 @@ bool ProofVerifierChromium::Job::VerifySignature(
     QuicStringPiece chlo_hash,
     const string& signature,
     const string& cert) {
-  QuicStringPiece spki;
-  if (!asn1::ExtractSPKIFromDERCert(cert, &spki)) {
-    DLOG(WARNING) << "ExtractSPKIFromDERCert failed";
-    return false;
-  }
-
   size_t size_bits;
   X509Certificate::PublicKeyType type;
   X509Certificate::GetPublicKeyInfo(cert_->cert_buffer(), &size_bits, &type);
@@ -535,23 +530,18 @@ bool ProofVerifierChromium::Job::VerifySignature(
   }
 
   crypto::SignatureVerifier verifier;
-  if (!verifier.VerifyInit(
-          algorithm, reinterpret_cast<const uint8_t*>(signature.data()),
-          signature.size(), reinterpret_cast<const uint8_t*>(spki.data()),
-          spki.size())) {
-    DLOG(WARNING) << "VerifyInit failed";
+  if (!x509_util::SignatureVerifierInitWithCertificate(
+          &verifier, algorithm, base::as_bytes(base::make_span(signature)),
+          cert_->cert_buffer())) {
+    DLOG(WARNING) << "SignatureVerifierInitWithCertificate failed";
     return false;
   }
 
-  verifier.VerifyUpdate(reinterpret_cast<const uint8_t*>(kProofSignatureLabel),
-                        sizeof(kProofSignatureLabel));
+  verifier.VerifyUpdate(base::as_bytes(base::make_span(kProofSignatureLabel)));
   uint32_t len = chlo_hash.length();
-  verifier.VerifyUpdate(reinterpret_cast<const uint8_t*>(&len), sizeof(len));
-  verifier.VerifyUpdate(reinterpret_cast<const uint8_t*>(chlo_hash.data()),
-                        len);
-
-  verifier.VerifyUpdate(reinterpret_cast<const uint8_t*>(signed_data.data()),
-                        signed_data.size());
+  verifier.VerifyUpdate(base::as_bytes(base::make_span(&len, 1)));
+  verifier.VerifyUpdate(base::as_bytes(base::make_span(chlo_hash)));
+  verifier.VerifyUpdate(base::as_bytes(base::make_span(signed_data)));
 
   if (!verifier.VerifyFinal()) {
     DLOG(WARNING) << "VerifyFinal failed";

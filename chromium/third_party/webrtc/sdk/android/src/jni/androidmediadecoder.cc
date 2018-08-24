@@ -30,7 +30,6 @@
 #include "sdk/android/generated_video_jni/jni/MediaCodecVideoDecoder_jni.h"
 #include "sdk/android/native_api/jni/java_types.h"
 #include "sdk/android/src/jni/androidmediacodeccommon.h"
-#include "sdk/android/src/jni/surfacetexturehelper.h"
 #include "sdk/android/src/jni/videoframe.h"
 #include "third_party/libyuv/include/libyuv/convert.h"
 #include "third_party/libyuv/include/libyuv/convert_from.h"
@@ -68,7 +67,6 @@ class MediaCodecVideoDecoder : public VideoDecoder, public rtc::MessageHandler {
 
   int32_t Decode(
       const EncodedImage& inputImage, bool missingFrames,
-      const RTPFragmentationHeader* fragmentation,
       const CodecSpecificInfo* codecSpecificInfo = NULL,
       int64_t renderTimeMs = -1) override;
 
@@ -112,7 +110,6 @@ class MediaCodecVideoDecoder : public VideoDecoder, public rtc::MessageHandler {
   bool use_surface_;
   VideoCodec codec_;
   I420BufferPool decoded_frame_pool_;
-  rtc::scoped_refptr<SurfaceTextureHelper> surface_texture_helper_;
   DecodedImageCallback* callback_;
   int frames_received_;  // Number of frames received by decoder.
   int frames_decoded_;  // Number of frames decoded by decoder.
@@ -224,26 +221,12 @@ int32_t MediaCodecVideoDecoder::InitDecodeOnCodecThread() {
 
   ResetVariables();
 
-  if (use_surface_) {
-    surface_texture_helper_ = SurfaceTextureHelper::create(
-        jni, "Decoder SurfaceTextureHelper",
-        JavaParamRef<jobject>(render_egl_context_));
-    if (!surface_texture_helper_) {
-      ALOGE << "Couldn't create SurfaceTextureHelper - fallback to SW codec";
-      sw_fallback_required_ = true;
-      return WEBRTC_VIDEO_CODEC_ERROR;
-    }
-  }
-
   ScopedJavaLocalRef<jobject> j_video_codec_enum =
       Java_VideoCodecType_fromNativeIndex(jni, codecType_);
-  jobject j_surface_texture_helper =
-      use_surface_
-          ? surface_texture_helper_->GetJavaSurfaceTextureHelper().obj()
-          : nullptr;
+  jobject j_egl_context = use_surface_ ? render_egl_context_ : nullptr;
   bool success = Java_MediaCodecVideoDecoder_initDecode(
       jni, j_media_codec_video_decoder_, j_video_codec_enum, codec_.width,
-      codec_.height, JavaParamRef<jobject>(j_surface_texture_helper));
+      codec_.height, JavaParamRef<jobject>(j_egl_context));
 
   if (CheckException(jni) || !success) {
     ALOGE << "Codec initialization error - fallback to SW codec.";
@@ -325,7 +308,6 @@ int32_t MediaCodecVideoDecoder::ReleaseOnCodecThread() {
   ScopedLocalRefFrame local_ref_frame(jni);
   input_buffers_.clear();
   Java_MediaCodecVideoDecoder_release(jni, j_media_codec_video_decoder_);
-  surface_texture_helper_ = nullptr;
   inited_ = false;
   rtc::MessageQueueManager::Clear(this);
   if (CheckException(jni)) {
@@ -376,7 +358,6 @@ int32_t MediaCodecVideoDecoder::ProcessHWErrorOnCodecThread() {
 int32_t MediaCodecVideoDecoder::Decode(
     const EncodedImage& inputImage,
     bool missingFrames,
-    const RTPFragmentationHeader* fragmentation,
     const CodecSpecificInfo* codecSpecificInfo,
     int64_t renderTimeMs) {
   if (sw_fallback_required_) {
@@ -541,7 +522,7 @@ int32_t MediaCodecVideoDecoder::DecodeOnCodecThread(
   // Feed input to decoder.
   bool success = Java_MediaCodecVideoDecoder_queueInputBuffer(
       jni, j_media_codec_video_decoder_, j_input_buffer_index,
-      inputImage._length, presentation_timestamp_us,
+      static_cast<int>(inputImage._length), presentation_timestamp_us,
       static_cast<int64_t>(inputImage._timeStamp), inputImage.ntp_time_ms_);
   if (CheckException(jni) || !success) {
     ALOGE << "queueInputBuffer error";
@@ -604,18 +585,14 @@ bool MediaCodecVideoDecoder::DeliverPendingOutputs(
     decode_time_ms =
         Java_DecodedTextureBuffer_getDecodeTimeMs(jni, j_decoder_output_buffer);
 
-    const int texture_id =
-        Java_DecodedTextureBuffer_getTextureId(jni, j_decoder_output_buffer);
-    if (texture_id != 0) {  // |texture_id| == 0 represents a dropped frame.
-      ScopedJavaLocalRef<jfloatArray> j_transform_matrix =
-          Java_DecodedTextureBuffer_getTransformMatrix(jni,
-                                                       j_decoder_output_buffer);
+    ScopedJavaLocalRef<jobject> j_video_frame_buffer =
+        Java_DecodedTextureBuffer_getVideoFrameBuffer(jni,
+                                                      j_decoder_output_buffer);
+    // |video_frame_buffer| == null represents a dropped frame.
+    if (!j_video_frame_buffer.is_null()) {
       frame_delayed_ms = Java_DecodedTextureBuffer_getFrameDelayMs(
           jni, j_decoder_output_buffer);
-
-      // Create VideoFrameBuffer with native texture handle.
-      frame_buffer = surface_texture_helper_->CreateTextureFrame(
-          width, height, NativeHandleImpl(jni, texture_id, j_transform_matrix));
+      frame_buffer = AndroidVideoBuffer::Adopt(jni, j_video_frame_buffer);
     } else {
       EnableFrameLogOnWarning();
     }

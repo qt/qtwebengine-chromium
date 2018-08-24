@@ -14,7 +14,6 @@
 #include "base/memory/shared_memory.h"
 #include "base/process/process_handle.h"
 #include "build/build_config.h"
-#include "mojo/edk/embedder/platform_shared_buffer.h"
 #include "mojo/edk/test/mojo_test_base.h"
 #include "mojo/public/c/system/platform_handle.h"
 #include "mojo/public/cpp/system/message_pipe.h"
@@ -24,33 +23,33 @@
 #include <windows.h>
 #endif
 
-#if defined(OS_POSIX)
-#define SIMPLE_PLATFORM_HANDLE_TYPE MOJO_PLATFORM_HANDLE_TYPE_FILE_DESCRIPTOR
-#elif defined(OS_WIN)
+#if defined(OS_WIN)
 #define SIMPLE_PLATFORM_HANDLE_TYPE MOJO_PLATFORM_HANDLE_TYPE_WINDOWS_HANDLE
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
+#define SIMPLE_PLATFORM_HANDLE_TYPE MOJO_PLATFORM_HANDLE_TYPE_FILE_DESCRIPTOR
 #endif
 
-#if defined(OS_MACOSX) && !defined(OS_IOS)
-#define SHARED_BUFFER_PLATFORM_HANDLE_TYPE MOJO_PLATFORM_HANDLE_TYPE_MACH_PORT
-#elif defined(OS_FUCHSIA)
+#if defined(OS_FUCHSIA)
 #define SHARED_BUFFER_PLATFORM_HANDLE_TYPE \
   MOJO_PLATFORM_HANDLE_TYPE_FUCHSIA_HANDLE
-#else
+#elif defined(OS_MACOSX) && !defined(OS_IOS)
+#define SHARED_BUFFER_PLATFORM_HANDLE_TYPE MOJO_PLATFORM_HANDLE_TYPE_MACH_PORT
+#elif defined(OS_WIN) || defined(OS_POSIX)
 #define SHARED_BUFFER_PLATFORM_HANDLE_TYPE SIMPLE_PLATFORM_HANDLE_TYPE
 #endif
 
-uint64_t PlatformHandleValueFromPlatformFile(base::PlatformFile file) {
+uint64_t InternalPlatformHandleValueFromPlatformFile(base::PlatformFile file) {
 #if defined(OS_WIN)
   return reinterpret_cast<uint64_t>(file);
-#else
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   return static_cast<uint64_t>(file);
 #endif
 }
 
-base::PlatformFile PlatformFileFromPlatformHandleValue(uint64_t value) {
+base::PlatformFile PlatformFileFromInternalPlatformHandleValue(uint64_t value) {
 #if defined(OS_WIN)
   return reinterpret_cast<base::PlatformFile>(value);
-#else
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   return static_cast<base::PlatformFile>(value);
 #endif
 }
@@ -61,7 +60,7 @@ namespace {
 
 using PlatformWrapperTest = test::MojoTestBase;
 
-TEST_F(PlatformWrapperTest, WrapPlatformHandle) {
+TEST_F(PlatformWrapperTest, WrapInternalPlatformHandle) {
   // Create a temporary file and write a message to it.
   base::FilePath temp_file_path;
   ASSERT_TRUE(base::CreateTemporaryFile(&temp_file_path));
@@ -82,9 +81,9 @@ TEST_F(PlatformWrapperTest, WrapPlatformHandle) {
     os_file.struct_size = sizeof(MojoPlatformHandle);
     os_file.type = SIMPLE_PLATFORM_HANDLE_TYPE;
     os_file.value =
-        PlatformHandleValueFromPlatformFile(file.TakePlatformFile());
+        InternalPlatformHandleValueFromPlatformFile(file.TakePlatformFile());
     EXPECT_EQ(MOJO_RESULT_OK,
-              MojoWrapPlatformHandle(&os_file, &wrapped_handle));
+              MojoWrapPlatformHandle(&os_file, nullptr, &wrapped_handle));
 
     WriteMessageWithHandles(h, kMessage, &wrapped_handle, 1);
   });
@@ -99,10 +98,11 @@ DEFINE_TEST_CLIENT_TEST_WITH_PIPE(ReadPlatformFile, PlatformWrapperTest, h) {
 
   MojoPlatformHandle platform_handle;
   platform_handle.struct_size = sizeof(MojoPlatformHandle);
-  ASSERT_EQ(MOJO_RESULT_OK,
-            MojoUnwrapPlatformHandle(wrapped_handle, &platform_handle));
+  ASSERT_EQ(MOJO_RESULT_OK, MojoUnwrapPlatformHandle(wrapped_handle, nullptr,
+                                                     &platform_handle));
   EXPECT_EQ(SIMPLE_PLATFORM_HANDLE_TYPE, platform_handle.type);
-  base::File file(PlatformFileFromPlatformHandleValue(platform_handle.value));
+  base::File file(
+      PlatformFileFromInternalPlatformHandleValue(platform_handle.value));
 
   // Expect to read the same message from the file.
   std::vector<char> data(message.size());
@@ -111,7 +111,7 @@ DEFINE_TEST_CLIENT_TEST_WITH_PIPE(ReadPlatformFile, PlatformWrapperTest, h) {
   EXPECT_TRUE(std::equal(message.begin(), message.end(), data.begin()));
 }
 
-TEST_F(PlatformWrapperTest, WrapPlatformSharedBufferHandle) {
+TEST_F(PlatformWrapperTest, WrapPlatformSharedMemoryRegion) {
   // Allocate a new platform shared buffer and write a message into it.
   const std::string kMessage = "Hello, world!";
   base::SharedMemory buffer;
@@ -127,12 +127,14 @@ TEST_F(PlatformWrapperTest, WrapPlatformSharedBufferHandle) {
     MojoPlatformHandle os_buffer;
     os_buffer.struct_size = sizeof(MojoPlatformHandle);
     os_buffer.type = SHARED_BUFFER_PLATFORM_HANDLE_TYPE;
-#if defined(OS_MACOSX) && !defined(OS_IOS)
-    os_buffer.value = static_cast<uint64_t>(memory_handle.GetMemoryObject());
-#elif defined(OS_WIN)
+#if defined(OS_WIN)
     os_buffer.value = reinterpret_cast<uint64_t>(memory_handle.GetHandle());
-#else
+#elif defined(OS_MACOSX) && !defined(OS_IOS)
+    os_buffer.value = static_cast<uint64_t>(memory_handle.GetMemoryObject());
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
     os_buffer.value = static_cast<uint64_t>(memory_handle.GetHandle());
+#else
+#error Unsupported platform
 #endif
 
     MojoSharedBufferGuid mojo_guid;
@@ -141,10 +143,11 @@ TEST_F(PlatformWrapperTest, WrapPlatformSharedBufferHandle) {
     mojo_guid.low = guid.GetLowForSerialization();
 
     MojoHandle wrapped_handle;
-    ASSERT_EQ(MOJO_RESULT_OK, MojoWrapPlatformSharedBufferHandle(
-                                  &os_buffer, kMessage.size(), &mojo_guid,
-                                  MOJO_PLATFORM_SHARED_BUFFER_HANDLE_FLAG_NONE,
-                                  &wrapped_handle));
+    ASSERT_EQ(MOJO_RESULT_OK,
+              MojoWrapPlatformSharedMemoryRegion(
+                  &os_buffer, 1, kMessage.size(), &mojo_guid,
+                  MOJO_PLATFORM_SHARED_MEMORY_REGION_ACCESS_MODE_UNSAFE,
+                  nullptr, &wrapped_handle));
     WriteMessageWithHandles(h, kMessage, &wrapped_handle, 1);
 
     // As a sanity check, send the GUID explicitly in a second message. We'll
@@ -169,37 +172,37 @@ DEFINE_TEST_CLIENT_TEST_WITH_PIPE(ReadPlatformSharedBuffer,
   // works as expected.
   MojoPlatformHandle os_buffer;
   os_buffer.struct_size = sizeof(MojoPlatformHandle);
-  size_t size;
+  uint32_t num_handles = 1;
+  uint64_t size;
   MojoSharedBufferGuid mojo_guid;
-  MojoPlatformSharedBufferHandleFlags flags;
-  ASSERT_EQ(MOJO_RESULT_OK,
-            MojoUnwrapPlatformSharedBufferHandle(wrapped_handle, &os_buffer,
-                                                 &size, &mojo_guid, &flags));
-  bool read_only = flags & MOJO_PLATFORM_SHARED_BUFFER_HANDLE_FLAG_NONE;
-  EXPECT_FALSE(read_only);
+  MojoPlatformSharedMemoryRegionAccessMode access_mode;
+  ASSERT_EQ(MOJO_RESULT_OK, MojoUnwrapPlatformSharedMemoryRegion(
+                                wrapped_handle, nullptr, &os_buffer,
+                                &num_handles, &size, &mojo_guid, &access_mode));
+  EXPECT_EQ(MOJO_PLATFORM_SHARED_MEMORY_REGION_ACCESS_MODE_UNSAFE, access_mode);
 
   base::UnguessableToken guid =
       base::UnguessableToken::Deserialize(mojo_guid.high, mojo_guid.low);
-#if defined(OS_MACOSX) && !defined(OS_IOS)
-  ASSERT_EQ(MOJO_PLATFORM_HANDLE_TYPE_MACH_PORT, os_buffer.type);
+#if defined(OS_WIN)
+  ASSERT_EQ(MOJO_PLATFORM_HANDLE_TYPE_WINDOWS_HANDLE, os_buffer.type);
   base::SharedMemoryHandle memory_handle(
-      static_cast<mach_port_t>(os_buffer.value), size, guid);
+      reinterpret_cast<HANDLE>(os_buffer.value), size, guid);
 #elif defined(OS_FUCHSIA)
   ASSERT_EQ(MOJO_PLATFORM_HANDLE_TYPE_FUCHSIA_HANDLE, os_buffer.type);
   base::SharedMemoryHandle memory_handle(
       static_cast<zx_handle_t>(os_buffer.value), size, guid);
+#elif defined(OS_MACOSX) && !defined(OS_IOS)
+  ASSERT_EQ(MOJO_PLATFORM_HANDLE_TYPE_MACH_PORT, os_buffer.type);
+  base::SharedMemoryHandle memory_handle(
+      static_cast<mach_port_t>(os_buffer.value), size, guid);
 #elif defined(OS_POSIX)
   ASSERT_EQ(MOJO_PLATFORM_HANDLE_TYPE_FILE_DESCRIPTOR, os_buffer.type);
   base::SharedMemoryHandle memory_handle(
       base::FileDescriptor(static_cast<int>(os_buffer.value), false), size,
       guid);
-#elif defined(OS_WIN)
-  ASSERT_EQ(MOJO_PLATFORM_HANDLE_TYPE_WINDOWS_HANDLE, os_buffer.type);
-  base::SharedMemoryHandle memory_handle(
-      reinterpret_cast<HANDLE>(os_buffer.value), size, guid);
 #endif
 
-  base::SharedMemory memory(memory_handle, read_only);
+  base::SharedMemory memory(memory_handle, false);
   memory.Map(message.size());
   ASSERT_TRUE(memory.memory());
 
@@ -227,9 +230,9 @@ TEST_F(PlatformWrapperTest, InvalidHandle) {
   invalid_handle.struct_size = sizeof(MojoPlatformHandle);
   invalid_handle.type = MOJO_PLATFORM_HANDLE_TYPE_INVALID;
   EXPECT_EQ(MOJO_RESULT_OK,
-            MojoWrapPlatformHandle(&invalid_handle, &wrapped_handle));
+            MojoWrapPlatformHandle(&invalid_handle, nullptr, &wrapped_handle));
   EXPECT_EQ(MOJO_RESULT_OK,
-            MojoUnwrapPlatformHandle(wrapped_handle, &invalid_handle));
+            MojoUnwrapPlatformHandle(wrapped_handle, nullptr, &invalid_handle));
   EXPECT_EQ(MOJO_PLATFORM_HANDLE_TYPE_INVALID, invalid_handle.type);
 }
 
@@ -239,7 +242,7 @@ TEST_F(PlatformWrapperTest, InvalidArgument) {
   MojoPlatformHandle platform_handle;
   platform_handle.struct_size = 0;
   EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
-            MojoWrapPlatformHandle(&platform_handle, &wrapped_handle));
+            MojoWrapPlatformHandle(&platform_handle, nullptr, &wrapped_handle));
 }
 
 }  // namespace

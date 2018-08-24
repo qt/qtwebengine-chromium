@@ -6,13 +6,15 @@
 
 #include "core/fxcrt/fx_extension.h"
 
-#include "core/fxcrt/fx_fallthrough.h"
-
 #include <algorithm>
 #include <cwctype>
+#include <limits>
+
+#include "third_party/base/compiler_specific.h"
 
 float FXSYS_wcstof(const wchar_t* pwsStr, int32_t iLength, int32_t* pUsedLen) {
   ASSERT(pwsStr);
+
   if (iLength < 0)
     iLength = static_cast<int32_t>(wcslen(pwsStr));
   if (iLength == 0)
@@ -23,7 +25,7 @@ float FXSYS_wcstof(const wchar_t* pwsStr, int32_t iLength, int32_t* pUsedLen) {
   switch (pwsStr[iUsedLen]) {
     case '-':
       bNegtive = true;
-      FX_FALLTHROUGH;
+      FALLTHROUGH;
     case '+':
       iUsedLen++;
       break;
@@ -50,6 +52,47 @@ float FXSYS_wcstof(const wchar_t* pwsStr, int32_t iLength, int32_t* pUsedLen) {
       fPrecise *= 0.1f;
     }
   }
+
+  if (iUsedLen < iLength &&
+      (pwsStr[iUsedLen] == 'e' || pwsStr[iUsedLen] == 'E')) {
+    ++iUsedLen;
+
+    bool negative_exponent = false;
+    if (iUsedLen < iLength &&
+        (pwsStr[iUsedLen] == '-' || pwsStr[iUsedLen] == '+')) {
+      negative_exponent = pwsStr[iUsedLen] == '-';
+      ++iUsedLen;
+    }
+
+    int32_t exp_value = 0;
+    while (iUsedLen < iLength) {
+      wchar_t wch = pwsStr[iUsedLen];
+      if (!std::iswdigit(wch))
+        break;
+
+      exp_value = exp_value * 10.0f + (wch - L'0');
+      // Exponent is outside the valid range, fail.
+      if ((negative_exponent &&
+           -exp_value < std::numeric_limits<float>::min_exponent10) ||
+          (!negative_exponent &&
+           exp_value > std::numeric_limits<float>::max_exponent10)) {
+        *pUsedLen = 0;
+        return 0.0f;
+      }
+
+      ++iUsedLen;
+    }
+
+    for (size_t i = exp_value; i > 0; --i) {
+      if (exp_value > 0) {
+        if (negative_exponent)
+          fValue /= 10;
+        else
+          fValue *= 10;
+      }
+    }
+  }
+
   if (pUsedLen)
     *pUsedLen = iUsedLen;
 
@@ -123,35 +166,4 @@ size_t FXSYS_ToUTF16BE(uint32_t unicode, char* buf) {
   // Low ten bits plus 0xDC00
   FXSYS_IntToFourHexChars(0xDC00 + unicode % 0x400, buf + 4);
   return 8;
-}
-
-uint32_t GetBits32(const uint8_t* pData, int bitpos, int nbits) {
-  ASSERT(0 < nbits && nbits <= 32);
-  const uint8_t* dataPtr = &pData[bitpos / 8];
-  int bitShift;
-  int bitMask;
-  int dstShift;
-  int bitCount = bitpos & 0x07;
-  if (nbits < 8 && nbits + bitCount <= 8) {
-    bitShift = 8 - nbits - bitCount;
-    bitMask = (1 << nbits) - 1;
-    dstShift = 0;
-  } else {
-    bitShift = 0;
-    int bitOffset = 8 - bitCount;
-    bitMask = (1 << std::min(bitOffset, nbits)) - 1;
-    dstShift = nbits - bitOffset;
-  }
-  uint32_t result =
-      static_cast<uint32_t>((*dataPtr++ >> bitShift & bitMask) << dstShift);
-  while (dstShift >= 8) {
-    dstShift -= 8;
-    result |= *dataPtr++ << dstShift;
-  }
-  if (dstShift > 0) {
-    bitShift = 8 - dstShift;
-    bitMask = (1 << dstShift) - 1;
-    result |= *dataPtr++ >> bitShift & bitMask;
-  }
-  return result;
 }

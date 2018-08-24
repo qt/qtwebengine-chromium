@@ -10,13 +10,10 @@
 #include "components/viz/service/viz_service_export.h"
 #include "ui/latency/latency_info.h"
 
-namespace cc {
-class OutputSurface;
-class DisplayResourceProvider;
-}  // namespace cc
-
 namespace viz {
 class DebugBorderDrawQuad;
+class DisplayResourceProvider;
+class OutputSurface;
 class PictureDrawQuad;
 class RenderPassDrawQuad;
 class SoftwareOutputDevice;
@@ -28,11 +25,12 @@ class VIZ_SERVICE_EXPORT SoftwareRenderer : public DirectRenderer {
  public:
   SoftwareRenderer(const RendererSettings* settings,
                    OutputSurface* output_surface,
-                   cc::DisplayResourceProvider* resource_provider);
+                   DisplayResourceProvider* resource_provider);
 
   ~SoftwareRenderer() override;
 
-  void SwapBuffers(std::vector<ui::LatencyInfo> latency_info) override;
+  void SwapBuffers(std::vector<ui::LatencyInfo> latency_info,
+                   bool need_presentation_feedback) override;
 
   void SetDisablePictureQuadImageFiltering(bool disable) {
     disable_picture_quad_image_filtering_ = disable;

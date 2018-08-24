@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// no-include-guard-because-multiply-included
 // Multiply-included message file, hence no include guard here.
 
 #include "gpu/command_buffer/common/capabilities.h"
@@ -133,6 +134,7 @@ IPC_STRUCT_TRAITS_BEGIN(gpu::Capabilities)
   IPC_STRUCT_TRAITS_MEMBER(chromium_image_rgb_emulation)
   IPC_STRUCT_TRAITS_MEMBER(dc_layers)
   IPC_STRUCT_TRAITS_MEMBER(use_dc_overlays_for_video)
+  IPC_STRUCT_TRAITS_MEMBER(protected_video_swap_chain)
   IPC_STRUCT_TRAITS_MEMBER(disable_non_empty_post_sub_buffers)
   IPC_STRUCT_TRAITS_MEMBER(avoid_stencil_buffers)
   IPC_STRUCT_TRAITS_MEMBER(disable_2d_canvas_copy_on_write)
@@ -141,6 +143,8 @@ IPC_STRUCT_TRAITS_BEGIN(gpu::Capabilities)
   IPC_STRUCT_TRAITS_MEMBER(supports_oop_raster)
   IPC_STRUCT_TRAITS_MEMBER(chromium_gpu_fence)
   IPC_STRUCT_TRAITS_MEMBER(unpremultiply_and_dither_copy)
+  IPC_STRUCT_TRAITS_MEMBER(separate_stencil_ref_mask_writemask)
+  IPC_STRUCT_TRAITS_MEMBER(use_gpu_fences_for_overlay_planes)
 
   IPC_STRUCT_TRAITS_MEMBER(major_version)
   IPC_STRUCT_TRAITS_MEMBER(minor_version)
@@ -180,7 +184,6 @@ IPC_STRUCT_TRAITS_BEGIN(gpu::ContextCreationAttribs)
   IPC_STRUCT_TRAITS_MEMBER(color_space)
   IPC_STRUCT_TRAITS_MEMBER(enable_gles2_interface)
   IPC_STRUCT_TRAITS_MEMBER(enable_raster_interface)
-  IPC_STRUCT_TRAITS_MEMBER(enable_raster_decoder)
   IPC_STRUCT_TRAITS_MEMBER(enable_oop_rasterization)
   IPC_STRUCT_TRAITS_MEMBER(enable_swap_timestamps_if_supported)
 IPC_STRUCT_TRAITS_END()

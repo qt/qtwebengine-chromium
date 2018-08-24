@@ -13,7 +13,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
-#include "components/signin/core/account_id/account_id.h"
+#include "components/account_id/account_id.h"
 #include "components/user_manager/user_manager.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 
@@ -200,6 +200,10 @@ bool User::IsSupervised() const {
   UserType type = GetType();
   return  type == USER_TYPE_SUPERVISED ||
           type == USER_TYPE_CHILD;
+}
+
+bool User::IsChild() const {
+  return GetType() == USER_TYPE_CHILD;
 }
 
 std::string User::GetAccountName(bool use_display_email) const {

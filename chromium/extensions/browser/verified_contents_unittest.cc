@@ -47,14 +47,13 @@ bool GetPublicKey(const base::FilePath& path, std::string* public_key) {
 TEST(VerifiedContents, Simple) {
   // Figure out our test data directory.
   base::FilePath path;
-  PathService::Get(DIR_TEST_DATA, &path);
+  base::PathService::Get(DIR_TEST_DATA, &path);
   path = path.AppendASCII(kContentVerifierDirectory);
 
   // Initialize the VerifiedContents object.
   std::string public_key;
   ASSERT_TRUE(GetPublicKey(path.AppendASCII(kPublicKeyPem), &public_key));
-  VerifiedContents contents(reinterpret_cast<const uint8_t*>(public_key.data()),
-                            public_key.size());
+  VerifiedContents contents(base::as_bytes(base::make_span(public_key)));
   base::FilePath verified_contents_path =
       path.AppendASCII("verified_contents.json");
 
@@ -141,14 +140,13 @@ TEST(VerifiedContents, FailsOnBase64) {
   // will be considered to be invalid data. Verify that it gets rejected.
 
   base::FilePath path;
-  PathService::Get(DIR_TEST_DATA, &path);
+  base::PathService::Get(DIR_TEST_DATA, &path);
   path = path.AppendASCII(kContentVerifierDirectory);
 
   // Initialize the VerifiedContents object.
   std::string public_key;
   ASSERT_TRUE(GetPublicKey(path.AppendASCII(kPublicKeyPem), &public_key));
-  VerifiedContents contents(reinterpret_cast<const uint8_t*>(public_key.data()),
-                            public_key.size());
+  VerifiedContents contents(base::as_bytes(base::make_span(public_key)));
 
   base::FilePath verified_contents_path =
       path.AppendASCII("verified_contents_base64.json");

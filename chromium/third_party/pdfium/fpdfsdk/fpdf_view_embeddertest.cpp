@@ -8,6 +8,7 @@
 #include <string>
 
 #include "fpdfsdk/fpdf_view_c_api_test.h"
+#include "public/cpp/fpdf_scopers.h"
 #include "public/fpdfview.h"
 #include "testing/embedder_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -132,6 +133,12 @@ TEST_F(FPDFViewEmbeddertest, ViewerRefDummy) {
   char buf[100];
   EXPECT_EQ(0U, FPDF_VIEWERREF_GetName(document(), "foo", nullptr, 0));
   EXPECT_EQ(0U, FPDF_VIEWERREF_GetName(document(), "foo", buf, sizeof(buf)));
+
+  FPDF_PAGERANGE page_range = FPDF_VIEWERREF_GetPrintPageRange(document());
+  EXPECT_FALSE(page_range);
+  EXPECT_EQ(0U, FPDF_VIEWERREF_GetPrintPageRangeCount(page_range));
+  EXPECT_EQ(-1, FPDF_VIEWERREF_GetPrintPageRangeElement(page_range, 0));
+  EXPECT_EQ(-1, FPDF_VIEWERREF_GetPrintPageRangeElement(page_range, 1));
 }
 
 TEST_F(FPDFViewEmbeddertest, ViewerRef) {
@@ -171,6 +178,15 @@ TEST_F(FPDFViewEmbeddertest, ViewerRef) {
   ASSERT_EQ(8U,
             FPDF_VIEWERREF_GetName(document(), "ViewArea", buf, sizeof(buf)));
   EXPECT_STREQ("CropBox", buf);
+
+  FPDF_PAGERANGE page_range = FPDF_VIEWERREF_GetPrintPageRange(document());
+  EXPECT_TRUE(page_range);
+  EXPECT_EQ(4U, FPDF_VIEWERREF_GetPrintPageRangeCount(page_range));
+  EXPECT_EQ(0, FPDF_VIEWERREF_GetPrintPageRangeElement(page_range, 0));
+  EXPECT_EQ(2, FPDF_VIEWERREF_GetPrintPageRangeElement(page_range, 1));
+  EXPECT_EQ(4, FPDF_VIEWERREF_GetPrintPageRangeElement(page_range, 2));
+  EXPECT_EQ(4, FPDF_VIEWERREF_GetPrintPageRangeElement(page_range, 3));
+  EXPECT_EQ(-1, FPDF_VIEWERREF_GetPrintPageRangeElement(page_range, 4));
 }
 
 TEST_F(FPDFViewEmbeddertest, NamedDests) {
@@ -439,7 +455,7 @@ TEST_F(FPDFViewEmbeddertest, FPDF_RenderPageBitmapWithMatrix) {
   EXPECT_EQ(200, page_width);
   EXPECT_EQ(300, page_height);
 
-  std::unique_ptr<void, FPDFBitmapDeleter> bitmap = RenderLoadedPage(page);
+  ScopedFPDFBitmap bitmap = RenderLoadedPage(page);
   CompareBitmap(bitmap.get(), page_width, page_height, kOriginalMD5);
 
   FS_RECTF page_rect{0, 0, page_width, page_height};

@@ -95,6 +95,11 @@ class XRSession final : public EventTargetWithInlineData {
   // reports (0, 0);
   DoubleSize OutputCanvasSize() const;
 
+  void LogGetPose() const;
+
+  // Output canvas orientation in degrees. Expected to be multiple of 90.
+  int OutputCanvasAngle() const;
+
   // EventTarget overrides.
   ExecutionContext* GetExecutionContext() const override;
   const AtomicString& InterfaceName() const override;
@@ -112,8 +117,12 @@ class XRSession final : public EventTargetWithInlineData {
   void OnSelectEnd(XRInputSource*);
   void OnSelect(XRInputSource*);
 
+  void OnPoseReset();
+
+  void SetNonExclusiveProjectionMatrix(const WTF::Vector<float>&);
+
   void Trace(blink::Visitor*) override;
-  virtual void TraceWrappers(const blink::ScriptWrappableVisitor*) const;
+  void TraceWrappers(blink::ScriptWrappableVisitor*) const override;
 
  private:
   class XRSessionResizeObserverDelegate;
@@ -143,6 +152,8 @@ class XRSession final : public EventTargetWithInlineData {
   XRFrameRequestCallbackCollection callback_collection_;
   std::unique_ptr<TransformationMatrix> base_pose_matrix_;
 
+  WTF::Vector<float> non_exclusive_projection_matrix_;
+
   double depth_near_ = 0.1;
   double depth_far_ = 1000.0;
   bool blurred_;
@@ -152,11 +163,17 @@ class XRSession final : public EventTargetWithInlineData {
   bool update_views_next_frame_ = false;
   bool views_dirty_ = true;
 
+  // Indicates that we've already logged a metric, so don't need to log it
+  // again.
+  mutable bool did_log_getInputSources_ = false;
+  mutable bool did_log_getDevicePose_ = false;
+
   // Dimensions of the output canvas.
   int output_width_ = 1;
   int output_height_ = 1;
+  int output_angle_ = 0;
 };
 
 }  // namespace blink
 
-#endif  // XRWebGLLayer_h
+#endif  // THIRD_PARTY_BLINK_RENDERER_MODULES_XR_XR_SESSION_H_

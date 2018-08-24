@@ -26,10 +26,10 @@ GURL ImageUrlFromId(const std::string& image_id) {
 
 ContextualContentSuggestionsServiceProxy::
     ContextualContentSuggestionsServiceProxy(
-        ntp_snippets::ContextualContentSuggestionsService* service,
-        std::unique_ptr<ContextualSuggestionsMetricsReporter> metrics_reporter)
+        ContextualContentSuggestionsService* service,
+        std::unique_ptr<ContextualSuggestionsReporter> reporter)
     : service_(service),
-      metrics_reporter_(std::move(metrics_reporter)),
+      reporter_(std::move(reporter)),
       last_ukm_source_id_(ukm::kInvalidSourceId),
       weak_ptr_factory_(this) {}
 
@@ -38,7 +38,7 @@ ContextualContentSuggestionsServiceProxy::
 
 void ContextualContentSuggestionsServiceProxy::FetchContextualSuggestions(
     const GURL& url,
-    ClustersCallback callback) {
+    FetchClustersCallback callback) {
   service_->FetchContextualSuggestionClusters(
       url,
       base::BindOnce(
@@ -46,7 +46,7 @@ void ContextualContentSuggestionsServiceProxy::FetchContextualSuggestions(
           weak_ptr_factory_.GetWeakPtr(), std::move(callback)),
       base::BindRepeating(
           &ContextualContentSuggestionsServiceProxy::ReportEvent,
-          weak_ptr_factory_.GetWeakPtr(), last_ukm_source_id_));
+          weak_ptr_factory_.GetWeakPtr(), last_ukm_source_id_, url.spec()));
 }
 
 void ContextualContentSuggestionsServiceProxy::FetchContextualSuggestionImage(
@@ -88,6 +88,7 @@ void ContextualContentSuggestionsServiceProxy::ClearState() {
 
 void ContextualContentSuggestionsServiceProxy::ReportEvent(
     ukm::SourceId ukm_source_id,
+    const std::string& url,
     ContextualSuggestionsEvent event) {
   // TODO(pnoland): investigate how we can get into this state(one known
   // example is if we switch tabs and there's no committed navigation in the new
@@ -100,17 +101,17 @@ void ContextualContentSuggestionsServiceProxy::ReportEvent(
   // Flush the previous page (if any) and setup the new page.
   if (ukm_source_id != last_ukm_source_id_) {
     if (last_ukm_source_id_ != ukm::kInvalidSourceId)
-      metrics_reporter_->Flush();
+      reporter_->Flush();
     last_ukm_source_id_ = ukm_source_id;
-    metrics_reporter_->SetupForPage(ukm_source_id);
+    reporter_->SetupForPage(url, ukm_source_id);
   }
 
-  metrics_reporter_->RecordEvent(event);
+  reporter_->RecordEvent(event);
 }
 
 void ContextualContentSuggestionsServiceProxy::FlushMetrics() {
   if (last_ukm_source_id_ != ukm::kInvalidSourceId)
-    metrics_reporter_->Flush();
+    reporter_->Flush();
   last_ukm_source_id_ = ukm::kInvalidSourceId;
 }
 
@@ -128,16 +129,15 @@ void ContextualContentSuggestionsServiceProxy::FetchImageImpl(
 }
 
 void ContextualContentSuggestionsServiceProxy::CacheSuggestions(
-    ClustersCallback callback,
-    std::string peek_text,
-    std::vector<Cluster> clusters) {
+    FetchClustersCallback callback,
+    ContextualSuggestionsResult result) {
   suggestions_.clear();
-  for (auto& cluster : clusters) {
+  for (auto& cluster : result.clusters) {
     for (auto& suggestion : cluster.suggestions) {
       suggestions_.emplace(std::make_pair(suggestion.id, suggestion));
     }
   }
-  std::move(callback).Run(peek_text, std::move(clusters));
+  std::move(callback).Run(std::move(result));
 }
 
 }  // namespace contextual_suggestions

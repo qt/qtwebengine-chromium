@@ -9,7 +9,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "net/base/net_errors.h"
-#include "net/quic/platform/api/quic_clock.h"
+#include "net/third_party/quic/platform/api/quic_clock.h"
 
 namespace net {
 
@@ -44,9 +44,10 @@ void QuicChromiumPacketReader::StartReading() {
 
     DCHECK(socket_);
     read_pending_ = true;
-    int rv = socket_->Read(read_buffer_.get(), read_buffer_->size(),
-                           base::Bind(&QuicChromiumPacketReader::OnReadComplete,
-                                      weak_factory_.GetWeakPtr()));
+    int rv =
+        socket_->Read(read_buffer_.get(), read_buffer_->size(),
+                      base::BindOnce(&QuicChromiumPacketReader::OnReadComplete,
+                                     weak_factory_.GetWeakPtr()));
     UMA_HISTOGRAM_BOOLEAN("Net.QuicSession.AsyncRead", rv == ERR_IO_PENDING);
     if (rv == ERR_IO_PENDING) {
       num_packets_read_ = 0;

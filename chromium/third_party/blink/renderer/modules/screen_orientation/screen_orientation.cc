@@ -6,7 +6,7 @@
 
 #include <memory>
 
-#include "third_party/blink/public/platform/modules/screen_orientation/web_screen_orientation_type.h"
+#include "third_party/blink/public/common/screen_orientation/web_screen_orientation_type.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -59,7 +59,7 @@ static ScreenOrientationInfo* OrientationsMap(unsigned& length) {
       {portrait, kWebScreenOrientationLockPortrait},
       {landscape, kWebScreenOrientationLockLandscape},
       {natural, kWebScreenOrientationLockNatural}};
-  length = WTF_ARRAY_LENGTH(orientation_map);
+  length = arraysize(orientation_map);
 
   return orientation_map;
 }

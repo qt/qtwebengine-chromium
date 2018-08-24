@@ -19,6 +19,7 @@
 #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
 #include "third_party/blink/renderer/core/script/modulator.h"
 #include "third_party/blink/renderer/core/script/module_script.h"
+#include "third_party/blink/renderer/core/script/script.h"
 #include "third_party/blink/renderer/core/testing/dummy_modulator.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/core/workers/global_scope_creation_params.h"
@@ -177,7 +178,7 @@ void ModuleScriptLoaderTest::InitializeForWorklet() {
   reporting_proxy_ =
       std::make_unique<MainThreadWorkletReportingProxy>(&GetDocument());
   auto creation_params = std::make_unique<GlobalScopeCreationParams>(
-      GetDocument().Url(), GetDocument().UserAgent(),
+      GetDocument().Url(), ScriptType::kModule, GetDocument().UserAgent(),
       nullptr /* content_security_policy_parsed_headers */,
       GetDocument().GetReferrerPolicy(), GetDocument().GetSecurityOrigin(),
       GetDocument().IsSecureContext(), nullptr /* worker_clients */,
@@ -197,10 +198,9 @@ void ModuleScriptLoaderTest::TestFetchDataURL(
     TestModuleScriptLoaderClient* client) {
   ModuleScriptLoaderRegistry* registry = ModuleScriptLoaderRegistry::Create();
   KURL url("data:text/javascript,export default 'grapes';");
-  ModuleScriptFetchRequest module_request(url, kReferrerPolicyDefault,
-                                          ScriptFetchOptions());
-  registry->Fetch(module_request, ModuleGraphLevel::kTopLevelModuleFetch,
-                  GetModulator(), client);
+  registry->Fetch(ModuleScriptFetchRequest::CreateForTest(url),
+                  ModuleGraphLevel::kTopLevelModuleFetch, GetModulator(),
+                  client);
 }
 
 TEST_F(ModuleScriptLoaderTest, FetchDataURL) {
@@ -248,11 +248,10 @@ void ModuleScriptLoaderTest::TestInvalidSpecifier(
     TestModuleScriptLoaderClient* client) {
   ModuleScriptLoaderRegistry* registry = ModuleScriptLoaderRegistry::Create();
   KURL url("data:text/javascript,import 'invalid';export default 'grapes';");
-  ModuleScriptFetchRequest module_request(url, kReferrerPolicyDefault,
-                                          ScriptFetchOptions());
   GetModulator()->SetModuleRequests({"invalid"});
-  registry->Fetch(module_request, ModuleGraphLevel::kTopLevelModuleFetch,
-                  GetModulator(), client);
+  registry->Fetch(ModuleScriptFetchRequest::CreateForTest(url),
+                  ModuleGraphLevel::kTopLevelModuleFetch, GetModulator(),
+                  client);
 }
 
 TEST_F(ModuleScriptLoaderTest, InvalidSpecifier) {
@@ -287,10 +286,9 @@ void ModuleScriptLoaderTest::TestFetchInvalidURL(
   ModuleScriptLoaderRegistry* registry = ModuleScriptLoaderRegistry::Create();
   KURL url;
   EXPECT_FALSE(url.IsValid());
-  ModuleScriptFetchRequest module_request(url, kReferrerPolicyDefault,
-                                          ScriptFetchOptions());
-  registry->Fetch(module_request, ModuleGraphLevel::kTopLevelModuleFetch,
-                  GetModulator(), client);
+  registry->Fetch(ModuleScriptFetchRequest::CreateForTest(url),
+                  ModuleGraphLevel::kTopLevelModuleFetch, GetModulator(),
+                  client);
 }
 
 TEST_F(ModuleScriptLoaderTest, FetchInvalidURL) {
@@ -323,10 +321,9 @@ void ModuleScriptLoaderTest::TestFetchURL(
       url, test::CoreTestDataPath("module.js"), "text/javascript");
 
   ModuleScriptLoaderRegistry* registry = ModuleScriptLoaderRegistry::Create();
-  ModuleScriptFetchRequest module_request(url, kReferrerPolicyDefault,
-                                          ScriptFetchOptions());
-  registry->Fetch(module_request, ModuleGraphLevel::kTopLevelModuleFetch,
-                  GetModulator(), client);
+  registry->Fetch(ModuleScriptFetchRequest::CreateForTest(url),
+                  ModuleGraphLevel::kTopLevelModuleFetch, GetModulator(),
+                  client);
 }
 
 TEST_F(ModuleScriptLoaderTest, FetchURL) {

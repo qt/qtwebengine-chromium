@@ -11,8 +11,8 @@ namespace background_loader {
 BackgroundLoaderContents::BackgroundLoaderContents(
     content::BrowserContext* browser_context)
     : browser_context_(browser_context) {
-  web_contents_.reset(content::WebContents::Create(
-      content::WebContents::CreateParams(browser_context_)));
+  web_contents_ = content::WebContents::Create(
+      content::WebContents::CreateParams(browser_context_));
   web_contents_->SetAudioMuted(true);
   web_contents_->SetDelegate(this);
 }
@@ -88,7 +88,7 @@ bool BackgroundLoaderContents::ShouldCreateWebContents(
 
 void BackgroundLoaderContents::AddNewContents(
     content::WebContents* source,
-    content::WebContents* new_contents,
+    std::unique_ptr<content::WebContents> new_contents,
     WindowOpenDisposition disposition,
     const gfx::Rect& initial_rect,
     bool user_gesture,

@@ -237,7 +237,6 @@
   V(error_script_symbol)               \
   V(error_start_pos_symbol)            \
   V(frozen_symbol)                     \
-  V(generator_outer_promise_symbol)    \
   V(generic_symbol)                    \
   V(home_object_symbol)                \
   V(intl_initialized_marker_symbol)    \
@@ -257,8 +256,6 @@
   V(sealed_symbol)                     \
   V(stack_trace_symbol)                \
   V(strict_function_transition_symbol) \
-  V(wasm_function_index_symbol)        \
-  V(wasm_instance_symbol)              \
   V(uninitialized_symbol)
 
 #define PUBLIC_SYMBOL_LIST(V)                    \

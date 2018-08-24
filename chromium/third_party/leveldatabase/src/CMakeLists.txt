@@ -53,6 +53,14 @@ int main() { return 0; }
 "  HAVE_CLANG_THREAD_SAFETY)
 set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQUIRED_FLAGS})
 
+# Test whether C++17 __has_include is available.
+check_cxx_source_compiles("
+#if defined(__has_include) &&  __has_include(<string>)
+#include <string>
+#endif
+int main() { std::string str; return 0; }
+" HAVE_CXX17_HAS_INCLUDE)
+
 set(LEVELDB_PUBLIC_INCLUDE_DIR "include/leveldb")
 set(LEVELDB_PORT_CONFIG_DIR "include/port")
 
@@ -71,27 +79,10 @@ if(BUILD_SHARED_LIBS)
   add_compile_options(-fvisibility=hidden)
 endif(BUILD_SHARED_LIBS)
 
-# POSIX code is specified separately so we can leave it out in the future.
-add_library(leveldb_port_posix OBJECT "")
-target_sources(leveldb_port_posix
-  PRIVATE
-    "${PROJECT_SOURCE_DIR}/port/port_posix.cc"
-
-  PUBLIC
-    # The headers below are dependencies for leveldb, but aren't needed by users
-    # that link to the installed version of leveldb and rely on its public API.
-    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/${LEVELDB_PORT_CONFIG_DIR}/port_config.h>
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/port/atomic_pointer.h>
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/port/port_posix.h>
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/port/port.h>
-)
-if(BUILD_SHARED_LIBS)
-  set_property(TARGET leveldb_port_posix PROPERTY POSITION_INDEPENDENT_CODE ON)
-endif(BUILD_SHARED_LIBS)
-
 add_library(leveldb "")
 target_sources(leveldb
   PRIVATE
+    "${PROJECT_BINARY_DIR}/${LEVELDB_PORT_CONFIG_DIR}/port_config.h"
     "${PROJECT_SOURCE_DIR}/db/builder.cc"
     "${PROJECT_SOURCE_DIR}/db/builder.h"
     "${PROJECT_SOURCE_DIR}/db/c.cc"
@@ -122,6 +113,8 @@ target_sources(leveldb
     "${PROJECT_SOURCE_DIR}/db/version_set.h"
     "${PROJECT_SOURCE_DIR}/db/write_batch_internal.h"
     "${PROJECT_SOURCE_DIR}/db/write_batch.cc"
+    "${PROJECT_SOURCE_DIR}/port/atomic_pointer.h"
+    "${PROJECT_SOURCE_DIR}/port/port_stdcxx.h"
     "${PROJECT_SOURCE_DIR}/port/port.h"
     "${PROJECT_SOURCE_DIR}/port/thread_annotations.h"
     "${PROJECT_SOURCE_DIR}/table/block_builder.cc"
@@ -149,7 +142,6 @@ target_sources(leveldb
     "${PROJECT_SOURCE_DIR}/util/comparator.cc"
     "${PROJECT_SOURCE_DIR}/util/crc32c.cc"
     "${PROJECT_SOURCE_DIR}/util/crc32c.h"
-    "${PROJECT_SOURCE_DIR}/util/env_posix.cc"
     "${PROJECT_SOURCE_DIR}/util/env.cc"
     "${PROJECT_SOURCE_DIR}/util/filter_policy.cc"
     "${PROJECT_SOURCE_DIR}/util/hash.cc"
@@ -158,10 +150,8 @@ target_sources(leveldb
     "${PROJECT_SOURCE_DIR}/util/logging.h"
     "${PROJECT_SOURCE_DIR}/util/mutexlock.h"
     "${PROJECT_SOURCE_DIR}/util/options.cc"
-    "${PROJECT_SOURCE_DIR}/util/posix_logger.h"
     "${PROJECT_SOURCE_DIR}/util/random.h"
     "${PROJECT_SOURCE_DIR}/util/status.cc"
-    $<TARGET_OBJECTS:leveldb_port_posix>
 
   # Only CMake 3.3+ supports PUBLIC sources in targets exported by "install".
   $<$<VERSION_GREATER:CMAKE_VERSION,3.2>:PUBLIC>
@@ -181,12 +171,21 @@ target_sources(leveldb
     "${LEVELDB_PUBLIC_INCLUDE_DIR}/table.h"
     "${LEVELDB_PUBLIC_INCLUDE_DIR}/write_batch.h"
 )
+
+# POSIX code is specified separately so we can leave it out in the future.
+target_sources(leveldb
+  PRIVATE
+    "${PROJECT_SOURCE_DIR}/util/env_posix.cc"
+    "${PROJECT_SOURCE_DIR}/util/posix_logger.h"
+)
+
 # MemEnv is not part of the interface and could be pulled to a separate library.
 target_sources(leveldb
   PRIVATE
     "${PROJECT_SOURCE_DIR}/helpers/memenv/memenv.cc"
     "${PROJECT_SOURCE_DIR}/helpers/memenv/memenv.h"
 )
+
 target_include_directories(leveldb
   PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
@@ -199,6 +198,13 @@ target_compile_definitions(leveldb
     # Used by port/port.h.
     LEVELDB_PLATFORM_POSIX=1
 )
+if (NOT HAVE_CXX17_HAS_INCLUDE)
+  target_compile_definitions(leveldb
+    PRIVATE
+      LEVELDB_HAS_PORT_CONFIG_H=1
+  )
+endif(NOT HAVE_CXX17_HAS_INCLUDE)
+
 if(BUILD_SHARED_LIBS)
   target_compile_definitions(leveldb
     PUBLIC
@@ -213,11 +219,6 @@ if(HAVE_CLANG_THREAD_SAFETY)
       -Werror -Wthread-safety)
 endif(HAVE_CLANG_THREAD_SAFETY)
 
-# TODO(costan): This is only needed for port_posix.
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package(Threads REQUIRED)
-target_link_libraries(leveldb Threads::Threads)
-
 if(HAVE_CRC32C)
   target_link_libraries(leveldb crc32c)
 endif(HAVE_CRC32C)
@@ -227,6 +228,10 @@ endif(HAVE_SNAPPY)
 if(HAVE_TCMALLOC)
   target_link_libraries(leveldb tcmalloc)
 endif(HAVE_TCMALLOC)
+
+# Needed by port_stdcxx.h
+find_package(Threads REQUIRED)
+target_link_libraries(leveldb Threads::Threads)
 
 add_executable(leveldbutil
   "${PROJECT_SOURCE_DIR}/db/leveldbutil.cc"
@@ -250,19 +255,17 @@ if(LEVELDB_BUILD_TESTS)
 
         "${test_file}"
     )
-    if(BUILD_SHARED_LIBS)
-      # Port functions aren't exposed in the shared library build.
-      target_sources("${test_target_name}"
-        PRIVATE
-          $<TARGET_OBJECTS:leveldb_port_posix>
-      )
-    endif(BUILD_SHARED_LIBS)
-
     target_link_libraries("${test_target_name}" leveldb)
     target_compile_definitions("${test_target_name}"
       PRIVATE
         LEVELDB_PLATFORM_POSIX=1
     )
+    if (NOT HAVE_CXX17_HAS_INCLUDE)
+      target_compile_definitions("${test_target_name}"
+        PRIVATE
+          LEVELDB_HAS_PORT_CONFIG_H=1
+      )
+    endif(NOT HAVE_CXX17_HAS_INCLUDE)
 
     add_test(NAME "${test_target_name}" COMMAND "${test_target_name}")
   endfunction(leveldb_test)
@@ -274,6 +277,7 @@ if(LEVELDB_BUILD_TESTS)
   leveldb_test("${PROJECT_SOURCE_DIR}/issues/issue200_test.cc")
 
   leveldb_test("${PROJECT_SOURCE_DIR}/util/env_test.cc")
+  leveldb_test("${PROJECT_SOURCE_DIR}/util/status_test.cc")
 
   if(NOT BUILD_SHARED_LIBS)
     leveldb_test("${PROJECT_SOURCE_DIR}/db/autocompact_test.cc")
@@ -299,6 +303,7 @@ if(LEVELDB_BUILD_TESTS)
     leveldb_test("${PROJECT_SOURCE_DIR}/util/coding_test.cc")
     leveldb_test("${PROJECT_SOURCE_DIR}/util/crc32c_test.cc")
     leveldb_test("${PROJECT_SOURCE_DIR}/util/hash_test.cc")
+    leveldb_test("${PROJECT_SOURCE_DIR}/util/logging_test.cc")
 
     # TODO(costan): This test also uses
     #               "${PROJECT_SOURCE_DIR}/util/env_posix_test_helper.h"
@@ -323,19 +328,17 @@ if(LEVELDB_BUILD_BENCHMARKS)
 
         "${bench_file}"
     )
-    if(BUILD_SHARED_LIBS)
-      # Port functions aren't exposed in the shared library build.
-      target_sources("${bench_target_name}"
-        PRIVATE
-          $<TARGET_OBJECTS:leveldb_port_posix>
-      )
-    endif(BUILD_SHARED_LIBS)
-
     target_link_libraries("${bench_target_name}" leveldb)
     target_compile_definitions("${bench_target_name}"
       PRIVATE
         LEVELDB_PLATFORM_POSIX=1
     )
+    if (NOT HAVE_CXX17_HAS_INCLUDE)
+      target_compile_definitions("${bench_target_name}"
+        PRIVATE
+          LEVELDB_HAS_PORT_CONFIG_H=1
+      )
+    endif(NOT HAVE_CXX17_HAS_INCLUDE)
   endfunction(leveldb_benchmark)
 
   if(NOT BUILD_SHARED_LIBS)

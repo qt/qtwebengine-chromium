@@ -506,11 +506,12 @@ static void UpdatePageScaleFactorInternal(PropertyTrees* property_trees,
                                           float page_scale_factor,
                                           float device_scale_factor,
                                           gfx::Transform device_transform) {
-  if (property_trees->transform_tree.page_scale_factor() == page_scale_factor)
+  if (property_trees->transform_tree.page_scale_factor() == page_scale_factor ||
+      !page_scale_layer) {
     return;
+  }
 
   property_trees->transform_tree.set_page_scale_factor(page_scale_factor);
-  DCHECK(page_scale_layer);
   DCHECK_GE(page_scale_layer->transform_tree_index(),
             TransformTree::kRootNodeId);
   TransformNode* node = property_trees->transform_tree.Node(
@@ -648,7 +649,7 @@ static void SetSurfaceDrawTransform(const PropertyTrees* property_trees,
   const EffectNode* effect_node =
       effect_tree.Node(render_surface->EffectTreeIndex());
   // The draw transform of root render surface is identity tranform.
-  if (transform_node->id == TransformTree::kRootNodeId) {
+  if (render_surface->EffectTreeIndex() == EffectTree::kContentsRootNodeId) {
     render_surface->SetDrawTransform(gfx::Transform());
     return;
   }
@@ -1004,7 +1005,7 @@ void ComputeDrawPropertiesOfVisibleLayers(const LayerImplList* layer_list,
 }
 
 void ComputeMaskDrawProperties(LayerImpl* mask_layer,
-                               const PropertyTrees* property_trees) {
+                               PropertyTrees* property_trees) {
   // Mask draw properties are used only for rastering, so most of the draw
   // properties computed for other layers are not needed.
   // Draw transform of a mask layer has to be a 2d scale.
@@ -1016,8 +1017,17 @@ void ComputeMaskDrawProperties(LayerImpl* mask_layer,
   mask_layer->draw_properties().screen_space_transform =
       ScreenSpaceTransformInternal(mask_layer,
                                    property_trees->transform_tree);
+
+  ConditionalClip clip = LayerClipRect(property_trees, mask_layer);
+  // is_clipped should be set before visible rect computation as it is used
+  // there.
+  mask_layer->draw_properties().is_clipped = clip.is_clipped;
+  mask_layer->draw_properties().clip_rect =
+      gfx::ToEnclosingRect(clip.clip_rect);
+  // Calculate actual visible layer rect for mask layers, since we could have
+  // tiled mask layers and the tile manager would need this info for rastering.
   mask_layer->draw_properties().visible_layer_rect =
-      gfx::Rect(mask_layer->bounds());
+      LayerVisibleRect(property_trees, mask_layer);
   mask_layer->draw_properties().opacity = 1;
 }
 

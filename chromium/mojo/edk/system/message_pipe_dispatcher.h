@@ -47,8 +47,8 @@ class MessagePipeDispatcher : public Dispatcher {
   // Dispatcher:
   Type GetType() const override;
   MojoResult Close() override;
-  MojoResult WriteMessage(std::unique_ptr<ports::UserMessageEvent> message,
-                          MojoWriteMessageFlags flags) override;
+  MojoResult WriteMessage(
+      std::unique_ptr<ports::UserMessageEvent> message) override;
   MojoResult ReadMessage(
       std::unique_ptr<ports::UserMessageEvent>* message) override;
   HandleSignalsState GetHandleSignalsState() const override;
@@ -61,17 +61,18 @@ class MessagePipeDispatcher : public Dispatcher {
                       uint32_t* num_handles) override;
   bool EndSerialize(void* destination,
                     ports::PortName* ports,
-                    ScopedPlatformHandle* handles) override;
+                    ScopedInternalPlatformHandle* handles) override;
   bool BeginTransit() override;
   void CompleteTransitAndClose() override;
   void CancelTransit() override;
 
-  static scoped_refptr<Dispatcher> Deserialize(const void* data,
-                                               size_t num_bytes,
-                                               const ports::PortName* ports,
-                                               size_t num_ports,
-                                               ScopedPlatformHandle* handles,
-                                               size_t num_handles);
+  static scoped_refptr<Dispatcher> Deserialize(
+      const void* data,
+      size_t num_bytes,
+      const ports::PortName* ports,
+      size_t num_ports,
+      ScopedInternalPlatformHandle* handles,
+      size_t num_handles);
 
  private:
   class PortObserverThunk;

@@ -82,19 +82,10 @@ TEST(ExtensionTest, ExtensionManifestVersions) {
   EXPECT_TRUE(RunManifestVersionFailure(get_manifest(-1)));
 
   {
-    // Manifest v1 should only load if a command line switch is used....
+    // Manifest v1 should only load if a command line switch is used.
     base::test::ScopedCommandLine command_line;
     command_line.GetProcessCommandLine()->AppendSwitch(
         switches::kAllowLegacyExtensionManifests);
-    EXPECT_TRUE(RunManifestVersionSuccess(get_manifest(1), kType, 1));
-    EXPECT_TRUE(
-        RunManifestVersionSuccess(get_manifest(base::nullopt), kType, 1));
-  }
-
-  {
-    // ...or a runtime flag is set.
-    Extension::ScopedAllowLegacyExtensions allow_legacy_extensions =
-        Extension::allow_legacy_extensions_for_testing();
     EXPECT_TRUE(RunManifestVersionSuccess(get_manifest(1), kType, 1));
     EXPECT_TRUE(
         RunManifestVersionSuccess(get_manifest(base::nullopt), kType, 1));
@@ -173,7 +164,7 @@ TEST(ExtensionTest, UserScriptManifestVersions) {
     builder.Set("name", "My Extension")
         .Set("version", "0.1")
         .Set("description", "An awesome extension")
-        .SetBoolean("converted_from_user_script", true);
+        .Set("converted_from_user_script", true);
     if (manifest_version)
       builder.Set("manifest_version", *manifest_version);
     return builder.Build();

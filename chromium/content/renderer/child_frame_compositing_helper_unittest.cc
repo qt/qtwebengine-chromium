@@ -4,7 +4,7 @@
 
 #include "content/renderer/child_frame_compositing_helper.h"
 
-#include "cc/blink/web_layer_impl.h"
+#include "cc/layers/layer.h"
 #include "content/renderer/child_frame_compositor.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -20,16 +20,17 @@ class MockChildFrameCompositor : public ChildFrameCompositor {
     sad_page_bitmap_.allocN32Pixels(width, height);
   }
 
-  blink::WebLayer* GetLayer() override { return web_layer_.get(); }
+  cc::Layer* GetLayer() override { return layer_.get(); }
 
-  void SetLayer(std::unique_ptr<blink::WebLayer> web_layer) override {
-    web_layer_ = std::move(web_layer);
+  void SetLayer(scoped_refptr<cc::Layer> layer,
+                bool prevent_contents_opaque_changes) override {
+    layer_ = std::move(layer);
   }
 
   SkBitmap* GetSadPageBitmap() override { return &sad_page_bitmap_; }
 
  private:
-  std::unique_ptr<blink::WebLayer> web_layer_;
+  scoped_refptr<cc::Layer> layer_;
   SkBitmap sad_page_bitmap_;
 
   DISALLOW_COPY_AND_ASSIGN(MockChildFrameCompositor);

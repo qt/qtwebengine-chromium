@@ -24,14 +24,13 @@ class ClipboardPromise final
 
  public:
   virtual ~ClipboardPromise() = default;
-  ;
 
   static ScriptPromise CreateForRead(ScriptState*);
   static ScriptPromise CreateForReadText(ScriptState*);
   static ScriptPromise CreateForWrite(ScriptState*, DataTransfer*);
   static ScriptPromise CreateForWriteText(ScriptState*, const String&);
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   ClipboardPromise(ScriptState*);
@@ -66,7 +65,7 @@ class ClipboardPromise final
 
   mojom::ClipboardBuffer buffer_;
 
-  WebString write_data_;
+  String write_data_;
 };
 
 }  // namespace blink

@@ -21,6 +21,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "base/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "cc/input/overscroll_behavior.h"
@@ -47,7 +48,7 @@
 #include "ipc/ipc_sender.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "ppapi/buildflags/buildflags.h"
-#include "third_party/blink/public/platform/web_display_mode.h"
+#include "third_party/blink/public/common/manifest/web_display_mode.h"
 #include "third_party/blink/public/platform/web_input_event.h"
 #include "third_party/blink/public/platform/web_rect.h"
 #include "third_party/blink/public/platform/web_referrer_policy.h"
@@ -117,7 +118,7 @@ class ResizingModeSelector;
 class TextInputClientObserver;
 class WidgetInputHandlerManager;
 struct ContextMenuParams;
-struct ResizeParams;
+struct VisualProperties;
 
 // RenderWidget provides a communication bridge between a WebWidget and
 // a RenderWidgetHost, the latter of which lives in a different process.
@@ -256,7 +257,7 @@ class CONTENT_EXPORT RenderWidget
                            float top_controls_delta) override;
   void RecordWheelAndTouchScrollingCount(bool has_scrolled_by_wheel,
                                          bool has_scrolled_by_touch) override;
-  void BeginMainFrame(double frame_time_sec) override;
+  void BeginMainFrame(base::TimeTicks frame_time) override;
   void RequestNewLayerTreeFrameSink(
       const LayerTreeFrameSinkCallback& callback) override;
   void DidCommitAndDrawCompositorFrame() override;
@@ -289,7 +290,8 @@ class CONTENT_EXPORT RenderWidget
 
   // RenderWidgetScreenMetricsEmulatorDelegate
   void Redraw() override;
-  void Resize(const ResizeParams& resize_params) override;
+  void SynchronizeVisualProperties(
+      const VisualProperties& resize_params) override;
   void SetScreenMetricsEmulationParameters(
       bool enabled,
       const blink::WebDeviceEmulationParams& params) override;
@@ -319,7 +321,7 @@ class CONTENT_EXPORT RenderWidget
                      const blink::WebFloatSize& accumulatedOverscroll,
                      const blink::WebFloatPoint& position,
                      const blink::WebFloatSize& velocity,
-                     const blink::WebOverscrollBehavior& behavior) override;
+                     const cc::OverscrollBehavior& behavior) override;
   void ShowVirtualKeyboardOnElementFocus() override;
   void ConvertViewportToWindow(blink::WebRect* rect) override;
   void ConvertWindowToViewport(blink::WebFloatRect* rect) override;
@@ -417,10 +419,6 @@ class CONTENT_EXPORT RenderWidget
 
   bool auto_resize_mode() const { return auto_resize_mode_; }
 
-  uint64_t auto_resize_sequence_number() const {
-    return auto_resize_sequence_number_;
-  }
-
   const gfx::Size& min_size_for_auto_resize() const {
     return min_size_for_auto_resize_;
   }
@@ -428,6 +426,11 @@ class CONTENT_EXPORT RenderWidget
   const gfx::Size& max_size_for_auto_resize() const {
     return max_size_for_auto_resize_;
   }
+
+  uint32_t capture_sequence_number() const {
+    return last_capture_sequence_number_;
+  }
+
   // MainThreadEventQueueClient overrides.
 
   // Requests a BeginMainFrame callback from the compositor.
@@ -464,8 +467,8 @@ class CONTENT_EXPORT RenderWidget
   void OnRequestTextInputStateUpdate();
 
   // Called by the browser process to update the cursor and composition
-  // information by sending InputHostMsg_ImeCompositionRangeChanged. If
-  // |immediate_request| is true, an IPC is sent back with current state.
+  // information by sending WidgetInputHandlerHost::ImeCompositionRangeChanged.
+  // If |immediate_request| is true, an IPC is sent back with current state.
   // When |monitor_update| is true, then RenderWidget will send the updates
   // in each compositor frame when there are changes. Outside of compositor
   // frame updates, a change in text selection might also lead to an update for
@@ -474,13 +477,15 @@ class CONTENT_EXPORT RenderWidget
                                    bool monitor_updates);
   void SetWidgetBinding(mojom::WidgetRequest request);
 
+  void SetMouseCapture(bool capture);
+
   // Time-To-First-Active-Paint(TTFAP) type
   enum {
     TTFAP_AFTER_PURGED,
     TTFAP_5MIN_AFTER_BACKGROUNDED,
   };
 
-  void DidResizeOrRepaintAck();
+  bool IsSurfaceSynchronizationEnabled() const;
 
   base::WeakPtr<RenderWidget> AsWeakPtr();
 
@@ -558,7 +563,7 @@ class CONTENT_EXPORT RenderWidget
       InputEventDispatchType dispatch_type);
   void OnClose();
   void OnCreatingNewAck();
-  virtual void OnResize(const ResizeParams& params);
+  virtual void OnSynchronizeVisualProperties(const VisualProperties& params);
   void OnEnableDeviceEmulation(const blink::WebDeviceEmulationParams& params);
   void OnDisableDeviceEmulation();
   virtual void OnWasHidden();
@@ -571,7 +576,6 @@ class CONTENT_EXPORT RenderWidget
   virtual void OnShowContextMenu(ui::MenuSourceType source_type,
                                  const gfx::Point& location);
 
-  void OnRepaint(gfx::Size size_to_paint);
   void OnSetTextDirection(blink::WebTextDirection direction);
   void OnGetFPS();
   void OnUpdateScreenRects(const gfx::Rect& view_screen_rect,
@@ -580,6 +584,7 @@ class CONTENT_EXPORT RenderWidget
   void OnSetViewportIntersection(const gfx::Rect& viewport_intersection,
                                  const gfx::Rect& compositor_visible_rect);
   void OnSetIsInert(bool);
+  void OnSetInheritedEffectiveTouchAction(cc::TouchAction touch_action);
   void OnUpdateRenderThrottlingStatus(bool is_throttled,
                                       bool subtree_throttled);
   // Real data that is dragged is not included at DragEnter time.
@@ -619,11 +624,6 @@ class CONTENT_EXPORT RenderWidget
   void SetHidden(bool hidden);
 
   void DidToggleFullscreen();
-
-  bool next_paint_is_resize_ack() const;
-  void set_next_paint_is_resize_ack();
-  void set_next_paint_is_repaint_ack();
-  void reset_next_paint_is_resize_ack();
 
   // Returns a rect that the compositor needs to raster. For a main frame this
   // is always the entire viewprot, but for out-of-process iframes this can be
@@ -722,30 +722,15 @@ class CONTENT_EXPORT RenderWidget
   // The size of the visible viewport in pixels.
   gfx::Size visible_viewport_size_;
 
-  // Flags for the next ViewHostMsg_ResizeOrRepaint_ACK message.
-  int next_paint_flags_;
-
   // Whether the WebWidget is in auto resize mode, which is used for example
   // by extension popups.
   bool auto_resize_mode_;
-
-  // True if we need to send a ViewHsotMsg_ResizeOrRepaint_ACK message to notify
-  // the browser about an already-completed auto-resize.
-  bool need_resize_ack_for_auto_resize_;
-
-  // The sequence number used for the auto-resize request.
-  uint64_t auto_resize_sequence_number_ = 0;
 
   // The minimum size to use for auto-resize.
   gfx::Size min_size_for_auto_resize_;
 
   // The maximum size to use for auto-resize.
   gfx::Size max_size_for_auto_resize_;
-
-  // A pending ResizeOrRepaintAck callback in response to an auto-resize
-  // initiated by Blink. If auto-resize mode is canceled with an in-flight
-  // Ack, then the Ack will be canceled.
-  base::CancelableOnceClosure auto_resize_ack_callback_;
 
   // Set to true if we should ignore RenderWidget::Show calls.
   bool did_show_;
@@ -866,9 +851,7 @@ class CONTENT_EXPORT RenderWidget
   // Wraps the |webwidget_| as a MouseLockDispatcher::LockTarget interface.
   std::unique_ptr<MouseLockDispatcher::LockTarget> webwidget_mouse_lock_target_;
 
-  bool has_added_input_handler_;
-
-  viz::LocalSurfaceId local_surface_id_;
+  viz::LocalSurfaceId local_surface_id_from_parent_;
 
  private:
   // TODO(ekaramad): This method should not be confused with its RenderView
@@ -893,9 +876,11 @@ class CONTENT_EXPORT RenderWidget
                     int32_t* routing_id);
 
   void UpdateSurfaceAndScreenInfo(
-      viz::LocalSurfaceId new_local_surface_id,
+      const viz::LocalSurfaceId& new_local_surface_id,
       const gfx::Size& new_compositor_viewport_pixel_size,
       const ScreenInfo& new_screen_info);
+
+  void UpdateCaptureSequenceNumber(uint32_t capture_sequence_number);
 
   // A variant of Send but is fatal if it fails. The browser may
   // be waiting for this IPC Message and if the send fails the browser will
@@ -988,10 +973,11 @@ class CONTENT_EXPORT RenderWidget
 
   gfx::Rect compositor_visible_rect_;
 
-  // Cache whether or not we have touch handlers, to reduce IPCs sent.
   // Different consumers in the browser process makes different assumptions, so
   // must always send the first IPC regardless of value.
   base::Optional<bool> has_touch_handlers_;
+
+  uint32_t last_capture_sequence_number_ = 0u;
 
   base::WeakPtrFactory<RenderWidget> weak_ptr_factory_;
 

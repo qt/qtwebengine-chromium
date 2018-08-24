@@ -35,7 +35,6 @@
 
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
-#include "third_party/blink/public/platform/web_compositor_support.h"
 #include "third_party/blink/renderer/core/animation/animation_timeline.h"
 #include "third_party/blink/renderer/core/animation/css/css_animations.h"
 #include "third_party/blink/renderer/core/animation/document_timeline.h"
@@ -48,7 +47,7 @@
 #include "third_party/blink/renderer/core/events/animation_playback_event.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/platform/animation/compositor_animation.h"
@@ -209,13 +208,13 @@ void Animation::SetCurrentTimeInternal(double new_current_time,
       outdated = true;
     hold_time_ = new_current_time;
     if (paused_ || !playback_rate_) {
-      start_time_ = WTF::nullopt;
+      start_time_ = base::nullopt;
     } else if (is_limited && !start_time_ &&
                reason == kTimingUpdateForAnimationFrame) {
       start_time_ = CalculateStartTime(new_current_time);
     }
   } else {
-    hold_time_ = WTF::nullopt;
+    hold_time_ = base::nullopt;
     start_time_ = CalculateStartTime(new_current_time);
     finished_ = false;
     outdated = true;
@@ -252,14 +251,14 @@ void Animation::UpdateCurrentTimingState(TimingUpdateReason reason) {
 }
 
 double Animation::startTime(bool& is_null) const {
-  WTF::Optional<double> result = startTime();
+  base::Optional<double> result = startTime();
   is_null = !result;
   return result.value_or(0);
 }
 
-WTF::Optional<double> Animation::startTime() const {
-  return start_time_ ? WTF::make_optional(start_time_.value() * 1000)
-                     : WTF::nullopt;
+base::Optional<double> Animation::startTime() const {
+  return start_time_ ? base::make_optional(start_time_.value() * 1000)
+                     : base::nullopt;
 }
 
 double Animation::currentTime(bool& is_null) {
@@ -302,7 +301,7 @@ double Animation::UnlimitedCurrentTimeInternal() const {
 
 bool Animation::PreCommit(
     int compositor_group,
-    const Optional<CompositorElementIdSet>& composited_element_ids,
+    const base::Optional<CompositorElementIdSet>& composited_element_ids,
     bool start_on_compositor) {
   PlayStateUpdateScope update_scope(*this, kTimingUpdateOnDemand,
                                     kDoNotSetCompositorPending);
@@ -349,24 +348,6 @@ bool Animation::PreCommit(
         StartAnimationOnCompositor(composited_element_ids);
         compositor_state_ = std::make_unique<CompositorState>(*this);
       } else {
-        // failure_code.Ok() is equivalent of |will_composite| = true, so if the
-        // |can_composite| is true here, then we know that it is a main thread
-        // compositable animation.
-        // The |will_composite| is set at
-        // CompositorAnimations::CheckCanStartElementOnCompositor. Please refer
-        // to that function for more details.
-        //
-        // In the CompositingRequirementsUpdater::UpdateRecursive, the
-        // (direct_reasons & CompositingReason::kComboActiveAnimation) can be
-        // non-zero which indicates that there is a compositor animation.
-        // However, the PaintLayerCompositor::CanBeComposited could still return
-        // false because the LocalFrameView is not visible. And in that case,
-        // the code path will get here because there is a compositor animation
-        // but it won't be composited. We have to account for this case.
-        if (failure_code.can_composite &&
-            TimelineInternal()->GetDocument()->View()->IsVisible()) {
-          is_non_composited_compositable_ = true;
-        }
         CancelIncompatibleAnimationsOnCompositor();
       }
     }
@@ -420,7 +401,7 @@ void Animation::NotifyCompositorStartTime(double timeline_time) {
     // TODO(crbug.com/791086): Determine whether this can ever be null.
     double start_time = timeline_time + CurrentTimeInternal() / -playback_rate_;
     compositor_state_->start_time =
-        IsNull(start_time) ? WTF::nullopt : WTF::make_optional(start_time);
+        IsNull(start_time) ? base::nullopt : base::make_optional(start_time);
 
     if (start_time_ == timeline_time) {
       // The start time was set to the incoming compositor start time.
@@ -471,8 +452,9 @@ bool Animation::Affects(const Element& element,
          effect->Affects(PropertyHandle(property));
 }
 
-WTF::Optional<double> Animation::CalculateStartTime(double current_time) const {
-  WTF::Optional<double> start_time =
+base::Optional<double> Animation::CalculateStartTime(
+    double current_time) const {
+  base::Optional<double> start_time =
       timeline_->EffectiveTime() - current_time / playback_rate_;
   DCHECK(!IsNull(start_time.value()));
   return start_time;
@@ -499,7 +481,7 @@ void Animation::setStartTime(double start_time, bool is_null) {
   SetStartTimeInternal(start_time / 1000);
 }
 
-void Animation::SetStartTimeInternal(WTF::Optional<double> new_start_time) {
+void Animation::SetStartTimeInternal(base::Optional<double> new_start_time) {
   DCHECK(!paused_);
   DCHECK(new_start_time.has_value());
   DCHECK(new_start_time != start_time_);
@@ -510,7 +492,7 @@ void Animation::SetStartTimeInternal(WTF::Optional<double> new_start_time) {
   if (hold_time_ && playback_rate_) {
     // If held, the start time would still be derrived from the hold time.
     // Force a new, limited, current time.
-    hold_time_ = WTF::nullopt;
+    hold_time_ = base::nullopt;
     double current_time = CalculateCurrentTime();
     if (playback_rate_ > 0 && current_time > EffectEnd()) {
       current_time = EffectEnd();
@@ -642,7 +624,7 @@ void Animation::play(ExceptionState& exception_state) {
   }
 
   if (!Playing()) {
-    start_time_ = WTF::nullopt;
+    start_time_ = base::nullopt;
   }
 
   if (PlayStateInternal() == kIdle) {
@@ -654,11 +636,11 @@ void Animation::play(ExceptionState& exception_state) {
   UnpauseInternal();
 
   if (playback_rate_ > 0 && (current_time < 0 || current_time >= EffectEnd())) {
-    start_time_ = WTF::nullopt;
+    start_time_ = base::nullopt;
     SetCurrentTimeInternal(0, kTimingUpdateOnDemand);
   } else if (playback_rate_ < 0 &&
              (current_time <= 0 || current_time > EffectEnd())) {
-    start_time_ = WTF::nullopt;
+    start_time_ = base::nullopt;
     SetCurrentTimeInternal(EffectEnd(), kTimingUpdateOnDemand);
   }
 }
@@ -763,7 +745,7 @@ void Animation::setPlaybackRate(double playback_rate) {
 
   PlayStateUpdateScope update_scope(*this, kTimingUpdateOnDemand);
 
-  WTF::Optional<double> start_time_before = start_time_;
+  base::Optional<double> start_time_before = start_time_;
   SetPlaybackRateInternal(playback_rate);
 
   // Adds a UseCounter to check if setting playbackRate causes a compensatory
@@ -788,7 +770,7 @@ void Animation::SetPlaybackRateInternal(double playback_rate) {
     finished_ = false;
 
   playback_rate_ = playback_rate;
-  start_time_ = WTF::nullopt;
+  start_time_ = base::nullopt;
   SetCurrentTimeInternal(stored_current_time, kTimingUpdateOnDemand);
 }
 
@@ -813,7 +795,8 @@ void Animation::ForceServiceOnNextFrame() {
 }
 
 CompositorAnimations::FailureCode Animation::CheckCanStartAnimationOnCompositor(
-    const Optional<CompositorElementIdSet>& composited_element_ids) const {
+    const base::Optional<CompositorElementIdSet>& composited_element_ids)
+    const {
   CompositorAnimations::FailureCode code =
       CheckCanStartAnimationOnCompositorInternal(composited_element_ids);
   if (!code.Ok()) {
@@ -825,7 +808,8 @@ CompositorAnimations::FailureCode Animation::CheckCanStartAnimationOnCompositor(
 
 CompositorAnimations::FailureCode
 Animation::CheckCanStartAnimationOnCompositorInternal(
-    const Optional<CompositorElementIdSet>& composited_element_ids) const {
+    const base::Optional<CompositorElementIdSet>& composited_element_ids)
+    const {
   if (is_composited_animation_disabled_for_testing_) {
     return CompositorAnimations::FailureCode::NonActionable(
         "Accelerated animations disabled for testing");
@@ -869,7 +853,8 @@ Animation::CheckCanStartAnimationOnCompositorInternal(
   // If the optional element id set has no value we must be in SPv1 mode in
   // which case we trust the compositing logic will create a layer if needed.
   if (composited_element_ids) {
-    DCHECK(RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
+    DCHECK(RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled() ||
+           RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
     Element* target_element = ToKeyframeEffect(content_.Get())->target();
     if (!target_element) {
       return CompositorAnimations::FailureCode::Actionable(
@@ -903,12 +888,12 @@ Animation::CheckCanStartAnimationOnCompositorInternal(
 }
 
 void Animation::StartAnimationOnCompositor(
-    const Optional<CompositorElementIdSet>& composited_element_ids) {
+    const base::Optional<CompositorElementIdSet>& composited_element_ids) {
   DCHECK(CheckCanStartAnimationOnCompositor(composited_element_ids).Ok());
 
   bool reversed = playback_rate_ < 0;
 
-  WTF::Optional<double> start_time = WTF::nullopt;
+  base::Optional<double> start_time = base::nullopt;
   double time_offset = 0;
   if (start_time_) {
     start_time = TimelineInternal()->ZeroTime() + start_time_.value();
@@ -955,8 +940,10 @@ void Animation::SetCompositorPending(bool effect_changed) {
 }
 
 void Animation::CancelAnimationOnCompositor() {
-  if (HasActiveAnimationsOnCompositor())
-    ToKeyframeEffect(content_.Get())->CancelAnimationOnCompositor();
+  if (HasActiveAnimationsOnCompositor()) {
+    ToKeyframeEffect(content_.Get())
+        ->CancelAnimationOnCompositor(GetCompositorAnimation());
+  }
 
   DestroyCompositorAnimation();
 }
@@ -964,8 +951,8 @@ void Animation::CancelAnimationOnCompositor() {
 void Animation::RestartAnimationOnCompositor() {
   if (!HasActiveAnimationsOnCompositor())
     return;
-
-  if (ToKeyframeEffect(content_.Get())->CancelAnimationOnCompositor())
+  if (ToKeyframeEffect(content_.Get())
+          ->CancelAnimationOnCompositor(GetCompositorAnimation()))
     SetCompositorPending(true);
 }
 
@@ -1042,7 +1029,7 @@ void Animation::UpdateIfNecessary() {
   DCHECK(!Outdated());
 }
 
-void Animation::SpecifiedTimingChanged() {
+void Animation::EffectInvalidated() {
   SetOutdated();
   // FIXME: Needs to consider groups when added.
   SetCompositorPending(true);
@@ -1075,10 +1062,10 @@ void Animation::cancel() {
   if (PlayStateInternal() == kIdle)
     return;
 
-  hold_time_ = WTF::nullopt;
+  hold_time_ = base::nullopt;
   paused_ = false;
   play_state_ = kIdle;
-  start_time_ = WTF::nullopt;
+  start_time_ = base::nullopt;
   current_time_pending_ = false;
   ForceServiceOnNextFrame();
 }
@@ -1097,7 +1084,6 @@ void Animation::EndUpdatingState() {
 void Animation::CreateCompositorAnimation() {
   if (Platform::Current()->IsThreadedAnimationEnabled() &&
       !compositor_animation_) {
-    DCHECK(Platform::Current()->CompositorSupport());
     compositor_animation_ = CompositorAnimationHolder::Create(this);
     DCHECK(compositor_animation_);
     AttachCompositorTimeline();

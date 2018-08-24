@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/platform/bindings/script_wrappable_marking_visitor.h"
 
+#include "base/auto_reset.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/bindings/active_script_wrappable_base.h"
 #include "third_party/blink/renderer/platform/bindings/dom_wrapper_map.h"
@@ -17,9 +18,8 @@
 #include "third_party/blink/renderer/platform/heap/heap_compact.h"
 #include "third_party/blink/renderer/platform/heap/heap_page.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
@@ -39,7 +39,7 @@ void ScriptWrappableMarkingVisitor::TracePrologue() {
   CHECK(marking_deque_.IsEmpty());
   CHECK(verifier_deque_.IsEmpty());
   tracing_in_progress_ = true;
-  ThreadState::Current()->SetWrapperTracingInProgress(true);
+  ThreadState::Current()->EnableWrapperTracingBarrier();
 }
 
 void ScriptWrappableMarkingVisitor::EnterFinalPause() {
@@ -62,7 +62,7 @@ void ScriptWrappableMarkingVisitor::TraceEpilogue() {
 
   should_cleanup_ = true;
   tracing_in_progress_ = false;
-  ThreadState::Current()->SetWrapperTracingInProgress(false);
+  ThreadState::Current()->DisableWrapperTracingBarrier();
   ScheduleIdleLazyCleanup();
 }
 
@@ -70,7 +70,7 @@ void ScriptWrappableMarkingVisitor::AbortTracing() {
   CHECK(ThreadState::Current());
   should_cleanup_ = true;
   tracing_in_progress_ = false;
-  ThreadState::Current()->SetWrapperTracingInProgress(false);
+  ThreadState::Current()->DisableWrapperTracingBarrier();
   PerformCleanup();
 }
 
@@ -196,7 +196,7 @@ bool ScriptWrappableMarkingVisitor::AdvanceTracing(
   CHECK(ThreadState::Current());
   CHECK(!ThreadState::Current()->IsWrapperTracingForbidden());
   CHECK(tracing_in_progress_);
-  WTF::AutoReset<bool>(&advancing_tracing_, true);
+  base::AutoReset<bool>(&advancing_tracing_, true);
   while (actions.force_completion ==
              v8::EmbedderHeapTracer::ForceCompletionAction::FORCE_COMPLETION ||
          WTF::CurrentTimeTicksInMilliseconds() < deadline_in_ms) {
@@ -209,7 +209,7 @@ bool ScriptWrappableMarkingVisitor::AdvanceTracing(
 }
 
 void ScriptWrappableMarkingVisitor::MarkWrapperHeader(
-    HeapObjectHeader* header) const {
+    HeapObjectHeader* header) {
   DCHECK(!header->IsWrapperHeaderMarked());
   // Verify that no compactable & movable objects are slated for
   // lazy unmarking.
@@ -243,7 +243,7 @@ void ScriptWrappableMarkingVisitor::WriteBarrier(
 }
 
 void ScriptWrappableMarkingVisitor::Visit(
-    const TraceWrapperV8Reference<v8::Value>& traced_wrapper) const {
+    const TraceWrapperV8Reference<v8::Value>& traced_wrapper) {
   // The write barrier may try to mark a wrapper because cleanup is still
   // delayed. Bail out in this case. We also allow unconditional marking which
   // requires us to bail out here when tracing is not in progress.
@@ -253,7 +253,8 @@ void ScriptWrappableMarkingVisitor::Visit(
 }
 
 void ScriptWrappableMarkingVisitor::Visit(
-    const TraceWrapperDescriptor& wrapper_descriptor) const {
+    void* object,
+    TraceWrapperDescriptor wrapper_descriptor) {
   HeapObjectHeader* header =
       HeapObjectHeader::FromPayload(wrapper_descriptor.base_object_payload);
   if (header->IsWrapperHeaderMarked())
@@ -271,7 +272,7 @@ void ScriptWrappableMarkingVisitor::Visit(
 
 void ScriptWrappableMarkingVisitor::Visit(
     DOMWrapperMap<ScriptWrappable>* wrapper_map,
-    const ScriptWrappable* key) const {
+    const ScriptWrappable* key) {
   wrapper_map->MarkWrapper(const_cast<ScriptWrappable*>(key));
 }
 

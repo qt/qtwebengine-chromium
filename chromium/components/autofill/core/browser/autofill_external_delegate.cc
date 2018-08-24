@@ -10,8 +10,8 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/feature_list.h"
 #include "base/i18n/case_conversion.h"
-#include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -34,9 +34,7 @@ namespace {
 // Returns true if the suggestion entry is an Autofill warning message.
 // Warning messages should display on top of suggestion list.
 bool IsAutofillWarningEntry(int frontend_id) {
-  return frontend_id ==
-             POPUP_ITEM_ID_INSECURE_CONTEXT_PAYMENT_DISABLED_MESSAGE ||
-         frontend_id == POPUP_ITEM_ID_HTTP_NOT_SECURE_WARNING_MESSAGE;
+  return frontend_id == POPUP_ITEM_ID_INSECURE_CONTEXT_PAYMENT_DISABLED_MESSAGE;
 }
 
 }  // namespace
@@ -49,7 +47,7 @@ AutofillExternalDelegate::AutofillExternalDelegate(AutofillManager* manager,
       has_autofill_suggestions_(false),
       has_shown_popup_for_current_edit_(false),
       should_show_scan_credit_card_(false),
-      is_credit_card_popup_(false),
+      popup_type_(PopupType::kUnspecified),
       should_show_cc_signin_promo_(false),
       weak_ptr_factory_(this) {
   DCHECK(manager);
@@ -70,8 +68,7 @@ void AutofillExternalDelegate::OnQuery(int query_id,
   element_bounds_ = element_bounds;
   should_show_scan_credit_card_ =
       manager_->ShouldShowScanCreditCard(query_form_, query_field_);
-  is_credit_card_popup_ =
-      manager_->IsCreditCardPopup(query_form_, query_field_);
+  popup_type_ = manager_->GetPopupType(query_form_, query_field_);
   should_show_cc_signin_promo_ =
       manager_->ShouldShowCreditCardSigninPromo(query_form_, query_field_);
 }
@@ -90,8 +87,11 @@ void AutofillExternalDelegate::OnSuggestionsReturned(
 
 #if !defined(OS_ANDROID)
   // If there are above the fold suggestions at this point, add a separator to
-  // go between the values and menu items.
-  if (!suggestions.empty()) {
+  // go between the values and menu items. Skip this when using the Native Views
+  // implementation, which has its own logic for distinguishing footer rows.
+  // TODO(crbug.com/831603): Remove this when the relevant feature is on 100%.
+  if (!suggestions.empty() &&
+      !base::FeatureList::IsEnabled(autofill::kAutofillExpandedPopupViews)) {
     suggestions.push_back(Suggestion());
     suggestions.back().frontend_id = POPUP_ITEM_ID_SEPARATOR;
   }
@@ -214,7 +214,7 @@ void AutofillExternalDelegate::DidAcceptSuggestion(const base::string16& value,
     manager_->ShowAutofillSettings();
   } else if (identifier == POPUP_ITEM_ID_CLEAR_FORM) {
     // User selected 'Clear form'.
-    driver_->RendererShouldClearFilledForm();
+    driver_->RendererShouldClearFilledSection();
   } else if (identifier == POPUP_ITEM_ID_PASSWORD_ENTRY ||
              identifier == POPUP_ITEM_ID_USERNAME_ENTRY) {
     NOTREACHED();  // Should be handled elsewhere.
@@ -227,8 +227,7 @@ void AutofillExternalDelegate::DidAcceptSuggestion(const base::string16& value,
   } else if (identifier == POPUP_ITEM_ID_SCAN_CREDIT_CARD) {
     manager_->client()->ScanCreditCard(base::Bind(
         &AutofillExternalDelegate::OnCreditCardScanned, GetWeakPtr()));
-  } else if (identifier == POPUP_ITEM_ID_CREDIT_CARD_SIGNIN_PROMO ||
-             identifier == POPUP_ITEM_ID_HTTP_NOT_SECURE_WARNING_MESSAGE) {
+  } else if (identifier == POPUP_ITEM_ID_CREDIT_CARD_SIGNIN_PROMO) {
     manager_->client()->ExecuteCommand(identifier);
   } else {
     if (identifier > 0)  // Denotes an Autofill suggestion.
@@ -278,8 +277,8 @@ void AutofillExternalDelegate::ClearPreviewedForm() {
   driver_->RendererShouldClearPreviewedForm();
 }
 
-bool AutofillExternalDelegate::IsCreditCardPopup() {
-  return is_credit_card_popup_;
+PopupType AutofillExternalDelegate::GetPopupType() const {
+  return popup_type_;
 }
 
 AutofillDriver* AutofillExternalDelegate::GetAutofillDriver() {
@@ -411,6 +410,17 @@ void AutofillExternalDelegate::InsertDataListValues(
 
 base::string16 AutofillExternalDelegate::GetSettingsSuggestionValue()
     const {
+  if (base::FeatureList::IsEnabled(autofill::kAutofillExpandedPopupViews)) {
+    if (GetPopupType() == PopupType::kAddresses)
+      return l10n_util::GetStringUTF16(IDS_AUTOFILL_MANAGE_ADDRESSES);
+
+    if (GetPopupType() == PopupType::kCreditCards)
+      return l10n_util::GetStringUTF16(IDS_AUTOFILL_MANAGE_PAYMENT_METHODS);
+
+    DCHECK_EQ(GetPopupType(), PopupType::kPersonalInformation);
+    return l10n_util::GetStringUTF16(IDS_AUTOFILL_MANAGE);
+  }
+
   return l10n_util::GetStringUTF16(
       IsKeyboardAccessoryEnabled() ? IDS_AUTOFILL_OPTIONS_CONTENT_DESCRIPTION
                                    : IDS_AUTOFILL_SETTINGS_POPUP);

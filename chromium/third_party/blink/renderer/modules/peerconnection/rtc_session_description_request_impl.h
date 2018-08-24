@@ -57,12 +57,12 @@ class RTCSessionDescriptionRequestImpl final
   ~RTCSessionDescriptionRequestImpl() override;
 
   void RequestSucceeded(const WebRTCSessionDescription&) override;
-  void RequestFailed(const String& error) override;
+  void RequestFailed(const webrtc::RTCError& error) override;
 
   // ContextLifecycleObserver
   void ContextDestroyed(ExecutionContext*) override;
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   RTCSessionDescriptionRequestImpl(ExecutionContext*,

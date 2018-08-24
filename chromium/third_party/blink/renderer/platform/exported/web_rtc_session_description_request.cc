@@ -37,8 +37,8 @@
 namespace blink {
 
 WebRTCSessionDescriptionRequest::WebRTCSessionDescriptionRequest(
-    RTCSessionDescriptionRequest* constraints)
-    : private_(constraints) {}
+    RTCSessionDescriptionRequest* request)
+    : private_(request) {}
 
 void WebRTCSessionDescriptionRequest::Assign(
     const WebRTCSessionDescriptionRequest& other) {
@@ -56,7 +56,7 @@ void WebRTCSessionDescriptionRequest::RequestSucceeded(
 }
 
 void WebRTCSessionDescriptionRequest::RequestFailed(
-    const WebString& error) const {
+    const webrtc::RTCError& error) const {
   DCHECK(private_.Get());
   private_->RequestFailed(error);
 }

@@ -93,6 +93,10 @@ class PLATFORM_EXPORT FetchParameters {
     resource_request_.SetRequestContext(context);
   }
 
+  void SetFetchImportanceMode(mojom::FetchImportanceMode importance_mode) {
+    resource_request_.SetFetchImportanceMode(importance_mode);
+  }
+
   const TextResourceDecoderOptions& DecoderOptions() const {
     return decoder_options_;
   }
@@ -129,8 +133,6 @@ class PLATFORM_EXPORT FetchParameters {
   }
   void SetSpeculativePreloadType(SpeculativePreloadType,
                                  double discovery_time = 0);
-
-  double PreloadDiscoveryTime() const { return preload_discovery_time_; }
 
   bool IsLinkPreload() const { return options_.initiator_info.is_link_preload; }
   void SetLinkPreload(bool is_link_preload) {
@@ -199,7 +201,6 @@ class PLATFORM_EXPORT FetchParameters {
   TextResourceDecoderOptions decoder_options_;
   ResourceLoaderOptions options_;
   SpeculativePreloadType speculative_preload_type_;
-  double preload_discovery_time_;
   DeferOption defer_;
   OriginRestriction origin_restriction_;
   ResourceWidth resource_width_;
@@ -228,7 +229,6 @@ struct CrossThreadFetchParametersData {
   TextResourceDecoderOptions decoder_options;
   CrossThreadResourceLoaderOptionsData options;
   FetchParameters::SpeculativePreloadType speculative_preload_type;
-  double preload_discovery_time;
   FetchParameters::DeferOption defer;
   FetchParameters::OriginRestriction origin_restriction;
   FetchParameters::ResourceWidth resource_width;

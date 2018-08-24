@@ -31,6 +31,11 @@ class XRView final : public ScriptWrappable {
   XRSession* session() const;
   DOMFloat32Array* projectionMatrix() const { return projection_matrix_; }
 
+  void UpdateProjectionMatrixFromRawValues(
+      const WTF::Vector<float>& projection_matrix,
+      float near_depth,
+      float far_depth);
+
   void UpdateProjectionMatrixFromFoV(float up_rad,
                                      float down_rad,
                                      float left_rad,
@@ -52,7 +57,7 @@ class XRView final : public ScriptWrappable {
   const FloatPoint3D& offset() const { return offset_; }
   void UpdateOffset(float x, float y, float z);
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   const Eye eye_;

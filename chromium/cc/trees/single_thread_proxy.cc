@@ -381,10 +381,6 @@ size_t SingleThreadProxy::MainThreadAnimationsCount() const {
   return 0;
 }
 
-size_t SingleThreadProxy::MainThreadCompositableAnimationsCount() const {
-  return 0;
-}
-
 bool SingleThreadProxy::CurrentFrameHadRAF() const {
   return false;
 }
@@ -748,8 +744,8 @@ void SingleThreadProxy::BeginMainFrame(
   // know we will commit since QueueSwapPromise itself requests a commit.
   ui::LatencyInfo new_latency_info(ui::SourceEventType::FRAME);
   new_latency_info.AddLatencyNumberWithTimestamp(
-      ui::LATENCY_BEGIN_FRAME_UI_MAIN_COMPONENT, 0, 0,
-      begin_frame_args.frame_time, 1);
+      ui::LATENCY_BEGIN_FRAME_UI_MAIN_COMPONENT, 0, begin_frame_args.frame_time,
+      1);
   layer_tree_host_->QueueSwapPromise(
       std::make_unique<LatencyInfoSwapPromise>(new_latency_info));
 
@@ -839,7 +835,9 @@ void SingleThreadProxy::ScheduledActionPrepareTiles() {
 }
 
 void SingleThreadProxy::ScheduledActionInvalidateLayerTreeFrameSink() {
-  NOTREACHED();
+  // This is an Android WebView codepath, which only uses multi-thread
+  // compositor. So this should not occur in single-thread mode.
+  NOTREACHED() << "Android Webview use-case, so multi-thread only";
 }
 
 void SingleThreadProxy::ScheduledActionPerformImplSideInvalidation() {

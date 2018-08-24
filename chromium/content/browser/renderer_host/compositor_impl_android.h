@@ -17,6 +17,7 @@
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_single_thread_client.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
+#include "components/viz/common/surfaces/local_surface_id.h"
 #include "components/viz/host/host_frame_sink_client.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/android/compositor.h"
@@ -158,7 +159,7 @@ class CONTENT_EXPORT CompositorImpl
   void InitializeDisplay(
       std::unique_ptr<viz::OutputSurface> display_output_surface,
       scoped_refptr<viz::ContextProvider> context_provider);
-  void DidSwapBuffers();
+  void DidSwapBuffers(gfx::Size swap_size);
 
   bool HavePendingReadbacks();
 
@@ -168,6 +169,14 @@ class CONTENT_EXPORT CompositorImpl
   // longer visible on low-end devices.
   void EnqueueLowEndBackgroundCleanup();
   void DoLowEndBackgroundCleanup();
+
+  // Returns a new surface ID when in surface-synchronization mode. Otherwise
+  // returns an empty surface.
+  viz::LocalSurfaceId GenerateLocalSurfaceId() const;
+
+  // Viz specific functions:
+  void InitializeVizLayerTreeFrameSink(
+      scoped_refptr<ui::ContextProviderCommandBuffer> context_provider);
 
   viz::FrameSinkId frame_sink_id_;
 
@@ -219,6 +228,12 @@ class CONTENT_EXPORT CompositorImpl
   // A task which runs cleanup tasks on low-end Android after a delay. Enqueued
   // when we hide, canceled when we're shown.
   base::CancelableOnceClosure low_end_background_cleanup_task_;
+
+  // If true, we are using surface synchronization.
+  const bool enable_surface_synchronization_;
+
+  // If true, we are using a Viz process.
+  const bool enable_viz_;
 
   base::WeakPtrFactory<CompositorImpl> weak_factory_;
 

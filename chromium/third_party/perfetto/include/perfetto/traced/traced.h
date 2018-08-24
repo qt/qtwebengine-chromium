@@ -21,18 +21,6 @@
 
 namespace perfetto {
 
-// TODO(primiano): The actual paths are TBD after security reviews. For the
-// moment using an abstract socket on Linux/Andriod and a linked socket on /tmp
-// for Mac.
-
-#if BUILDFLAG(OS_ANDROID)
-#define PERFETTO_PRODUCER_SOCK_NAME "/dev/socket/traced_producer"
-#define PERFETTO_CONSUMER_SOCK_NAME "/dev/socket/traced_consumer"
-#else
-#define PERFETTO_PRODUCER_SOCK_NAME "/tmp/perfetto-producer"
-#define PERFETTO_CONSUMER_SOCK_NAME "/tmp/perfetto-consumer"
-#endif
-
 int ServiceMain(int argc, char** argv);
 int ProbesMain(int argc, char** argv);
 int PerfettoCmdMain(int argc, char** argv);

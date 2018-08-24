@@ -20,6 +20,15 @@ class FirstMeaningfulPaintDetectorTest : public PageTestBase {
   void SetUp() override {
     platform_->AdvanceClockSeconds(1);
     PageTestBase::SetUp();
+    ResetNetworkQuietTimer();
+  }
+
+  // The initial document doesn't need to load any resources other than itself.
+  // It means initially, the network quiet timers are already active. This
+  // function is used to reset them.
+  void ResetNetworkQuietTimer() {
+    Detector().network2_quiet_timer_.Stop();
+    Detector().network0_quiet_timer_.Stop();
   }
 
   TimeTicks AdvanceClockAndGetTime() {
@@ -79,23 +88,23 @@ class FirstMeaningfulPaintDetectorTest : public PageTestBase {
     platform_->AdvanceClockSeconds(0.001);
     GetPaintTiming().ReportSwapTime(PaintEvent::kFirstPaint,
                                     WebLayerTreeView::SwapResult::kDidSwap,
-                                    CurrentTimeTicksInSeconds());
+                                    CurrentTimeTicks());
   }
 
   void ClearFirstContentfulPaintSwapPromise() {
     platform_->AdvanceClockSeconds(0.001);
     GetPaintTiming().ReportSwapTime(PaintEvent::kFirstContentfulPaint,
                                     WebLayerTreeView::SwapResult::kDidSwap,
-                                    CurrentTimeTicksInSeconds());
+                                    CurrentTimeTicks());
   }
 
   void ClearProvisionalFirstMeaningfulPaintSwapPromise() {
     platform_->AdvanceClockSeconds(0.001);
-    ClearProvisionalFirstMeaningfulPaintSwapPromise(
-        CurrentTimeTicksInSeconds());
+    ClearProvisionalFirstMeaningfulPaintSwapPromise(CurrentTimeTicks());
   }
 
-  void ClearProvisionalFirstMeaningfulPaintSwapPromise(double timestamp) {
+  void ClearProvisionalFirstMeaningfulPaintSwapPromise(
+      base::TimeTicks timestamp) {
     Detector().ReportSwapTime(PaintEvent::kProvisionalFirstMeaningfulPaint,
                               WebLayerTreeView::SwapResult::kDidSwap,
                               timestamp);
@@ -472,8 +481,7 @@ TEST_F(FirstMeaningfulPaintDetectorTest,
   // Simulate a delay in receiving the SwapPromise timestamp. Clearing this
   // SwapPromise will set FMP, and this will crash if the new provisional
   // non-swap timestamp is used.
-  ClearProvisionalFirstMeaningfulPaintSwapPromise(
-      TimeTicksInSeconds(pre_stable_timestamp));
+  ClearProvisionalFirstMeaningfulPaintSwapPromise(pre_stable_timestamp);
   EXPECT_EQ(OutstandingDetectorSwapPromiseCount(), 0U);
   EXPECT_GT(GetPaintTiming().FirstMeaningfulPaintRendered(), TimeTicks());
   EXPECT_GT(GetPaintTiming().FirstMeaningfulPaint(), TimeTicks());

@@ -220,9 +220,16 @@ class PLATFORM_EXPORT ThreadState {
   // Returns true if any thread is currently incremental marking its heap and
   // false otherwise. For an exact check use
   // ThreadState::IsIncrementalMarking().
-  static bool IsAnyIncrementalMarking() {
+  ALWAYS_INLINE static bool IsAnyIncrementalMarking() {
     // Stores use full barrier to allow using the simplest relaxed load here.
     return base::subtle::NoBarrier_Load(&incremental_marking_counter_) > 0;
+  }
+
+  // Returns true if any thread is currently incremental marking its heap and
+  // false otherwise. For an exact check use ThreadState::IsWrapperTracing().
+  static bool IsAnyWrapperTracing() {
+    // Stores use full barrier to allow using the simplest relaxed load here.
+    return base::subtle::NoBarrier_Load(&wrapper_tracing_counter_) > 0;
   }
 
   static void AttachMainThread();
@@ -276,6 +283,9 @@ class PLATFORM_EXPORT ThreadState {
   void SetGCPhase(GCPhase);
   bool IsMarkingInProgress() const { return gc_phase_ == GCPhase::kMarking; }
   bool IsSweepingInProgress() const { return gc_phase_ == GCPhase::kSweeping; }
+
+  void EnableWrapperTracingBarrier();
+  void DisableWrapperTracingBarrier();
 
   // Incremental GC.
 
@@ -364,10 +374,8 @@ class PLATFORM_EXPORT ThreadState {
     return in_atomic_pause() && IsSweepingInProgress();
   }
 
-  bool WrapperTracingInProgress() const { return wrapper_tracing_in_progress_; }
-  void SetWrapperTracingInProgress(bool value) {
-    wrapper_tracing_in_progress_ = value;
-  }
+  bool IsWrapperTracing() const { return wrapper_tracing_; }
+  void SetWrapperTracing(bool value) { wrapper_tracing_ = value; }
 
   bool IsIncrementalMarking() const { return incremental_marking_; }
   void SetIncrementalMarking(bool value) { incremental_marking_ = value; }
@@ -522,10 +530,6 @@ class PLATFORM_EXPORT ThreadState {
     }
   }
 
-  void AccumulateSweepingTime(double time) {
-    accumulated_sweeping_time_ += time;
-  }
-
   void FreePersistentNode(PersistentRegion*, PersistentNode*);
 
   using PersistentClearCallback = void (*)(void*);
@@ -594,6 +598,9 @@ class PLATFORM_EXPORT ThreadState {
   // marking and decremented upon finishing.
   static base::subtle::AtomicWord incremental_marking_counter_;
 
+  // Same semantic as |incremental_marking_counter_|.
+  static base::subtle::AtomicWord wrapper_tracing_counter_;
+
   ThreadState();
   ~ThreadState();
 
@@ -601,6 +608,8 @@ class PLATFORM_EXPORT ThreadState {
     safe_point_stack_copy_.clear();
     safe_point_scope_marker_ = nullptr;
   }
+
+  bool ShouldVerifyMarking() const;
 
   // shouldScheduleIdleGC and shouldForceConservativeGC
   // implement the heuristics that are used to determine when to collect
@@ -687,7 +696,6 @@ class PLATFORM_EXPORT ThreadState {
   size_t no_allocation_count_;
   size_t gc_forbidden_count_;
   size_t mixins_being_constructed_count_;
-  double accumulated_sweeping_time_;
   bool object_resurrection_forbidden_;
   bool in_atomic_pause_;
 
@@ -708,7 +716,7 @@ class PLATFORM_EXPORT ThreadState {
   void (*trace_dom_wrappers_)(v8::Isolate*, Visitor*);
   void (*invalidate_dead_objects_in_wrappers_marking_deque_)(v8::Isolate*);
   void (*perform_cleanup_)(v8::Isolate*);
-  bool wrapper_tracing_in_progress_;
+  bool wrapper_tracing_;
   bool incremental_marking_;
 
 #if defined(ADDRESS_SANITIZER)
@@ -737,7 +745,6 @@ class PLATFORM_EXPORT ThreadState {
     BlinkGC::MarkingType marking_type;
     BlinkGC::GCReason reason;
     double marking_time_in_milliseconds;
-    size_t marked_object_size;
     std::unique_ptr<MarkingVisitor> visitor;
   };
   GCData current_gc_data_;

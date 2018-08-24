@@ -45,7 +45,7 @@ class TaskSchedulerSingleThreadTaskRunnerManagerTest : public testing::Test {
     delayed_task_manager_.Start(service_thread_.task_runner());
     single_thread_task_runner_manager_ =
         std::make_unique<SchedulerSingleThreadTaskRunnerManager>(
-            &task_tracker_, &delayed_task_manager_);
+            task_tracker_.GetTrackedRef(), &delayed_task_manager_);
     StartSingleThreadTaskRunnerManagerFromSetUp();
   }
 
@@ -65,14 +65,13 @@ class TaskSchedulerSingleThreadTaskRunnerManagerTest : public testing::Test {
     single_thread_task_runner_manager_.reset();
   }
 
+  Thread service_thread_;
+  TaskTracker task_tracker_ = {"Test"};
+  DelayedTaskManager delayed_task_manager_;
   std::unique_ptr<SchedulerSingleThreadTaskRunnerManager>
       single_thread_task_runner_manager_;
-  TaskTracker task_tracker_ = {"Test"};
 
  private:
-  Thread service_thread_;
-  DelayedTaskManager delayed_task_manager_;
-
   DISALLOW_COPY_AND_ASSIGN(TaskSchedulerSingleThreadTaskRunnerManagerTest);
 };
 
@@ -189,6 +188,7 @@ TEST_F(TaskSchedulerSingleThreadTaskRunnerManagerTest,
 
 TEST_F(TaskSchedulerSingleThreadTaskRunnerManagerTest,
        SharedWithBaseSyncPrimitivesDCHECKs) {
+  testing::GTEST_FLAG(death_test_style) = "threadsafe";
   EXPECT_DCHECK_DEATH({
     single_thread_task_runner_manager_->CreateSingleThreadTaskRunnerWithTraits(
         {WithBaseSyncPrimitives()}, SingleThreadTaskRunnerThreadMode::SHARED);
@@ -357,12 +357,20 @@ TEST_P(TaskSchedulerSingleThreadTaskRunnerManagerCommonTest,
 TEST_P(TaskSchedulerSingleThreadTaskRunnerManagerCommonTest, PostDelayedTask) {
   TimeTicks start_time = TimeTicks::Now();
 
-  // Post a task with a short delay.
-  WaitableEvent task_ran(WaitableEvent::ResetPolicy::MANUAL,
+  WaitableEvent task_ran(WaitableEvent::ResetPolicy::AUTOMATIC,
                          WaitableEvent::InitialState::NOT_SIGNALED);
   auto task_runner =
       single_thread_task_runner_manager_
           ->CreateSingleThreadTaskRunnerWithTraits(TaskTraits(), GetParam());
+
+  // Wait until the task runner is up and running to make sure the test below is
+  // solely timing the delayed task, not bringing up a physical thread.
+  task_runner->PostTask(
+      FROM_HERE, BindOnce(&WaitableEvent::Signal, Unretained(&task_ran)));
+  task_ran.Wait();
+  ASSERT_TRUE(!task_ran.IsSignaled());
+
+  // Post a task with a short delay.
   EXPECT_TRUE(task_runner->PostDelayedTask(
       FROM_HERE, BindOnce(&WaitableEvent::Signal, Unretained(&task_ran)),
       TestTimeouts::tiny_timeout()));
@@ -370,7 +378,7 @@ TEST_P(TaskSchedulerSingleThreadTaskRunnerManagerCommonTest, PostDelayedTask) {
   // Wait until the task runs.
   task_ran.Wait();
 
-  // Expect the task to run after its delay expires, but not more than 250 ms
+  // Expect the task to run after its delay expires, but no more than 250 ms
   // after that.
   const TimeDelta actual_delay = TimeTicks::Now() - start_time;
   EXPECT_GE(actual_delay, TestTimeouts::tiny_timeout());

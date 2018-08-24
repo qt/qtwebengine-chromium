@@ -12,6 +12,11 @@
 #include "libANGLE/renderer/vulkan/CommandGraph.h"
 #include "libANGLE/renderer/vulkan/vk_utils.h"
 
+namespace gl
+{
+class ImageIndex;
+}  // namespace gl;
+
 namespace rx
 {
 namespace vk
@@ -30,7 +35,7 @@ class DynamicBuffer : angle::NonCopyable
     ~DynamicBuffer();
 
     // Init is called after the buffer creation so that the alignment can be specified later.
-    void init(size_t alignment);
+    void init(size_t alignment, RendererVk *renderer);
 
     bool valid();
 
@@ -47,8 +52,14 @@ class DynamicBuffer : angle::NonCopyable
     // After a sequence of writes, call flush to ensure the data is visible to the device.
     Error flush(VkDevice device);
 
+    // After a sequence of writes, call invalidate to ensure the data is visible to the host.
+    Error invalidate(VkDevice device);
+
     // This releases resources when they might currently be in use.
     void release(RendererVk *renderer);
+
+    // This releases all the buffers that have been allocated since this was last called.
+    void releaseRetainedBuffers(RendererVk *renderer);
 
     // This frees resources immediately.
     void destroy(VkDevice device);
@@ -63,11 +74,13 @@ class DynamicBuffer : angle::NonCopyable
     size_t mMinSize;
     Buffer mBuffer;
     DeviceMemory mMemory;
-    uint32_t mNextWriteOffset;
-    uint32_t mLastFlushOffset;
+    uint32_t mNextAllocationOffset;
+    uint32_t mLastFlushOrInvalidateOffset;
     size_t mSize;
     size_t mAlignment;
     uint8_t *mMappedMemory;
+
+    std::vector<BufferAndMemory> mRetainedBuffers;
 };
 
 // Uses DescriptorPool to allocate descriptor sets as needed. If the descriptor pool
@@ -96,9 +109,13 @@ class DynamicDescriptorPool final : angle::NonCopyable
                                  uint32_t descriptorSetCount,
                                  VkDescriptorSet *descriptorSetsOut);
 
+    // For testing only!
+    void setMaxSetsPerPoolForTesting(uint32_t maxSetsPerPool);
+
   private:
     Error allocateNewPool(const VkDevice &device);
 
+    uint32_t mMaxSetsPerPool;
     DescriptorPool mCurrentDescriptorSetPool;
     size_t mCurrentAllocatedDescriptorSetCount;
     uint32_t mUniformBufferDescriptorsPerSet;
@@ -115,7 +132,7 @@ class DynamicDescriptorPool final : angle::NonCopyable
 class LineLoopHelper final : public vk::CommandGraphResource
 {
   public:
-    LineLoopHelper();
+    LineLoopHelper(RendererVk *renderer);
     ~LineLoopHelper();
 
     gl::Error getIndexBufferForDrawArrays(RendererVk *renderer,
@@ -126,8 +143,16 @@ class LineLoopHelper final : public vk::CommandGraphResource
                                                   BufferVk *elementArrayBufferVk,
                                                   VkIndexType indexType,
                                                   int indexCount,
+                                                  intptr_t elementArrayOffset,
                                                   VkBuffer *bufferHandleOut,
                                                   VkDeviceSize *bufferOffsetOut);
+    gl::Error getIndexBufferForClientElementArray(RendererVk *renderer,
+                                                  const void *indicesInput,
+                                                  VkIndexType indexType,
+                                                  int indexCount,
+                                                  VkBuffer *bufferHandleOut,
+                                                  VkDeviceSize *bufferOffsetOut);
+
     void destroy(VkDevice device);
 
     static void Draw(uint32_t count, CommandBuffer *commandBuffer);
@@ -145,18 +170,22 @@ class ImageHelper final : angle::NonCopyable
 
     bool valid() const;
 
-    Error init2D(VkDevice device,
-                 const gl::Extents &extents,
-                 const Format &format,
-                 GLint samples,
-                 VkImageUsageFlags usage);
+    Error init(VkDevice device,
+               gl::TextureType textureType,
+               const gl::Extents &extents,
+               const Format &format,
+               GLint samples,
+               VkImageUsageFlags usage,
+               uint32_t mipLevels);
     Error initMemory(VkDevice device,
                      const MemoryProperties &memoryProperties,
                      VkMemoryPropertyFlags flags);
     Error initImageView(VkDevice device,
+                        gl::TextureType textureType,
                         VkImageAspectFlags aspectMask,
                         const gl::SwizzleState &swizzleMap,
-                        ImageView *imageViewOut);
+                        ImageView *imageViewOut,
+                        uint32_t levelCount);
     Error init2DStaging(VkDevice device,
                         const MemoryProperties &memoryProperties,
                         const Format &format,
@@ -195,6 +224,7 @@ class ImageHelper final : angle::NonCopyable
     void clearDepthStencil(VkImageAspectFlags aspectFlags,
                            const VkClearDepthStencilValue &depthStencil,
                            CommandBuffer *commandBuffer);
+    gl::Extents getSize(const gl::ImageIndex &index) const;
 
     static void Copy(ImageHelper *srcImage,
                      ImageHelper *dstImage,
@@ -217,8 +247,10 @@ class ImageHelper final : angle::NonCopyable
 
     // Current state.
     VkImageLayout mCurrentLayout;
-};
 
+    // Cached properties.
+    uint32_t mLayerCount;
+};
 }  // namespace vk
 }  // namespace rx
 

@@ -24,6 +24,7 @@ video:-webkit-full-page-media {
 
 audio::-webkit-media-controls,
 video::-webkit-media-controls {
+  writing-mode: horizontal-tb;
   width: inherit;
   height: inherit;
   position: relative;
@@ -70,10 +71,6 @@ video::-webkit-media-controls-panel {
   font-weight: normal;  /* Make sure that we don't inherit non-defaults. */
   font-style: normal;
 
-  background:
-    -webkit-image-set(url('default_100_percent/modern/gradient_bg.png') 1x)
-    repeat-x bottom left;
-
   opacity: 1;
   transition: opacity 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
 }
@@ -84,9 +81,27 @@ video::-webkit-media-controls-panel.transparent {
   transition: opacity 1s cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-video::-webkit-media-controls-panel.scrubbing-message {
-  /* Need dark gradient at the top of the video when the scrubbing message is
-   * shown */
+video::-webkit-media-controls:not(.audio-only) div[pseudo="-webkit-media-controls-panel" i] {
+  background:
+    -webkit-image-set(url('default_100_percent/modern/gradient_bg.png') 1x)
+    repeat-x bottom left;
+}
+
+video::-webkit-media-controls.sizing-small div[pseudo="-webkit-media-controls-panel" i] {
+  background-size: auto 92px;
+}
+
+video::-webkit-media-controls.sizing-medium div[pseudo="-webkit-media-controls-panel" i] {
+  background-size: auto 200px;
+}
+
+video::-webkit-media-controls.sizing-large div[pseudo="-webkit-media-controls-panel" i] {
+  background-size: auto 312px;
+}
+
+/* Need dark gradient at the top of the video when the scrubbing message is
+ * shown */
+video::-webkit-media-controls:not(.audio-only) div[pseudo="-webkit-media-controls-panel" i].scrubbing-message {
   background:
     -webkit-image-set(url('default_100_percent/modern/top_gradient_bg.png') 1x)
     repeat-x top left,
@@ -94,21 +109,16 @@ video::-webkit-media-controls-panel.scrubbing-message {
     repeat-x bottom left;
 }
 
-@media (-webkit-min-device-pixel-ratio: 2) {
-  audio::-webkit-media-controls-panel,
-  video::-webkit-media-controls-panel {
-    background:
-      -webkit-image-set(url('default_200_percent/modern/gradient_bg.png') 1x)
-      repeat-x bottom left auto 80px;
-  }
+video::-webkit-media-controls.sizing-small div[pseudo="-webkit-media-controls-panel" i].scrubbing-message {
+  background-size: auto 120px, auto 92px;
+}
 
-  video::-webkit-media-controls-panel.scrubbing-message {
-    background:
-      -webkit-image-set(url('default_200_percent/modern/top_gradient_bg.png') 1x)
-      repeat-x top left auto 120px,
-      -webkit-image-set(url('default_200_percent/modern/gradient_bg.png') 1x)
-      repeat-x bottom left auto 80px;
-  }
+video::-webkit-media-controls.sizing-medium div[pseudo="-webkit-media-controls-panel" i].scrubbing-message {
+  background-size: auto 120px, auto 200px;
+}
+
+video::-webkit-media-controls.sizing-large div[pseudo="-webkit-media-controls-panel" i].scrubbing-message {
+  background-size: auto 120px, auto 312px;
 }
 
 audio::-internal-media-controls-button-panel,
@@ -130,9 +140,9 @@ video::-internal-media-controls-button-panel {
   overflow: hidden;
   text-align: right;
   bottom: auto;
-  height: 32px;
+  height: 48px;
   min-width: 48px;
-  line-height: 30px;
+  line-height: 48px;
   padding: 0 10px 0 16px;
   box-sizing: border-box;
 }
@@ -190,6 +200,71 @@ video::-internal-media-controls-picture-in-picture-button {
   border-width: 0;
   background-color: initial;
   color: inherit;
+}
+
+video::-webkit-media-controls.sizing-small input[pseudo="-webkit-media-controls-play-button" i],
+video::-webkit-media-controls.sizing-small input[pseudo="-webkit-media-controls-mute-button" i],
+video::-webkit-media-controls.sizing-small input[pseudo="-webkit-media-controls-fullscreen-button" i],
+video::-webkit-media-controls.sizing-small input[pseudo="-internal-media-controls-overflow-button" i] {
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+}
+
+video::-webkit-media-controls.sizing-medium input[pseudo="-webkit-media-controls-play-button" i],
+video::-webkit-media-controls.sizing-medium input[pseudo="-webkit-media-controls-mute-button" i],
+video::-webkit-media-controls.sizing-medium input[pseudo="-webkit-media-controls-fullscreen-button" i],
+video::-webkit-media-controls.sizing-medium input[pseudo="-internal-media-controls-overflow-button" i] {
+  width: 64px;
+  height: 64px;
+  min-width: 64px;
+  background-size: 32px;
+}
+
+/* TODO(https://crbug.com/857120): remove these rules and the sizing-large CSS class. */
+video::-webkit-media-controls.sizing-large input[pseudo="-webkit-media-controls-play-button" i],
+video::-webkit-media-controls.sizing-large input[pseudo="-webkit-media-controls-mute-button" i],
+video::-webkit-media-controls.sizing-large input[pseudo="-webkit-media-controls-fullscreen-button" i],
+video::-webkit-media-controls.sizing-large input[pseudo="-internal-media-controls-overflow-button" i] {
+  width: 64px;
+  height: 64px;
+  min-width: 64px;
+  background-size: 32px;
+}
+
+video::-webkit-media-controls.sizing-small div[pseudo="-internal-media-controls-button-panel" i] {
+  height: 48px;
+  line-height: 48px;
+  padding: 0 0 0 16px;
+}
+
+video::-webkit-media-controls.sizing-medium div[pseudo="-internal-media-controls-button-panel" i] {
+  height: 64px;
+  line-height: 64px;
+  padding: 0 32px 0 32px;
+}
+
+/* TODO(https://crbug.com/857120): remove these rules and the sizing-large CSS class. */
+video::-webkit-media-controls.sizing-large div[pseudo="-internal-media-controls-button-panel" i] {
+  height: 64px;
+  line-height: 64px;
+  padding: 0 32px 0 32px;
+}
+
+/* TODO(https://crbug.com/857120): All these are the same, so these are unnecessary. */
+video::-webkit-media-controls.sizing-small [pseudo="-webkit-media-controls-current-time-display"],
+video::-webkit-media-controls.sizing-small [pseudo="-webkit-media-controls-time-remaining-display"] {
+  font-size: 16px;
+}
+
+video::-webkit-media-controls.sizing-medium [pseudo="-webkit-media-controls-current-time-display"],
+video::-webkit-media-controls.sizing-medium [pseudo="-webkit-media-controls-time-remaining-display"] {
+  font-size: 16px;
+}
+
+video::-webkit-media-controls.sizing-large [pseudo="-webkit-media-controls-current-time-display"],
+video::-webkit-media-controls.sizing-large [pseudo="-webkit-media-controls-time-remaining-display"] {
+  font-size: 16px;
 }
 
 audio::-webkit-media-controls-play-button,
@@ -287,7 +362,7 @@ video::-webkit-media-controls-overlay-play-button {
   box-sizing: border-box;
   overflow: hidden;
   background: transparent;
-  margin-bottom: -40px;
+  margin-bottom: -48px;
   position: relative;
   opacity: 1;
   transition: opacity 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
@@ -299,11 +374,11 @@ video::-webkit-media-controls-overlay-play-button.hidden {
 }
 
 input[pseudo="-webkit-media-controls-overlay-play-button" i]::-internal-media-controls-overlay-play-button-internal {
-  width: 56px;
-  height: 56px;
-  border-radius: 28px;
+  width: var(--overlay-play-button-width, 48px);
+  height: var(--overlay-play-button-width, 48px);
+  border-radius: 50%;
 
-  background-size: 30px;
+  background-size: 50%;
   background-repeat: no-repeat;
   background-position: center center;
   background-image: -webkit-image-set(url(ic_play_arrow.svg) 1x);
@@ -324,6 +399,19 @@ input[pseudo="-webkit-media-controls-overlay-play-button" i]::-internal-media-co
 
 video::-webkit-media-controls.state-playing:not(.audio-only) input[pseudo="-webkit-media-controls-play-button" i] {
   background-image: -webkit-image-set(url(ic_pause_white.svg) 1x);
+}
+
+video::-webkit-media-controls.sizing-small input[pseudo="-webkit-media-controls-overlay-play-button" i] {
+  margin-bottom: -48px;
+}
+
+video::-webkit-media-controls.sizing-medium input[pseudo="-webkit-media-controls-overlay-play-button" i] {
+  margin-bottom: -64px;
+}
+
+/* TODO(https://crbug.com/857120): remove these rules and the sizing-large CSS class. */
+video::-webkit-media-controls.sizing-large input[pseudo="-webkit-media-controls-overlay-play-button" i] {
+  margin-bottom: -64px;
 }
 
 /**
@@ -350,8 +438,99 @@ video::-webkit-media-controls.audio-only [pseudo="-webkit-media-controls-timelin
 }
 
 video::-webkit-media-controls-timeline {
-  padding-top: 5px;
-  padding-bottom: 17px;
+  z-index: 0;
+}
+
+video::-webkit-media-controls.sizing-small input[pseudo="-webkit-media-controls-timeline" i] {
+  padding: 0 16px 12px 16px;
+}
+
+video::-webkit-media-controls.sizing-medium input[pseudo="-webkit-media-controls-timeline" i] {
+  padding: 0 32px 36px 32px;
+}
+
+/* TODO(https://crbug.com/857120): remove these rules and the sizing-large CSS class. */
+video::-webkit-media-controls.sizing-large input[pseudo="-webkit-media-controls-timeline" i] {
+  padding: 0 32px 36px 32px;
+}
+
+/* TODO(https://crbug.com/857120): All these are the same, so these are unnecessary. */
+video::-webkit-media-controls.sizing-small input[pseudo="-webkit-media-controls-timeline" i],
+video::-webkit-media-controls.sizing-small input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-highlight-before,
+video::-webkit-media-controls.sizing-small input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-highlight-after,
+video::-webkit-media-controls.sizing-small input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-background {
+  height: 4px;
+}
+
+video::-webkit-media-controls.sizing-medium input[pseudo="-webkit-media-controls-timeline" i],
+video::-webkit-media-controls.sizing-medium input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-highlight-before,
+video::-webkit-media-controls.sizing-medium input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-highlight-after,
+video::-webkit-media-controls.sizing-medium input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-background {
+  height: 4px;
+}
+
+video::-webkit-media-controls.sizing-large input[pseudo="-webkit-media-controls-timeline" i],
+video::-webkit-media-controls.sizing-large input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-highlight-before,
+video::-webkit-media-controls.sizing-large input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-highlight-after,
+video::-webkit-media-controls.sizing-large input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-background {
+  height: 4px;
+}
+
+/* TODO(https://crbug.com/857120): All these are the same, so these are unnecessary. */
+video::-webkit-media-controls.sizing-small input[pseudo="-webkit-media-controls-timeline" i]::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+}
+
+video::-webkit-media-controls.sizing-medium input[pseudo="-webkit-media-controls-timeline" i]::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+}
+
+video::-webkit-media-controls.sizing-large input[pseudo="-webkit-media-controls-timeline" i]::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+}
+
+/* TODO(https://crbug.com/857120): All these are the same, so these are unnecessary. */
+video::-webkit-media-controls.sizing-small input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-highlight-after,
+video::-webkit-media-controls.sizing-small input[pseudo="-webkit-media-controls-timeline" i]::-internal-media-controls-segmented-track {
+  border-radius: 2px;
+}
+
+video::-webkit-media-controls.sizing-medium input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-highlight-after,
+video::-webkit-media-controls.sizing-medium input[pseudo="-webkit-media-controls-timeline" i]::-internal-media-controls-segmented-track {
+  border-radius: 2px;
+}
+
+video::-webkit-media-controls.sizing-large input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-highlight-after,
+video::-webkit-media-controls.sizing-large input[pseudo="-webkit-media-controls-timeline" i]::-internal-media-controls-segmented-track {
+  border-radius: 2px;
+}
+
+video::-webkit-media-controls.sizing-small div[pseudo="-internal-media-controls-loading-panel" i]::-internal-media-controls-loading-panel-spinner-frame {
+  margin-top: calc(
+      (var(--overlay-play-button-width, 48px)
+          + 16px /* timeline height + padding-bottom */)
+      / -2);
+}
+
+video::-webkit-media-controls.sizing-medium div[pseudo="-internal-media-controls-loading-panel" i]::-internal-media-controls-loading-panel-spinner-frame {
+  margin-top: calc(
+      (var(--overlay-play-button-width, 48px)
+          + 40px /* timeline height + padding-bottom */)
+      / -2);
+}
+
+/* TODO(https://crbug.com/857120): remove these rules and the sizing-large CSS class. */
+video::-webkit-media-controls.sizing-large div[pseudo="-internal-media-controls-loading-panel" i]::-internal-media-controls-loading-panel-spinner-frame {
+  margin-top: calc(
+      (var(--overlay-play-button-width, 48px)
+          + 40px /* timeline height + padding-bottom */)
+      / -2);
 }
 
 input[pseudo="-webkit-media-controls-timeline" i]::-internal-media-controls-segmented-track {
@@ -374,7 +553,7 @@ input[pseudo="-webkit-media-controls-timeline" i]::-webkit-slider-thumb {
 
   width: 12px;
   height: 12px;
-  border-radius: 6px;
+  border-radius: 50%;
   margin-top: -4px;
   flex: 0 0 0;
 }
@@ -423,25 +602,6 @@ video::-webkit-media-controls-volume-slider {
   display: none;
 }
 
-input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-buffering {
-  position: absolute;
-  background: rgba(0, 0, 0, .54);
-  border-radius: 100px;
-  height: 4px;
-
-  right: 0;
-  left: 0;
-  top: 0;
-  display: none;
-}
-video::-webkit-media-controls:not(.audio-only) input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-buffering {
-  background: rgba(255, 255, 255, .54);
-}
-
-.state-buffering input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-buffering {
-  display: block;
-}
-
 /**
  * Time Display
  */
@@ -481,7 +641,7 @@ video::-internal-media-controls-overflow-menu-list {
   position: fixed;
   max-width: 50%;
   max-height: 250px;
-  min-width: 150px;
+  min-width: 180px;
   overflow-x: hidden;
   overflow-y: auto;
   white-space: nowrap;
@@ -507,8 +667,74 @@ video::-internal-media-controls-overflow-menu-list-item {
   letter-spacing: 0;
 
   line-height: 48px;
-  padding-left: 15px;
-  padding-right: 15px;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+/* TODO(https://crbug.com/857120): All these are the same, so these are unnecessary. */
+video::-webkit-media-controls.sizing-small div[pseudo="-internal-media-controls-overflow-menu-list" i] {
+  min-width: 180px;
+  max-width: 180px;
+  max-height: 250px;
+}
+
+video::-webkit-media-controls.sizing-medium div[pseudo="-internal-media-controls-overflow-menu-list" i] {
+  min-width: 180px;
+  max-width: 180px;
+  max-height: 250px;
+}
+
+video::-webkit-media-controls.sizing-large div[pseudo="-internal-media-controls-overflow-menu-list" i] {
+  min-width: 180px;
+  max-width: 180px;
+  max-height: 250px;
+}
+
+/* TODO(https://crbug.com/857120): All these are the same, so these are unnecessary. */
+video::-webkit-media-controls.sizing-small label[pseudo="-internal-media-controls-overflow-menu-list-item" i] {
+  font-size: 14px;
+  height: 48px;
+  padding: 0 16px 0;
+}
+
+video::-webkit-media-controls.sizing-medium label[pseudo="-internal-media-controls-overflow-menu-list-item" i] {
+  font-size: 14px;
+  height: 48px;
+  padding: 0 16px 0;
+}
+
+video::-webkit-media-controls.sizing-large label[pseudo="-internal-media-controls-overflow-menu-list-item" i] {
+  font-size: 14px;
+  height: 48px;
+  padding: 0 16px 0;
+}
+
+/* TODO(https://crbug.com/857120): All these are the same, so these are unnecessary. */
+video::-webkit-media-controls.sizing-small label[pseudo="-internal-media-controls-overflow-menu-list-item" i] input {
+  margin-left: 0;
+  margin-right: 16px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  background-size: 24px;
+}
+
+video::-webkit-media-controls.sizing-medium label[pseudo="-internal-media-controls-overflow-menu-list-item" i] input {
+  margin-left: 0;
+  margin-right: 16px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  background-size: 24px;
+}
+
+video::-webkit-media-controls.sizing-large label[pseudo="-internal-media-controls-overflow-menu-list-item" i] input {
+  margin-left: 0;
+  margin-right: 16px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  background-size: 24px;
 }
 
 label[pseudo="-internal-media-controls-overflow-menu-list-item"] input {
@@ -520,6 +746,7 @@ label[pseudo="-internal-media-controls-overflow-menu-list-item"] input {
 label[pseudo="-internal-media-controls-overflow-menu-list-item"] div {
   display: inline-grid;
   margin: 16px 0 16px 0;
+  overflow: hidden;
 }
 
 label[pseudo="-internal-media-controls-overflow-menu-list-item"] div.with-subtitle {
@@ -528,6 +755,8 @@ label[pseudo="-internal-media-controls-overflow-menu-list-item"] div.with-subtit
 
 label[pseudo="-internal-media-controls-overflow-menu-list-item"] div span {
   line-height: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 label[pseudo="-internal-media-controls-overflow-menu-list-item"] div span.subtitle {
@@ -570,6 +799,12 @@ label[pseudo="-internal-media-controls-text-track-list-item"] input {
 
 label[pseudo="-internal-media-controls-text-track-list-item"] input:checked {
   background-image: -webkit-image-set(url(ic_check_blue.svg) 1x);
+}
+
+video::-webkit-media-controls-overlay-enclosure {
+  position: absolute;
+  width: 100%;
+  height: 100%;
 }
 
 /**
@@ -674,22 +909,13 @@ video::-internal-media-controls-loading-panel {
   right: 0;
   bottom: 0;
   overflow: hidden;
-  opacity: .5;
+  z-index: 1;
+  pointer-events: none;
 }
 
 audio::-internal-media-controls-loading-panel,
 video::-webkit-media-controls.audio-only [pseudo="-internal-media-controls-loading-panel"] {
   display: none;
-}
-
-.state-loading-metadata div[pseudo="-webkit-media-controls-panel" i] {
-  background-image: none;
-}
-
-.state-loading-metadata div[pseudo="-internal-media-controls-button-panel" i],
-.state-loading-metadata input[pseudo="-webkit-media-controls-timeline" i],
-.state-loading-metadata input[pseudo="-webkit-media-controls-overlay-play-button" i]::-internal-media-controls-overlay-play-button-internal {
-  opacity: 0;
 }
 
 /**
@@ -819,14 +1045,14 @@ video::-internal-media-controls-scrubbing-message {
 /**
  * VR styling.
  */
-.immersive-mode input[pseudo="-webkit-media-controls-timeline" i],
-.immersive-mode div[pseudo="-internal-media-controls-button-panel" i] {
+video::-webkit-media-controls.immersive-mode input[pseudo="-webkit-media-controls-timeline" i],
+video::-webkit-media-controls.immersive-mode div[pseudo="-internal-media-controls-button-panel" i] {
   padding-left: 32px;
   padding-right: 32px;
 }
 
 /* Timeline sizing does not include padding in max width. */
-.immersive-mode input[pseudo="-webkit-media-controls-timeline" i] {
+video::-webkit-media-controls.immersive-mode input[pseudo="-webkit-media-controls-timeline" i] {
   max-width: 471px;
   height: 5px;
   margin-bottom: 20px;
@@ -835,11 +1061,11 @@ video::-internal-media-controls-scrubbing-message {
 }
 
 /* Button panel sizing does include padding in max width. */
-.immersive-mode div[pseudo="-internal-media-controls-button-panel" i] {
+video::-webkit-media-controls.immersive-mode div[pseudo="-internal-media-controls-button-panel" i] {
   max-width: 535px; /* 471px + 64px padding. */
 }
 
-.immersive-mode div[pseudo="-webkit-media-controls-panel" i] {
+video::-webkit-media-controls.immersive-mode div[pseudo="-webkit-media-controls-panel" i] {
   /* Centering the button panel and timeline within the controls. */
   text-align: -webkit-center;
 
@@ -849,50 +1075,56 @@ video::-internal-media-controls-scrubbing-message {
     repeat-x bottom left;
 }
 
-.immersive-mode input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-highlight-before,
-.immersive-mode input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-highlight-after,
-.immersive-mode input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-background,
-.immersive-mode input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-buffering {
+video::-webkit-media-controls.immersive-mode input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-highlight-before,
+video::-webkit-media-controls.immersive-mode input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-highlight-after,
+video::-webkit-media-controls.immersive-mode input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-background {
   height: 5px;
 }
 
-.immersive-mode input[pseudo="-webkit-media-controls-timeline" i]::-webkit-slider-thumb {
+video::-webkit-media-controls.immersive-mode input[pseudo="-webkit-media-controls-timeline" i]::-webkit-slider-thumb {
   width: 16px;
   height: 16px;
   border-radius: 8px;
   margin-top: -5px;
 }
 
-.immersive-mode input[pseudo="-webkit-media-controls-overlay-play-button" i]::-internal-media-controls-overlay-play-button-internal {
+video::-webkit-media-controls.immersive-mode input[pseudo="-webkit-media-controls-overlay-play-button" i]::-internal-media-controls-overlay-play-button-internal {
   width: 64px;
   height: 64px;
   border-radius: 32px;
   background-size: 36px;
 }
 
-.immersive-mode input[pseudo="-webkit-media-controls-mute-button" i],
-.immersive-mode input[pseudo="-webkit-media-controls-fullscreen-button" i],
-.immersive-mode input[pseudo="-internal-media-controls-overflow-button" i] {
+video::-webkit-media-controls.immersive-mode input[pseudo="-webkit-media-controls-mute-button" i],
+video::-webkit-media-controls.immersive-mode input[pseudo="-webkit-media-controls-fullscreen-button" i],
+video::-webkit-media-controls.immersive-mode input[pseudo="-internal-media-controls-overflow-button" i] {
   width: 43px;
   height: 43px;
   min-width: 43px;
   margin-left: 5px;
+  background-size: 24px;
 }
 
-.immersive-mode div[pseudo="-internal-media-controls-button-panel" i] {
+video::-webkit-media-controls.immersive-mode div[pseudo="-internal-media-controls-button-panel" i] {
   height: 43px;
+  line-height: 43px;
+}
+
+video::-webkit-media-controls.immersive-mode div[pseudo="-webkit-media-controls-current-time-display" i],
+video::-webkit-media-controls.immersive-mode div[pseudo="-webkit-media-controls-time-remaining-display" i] {
+  font-size: 16px;
 }
 
 /* Hover highlighting. */
-.immersive-mode input[pseudo="-webkit-media-controls-mute-button" i]:hover,
-.immersive-mode input[pseudo="-webkit-media-controls-fullscreen-button" i]:hover,
-.immersive-mode input[pseudo="-internal-media-controls-overflow-button" i]:hover {
+video::-webkit-media-controls.immersive-mode input[pseudo="-webkit-media-controls-mute-button" i]:hover,
+video::-webkit-media-controls.immersive-mode input[pseudo="-webkit-media-controls-fullscreen-button" i]:hover,
+video::-webkit-media-controls.immersive-mode input[pseudo="-internal-media-controls-overflow-button" i]:hover {
   background-color: rgba(255, 255, 255, 0.2);
   border-radius: 4px;
 }
 
 @media (-webkit-min-device-pixel-ratio: 2) {
-  .immersive-mode div[pseudo="-webkit-media-controls-panel" i] {
+  video::-webkit-media-controls.immersive-mode div[pseudo="-webkit-media-controls-panel" i] {
     background:
       -webkit-image-set(url('default_200_percent/modern/vr_gradient_bg.png') 1x)
       repeat-x bottom left auto 198px;
@@ -913,4 +1145,3 @@ video::-webkit-media-controls.test-mode *,
 video::-webkit-media-controls.test-mode input[pseudo="-webkit-media-controls-overlay-play-button" i]::-internal-media-controls-overlay-play-button-internal {
   transition: none !important;
 }
-

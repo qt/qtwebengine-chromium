@@ -48,18 +48,16 @@
 #define MAX_BPB_FACTOR 50
 
 #if CONFIG_VP9_HIGHBITDEPTH
-#define ASSIGN_MINQ_TABLE(bit_depth, name)                   \
-  do {                                                       \
-    switch (bit_depth) {                                     \
-      case VPX_BITS_8: name = name##_8; break;               \
-      case VPX_BITS_10: name = name##_10; break;             \
-      case VPX_BITS_12: name = name##_12; break;             \
-      default:                                               \
-        assert(0 &&                                          \
-               "bit_depth should be VPX_BITS_8, VPX_BITS_10" \
-               " or VPX_BITS_12");                           \
-        name = NULL;                                         \
-    }                                                        \
+#define ASSIGN_MINQ_TABLE(bit_depth, name)       \
+  do {                                           \
+    switch (bit_depth) {                         \
+      case VPX_BITS_8: name = name##_8; break;   \
+      case VPX_BITS_10: name = name##_10; break; \
+      default:                                   \
+        assert(bit_depth == VPX_BITS_12);        \
+        name = name##_12;                        \
+        break;                                   \
+    }                                            \
   } while (0)
 #else
 #define ASSIGN_MINQ_TABLE(bit_depth, name) \
@@ -167,10 +165,9 @@ double vp9_convert_qindex_to_q(int qindex, vpx_bit_depth_t bit_depth) {
   switch (bit_depth) {
     case VPX_BITS_8: return vp9_ac_quant(qindex, 0, bit_depth) / 4.0;
     case VPX_BITS_10: return vp9_ac_quant(qindex, 0, bit_depth) / 16.0;
-    case VPX_BITS_12: return vp9_ac_quant(qindex, 0, bit_depth) / 64.0;
     default:
-      assert(0 && "bit_depth should be VPX_BITS_8, VPX_BITS_10 or VPX_BITS_12");
-      return -1.0;
+      assert(bit_depth == VPX_BITS_12);
+      return vp9_ac_quant(qindex, 0, bit_depth) / 64.0;
   }
 #else
   return vp9_ac_quant(qindex, 0, bit_depth) / 4.0;
@@ -620,8 +617,14 @@ int vp9_rc_regulate_q(const VP9_COMP *cpi, int target_bits_per_frame,
        !(cpi->refresh_alt_ref_frame || cpi->refresh_golden_frame)) &&
       (cpi->rc.rc_1_frame * cpi->rc.rc_2_frame == -1) &&
       cpi->rc.q_1_frame != cpi->rc.q_2_frame) {
-    q = clamp(q, VPXMIN(cpi->rc.q_1_frame, cpi->rc.q_2_frame),
-              VPXMAX(cpi->rc.q_1_frame, cpi->rc.q_2_frame));
+    int qclamp = clamp(q, VPXMIN(cpi->rc.q_1_frame, cpi->rc.q_2_frame),
+                       VPXMAX(cpi->rc.q_1_frame, cpi->rc.q_2_frame));
+    // If the previous had overshoot and the current q needs to increase above
+    // the clamped value, reduce the clamp for faster reaction to overshoot.
+    if (cpi->rc.rc_1_frame == -1 && q > qclamp)
+      q = (q + qclamp) >> 1;
+    else
+      q = qclamp;
   }
   return q;
 }
@@ -831,19 +834,6 @@ static int rc_pick_q_and_bounds_one_pass_cbr(const VP9_COMP *cpi,
 
   *top_index = active_worst_quality;
   *bottom_index = active_best_quality;
-
-#if LIMIT_QRANGE_FOR_ALTREF_AND_KEY
-  // Limit Q range for the adaptive loop.
-  if (cm->frame_type == KEY_FRAME && !rc->this_key_frame_forced &&
-      !(cm->current_video_frame == 0)) {
-    int qdelta = 0;
-    vpx_clear_system_state();
-    qdelta = vp9_compute_qdelta_by_rate(
-        &cpi->rc, cm->frame_type, active_worst_quality, 2.0, cm->bit_depth);
-    *top_index = active_worst_quality + qdelta;
-    *top_index = (*top_index > *bottom_index) ? *top_index : *bottom_index;
-  }
-#endif
 
   // Special case code to try and match quality with forced key frames
   if (cm->frame_type == KEY_FRAME && rc->this_key_frame_forced) {
@@ -1097,7 +1087,7 @@ static int rc_pick_q_and_bounds_two_pass(const VP9_COMP *cpi, int *bottom_index,
   int *inter_minq;
   ASSIGN_MINQ_TABLE(cm->bit_depth, inter_minq);
 
-  if (frame_is_intra_only(cm) || vp9_is_upper_layer_key_frame(cpi)) {
+  if (frame_is_intra_only(cm)) {
     // Handle the special case for key frames forced when we have reached
     // the maximum key frame interval. Here force the Q to a range
     // based on the ambient Q to reduce the risk of popping.
@@ -1213,9 +1203,8 @@ static int rc_pick_q_and_bounds_two_pass(const VP9_COMP *cpi, int *bottom_index,
 #if LIMIT_QRANGE_FOR_ALTREF_AND_KEY
   vpx_clear_system_state();
   // Static forced key frames Q restrictions dealt with elsewhere.
-  if (!((frame_is_intra_only(cm) || vp9_is_upper_layer_key_frame(cpi))) ||
-      !rc->this_key_frame_forced ||
-      (cpi->twopass.last_kfgroup_zeromotion_pct < STATIC_MOTION_THRESH)) {
+  if (!frame_is_intra_only(cm) || !rc->this_key_frame_forced ||
+      cpi->twopass.last_kfgroup_zeromotion_pct < STATIC_MOTION_THRESH) {
     int qdelta = vp9_frame_type_qdelta(cpi, gf_group->rf_level[gf_group->index],
                                        active_worst_quality);
     active_worst_quality =
@@ -1239,8 +1228,7 @@ static int rc_pick_q_and_bounds_two_pass(const VP9_COMP *cpi, int *bottom_index,
   if (oxcf->rc_mode == VPX_Q) {
     q = active_best_quality;
     // Special case code to try and match quality with forced key frames.
-  } else if ((frame_is_intra_only(cm) || vp9_is_upper_layer_key_frame(cpi)) &&
-             rc->this_key_frame_forced) {
+  } else if (frame_is_intra_only(cm) && rc->this_key_frame_forced) {
     // If static since last kf use better of last boosted and last kf q.
     if (cpi->twopass.last_kfgroup_zeromotion_pct >= STATIC_MOTION_THRESH) {
       q = VPXMIN(rc->last_kf_qindex, rc->last_boosted_qindex);
@@ -1488,7 +1476,7 @@ void vp9_rc_postencode_update(VP9_COMP *cpi, uint64_t bytes_used) {
 
   rc->total_target_vs_actual = rc->total_actual_bits - rc->total_target_bits;
 
-  if (!cpi->use_svc || is_two_pass_svc(cpi)) {
+  if (!cpi->use_svc) {
     if (is_altref_enabled(cpi) && cpi->refresh_alt_ref_frame &&
         (cm->frame_type != KEY_FRAME))
       // Update the alternate reference frame stats as appropriate.
@@ -1734,10 +1722,7 @@ void vp9_rc_get_svc_params(VP9_COMP *cpi) {
        cpi->svc.spatial_layer_id == 0)) {
     cm->frame_type = KEY_FRAME;
     rc->source_alt_ref_active = 0;
-    if (is_two_pass_svc(cpi)) {
-      cpi->svc.layer_context[layer].is_key_frame = 1;
-      cpi->ref_frame_flags &= (~VP9_LAST_FLAG & ~VP9_GOLD_FLAG & ~VP9_ALT_FLAG);
-    } else if (is_one_pass_cbr_svc(cpi)) {
+    if (is_one_pass_cbr_svc(cpi)) {
       if (cm->current_video_frame > 0) vp9_svc_reset_key_frame(cpi);
       layer = LAYER_IDS_TO_IDX(cpi->svc.spatial_layer_id,
                                cpi->svc.temporal_layer_id,
@@ -1750,17 +1735,7 @@ void vp9_rc_get_svc_params(VP9_COMP *cpi) {
     }
   } else {
     cm->frame_type = INTER_FRAME;
-    if (is_two_pass_svc(cpi)) {
-      LAYER_CONTEXT *lc = &cpi->svc.layer_context[layer];
-      if (cpi->svc.spatial_layer_id == 0) {
-        lc->is_key_frame = 0;
-      } else {
-        lc->is_key_frame =
-            cpi->svc.layer_context[cpi->svc.temporal_layer_id].is_key_frame;
-        if (lc->is_key_frame) cpi->ref_frame_flags &= (~VP9_LAST_FLAG);
-      }
-      cpi->ref_frame_flags &= (~VP9_ALT_FLAG);
-    } else if (is_one_pass_cbr_svc(cpi)) {
+    if (is_one_pass_cbr_svc(cpi)) {
       LAYER_CONTEXT *lc = &cpi->svc.layer_context[layer];
       if (cpi->svc.spatial_layer_id == cpi->svc.first_spatial_layer_to_encode) {
         lc->is_key_frame = 0;
@@ -1790,8 +1765,6 @@ void vp9_rc_get_one_pass_cbr_params(VP9_COMP *cpi) {
   if ((cm->current_video_frame == 0 || (cpi->frame_flags & FRAMEFLAGS_KEY) ||
        rc->frames_to_key == 0 || (cpi->oxcf.auto_key && 0))) {
     cm->frame_type = KEY_FRAME;
-    rc->this_key_frame_forced =
-        cm->current_video_frame != 0 && rc->frames_to_key == 0;
     rc->frames_to_key = cpi->oxcf.key_freq;
     rc->kf_boost = DEFAULT_KF_BOOST;
     rc->source_alt_ref_active = 0;
@@ -2301,18 +2274,34 @@ static void adjust_gf_boost_lag_one_pass_vbr(VP9_COMP *cpi,
 void vp9_scene_detection_onepass(VP9_COMP *cpi) {
   VP9_COMMON *const cm = &cpi->common;
   RATE_CONTROL *const rc = &cpi->rc;
+  YV12_BUFFER_CONFIG const *unscaled_src = cpi->un_scaled_source;
+  YV12_BUFFER_CONFIG const *unscaled_last_src = cpi->unscaled_last_source;
+  uint8_t *src_y;
+  int src_ystride;
+  int src_width;
+  int src_height;
+  uint8_t *last_src_y;
+  int last_src_ystride;
+  int last_src_width;
+  int last_src_height;
+  if (cpi->un_scaled_source == NULL || cpi->unscaled_last_source == NULL ||
+      (cpi->use_svc && cpi->svc.current_superframe == 0))
+    return;
+  src_y = unscaled_src->y_buffer;
+  src_ystride = unscaled_src->y_stride;
+  src_width = unscaled_src->y_width;
+  src_height = unscaled_src->y_height;
+  last_src_y = unscaled_last_src->y_buffer;
+  last_src_ystride = unscaled_last_src->y_stride;
+  last_src_width = unscaled_last_src->y_width;
+  last_src_height = unscaled_last_src->y_height;
 #if CONFIG_VP9_HIGHBITDEPTH
   if (cm->use_highbitdepth) return;
 #endif
   rc->high_source_sad = 0;
-  if (cpi->Last_Source != NULL &&
-      cpi->Last_Source->y_width == cpi->Source->y_width &&
-      cpi->Last_Source->y_height == cpi->Source->y_height) {
+  if (cpi->svc.spatial_layer_id == 0 && src_width == last_src_width &&
+      src_height == last_src_height) {
     YV12_BUFFER_CONFIG *frames[MAX_LAG_BUFFERS] = { NULL };
-    uint8_t *src_y = cpi->Source->y_buffer;
-    int src_ystride = cpi->Source->y_stride;
-    uint8_t *last_src_y = cpi->Last_Source->y_buffer;
-    int last_src_ystride = cpi->Last_Source->y_stride;
     int start_frame = 0;
     int frames_to_buffer = 1;
     int frame = 0;
@@ -2437,6 +2426,19 @@ void vp9_scene_detection_onepass(VP9_COMP *cpi) {
       if (cm->frame_type != KEY_FRAME && rc->reset_high_source_sad)
         rc->this_frame_target = rc->avg_frame_bandwidth;
     }
+    // For SVC the new (updated) avg_source_sad[0] for the current superframe
+    // updates the setting for all layers.
+    if (cpi->use_svc) {
+      int sl, tl;
+      SVC *const svc = &cpi->svc;
+      for (sl = 0; sl < svc->number_spatial_layers; ++sl)
+        for (tl = 0; tl < svc->number_temporal_layers; ++tl) {
+          int layer = LAYER_IDS_TO_IDX(sl, tl, svc->number_temporal_layers);
+          LAYER_CONTEXT *const lc = &svc->layer_context[layer];
+          RATE_CONTROL *const lrc = &lc->rc;
+          lrc->avg_source_sad[0] = rc->avg_source_sad[0];
+        }
+    }
     // For VBR, under scene change/high content change, force golden refresh.
     if (cpi->oxcf.rc_mode == VPX_VBR && cm->frame_type != KEY_FRAME &&
         rc->high_source_sad && rc->frames_to_key > 3 &&
@@ -2471,7 +2473,10 @@ int vp9_encodedframe_overshoot(VP9_COMP *cpi, int frame_size, int *q) {
   VP9_COMMON *const cm = &cpi->common;
   RATE_CONTROL *const rc = &cpi->rc;
   int thresh_qp = 3 * (rc->worst_quality >> 2);
-  int thresh_rate = rc->avg_frame_bandwidth * 10;
+  int thresh_rate = rc->avg_frame_bandwidth << 3;
+  // Lower rate threshold for video.
+  if (cpi->oxcf.content != VP9E_CONTENT_SCREEN)
+    thresh_rate = rc->avg_frame_bandwidth << 2;
   if (cm->base_qindex < thresh_qp && frame_size > thresh_rate) {
     double rate_correction_factor =
         cpi->rc.rate_correction_factors[INTER_NORMAL];

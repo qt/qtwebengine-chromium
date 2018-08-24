@@ -33,9 +33,9 @@
 
 #include "third_party/blink/renderer/platform/geometry/float_rect_outsets.h"
 #include "third_party/blink/renderer/platform/geometry/int_rect_outsets.h"
+#include "third_party/blink/renderer/platform/geometry/layout_size.h"
 #include "third_party/blink/renderer/platform/layout_unit.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
-#include "third_party/blink/renderer/platform/text/writing_mode.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 
 namespace blink {
@@ -83,6 +83,7 @@ class PLATFORM_EXPORT LayoutRectOutsets {
   void SetBottom(LayoutUnit value) { bottom_ = value; }
   void SetLeft(LayoutUnit value) { left_ = value; }
 
+  LayoutSize Size() const { return LayoutSize(left_ + right_, top_ + bottom_); }
   bool IsZero() const { return !top_ && !right_ && !bottom_ && !left_; }
 
   void ClampNegativeToZero();
@@ -90,17 +91,6 @@ class PLATFORM_EXPORT LayoutRectOutsets {
   void Unite(const LayoutRectOutsets&);
 
   void FlipHorizontally() { std::swap(left_, right_); }
-
-  // Produces a new LayoutRectOutsets in line orientation
-  // (https://www.w3.org/TR/css-writing-modes-3/#line-orientation), whose
-  // - |top| is the logical 'over',
-  // - |right| is the logical 'line right',
-  // - |bottom| is the logical 'under',
-  // - |left| is the logical 'line left'.
-  LayoutRectOutsets LineOrientationOutsets(WritingMode) const;
-
-  // The same as |logicalOutsets|, but also adjusting for flipped lines.
-  LayoutRectOutsets LineOrientationOutsetsWithFlippedLines(WritingMode) const;
 
   bool operator==(const LayoutRectOutsets other) const {
     return Top() == other.Top() && Right() == other.Right() &&

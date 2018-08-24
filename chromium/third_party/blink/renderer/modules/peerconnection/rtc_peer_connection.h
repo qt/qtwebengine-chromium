@@ -103,18 +103,20 @@ class MODULES_EXPORT RTCPeerConnection final
 
   ScriptPromise setLocalDescription(ScriptState*,
                                     const RTCSessionDescriptionInit&);
-  ScriptPromise setLocalDescription(ScriptState*,
-                                    const RTCSessionDescriptionInit&,
-                                    V8VoidFunction*,
-                                    V8RTCPeerConnectionErrorCallback*);
+  ScriptPromise setLocalDescription(
+      ScriptState*,
+      const RTCSessionDescriptionInit&,
+      V8VoidFunction*,
+      V8RTCPeerConnectionErrorCallback* = nullptr);
   RTCSessionDescription* localDescription();
 
   ScriptPromise setRemoteDescription(ScriptState*,
                                      const RTCSessionDescriptionInit&);
-  ScriptPromise setRemoteDescription(ScriptState*,
-                                     const RTCSessionDescriptionInit&,
-                                     V8VoidFunction*,
-                                     V8RTCPeerConnectionErrorCallback*);
+  ScriptPromise setRemoteDescription(
+      ScriptState*,
+      const RTCSessionDescriptionInit&,
+      V8VoidFunction*,
+      V8RTCPeerConnectionErrorCallback* = nullptr);
   RTCSessionDescription* remoteDescription();
 
   String signalingState() const;
@@ -219,6 +221,7 @@ class MODULES_EXPORT RTCPeerConnection final
   void DidAddRemoteDataChannel(WebRTCDataChannelHandler*) override;
   void ReleasePeerConnectionHandler() override;
   void ClosePeerConnection() override;
+  WebRTCOriginTrials GetOriginTrials() override;
 
   // EventTarget
   const AtomicString& InterfaceName() const override;
@@ -237,7 +240,7 @@ class MODULES_EXPORT RTCPeerConnection final
   static int PeerConnectionCount();
   static int PeerConnectionCountLimit();
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(RTCPeerConnectionTest, GetAudioTrack);

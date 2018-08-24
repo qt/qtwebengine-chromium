@@ -18,21 +18,6 @@ namespace metrics {
 
 class ChromeUserMetricsExtension;
 
-// Internal to expose functions for testing.
-namespace internal {
-
-// Returns the process uptime as a TimeDelta.
-base::TimeDelta GetUptime();
-
-// Get a callback for use with StackSamplingProfiler that provides completed
-// profiles to this object. The callback should be immediately passed to the
-// StackSamplingProfiler, and should not be reused between
-// StackSamplingProfilers. This function may be called on any thread.
-base::StackSamplingProfiler::CompletedCallback GetProfilerCallback(
-    CallStackProfileParams* params);
-
-}  // namespace internal
-
 // Performs metrics logging for the stack sampling profiler.
 class CallStackProfileMetricsProvider : public MetricsProvider {
  public:
@@ -57,35 +42,18 @@ class CallStackProfileMetricsProvider : public MetricsProvider {
   // parameters for general browser process sampling. The callback should be
   // immediately passed to the StackSamplingProfiler, and should not be reused.
   static base::StackSamplingProfiler::CompletedCallback
-  GetProfilerCallbackForBrowserProcess(CallStackProfileParams* params);
-
-  // Returns a callback for use with StackSamplingProfiler that sets up
-  // parameters for UI thread of browser process startup sampling. The callback
-  // should be immediately passed to the StackSamplingProfiler, and should not
-  // be reused.
-  static base::StackSamplingProfiler::CompletedCallback
-  GetProfilerCallbackForBrowserProcessUIThreadStartup();
-
-  // Returns a callback for use with StackSamplingProfiler that sets up
-  // parameters for IO thread of browser process startup sampling. The callback
-  // should be immediately passed to the StackSamplingProfiler, and should not
-  // be reused.
-  static base::StackSamplingProfiler::CompletedCallback
-  GetProfilerCallbackForBrowserProcessIOThreadStartup();
+  GetProfilerCallbackForBrowserProcess(const CallStackProfileParams& params);
 
   // Provides completed stack profiles to the metrics provider. Intended for use
   // when receiving profiles over IPC. In-process StackSamplingProfiler users
   // should instead use a variant of GetProfilerCallback*(). |profiles| is not
   // const& because it must be passed with std::move.
   static void ReceiveCompletedProfiles(
-      CallStackProfileParams* params,
+      const CallStackProfileParams& params,
+      base::TimeTicks profile_start_time,
       base::StackSamplingProfiler::CallStackProfiles profiles);
 
-  // Whether periodic sampling is enabled via a trial.
-  static bool IsPeriodicSamplingEnabled();
-
   // MetricsProvider:
-  void Init() override;
   void OnRecordingEnabled() override;
   void OnRecordingDisabled() override;
   void ProvideCurrentSessionData(

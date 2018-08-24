@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "event_info.h"
+#include "src/ftrace_reader/event_info.h"
 
 #include "gtest/gtest.h"
 
@@ -73,6 +73,19 @@ TEST(EventInfoTest, SetTranslationStrategySanityCheck) {
   ASSERT_EQ(strategy, kUint32ToUint32);
   ASSERT_TRUE(SetTranslationStrategy(kFtraceCString, kProtoString, &strategy));
   ASSERT_EQ(strategy, kCStringToString);
+  ASSERT_TRUE(SetTranslationStrategy(kFtracePid32, kProtoInt32, &strategy));
+  ASSERT_EQ(strategy, kPid32ToInt32);
+  ASSERT_TRUE(SetTranslationStrategy(kFtraceInode32, kProtoUint64, &strategy));
+  ASSERT_EQ(strategy, kInode32ToUint64);
+  ASSERT_TRUE(SetTranslationStrategy(kFtraceInode64, kProtoUint64, &strategy));
+  ASSERT_EQ(strategy, kInode64ToUint64);
+  ASSERT_TRUE(SetTranslationStrategy(kFtraceDevId32, kProtoUint64, &strategy));
+  ASSERT_EQ(strategy, kDevId32ToUint64);
+  ASSERT_TRUE(SetTranslationStrategy(kFtraceDevId64, kProtoUint64, &strategy));
+  ASSERT_EQ(strategy, kDevId64ToUint64);
+  ASSERT_TRUE(
+      SetTranslationStrategy(kFtraceCommonPid32, kProtoInt32, &strategy));
+  ASSERT_EQ(strategy, kCommonPid32ToInt32);
 }
 
 }  // namespace

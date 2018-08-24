@@ -68,7 +68,9 @@ base::SingleThreadTaskRunner* DummyModulator::TaskRunner() {
   return nullptr;
 };
 
-void DummyModulator::FetchTree(const ModuleScriptFetchRequest&,
+void DummyModulator::FetchTree(const KURL&,
+                               WebURLRequest::RequestContext,
+                               const ScriptFetchOptions&,
                                ModuleTreeClient*) {
   NOTREACHED();
 }
@@ -79,8 +81,10 @@ void DummyModulator::FetchSingle(const ModuleScriptFetchRequest&,
   NOTREACHED();
 }
 
-void DummyModulator::FetchDescendantsForInlineScript(ModuleScript*,
-                                                     ModuleTreeClient*) {
+void DummyModulator::FetchDescendantsForInlineScript(
+    ModuleScript*,
+    WebURLRequest::RequestContext,
+    ModuleTreeClient*) {
   NOTREACHED();
 }
 

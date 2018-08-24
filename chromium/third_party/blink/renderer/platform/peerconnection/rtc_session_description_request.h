@@ -34,6 +34,10 @@
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 
+namespace webrtc {
+class RTCError;
+}
+
 namespace blink {
 class WebRTCSessionDescription;
 
@@ -43,7 +47,7 @@ class RTCSessionDescriptionRequest
   virtual ~RTCSessionDescriptionRequest() = default;
 
   virtual void RequestSucceeded(const WebRTCSessionDescription&) = 0;
-  virtual void RequestFailed(const String& error) = 0;
+  virtual void RequestFailed(const webrtc::RTCError&) = 0;
 
   virtual void Trace(blink::Visitor* visitor) {}
 

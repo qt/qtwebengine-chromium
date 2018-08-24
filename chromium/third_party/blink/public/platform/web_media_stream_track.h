@@ -62,10 +62,12 @@ class WebMediaStreamTrack {
     long height = -1;
     double aspect_ratio = -1.0;
     WebString device_id;
+    WebString group_id;
     FacingMode facing_mode = FacingMode::kNone;
     base::Optional<bool> echo_cancellation;
     base::Optional<bool> auto_gain_control;
     base::Optional<bool> noise_supression;
+    WebString echo_cancellation_type;
     // Media Capture Depth Stream Extensions.
     WebString video_kind;
     double focal_length_x = -1.0;

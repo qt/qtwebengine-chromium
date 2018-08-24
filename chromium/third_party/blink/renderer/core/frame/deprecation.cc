@@ -246,11 +246,6 @@ DeprecationInfo GetDeprecationInfo(WebFeature feature) {
               "because of its detrimental effects to the end user's "
               "experience. For more help, check https://xhr.spec.whatwg.org/."};
 
-    case WebFeature::kGetMatchedCSSRules:
-      return {"GetMatchedCSSRules", kM64,
-              WillBeRemoved("document.getMatchedCSSRules()", kM64,
-                            "4606972603138048")};
-
     case WebFeature::kPrefixedWindowURL:
       return {"PrefixedWindowURL", kUnknown,
               ReplacedBy("'webkitURL'", "'URL'")};
@@ -528,9 +523,9 @@ DeprecationInfo GetDeprecationInfo(WebFeature feature) {
                      "in a `.css` file extension.")};
 
     case WebFeature::kCreateObjectURLMediaStream:
-      return {"CreateObjectURLMediaStreamDeprecated", kM68,
+      return {"CreateObjectURLMediaStreamDeprecated", kM69,
               ReplacedWillBeRemoved("URL.createObjectURL with media streams",
-                                    "HTMLMediaElement.srcObject", kM68,
+                                    "HTMLMediaElement.srcObject", kM69,
                                     "5618491470118912")};
 
     case WebFeature::kChromeLoadTimesRequestTime:
@@ -556,19 +551,10 @@ DeprecationInfo GetDeprecationInfo(WebFeature feature) {
               kChromeLoadTimesNextHopProtocol};
 
     case WebFeature::kDataUriHasOctothorpe:
-      return {"DataUriHasOctothorpe", kM68,
+      return {"DataUriHasOctothorpe", kM71,
               ReplacedWillBeRemoved(
                   "Using unescaped '#' characters in a data URI body", "'%23'",
-                  kM68, "5656049583390720")};
-
-    case WebFeature::kThreeValuedPositionBasicShape:
-    case WebFeature::kThreeValuedPositionGradient:
-    case WebFeature::kThreeValuedPositionObjectPosition:
-    case WebFeature::kThreeValuedPositionPerspectiveOrigin:
-      return {
-          "ThreeValuedPosition", kM68,
-          ReplacedWillBeRemoved("Expressing a position using 3 parts",
-                                "<position> syntax", kM68, "5116559680864256")};
+                  kM71, "5656049583390720")};
 
     case WebFeature::kImageInputTypeFormDataWithNonEmptyValue:
       return {"ImageInputTypeFormDataWithNonEmptyValue", kM68,
@@ -577,17 +563,23 @@ DeprecationInfo GetDeprecationInfo(WebFeature feature) {
                             "value for <input type='image'>",
                             kM68, "5672688152477696")};
 
-    case WebFeature::kV8Document_CreateTouch_Method:
-      return {"V8Document_CreateTouch_Method", kM68,
-              ReplacedWillBeRemoved("document.createTouch",
-                                    "TouchEvent constructor", kM68,
-                                    "5668612064935936")};
 
     case WebFeature::kV8Document_CreateTouchList_Method:
-      return {"V8Document_CreateTouchList_Method", kM68,
+      return {"V8Document_CreateTouchList_Method", kM69,
               ReplacedWillBeRemoved("document.createTouchList",
-                                    "TouchEvent constructor", kM68,
+                                    "TouchEvent constructor", kM69,
                                     "5668612064935936")};
+
+    case WebFeature::kDocumentOrigin:
+      return {"DocumentOrigin", kM70,
+              ReplacedWillBeRemoved("document.origin",
+                                    "self.origin (window.origin)", kM70,
+                                    "5701042356355072")};
+
+    case WebFeature::kHTMLFrameSetElementAnonymousNamedGetter:
+      return {"HTMLFrameSetElementAnonymousNamedGetter", kM70,
+              WillBeRemoved("Anonymous named getter of HTMLFrameSetElement",
+                            kM70, "5235521668251648")};
 
     // Features that aren't deprecated don't have a deprecation message.
     default:

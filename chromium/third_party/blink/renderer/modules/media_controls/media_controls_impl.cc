@@ -30,6 +30,7 @@
 #include "third_party/blink/public/platform/web_size.h"
 #include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/string_or_trusted_html.h"
+#include "third_party/blink/renderer/core/css/css_style_declaration.h"
 #include "third_party/blink/renderer/core/dom/mutation_observer.h"
 #include "third_party/blink/renderer/core/dom/mutation_observer_init.h"
 #include "third_party/blink/renderer/core/dom/mutation_record.h"
@@ -76,7 +77,6 @@
 #include "third_party/blink/renderer/modules/media_controls/media_controls_orientation_lock_delegate.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_resource_loader.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_rotate_to_fullscreen_delegate.h"
-#include "third_party/blink/renderer/modules/media_controls/media_controls_window_event_listener.h"
 #include "third_party/blink/renderer/modules/media_controls/media_download_in_product_help_manager.h"
 #include "third_party/blink/renderer/modules/remoteplayback/html_media_element_remote_playback.h"
 #include "third_party/blink/renderer/modules/remoteplayback/remote_playback.h"
@@ -110,13 +110,13 @@ constexpr int kModernMinWidthForOverlayPlayButton = 72;
 constexpr int kMinScrubbingMessageWidth = 300;
 
 const char* kStateCSSClasses[7] = {
-    "phase-pre-ready state-no-source",    // kNoSource
-    "phase-pre-ready state-no-metadata",  // kNotLoaded
-    "state-loading-metadata",             // kLoadingMetadata
-    "phase-ready state-stopped",          // kStopped
-    "phase-ready state-playing",          // kPlaying
-    "phase-ready state-buffering",        // kBuffering
-    "phase-ready state-scrubbing",        // kScrubbing
+    "state-no-source",         // kNoSource
+    "state-no-metadata",       // kNotLoaded
+    "state-loading-metadata",  // kLoadingMetadata
+    "state-stopped",           // kStopped
+    "state-playing",           // kPlaying
+    "state-buffering",         // kBuffering
+    "state-scrubbing",         // kScrubbing
 };
 
 // The padding in pixels inside the button panel.
@@ -128,6 +128,23 @@ const char kActAsAudioControlsCSSClass[] = "audio-only";
 const char kScrubbingMessageCSSClass[] = "scrubbing-message";
 const char kTestModeCSSClass[] = "test-mode";
 const char kImmersiveModeCSSClass[] = "immersive-mode";
+
+const char kSizingSmallCSSClass[] = "sizing-small";
+const char kSizingMediumCSSClass[] = "sizing-medium";
+const char kSizingLargeCSSClass[] = "sizing-large";
+
+// The minimum width in pixels to reach a given size.
+constexpr int kSizingMediumThreshold = 741;
+constexpr int kSizingLargeThreshold = 1441;
+
+// The ratio of video width/height to use for play button size.
+constexpr float kSizingSmallOverlayPlayButtonSizeRatio = 0.25;
+constexpr float kSizingMediumOverlayPlayButtonSizeRatio = 0.15;
+constexpr float kSizingLargeOverlayPlayButtonSizeRatio = 0.11;
+
+// Used for setting overlay play button width CSS variable.
+constexpr double kMinOverlayPlayButtonWidth = 48;
+const char kOverlayPlayButtonWidthCSSVar[] = "--overlay-play-button-width";
 
 bool ShouldShowFullscreenButton(const HTMLMediaElement& media_element) {
   // Unconditionally allow the user to exit fullscreen if we are in it
@@ -254,7 +271,7 @@ class MediaControlsImpl::MediaControlsResizeObserverDelegate final
     controls_->NotifyElementSizeChanged(entries[0]->contentRect());
   }
 
-  void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(controls_);
     ResizeObserver::Delegate::Trace(visitor);
   }
@@ -313,7 +330,7 @@ class MediaControlsImpl::MediaElementMutationCallback
 
   void Disconnect() { observer_->disconnect(); }
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(controls_);
     visitor->Trace(observer_);
     MutationObserver::Delegate::Trace(visitor);
@@ -359,10 +376,6 @@ MediaControlsImpl::MediaControlsImpl(HTMLMediaElement& media_element)
       fullscreen_button_(nullptr),
       download_button_(nullptr),
       media_event_listener_(new MediaControlsMediaEventListener(this)),
-      window_event_listener_(MediaControlsWindowEventListener::Create(
-          this,
-          WTF::BindRepeating(&MediaControlsImpl::HideAllMenus,
-                             WrapWeakPersistent(this)))),
       orientation_lock_delegate_(nullptr),
       rotate_to_fullscreen_delegate_(nullptr),
       hide_media_controls_timer_(
@@ -673,36 +686,45 @@ Node::InsertionNotificationRequest MediaControlsImpl::InsertedInto(
 
 void MediaControlsImpl::UpdateCSSClassFromState() {
   const ControlsState state = State();
-  StringBuilder builder;
-  builder.Append(kStateCSSClasses[state]);
+
+  Vector<String> toAdd;
+  Vector<String> toRemove;
+
+  if (state < kLoadingMetadata)
+    toAdd.push_back("phase-pre-ready");
+  else
+    toRemove.push_back("phase-pre-ready");
+
+  if (state > kLoadingMetadata)
+    toAdd.push_back("phase-ready");
+  else
+    toRemove.push_back("phase-ready");
+
+  for (int i = 0; i < 7; i++) {
+    if (i == state)
+      toAdd.push_back(kStateCSSClasses[i]);
+    else
+      toRemove.push_back(kStateCSSClasses[i]);
+  }
 
   if (MediaElement().ShouldShowControls() && ShouldShowVideoControls() &&
       !VideoElement().HasAvailableVideoFrame() &&
       VideoElement().PosterImageURL().IsEmpty() &&
       state <= ControlsState::kLoadingMetadata) {
-    builder.Append(" ");
-    builder.Append(kShowDefaultPosterCSSClass);
-  }
-
-  if (is_acting_as_audio_controls_) {
-    builder.Append(" ");
-    builder.Append(kActAsAudioControlsCSSClass);
+    toAdd.push_back(kShowDefaultPosterCSSClass);
+  } else {
+    toRemove.push_back(kShowDefaultPosterCSSClass);
   }
 
   if (ShouldShowVideoControls() && GetDocument().GetSettings() &&
       GetDocument().GetSettings()->GetImmersiveModeEnabled()) {
-    builder.Append(" ");
-    builder.Append(kImmersiveModeCSSClass);
+    toAdd.push_back(kImmersiveModeCSSClass);
+  } else {
+    toRemove.push_back(kImmersiveModeCSSClass);
   }
 
-  if (is_test_mode_) {
-    builder.Append(" ");
-    builder.Append(kTestModeCSSClass);
-  }
-
-  const AtomicString& classes = builder.ToAtomicString();
-  if (getAttribute("class") != classes)
-    setAttribute("class", classes);
+  classList().add(toAdd, ASSERT_NO_EXCEPTION);
+  classList().remove(toRemove, ASSERT_NO_EXCEPTION);
 
   if (loading_panel_)
     loading_panel_->UpdateDisplayState();
@@ -723,6 +745,14 @@ void MediaControlsImpl::UpdateCSSClassFromState() {
       UpdateOverflowMenuWanted();
     }
   }
+}
+
+void MediaControlsImpl::SetClass(const AtomicString& class_name,
+                                 bool should_have_class) {
+  if (should_have_class && !classList().contains(class_name))
+    classList().Add(class_name);
+  else if (!should_have_class && classList().contains(class_name))
+    classList().Remove(class_name);
 }
 
 MediaControlsImpl::ControlsState MediaControlsImpl::State() const {
@@ -762,7 +792,6 @@ void MediaControlsImpl::RemovedFrom(ContainerNode*) {
   // TODO(mlamouri): we hide show the controls instead of having
   // HTMLMediaElement do it.
 
-  window_event_listener_->Stop();
   media_event_listener_->Detach();
   if (orientation_lock_delegate_)
     orientation_lock_delegate_->Detach();
@@ -809,6 +838,7 @@ void MediaControlsImpl::Reset() {
   }
 
   UpdateCSSClassFromState();
+  UpdateSizingCSSClass();
   OnControlsListUpdated();
 }
 
@@ -850,7 +880,7 @@ LayoutObject* MediaControlsImpl::ContainerLayoutObject() {
 
 void MediaControlsImpl::SetTestMode(bool enable) {
   is_test_mode_ = enable;
-  UpdateCSSClassFromState();
+  SetClass(kTestModeCSSClass, enable);
 }
 
 void MediaControlsImpl::MaybeShow() {
@@ -1045,9 +1075,6 @@ void MediaControlsImpl::ToggleTextTrackList() {
     text_track_list_->SetIsWanted(false);
     return;
   }
-
-  if (!text_track_list_->IsWanted())
-    window_event_listener_->Start();
 
   text_track_list_->SetIsWanted(!text_track_list_->IsWanted());
 }
@@ -1286,6 +1313,52 @@ void MediaControlsImpl::UpdateOverflowMenuWanted() const {
 void MediaControlsImpl::UpdateScrubbingMessageFits() const {
   if (scrubbing_message_)
     scrubbing_message_->SetDoesFit(size_.Width() >= kMinScrubbingMessageWidth);
+}
+
+void MediaControlsImpl::UpdateSizingCSSClass() {
+  int width = size_.Width();
+  SetClass(kSizingSmallCSSClass,
+           ShouldShowVideoControls() && width < kSizingMediumThreshold);
+  SetClass(kSizingMediumCSSClass, ShouldShowVideoControls() &&
+                                      width >= kSizingMediumThreshold &&
+                                      width < kSizingLargeThreshold);
+  SetClass(kSizingLargeCSSClass,
+           ShouldShowVideoControls() && width >= kSizingLargeThreshold);
+
+  UpdateOverlayPlayButtonWidthCSSVar();
+}
+
+void MediaControlsImpl::UpdateOverlayPlayButtonWidthCSSVar() {
+  // The logic for sizing the overlay play button and its use inside the
+  // controls is a bit too complex for CSS alone (the sizing is a min of two
+  // values maxed with another, and then that needs to be used in calculations
+  // for the spinner as well). To work around this, we're using a CSS variable
+  // set here and used inside the controls CSS.
+  int width = size_.Width();
+  int height = size_.Height();
+  double minDimension = std::min(width, height);
+
+  double sizingRatio;
+  if (width >= kSizingLargeThreshold) {
+    sizingRatio = kSizingLargeOverlayPlayButtonSizeRatio;
+  } else if (width >= kSizingMediumThreshold) {
+    sizingRatio = kSizingMediumOverlayPlayButtonSizeRatio;
+  } else {
+    sizingRatio = kSizingSmallOverlayPlayButtonSizeRatio;
+  }
+
+  double play_button_width =
+      std::max(kMinOverlayPlayButtonWidth, minDimension * sizingRatio);
+
+  WTF::String play_button_css_value = WTF::String::Number(play_button_width);
+  play_button_css_value.append("px");
+
+  if (!overlay_play_button_width_.has_value() ||
+      overlay_play_button_width_.value() != play_button_width) {
+    overlay_play_button_width_ = play_button_width;
+    style()->setProperty(&GetDocument(), kOverlayPlayButtonWidthCSSVar,
+                         play_button_css_value, "", ASSERT_NO_EXCEPTION);
+  }
 }
 
 void MediaControlsImpl::MaybeToggleControlsFromTap() {
@@ -1638,8 +1711,14 @@ void MediaControlsImpl::NotifyElementSizeChanged(DOMRectReadOnly* new_size) {
   size_.SetHeight(new_size->height());
 
   // Don't bother to do any work if this matches the most recent size.
-  if (old_size != size_)
+  if (old_size != size_) {
+    // Update the sizing CSS class before computing which controls fit so that
+    // the element sizes can update from the CSS class change before we start
+    // calculating.
+    if (IsModern())
+      UpdateSizingCSSClass();
     element_size_changed_timer_.StartOneShot(TimeDelta(), FROM_HERE);
+  }
 }
 
 void MediaControlsImpl::ElementSizeChangedTimerFired(TimerBase*) {
@@ -1804,7 +1883,7 @@ void MediaControlsImpl::MaybeRecordElementsDisplayed() const {
   };
 
   // Record which controls are used.
-  for (const auto& element : elements) {
+  for (auto* const element : elements) {
     if (element)
       element->MaybeRecordDisplayed();
   }
@@ -1834,6 +1913,7 @@ void MediaControlsImpl::StartActingAsAudioControls() {
   DCHECK(!is_acting_as_audio_controls_);
 
   is_acting_as_audio_controls_ = true;
+  SetClass(kActAsAudioControlsCSSClass, true);
   PopulatePanel();
   Reset();
 }
@@ -1843,6 +1923,7 @@ void MediaControlsImpl::StopActingAsAudioControls() {
   DCHECK(is_acting_as_audio_controls_);
 
   is_acting_as_audio_controls_ = false;
+  SetClass(kActAsAudioControlsCSSClass, false);
   PopulatePanel();
   Reset();
 }
@@ -1881,19 +1962,7 @@ bool MediaControlsImpl::OverflowMenuVisible() {
 void MediaControlsImpl::ToggleOverflowMenu() {
   DCHECK(overflow_list_);
 
-  if (!overflow_list_->IsWanted())
-    window_event_listener_->Start();
-
   overflow_list_->SetIsWanted(!overflow_list_->IsWanted());
-}
-
-void MediaControlsImpl::HideAllMenus() {
-  window_event_listener_->Stop();
-
-  if (overflow_list_->IsWanted())
-    overflow_list_->SetIsWanted(false);
-  if (text_track_list_->IsWanted())
-    text_track_list_->SetIsWanted(false);
 }
 
 void MediaControlsImpl::StartHideMediaControlsIfNecessary() {
@@ -1925,11 +1994,6 @@ MediaDownloadInProductHelpManager* MediaControlsImpl::DownloadInProductHelp() {
 
 void MediaControlsImpl::OnWaiting() {
   UpdateCSSClassFromState();
-}
-
-void MediaControlsImpl::MaybeRecordOverflowTimeToAction() {
-  overflow_list_->MaybeRecordTimeTaken(
-      MediaControlOverflowMenuListElement::kTimeToAction);
 }
 
 void MediaControlsImpl::OnLoadedData() {
@@ -1965,7 +2029,6 @@ void MediaControlsImpl::Trace(blink::Visitor* visitor) {
   visitor->Trace(cast_button_);
   visitor->Trace(overlay_cast_button_);
   visitor->Trace(media_event_listener_);
-  visitor->Trace(window_event_listener_);
   visitor->Trace(orientation_lock_delegate_);
   visitor->Trace(rotate_to_fullscreen_delegate_);
   visitor->Trace(download_iph_manager_);

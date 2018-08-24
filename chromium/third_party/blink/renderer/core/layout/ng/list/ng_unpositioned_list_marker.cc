@@ -5,8 +5,6 @@
 #include "third_party/blink/renderer/core/layout/ng/list/ng_unpositioned_list_marker.h"
 
 #include "third_party/blink/renderer/core/layout/layout_list_marker.h"
-#include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_box_state.h"
-#include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_item_result.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_physical_line_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/list/layout_ng_list_marker.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_box_fragment.h"
@@ -41,24 +39,28 @@ LayoutUnit NGUnpositionedListMarker::InlineOffset(
 }
 
 scoped_refptr<NGLayoutResult> NGUnpositionedListMarker::Layout(
-    const NGConstraintSpace& space) const {
+    const NGConstraintSpace& space,
+    FontBaseline baseline_type) const {
   DCHECK(marker_layout_object_);
   NGBlockNode marker_node(marker_layout_object_);
   scoped_refptr<NGLayoutResult> marker_layout_result =
-      marker_node.LayoutAtomicInline(space, space.UseFirstLineStyle());
+      marker_node.LayoutAtomicInline(space, baseline_type,
+                                     space.UseFirstLineStyle());
   DCHECK(marker_layout_result && marker_layout_result->PhysicalFragment());
   return marker_layout_result;
 }
 
 bool NGUnpositionedListMarker::AddToBox(
     const NGConstraintSpace& space,
+    FontBaseline baseline_type,
     const NGPhysicalFragment& content,
     NGLogicalOffset* content_offset,
     NGFragmentBuilder* container_builder) const {
+  // Baselines from two different writing-mode cannot be aligned.
+  if (UNLIKELY(space.GetWritingMode() != content.Style().GetWritingMode()))
+    return false;
+
   // Compute the baseline of the child content.
-  FontBaseline baseline_type = IsHorizontalWritingMode(space.GetWritingMode())
-                                   ? kAlphabeticBaseline
-                                   : kIdeographicBaseline;
   NGLineHeightMetrics content_metrics;
   if (content.IsLineBox()) {
     content_metrics = ToNGPhysicalLineBoxFragment(content).Metrics();
@@ -66,7 +68,7 @@ bool NGUnpositionedListMarker::AddToBox(
     NGBoxFragment content_fragment(space.GetWritingMode(),
                                    ToNGPhysicalBoxFragment(content));
     content_metrics = content_fragment.BaselineMetricsWithoutSynthesize(
-        {NGBaselineAlgorithmType::kFirstLine, baseline_type}, space);
+        {NGBaselineAlgorithmType::kFirstLine, baseline_type});
 
     // If this child content does not have any line boxes, the list marker
     // should be aligned to the first line box of next child.
@@ -76,7 +78,8 @@ bool NGUnpositionedListMarker::AddToBox(
   }
 
   // Layout the list marker.
-  scoped_refptr<NGLayoutResult> marker_layout_result = Layout(space);
+  scoped_refptr<NGLayoutResult> marker_layout_result =
+      Layout(space, baseline_type);
   DCHECK(marker_layout_result && marker_layout_result->PhysicalFragment());
   const NGPhysicalBoxFragment& marker_physical_fragment =
       ToNGPhysicalBoxFragment(*marker_layout_result->PhysicalFragment());
@@ -108,9 +111,11 @@ bool NGUnpositionedListMarker::AddToBox(
 
 LayoutUnit NGUnpositionedListMarker::AddToBoxWithoutLineBoxes(
     const NGConstraintSpace& space,
+    FontBaseline baseline_type,
     NGFragmentBuilder* container_builder) const {
   // Layout the list marker.
-  scoped_refptr<NGLayoutResult> marker_layout_result = Layout(space);
+  scoped_refptr<NGLayoutResult> marker_layout_result =
+      Layout(space, baseline_type);
   DCHECK(marker_layout_result && marker_layout_result->PhysicalFragment());
   const NGPhysicalBoxFragment& marker_physical_fragment =
       ToNGPhysicalBoxFragment(*marker_layout_result->PhysicalFragment());

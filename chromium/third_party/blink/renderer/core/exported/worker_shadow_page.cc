@@ -57,7 +57,7 @@ void WorkerShadowPage::Initialize(const KURL& script_url) {
   CString content("");
   scoped_refptr<SharedBuffer> buffer(
       SharedBuffer::Create(content.data(), content.length()));
-  main_frame_->GetFrame()->Loader().Load(FrameLoadRequest(
+  main_frame_->GetFrame()->Loader().CommitNavigation(FrameLoadRequest(
       nullptr, ResourceRequest(script_url), SubstituteData(buffer)));
 }
 
@@ -95,6 +95,11 @@ base::UnguessableToken WorkerShadowPage::GetDevToolsFrameToken() {
   // DevTools once we stop using a frame for workers. Currently, we rely on
   // the frame's instrumentation token to match the worker.
   return client_->GetDevToolsWorkerToken();
+}
+
+std::unique_ptr<WebSocketHandshakeThrottle>
+WorkerShadowPage::CreateWebSocketHandshakeThrottle() {
+  return Platform::Current()->CreateWebSocketHandshakeThrottle();
 }
 
 bool WorkerShadowPage::WasInitialized() const {

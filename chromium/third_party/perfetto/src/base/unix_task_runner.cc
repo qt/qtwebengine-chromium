@@ -23,6 +23,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <limits>
+
 namespace perfetto {
 namespace base {
 
@@ -43,7 +45,7 @@ UnixTaskRunner::UnixTaskRunner() {
   control_read_.reset(pipe_fds[0]);
   control_write_.reset(pipe_fds[1]);
 
-#if BUILDFLAG(OS_LINUX)
+#if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX)
   // We are never expecting to have more than a few bytes in the wake-up pipe.
   // Reduce the buffer size on Linux. Note that this gets rounded up to the page
   // size.
@@ -57,10 +59,6 @@ UnixTaskRunner::UnixTaskRunner() {
 }
 
 UnixTaskRunner::~UnixTaskRunner() = default;
-
-UnixTaskRunner::TimePoint UnixTaskRunner::GetTime() const {
-  return std::chrono::steady_clock::now();
-}
 
 void UnixTaskRunner::WakeUp() {
   const char dummy = 'P';
@@ -77,7 +75,7 @@ void UnixTaskRunner::Run() {
       std::lock_guard<std::mutex> lock(lock_);
       if (quit_)
         return;
-      poll_timeout_ms = static_cast<int>(GetDelayToNextTaskLocked().count());
+      poll_timeout_ms = GetDelayMsToNextTaskLocked();
       UpdateWatchTasksLocked();
     }
     int ret = PERFETTO_EINTR(poll(
@@ -117,11 +115,10 @@ void UnixTaskRunner::UpdateWatchTasksLocked() {
 }
 
 void UnixTaskRunner::RunImmediateAndDelayedTask() {
-  // TODO(skyostil): Add a separate work queue in case in case locking overhead
-  // becomes an issue.
+  // If locking overhead becomes an issue, add a separate work queue.
   std::function<void()> immediate_task;
   std::function<void()> delayed_task;
-  auto now = GetTime();
+  TimeMillis now = GetWallTimeMs();
   {
     std::lock_guard<std::mutex> lock(lock_);
     if (!immediate_tasks_.empty()) {
@@ -139,11 +136,10 @@ void UnixTaskRunner::RunImmediateAndDelayedTask() {
 
   errno = 0;
   if (immediate_task)
-    immediate_task();
-
+    RunTask(immediate_task);
   errno = 0;
   if (delayed_task)
-    delayed_task();
+    RunTask(delayed_task);
 }
 
 void UnixTaskRunner::PostFileDescriptorWatches() {
@@ -195,20 +191,18 @@ void UnixTaskRunner::RunFileDescriptorWatch(int fd) {
     task = it->second.callback;
   }
   errno = 0;
-  task();
+  RunTask(task);
 }
 
-UnixTaskRunner::TimeDurationMs UnixTaskRunner::GetDelayToNextTaskLocked()
-    const {
+int UnixTaskRunner::GetDelayMsToNextTaskLocked() const {
   PERFETTO_DCHECK_THREAD(thread_checker_);
   if (!immediate_tasks_.empty())
-    return TimeDurationMs(0);
+    return 0;
   if (!delayed_tasks_.empty()) {
-    return std::max(TimeDurationMs(0),
-                    std::chrono::duration_cast<TimeDurationMs>(
-                        delayed_tasks_.begin()->first - GetTime()));
+    TimeMillis diff = delayed_tasks_.begin()->first - GetWallTimeMs();
+    return std::max(0, static_cast<int>(diff.count()));
   }
-  return TimeDurationMs(-1);
+  return -1;
 }
 
 void UnixTaskRunner::PostTask(std::function<void()> task) {
@@ -222,9 +216,9 @@ void UnixTaskRunner::PostTask(std::function<void()> task) {
     WakeUp();
 }
 
-void UnixTaskRunner::PostDelayedTask(std::function<void()> task, int delay_ms) {
-  PERFETTO_DCHECK(delay_ms >= 0);
-  auto runtime = GetTime() + std::chrono::milliseconds(delay_ms);
+void UnixTaskRunner::PostDelayedTask(std::function<void()> task,
+                                     uint32_t delay_ms) {
+  TimeMillis runtime = GetWallTimeMs() + TimeMillis(delay_ms);
   {
     std::lock_guard<std::mutex> lock(lock_);
     delayed_tasks_.insert(std::make_pair(runtime, std::move(task)));

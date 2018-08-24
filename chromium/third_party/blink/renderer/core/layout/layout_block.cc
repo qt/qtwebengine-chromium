@@ -36,6 +36,7 @@
 #include "third_party/blink/renderer/core/editing/drag_caret.h"
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
+#include "third_party/blink/renderer/core/editing/text_affinity.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/html_marquee_element.h"
@@ -157,12 +158,12 @@ void LayoutBlock::StyleWillChange(StyleDifference diff,
 
   if (old_style && Parent()) {
     bool old_style_contains_fixed_position =
-        old_style->CanContainFixedPositionObjects();
+        old_style->CanContainFixedPositionObjects(IsDocumentElement());
     bool old_style_contains_absolute_position =
         old_style_contains_fixed_position ||
         old_style->CanContainAbsolutePositionObjects();
     bool new_style_contains_fixed_position =
-        new_style.CanContainFixedPositionObjects();
+        new_style.CanContainFixedPositionObjects(IsDocumentElement());
     bool new_style_contains_absolute_position =
         new_style_contains_fixed_position ||
         new_style.CanContainAbsolutePositionObjects();
@@ -256,9 +257,9 @@ void LayoutBlock::StyleDidChange(StyleDifference diff,
   // text control. So just make sure this is the case. Finally, computed style
   // may turn us into a container of all things, e.g. if the element is
   // transformed, or contain:paint is specified.
-  SetCanContainFixedPositionObjects(IsLayoutView() || IsSVGForeignObject() ||
-                                    IsTextControl() ||
-                                    new_style.CanContainFixedPositionObjects());
+  SetCanContainFixedPositionObjects(
+      IsLayoutView() || IsSVGForeignObject() || IsTextControl() ||
+      new_style.CanContainFixedPositionObjects(IsDocumentElement()));
 
   // It's possible for our border/padding to change, but for the overall logical
   // width or height of the block to end up being the same. We keep track of
@@ -417,9 +418,6 @@ void LayoutBlock::RemoveLeftoverAnonymousBlock(LayoutBlock* child) {
 
 void LayoutBlock::UpdateAfterLayout() {
   InvalidateStickyConstraints();
-
-  if (RuntimeEnabledFeatures::ImplicitRootScrollerEnabled() && GetNode())
-    GetDocument().GetRootScrollerController().ConsiderForImplicit(*GetNode());
 
   LayoutBox::UpdateAfterLayout();
 }
@@ -928,7 +926,7 @@ void LayoutBlock::InsertPositionedObject(LayoutBox* o) {
   DCHECK(!IsAnonymousBlock());
   DCHECK_EQ(o->ContainingBlock(), this);
 
-  o->ClearContainingBlockOverrideSize();
+  o->ClearOverrideContainingBlockContentSize();
 
   if (g_positioned_container_map) {
     auto container_map_it = g_positioned_container_map->find(o);
@@ -1257,10 +1255,15 @@ PositionWithAffinity LayoutBlock::PositionForPointIfOutsideAtomicInlineLevel(
   LayoutUnit point_logical_top =
       IsHorizontalWritingMode() ? point.Y() : point.X();
 
-  if (point_logical_left < 0)
-    return CreatePositionWithAffinity(CaretMinOffset());
-  if (point_logical_left >= LogicalWidth())
-    return CreatePositionWithAffinity(CaretMaxOffset());
+  const bool is_ltr = IsLtr(ResolvedDirection());
+  if (point_logical_left < 0) {
+    return CreatePositionWithAffinity(is_ltr ? CaretMinOffset()
+                                             : CaretMaxOffset());
+  }
+  if (point_logical_left >= LogicalWidth()) {
+    return CreatePositionWithAffinity(is_ltr ? CaretMaxOffset()
+                                             : CaretMinOffset());
+  }
   if (point_logical_top < 0)
     return CreatePositionWithAffinity(CaretMinOffset());
   if (point_logical_top >= LogicalHeight())
@@ -1469,17 +1472,17 @@ void LayoutBlock::ComputeBlockPreferredLogicalWidths(
       child->SetPreferredLogicalWidthsDirty();
     }
 
-    const ComputedStyle& child_style = child->StyleRef();
+    scoped_refptr<const ComputedStyle> child_style = child->Style();
     if (child->IsFloating() ||
         (child->IsBox() && ToLayoutBox(child)->AvoidsFloats())) {
       LayoutUnit float_total_width = float_left_width + float_right_width;
-      if (child_style.Clear() == EClear::kBoth ||
-          child_style.Clear() == EClear::kLeft) {
+      if (child_style->Clear() == EClear::kBoth ||
+          child_style->Clear() == EClear::kLeft) {
         max_logical_width = std::max(float_total_width, max_logical_width);
         float_left_width = LayoutUnit();
       }
-      if (child_style.Clear() == EClear::kBoth ||
-          child_style.Clear() == EClear::kRight) {
+      if (child_style->Clear() == EClear::kBoth ||
+          child_style->Clear() == EClear::kRight) {
         max_logical_width = std::max(float_total_width, max_logical_width);
         float_right_width = LayoutUnit();
       }
@@ -1489,8 +1492,8 @@ void LayoutBlock::ComputeBlockPreferredLogicalWidths(
     // (variable).
     // Auto and percentage margins simply become 0 when computing min/max width.
     // Fixed margins can be added in as is.
-    Length start_margin_length = child_style.MarginStartUsing(style_to_use);
-    Length end_margin_length = child_style.MarginEndUsing(style_to_use);
+    Length start_margin_length = child_style->MarginStartUsing(style_to_use);
+    Length end_margin_length = child_style->MarginEndUsing(style_to_use);
     LayoutUnit margin;
     LayoutUnit margin_start;
     LayoutUnit margin_end;
@@ -1544,7 +1547,7 @@ void LayoutBlock::ComputeBlockPreferredLogicalWidths(
     }
 
     if (child->IsFloating()) {
-      if (child_style.Floating() == EFloat::kLeft)
+      if (child_style->Floating() == EFloat::kLeft)
         float_left_width += w;
       else
         float_right_width += w;
@@ -2145,15 +2148,15 @@ LayoutUnit LayoutBlock::AvailableLogicalHeightForPercentageComputation() const {
        (!style.LogicalTop().IsAuto() && !style.LogicalBottom().IsAuto()));
 
   LayoutUnit stretched_flex_height(-1);
-  if (IsFlexItem())
-    stretched_flex_height =
-        ToLayoutFlexibleBox(Parent())
-            ->ChildLogicalHeightForPercentageResolution(*this);
-
+  if (IsFlexItem()) {
+    const LayoutFlexibleBox* flex_box = ToLayoutFlexibleBox(Parent());
+    if (flex_box->UseOverrideLogicalHeightForPerentageResolution(*this))
+      stretched_flex_height = OverrideContentLogicalHeight();
+  }
   if (stretched_flex_height != LayoutUnit(-1)) {
     available_height = stretched_flex_height;
-  } else if (IsGridItem() && HasOverrideLogicalContentHeight()) {
-    available_height = OverrideLogicalContentHeight();
+  } else if (IsGridItem() && HasOverrideLogicalHeight()) {
+    available_height = OverrideContentLogicalHeight();
   } else if (style.LogicalHeight().IsFixed()) {
     LayoutUnit content_box_height = AdjustContentBoxLogicalHeightForBoxSizing(
         style.LogicalHeight().Value());

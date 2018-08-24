@@ -119,10 +119,8 @@
 // Zimmermann's, as implemented in PGP.  I have had a read of his comments and
 // implemented my own version.
 
-#define NUMPRIMES 2048
-
-// primes contains all the primes that fit into a uint16_t.
-static const uint16_t primes[NUMPRIMES] = {
+// kPrimes contains the first 2048 primes.
+static const uint16_t kPrimes[] = {
     2,     3,     5,     7,     11,    13,    17,    19,    23,    29,    31,
     37,    41,    43,    47,    53,    59,    61,    67,    71,    73,    79,
     83,    89,    97,    101,   103,   107,   109,   113,   127,   131,   137,
@@ -343,6 +341,16 @@ static int BN_prime_checks_for_size(int bits) {
   return 28;
 }
 
+// num_trial_division_primes returns the number of primes to try with trial
+// division before using more expensive checks. For larger numbers, the value
+// of excluding a candidate with trial division is larger.
+static size_t num_trial_division_primes(const BIGNUM *n) {
+  if (n->width * BN_BITS2 > 1024) {
+    return OPENSSL_ARRAY_SIZE(kPrimes);
+  }
+  return OPENSSL_ARRAY_SIZE(kPrimes) / 4;
+}
+
 // BN_PRIME_CHECKS_BLINDED is the iteration count for blinding the constant-time
 // primality test. See |BN_primality_test| for details. This number is selected
 // so that, for a candidate N-bit RSA prime, picking |BN_PRIME_CHECKS_BLINDED|
@@ -524,77 +532,11 @@ err:
   return found;
 }
 
-// The following functions use a Barrett reduction variant to avoid leaking the
-// numerator. See http://ridiculousfish.com/blog/posts/labor-of-division-episode-i.html
-//
-// We use 32-bit numerator and 16-bit divisor for simplicity. This allows
-// computing |m| and |q| without architecture-specific code.
-
-// mod_u16 returns |n| mod |d|. |p| and |m| are the "magic numbers" for |d| (see
-// reference). For proof of correctness in Coq, see
-// https://github.com/davidben/fiat-crypto/blob/barrett/src/Arithmetic/BarrettReduction/RidiculousFish.v
-// Note the Coq version of |mod_u16| additionally includes the computation of
-// |p| and |m| from |bn_mod_u16_consttime| below.
-static uint16_t mod_u16(uint32_t n, uint16_t d, uint32_t p, uint32_t m) {
-  // Compute floor(n/d) per steps 3 through 5.
-  uint32_t q = ((uint64_t)m * n) >> 32;
-  // Note there is a typo in the reference. We right-shift by one, not two.
-  uint32_t t = ((n - q) >> 1) + q;
-  t = t >> (p - 1);
-
-  // Multiply and subtract to get the remainder.
-  n -= d * t;
-  assert(n < d);
-  return n;
-}
-
-// shift_and_add_mod_u16 returns |r| * 2^32 + |a| mod |d|. |p| and |m| are the
-// "magic numbers" for |d| (see reference).
-static uint16_t shift_and_add_mod_u16(uint16_t r, uint32_t a, uint16_t d,
-                                      uint32_t p, uint32_t m) {
-  // Incorporate |a| in two 16-bit chunks.
-  uint32_t t = r;
-  t <<= 16;
-  t |= a >> 16;
-  t = mod_u16(t, d, p, m);
-
-  t <<= 16;
-  t |= a & 0xffff;
-  t = mod_u16(t, d, p, m);
-  return t;
-}
-
-uint16_t bn_mod_u16_consttime(const BIGNUM *bn, uint16_t d) {
-  if (d <= 1) {
-    return 0;
-  }
-
-  // Compute the "magic numbers" for |d|. See steps 1 and 2.
-  // This computes p = ceil(log_2(d)).
-  uint32_t p = BN_num_bits_word(d - 1);
-  // This operation is not constant-time, but |p| and |d| are public values.
-  // Note that |p| is at most 16, so the computation fits in |uint64_t|.
-  assert(p <= 16);
-  uint32_t m = ((UINT64_C(1) << (32 + p)) + d - 1) / d;
-
-  uint16_t ret = 0;
-  for (int i = bn->width - 1; i >= 0; i--) {
-#if BN_BITS2 == 32
-    ret = shift_and_add_mod_u16(ret, bn->d[i], d, p, m);
-#elif BN_BITS2 == 64
-    ret = shift_and_add_mod_u16(ret, bn->d[i] >> 32, d, p, m);
-    ret = shift_and_add_mod_u16(ret, bn->d[i] & 0xffffffff, d, p, m);
-#else
-#error "Unknown BN_ULONG size"
-#endif
-  }
-  return ret;
-}
-
 static int bn_trial_division(uint16_t *out, const BIGNUM *bn) {
-  for (int i = 1; i < NUMPRIMES; i++) {
-    if (bn_mod_u16_consttime(bn, primes[i]) == 0) {
-      *out = primes[i];
+  const size_t num_primes = num_trial_division_primes(bn);
+  for (size_t i = 1; i < num_primes; i++) {
+    if (bn_mod_u16_consttime(bn, kPrimes[i]) == 0) {
+      *out = kPrimes[i];
       return 1;
     }
   }
@@ -647,6 +589,15 @@ int BN_primality_test(int *is_probably_prime, const BIGNUM *w,
     iterations = BN_prime_checks_for_size(BN_num_bits(w));
   }
 
+  BN_CTX *new_ctx = NULL;
+  if (ctx == NULL) {
+    new_ctx = BN_CTX_new();
+    if (new_ctx == NULL) {
+      return 0;
+    }
+    ctx = new_ctx;
+  }
+
   // See C.3.1 from FIPS 186-4.
   int ret = 0;
   BN_MONT_CTX *mont = NULL;
@@ -672,7 +623,7 @@ int BN_primality_test(int *is_probably_prime, const BIGNUM *w,
   BIGNUM *z = BN_CTX_get(ctx);
   BIGNUM *one_mont = BN_CTX_get(ctx);
   BIGNUM *w1_mont = BN_CTX_get(ctx);
-  mont = BN_MONT_CTX_new_for_modulus(w, ctx);
+  mont = BN_MONT_CTX_new_consttime(w, ctx);
   if (b == NULL || z == NULL || one_mont == NULL || w1_mont == NULL ||
       mont == NULL ||
       !bn_one_to_montgomery(one_mont, mont, ctx) ||
@@ -792,10 +743,12 @@ int BN_primality_test(int *is_probably_prime, const BIGNUM *w,
 err:
   BN_MONT_CTX_free(mont);
   BN_CTX_end(ctx);
+  BN_CTX_free(new_ctx);
   return ret;
 }
 
-int BN_is_prime_ex(const BIGNUM *candidate, int checks, BN_CTX *ctx, BN_GENCB *cb) {
+int BN_is_prime_ex(const BIGNUM *candidate, int checks, BN_CTX *ctx,
+                   BN_GENCB *cb) {
   return BN_is_prime_fasttest_ex(candidate, checks, ctx, 0, cb);
 }
 
@@ -949,10 +902,10 @@ err:
 }
 
 static int probable_prime(BIGNUM *rnd, int bits) {
-  int i;
-  uint16_t mods[NUMPRIMES];
+  uint16_t mods[OPENSSL_ARRAY_SIZE(kPrimes)];
+  const size_t num_primes = num_trial_division_primes(rnd);
   BN_ULONG delta;
-  BN_ULONG maxdelta = BN_MASK2 - primes[NUMPRIMES - 1];
+  BN_ULONG maxdelta = BN_MASK2 - kPrimes[num_primes - 1];
   char is_single_word = bits <= BN_BITS2;
 
 again:
@@ -961,8 +914,8 @@ again:
   }
 
   // we now have a random number 'rnd' to test.
-  for (i = 1; i < NUMPRIMES; i++) {
-    mods[i] = bn_mod_u16_consttime(rnd, primes[i]);
+  for (size_t i = 1; i < num_primes; i++) {
+    mods[i] = bn_mod_u16_consttime(rnd, kPrimes[i]);
   }
   // If bits is so small that it fits into a single word then we
   // additionally don't want to exceed that many bits.
@@ -986,15 +939,15 @@ loop:
 
     // In the case that the candidate prime is a single word then
     // we check that:
-    //   1) It's greater than primes[i] because we shouldn't reject
+    //   1) It's greater than kPrimes[i] because we shouldn't reject
     //      3 as being a prime number because it's a multiple of
     //      three.
     //   2) That it's not a multiple of a known prime. We don't
     //      check that rnd-1 is also coprime to all the known
     //      primes because there aren't many small primes where
     //      that's true.
-    for (i = 1; i < NUMPRIMES && primes[i] < rnd_word; i++) {
-      if ((mods[i] + delta) % primes[i] == 0) {
+    for (size_t i = 1; i < num_primes && kPrimes[i] < rnd_word; i++) {
+      if ((mods[i] + delta) % kPrimes[i] == 0) {
         delta += 2;
         if (delta > maxdelta) {
           goto again;
@@ -1003,10 +956,10 @@ loop:
       }
     }
   } else {
-    for (i = 1; i < NUMPRIMES; i++) {
+    for (size_t i = 1; i < num_primes; i++) {
       // check that rnd is not a prime and also
       // that gcd(rnd-1,primes) == 1 (except for 2)
-      if (((mods[i] + delta) % primes[i]) <= 1) {
+      if (((mods[i] + delta) % kPrimes[i]) <= 1) {
         delta += 2;
         if (delta > maxdelta) {
           goto again;
@@ -1028,7 +981,7 @@ loop:
 
 static int probable_prime_dh(BIGNUM *rnd, int bits, const BIGNUM *add,
                              const BIGNUM *rem, BN_CTX *ctx) {
-  int i, ret = 0;
+  int ret = 0;
   BIGNUM *t1;
 
   BN_CTX_start(ctx);
@@ -1059,10 +1012,11 @@ static int probable_prime_dh(BIGNUM *rnd, int bits, const BIGNUM *add,
   }
   // we now have a random number 'rand' to test.
 
+  const size_t num_primes = num_trial_division_primes(rnd);
 loop:
-  for (i = 1; i < NUMPRIMES; i++) {
+  for (size_t i = 1; i < num_primes; i++) {
     // check that rnd is a prime
-    if (bn_mod_u16_consttime(rnd, primes[i]) <= 1) {
+    if (bn_mod_u16_consttime(rnd, kPrimes[i]) <= 1) {
       if (!BN_add(rnd, rnd, add)) {
         goto err;
       }
@@ -1079,7 +1033,7 @@ err:
 
 static int probable_prime_dh_safe(BIGNUM *p, int bits, const BIGNUM *padd,
                                   const BIGNUM *rem, BN_CTX *ctx) {
-  int i, ret = 0;
+  int ret = 0;
   BIGNUM *t1, *qadd, *q;
 
   bits--;
@@ -1129,13 +1083,14 @@ static int probable_prime_dh_safe(BIGNUM *p, int bits, const BIGNUM *padd,
     goto err;
   }
 
+  const size_t num_primes = num_trial_division_primes(p);
 loop:
-  for (i = 1; i < NUMPRIMES; i++) {
+  for (size_t i = 1; i < num_primes; i++) {
     // check that p and q are prime
     // check that for p and q
     // gcd(p-1,primes) == 1 (except for 2)
-    if (bn_mod_u16_consttime(p, primes[i]) == 0 ||
-        bn_mod_u16_consttime(q, primes[i]) == 0) {
+    if (bn_mod_u16_consttime(p, kPrimes[i]) == 0 ||
+        bn_mod_u16_consttime(q, kPrimes[i]) == 0) {
       if (!BN_add(p, p, padd)) {
         goto err;
       }

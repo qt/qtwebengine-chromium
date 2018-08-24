@@ -83,7 +83,6 @@ class BrowserControlsTest : public testing::Test {
 
   static void ConfigureSettings(WebSettings* settings) {
     settings->SetJavaScriptEnabled(true);
-    settings->SetAcceleratedCompositingEnabled(true);
     settings->SetPreferCompositingToLCDTextEnabled(true);
     // Android settings
     settings->SetViewportEnabled(true);
@@ -102,6 +101,7 @@ class BrowserControlsTest : public testing::Test {
                                        int delta_x = 0,
                                        int delta_y = 0) {
     WebGestureEvent event(type, WebInputEvent::kNoModifiers,
+                          WebInputEvent::GetStaticTimeStampForTests(),
                           kWebGestureDeviceTouchscreen);
     event.SetPositionInWidget(FloatPoint(100, 100));
     if (type == WebInputEvent::kGestureScrollUpdate) {

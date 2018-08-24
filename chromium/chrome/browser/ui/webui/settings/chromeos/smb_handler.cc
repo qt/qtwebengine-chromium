@@ -10,19 +10,14 @@
 #include "base/bind.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/file_system_provider/provided_file_system_info.h"
-#include "chrome/browser/chromeos/smb_client/smb_service.h"
 #include "chrome/browser/profiles/profile.h"
-
-namespace {
-void DoNothingCallback(base::File::Error error) {
-  return;
-}
-}  // namespace
+#include "content/public/browser/web_ui_message_handler.h"
 
 namespace chromeos {
 namespace settings {
 
-SmbHandler::SmbHandler(Profile* profile) : profile_(profile) {}
+SmbHandler::SmbHandler(Profile* profile)
+    : profile_(profile), weak_ptr_factory_(this) {}
 
 SmbHandler::~SmbHandler() = default;
 
@@ -33,9 +28,13 @@ void SmbHandler::RegisterMessages() {
 }
 
 void SmbHandler::HandleSmbMount(const base::ListValue* args) {
-  CHECK_EQ(1U, args->GetSize());
+  CHECK_EQ(3U, args->GetSize());
   std::string mountUrl;
+  std::string username;
+  std::string password;
   CHECK(args->GetString(0, &mountUrl));
+  CHECK(args->GetString(1, &username));
+  CHECK(args->GetString(2, &password));
 
   chromeos::smb_client::SmbService* const service =
       chromeos::smb_client::SmbService::Get(profile_);
@@ -44,8 +43,14 @@ void SmbHandler::HandleSmbMount(const base::ListValue* args) {
   mo.display_name = mountUrl;
   mo.writable = true;
 
-  service->Mount(mo, base::FilePath(mountUrl),
-                 base::BindOnce(&DoNothingCallback));
+  service->Mount(mo, base::FilePath(mountUrl), username, password,
+                 base::BindOnce(&SmbHandler::HandleSmbMountResponse,
+                                weak_ptr_factory_.GetWeakPtr()));
+}
+
+void SmbHandler::HandleSmbMountResponse(SmbMountResult result) {
+  AllowJavascript();
+  FireWebUIListener("on-add-smb-share", base::Value(result));
 }
 
 }  // namespace settings

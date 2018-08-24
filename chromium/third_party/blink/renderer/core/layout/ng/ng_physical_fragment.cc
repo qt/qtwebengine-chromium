@@ -5,11 +5,12 @@
 #include "third_party/blink/renderer/core/layout/ng/ng_physical_fragment.h"
 
 #include "third_party/blink/renderer/core/layout/layout_block.h"
-#include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/layout/ng/geometry/ng_border_edges.h"
 #include "third_party/blink/renderer/core/layout/ng/geometry/ng_box_strut.h"
+#include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_node.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_physical_line_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_physical_text_fragment.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_block_node.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_break_token.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_physical_box_fragment.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
@@ -241,9 +242,12 @@ void NGPhysicalFragment::Destroy() const {
 
 const ComputedStyle& NGPhysicalFragment::Style() const {
   DCHECK(style_);
+  // TODO(kojii): Returning |style_| locks the style at the layout time, and
+  // will not be updated when its base style is updated later. Line styles and
+  // ellipsis styles have this problem.
   if (!GetLayoutObject())
     return *style_;
-  switch ((NGStyleVariant)style_variant_) {
+  switch (StyleVariant()) {
     case NGStyleVariant::kStandard:
       return *GetLayoutObject()->Style();
     case NGStyleVariant::kFirstLine:
@@ -285,7 +289,9 @@ bool NGPhysicalFragment::IsPlacedByLayoutNG() const {
   if (!layout_object_)
     return false;
   const LayoutBlock* container = layout_object_->ContainingBlock();
-  return container && container->IsLayoutNGMixin();
+  if (!container)
+    return false;
+  return container->IsLayoutNGMixin() || container->IsLayoutNGFlexibleBox();
 }
 
 NGPixelSnappedPhysicalBoxStrut NGPhysicalFragment::BorderWidths() const {
@@ -324,11 +330,56 @@ NGPhysicalOffsetRect NGPhysicalFragment::VisualRectWithContents() const {
   return {{}, Size()};
 }
 
+NGPhysicalOffsetRect NGPhysicalFragment::ScrollableOverflow() const {
+  switch (Type()) {
+    case NGPhysicalFragment::kFragmentBox:
+      return ToNGPhysicalBoxFragment(*this).ScrollableOverflow();
+    case NGPhysicalFragment::kFragmentText:
+      return {{}, Size()};
+    case NGPhysicalFragment::kFragmentLineBox:
+      return ToNGPhysicalLineBoxFragment(*this).ScrollableOverflow();
+  }
+  NOTREACHED();
+  return {{}, Size()};
+}
+
 void NGPhysicalFragment::PropagateContentsVisualRect(
     NGPhysicalOffsetRect* parent_visual_rect) const {
   NGPhysicalOffsetRect visual_rect = VisualRectWithContents();
   visual_rect.offset += Offset();
   parent_visual_rect->Unite(visual_rect);
+}
+
+const Vector<NGInlineItem>& NGPhysicalFragment::InlineItemsOfContainingBlock()
+    const {
+  DCHECK(IsInline());
+  DCHECK(GetLayoutObject());
+  LayoutBlockFlow* block_flow =
+      GetLayoutObject()->Parent()->EnclosingNGBlockFlow();
+  // TODO(xiaochengh): Code below is copied from ng_offset_mapping.cc with
+  // modification. Unify them.
+  DCHECK(block_flow);
+  DCHECK(block_flow->ChildrenInline());
+  NGBlockNode block_node = NGBlockNode(block_flow);
+  DCHECK(block_node.CanUseNewLayout());
+  NGLayoutInputNode node = block_node.FirstChild();
+  DCHECK(node);
+  DCHECK(node.IsInline());
+
+  // TODO(xiaochengh): Handle ::first-line.
+  return ToNGInlineNode(node).ItemsData(false).items;
+}
+
+UBiDiLevel NGPhysicalFragment::BidiLevel() const {
+  NOTREACHED();
+  return 0;
+}
+
+TextDirection NGPhysicalFragment::ResolvedDirection() const {
+  DCHECK(IsInline());
+  DCHECK(IsText() || IsAtomicInline());
+  // TODO(xiaochengh): Store direction in |base_direction_| flag.
+  return DirectionFromLevel(BidiLevel());
 }
 
 scoped_refptr<NGPhysicalFragment> NGPhysicalFragment::CloneWithoutOffset()

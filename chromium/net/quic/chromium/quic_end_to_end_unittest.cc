@@ -29,15 +29,16 @@
 #include "net/http/transport_security_state.h"
 #include "net/log/net_log_with_source.h"
 #include "net/proxy_resolution/proxy_resolution_service.h"
-#include "net/quic/platform/api/quic_string_piece.h"
-#include "net/quic/test_tools/crypto_test_utils.h"
-#include "net/quic/test_tools/quic_test_utils.h"
 #include "net/ssl/default_channel_id_store.h"
 #include "net/ssl/ssl_config_service_defaults.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/gtest_util.h"
 #include "net/test/test_data_directory.h"
-#include "net/tools/quic/quic_http_response_cache.h"
+#include "net/test/test_with_scoped_task_environment.h"
+#include "net/third_party/quic/platform/api/quic_string_piece.h"
+#include "net/third_party/quic/test_tools/crypto_test_utils.h"
+#include "net/third_party/quic/test_tools/quic_test_utils.h"
+#include "net/third_party/quic/tools/quic_memory_cache_backend.h"
 #include "net/tools/quic/quic_simple_server.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -96,7 +97,8 @@ std::vector<TestParams> GetTestParams() {
 
 }  // namespace
 
-class QuicEndToEndTest : public ::testing::TestWithParam<TestParams> {
+class QuicEndToEndTest : public ::testing::TestWithParam<TestParams>,
+                         public WithScopedTaskEnvironment {
  protected:
   QuicEndToEndTest()
       : host_resolver_impl_(CreateResolverImpl()),
@@ -177,9 +179,10 @@ class QuicEndToEndTest : public ::testing::TestWithParam<TestParams> {
     server_config_.SetInitialSessionFlowControlWindowToSend(
         kInitialSessionFlowControlWindowForTest);
     server_config_options_.token_binding_params = QuicTagVector{kTB10, kP256};
-    server_.reset(new QuicSimpleServer(
-        crypto_test_utils::ProofSourceForTesting(), server_config_,
-        server_config_options_, AllSupportedVersions(), &response_cache_));
+    server_.reset(
+        new QuicSimpleServer(crypto_test_utils::ProofSourceForTesting(),
+                             server_config_, server_config_options_,
+                             AllSupportedVersions(), &memory_cache_backend_));
     server_->Listen(server_address_);
     server_address_ = server_->server_address();
     server_->StartReading();
@@ -192,8 +195,8 @@ class QuicEndToEndTest : public ::testing::TestWithParam<TestParams> {
                   int response_code,
                   QuicStringPiece response_detail,
                   QuicStringPiece body) {
-    response_cache_.AddSimpleResponse("test.example.com", path, response_code,
-                                      body);
+    memory_cache_backend_.AddSimpleResponse("test.example.com", path,
+                                            response_code, body);
   }
 
   // Populates |request_body_| with |length_| ASCII bytes.
@@ -237,7 +240,7 @@ class QuicEndToEndTest : public ::testing::TestWithParam<TestParams> {
   std::unique_ptr<ChannelIDService> channel_id_service_;
   TransportSecurityState transport_security_state_;
   std::unique_ptr<CTVerifier> cert_transparency_verifier_;
-  CTPolicyEnforcer ct_policy_enforcer_;
+  DefaultCTPolicyEnforcer ct_policy_enforcer_;
   scoped_refptr<SSLConfigServiceDefaults> ssl_config_service_;
   std::unique_ptr<ProxyResolutionService> proxy_resolution_service_;
   std::unique_ptr<HttpAuthHandlerFactory> auth_handler_factory_;
@@ -249,7 +252,7 @@ class QuicEndToEndTest : public ::testing::TestWithParam<TestParams> {
   std::string request_body_;
   std::unique_ptr<UploadDataStream> upload_data_stream_;
   std::unique_ptr<QuicSimpleServer> server_;
-  QuicHttpResponseCache response_cache_;
+  QuicMemoryCacheBackend memory_cache_backend_;
   IPEndPoint server_address_;
   std::string server_hostname_;
   QuicConfig server_config_;

@@ -92,7 +92,7 @@ class WebAssociatedURLLoaderTest : public testing::Test,
         "invisible_iframe.html", "visible_iframe.html",
         "zero_sized_iframe.html",
     };
-    for (size_t i = 0; i < WTF_ARRAY_LENGTH(iframe_support_files); ++i) {
+    for (size_t i = 0; i < arraysize(iframe_support_files); ++i) {
       RegisterMockedUrl(url_root, iframe_support_files[i]);
     }
 
@@ -154,9 +154,7 @@ class WebAssociatedURLLoaderTest : public testing::Test,
     did_receive_cached_metadata_ = true;
   }
 
-  void DidFinishLoading(double finish_time) override {
-    did_finish_loading_ = true;
-  }
+  void DidFinishLoading() override { did_finish_loading_ = true; }
 
   void DidFail(const WebURLError& error) override { did_fail_ = true; }
 

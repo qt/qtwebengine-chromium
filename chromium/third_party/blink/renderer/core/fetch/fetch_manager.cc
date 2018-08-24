@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/core/fetch/fetch_manager.h"
 
 #include <memory>
+#include "base/single_thread_task_runner.h"
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
 #include "third_party/blink/public/platform/web_cors.h"
 #include "third_party/blink/public/platform/web_url_request.h"
@@ -182,7 +183,7 @@ class FetchManager::Loader final
   void DidReceiveResponse(unsigned long,
                           const ResourceResponse&,
                           std::unique_ptr<WebDataConsumerHandle>) override;
-  void DidFinishLoading(unsigned long, double) override;
+  void DidFinishLoading(unsigned long) override;
   void DidFail(const ResourceError&) override;
   void DidFailRedirectCheck() override;
 
@@ -547,7 +548,7 @@ void FetchManager::Loader::DidReceiveResponse(
   }
 }
 
-void FetchManager::Loader::DidFinishLoading(unsigned long, double) {
+void FetchManager::Loader::DidFinishLoading(unsigned long) {
   did_finish_loading_ = true;
   // If there is an integrity verifier, and it has not already finished, it
   // will take care of finishing the load or performing a network error when
@@ -581,12 +582,10 @@ void FetchManager::Loader::LoadSucceeded() {
 
   if (GetDocument() && GetDocument()->GetFrame() &&
       GetDocument()->GetFrame()->GetPage() &&
-      FetchUtils::IsOkStatus(response_http_status_code_)) {
+      CORS::IsOkStatus(response_http_status_code_)) {
     GetDocument()->GetFrame()->GetPage()->GetChromeClient().AjaxSucceeded(
         GetDocument()->GetFrame());
   }
-  probe::didFinishFetch(execution_context_, this, fetch_request_data_->Method(),
-                        fetch_request_data_->Url().GetString());
   NotifyFinished();
 }
 
@@ -653,6 +652,16 @@ void FetchManager::Loader::Start() {
 
   // "- |request|'s mode is |no CORS|"
   if (fetch_request_data_->Mode() == FetchRequestMode::kNoCORS) {
+    // "If |request|'s redirect mode is not |follow|, then return a network
+    // error.
+    if (fetch_request_data_->Redirect() != FetchRedirectMode::kFollow) {
+      PerformNetworkError("Fetch API cannot load " +
+                          fetch_request_data_->Url().GetString() +
+                          ". Request mode is \"no-cors\" but the redirect mode "
+                          " is not \"follow\".");
+      return;
+    }
+
     // "Set |request|'s response tainting to |opaque|."
     fetch_request_data_->SetResponseTainting(FetchRequestData::kOpaqueTainting);
     // "The result of performing a scheme fetch using |request|."
@@ -707,8 +716,6 @@ void FetchManager::Loader::Abort() {
     threadable_loader_ = nullptr;
     loader->Cancel();
   }
-  // TODO(ricea): Maybe a more specific probe is needed?
-  probe::didFailFetch(execution_context_, this);
   NotifyFinished();
 }
 
@@ -766,7 +773,7 @@ void FetchManager::Loader::PerformHTTPFetch() {
     // Since |fetch_request_data_|'s headers are populated with either of the
     // "request" guard or "request-no-cors" guard, we can assume that none of
     // the headers have a name listed in the forbidden header names.
-    DCHECK(!FetchUtils::IsForbiddenHeaderName(header.first));
+    DCHECK(!CORS::IsForbiddenHeaderName(header.first));
 
     request.AddHTTPHeaderField(AtomicString(header.first),
                                AtomicString(header.second));
@@ -806,7 +813,7 @@ void FetchManager::Loader::PerformHTTPFetch() {
 
   if (fetch_request_data_->Keepalive()) {
     if (!CORS::IsCORSSafelistedMethod(request.HttpMethod()) ||
-        !WebCORS::ContainsOnlyCORSSafelistedOrForbiddenHeaders(
+        !CORS::ContainsOnlyCORSSafelistedOrForbiddenHeaders(
             request.HttpHeaderFields())) {
       PerformNetworkError(
           "Preflight request for request with keepalive "
@@ -894,7 +901,6 @@ void FetchManager::Loader::Failed(const String& message) {
     resolver_->Reject(V8ThrowException::CreateTypeError(state->GetIsolate(),
                                                         "Failed to fetch"));
   }
-  probe::didFailFetch(execution_context_, this);
   NotifyFinished();
 }
 

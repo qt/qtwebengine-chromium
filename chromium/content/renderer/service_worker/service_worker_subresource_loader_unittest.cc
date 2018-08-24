@@ -9,7 +9,6 @@
 #include "base/test/scoped_feature_list.h"
 #include "content/common/service_worker/service_worker_container.mojom.h"
 #include "content/common/service_worker/service_worker_utils.h"
-#include "content/common/wrapper_shared_url_loader_factory.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/resource_type.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -22,6 +21,7 @@
 #include "net/url_request/url_request.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "services/network/public/cpp/wrapper_shared_url_loader_factory.h"
 #include "services/network/test/test_data_pipe_getter.h"
 #include "services/network/test/test_url_loader_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -354,14 +354,15 @@ class ServiceWorkerSubresourceLoaderTest : public ::testing::Test {
     network::mojom::URLLoaderFactoryPtr fake_loader_factory;
     mojo::MakeStrongBinding(std::make_unique<FakeNetworkURLLoaderFactory>(),
                             MakeRequest(&fake_loader_factory));
-    loader_factory_ = base::MakeRefCounted<WrapperSharedURLLoaderFactory>(
-        std::move(fake_loader_factory));
+    loader_factory_ =
+        base::MakeRefCounted<network::WrapperSharedURLLoaderFactory>(
+            std::move(fake_loader_factory));
   }
 
   network::mojom::URLLoaderFactoryPtr CreateSubresourceLoaderFactory() {
     if (!connector_) {
       connector_ = base::MakeRefCounted<ControllerServiceWorkerConnector>(
-          &fake_container_host_);
+          &fake_container_host_, nullptr /*controller_ptr*/, "" /*client_id*/);
     }
     network::mojom::URLLoaderFactoryPtr service_worker_url_loader_factory;
     ServiceWorkerSubresourceLoaderFactory::Create(
@@ -569,7 +570,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, NoController) {
   }
 
   // Make the connector have no controller.
-  connector_->ResetControllerConnection(nullptr, "" /*client_id*/);
+  connector_->ResetControllerConnection(nullptr);
   base::RunLoop().RunUntilIdle();
 
   {
@@ -812,7 +813,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, RedirectResponse) {
 
   // Redirect once more.
   fake_controller_.RespondWithRedirect("https://other.example.com/baz.png");
-  loader->FollowRedirect();
+  loader->FollowRedirect(base::nullopt);
   client->RunUntilRedirectReceived();
 
   EXPECT_EQ(net::OK, client->completion_status().error_code);
@@ -831,7 +832,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, RedirectResponse) {
   mojo::DataPipe data_pipe;
   fake_controller_.RespondWithStream(mojo::MakeRequest(&stream_callback),
                                      std::move(data_pipe.consumer_handle));
-  loader->FollowRedirect();
+  loader->FollowRedirect(base::nullopt);
   client->RunUntilResponseReceived();
 
   const network::ResourceResponseHead& info = client->response_head();
@@ -896,7 +897,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, TooManyRedirects) {
     redirect_location = std::string("https://www.example.com/redirect_") +
                         base::IntToString(count);
     fake_controller_.RespondWithRedirect(redirect_location);
-    loader->FollowRedirect();
+    loader->FollowRedirect(base::nullopt);
   }
   client->RunUntilComplete();
 

@@ -13,6 +13,7 @@
 #include "base/debug/alias.h"
 #include "base/macros.h"
 #include "base/strings/string_util.h"
+#include "base/syslog_logging.h"
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
 #include "components/download/public/common/download_url_parameters.h"
@@ -96,9 +97,13 @@ void CreateChildFrameOnUI(
   }
 }
 
+// |blob_data_handle| is only here for the legacy code path. With network
+// service enabled |blob_url_token| should be provided and will be used instead
+// to download the correct blob.
 void DownloadUrlOnUIThread(
     std::unique_ptr<download::DownloadUrlParameters> parameters,
-    std::unique_ptr<storage::BlobDataHandle> blob_data_handle) {
+    std::unique_ptr<storage::BlobDataHandle> blob_data_handle,
+    blink::mojom::BlobURLTokenPtrInfo blob_url_token) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   RenderProcessHost* render_process_host =
@@ -107,11 +112,21 @@ void DownloadUrlOnUIThread(
     return;
 
   BrowserContext* browser_context = render_process_host->GetBrowserContext();
+
+  scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory;
+  if (blob_url_token) {
+    blob_url_loader_factory =
+        ChromeBlobStorageContext::URLLoaderFactoryForToken(
+            browser_context,
+            blink::mojom::BlobURLTokenPtr(std::move(blob_url_token)));
+  }
+
   DownloadManager* download_manager =
       BrowserContext::GetDownloadManager(browser_context);
   parameters->set_download_source(download::DownloadSource::FROM_RENDERER);
   download_manager->DownloadUrl(std::move(parameters),
-                                std::move(blob_data_handle));
+                                std::move(blob_data_handle),
+                                std::move(blob_url_loader_factory));
 }
 
 // Common functionality for converting a sync renderer message to a callback
@@ -296,13 +311,15 @@ void RenderFrameMessageFilter::OnDestruct() const {
   BrowserThread::DeleteOnIOThread::Destruct(this);
 }
 
-void RenderFrameMessageFilter::DownloadUrl(int render_view_id,
-                                           int render_frame_id,
-                                           const GURL& url,
-                                           const Referrer& referrer,
-                                           const url::Origin& initiator,
-                                           const base::string16& suggested_name,
-                                           const bool use_prompt) const {
+void RenderFrameMessageFilter::DownloadUrl(
+    int render_view_id,
+    int render_frame_id,
+    const GURL& url,
+    const Referrer& referrer,
+    const url::Origin& initiator,
+    const base::string16& suggested_name,
+    const bool use_prompt,
+    blink::mojom::BlobURLTokenPtrInfo blob_url_token) const {
   if (!resource_context_)
     return;
 
@@ -343,6 +360,10 @@ void RenderFrameMessageFilter::DownloadUrl(int render_view_id,
       Referrer::ReferrerPolicyForUrlRequest(referrer.policy));
   parameters->set_initiator(initiator);
 
+  // If network service is enabled we should always have a |blob_url_token|,
+  // which will be used to download the correct blob. But in the legacy
+  // non-network service code path we still need to look up the BlobDataHandle
+  // for the URL here, to make sure the correct blob ends up getting downloaded.
   std::unique_ptr<storage::BlobDataHandle> blob_data_handle;
   if (url.SchemeIsBlob()) {
     ChromeBlobStorageContext* blob_context =
@@ -355,7 +376,7 @@ void RenderFrameMessageFilter::DownloadUrl(int render_view_id,
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::BindOnce(&DownloadUrlOnUIThread, std::move(parameters),
-                     std::move(blob_data_handle)));
+                     std::move(blob_data_handle), std::move(blob_url_token)));
 }
 
 void RenderFrameMessageFilter::OnCreateChildFrame(
@@ -414,9 +435,18 @@ void RenderFrameMessageFilter::CheckPolicyForCookies(
 
 void RenderFrameMessageFilter::OnDownloadUrl(
     const FrameHostMsg_DownloadUrl_Params& params) {
+  mojo::ScopedMessagePipeHandle blob_url_token_handle(params.blob_url_token);
+  blink::mojom::BlobURLTokenPtrInfo blob_url_token(
+      std::move(blob_url_token_handle), blink::mojom::BlobURLToken::Version_);
+  if (blob_url_token && !params.url.SchemeIsBlob()) {
+    bad_message::ReceivedBadMessage(
+        this, bad_message::RFMF_BLOB_URL_TOKEN_FOR_NON_BLOB_URL);
+    return;
+  }
+
   DownloadUrl(params.render_view_id, params.render_frame_id, params.url,
               params.referrer, params.initiator_origin, params.suggested_name,
-              false);
+              false, std::move(blob_url_token));
 }
 
 void RenderFrameMessageFilter::OnSaveImageFromDataURL(
@@ -432,7 +462,7 @@ void RenderFrameMessageFilter::OnSaveImageFromDataURL(
     return;
 
   DownloadUrl(render_view_id, render_frame_id, data_url, Referrer(),
-              url::Origin(), base::string16(), true);
+              url::Origin(), base::string16(), true, nullptr);
 }
 
 void RenderFrameMessageFilter::OnAre3DAPIsBlocked(int render_frame_id,
@@ -461,8 +491,11 @@ void RenderFrameMessageFilter::SetCookie(int32_t render_frame_id,
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
   if (!policy->CanAccessDataForOrigin(render_process_id_, url)) {
-    bad_message::ReceivedBadMessage(this,
-                                    bad_message::RFMF_SET_COOKIE_BAD_ORIGIN);
+    bad_message::BadMessageReason reason =
+        bad_message::RFMF_SET_COOKIE_BAD_ORIGIN;
+    SYSLOG(WARNING) << "Killing renderer: illegal cookie write. Reason: "
+                    << reason;
+    bad_message::ReceivedBadMessage(this, reason);
     return;
   }
 
@@ -502,8 +535,11 @@ void RenderFrameMessageFilter::GetCookies(int render_frame_id,
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
   if (!policy->CanAccessDataForOrigin(render_process_id_, url)) {
-    bad_message::ReceivedBadMessage(this,
-                                    bad_message::RFMF_GET_COOKIES_BAD_ORIGIN);
+    bad_message::BadMessageReason reason =
+        bad_message::RFMF_GET_COOKIES_BAD_ORIGIN;
+    SYSLOG(WARNING) << "Killing renderer: illegal cookie read. Reason: "
+                    << reason;
+    bad_message::ReceivedBadMessage(this, reason);
     std::move(callback).Run(std::string());
     return;
   }

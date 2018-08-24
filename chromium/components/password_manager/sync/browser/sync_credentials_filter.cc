@@ -77,18 +77,25 @@ std::vector<std::unique_ptr<PasswordForm>> SyncCredentialsFilter::FilterResults(
 
 bool SyncCredentialsFilter::ShouldSave(
     const autofill::PasswordForm& form) const {
-  return !sync_util::IsSyncAccountCredential(
-      form, sync_service_factory_function_.Run(),
-      signin_manager_factory_function_.Run(), client_->GetPrefs());
+  return !form.is_gaia_with_skip_save_password_form &&
+         !sync_util::IsSyncAccountCredential(
+             form, sync_service_factory_function_.Run(),
+             signin_manager_factory_function_.Run());
+}
+
+bool SyncCredentialsFilter::ShouldSavePasswordHash(
+    const autofill::PasswordForm& form) const {
+  return sync_util::ShouldSavePasswordHash(
+      form, signin_manager_factory_function_.Run(), client_->GetPrefs());
 }
 
 void SyncCredentialsFilter::ReportFormLoginSuccess(
     const PasswordFormManager& form_manager) const {
   if (!form_manager.IsNewLogin() &&
-      sync_util::IsSyncAccountCredential(form_manager.pending_credentials(),
-                                         sync_service_factory_function_.Run(),
-                                         signin_manager_factory_function_.Run(),
-                                         client_->GetPrefs())) {
+      sync_util::IsSyncAccountCredential(
+          form_manager.GetPendingCredentials(),
+          sync_service_factory_function_.Run(),
+          signin_manager_factory_function_.Run())) {
     base::RecordAction(base::UserMetricsAction(
         "PasswordManager_SyncCredentialFilledAndLoginSuccessfull"));
   }

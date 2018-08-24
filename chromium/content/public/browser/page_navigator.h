@@ -21,6 +21,7 @@
 #include "content/public/common/referrer.h"
 #include "ipc/ipc_message.h"
 #include "services/network/public/cpp/resource_request_body.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "third_party/blink/public/web/web_triggering_event_info.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
@@ -108,10 +109,8 @@ struct CONTENT_EXPORT OpenURLParams {
   // Indicates whether this navigation was started via context menu.
   bool started_from_context_menu;
 
-  // If this event was triggered by an anchor element with a download
-  // attribute, |suggested_filename| will contain the (possibly empty) value of
-  // that attribute.
-  base::Optional<std::string> suggested_filename;
+  // Optional URLLoaderFactory to facilitate navigation to a blob URL.
+  scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory;
 
   // Indicates that the navigation should happen in an app window if
   // possible, i.e. if an app for the URL is installed.

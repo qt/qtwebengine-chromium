@@ -39,6 +39,7 @@ cc_library(
     ],
     deps = [
         "//absl/base",
+        "//absl/base:base_internal",
         "//absl/base:core_headers",
         "//absl/base:malloc_internal",
     ],
@@ -75,9 +76,9 @@ cc_library(
         "//absl/base:config",
         "//absl/base:core_headers",
         "//absl/base:dynamic_annotations",
-        "//absl/base:malloc_extension",
         "//absl/base:malloc_internal",
         "//absl/debugging:stacktrace",
+        "//absl/debugging:symbolize",
         "//absl/time",
     ],
 )
@@ -119,6 +120,20 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "graphcycles_benchmark",
+    srcs = ["internal/graphcycles_benchmark.cc"],
+    copts = ABSL_TEST_COPTS,
+    tags = [
+        "benchmark",
+    ],
+    deps = [
+        ":graphcycles_internal",
+        "//absl/base",
+        "@com_github_google_benchmark//:benchmark",
+    ],
+)
+
 cc_library(
     name = "thread_pool",
     testonly = 1,
@@ -149,6 +164,20 @@ cc_test(
 )
 
 cc_test(
+    name = "mutex_benchmark",
+    srcs = ["mutex_benchmark.cc"],
+    copts = ABSL_TEST_COPTS,
+    tags = ["benchmark"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":synchronization",
+        ":thread_pool",
+        "//absl/base",
+        "@com_github_google_benchmark//:benchmark",
+    ],
+)
+
+cc_test(
     name = "notification_test",
     size = "small",
     srcs = ["notification_test.cc"],
@@ -168,7 +197,6 @@ cc_library(
     deps = [
         ":synchronization",
         "//absl/base",
-        "//absl/base:malloc_extension",
         "//absl/strings",
         "//absl/time",
         "@com_google_googletest//:gtest",
@@ -184,7 +212,6 @@ cc_test(
         ":per_thread_sem_test_common",
         ":synchronization",
         "//absl/base",
-        "//absl/base:malloc_extension",
         "//absl/strings",
         "//absl/time",
         "@com_google_googletest//:gtest_main",

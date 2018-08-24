@@ -8,13 +8,18 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/signin/account_consistency_mode_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/unified_consent_helper.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/webui/signin/sync_confirmation_handler.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/browser_resources.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/signin/core/browser/avatar_icon_util.h"
+#include "components/signin/core/browser/signin_manager.h"
+#include "components/strings/grit/components_strings.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -57,10 +62,51 @@ SyncConfirmationUI::SyncConfirmationUI(content::WebUI* web_ui)
                       IDS_SYNC_CONFIRMATION_DICE_SYNC_SETTINGS_LINK_BODY);
     AddStringResource(source, "syncConfirmationSyncSettingsDescription",
                       IDS_SYNC_CONFIRMATION_DICE_SYNC_SETTINGS_DESCRIPTION);
+    AddStringResource(source, "syncConfirmationSettingsLabel",
+                      IDS_SYNC_CONFIRMATION_DICE_SETTINGS_BUTTON_LABEL);
+
+    AddStringResource(source, "syncConfirmationMoreOptionsLabel",
+                      IDS_SYNC_CONFIRMATION_UNITY_MORE_OPTIONS_BUTTON_LABEL);
+    AddStringResource(source, "syncConfirmationOptionsTitle",
+                      IDS_SYNC_CONFIRMATION_UNITY_MORE_OPTIONS_TITLE);
+    AddStringResource(source, "syncConfirmationOptionsSubtitle",
+                      IDS_SYNC_CONFIRMATION_UNITY_MORE_OPTIONS_SUBTITLE);
+    AddStringResource(
+        source, "syncConfirmationOptionsReviewSettingsTitle",
+        IDS_SYNC_CONFIRMATION_UNITY_OPTIONS_REVIEW_SETTINGS_TITLE);
+    AddStringResource(
+        source, "syncConfirmationOptionsMakeNoChangesTitle",
+        IDS_SYNC_CONFIRMATION_UNITY_OPTIONS_MAKE_NO_CHANGES_TITLE);
+    AddStringResource(
+        source, "syncConfirmationOptionsMakeNoChangesSubtitle",
+        IDS_SYNC_CONFIRMATION_UNITY_OPTIONS_MAKE_NO_CHANGES_SUBTITLE);
+    AddStringResource(source, "syncConfirmationOptionsUseDefaultTitle",
+                      IDS_SYNC_CONFIRMATION_UNITY_OPTIONS_USE_DEFAULT_TITLE);
+    AddStringResource(source, "syncConfirmationOptionsUseDefaultSubtitle",
+                      IDS_SYNC_CONFIRMATION_UNITY_OPTIONS_USE_DEFAULT_SUBTITLE);
+    AddStringResource(source, "syncConfirmationOptionsConfirmLabel",
+                      IDS_SYNC_CONFIRMATION_UNITY_OPTIONS_CONFIRM_BUTTON_LABEL);
+    AddStringResource(source, "syncConfirmationOptionsBackLabel",
+                      IDS_SYNC_CONFIRMATION_UNITY_OPTIONS_BACK_BUTTON_LABEL);
+    AddStringResource(source, "syncConsentBumpTitle",
+                      IDS_SYNC_CONFIRMATION_UNITY_CONSENT_BUMP_TITLE);
+
+    constexpr int kAccountPictureSize = 68;
+    std::string custom_picture_url = profiles::GetPlaceholderAvatarIconUrl();
+    GURL account_picture_url(SigninManagerFactory::GetForProfile(profile)
+                                 ->GetAuthenticatedAccountInfo()
+                                 .picture_url);
+    if (account_picture_url.is_valid()) {
+      custom_picture_url = signin::GetAvatarImageURLWithOptions(
+                               account_picture_url, kAccountPictureSize,
+                               false /* no_silhouette */)
+                               .spec();
+    }
+    source->AddString("accountPictureUrl", custom_picture_url);
 
     title_ids = IDS_SYNC_CONFIRMATION_UNITY_TITLE;
     confirm_button_ids = IDS_SYNC_CONFIRMATION_DICE_CONFIRM_BUTTON_LABEL;
-    undo_button_ids = IDS_SYNC_CONFIRMATION_DICE_UNDO_BUTTON_LABEL;
+    undo_button_ids = IDS_CANCEL;
   } else {
     source->SetDefaultResource(IDR_SYNC_CONFIRMATION_HTML);
     source->AddResourcePath("sync_confirmation.css", IDR_SYNC_CONFIRMATION_CSS);

@@ -450,14 +450,15 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   // still working on LayoutNG.
   void AddOverflowFromFloats();
 
+  virtual NGInlineNodeData* TakeNGInlineNodeData() { return nullptr; }
   virtual NGInlineNodeData* GetNGInlineNodeData() const { return nullptr; }
   virtual void ResetNGInlineNodeData() {}
   virtual bool HasNGInlineNodeData() const { return false; }
   virtual NGPaintFragment* PaintFragment() const { return nullptr; }
-  virtual Vector<NGPaintFragment*> GetPaintFragments(const LayoutObject&) const;
   virtual scoped_refptr<NGLayoutResult> CachedLayoutResult(
       const NGConstraintSpace&,
       NGBreakToken*) const;
+  virtual const NGConstraintSpace* CachedConstraintSpace() const;
   virtual scoped_refptr<NGLayoutResult> CachedLayoutResultForTesting();
   virtual void SetCachedLayoutResult(const NGConstraintSpace&,
                                      NGBreakToken*,

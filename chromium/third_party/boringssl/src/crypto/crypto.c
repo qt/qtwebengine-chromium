@@ -164,31 +164,36 @@ int CRYPTO_has_asm(void) {
 #endif
 }
 
-const char *SSLeay_version(int unused) {
-  return "BoringSSL";
+const char *SSLeay_version(int which) { return OpenSSL_version(which); }
+
+const char *OpenSSL_version(int which) {
+  switch (which) {
+    case OPENSSL_VERSION:
+      return "BoringSSL";
+    case OPENSSL_CFLAGS:
+      return "compiler: n/a";
+    case OPENSSL_BUILT_ON:
+      return "built on: n/a";
+    case OPENSSL_PLATFORM:
+      return "platform: n/a";
+    case OPENSSL_DIR:
+      return "OPENSSLDIR: n/a";
+    default:
+      return "not available";
+  }
 }
 
-const char *OpenSSL_version(int unused) {
-  return "BoringSSL";
-}
+unsigned long SSLeay(void) { return OPENSSL_VERSION_NUMBER; }
 
-unsigned long SSLeay(void) {
-  return OPENSSL_VERSION_NUMBER;
-}
+unsigned long OpenSSL_version_num(void) { return OPENSSL_VERSION_NUMBER; }
 
-unsigned long OpenSSL_version_num(void) {
-  return OPENSSL_VERSION_NUMBER;
-}
+int CRYPTO_malloc_init(void) { return 1; }
 
-int CRYPTO_malloc_init(void) {
-  return 1;
-}
+int OPENSSL_malloc_init(void) { return 1; }
 
 void ENGINE_load_builtin_engines(void) {}
 
-int ENGINE_register_all_complete(void) {
-  return 1;
-}
+int ENGINE_register_all_complete(void) { return 1; }
 
 void OPENSSL_load_builtin_modules(void) {}
 

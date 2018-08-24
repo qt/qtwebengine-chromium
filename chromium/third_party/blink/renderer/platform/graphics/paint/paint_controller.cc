@@ -5,11 +5,11 @@
 #include "third_party/blink/renderer/platform/graphics/paint/paint_controller.h"
 
 #include <memory>
+#include "base/auto_reset.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
 #include "third_party/blink/renderer/platform/graphics/logging_canvas.h"
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_display_item.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
@@ -26,12 +26,9 @@ void PaintController::SetTracksRasterInvalidations(bool value) {
       raster_invalidation_tracking_info_->old_client_debug_names.Set(
           &item.Client(), item.Client().DebugName());
     }
-  } else if (!RuntimeEnabledFeatures::PaintUnderInvalidationCheckingEnabled()) {
+  } else if (!RasterInvalidationTracking::ShouldAlwaysTrack()) {
     raster_invalidation_tracking_info_ = nullptr;
   }
-
-  for (auto& chunk : current_paint_artifact_.PaintChunks())
-    chunk.raster_invalidation_tracking.clear();
 }
 
 void PaintController::EnsureRasterInvalidationTracking() {
@@ -119,6 +116,16 @@ bool PaintController::UseCachedSubsequenceIfPossible(
 
   SubsequenceMarkers* markers = GetSubsequenceMarkers(client);
   if (!markers) {
+    return false;
+  }
+
+  if (current_paint_artifact_.GetDisplayItemList()[markers->start]
+          .IsTombstone()) {
+    // The subsequence has already been copied, indicating that the same client
+    // created multiple subsequences. If DCHECK_IS_ON(), then we should have
+    // encountered the DCHECK at the end of EndSubsequence() during the previous
+    // paint.
+    NOTREACHED();
     return false;
   }
 
@@ -494,14 +501,14 @@ void PaintController::CopyCachedSubsequence(size_t begin_index,
                                             size_t end_index) {
   DCHECK(!RuntimeEnabledFeatures::PaintUnderInvalidationCheckingEnabled());
 
-  AutoReset<size_t> subsequence_begin_index(
+  base::AutoReset<size_t> subsequence_begin_index(
       &current_cached_subsequence_begin_index_in_new_list_,
       new_display_item_list_.size());
   DisplayItem* cached_item =
       &current_paint_artifact_.GetDisplayItemList()[begin_index];
 
   Vector<PaintChunk>::const_iterator cached_chunk;
-  PaintChunkProperties properties_before_subsequence;
+  base::Optional<PropertyTreeState> properties_before_subsequence;
   if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     cached_chunk =
         current_paint_artifact_.FindChunkByDisplayItemIndex(begin_index);
@@ -509,9 +516,8 @@ void PaintController::CopyCachedSubsequence(size_t begin_index,
 
     properties_before_subsequence =
         new_paint_chunks_.CurrentPaintChunkProperties();
-    new_paint_chunks_.ForceNewChunk();
     UpdateCurrentPaintChunkPropertiesUsingIdWithFragment(
-        cached_chunk->id, cached_chunk->properties);
+        cached_chunk->id, cached_chunk->properties.GetPropertyTreeState());
   } else {
     // Avoid uninitialized variable error on Windows.
     cached_chunk = current_paint_artifact_.PaintChunks().begin();
@@ -531,7 +537,7 @@ void PaintController::CopyCachedSubsequence(size_t begin_index,
       DCHECK(cached_chunk != current_paint_artifact_.PaintChunks().end());
       new_paint_chunks_.ForceNewChunk();
       UpdateCurrentPaintChunkPropertiesUsingIdWithFragment(
-          cached_chunk->id, cached_chunk->properties);
+          cached_chunk->id, cached_chunk->properties.GetPropertyTreeState());
     }
 
 #if DCHECK_IS_ON()
@@ -562,8 +568,8 @@ void PaintController::CopyCachedSubsequence(size_t begin_index,
     // Restore properties and force new chunk for any trailing display items
     // after the cached subsequence without new properties.
     new_paint_chunks_.ForceNewChunk();
-    UpdateCurrentPaintChunkProperties(WTF::nullopt,
-                                      properties_before_subsequence);
+    UpdateCurrentPaintChunkProperties(base::nullopt,
+                                      *properties_before_subsequence);
   }
 }
 
@@ -634,9 +640,8 @@ void PaintController::CommitNewDisplayItems() {
   // The new list will not be appended to again so we can release unused memory.
   new_display_item_list_.ShrinkToFit();
 
-  current_paint_artifact_ =
-      PaintArtifact(std::move(new_display_item_list_),
-                    new_paint_chunks_.ReleasePaintChunks());
+  current_paint_artifact_ = PaintArtifact(std::move(new_display_item_list_),
+                                          new_paint_chunks_.ReleaseData());
 
   ResetCurrentListIndices();
   out_of_order_item_indices_.clear();
@@ -674,6 +679,13 @@ void PaintController::CommitNewDisplayItems() {
       ShowDebugData();
   }
 #endif
+}
+
+void PaintController::FinishCycle() {
+  DCHECK(new_display_item_list_.IsEmpty());
+  DCHECK(new_paint_chunks_.IsInInitialState());
+
+  current_paint_artifact_.FinishCycle();
 }
 
 size_t PaintController::ApproximateUnsharedMemoryUsage() const {
@@ -724,10 +736,9 @@ void PaintController::AppendDebugDrawingAfterCommit(
   if (property_tree_state) {
     DCHECK(RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
     // Create a PaintChunk for the debug drawing.
-    PaintChunk chunk(display_item_list.size() - 1, display_item_list.size(),
-                     display_item.GetId(),
-                     PaintChunkProperties(*property_tree_state));
-    current_paint_artifact_.PaintChunks().push_back(chunk);
+    current_paint_artifact_.PaintChunks().emplace_back(
+        display_item_list.size() - 1, display_item_list.size(),
+        display_item.GetId(), *property_tree_state);
   }
 }
 
@@ -784,8 +795,8 @@ void PaintController::AddRasterInvalidation(const DisplayItemClient& client,
                                             PaintChunk& chunk,
                                             const FloatRect& rect,
                                             PaintInvalidationReason reason) {
-  chunk.raster_invalidation_rects.push_back(rect);
-  if (RuntimeEnabledFeatures::PaintUnderInvalidationCheckingEnabled())
+  new_paint_chunks_.AddRasterInvalidation(chunk, rect);
+  if (RasterInvalidationTracking::ShouldAlwaysTrack())
     EnsureRasterInvalidationTracking();
   if (raster_invalidation_tracking_info_)
     TrackRasterInvalidation(client, chunk, reason);
@@ -814,7 +825,7 @@ void PaintController::TrackRasterInvalidation(const DisplayItemClient& client,
     info.client_debug_name = client.DebugName();
   }
 
-  chunk.raster_invalidation_tracking.push_back(info);
+  new_paint_chunks_.TrackRasterInvalidation(chunk, info);
 }
 
 void PaintController::GenerateRasterInvalidationsComparingChunks(

@@ -21,21 +21,20 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_node_list.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_script_runner.h"
 #include "third_party/blink/renderer/core/dom/user_gesture_indicator.h"
-#include "third_party/blink/renderer/core/inspector/InspectorDOMDebuggerAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/core/inspector/inspector_dom_debugger_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/inspector/v8_inspector_string.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/platform/bindings/script_forbidden_scope.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
 
 ThreadDebugger::ThreadDebugger(v8::Isolate* isolate)
     : isolate_(isolate),
-      v8_inspector_(v8_inspector::V8Inspector::create(isolate, this)),
-      v8_tracing_cpu_profiler_(v8::TracingCpuProfiler::Create(isolate)) {}
+      v8_inspector_(v8_inspector::V8Inspector::create(isolate, this)) {}
 
 ThreadDebugger::~ThreadDebugger() = default;
 
@@ -220,16 +219,18 @@ static v8::Maybe<bool> CreateDataProperty(v8::Local<v8::Context> context,
   return object->CreateDataProperty(context, key, value);
 }
 
-static void CreateFunctionPropertyWithData(v8::Local<v8::Context> context,
-                                           v8::Local<v8::Object> object,
-                                           const char* name,
-                                           v8::FunctionCallback callback,
-                                           v8::Local<v8::Value> data,
-                                           const char* description) {
+static void CreateFunctionPropertyWithData(
+    v8::Local<v8::Context> context,
+    v8::Local<v8::Object> object,
+    const char* name,
+    v8::FunctionCallback callback,
+    v8::Local<v8::Value> data,
+    const char* description,
+    v8::SideEffectType side_effect_type) {
   v8::Local<v8::String> func_name = V8String(context->GetIsolate(), name);
   v8::Local<v8::Function> func;
   if (!v8::Function::New(context, callback, data, 0,
-                         v8::ConstructorBehavior::kThrow)
+                         v8::ConstructorBehavior::kThrow, side_effect_type)
            .ToLocal(&func))
     return;
   func->SetName(func_name);
@@ -237,7 +238,8 @@ static void CreateFunctionPropertyWithData(v8::Local<v8::Context> context,
       V8String(context->GetIsolate(), description);
   v8::Local<v8::Function> to_string_function;
   if (v8::Function::New(context, ReturnDataCallback, return_value, 0,
-                        v8::ConstructorBehavior::kThrow)
+                        v8::ConstructorBehavior::kThrow,
+                        v8::SideEffectType::kHasNoSideEffect)
           .ToLocal(&to_string_function))
     CreateDataProperty(context, func,
                        V8AtomicString(context->GetIsolate(), "toString"),
@@ -257,14 +259,16 @@ v8::Maybe<bool> ThreadDebugger::CreateDataPropertyInArray(
   return array->CreateDataProperty(context, index, value);
 }
 
-void ThreadDebugger::CreateFunctionProperty(v8::Local<v8::Context> context,
-                                            v8::Local<v8::Object> object,
-                                            const char* name,
-                                            v8::FunctionCallback callback,
-                                            const char* description) {
+void ThreadDebugger::CreateFunctionProperty(
+    v8::Local<v8::Context> context,
+    v8::Local<v8::Object> object,
+    const char* name,
+    v8::FunctionCallback callback,
+    const char* description,
+    v8::SideEffectType side_effect_type) {
   CreateFunctionPropertyWithData(context, object, name, callback,
                                  v8::External::New(context->GetIsolate(), this),
-                                 description);
+                                 description, side_effect_type);
 }
 
 void ThreadDebugger::installAdditionalCommandLineAPI(
@@ -273,7 +277,8 @@ void ThreadDebugger::installAdditionalCommandLineAPI(
   CreateFunctionProperty(
       context, object, "getEventListeners",
       ThreadDebugger::GetEventListenersCallback,
-      "function getEventListeners(node) { [Command Line API] }");
+      "function getEventListeners(node) { [Command Line API] }",
+      v8::SideEffectType::kHasNoSideEffect);
 
   v8::Local<v8::Value> function_value;
   bool success =
@@ -288,11 +293,13 @@ void ThreadDebugger::installAdditionalCommandLineAPI(
   CreateFunctionPropertyWithData(
       context, object, "monitorEvents", ThreadDebugger::MonitorEventsCallback,
       function_value,
-      "function monitorEvents(object, [types]) { [Command Line API] }");
+      "function monitorEvents(object, [types]) { [Command Line API] }",
+      v8::SideEffectType::kHasSideEffect);
   CreateFunctionPropertyWithData(
       context, object, "unmonitorEvents",
       ThreadDebugger::UnmonitorEventsCallback, function_value,
-      "function unmonitorEvents(object, [types]) { [Command Line API] }");
+      "function unmonitorEvents(object, [types]) { [Command Line API] }",
+      v8::SideEffectType::kHasSideEffect);
 }
 
 static Vector<String> NormalizeEventTypes(

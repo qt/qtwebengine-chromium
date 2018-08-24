@@ -28,14 +28,10 @@ namespace blink {
 
 class KeyframeEffectTest : public PageTestBase {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     PageTestBase::SetUp(IntSize());
     element = GetDocument().CreateElementForBinding("foo");
-
-    GetDocument().GetAnimationClock().ResetTimeForTesting(
-        GetDocument().Timeline().ZeroTime());
     GetDocument().documentElement()->AppendChild(element.Get());
-    EXPECT_EQ(0, GetDocument().Timeline().currentTime());
   }
 
   KeyframeEffectModelBase* CreateEmptyEffectModel() {

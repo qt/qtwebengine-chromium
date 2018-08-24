@@ -18,7 +18,15 @@ namespace headless {
 
 // static
 std::unique_ptr<HeadlessDevToolsClient> HeadlessDevToolsClient::Create() {
-  return base::WrapUnique(new HeadlessDevToolsClientImpl());
+  return std::make_unique<HeadlessDevToolsClientImpl>();
+}
+
+// static
+std::unique_ptr<HeadlessDevToolsClient>
+HeadlessDevToolsClient::CreateWithExternalHost(ExternalHost* external_host) {
+  auto result = std::make_unique<HeadlessDevToolsClientImpl>();
+  result->AttachToExternalHost(external_host);
+  return result;
 }
 
 // static
@@ -30,12 +38,7 @@ HeadlessDevToolsClientImpl* HeadlessDevToolsClientImpl::From(
 }
 
 HeadlessDevToolsClientImpl::HeadlessDevToolsClientImpl()
-    : agent_host_(nullptr),
-      raw_protocol_listener_(nullptr),
-      next_message_id_(0),
-      next_raw_message_id_(1),
-      renderer_crashed_(false),
-      accessibility_domain_(this),
+    : accessibility_domain_(this),
       animation_domain_(this),
       application_cache_domain_(this),
       browser_domain_(this),
@@ -74,21 +77,17 @@ HeadlessDevToolsClientImpl::HeadlessDevToolsClientImpl()
 
 HeadlessDevToolsClientImpl::~HeadlessDevToolsClientImpl() = default;
 
-bool HeadlessDevToolsClientImpl::AttachToHost(
+void HeadlessDevToolsClientImpl::AttachToHost(
     content::DevToolsAgentHost* agent_host) {
-  DCHECK(!agent_host_);
-  if (agent_host->IsAttached())
-    return false;
+  DCHECK(!agent_host_ && !external_host_);
   agent_host->AttachClient(this);
   agent_host_ = agent_host;
-  return true;
 }
 
-void HeadlessDevToolsClientImpl::ForceAttachToHost(
-    content::DevToolsAgentHost* agent_host) {
-  DCHECK(!agent_host_);
-  agent_host_ = agent_host;
-  agent_host_->ForceAttachClient(this);
+void HeadlessDevToolsClientImpl::AttachToExternalHost(
+    ExternalHost* external_host) {
+  DCHECK(!agent_host_ && !external_host_);
+  external_host_ = external_host;
 }
 
 void HeadlessDevToolsClientImpl::DetachFromHost(
@@ -121,11 +120,12 @@ void HeadlessDevToolsClientImpl::SendRawDevToolsMessage(
     NOTREACHED() << "Badly formed message " << json_message;
     return;
   }
-  DCHECK_EQ((id_value->GetInt() % 2), 1)
-      << "Raw devtools messages must have an odd ID.";
 #endif
-
-  agent_host_->DispatchProtocolMessage(this, json_message);
+  DCHECK(agent_host_ || external_host_);
+  if (agent_host_)
+    agent_host_->DispatchProtocolMessage(this, json_message);
+  else
+    external_host_->SendProtocolMessage(json_message);
 }
 
 void HeadlessDevToolsClientImpl::SendRawDevToolsMessage(
@@ -139,6 +139,18 @@ void HeadlessDevToolsClientImpl::DispatchProtocolMessage(
     content::DevToolsAgentHost* agent_host,
     const std::string& json_message) {
   DCHECK_EQ(agent_host_, agent_host);
+  DispatchProtocolMessage(agent_host->GetId(), json_message);
+}
+
+void HeadlessDevToolsClientImpl::DispatchMessageFromExternalHost(
+    const std::string& json_message) {
+  DCHECK(external_host_);
+  DispatchProtocolMessage(std::string(), json_message);
+}
+
+void HeadlessDevToolsClientImpl::DispatchProtocolMessage(
+    const std::string& host_id,
+    const std::string& json_message) {
   std::unique_ptr<base::Value> message =
       base::JSONReader::Read(json_message, base::JSON_PARSE_RFC);
   const base::DictionaryValue* message_dict;
@@ -147,23 +159,28 @@ void HeadlessDevToolsClientImpl::DispatchProtocolMessage(
     return;
   }
 
-  if (raw_protocol_listener_ &&
-      raw_protocol_listener_->OnProtocolMessage(agent_host->GetId(),
-                                                json_message, *message_dict)) {
+  if (raw_protocol_listener_ && raw_protocol_listener_->OnProtocolMessage(
+                                    host_id, json_message, *message_dict)) {
     return;
   }
 
-  if (!DispatchMessageReply(*message_dict) &&
-      !DispatchEvent(std::move(message), *message_dict)) {
+  bool success = false;
+  if (message_dict->HasKey("id"))
+    success = DispatchMessageReply(std::move(message), *message_dict);
+  else
+    success = DispatchEvent(std::move(message), *message_dict);
+  if (!success)
     DLOG(ERROR) << "Unhandled protocol message: " << json_message;
-  }
 }
 
 bool HeadlessDevToolsClientImpl::DispatchMessageReply(
+    std::unique_ptr<base::Value> owning_message,
     const base::DictionaryValue& message_dict) {
   const base::Value* id_value = message_dict.FindKey("id");
-  if (!id_value)
+  if (!id_value) {
+    NOTREACHED() << "ID must be specified.";
     return false;
+  }
   auto it = pending_messages_.find(id_value->GetInt());
   if (it == pending_messages_.end()) {
     NOTREACHED() << "Unexpected reply";
@@ -174,19 +191,44 @@ bool HeadlessDevToolsClientImpl::DispatchMessageReply(
   if (!callback.callback_with_result.is_null()) {
     const base::DictionaryValue* result_dict;
     if (message_dict.GetDictionary("result", &result_dict)) {
-      std::move(callback.callback_with_result).Run(*result_dict);
+      browser_main_thread_->PostTask(
+          FROM_HERE,
+          base::BindOnce(
+              &HeadlessDevToolsClientImpl::DispatchMessageReplyWithResultTask,
+              weak_ptr_factory_.GetWeakPtr(), std::move(owning_message),
+              std::move(callback.callback_with_result), result_dict));
     } else if (message_dict.GetDictionary("error", &result_dict)) {
       auto null_value = std::make_unique<base::Value>();
       DLOG(ERROR) << "Error in method call result: " << *result_dict;
-      std::move(callback.callback_with_result).Run(*null_value);
+      browser_main_thread_->PostTask(
+          FROM_HERE,
+          base::BindOnce(
+              &HeadlessDevToolsClientImpl::DispatchMessageReplyWithResultTask,
+              weak_ptr_factory_.GetWeakPtr(), std::move(null_value),
+              std::move(callback.callback_with_result), null_value.get()));
     } else {
       NOTREACHED() << "Reply has neither result nor error";
       return false;
     }
   } else if (!callback.callback.is_null()) {
-    std::move(callback.callback).Run();
+    browser_main_thread_->PostTask(
+        FROM_HERE,
+        base::BindOnce(
+            [](base::WeakPtr<HeadlessDevToolsClientImpl> self,
+               base::OnceClosure callback) {
+              if (self)
+                std::move(callback).Run();
+            },
+            weak_ptr_factory_.GetWeakPtr(), std::move(callback.callback)));
   }
   return true;
+}
+
+void HeadlessDevToolsClientImpl::DispatchMessageReplyWithResultTask(
+    std::unique_ptr<base::Value> owning_message,
+    base::OnceCallback<void(const base::Value&)> callback,
+    const base::Value* result_dict) {
+  std::move(callback).Run(*result_dict);
 }
 
 bool HeadlessDevToolsClientImpl::DispatchEvent(
@@ -374,14 +416,17 @@ void HeadlessDevToolsClientImpl::FinalizeAndSendMessage(
     CallbackType callback) {
   if (renderer_crashed_)
     return;
-  DCHECK(agent_host_);
+  DCHECK(agent_host_ || external_host_);
   int id = next_message_id_;
   next_message_id_ += 2;  // We only send even numbered messages.
   message->SetInteger("id", id);
   std::string json_message;
   base::JSONWriter::Write(*message, &json_message);
   pending_messages_[id] = Callback(std::move(callback));
-  agent_host_->DispatchProtocolMessage(this, json_message);
+  if (agent_host_)
+    agent_host_->DispatchProtocolMessage(this, json_message);
+  else
+    external_host_->SendProtocolMessage(json_message);
 }
 
 template <typename CallbackType>

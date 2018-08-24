@@ -32,7 +32,7 @@
 
 namespace blink {
 
-class RegisteredEventListener {
+class RegisteredEventListener final {
   DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 
  public:
@@ -56,7 +56,7 @@ class RegisteredEventListener {
         passive_specified_(options.PassiveSpecified()) {}
 
   void Trace(blink::Visitor* visitor) { visitor->Trace(callback_); }
-  void TraceWrappers(const ScriptWrappableVisitor* visitor) const {
+  void TraceWrappers(ScriptWrappableVisitor* visitor) const {
     visitor->TraceWrappers(callback_);
   }
 

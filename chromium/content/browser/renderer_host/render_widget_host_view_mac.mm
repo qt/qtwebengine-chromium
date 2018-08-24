@@ -17,8 +17,10 @@
 #include "base/macros.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "components/viz/common/switches.h"
 #include "content/browser/accessibility/browser_accessibility_manager_mac.h"
 #include "content/browser/renderer_host/cursor_manager.h"
+#include "content/browser/renderer_host/input/motion_event_web.h"
 #import "content/browser/renderer_host/input/synthetic_gesture_target_mac.h"
 #include "content/browser/renderer_host/input/web_input_event_builders_mac.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
@@ -28,6 +30,7 @@
 #import "content/browser/renderer_host/render_widget_host_ns_view_bridge.h"
 #import "content/browser/renderer_host/render_widget_host_view_cocoa.h"
 #import "content/browser/renderer_host/text_input_client_mac.h"
+#import "content/browser/renderer_host/ui_events_helper.h"
 #include "content/common/text_input_state.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
@@ -43,15 +46,18 @@
 #include "ui/base/cocoa/cocoa_base_utils.h"
 #import "ui/base/cocoa/secure_password_input.h"
 #include "ui/base/cocoa/text_services_context_menu.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
+#include "ui/events/gesture_detection/gesture_provider_config_helper.h"
+#include "ui/events/keycodes/dom/dom_code.h"
 #include "ui/gfx/geometry/dip_util.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
-#include "ui/gl/gl_switches.h"
 
 using blink::WebInputEvent;
 using blink::WebMouseEvent;
 using blink::WebGestureEvent;
+using blink::WebTouchEvent;
 
 namespace content {
 
@@ -72,7 +78,7 @@ void RenderWidgetHostViewMac::BrowserCompositorMacOnBeginFrame(
     base::TimeTicks frame_time) {
   // ProgressFling must get called for middle click autoscroll fling on Mac.
   if (host())
-    host()->ProgressFling(frame_time);
+    host()->ProgressFlingIfNeeded(frame_time);
   UpdateNeedsBeginFramesInternal();
 }
 
@@ -92,8 +98,8 @@ void RenderWidgetHostViewMac::DestroyCompositorForShutdown() {
   Destroy();
 }
 
-void RenderWidgetHostViewMac::WasResized() {
-  host()->WasResized();
+bool RenderWidgetHostViewMac::SynchronizeVisualProperties() {
+  return host()->SynchronizeVisualProperties();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -103,21 +109,18 @@ NSView* RenderWidgetHostViewMac::AcceleratedWidgetGetNSView() const {
   return cocoa_view();
 }
 
-void RenderWidgetHostViewMac::AcceleratedWidgetGetVSyncParameters(
-    base::TimeTicks* timebase, base::TimeDelta* interval) const {
-  if (display_link_ &&
-      display_link_->GetVSyncParameters(timebase, interval))
-    return;
-  *timebase = base::TimeTicks();
-  *interval = base::TimeDelta();
-}
-
-void RenderWidgetHostViewMac::AcceleratedWidgetSwapCompleted() {
+void RenderWidgetHostViewMac::AcceleratedWidgetCALayerParamsUpdated() {
   // Set the background color for the root layer from the frame that just
   // swapped. See RenderWidgetHostViewAura for more details. Note that this is
   // done only after the swap has completed, so that the background is not set
   // before the frame is up.
   SetBackgroundLayerColor(last_frame_root_background_color_);
+
+  // Update the contents that the NSView is displaying.
+  const gfx::CALayerParams* ca_layer_params =
+      browser_compositor_->GetLastCALayerParams();
+  if (ca_layer_params)
+    ns_view_bridge_->SetCALayerParams(*ca_layer_params);
 
   if (display_link_)
     display_link_->NotifyCurrentTime(base::TimeTicks::Now());
@@ -134,6 +137,9 @@ RenderWidgetHostViewMac::RenderWidgetHostViewMac(RenderWidgetHost* widget,
       is_loading_(false),
       allow_pause_for_resize_or_repaint_(true),
       is_guest_view_hack_(is_guest_view_hack),
+      gesture_provider_(ui::GetGestureProviderConfig(
+                            ui::GestureProviderConfigType::CURRENT_PLATFORM),
+                        this),
       weak_factory_(this) {
   // The NSView is on the other side of |ns_view_bridge_|.
   ns_view_bridge_ = RenderWidgetHostNSViewBridge::Create(this);
@@ -190,6 +196,21 @@ RenderWidgetHostViewMac::RenderWidgetHostViewMac(RenderWidgetHost* widget,
 }
 
 RenderWidgetHostViewMac::~RenderWidgetHostViewMac() {
+}
+
+void RenderWidgetHostViewMac::SetParentUiLayer(ui::Layer* parent_ui_layer) {
+  if (!display_only_using_parent_ui_layer_) {
+    // The first time that we display using a parent ui::Layer, permanently
+    // switch from drawing using Cocoa to only drawing using ui::Views. Erase
+    // the existing content being drawn by Cocoa (which may have been set due
+    // to races, e.g, in https://crbug.com/845807). Note that this transition
+    // must be done lazily because not all code has been updated to use
+    // ui::Views (e.g, content_shell).
+    display_only_using_parent_ui_layer_ = true;
+    ns_view_bridge_->DisableDisplay();
+  }
+  if (browser_compositor_)
+    browser_compositor_->SetParentUiLayer(parent_ui_layer);
 }
 
 RenderWidgetHostViewCocoa* RenderWidgetHostViewMac::cocoa_view() const {
@@ -293,10 +314,10 @@ RenderWidgetHostImpl* RenderWidgetHostViewMac::GetWidgetForIme() {
 }
 
 void RenderWidgetHostViewMac::UpdateNSViewAndDisplayProperties() {
-  static bool is_vsync_disabled =
+  static bool is_frame_rate_limit_disabled =
       base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableGpuVsync);
-  if (!is_vsync_disabled) {
+          switches::kDisableFrameRateLimit);
+  if (!is_frame_rate_limit_disabled) {
     display_link_ = ui::DisplayLinkMac::GetForDisplay(display_.id());
     if (!display_link_.get()) {
       // Note that on some headless systems, the display link will fail to be
@@ -336,7 +357,7 @@ void RenderWidgetHostViewMac::Show() {
 
   ui::LatencyInfo renderer_latency_info;
   renderer_latency_info.AddLatencyNumber(ui::TAB_SHOW_COMPONENT,
-                                         host()->GetLatencyComponentId(), 0);
+                                         host()->GetLatencyComponentId());
   renderer_latency_info.set_trace_id(++tab_show_sequence_);
   host()->WasShown(renderer_latency_info);
   TRACE_EVENT_ASYNC_BEGIN0("latency", "TabSwitching::Latency",
@@ -344,7 +365,7 @@ void RenderWidgetHostViewMac::Show() {
 
   // If there is not a frame being currently drawn, kick one, so that the below
   // pause will have a frame to wait on.
-  host()->ScheduleComposite();
+  host()->RequestRepaintForTesting();
   PauseForPendingResizeOrRepaintsAndDraw();
 }
 
@@ -417,6 +438,10 @@ CursorManager* RenderWidgetHostViewMac::GetCursorManager() {
   return cursor_manager_.get();
 }
 
+void RenderWidgetHostViewMac::OnDidNavigateMainFrameToNewPage() {
+  gesture_provider_.ResetDetection();
+}
+
 void RenderWidgetHostViewMac::SetIsLoading(bool is_loading) {
   is_loading_ = is_loading;
   // If we ever decide to show the waiting cursor while the page is loading
@@ -429,6 +454,8 @@ void RenderWidgetHostViewMac::OnUpdateTextInputStateCalled(
     bool did_update_state) {
   if (!did_update_state)
     return;
+
+  ns_view_bridge_->SetTextInputType(GetTextInputType());
 
   // |updated_view| is the last view to change its TextInputState which can be
   // used to start/stop monitoring composition info when it has a focused
@@ -457,14 +484,6 @@ void RenderWidgetHostViewMac::OnUpdateTextInputStateCalled(
     // Let AppKit cache the new input context to make IMEs happy.
     // See http://crbug.com/73039.
     [NSApp updateWindows];
-
-#ifndef __LP64__
-    bool can_compose_inline =
-        !!GetTextInputManager()->GetActiveWidget()
-            ? GetTextInputManager()->GetTextInputState()->can_compose_inline
-            : true;
-    UseInputWindow(TSMGetActiveDocument(), !can_compose_inline);
-#endif
   }
 }
 
@@ -531,6 +550,22 @@ void RenderWidgetHostViewMac::OnTextSelectionChanged(
                                     selection->range());
 }
 
+void RenderWidgetHostViewMac::OnGestureEvent(
+    const ui::GestureEventData& gesture) {
+  blink::WebGestureEvent web_gesture =
+      ui::CreateWebGestureEventFromGestureEventData(gesture);
+
+  ui::LatencyInfo latency_info(ui::SourceEventType::TOUCH);
+
+  if (ShouldRouteEvent(web_gesture)) {
+    blink::WebGestureEvent gesture_event(web_gesture);
+    host()->delegate()->GetInputEventRouter()->RouteGestureEvent(
+        this, &gesture_event, latency_info);
+  } else {
+    host()->ForwardGestureEventWithLatencyInfo(web_gesture, latency_info);
+  }
+}
+
 void RenderWidgetHostViewMac::OnRenderFrameMetadataChanged() {
   last_frame_root_background_color_ = host()
                                           ->render_frame_metadata_provider()
@@ -585,17 +620,15 @@ void RenderWidgetHostViewMac::DisplayTooltipText(
   ns_view_bridge_->SetTooltipText(tooltip_text);
 }
 
-viz::ScopedSurfaceIdAllocator RenderWidgetHostViewMac::ResizeDueToAutoResize(
-    const gfx::Size& new_size,
-    uint64_t sequence_number) {
-  // TODO(cblume): This doesn't currently suppress allocation.
-  // It maintains existing behavior while using the suppression style.
-  // This will be addressed in a follow-up patch.
-  // See https://crbug.com/805073
-  base::OnceCallback<void()> allocation_task =
-      base::BindOnce(&RenderWidgetHostViewMac::OnResizeDueToAutoResizeComplete,
-                     weak_factory_.GetWeakPtr(), new_size, sequence_number);
-  return viz::ScopedSurfaceIdAllocator(std::move(allocation_task));
+viz::ScopedSurfaceIdAllocator
+RenderWidgetHostViewMac::DidUpdateVisualProperties(
+    const cc::RenderFrameMetadata& metadata) {
+  base::OnceCallback<void()> allocation_task = base::BindOnce(
+      base::IgnoreResult(
+          &RenderWidgetHostViewMac::OnDidUpdateVisualPropertiesComplete),
+      weak_factory_.GetWeakPtr(), metadata);
+  return browser_compositor_->GetScopedRendererSurfaceIdAllocator(
+      std::move(allocation_task));
 }
 
 void RenderWidgetHostViewMac::DidNavigate() {
@@ -684,12 +717,21 @@ void RenderWidgetHostViewMac::SetShowingContextMenu(bool showing) {
   ns_view_bridge_->SetShowingContextMenu(showing);
 }
 
+uint32_t RenderWidgetHostViewMac::GetCaptureSequenceNumber() const {
+  return latest_capture_sequence_number_;
+}
+
 void RenderWidgetHostViewMac::CopyFromSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
     base::OnceCallback<void(const SkBitmap&)> callback) {
   browser_compositor_->GetDelegatedFrameHost()->CopyFromCompositingSurface(
       src_subrect, dst_size, std::move(callback));
+}
+
+void RenderWidgetHostViewMac::EnsureSurfaceSynchronizedForLayoutTest() {
+  ++latest_capture_sequence_number_;
+  SynchronizeVisualProperties();
 }
 
 void RenderWidgetHostViewMac::SetNeedsBeginFrames(bool needs_begin_frames) {
@@ -701,11 +743,11 @@ void RenderWidgetHostViewMac::UpdateNeedsBeginFramesInternal() {
   browser_compositor_->SetNeedsBeginFrames(needs_begin_frames_);
 }
 
-void RenderWidgetHostViewMac::OnResizeDueToAutoResizeComplete(
-    const gfx::Size& new_size,
-    uint64_t sequence_number) {
-  browser_compositor_->UpdateForAutoResize(new_size);
-  host()->DidAllocateLocalSurfaceIdForAutoResize(sequence_number);
+void RenderWidgetHostViewMac::OnDidUpdateVisualPropertiesComplete(
+    const cc::RenderFrameMetadata& metadata) {
+  browser_compositor_->SynchronizeVisualProperties(
+      metadata.viewport_size_in_pixels,
+      metadata.local_surface_id.value_or(viz::LocalSurfaceId()));
 }
 
 void RenderWidgetHostViewMac::SetWantsAnimateOnlyBeginFrames() {
@@ -721,7 +763,16 @@ void RenderWidgetHostViewMac::TakeFallbackContentFrom(
   RenderWidgetHostViewMac* view_mac =
       static_cast<RenderWidgetHostViewMac*>(view);
   ScopedCAActionDisabler disabler;
-  SetBackgroundColor(view_mac->background_color());
+  base::Optional<SkColor> color = view_mac->GetBackgroundColor();
+  if (color)
+    SetBackgroundColor(*color);
+
+  // Make the NSView for |this| display the same content as is being displayed
+  // in the NSView for |view_mac|.
+  const gfx::CALayerParams* ca_layer_params =
+      view_mac->browser_compositor_->GetLastCALayerParams();
+  if (ca_layer_params)
+    ns_view_bridge_->SetCALayerParams(*ca_layer_params);
   browser_compositor_->TakeFallbackContentFrom(
       view_mac->browser_compositor_.get());
 }
@@ -890,6 +941,10 @@ bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
 }
 
 bool RenderWidgetHostViewMac::ShouldContinueToPauseForFrame() {
+  // Only pause for frames when drawing through a separate ui::Compositor.
+  if (display_only_using_parent_ui_layer_)
+    return false;
+
   return browser_compositor_->ShouldContinueToPauseForFrame();
 }
 
@@ -917,7 +972,7 @@ void RenderWidgetHostViewMac::DidCreateNewRendererCompositorFrameSink(
 void RenderWidgetHostViewMac::SubmitCompositorFrame(
     const viz::LocalSurfaceId& local_surface_id,
     viz::CompositorFrame frame,
-    viz::mojom::HitTestRegionListPtr hit_test_region_list) {
+    base::Optional<viz::HitTestRegionList> hit_test_region_list) {
   TRACE_EVENT0("browser", "RenderWidgetHostViewMac::OnSwapCompositorFrame");
 
   page_at_minimum_scale_ =
@@ -938,8 +993,13 @@ void RenderWidgetHostViewMac::ClearCompositorFrame() {
   browser_compositor_->ClearCompositorFrame();
 }
 
-gfx::Vector2d RenderWidgetHostViewMac::GetOffsetFromRootSurface() {
-  return gfx::Vector2d();
+bool RenderWidgetHostViewMac::RequestRepaintForTesting() {
+  return browser_compositor_->RequestRepaintForTesting();
+}
+
+void RenderWidgetHostViewMac::TransformPointToRootSurface(gfx::PointF* point) {
+  if (display_only_using_parent_ui_layer_)
+    *point += view_bounds_in_window_dip_.OffsetFromOrigin();
 }
 
 gfx::Rect RenderWidgetHostViewMac::GetBoundsInRootWindow() {
@@ -971,6 +1031,25 @@ void RenderWidgetHostViewMac::UnlockMouse() {
     host()->LostMouseLock();
 }
 
+bool RenderWidgetHostViewMac::LockKeyboard(
+    base::Optional<base::flat_set<ui::DomCode>> dom_codes) {
+  is_keyboard_locked_ = true;
+  ns_view_bridge_->LockKeyboard(std::move(dom_codes));
+  return true;
+}
+
+void RenderWidgetHostViewMac::UnlockKeyboard() {
+  if (!is_keyboard_locked_)
+    return;
+
+  is_keyboard_locked_ = false;
+  ns_view_bridge_->UnlockKeyboard();
+}
+
+bool RenderWidgetHostViewMac::IsKeyboardLocked() {
+  return is_keyboard_locked_;
+}
+
 void RenderWidgetHostViewMac::GestureEventAck(const WebGestureEvent& event,
                                               InputEventAckState ack_result) {
   bool consumed = ack_result == INPUT_EVENT_ACK_STATE_CONSUMED;
@@ -984,6 +1063,23 @@ void RenderWidgetHostViewMac::GestureEventAck(const WebGestureEvent& event,
       break;
   }
   mouse_wheel_phase_handler_.GestureEventAck(event, ack_result);
+}
+
+void RenderWidgetHostViewMac::ProcessAckedTouchEvent(
+    const TouchEventWithLatencyInfo& touch,
+    InputEventAckState ack_result) {
+  const bool event_consumed = ack_result == INPUT_EVENT_ACK_STATE_CONSUMED;
+  gesture_provider_.OnTouchEventAck(
+      touch.event.unique_touch_event_id, event_consumed,
+      InputEventAckStateIsSetNonBlocking(ack_result));
+  if (touch.event.touch_start_or_first_touch_move && event_consumed &&
+      host()->delegate() && host()->delegate()->GetInputEventRouter()) {
+    host()
+        ->delegate()
+        ->GetInputEventRouter()
+        ->OnHandledTouchStartOrFirstTouchMove(
+            touch.event.unique_touch_event_id);
+  }
 }
 
 void RenderWidgetHostViewMac::DidOverscroll(
@@ -1009,12 +1105,16 @@ viz::FrameSinkId RenderWidgetHostViewMac::GetFrameSinkId() {
 
 bool RenderWidgetHostViewMac::ShouldRouteEvent(
     const WebInputEvent& event) const {
+  // Event routing requires a valid frame sink (that is, that we be connected to
+  // a ui::Compositor), which is not guaranteed to be the case.
+  // https://crbug.com/844095
+  if (!browser_compositor_->GetRootFrameSinkId().is_valid())
+    return false;
   // See also RenderWidgetHostViewAura::ShouldRouteEvent.
   // TODO(wjmaclean): Update this function if RenderWidgetHostViewMac implements
   // OnTouchEvent(), to match what we are doing in RenderWidgetHostViewAura.
-  DCHECK(WebInputEvent::IsMouseEventType(event.GetType()) ||
-         event.GetType() == WebInputEvent::kMouseWheel ||
-         WebInputEvent::IsPinchGestureEventType(event.GetType()));
+  // The only touch events and touch gesture events expected here are
+  // injected synthetic events.
   return host()->delegate() && host()->delegate()->GetInputEventRouter();
 }
 
@@ -1030,7 +1130,24 @@ void RenderWidgetHostViewMac::SendGesturePinchEvent(WebGestureEvent* event) {
   host()->ForwardGestureEvent(*event);
 }
 
-bool RenderWidgetHostViewMac::TransformPointToLocalCoordSpace(
+void RenderWidgetHostViewMac::InjectTouchEvent(
+    const WebTouchEvent& event,
+    const ui::LatencyInfo& latency_info) {
+  ui::FilteredGestureProvider::TouchHandlingResult result =
+      gesture_provider_.OnTouchEvent(MotionEventWeb(event));
+  if (!result.succeeded)
+    return;
+
+  if (ShouldRouteEvent(event)) {
+    WebTouchEvent touch_event(event);
+    host()->delegate()->GetInputEventRouter()->RouteTouchEvent(
+        this, &touch_event, latency_info);
+  } else {
+    host()->ForwardTouchEventWithLatencyInfo(event, latency_info);
+  }
+}
+
+bool RenderWidgetHostViewMac::TransformPointToLocalCoordSpaceLegacy(
     const gfx::PointF& point,
     const viz::SurfaceId& original_surface,
     gfx::PointF* transformed_point) {
@@ -1039,8 +1156,8 @@ bool RenderWidgetHostViewMac::TransformPointToLocalCoordSpace(
   float scale_factor = display_.device_scale_factor();
   gfx::PointF point_in_pixels = gfx::ConvertPointToPixel(scale_factor, point);
   if (!browser_compositor_->GetDelegatedFrameHost()
-           ->TransformPointToLocalCoordSpace(point_in_pixels, original_surface,
-                                             transformed_point))
+           ->TransformPointToLocalCoordSpaceLegacy(
+               point_in_pixels, original_surface, transformed_point))
     return false;
   *transformed_point = gfx::ConvertPointToDIP(scale_factor, *transformed_point);
   return true;
@@ -1049,15 +1166,16 @@ bool RenderWidgetHostViewMac::TransformPointToLocalCoordSpace(
 bool RenderWidgetHostViewMac::TransformPointToCoordSpaceForView(
     const gfx::PointF& point,
     RenderWidgetHostViewBase* target_view,
-    gfx::PointF* transformed_point) {
+    gfx::PointF* transformed_point,
+    viz::EventSource source) {
   if (target_view == this) {
     *transformed_point = point;
     return true;
   }
 
   return browser_compositor_->GetDelegatedFrameHost()
-      ->TransformPointToCoordSpaceForView(point, target_view,
-                                          transformed_point);
+      ->TransformPointToCoordSpaceForView(point, target_view, transformed_point,
+                                          source);
 }
 
 viz::FrameSinkId RenderWidgetHostViewMac::GetRootFrameSinkId() {
@@ -1102,32 +1220,25 @@ void RenderWidgetHostViewMac::ShowDefinitionForSelection() {
   ns_view_bridge_->ShowDictionaryOverlayForSelection();
 }
 
-void RenderWidgetHostViewMac::SetBackgroundColor(SkColor color) {
+void RenderWidgetHostViewMac::UpdateBackgroundColor() {
   // This is called by the embedding code prior to the first frame appearing,
   // to set a reasonable color to show before the web content generates its
   // first frame. This will be overridden by the web contents.
+  DCHECK(RenderWidgetHostViewBase::GetBackgroundColor());
+  SkColor color = *RenderWidgetHostViewBase::GetBackgroundColor();
   SetBackgroundLayerColor(color);
   browser_compositor_->SetBackgroundColor(color);
-
-  DCHECK(SkColorGetA(color) == SK_AlphaOPAQUE ||
-         SkColorGetA(color) == SK_AlphaTRANSPARENT);
-  bool opaque = SkColorGetA(color) == SK_AlphaOPAQUE;
-  if (background_is_opaque_ != opaque) {
-    background_is_opaque_ = opaque;
-    if (host())
-      host()->SetBackgroundOpaque(opaque);
-  }
 }
 
-SkColor RenderWidgetHostViewMac::background_color() const {
+base::Optional<SkColor> RenderWidgetHostViewMac::GetBackgroundColor() const {
   // This is used to specify a color to temporarily show while waiting for web
   // content. This should never return transparent, since that will cause bugs
   // where views are initialized as having a transparent background
   // inappropriately.
   // https://crbug.com/735407
-  if (background_layer_color_ == SK_ColorTRANSPARENT)
-    return SK_ColorWHITE;
-  return background_layer_color_;
+  base::Optional<SkColor> color =
+      RenderWidgetHostViewBase::GetBackgroundColor();
+  return (color && *color == SK_ColorTRANSPARENT) ? SK_ColorWHITE : color;
 }
 
 void RenderWidgetHostViewMac::SetBackgroundLayerColor(SkColor color) {
@@ -1192,6 +1303,10 @@ RenderWidgetHostViewMac::AllocateFrameSinkIdForGuestViewHack() {
   return ImageTransportFactory::GetInstance()
       ->GetContextFactoryPrivate()
       ->AllocateFrameSinkId();
+}
+
+MouseWheelPhaseHandler* RenderWidgetHostViewMac::GetMouseWheelPhaseHandler() {
+  return &mouse_wheel_phase_handler_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1262,7 +1377,14 @@ void RenderWidgetHostViewMac::OnNSViewBoundsInWindowChanged(
 
 void RenderWidgetHostViewMac::OnNSViewWindowFrameInScreenChanged(
     const gfx::Rect& window_frame_in_screen_dip) {
+  if (window_frame_in_screen_dip_ == window_frame_in_screen_dip)
+    return;
+
   window_frame_in_screen_dip_ = window_frame_in_screen_dip;
+  if (host()->delegate())
+    host()->delegate()->SendScreenRects();
+  else
+    host()->SendScreenRects();
 }
 
 void RenderWidgetHostViewMac::OnNSViewDisplayChanged(
@@ -1313,7 +1435,7 @@ void RenderWidgetHostViewMac::OnNSViewRouteOrProcessMouseEvent(
     const blink::WebMouseEvent& const_web_event) {
   blink::WebMouseEvent web_event = const_web_event;
   ui::LatencyInfo latency_info(ui::SourceEventType::OTHER);
-  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
+  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0);
   if (ShouldRouteEvent(web_event)) {
     host()->delegate()->GetInputEventRouter()->RouteMouseEvent(this, &web_event,
                                                                latency_info);
@@ -1326,7 +1448,7 @@ void RenderWidgetHostViewMac::OnNSViewRouteOrProcessWheelEvent(
     const blink::WebMouseWheelEvent& const_web_event) {
   blink::WebMouseWheelEvent web_event = const_web_event;
   ui::LatencyInfo latency_info(ui::SourceEventType::WHEEL);
-  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
+  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0);
   if (wheel_scroll_latching_enabled()) {
     mouse_wheel_phase_handler_.AddPhaseIfNeededAndScheduleEndEvent(
         web_event, ShouldRouteEvent(web_event));
@@ -1362,19 +1484,21 @@ void RenderWidgetHostViewMac::OnNSViewForwardWheelEvent(
                                                                    false);
   } else {
     ui::LatencyInfo latency_info(ui::SourceEventType::WHEEL);
-    latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
+    latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0);
     host()->ForwardWheelEventWithLatencyInfo(web_event, latency_info);
   }
 }
 
 void RenderWidgetHostViewMac::OnNSViewGestureBegin(
-    blink::WebGestureEvent begin_event) {
+    blink::WebGestureEvent begin_event,
+    bool is_synthetically_injected) {
   gesture_begin_event_.reset(new WebGestureEvent(begin_event));
 
   // If the page is at the minimum zoom level, require a threshold be reached
-  // before the pinch has an effect.
+  // before the pinch has an effect. Synthetic pinches are not subject to this
+  // threshold.
   if (page_at_minimum_scale_) {
-    pinch_has_reached_zoom_threshold_ = false;
+    pinch_has_reached_zoom_threshold_ = is_synthetically_injected;
     pinch_unused_amount_ = 1;
   }
 }
@@ -1502,11 +1626,6 @@ void RenderWidgetHostViewMac::OnNSViewLookUpDictionaryOverlayAtPoint(
       base::BindOnce(&RenderWidgetHostViewMac::OnGotStringForDictionaryOverlay,
                      weak_factory_.GetWeakPtr(), target_widget_process_id,
                      target_widget_routing_id));
-}
-
-void RenderWidgetHostViewMac::OnNSViewSyncGetTextInputType(
-    ui::TextInputType* text_input_type) {
-  *text_input_type = GetTextInputType();
 }
 
 void RenderWidgetHostViewMac::OnNSViewSyncGetCharacterIndexAtPoint(

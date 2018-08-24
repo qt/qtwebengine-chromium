@@ -12,6 +12,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_current.h"
 #include "base/path_service.h"
 #include "base/process/process_metrics.h"
 #include "base/run_loop.h"
@@ -300,26 +301,26 @@ scoped_refptr<X509Certificate> EmbeddedTestServer::GetCertificate() const {
 
 void EmbeddedTestServer::ServeFilesFromDirectory(
     const base::FilePath& directory) {
-  RegisterRequestHandler(base::Bind(&HandleFileRequest, directory));
+  RegisterDefaultHandler(base::Bind(&HandleFileRequest, directory));
 }
 
 void EmbeddedTestServer::ServeFilesFromSourceDirectory(
     const std::string& relative) {
   base::FilePath test_data_dir;
-  CHECK(PathService::Get(base::DIR_SOURCE_ROOT, &test_data_dir));
+  CHECK(base::PathService::Get(base::DIR_SOURCE_ROOT, &test_data_dir));
   ServeFilesFromDirectory(test_data_dir.AppendASCII(relative));
 }
 
 void EmbeddedTestServer::ServeFilesFromSourceDirectory(
     const base::FilePath& relative) {
   base::FilePath test_data_dir;
-  CHECK(PathService::Get(base::DIR_SOURCE_ROOT, &test_data_dir));
+  CHECK(base::PathService::Get(base::DIR_SOURCE_ROOT, &test_data_dir));
   ServeFilesFromDirectory(test_data_dir.Append(relative));
 }
 
 void EmbeddedTestServer::AddDefaultHandlers(const base::FilePath& directory) {
-  RegisterDefaultHandlers(this);
   ServeFilesFromSourceDirectory(directory);
+  RegisterDefaultHandlers(this);
 }
 
 void EmbeddedTestServer::RegisterRequestHandler(
@@ -351,13 +352,10 @@ std::unique_ptr<StreamSocket> EmbeddedTestServer::DoSSLUpgrade(
 }
 
 void EmbeddedTestServer::DoAcceptLoop() {
-  int rv = OK;
-  while (rv == OK) {
-    rv = listen_socket_->Accept(
-        &accepted_socket_, base::Bind(&EmbeddedTestServer::OnAcceptCompleted,
-                                      base::Unretained(this)));
-    if (rv == ERR_IO_PENDING)
-      return;
+  while (
+      listen_socket_->Accept(&accepted_socket_,
+                             base::Bind(&EmbeddedTestServer::OnAcceptCompleted,
+                                        base::Unretained(this))) == OK) {
     HandleAcceptResult(std::move(accepted_socket_));
   }
 }
@@ -479,7 +477,7 @@ bool EmbeddedTestServer::PostTaskToIOThreadAndWait(
   // To handle this situation, create temporary message loop to support the
   // PostTaskAndReply operation if the current thread as no message loop.
   std::unique_ptr<base::MessageLoop> temporary_loop;
-  if (!base::MessageLoop::current())
+  if (!base::MessageLoopCurrent::Get())
     temporary_loop.reset(new base::MessageLoop());
 
   base::RunLoop run_loop;

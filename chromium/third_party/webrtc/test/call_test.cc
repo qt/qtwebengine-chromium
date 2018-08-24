@@ -14,12 +14,13 @@
 
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
+#include "api/video_codecs/video_encoder_config.h"
 #include "call/rtp_transport_controller_send.h"
-#include "call/video_config.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/event.h"
 #include "rtc_base/ptr_util.h"
+#include "test/fake_encoder.h"
 #include "test/testsupport/fileutils.h"
 
 namespace webrtc {
@@ -37,7 +38,11 @@ CallTest::CallTest()
       video_send_stream_(nullptr),
       audio_send_config_(nullptr),
       audio_send_stream_(nullptr),
-      fake_encoder_(clock_),
+      fake_encoder_factory_([this]() {
+        auto encoder = rtc::MakeUnique<test::FakeEncoder>(clock_);
+        encoder->SetMaxBitrate(fake_encoder_max_bitrate_);
+        return encoder;
+      }),
       num_video_streams_(1),
       num_audio_streams_(0),
       num_flexfec_streams_(0),
@@ -173,7 +178,8 @@ void CallTest::CreateCalls(const Call::Config& sender_config,
 void CallTest::CreateSenderCall(const Call::Config& config) {
   std::unique_ptr<RtpTransportControllerSend> controller_send =
       rtc::MakeUnique<RtpTransportControllerSend>(
-          Clock::GetRealTimeClock(), config.event_log, config.bitrate_config);
+          Clock::GetRealTimeClock(), config.event_log,
+          config.network_controller_factory, config.bitrate_config);
   sender_call_transport_controller_ = controller_send.get();
   sender_call_.reset(Call::Create(config, std::move(controller_send)));
 }
@@ -193,7 +199,7 @@ void CallTest::CreateVideoSendConfig(VideoSendStream::Config* video_config,
                                      Transport* send_transport) {
   RTC_DCHECK_LE(num_video_streams + num_used_ssrcs, kNumSsrcs);
   *video_config = VideoSendStream::Config(send_transport);
-  video_config->encoder_settings.encoder = &fake_encoder_;
+  video_config->encoder_settings.encoder_factory = &fake_encoder_factory_;
   video_config->rtp.payload_name = "FAKE";
   video_config->rtp.payload_type = kFakeVideoSendPayloadType;
   video_config->rtp.extensions.push_back(
@@ -318,9 +324,8 @@ void CallTest::CreateFrameGeneratorCapturerWithDrift(Clock* clock,
                                                      int height) {
   frame_generator_capturer_.reset(test::FrameGeneratorCapturer::Create(
       width, height, rtc::nullopt, rtc::nullopt, framerate * speed, clock));
-  video_send_stream_->SetSource(
-      frame_generator_capturer_.get(),
-      VideoSendStream::DegradationPreference::kMaintainFramerate);
+  video_send_stream_->SetSource(frame_generator_capturer_.get(),
+                                DegradationPreference::MAINTAIN_FRAMERATE);
 }
 
 void CallTest::CreateFrameGeneratorCapturer(int framerate,
@@ -328,9 +333,8 @@ void CallTest::CreateFrameGeneratorCapturer(int framerate,
                                             int height) {
   frame_generator_capturer_.reset(test::FrameGeneratorCapturer::Create(
       width, height, rtc::nullopt, rtc::nullopt, framerate, clock_));
-  video_send_stream_->SetSource(
-      frame_generator_capturer_.get(),
-      VideoSendStream::DegradationPreference::kMaintainFramerate);
+  video_send_stream_->SetSource(frame_generator_capturer_.get(),
+                                DegradationPreference::MAINTAIN_FRAMERATE);
 }
 
 void CallTest::CreateFakeAudioDevices(

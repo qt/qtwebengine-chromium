@@ -265,10 +265,17 @@ void AudioInputDelegateImpl::OnSetVolume(double volume) {
   audio_log_->OnSetVolume(volume);
 }
 
+void AudioInputDelegateImpl::OnSetOutputDeviceForAec(
+    const std::string& raw_output_device_id) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  controller_->SetOutputDeviceForAec(raw_output_device_id);
+  audio_log_->OnLogMessage("SetOutputDeviceForAec");
+}
+
 void AudioInputDelegateImpl::SendCreatedNotification(bool initially_muted) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(foreign_socket_);
-  subscriber_->OnStreamCreated(stream_id_, writer_->shared_memory(),
+  subscriber_->OnStreamCreated(stream_id_, writer_->TakeSharedMemoryRegion(),
                                std::move(foreign_socket_), initially_muted);
 }
 

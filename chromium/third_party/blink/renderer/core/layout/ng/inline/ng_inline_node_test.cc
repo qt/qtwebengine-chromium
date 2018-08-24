@@ -22,29 +22,29 @@ class NGInlineNodeForTest : public NGInlineNode {
  public:
   using NGInlineNode::NGInlineNode;
 
-  std::string Text() const { return Data().text_content_.Utf8().data(); }
-  Vector<NGInlineItem>& Items() { return MutableData()->items_; }
+  std::string Text() const { return Data().text_content.Utf8().data(); }
+  Vector<NGInlineItem>& Items() { return MutableData()->items; }
   static Vector<NGInlineItem>& Items(NGInlineNodeData& data) {
-    return data.items_;
+    return data.items;
   }
 
   void Append(const String& text,
               const ComputedStyle* style = nullptr,
               LayoutObject* layout_object = nullptr) {
     NGInlineNodeData* data = MutableData();
-    unsigned start = data->text_content_.length();
-    data->text_content_.append(text);
-    data->items_.push_back(NGInlineItem(NGInlineItem::kText, start,
-                                        start + text.length(), style,
-                                        layout_object));
+    unsigned start = data->text_content.length();
+    data->text_content.append(text);
+    data->items.push_back(NGInlineItem(NGInlineItem::kText, start,
+                                       start + text.length(), style,
+                                       layout_object));
     data->is_empty_inline_ = false;
   }
 
   void Append(UChar character) {
     NGInlineNodeData* data = MutableData();
-    data->text_content_.append(character);
-    unsigned end = data->text_content_.length();
-    data->items_.push_back(
+    data->text_content.append(character);
+    unsigned end = data->text_content.length();
+    data->items.push_back(
         NGInlineItem(NGInlineItem::kBidiControl, end - 1, end, nullptr));
     data->is_bidi_enabled_ = true;
     data->is_empty_inline_ = false;
@@ -52,8 +52,8 @@ class NGInlineNodeForTest : public NGInlineNode {
 
   void ClearText() {
     NGInlineNodeData* data = MutableData();
-    data->text_content_ = String();
-    data->items_.clear();
+    data->text_content = String();
+    data->items.clear();
     data->is_empty_inline_ = true;
   }
 
@@ -93,7 +93,7 @@ class NGInlineNodeTest : public NGLayoutTest {
     if (!layout_block_flow_)
       SetupHtml("t", "<div id=t style='font:10px'>test</div>");
     NGInlineNodeForTest node(layout_block_flow_);
-    node.InvalidatePrepareLayout();
+    node.InvalidatePrepareLayoutForTest();
     return node;
   }
 
@@ -304,7 +304,6 @@ TEST_F(NGInlineNodeTest, SegmentSplit1To2) {
   NGInlineNodeForTest node = CreateInlineNode();
   node.Append(u"Hello \u05E2\u05D1\u05E8\u05D9\u05EA");
   node.SegmentText();
-  ASSERT_EQ(2u, node.Items().size());
   Vector<NGInlineItem>& items = node.Items();
   ASSERT_EQ(2u, items.size());
   TEST_ITEM_OFFSET_DIR(items[0], 0u, 6u, TextDirection::kLtr);

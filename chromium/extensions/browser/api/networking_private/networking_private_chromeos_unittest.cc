@@ -9,7 +9,6 @@
 #include "base/callback.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
@@ -189,40 +188,44 @@ class NetworkingPrivateApiTest : public ApiUnitTest {
                               *device_policy_onc, base::DictionaryValue());
   }
 
+  void SetDeviceProperty(const std::string& device_path,
+                         const std::string& name,
+                         const base::Value& value) {
+    device_test_->SetDeviceProperty(device_path, name, value,
+                                    /*notify_changed=*/false);
+  }
+
   void SetUpCellular() {
     // Add a Cellular GSM Device.
     device_test_->AddDevice(kCellularDevicePath, shill::kTypeCellular,
                             "stub_cellular_device1");
-    device_test_->SetDeviceProperty(kCellularDevicePath,
-                                    shill::kCarrierProperty,
-                                    base::Value("Cellular1_Carrier"));
+    SetDeviceProperty(kCellularDevicePath, shill::kCarrierProperty,
+                      base::Value("Cellular1_Carrier"));
 
     base::DictionaryValue home_provider;
     home_provider.SetString("name", "Cellular1_Provider");
     home_provider.SetString("code", "000000");
     home_provider.SetString("country", "us");
-    device_test_->SetDeviceProperty(
-        kCellularDevicePath, shill::kHomeProviderProperty, home_provider);
-    device_test_->SetDeviceProperty(kCellularDevicePath,
-                                    shill::kTechnologyFamilyProperty,
-                                    base::Value(shill::kNetworkTechnologyGsm));
-    device_test_->SetDeviceProperty(kCellularDevicePath, shill::kMeidProperty,
-                                    base::Value("test_meid"));
-    device_test_->SetDeviceProperty(kCellularDevicePath, shill::kImeiProperty,
-                                    base::Value("test_imei"));
-    device_test_->SetDeviceProperty(kCellularDevicePath, shill::kIccidProperty,
-                                    base::Value("test_iccid"));
-    device_test_->SetDeviceProperty(kCellularDevicePath, shill::kImsiProperty,
-                                    base::Value("test_imsi"));
-    device_test_->SetDeviceProperty(kCellularDevicePath, shill::kEsnProperty,
-                                    base::Value("test_esn"));
-    device_test_->SetDeviceProperty(kCellularDevicePath, shill::kMdnProperty,
-                                    base::Value("test_mdn"));
-    device_test_->SetDeviceProperty(kCellularDevicePath, shill::kMinProperty,
-                                    base::Value("test_min"));
-    device_test_->SetDeviceProperty(kCellularDevicePath,
-                                    shill::kModelIdProperty,
-                                    base::Value("test_model_id"));
+    SetDeviceProperty(kCellularDevicePath, shill::kHomeProviderProperty,
+                      home_provider);
+    SetDeviceProperty(kCellularDevicePath, shill::kTechnologyFamilyProperty,
+                      base::Value(shill::kNetworkTechnologyGsm));
+    SetDeviceProperty(kCellularDevicePath, shill::kMeidProperty,
+                      base::Value("test_meid"));
+    SetDeviceProperty(kCellularDevicePath, shill::kImeiProperty,
+                      base::Value("test_imei"));
+    SetDeviceProperty(kCellularDevicePath, shill::kIccidProperty,
+                      base::Value("test_iccid"));
+    SetDeviceProperty(kCellularDevicePath, shill::kImsiProperty,
+                      base::Value("test_imsi"));
+    SetDeviceProperty(kCellularDevicePath, shill::kEsnProperty,
+                      base::Value("test_esn"));
+    SetDeviceProperty(kCellularDevicePath, shill::kMdnProperty,
+                      base::Value("test_mdn"));
+    SetDeviceProperty(kCellularDevicePath, shill::kMinProperty,
+                      base::Value("test_min"));
+    SetDeviceProperty(kCellularDevicePath, shill::kModelIdProperty,
+                      base::Value("test_model_id"));
     std::unique_ptr<base::DictionaryValue> apn =
         DictionaryBuilder()
             .Set(shill::kApnProperty, "test-apn")
@@ -231,8 +234,8 @@ class NetworkingPrivateApiTest : public ApiUnitTest {
             .Build();
     std::unique_ptr<base::ListValue> apn_list =
         ListBuilder().Append(apn->CreateDeepCopy()).Build();
-    device_test_->SetDeviceProperty(kCellularDevicePath,
-                                    shill::kCellularApnListProperty, *apn_list);
+    SetDeviceProperty(kCellularDevicePath, shill::kCellularApnListProperty,
+                      *apn_list);
 
     service_test_->AddService(kCellularServicePath, kCellularGuid,
                               kCellularName, shill::kTypeCellular,
@@ -1081,8 +1084,8 @@ TEST_F(NetworkingPrivateApiTest, GetCellularProperties) {
       DictionaryBuilder()
           .Set("Cellular",
                DictionaryBuilder()
-                   .SetBoolean("AllowRoaming", false)
-                   .SetBoolean("AutoConnect", true)
+                   .Set("AllowRoaming", false)
+                   .Set("AutoConnect", true)
                    .Set("Carrier", "Cellular1_Carrier")
                    .Set("Family", "GSM")
                    .Set("HomeProvider", DictionaryBuilder()
@@ -1093,7 +1096,7 @@ TEST_F(NetworkingPrivateApiTest, GetCellularProperties) {
                    .Set("ModelID", "test_model_id")
                    .Set("NetworkTechnology", "GSM")
                    .Set("RoamingState", "Home")
-                   .SetBoolean("Scanning", false)
+                   .Set("Scanning", false)
                    .Build())
           .Set("ConnectionState", "Connected")
           .Set("GUID", "cellular_guid")
@@ -1128,8 +1131,8 @@ TEST_F(NetworkingPrivateApiTest, GetCellularPropertiesFromWebUi) {
       DictionaryBuilder()
           .Set("Cellular",
                DictionaryBuilder()
-                   .SetBoolean("AllowRoaming", false)
-                   .SetBoolean("AutoConnect", true)
+                   .Set("AllowRoaming", false)
+                   .Set("AutoConnect", true)
                    .Set("Carrier", "Cellular1_Carrier")
                    .Set("ESN", "test_esn")
                    .Set("Family", "GSM")
@@ -1147,7 +1150,7 @@ TEST_F(NetworkingPrivateApiTest, GetCellularPropertiesFromWebUi) {
                    .Set("MIN", "test_min")
                    .Set("NetworkTechnology", "GSM")
                    .Set("RoamingState", "Home")
-                   .SetBoolean("Scanning", false)
+                   .Set("Scanning", false)
                    .Set("APNList", ListBuilder()
                                        .Append(expected_apn->CreateDeepCopy())
                                        .Build())

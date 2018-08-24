@@ -18,7 +18,6 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -252,17 +251,7 @@ void TouchEventConverterEvdev::Initialize(const EventDeviceInfo& info) {
   if (cancelled_state)
     CancelAllTouches();
 
-  bool touch_noise_filtering =
-      base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kExtraTouchNoiseFiltering);
-  bool edge_touch_filtering =
-      base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEdgeTouchFiltering);
-  if (touch_noise_filtering || edge_touch_filtering) {
-    false_touch_finder_.reset(new FalseTouchFinder(touch_noise_filtering,
-                                                  edge_touch_filtering,
-                                                  GetTouchscreenSize()));
-  }
+  false_touch_finder_ = FalseTouchFinder::Create(GetTouchscreenSize());
 }
 
 void TouchEventConverterEvdev::Reinitialize() {
@@ -338,7 +327,7 @@ void TouchEventConverterEvdev::SetTouchEventLoggingEnabled(bool enabled) {
 }
 
 void TouchEventConverterEvdev::SetPalmSuppressionCallback(
-    const base::Callback<void(bool)>& callback) {
+    const base::RepeatingCallback<void(bool)>& callback) {
   enable_palm_suppression_callback_ = callback;
 }
 

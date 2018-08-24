@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/input/pointer_event_manager.h"
 
+#include "base/auto_reset.h"
 #include "third_party/blink/public/platform/web_touch_event.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
@@ -21,7 +22,6 @@
 #include "third_party/blink/renderer/core/layout/hit_test_canvas_result.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 
 namespace blink {
 
@@ -163,8 +163,7 @@ WebInputEventResult PointerEventManager::DispatchPointerEvent(
     }
   }
 
-  if (!frame_ || !frame_->GetPage() ||
-      !HasPointerEventListener(frame_->GetPage()->GetEventHandlerRegistry()))
+  if (!frame_ || !HasPointerEventListener(frame_->GetEventHandlerRegistry()))
     return WebInputEventResult::kNotHandled;
 
   if (event_type == EventTypeNames::pointerdown) {
@@ -181,7 +180,7 @@ WebInputEventResult PointerEventManager::DispatchPointerEvent(
       UseCounter::Count(frame_, WebFeature::kPointerEventDispatchPointerDown);
 
     DCHECK(!dispatching_pointer_id_);
-    AutoReset<int> dispatch_holder(&dispatching_pointer_id_, pointer_id);
+    base::AutoReset<int> dispatch_holder(&dispatching_pointer_id_, pointer_id);
     DispatchEventResult dispatch_result = target->DispatchEvent(pointer_event);
     return EventHandlingUtil::ToWebInputEventResult(dispatch_result);
   }
@@ -261,8 +260,7 @@ void PointerEventManager::HandlePointerInterruption(
       WebPointerProperties::PointerType::kMouse) {
     canceled_pointer_events.push_back(
         pointer_event_factory_.CreatePointerCancelEvent(
-            PointerEventFactory::kMouseId,
-            TimeTicksFromSeconds(web_pointer_event.TimeStampSeconds())));
+            PointerEventFactory::kMouseId, web_pointer_event.TimeStamp()));
   } else {
     // TODO(nzolghadr): Maybe canceling all the non-hovering pointers is not
     // the best strategy here. See the github issue for more details:
@@ -276,8 +274,7 @@ void PointerEventManager::HandlePointerInterruption(
       for (int pointer_id : non_hovering_pointer_ids) {
         canceled_pointer_events.push_back(
             pointer_event_factory_.CreatePointerCancelEvent(
-                pointer_id,
-                TimeTicksFromSeconds(web_pointer_event.TimeStampSeconds())));
+                pointer_id, web_pointer_event.TimeStamp()));
       }
 
       non_hovering_pointers_canceled_ = true;
@@ -332,7 +329,7 @@ void PointerEventManager::AdjustTouchPointerEvent(
          WebPointerProperties::PointerType::kTouch);
 
   LayoutSize padding = GetHitTestRectForAdjustment(
-      IntSize(pointer_event.width / 2, pointer_event.height / 2));
+      LayoutSize(pointer_event.width, pointer_event.height) * 0.5f);
 
   if (padding.IsEmpty())
     return;
@@ -619,8 +616,21 @@ WebInputEventResult PointerEventManager::SendMousePointerEvent(
   if (pointer_event->type() == EventTypeNames::pointerup ||
       pointer_event->type() == EventTypeNames::pointercancel) {
     ReleasePointerCapture(pointer_event->pointerId());
+
     // Send got/lostpointercapture rightaway if necessary.
-    ProcessPendingPointerCapture(pointer_event);
+    if (pointer_event->type() == EventTypeNames::pointerup) {
+      // If pointerup releases the capture we also send boundary events
+      // rightaway when the pointer that supports hover. The following function
+      // does nothing when there was no capture to begin with in the first
+      // place.
+      ProcessCaptureAndPositionOfPointerEvent(pointer_event, target,
+                                              canvas_region_id, &mouse_event);
+    } else {
+      // Don't send out/leave events in this case as it is a little tricky.
+      // This case happens for the drag operation and currently we don't
+      // let the page know that the pointer left the page while dragging.
+      ProcessPendingPointerCapture(pointer_event);
+    }
 
     if (pointer_event->isPrimary()) {
       prevent_mouse_event_for_pointer_type_[ToPointerTypeIndex(

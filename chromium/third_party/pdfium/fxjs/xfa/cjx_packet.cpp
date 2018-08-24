@@ -6,10 +6,15 @@
 
 #include "fxjs/xfa/cjx_packet.h"
 
+#include <utility>
 #include <vector>
 
+#include "core/fxcrt/xml/cfx_xmldocument.h"
+#include "core/fxcrt/xml/cfx_xmltext.h"
 #include "fxjs/cfxjse_value.h"
 #include "fxjs/js_resources.h"
+#include "xfa/fxfa/cxfa_ffdoc.h"
+#include "xfa/fxfa/cxfa_ffnotify.h"
 #include "xfa/fxfa/parser/cxfa_packet.h"
 
 const CJX_MethodSpec CJX_Packet::MethodSpecs[] = {
@@ -32,7 +37,7 @@ CJS_Return CJX_Packet::getAttribute(
   WideString attributeValue;
   CFX_XMLNode* pXMLNode = GetXFANode()->GetXMLMappingNode();
   if (pXMLNode && pXMLNode->GetType() == FX_XMLNODE_Element) {
-    attributeValue = static_cast<CFX_XMLElement*>(pXMLNode)->GetString(
+    attributeValue = static_cast<CFX_XMLElement*>(pXMLNode)->GetAttribute(
         runtime->ToWideString(params[0]).c_str());
   }
   return CJS_Return(
@@ -47,7 +52,7 @@ CJS_Return CJX_Packet::setAttribute(
 
   CFX_XMLNode* pXMLNode = GetXFANode()->GetXMLMappingNode();
   if (pXMLNode && pXMLNode->GetType() == FX_XMLNODE_Element) {
-    static_cast<CFX_XMLElement*>(pXMLNode)->SetString(
+    static_cast<CFX_XMLElement*>(pXMLNode)->SetAttribute(
         runtime->ToWideString(params[1]), runtime->ToWideString(params[0]));
   }
   return CJS_Return(runtime->NewNull());
@@ -75,8 +80,13 @@ void CJX_Packet::content(CFXJSE_Value* pValue,
   CFX_XMLNode* pXMLNode = GetXFANode()->GetXMLMappingNode();
   if (bSetting) {
     if (pXMLNode && pXMLNode->GetType() == FX_XMLNODE_Element) {
-      CFX_XMLElement* pXMLElement = static_cast<CFX_XMLElement*>(pXMLNode);
-      pXMLElement->SetTextData(pValue->ToWideString());
+      auto* text = GetXFANode()
+                       ->GetDocument()
+                       ->GetNotify()
+                       ->GetHDOC()
+                       ->GetXMLDocument()
+                       ->CreateNode<CFX_XMLText>(pValue->ToWideString());
+      pXMLNode->AppendChild(text);
     }
     return;
   }

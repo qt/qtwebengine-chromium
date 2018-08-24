@@ -9,6 +9,7 @@ import argparse
 import codecs
 import collections
 import glob
+import json
 import logging
 import os
 import re
@@ -32,15 +33,19 @@ sys.path.append(os.path.join(host_paths.DIR_SOURCE_ROOT, 'build'))
 import find_depot_tools  # pylint: disable=import-error
 
 _DEFAULT_ANDROID_MANIFEST_PATH = os.path.join(
-    host_paths.DIR_SOURCE_ROOT, 'build', 'android', 'AndroidManifest.xml')
+    host_paths.DIR_SOURCE_ROOT, 'build', 'android', 'gradle',
+    'AndroidManifest.xml')
 _FILE_DIR = os.path.dirname(__file__)
 _SRCJARS_SUBDIR = 'extracted-srcjars'
 _JNI_LIBS_SUBDIR = 'symlinked-libs'
 _ARMEABI_SUBDIR = 'armeabi'
 _RES_SUBDIR = 'extracted-res'
 _GRADLE_BUILD_FILE = 'build.gradle'
+_CMAKE_FILE = 'CMakeLists.txt'
 # This needs to come first alphabetically among all modules.
 _MODULE_ALL = '_all'
+_SRC_INTERNAL = os.path.join(
+    os.path.dirname(host_paths.DIR_SOURCE_ROOT), 'src-internal')
 
 _DEFAULT_TARGETS = [
     '//android_webview/test/embedded_test_server:aw_net_test_support_apk',
@@ -108,12 +113,24 @@ def _ReadPropertiesFile(path):
     return dict(l.rstrip().split('=', 1) for l in f if '=' in l)
 
 
-def _RunNinja(output_dir, args):
+def _RunGnGen(output_dir, args=None):
+  cmd = [
+    os.path.join(find_depot_tools.DEPOT_TOOLS_PATH, 'gn'),
+    'gen',
+    output_dir,
+  ]
+  if args:
+    cmd.extend(args)
+  logging.info('Running: %r', cmd)
+  subprocess.check_call(cmd)
+
+
+def _RunNinja(output_dir, args, j):
   cmd = [
     os.path.join(find_depot_tools.DEPOT_TOOLS_PATH, 'ninja'),
     '-C',
     output_dir,
-    '-j1000',
+    '-j{}'.format(j),
   ]
   cmd.extend(args)
   logging.info('Running: %r', cmd)
@@ -270,7 +287,7 @@ class _ProjectEntry(object):
 class _ProjectContextGenerator(object):
   """Helper class to generate gradle build files"""
   def __init__(self, project_dir, build_vars, use_gradle_process_resources,
-      jinja_processor, split_projects, channel):
+               jinja_processor, split_projects, channel):
     self.project_dir = project_dir
     self.build_vars = build_vars
     self.use_gradle_process_resources = use_gradle_process_resources
@@ -332,8 +349,7 @@ class _ProjectContextGenerator(object):
   def _Srcjars(self, entry):
     srcjars = _RebasePath(entry.Gradle().get('bundled_srcjars', []))
     if not self.use_gradle_process_resources:
-      srcjars += _RebasePath(entry.Javac()['srcjars'])
-      srcjars += _RebasePath(entry.Gradle().get('srcjars'))
+      srcjars += _RebasePath(entry.DepsInfo().get('owned_resource_srcjars', []))
     return srcjars
 
   def _GetEntries(self, entry):
@@ -357,12 +373,21 @@ class _ProjectContextGenerator(object):
     return set(_RebasePath(res_zips))
 
   def GeneratedInputs(self, root_entry):
-    generated_inputs = set(self.AllResZips(root_entry))
+    generated_inputs = self.AllResZips(root_entry)
     generated_inputs.update(self.AllSrcjars(root_entry))
     for entry in self._GetEntries(root_entry):
       generated_inputs.update(entry.GeneratedJavaFiles())
       generated_inputs.update(entry.PrebuiltJars())
-    return set(generated_inputs)
+    return generated_inputs
+
+  def GeneratedZips(self, root_entry):
+    entry_output_dir = self.EntryOutputDir(root_entry)
+    tuples = []
+    tuples.extend((s, os.path.join(entry_output_dir, _SRCJARS_SUBDIR))
+                  for s in self.AllSrcjars(root_entry))
+    tuples.extend((s, os.path.join(entry_output_dir, _RES_SUBDIR))
+                  for s in self.AllResZips(root_entry))
+    return tuples
 
   def Generate(self, root_entry):
     # TODO(agrieve): Add an option to use interface jars and see if that speeds
@@ -527,6 +552,10 @@ def _GenerateBaseVars(generator, build_vars, source_properties):
   variables['build_tools_version'] = source_properties['Pkg.Revision']
   variables['compile_sdk_version'] = (
       'android-%s' % build_vars['android_sdk_version'])
+  target_sdk_version = build_vars['android_sdk_version']
+  if target_sdk_version.isalpha():
+    target_sdk_version = '"{}"'.format(target_sdk_version)
+  variables['target_sdk_version'] = target_sdk_version
   variables['use_gradle_process_resources'] = (
       generator.use_gradle_process_resources)
   variables['channel'] = generator.channel
@@ -586,8 +615,38 @@ def _IsTestDir(path):
           'testing/' in path)
 
 
-def _GenerateModuleAll(gradle_output_dir, generator, build_vars,
-    source_properties, jinja_processor):
+# Example: //chrome/android:monochrome
+def _GetNative(relative_func, target_names):
+  out_dir = constants.GetOutDirectory()
+  with open(os.path.join(out_dir, 'project.json'), 'r') as project_file:
+    projects = json.load(project_file)
+  project_targets = projects['targets']
+  root_dir = projects['build_settings']['root_path']
+  targets = {}
+  includes = set()
+  def process_paths(paths):
+    # Ignores leading //
+    return relative_func(
+        sorted(os.path.join(root_dir, path[2:]) for path in paths))
+  for target_name in target_names:
+    target = project_targets[target_name]
+    includes.update(target.get('include_dirs', []))
+    sources = [f for f in target.get('sources', []) if f.endswith('.cc')]
+    if sources:
+      # CMake does not like forward slashes or colons for the target name.
+      filtered_name = target_name.replace('/', '.').replace(':', '-')
+      targets[filtered_name] = {
+          'sources': process_paths(sources),
+      }
+  return {
+      'targets': targets,
+      'includes': process_paths(includes),
+  }
+
+
+def _GenerateModuleAll(
+    gradle_output_dir, generator, build_vars, source_properties,
+    jinja_processor, native_targets):
   """Returns the data for a pseudo build.gradle of all dirs.
 
   See //docs/android_studio.md for more details."""
@@ -613,10 +672,17 @@ def _GenerateModuleAll(gradle_output_dir, generator, build_vars,
       'java_dirs': Relativize(test_java_dirs),
       'java_excludes': ['**/*.java'],
   }]
+  if native_targets:
+    variables['native'] = _GetNative(
+        relative_func=Relativize, target_names=native_targets)
   data = jinja_processor.Render(
       _TemplatePath(target_type.split('_')[0]), variables)
   _WriteFile(
       os.path.join(gradle_output_dir, _MODULE_ALL, _GRADLE_BUILD_FILE), data)
+  if native_targets:
+    cmake_data = jinja_processor.Render(_TemplatePath('cmake'), variables)
+    _WriteFile(
+        os.path.join(gradle_output_dir, _MODULE_ALL, _CMAKE_FILE), cmake_data)
 
 
 def _GenerateRootGradle(jinja_processor, channel):
@@ -624,7 +690,7 @@ def _GenerateRootGradle(jinja_processor, channel):
   return jinja_processor.Render(_TemplatePath('root'), {'channel': channel})
 
 
-def _GenerateSettingsGradle(project_entries, add_all_module):
+def _GenerateSettingsGradle(project_entries):
   """Returns the data for settings.gradle."""
   project_name = os.path.basename(os.path.dirname(host_paths.DIR_SOURCE_ROOT))
   lines = []
@@ -632,17 +698,11 @@ def _GenerateSettingsGradle(project_entries, add_all_module):
   lines.append('rootProject.name = "%s"' % project_name)
   lines.append('rootProject.projectDir = settingsDir')
   lines.append('')
-
-  if add_all_module:
-    lines.append('include ":{0}"'.format(_MODULE_ALL))
-    lines.append(
-        'project(":{0}").projectDir = new File(settingsDir, "{0}")'.format(
-            _MODULE_ALL))
-  for entry in project_entries:
+  for name, subdir in project_entries:
     # Example target: android_webview:android_webview_java__build_config
-    lines.append('include ":%s"' % entry.ProjectName())
+    lines.append('include ":%s"' % name)
     lines.append('project(":%s").projectDir = new File(settingsDir, "%s")' %
-                 (entry.ProjectName(), entry.GradleSubdir()))
+                 (name, subdir))
   return '\n'.join(lines)
 
 
@@ -742,6 +802,17 @@ def main():
                       action='store_true',
                       help='Split projects by their gn deps rather than '
                            'combining all the dependencies of each target')
+  parser.add_argument('--full',
+                      action='store_true',
+                      help='Generate R.java and other ninja-generated files')
+  parser.add_argument('-j',
+                      default=1000 if os.path.exists(_SRC_INTERNAL) else 50,
+                      help='Value for number of parallel jobs for ninja')
+  parser.add_argument('--native-target',
+                      dest='native_targets',
+                      action='append',
+                      help='GN native targets to generate for. May be '
+                           'repeated.')
   version_group = parser.add_mutually_exclusive_group()
   version_group.add_argument('--beta',
                       action='store_true',
@@ -756,15 +827,12 @@ def main():
                          choices=['AndroidStudioCurrent',
                                   'AndroidStudioDefault',
                                   'ChromiumSdkRoot'],
-                         default='ChromiumSdkRoot',
+                         default='AndroidStudioDefault',
                          help="Set the project's SDK root. This can be set to "
                               "Android Studio's current SDK root, the default "
                               "Android Studio SDK root, or Chromium's SDK "
-                              "root. The default is Chromium's SDK root, but "
-                              "using this means that updates and additions to "
-                              "the SDK (e.g. installing emulators), will "
-                              "modify this root, hence possibly causing "
-                              "conflicts on the next repository sync.")
+                              "root in //third_party. The default is Android "
+                              "Studio's SDK root in ~/Android/Sdk.")
   sdk_group.add_argument('--sdk-path',
                          help='An explict path for the SDK root, setting this '
                               'is an alternative to setting the --sdk option')
@@ -782,21 +850,7 @@ def main():
 
   _gradle_output_dir = os.path.abspath(
       args.project_dir.replace('$CHROMIUM_OUTPUT_DIR', output_dir))
-  jinja_processor = jinja_template.JinjaProcessor(_FILE_DIR)
-  build_vars = _ReadPropertiesFile(os.path.join(output_dir, 'build_vars.txt'))
-  source_properties = _ReadPropertiesFile(
-      _RebasePath(os.path.join(build_vars['android_sdk_build_tools'],
-                               'source.properties')))
-  if args.beta:
-    channel = 'beta'
-  elif args.canary:
-    channel = 'canary'
-  else:
-    channel = 'stable'
-  generator = _ProjectContextGenerator(_gradle_output_dir, build_vars,
-      args.use_gradle_process_resources, jinja_processor, args.split_projects,
-      channel)
-  logging.warning('Creating project at: %s', generator.project_dir)
+  logging.warning('Creating project at: %s', _gradle_output_dir)
 
   # Generate for "all targets" by default when not using --split-projects (too
   # slow), and when no --target has been explicitly set. "all targets" means all
@@ -809,18 +863,37 @@ def main():
     targets_from_args.update(args.extra_targets)
 
   if args.all:
-    # Run GN gen if necessary (faster than running "gn gen" in the no-op case).
-    _RunNinja(constants.GetOutDirectory(), ['build.ninja'])
+    if args.native_targets:
+      _RunGnGen(output_dir, ['--ide=json'])
+    elif not os.path.exists(os.path.join(output_dir, 'build.ninja')):
+      _RunGnGen(output_dir)
+    else:
+      # Faster than running "gn gen" in the no-op case.
+      _RunNinja(output_dir, ['build.ninja'], args.j)
     # Query ninja for all __build_config targets.
     targets = _QueryForAllGnTargets(output_dir)
   else:
+    assert not args.native_targets, 'Native editing requires --all.'
     targets = [re.sub(r'_test_apk$', '_test_apk__apk', t)
                for t in targets_from_args]
+
+  build_vars = _ReadPropertiesFile(os.path.join(output_dir, 'build_vars.txt'))
+  jinja_processor = jinja_template.JinjaProcessor(_FILE_DIR)
+  if args.beta:
+    channel = 'beta'
+  elif args.canary:
+    channel = 'canary'
+  else:
+    channel = 'stable'
+  generator = _ProjectContextGenerator(_gradle_output_dir, build_vars,
+      args.use_gradle_process_resources, jinja_processor, args.split_projects,
+      channel)
 
   main_entries = [_ProjectEntry.FromGnTarget(t) for t in targets]
 
   logging.warning('Building .build_config files...')
-  _RunNinja(output_dir, [e.NinjaBuildConfigTarget() for e in main_entries])
+  _RunNinja(
+      output_dir, [e.NinjaBuildConfigTarget() for e in main_entries], args.j)
 
   if args.all:
     # There are many unused libraries, so restrict to those that are actually
@@ -838,62 +911,64 @@ def main():
   entries = [e for e in _CombineTestEntries(main_entries) if e.IsValid()]
   logging.info('Creating %d projects for targets.', len(entries))
 
+  logging.warning('Writing .gradle files...')
+  source_properties = _ReadPropertiesFile(
+      _RebasePath(os.path.join(build_vars['android_sdk_build_tools'],
+                               'source.properties')))
+  project_entries = []
   # When only one entry will be generated we want it to have a valid
   # build.gradle file with its own AndroidManifest.
-  add_all_module = not args.split_projects and len(entries) > 1
-
-  logging.warning('Writing .gradle files...')
-  project_entries = []
-  zip_tuples = []
-  generated_inputs = []
   for entry in entries:
-    data = _GenerateGradleFile(entry, generator, build_vars, source_properties,
-        jinja_processor)
-    if data:
-      # Build all paths references by .gradle that exist within output_dir.
-      generated_inputs.extend(generator.GeneratedInputs(entry))
-      zip_tuples.extend(
-          (s, os.path.join(generator.EntryOutputDir(entry), _SRCJARS_SUBDIR))
-          for s in generator.AllSrcjars(entry))
-      zip_tuples.extend(
-          (s, os.path.join(generator.EntryOutputDir(entry), _RES_SUBDIR))
-          for s in generator.AllResZips(entry))
-      if not add_all_module:
-        project_entries.append(entry)
+    data = _GenerateGradleFile(
+        entry, generator, build_vars, source_properties, jinja_processor)
+    if data and not args.all:
+        project_entries.append((entry.ProjectName(), entry.GradleSubdir()))
         _WriteFile(
             os.path.join(generator.EntryOutputDir(entry), _GRADLE_BUILD_FILE),
             data)
-
-  if add_all_module:
-    _GenerateModuleAll(_gradle_output_dir, generator, build_vars,
-        source_properties, jinja_processor)
+  if args.all:
+    project_entries.append((_MODULE_ALL, _MODULE_ALL))
+    _GenerateModuleAll(
+        _gradle_output_dir, generator, build_vars, source_properties,
+        jinja_processor, args.native_targets)
 
   _WriteFile(os.path.join(generator.project_dir, _GRADLE_BUILD_FILE),
              _GenerateRootGradle(jinja_processor, channel))
 
   _WriteFile(os.path.join(generator.project_dir, 'settings.gradle'),
-             _GenerateSettingsGradle(project_entries, add_all_module))
+             _GenerateSettingsGradle(project_entries))
 
   if args.sdk != "AndroidStudioCurrent":
     if args.sdk_path:
       sdk_path = _RebasePath(args.sdk_path)
     elif args.sdk == "AndroidStudioDefault":
       sdk_path = os.path.expanduser('~/Android/Sdk')
+      if not os.path.exists(sdk_path):
+        # Help first-time users avoid Android Studio forcibly changing back to
+        # the previous default due to not finding a valid sdk under this dir.
+        shutil.copytree(_RebasePath(build_vars['android_sdk_root']), sdk_path)
     else:
       sdk_path = _RebasePath(build_vars['android_sdk_root'])
     _WriteFile(os.path.join(generator.project_dir, 'local.properties'),
                _GenerateLocalProperties(sdk_path))
 
-  if generated_inputs:
-    logging.warning('Building generated source files...')
-    targets = _RebasePath(generated_inputs, output_dir)
-    _RunNinja(output_dir, targets)
+  if args.full:
+    zip_tuples = []
+    generated_inputs = set()
+    for entry in entries:
+      # Build all paths references by .gradle that exist within output_dir.
+      generated_inputs.update(generator.GeneratedInputs(entry))
+      zip_tuples.extend(generator.GeneratedZips(entry))
+    if generated_inputs:
+      logging.warning('Building generated source files...')
+      targets = _RebasePath(generated_inputs, output_dir)
+      _RunNinja(output_dir, targets, args.j)
+    if zip_tuples:
+      _ExtractZips(generator.project_dir, zip_tuples)
 
-  if zip_tuples:
-    _ExtractZips(generator.project_dir, zip_tuples)
-
-  logging.warning('Project created!')
-  logging.warning('Generated projects work with Android Studio %s', channel)
+  logging.warning('Generated projects for Android Studio %s', channel)
+  if not args.full:
+    logging.warning('Run with --full flag to update generated files (slow)')
   logging.warning('For more tips: https://chromium.googlesource.com/chromium'
                   '/src.git/+/master/docs/android_studio.md')
 

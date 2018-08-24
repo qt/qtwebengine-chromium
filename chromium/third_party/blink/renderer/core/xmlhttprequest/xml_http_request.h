@@ -166,8 +166,8 @@ class XMLHttpRequest final : public XMLHttpRequestEventTarget,
 
   DEFINE_ATTRIBUTE_EVENT_LISTENER(readystatechange);
 
-  virtual void Trace(blink::Visitor*);
-  void TraceWrappers(const ScriptWrappableVisitor*) const override;
+  void Trace(blink::Visitor*) override;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override { return "XMLHttpRequest"; }
 
  private:
@@ -195,7 +195,7 @@ class XMLHttpRequest final : public XMLHttpRequestEventTarget,
   // of didReceiveData().
   void DidDownloadData(int data_length) override;
   void DidDownloadToBlob(scoped_refptr<BlobDataHandle>) override;
-  void DidFinishLoading(unsigned long identifier, double finish_time) override;
+  void DidFinishLoading(unsigned long identifier) override;
   void DidFail(const ResourceError&) override;
   void DidFailRedirectCheck() override;
 

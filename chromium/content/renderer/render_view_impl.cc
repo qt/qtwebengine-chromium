@@ -76,12 +76,13 @@
 #include "content/renderer/history_serialization.h"
 #include "content/renderer/idle_user_detector.h"
 #include "content/renderer/ime_event_guard.h"
-#include "content/renderer/input/input_handler_manager.h"
 #include "content/renderer/internal_document_state_data.h"
 #include "content/renderer/loader/request_extra_data.h"
 #include "content/renderer/media/audio_device_factory.h"
 #include "content/renderer/media/stream/media_stream_device_observer.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
+#include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
+#include "content/renderer/media/webrtc/rtc_peer_connection_handler.h"
 #include "content/renderer/navigation_state_impl.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_frame_proxy.h"
@@ -194,15 +195,9 @@
 #include "content/renderer/pepper/pepper_plugin_registry.h"
 #endif
 
-#if BUILDFLAG(ENABLE_WEBRTC)
-#include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
-#include "content/renderer/media/webrtc/rtc_peer_connection_handler.h"
-#endif
-
 using blink::WebAXObject;
 using blink::WebApplicationCacheHost;
 using blink::WebApplicationCacheHostClient;
-using blink::WebColor;
 using blink::WebConsoleMessage;
 using blink::WebData;
 using blink::WebDocument;
@@ -468,7 +463,7 @@ RenderViewImpl::RenderViewImpl(
     : RenderWidget(params.view_id,
                    compositor_deps,
                    blink::kWebPopupTypeNone,
-                   params.initial_size.screen_info,
+                   params.visual_properties.screen_info,
                    params.swapped_out,
                    params.hidden,
                    params.never_visible,
@@ -513,7 +508,7 @@ void RenderViewImpl::Initialize(
   was_created_by_renderer_ = was_created_by_renderer;
 #endif
   renderer_wide_named_frame_lookup_ = params->renderer_wide_named_frame_lookup;
-  display_mode_ = params->initial_size.display_mode;
+  display_mode_ = params->visual_properties.display_mode;
 
   WebFrame* opener_frame =
       RenderFrameImpl::ResolveOpener(params->opener_frame_route_id);
@@ -544,9 +539,6 @@ void RenderViewImpl::Initialize(
 
   if (switches::IsTouchDragDropEnabled())
     webview()->GetSettings()->SetTouchDragDropEnabled(true);
-
-  webview()->GetSettings()->SetBrowserSideNavigationEnabled(
-      IsBrowserSideNavigationEnabled());
 
   WebSettings::SelectionStrategyType selection_strategy =
       WebSettings::SelectionStrategyType::kCharacter;
@@ -612,9 +604,9 @@ void RenderViewImpl::Initialize(
   UpdateWebViewWithDeviceScaleFactor();
   OnSetRendererPrefs(params->renderer_preferences);
 
-  OnResize(params->initial_size);
+  OnSynchronizeVisualProperties(params->visual_properties);
 
-  idle_user_detector_.reset(new IdleUserDetector(this));
+  idle_user_detector_.reset(new IdleUserDetector());
 
   GetContentClient()->renderer()->RenderViewCreated(this);
 
@@ -727,9 +719,7 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   WebRuntimeFeatures::EnableXSLT(prefs.xslt_enabled);
   settings->SetXSSAuditorEnabled(prefs.xss_auditor_enabled);
   settings->SetDNSPrefetchingEnabled(prefs.dns_prefetching_enabled);
-  blink::WebNetworkStateNotifier::SetSaveDataEnabled(
-      prefs.data_saver_enabled &&
-      !base::FeatureList::IsEnabled(features::kDataSaverHoldback));
+  blink::WebNetworkStateNotifier::SetSaveDataEnabled(prefs.data_saver_enabled);
   settings->SetLocalStorageEnabled(prefs.local_storage_enabled);
   settings->SetSyncXHRInDocumentsEnabled(prefs.sync_xhr_in_documents_enabled);
   WebRuntimeFeatures::EnableDatabase(prefs.databases_enabled);
@@ -973,6 +963,11 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
 
   settings->SetPictureInPictureEnabled(prefs.picture_in_picture_enabled);
 
+  settings->SetDataSaverHoldbackWebApi(
+      prefs.data_saver_holdback_web_api_enabled);
+  settings->SetDataSaverHoldbackMediaApi(
+      prefs.data_saver_holdback_media_api_enabled);
+
 #if defined(OS_MACOSX)
   settings->SetDoubleTapToZoomEnabled(true);
   web_view->SetMaximumLegibleScale(prefs.default_maximum_page_scale_factor);
@@ -1045,16 +1040,6 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
       active_url = main_frame->ToWebLocalFrame()->GetDocument().Url();
     GetContentClient()->SetActiveURL(
         active_url, main_frame->Top()->GetSecurityOrigin().ToString().Utf8());
-  }
-
-  // Input IPC messages must not be processed if the RenderView is in
-  // swapped out state.
-  if (is_swapped_out_ &&
-      IPC_MESSAGE_ID_CLASS(message.type()) == InputMsgStart) {
-    IPC_BEGIN_MESSAGE_MAP(RenderViewImpl, message)
-      IPC_MESSAGE_HANDLER(InputMsg_HandleInputEvent, OnDiscardInputEvent)
-    IPC_END_MESSAGE_MAP()
-    return false;
   }
 
   for (auto& observer : observers_) {
@@ -1296,8 +1281,8 @@ WebView* RenderViewImpl::CreateView(WebLocalFrame* creator,
   // TODO(vangelis): Can we tell if the new view will be a background page?
   bool never_visible = false;
 
-  ResizeParams initial_size = ResizeParams();
-  initial_size.screen_info = screen_info_;
+  VisualProperties visual_properties = VisualProperties();
+  visual_properties.screen_info = screen_info_;
 
   // The initial hidden state for the RenderViewImpl here has to match what the
   // browser will eventually decide for the given disposition. Since we have to
@@ -1328,10 +1313,7 @@ WebView* RenderViewImpl::CreateView(WebLocalFrame* creator,
   // the empty string.
   view_params->hidden = is_background_tab;
   view_params->never_visible = never_visible;
-  view_params->initial_size = initial_size;
-  view_params->enable_auto_resize = false;
-  view_params->min_size = gfx::Size();
-  view_params->max_size = gfx::Size();
+  view_params->visual_properties = visual_properties;
   view_params->page_zoom_level = page_zoom_level_;
 
   // Unretained() is safe here because our calling function will also call
@@ -1342,7 +1324,7 @@ WebView* RenderViewImpl::CreateView(WebLocalFrame* creator,
 
   RenderViewImpl* view = RenderViewImpl::Create(
       compositor_deps_, std::move(view_params), std::move(show_callback),
-      creator->GetTaskRunner(blink::TaskType::kUnthrottled));
+      creator->GetTaskRunner(blink::TaskType::kInternalDefault));
 
   return view->webview();
 }
@@ -1351,7 +1333,7 @@ WebWidget* RenderViewImpl::CreatePopup(blink::WebLocalFrame* creator,
                                        blink::WebPopupType popup_type) {
   RenderWidget* widget = RenderWidget::CreateForPopup(
       this, compositor_deps_, popup_type, screen_info_,
-      creator->GetTaskRunner(blink::TaskType::kUnthrottled));
+      creator->GetTaskRunner(blink::TaskType::kInternalDefault));
   if (!widget)
     return nullptr;
   if (screen_metrics_emulator_) {
@@ -1590,13 +1572,7 @@ void RenderViewImpl::DidFocus(blink::WebLocalFrame* calling_frame) {
   // TODO(jcivelli): when https://bugs.webkit.org/show_bug.cgi?id=33389 is fixed
   //                 we won't have to test for user gesture anymore and we can
   //                 move that code back to render_widget.cc
-  WebFrame* main_frame = webview() ? webview()->MainFrame() : nullptr;
-  bool is_processing_user_gesture =
-      WebUserGestureIndicator::IsProcessingUserGesture(
-          main_frame && main_frame->IsWebLocalFrame()
-              ? main_frame->ToWebLocalFrame()
-              : nullptr);
-  if (is_processing_user_gesture &&
+  if (WebUserGestureIndicator::IsProcessingUserGesture(calling_frame) &&
       !RenderThreadImpl::current()->layout_test_mode()) {
     Send(new ViewHostMsg_Focus(GetRoutingID()));
 
@@ -1680,7 +1656,7 @@ void RenderViewImpl::DidOverscroll(
     const blink::WebFloatSize& accumulatedOverscroll,
     const blink::WebFloatPoint& positionInViewport,
     const blink::WebFloatSize& velocityInViewport,
-    const blink::WebOverscrollBehavior& behavior) {
+    const cc::OverscrollBehavior& behavior) {
   RenderWidget::DidOverscroll(overscrollDelta, accumulatedOverscroll,
                               positionInViewport, velocityInViewport, behavior);
 }
@@ -1712,10 +1688,6 @@ blink::WebWidgetClient* RenderViewImpl::WidgetClient() {
 
 // blink::WebFrameClient -----------------------------------------------------
 
-void RenderViewImpl::Repaint(const gfx::Size& size) {
-  OnRepaint(size);
-}
-
 void RenderViewImpl::SetEditCommandForNextKeyEvent(const std::string& name,
                                                    const std::string& value) {
   GetWidget()->SetEditCommandForNextKeyEvent(name, value);
@@ -1738,10 +1710,6 @@ gfx::RectF RenderViewImpl::ElementBoundsInWindow(
   blink::WebRect bounding_box_in_window = element.BoundsInViewport();
   ConvertViewportToWindowViaWidget(&bounding_box_in_window);
   return gfx::RectF(bounding_box_in_window);
-}
-
-bool RenderViewImpl::HasAddedInputHandler() const {
-  return has_added_input_handler_;
 }
 
 void RenderViewImpl::CheckPreferredSize() {
@@ -1959,8 +1927,9 @@ void RenderViewImpl::ResizeWebWidget() {
       browser_controls_shrink_blink_size_);
 }
 
-void RenderViewImpl::OnResize(const ResizeParams& params) {
-  TRACE_EVENT0("renderer", "RenderViewImpl::OnResize");
+void RenderViewImpl::OnSynchronizeVisualProperties(
+    const VisualProperties& params) {
+  TRACE_EVENT0("renderer", "RenderViewImpl::OnSynchronizeVisualProperties");
 
   if (webview()) {
     // Only hide popups when the size changes. There are situations (e.g. hiding
@@ -1999,8 +1968,6 @@ void RenderViewImpl::OnResize(const ResizeParams& params) {
                                       params.max_size_for_auto_resize);
     }
   } else if (auto_resize_mode_changed) {
-    auto_resize_ack_callback_.Cancel();
-    need_resize_ack_for_auto_resize_ = false;
     webview()->DisableAutoResizeMode();
     if (params.new_size.IsEmpty())
       return;
@@ -2012,13 +1979,13 @@ void RenderViewImpl::OnResize(const ResizeParams& params) {
   bottom_controls_height_ = params.bottom_controls_height;
 
   if (device_scale_factor_for_testing_) {
-    ResizeParams p(params);
+    VisualProperties p(params);
     p.screen_info.device_scale_factor = *device_scale_factor_for_testing_;
     p.compositor_viewport_pixel_size =
         gfx::ScaleToCeiledSize(p.new_size, p.screen_info.device_scale_factor);
-    RenderWidget::OnResize(p);
+    RenderWidget::OnSynchronizeVisualProperties(p);
   } else {
-    RenderWidget::OnResize(params);
+    RenderWidget::OnSynchronizeVisualProperties(params);
   }
 
   if (!params.scroll_focused_node_into_view)
@@ -2308,7 +2275,6 @@ bool RenderViewImpl::DidTapMultipleTargets(
 }
 
 void RenderViewImpl::SuspendVideoCaptureDevices(bool suspend) {
-#if BUILDFLAG(ENABLE_WEBRTC)
   if (!main_render_frame_)
     return;
 
@@ -2321,7 +2287,6 @@ void RenderViewImpl::SuspendVideoCaptureDevices(bool suspend) {
       media_stream_device_observer->GetNonScreenCaptureDevices();
   RenderThreadImpl::current()->video_capture_impl_manager()->SuspendDevices(
       video_devices, suspend);
-#endif  // BUILDFLAG(ENABLE_WEBRTC)
 }
 #endif  // defined(OS_ANDROID)
 
@@ -2330,6 +2295,12 @@ unsigned RenderViewImpl::GetLocalSessionHistoryLengthForTesting() const {
 }
 
 void RenderViewImpl::SetFocusAndActivateForTesting(bool enable) {
+  // If the main frame is remote, return immediately. Page level focus
+  // should be set from the browser process, so if needed by tests it should
+  // be properly supported.
+  if (webview()->MainFrame()->IsWebRemoteFrame())
+    return;
+
   if (enable) {
     if (has_focus())
       return;
@@ -2346,34 +2317,45 @@ void RenderViewImpl::SetFocusAndActivateForTesting(bool enable) {
 void RenderViewImpl::SetDeviceScaleFactorForTesting(float factor) {
   device_scale_factor_for_testing_ = factor;
 
-  ResizeParams params;
-  params.screen_info = screen_info_;
-  params.screen_info.device_scale_factor = factor;
-  params.new_size = size();
-  params.visible_viewport_size = visible_viewport_size_;
-  params.compositor_viewport_pixel_size =
+  VisualProperties visual_properties;
+  visual_properties.screen_info = screen_info_;
+  visual_properties.screen_info.device_scale_factor = factor;
+  visual_properties.new_size = size();
+  visual_properties.visible_viewport_size = visible_viewport_size_;
+  visual_properties.compositor_viewport_pixel_size =
       gfx::ScaleToCeiledSize(size(), factor);
-  params.browser_controls_shrink_blink_size = false;
-  params.top_controls_height = 0.f;
-  params.is_fullscreen_granted = is_fullscreen_granted();
-  params.display_mode = display_mode_;
-  params.content_source_id = GetContentSourceId();
-  OnResize(params);
+  visual_properties.browser_controls_shrink_blink_size = false;
+  visual_properties.top_controls_height = 0.f;
+  visual_properties.is_fullscreen_granted = is_fullscreen_granted();
+  visual_properties.display_mode = display_mode_;
+  visual_properties.local_surface_id = local_surface_id_from_parent_;
+  // We are changing the device scale factor from the renderer, so allocate a
+  // new viz::LocalSurfaceId to avoid surface invariants violations in tests.
+  if (compositor_)
+    compositor_->RequestNewLocalSurfaceId();
+
+  OnSynchronizeVisualProperties(visual_properties);
 }
 
 void RenderViewImpl::SetDeviceColorSpaceForTesting(
     const gfx::ColorSpace& color_space) {
-  ResizeParams params;
-  params.screen_info = screen_info_;
-  params.screen_info.color_space = color_space;
-  params.new_size = size();
-  params.visible_viewport_size = visible_viewport_size_;
-  params.compositor_viewport_pixel_size = compositor_viewport_pixel_size_;
-  params.browser_controls_shrink_blink_size = false;
-  params.top_controls_height = 0.f;
-  params.is_fullscreen_granted = is_fullscreen_granted();
-  params.display_mode = display_mode_;
-  OnResize(params);
+  VisualProperties visual_properties;
+  visual_properties.screen_info = screen_info_;
+  visual_properties.screen_info.color_space = color_space;
+  visual_properties.new_size = size();
+  visual_properties.visible_viewport_size = visible_viewport_size_;
+  visual_properties.compositor_viewport_pixel_size =
+      compositor_viewport_pixel_size_;
+  visual_properties.browser_controls_shrink_blink_size = false;
+  visual_properties.top_controls_height = 0.f;
+  visual_properties.is_fullscreen_granted = is_fullscreen_granted();
+  visual_properties.display_mode = display_mode_;
+  visual_properties.local_surface_id = local_surface_id_from_parent_;
+  // We are changing the device color space from the renderer, so allocate a
+  // new viz::LocalSurfaceId to avoid surface invariants violations in tests.
+  if (compositor_)
+    compositor_->RequestNewLocalSurfaceId();
+  OnSynchronizeVisualProperties(visual_properties);
 }
 
 void RenderViewImpl::ForceResizeForTesting(const gfx::Size& new_size) {
@@ -2388,37 +2370,39 @@ void RenderViewImpl::UseSynchronousResizeModeForTesting(bool enable) {
 
 void RenderViewImpl::EnableAutoResizeForTesting(const gfx::Size& min_size,
                                                 const gfx::Size& max_size) {
-  ResizeParams resize_params;
-  resize_params.auto_resize_enabled = true;
-  resize_params.min_size_for_auto_resize = min_size;
-  resize_params.max_size_for_auto_resize = max_size;
-  OnResize(resize_params);
+  VisualProperties visual_properties;
+  visual_properties.auto_resize_enabled = true;
+  visual_properties.min_size_for_auto_resize = min_size;
+  visual_properties.max_size_for_auto_resize = max_size;
+  visual_properties.local_surface_id = base::Optional<viz::LocalSurfaceId>(
+      viz::LocalSurfaceId(1, 1, base::UnguessableToken::Create()));
+  OnSynchronizeVisualProperties(visual_properties);
 }
 
 void RenderViewImpl::DisableAutoResizeForTesting(const gfx::Size& new_size) {
   if (!auto_resize_mode_)
     return;
 
-  ResizeParams resize_params;
-  resize_params.auto_resize_enabled = false;
-  resize_params.screen_info = screen_info_;
-  resize_params.new_size = new_size;
-  resize_params.compositor_viewport_pixel_size =
+  VisualProperties visual_properties;
+  visual_properties.auto_resize_enabled = false;
+  visual_properties.screen_info = screen_info_;
+  visual_properties.new_size = new_size;
+  visual_properties.compositor_viewport_pixel_size =
       compositor_viewport_pixel_size_;
-  resize_params.browser_controls_shrink_blink_size =
+  visual_properties.browser_controls_shrink_blink_size =
       browser_controls_shrink_blink_size_;
-  resize_params.top_controls_height = top_controls_height_;
-  resize_params.visible_viewport_size = visible_viewport_size_;
-  resize_params.is_fullscreen_granted = is_fullscreen_granted();
-  resize_params.display_mode = display_mode_;
-  resize_params.needs_resize_ack = false;
-  OnResize(resize_params);
+  visual_properties.top_controls_height = top_controls_height_;
+  visual_properties.visible_viewport_size = visible_viewport_size_;
+  visual_properties.is_fullscreen_granted = is_fullscreen_granted();
+  visual_properties.display_mode = display_mode_;
+  OnSynchronizeVisualProperties(visual_properties);
 }
 
-void RenderViewImpl::OnResolveTapDisambiguation(double timestamp_seconds,
-                                                gfx::Point tap_viewport_offset,
-                                                bool is_long_press) {
-  webview()->ResolveTapDisambiguation(timestamp_seconds, tap_viewport_offset,
+void RenderViewImpl::OnResolveTapDisambiguation(
+    base::TimeTicks timestamp,
+    const gfx::Point& tap_viewport_offset,
+    bool is_long_press) {
+  webview()->ResolveTapDisambiguation(timestamp, tap_viewport_offset,
                                       is_long_press);
 }
 
@@ -2426,20 +2410,6 @@ void RenderViewImpl::DidCommitCompositorFrame() {
   RenderWidget::DidCommitCompositorFrame();
   for (auto& observer : observers_)
     observer.DidCommitCompositorFrame();
-}
-
-void RenderViewImpl::OnDiscardInputEvent(
-    const blink::WebInputEvent* input_event,
-    const std::vector<const blink::WebInputEvent*>& coalesced_events,
-    const ui::LatencyInfo& latency_info,
-    InputEventDispatchType dispatch_type) {
-  if (!input_event || dispatch_type == DISPATCH_TYPE_NON_BLOCKING) {
-    return;
-  }
-
-  InputEventAck ack(InputEventAckSource::MAIN_THREAD, input_event->GetType(),
-                    INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
-  Send(new InputHostMsg_HandleInputEvent_ACK(routing_id_, ack));
 }
 
 void RenderViewImpl::HandleInputEvent(

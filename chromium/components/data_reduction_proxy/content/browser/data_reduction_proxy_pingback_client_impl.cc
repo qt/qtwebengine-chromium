@@ -106,6 +106,12 @@ void AddDataToPageloadMetrics(const DataReductionProxyData& request_data,
             timing.load_event_start.value())
             .release());
   }
+  if (timing.first_input_delay) {
+    request->set_allocated_first_input_delay(
+        protobuf_parser::CreateDurationFromTimeDelta(
+            timing.first_input_delay.value())
+            .release());
+  }
   if (timing.parse_blocked_on_script_load_duration) {
     request->set_allocated_parse_blocked_on_script_load_duration(
         protobuf_parser::CreateDurationFromTimeDelta(
@@ -121,8 +127,13 @@ void AddDataToPageloadMetrics(const DataReductionProxyData& request_data,
   request->set_effective_connection_type(
       protobuf_parser::ProtoEffectiveConnectionTypeFromEffectiveConnectionType(
           request_data.effective_connection_type()));
+  request->set_connection_type(
+      protobuf_parser::ProtoConnectionTypeFromConnectionType(
+          request_data.connection_type()));
   request->set_compressed_page_size_bytes(timing.network_bytes);
   request->set_original_page_size_bytes(timing.original_network_bytes);
+  request->set_total_page_size_bytes(timing.total_page_size_bytes);
+  request->set_cached_fraction(timing.cached_fraction);
   request->set_renderer_memory_usage_kb(timing.renderer_memory_usage_kb);
 
   request->set_renderer_crash_type(crash_type);
@@ -326,7 +337,7 @@ void DataReductionProxyPingbackClientImpl::CreateReport(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   PageloadMetrics* pageload_metrics = metrics_request_.add_pageloads();
   AddDataToPageloadMetrics(request_data, timing, crash_type, pageload_metrics);
-  if (current_fetcher_.get())
+  if (current_fetcher_)
     return;
   DCHECK_EQ(1, metrics_request_.pageloads_size());
   CreateFetcherForDataAndStart();

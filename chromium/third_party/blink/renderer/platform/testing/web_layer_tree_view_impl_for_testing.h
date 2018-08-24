@@ -14,13 +14,12 @@
 
 namespace cc {
 class AnimationHost;
+class Layer;
 class LayerTreeHost;
 class LayerTreeSettings;
 }
 
 namespace blink {
-
-class WebLayer;
 
 // Dummy WeblayerTeeView that does not support any actual compositing.
 class WebLayerTreeViewImplForTesting
@@ -36,15 +35,15 @@ class WebLayerTreeViewImplForTesting
 
   static cc::LayerTreeSettings DefaultLayerTreeSettings();
   cc::LayerTreeHost* GetLayerTreeHost() { return layer_tree_host_.get(); }
-  bool HasLayer(const WebLayer&);
+  bool HasLayer(const cc::Layer&);
   void SetViewportSize(const blink::WebSize&);
 
   // blink::WebLayerTreeView implementation.
-  void SetRootLayer(const blink::WebLayer&) override;
+  void SetRootLayer(scoped_refptr<cc::Layer>) override;
   void ClearRootLayer() override;
   cc::AnimationHost* CompositorAnimationHost() override;
   WebSize GetViewportSize() const override;
-  void SetBackgroundColor(blink::WebColor) override;
+  void SetBackgroundColor(SkColor) override;
   void SetVisible(bool) override;
   void SetPageScaleFactorAndLimits(float page_scale_factor,
                                    float minimum,

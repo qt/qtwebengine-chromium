@@ -5,6 +5,7 @@
 #include "content/browser/loader/prefetch_url_loader.h"
 
 #include "base/feature_list.h"
+#include "content/browser/web_package/signed_exchange_utils.h"
 #include "content/browser/web_package/web_package_prefetch_handler.h"
 #include "content/public/common/content_features.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -17,7 +18,7 @@ PrefetchURLLoader::PrefetchURLLoader(
     int32_t routing_id,
     int32_t request_id,
     uint32_t options,
-    int frame_tree_node_id,
+    base::RepeatingCallback<int(void)> frame_tree_node_id_getter,
     const network::ResourceRequest& resource_request,
     network::mojom::URLLoaderClientPtr client,
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
@@ -25,7 +26,9 @@ PrefetchURLLoader::PrefetchURLLoader(
     URLLoaderThrottlesGetter url_loader_throttles_getter,
     ResourceContext* resource_context,
     scoped_refptr<net::URLRequestContextGetter> request_context_getter)
-    : frame_tree_node_id_(frame_tree_node_id),
+    : frame_tree_node_id_getter_(frame_tree_node_id_getter),
+      url_(resource_request.url),
+      report_raw_headers_(resource_request.report_raw_headers),
       network_loader_factory_(std::move(network_loader_factory)),
       client_binding_(this),
       forwarding_client_(std::move(client)),
@@ -48,7 +51,11 @@ PrefetchURLLoader::PrefetchURLLoader(
 
 PrefetchURLLoader::~PrefetchURLLoader() = default;
 
-void PrefetchURLLoader::FollowRedirect() {
+void PrefetchURLLoader::FollowRedirect(
+    const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
+  DCHECK(!modified_request_headers.has_value()) << "Redirect with modified "
+                                                   "headers was not supported "
+                                                   "yet. crbug.com/845683";
   if (web_package_prefetch_handler_) {
     // Rebind |client_binding_| and |loader_|.
     client_binding_.Bind(web_package_prefetch_handler_->FollowRedirect(
@@ -56,7 +63,7 @@ void PrefetchURLLoader::FollowRedirect() {
     return;
   }
 
-  loader_->FollowRedirect();
+  loader_->FollowRedirect(base::nullopt);
 }
 
 void PrefetchURLLoader::ProceedWithResponse() {
@@ -79,16 +86,16 @@ void PrefetchURLLoader::ResumeReadingBodyFromNet() {
 void PrefetchURLLoader::OnReceiveResponse(
     const network::ResourceResponseHead& response,
     network::mojom::DownloadedTempFilePtr downloaded_file) {
-  if (WebPackagePrefetchHandler::IsResponseForWebPackage(response)) {
+  if (signed_exchange_utils::ShouldHandleAsSignedHTTPExchange(url_, response)) {
     DCHECK(!web_package_prefetch_handler_);
 
     // Note that after this point this doesn't directly get upcalls from the
     // network. (Until |this| calls the handler's FollowRedirect.)
     web_package_prefetch_handler_ = std::make_unique<WebPackagePrefetchHandler>(
-        frame_tree_node_id_, response, std::move(loader_),
-        client_binding_.Unbind(), network_loader_factory_, request_initiator_,
-        url_loader_throttles_getter_, resource_context_,
-        request_context_getter_, this);
+        frame_tree_node_id_getter_, report_raw_headers_, response,
+        std::move(loader_), client_binding_.Unbind(), network_loader_factory_,
+        request_initiator_, url_, url_loader_throttles_getter_,
+        resource_context_, request_context_getter_, this);
     return;
   }
   forwarding_client_->OnReceiveResponse(response, std::move(downloaded_file));

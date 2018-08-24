@@ -4,22 +4,62 @@
 
 #include "media/capture/video/chromeos/camera_metadata_utils.h"
 
-#include <set>
+#include <algorithm>
+#include <unordered_set>
 
 namespace media {
 
-const cros::mojom::CameraMetadataEntryPtr* GetMetadataEntry(
+cros::mojom::CameraMetadataEntryPtr* GetMetadataEntry(
     const cros::mojom::CameraMetadataPtr& camera_metadata,
     cros::mojom::CameraMetadataTag tag) {
-  if (!camera_metadata->entries.has_value()) {
+  if (!camera_metadata || !camera_metadata->entries.has_value()) {
     return nullptr;
   }
-  for (const auto& entry : camera_metadata->entries.value()) {
-    if (entry->tag == tag) {
-      return &entry;
-    }
+  // We assume the metadata entries are sorted.
+  auto iter = std::find_if(camera_metadata->entries.value().begin(),
+                           camera_metadata->entries.value().end(),
+                           [tag](const cros::mojom::CameraMetadataEntryPtr& e) {
+                             return e->tag == tag;
+                           });
+  if (iter == camera_metadata->entries.value().end()) {
+    return nullptr;
   }
-  return nullptr;
+  return &(camera_metadata->entries.value()[(*iter)->index]);
+}
+
+void AddOrUpdateMetadataEntry(cros::mojom::CameraMetadataPtr* to,
+                              cros::mojom::CameraMetadataEntryPtr entry) {
+  auto* e = GetMetadataEntry(*to, entry->tag);
+  if (e) {
+    (*to)->data_count += entry->data.size() - (*e)->data.size();
+    (*to)->data_capacity = std::max((*to)->data_capacity, (*to)->data_count);
+    (*e)->count = entry->count;
+    (*e)->data = std::move(entry->data);
+  } else {
+    entry->index = (*to)->entries->size();
+    (*to)->entry_count += 1;
+    (*to)->entry_capacity = std::max((*to)->entry_capacity, (*to)->entry_count);
+    (*to)->data_count += entry->data.size();
+    (*to)->data_capacity = std::max((*to)->data_capacity, (*to)->data_count);
+    (*to)->entries->push_back(std::move(entry));
+    SortCameraMetadata(to);
+  }
+}
+
+void SortCameraMetadata(cros::mojom::CameraMetadataPtr* camera_metadata) {
+  if (!camera_metadata || !(*camera_metadata) ||
+      !(*camera_metadata)->entries.has_value()) {
+    return;
+  }
+  std::sort((*camera_metadata)->entries.value().begin(),
+            (*camera_metadata)->entries.value().end(),
+            [](const cros::mojom::CameraMetadataEntryPtr& a,
+               const cros::mojom::CameraMetadataEntryPtr& b) {
+              return a->tag < b->tag;
+            });
+  for (size_t i = 0; i < (*camera_metadata)->entries.value().size(); ++i) {
+    (*camera_metadata)->entries.value()[i]->index = i;
+  }
 }
 
 void MergeMetadata(cros::mojom::CameraMetadataPtr* to,
@@ -34,7 +74,7 @@ void MergeMetadata(cros::mojom::CameraMetadataPtr* to,
     return;
   }
 
-  std::set<cros::mojom::CameraMetadataTag> tags;
+  std::unordered_set<cros::mojom::CameraMetadataTag> tags;
   if ((*to)->entries) {
     for (const auto& entry : (*to)->entries.value()) {
       tags.insert(entry->tag);

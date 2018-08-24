@@ -8,7 +8,7 @@
  * save any passwords.
  */
 
-/** @typedef {!{model: !{item: !chrome.passwordsPrivate.PasswordUiEntry}}} */
+/** @typedef {!{model: !{item: !PasswordManagerProxy.UiEntryWithPassword}}} */
 let PasswordUiEntryEvent;
 
 /** @typedef {!{model: !{item: !chrome.passwordsPrivate.ExceptionEntry}}} */
@@ -22,6 +22,7 @@ Polymer({
 
   behaviors: [
     I18nBehavior,
+    ListPropertyUpdateBehavior,
     Polymer.IronA11yKeysBehavior,
     settings.GlobalScrollTargetBehavior,
   ],
@@ -35,15 +36,21 @@ Polymer({
 
     /**
      * An array of passwords to display.
-     * @type {!Array<!PasswordManagerProxy.PasswordUiEntry>}
+     * @type {!Array<!PasswordManagerProxy.UiEntryWithPassword>}
      */
-    savedPasswords: Array,
+    savedPasswords: {
+      type: Array,
+      value: () => [],
+    },
 
     /**
      * An array of sites to display.
      * @type {!Array<!PasswordManagerProxy.ExceptionEntry>}
      */
-    passwordExceptions: Array,
+    passwordExceptions: {
+      type: Array,
+      value: () => [],
+    },
 
     /**
      * Duration of the undo toast in ms
@@ -76,7 +83,7 @@ Polymer({
     /** @private */
     showExportPasswords_: {
       type: Boolean,
-      computed: 'showExportPasswordsAndReady_(savedPasswords)'
+      computed: 'hasPasswords_(savedPasswords.splices)',
     },
 
     /** @private */
@@ -97,7 +104,7 @@ Polymer({
       value: '',
     },
 
-    /** @private {!PasswordManagerProxy.PasswordUiEntry} */
+    /** @private {!PasswordManagerProxy.UiEntryWithPassword} */
     lastFocused_: Object,
   },
 
@@ -144,14 +151,24 @@ Polymer({
   /** @override */
   attached: function() {
     // Create listener functions.
-    const setSavedPasswordsListener = list => {
-      this.savedPasswords = list.map(entry => {
-        return {
-          entry: entry,
-          password: '',
-        };
-      });
-    };
+    const setSavedPasswordsListener = list =>
+        this.updateList('savedPasswords', item => {
+          // The item uid is built from index, origin, and username for the
+          // following reasons: origin and username are enough to describe and
+          // uniquely identify an entry. It is impossible to have two entries
+          // that have the same origin and username, but different passwords,
+          // as the password update logic prevents these cases. The entry is
+          // required to force a refresh of entries, after a removal or undo of
+          // a removal has taken place. All entries before the point of
+          // modification are uneffected, but the ones following need to be
+          // refreshed. Including the index in the uid achieves this effect.
+          // See https://crbug.com/862119 how this could lead to bugs otherwise.
+          return item.entry.index + '_' + item.entry.loginPair.urls.origin +
+              '_' + item.entry.loginPair.username;
+        }, list.map(entry => ({
+                      entry: entry,
+                      password: '',
+                    })));
 
     const setPasswordExceptionsListener = list => {
       this.passwordExceptions = list;
@@ -172,6 +189,8 @@ Polymer({
         setSavedPasswordsListener);
     this.passwordManager_.addExceptionListChangedListener(
         setPasswordExceptionsListener);
+
+    this.notifySplices('savedPasswords', []);
 
     Polymer.RenderStatus.afterNextRender(this, function() {
       Polymer.IronA11yAnnouncer.requestAvailability();
@@ -218,19 +237,17 @@ Polymer({
   },
 
   /**
-   * @param {!Array<!PasswordManagerProxy.UiEntryWithPassword>} savedPasswords
    * @param {string} filter
    * @return {!Array<!PasswordManagerProxy.UiEntryWithPassword>}
    * @private
    */
-  getFilteredPasswords_: function(savedPasswords, filter) {
+  getFilteredPasswords_: function(filter) {
     if (!filter)
-      return savedPasswords;
+      return this.savedPasswords.slice();
 
-    return savedPasswords.filter(p => {
-      return [p.entry.loginPair.urls.shown, p.entry.loginPair.username].some(
-          term => term.toLowerCase().includes(filter.toLowerCase()));
-    });
+    return this.savedPasswords.filter(
+        p => [p.entry.loginPair.urls.shown, p.entry.loginPair.username].some(
+            term => term.toLowerCase().includes(filter.toLowerCase())));
   },
 
   /**
@@ -239,9 +256,8 @@ Polymer({
    * @private
    */
   passwordExceptionFilter_: function(filter) {
-    return function(exception) {
-      return exception.urls.shown.toLowerCase().includes(filter.toLowerCase());
-    };
+    return exception => exception.urls.shown.toLowerCase().includes(
+               filter.toLowerCase());
   },
 
   /**
@@ -365,14 +381,9 @@ Polymer({
     return toggleValue ? this.i18n('toggleOn') : this.i18n('toggleOff');
   },
 
-  /**
-   * @private
-   * @param {!Array<!PasswordManagerProxy.PasswordUiEntry>} savedPasswords
-   */
-  showExportPasswordsAndReady_: function(savedPasswords) {
-    return loadTimeData.valueExists('showExportPasswords') &&
-        loadTimeData.getBoolean('showExportPasswords') &&
-        savedPasswords.length > 0;
+  /** @private */
+  hasPasswords_: function() {
+    return this.savedPasswords.length > 0;
   },
 
   /**

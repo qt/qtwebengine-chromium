@@ -222,7 +222,7 @@ void HTMLFrameOwnerElement::SetSandboxFlags(SandboxFlags flags) {
   sandbox_flags_ = flags;
   // Recalculate the container policy in case the allow-same-origin flag has
   // changed.
-  container_policy_ = ConstructContainerPolicy(nullptr, nullptr);
+  container_policy_ = ConstructContainerPolicy(nullptr);
 
   // Don't notify about updates if ContentFrame() is null, for example when
   // the subframe hasn't been created yet.
@@ -244,9 +244,8 @@ void HTMLFrameOwnerElement::DisposePluginSoon(WebPluginContainerImpl* plugin) {
     plugin->Dispose();
 }
 
-void HTMLFrameOwnerElement::UpdateContainerPolicy(Vector<String>* messages,
-                                                  bool* old_syntax) {
-  container_policy_ = ConstructContainerPolicy(messages, old_syntax);
+void HTMLFrameOwnerElement::UpdateContainerPolicy(Vector<String>* messages) {
+  container_policy_ = ConstructContainerPolicy(messages);
   // Don't notify about updates if ContentFrame() is null, for example when
   // the subframe hasn't been created yet.
   if (ContentFrame()) {
@@ -427,8 +426,8 @@ bool HTMLFrameOwnerElement::LoadOrRedirectSubframe(
 
     lazy_load_intersection_observer_->observe(this);
   } else {
-    child_frame->Loader().Load(FrameLoadRequest(&GetDocument(), request),
-                               child_load_type);
+    child_frame->Loader().StartNavigation(
+        FrameLoadRequest(&GetDocument(), request), child_load_type);
   }
   return true;
 }
@@ -454,8 +453,8 @@ void HTMLFrameOwnerElement::LoadIfHiddenOrNearViewport(
   // be disconnected.
   ToLocalFrame(ContentFrame())
       ->Loader()
-      .Load(FrameLoadRequest(&GetDocument(), resource_request),
-            frame_load_type);
+      .StartNavigation(FrameLoadRequest(&GetDocument(), resource_request),
+                       frame_load_type);
 }
 
 void HTMLFrameOwnerElement::CancelPendingLazyLoad() {

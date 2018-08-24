@@ -12,13 +12,14 @@
 #include <vector>
 
 #include "base/atomicops.h"
+#include "base/containers/flat_map.h"
 #include "base/message_loop/message_loop.h"
 #include "base/optional.h"
 #include "base/single_thread_task_runner.h"
 #include "services/service_manager/public/cpp/bind_source_info.h"
 #include "services/ui/display/screen_manager.h"
 #include "services/ui/display/viewport_metrics.h"
-#include "services/ui/public/interfaces/display_manager.mojom.h"
+#include "services/ui/public/interfaces/screen_provider.mojom.h"
 #include "services/ui/public/interfaces/window_tree.mojom.h"
 #include "services/ui/ws/display.h"
 #include "services/ui/ws/display_binding.h"
@@ -136,8 +137,8 @@ class WindowTreeTestApi {
   }
   void AckLastAccelerator(
       mojom::EventResult result,
-      const std::unordered_map<std::string, std::vector<uint8_t>>& properties =
-          std::unordered_map<std::string, std::vector<uint8_t>>()) {
+      const base::flat_map<std::string, std::vector<uint8_t>>& properties =
+          base::flat_map<std::string, std::vector<uint8_t>>()) {
     tree_->OnAcceleratorAck(tree_->event_ack_id_, result, properties);
   }
 
@@ -402,7 +403,7 @@ class TestWindowManager : public mojom::WindowManager {
   void WmCreateTopLevelWindow(
       uint32_t change_id,
       const viz::FrameSinkId& frame_sink_id,
-      const std::unordered_map<std::string, std::vector<uint8_t>>& properties)
+      const base::flat_map<std::string, std::vector<uint8_t>>& properties)
       override;
   void WmClientJankinessChanged(ClientSpecificId client_id,
                                 bool janky) override;
@@ -537,9 +538,8 @@ class TestWindowTreeClient : public ui::mojom::WindowTreeClient {
   void OnWindowCursorChanged(Id window_id, ui::CursorData cursor) override;
   void OnWindowSurfaceChanged(Id window_id,
                               const viz::SurfaceInfo& surface_info) override;
-  void OnDragDropStart(
-      const std::unordered_map<std::string, std::vector<uint8_t>>& mime_data)
-      override;
+  void OnDragDropStart(const base::flat_map<std::string, std::vector<uint8_t>>&
+                           mime_data) override;
   void OnDragEnter(Id window,
                    uint32_t key_state,
                    const gfx::Point& position,
@@ -751,12 +751,12 @@ class WindowEventTargetingHelper {
 
 // -----------------------------------------------------------------------------
 
-class TestDisplayManagerObserver : public mojom::DisplayManagerObserver {
+class TestScreenProviderObserver : public mojom::ScreenProviderObserver {
  public:
-  TestDisplayManagerObserver();
-  ~TestDisplayManagerObserver() override;
+  TestScreenProviderObserver();
+  ~TestScreenProviderObserver() override;
 
-  mojom::DisplayManagerObserverPtr GetPtr();
+  mojom::ScreenProviderObserverPtr GetPtr();
 
   std::string GetAndClearObserverCalls();
 
@@ -764,15 +764,15 @@ class TestDisplayManagerObserver : public mojom::DisplayManagerObserver {
   std::string DisplayIdsToString(
       const std::vector<mojom::WsDisplayPtr>& wm_displays);
 
-  // mojom::DisplayManagerObserver:
+  // mojom::ScreenProviderObserver:
   void OnDisplaysChanged(std::vector<mojom::WsDisplayPtr> displays,
                          int64_t primary_display_id,
                          int64_t internal_display_id) override;
 
-  mojo::Binding<mojom::DisplayManagerObserver> binding_;
+  mojo::Binding<mojom::ScreenProviderObserver> binding_;
   std::string observer_calls_;
 
-  DISALLOW_COPY_AND_ASSIGN(TestDisplayManagerObserver);
+  DISALLOW_COPY_AND_ASSIGN(TestScreenProviderObserver);
 };
 
 // -----------------------------------------------------------------------------

@@ -33,6 +33,8 @@ class AudioOutputDispatcher;
 // AudioManagerBase provides AudioManager functions common for all platforms.
 class MEDIA_EXPORT AudioManagerBase : public AudioManager {
  public:
+  enum class VoiceProcessingMode { kDisabled = 0, kEnabled = 1 };
+
   ~AudioManagerBase() override;
 
   AudioOutputStream* MakeAudioOutputStream(
@@ -54,8 +56,6 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   std::unique_ptr<AudioLog> CreateAudioLog(
       AudioLogFactory::AudioComponent component,
       int component_id) override;
-
-  void SetMaxStreamCountForTesting(int max_input, int max_output) final;
 
   // AudioManagerBase:
 
@@ -168,6 +168,9 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   virtual std::string GetGroupIDOutput(const std::string& output_device_id);
   virtual std::string GetGroupIDInput(const std::string& input_device_id);
 
+  // Closes all currently open input streams.
+  void CloseAllInputStreams();
+
  private:
   FRIEND_TEST_ALL_PREFIXES(AudioManagerTest, AudioDebugRecording);
 
@@ -189,9 +192,6 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   // Max number of open output streams, modified by
   // SetMaxOutputStreamsAllowed().
   int max_num_output_streams_;
-
-  // Max number of open input streams.
-  int max_num_input_streams_;
 
   // Number of currently open output streams.
   int num_output_streams_;

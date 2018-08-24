@@ -24,11 +24,16 @@ void BoxClipperBase::InitializeScopedClipProperty(
   if (!fragment)
     return;
   const auto* properties = fragment->PaintProperties();
-  if (!properties || !properties->OverflowOrInnerBorderRadiusClip())
+  if (!properties)
     return;
 
-  scoped_clip_property_.emplace(paint_info.context.GetPaintController(),
-                                properties->OverflowOrInnerBorderRadiusClip(),
+  const auto* clip = properties->OverflowClip()
+                         ? properties->OverflowClip()
+                         : properties->InnerBorderRadiusClip();
+  if (!clip)
+    return;
+
+  scoped_clip_property_.emplace(paint_info.context.GetPaintController(), clip,
                                 client,
                                 paint_info.DisplayItemTypeForClipping());
 }

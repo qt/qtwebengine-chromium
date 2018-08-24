@@ -11,7 +11,6 @@
 
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -114,7 +113,7 @@ TEST_F(PingManagerTest, SendPing) {
 
   {
     Component component(*update_context, "abc");
-
+    component.crx_component_ = std::make_unique<CrxComponent>();
     component.state_ = std::make_unique<Component::StateUpdated>(&component);
     component.previous_version_ = base::Version("1.0");
     component.next_version_ = base::Version("2.0");
@@ -147,6 +146,7 @@ TEST_F(PingManagerTest, SendPing) {
   {
     // Test eventresult="0" is sent for failed updates.
     Component component(*update_context, "abc");
+    component.crx_component_ = std::make_unique<CrxComponent>();
     component.state_ =
         std::make_unique<Component::StateUpdateError>(&component);
     component.previous_version_ = base::Version("1.0");
@@ -170,16 +170,17 @@ TEST_F(PingManagerTest, SendPing) {
   {
     // Test the error values and the fingerprints.
     Component component(*update_context, "abc");
+    component.crx_component_ = std::make_unique<CrxComponent>();
     component.state_ =
         std::make_unique<Component::StateUpdateError>(&component);
     component.previous_version_ = base::Version("1.0");
     component.next_version_ = base::Version("2.0");
     component.previous_fp_ = "prev fp";
     component.next_fp_ = "next fp";
-    component.error_category_ = 1;
+    component.error_category_ = ErrorCategory::kDownload;
     component.error_code_ = 2;
     component.extra_code1_ = -1;
-    component.diff_error_category_ = 10;
+    component.diff_error_category_ = ErrorCategory::kService;
     component.diff_error_code_ = 20;
     component.diff_extra_code1_ = -10;
     component.crx_diffurls_.push_back(GURL("http://host/path"));
@@ -195,7 +196,7 @@ TEST_F(PingManagerTest, SendPing) {
                   "<app appid=\"abc\">"
                   "<event eventtype=\"3\" eventresult=\"0\" errorcat=\"1\" "
                   "errorcode=\"2\" extracode1=\"-1\" diffresult=\"0\" "
-                  "differrorcat=\"10\" "
+                  "differrorcat=\"4\" "
                   "differrorcode=\"20\" diffextracode1=\"-10\" "
                   "previousfp=\"prev fp\" nextfp=\"next fp\" "
                   "previousversion=\"1.0\" nextversion=\"2.0\"/></app>"))
@@ -206,6 +207,7 @@ TEST_F(PingManagerTest, SendPing) {
   {
     // Test an invalid |next_version| is not serialized.
     Component component(*update_context, "abc");
+    component.crx_component_ = std::make_unique<CrxComponent>();
     component.state_ =
         std::make_unique<Component::StateUpdateError>(&component);
     component.previous_version_ = base::Version("1.0");
@@ -229,6 +231,7 @@ TEST_F(PingManagerTest, SendPing) {
     // Test a valid |previouversion| and |next_version| = base::Version("0")
     // are serialized correctly under <event...> for uninstall.
     Component component(*update_context, "abc");
+    component.crx_component_ = std::make_unique<CrxComponent>();
     component.Uninstall(base::Version("1.2.3.4"), 0);
     component.AppendEvent(BuildUninstalledEventElement(component));
 
@@ -249,6 +252,7 @@ TEST_F(PingManagerTest, SendPing) {
   {
     // Test the download metrics.
     Component component(*update_context, "abc");
+    component.crx_component_ = std::make_unique<CrxComponent>();
     component.state_ = std::make_unique<Component::StateUpdated>(&component);
     component.previous_version_ = base::Version("1.0");
     component.next_version_ = base::Version("2.0");
@@ -306,9 +310,10 @@ TEST_F(PingManagerTest, RequiresEncryption) {
   const auto update_context = MakeMockUpdateContext();
 
   Component component(*update_context, "abc");
+  component.crx_component_ = std::make_unique<CrxComponent>();
 
   // The default value for |requires_network_encryption| is true.
-  EXPECT_TRUE(component.crx_component_.requires_network_encryption);
+  EXPECT_TRUE(component.crx_component_->requires_network_encryption);
 
   component.state_ = std::make_unique<Component::StateUpdated>(&component);
   component.previous_version_ = base::Version("1.0");

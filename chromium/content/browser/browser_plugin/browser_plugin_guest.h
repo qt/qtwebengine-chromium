@@ -30,6 +30,7 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "components/viz/common/surfaces/local_surface_id.h"
+#include "components/viz/common/surfaces/scoped_surface_id_allocator.h"
 #include "content/common/edit_command.h"
 #include "content/public/browser/browser_plugin_guest_delegate.h"
 #include "content/public/browser/guest_host.h"
@@ -56,6 +57,10 @@ namespace gfx {
 class Range;
 }  // namespace gfx
 
+namespace cc {
+class RenderFrameMetadata;
+}  // namespace cc
+
 namespace viz {
 class LocalSurfaceId;
 class SurfaceInfo;
@@ -71,7 +76,7 @@ class RenderWidgetHostView;
 class RenderWidgetHostViewBase;
 class SiteInstance;
 struct DropData;
-struct FrameResizeParams;
+struct FrameVisualProperties;
 struct ScreenInfo;
 struct TextInputState;
 
@@ -181,8 +186,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
 
   void EnableAutoResize(const gfx::Size& min_size, const gfx::Size& max_size);
   void DisableAutoResize();
-  void ResizeDueToAutoResize(const gfx::Size& new_size,
-                             uint64_t sequence_number);
+  void DidUpdateVisualProperties(const cc::RenderFrameMetadata& metadata);
 
   // WebContentsObserver implementation.
   void DidFinishNavigation(NavigationHandle* navigation_handle) override;
@@ -334,9 +338,10 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   void OnSetVisibility(int instance_id, bool visible);
   void OnUnlockMouse();
   void OnUnlockMouseAck(int instance_id);
-  void OnUpdateResizeParams(int instance_id,
-                            const viz::LocalSurfaceId& local_surface_id,
-                            const FrameResizeParams& resize_params);
+  void OnSynchronizeVisualProperties(
+      int instance_id,
+      const viz::LocalSurfaceId& local_surface_id,
+      const FrameVisualProperties& visual_properties);
 
   void OnTextInputStateChanged(const TextInputState& params);
   void OnImeSetComposition(
@@ -349,12 +354,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
                        int relative_cursor_pos);
   void OnImeFinishComposingText(int instance_id, bool keep_selection);
   void OnExtendSelectionAndDelete(int instance_id, int before, int after);
-  void OnImeCancelComposition();
-#if defined(OS_MACOSX) || defined(USE_AURA)
-  void OnImeCompositionRangeChanged(
-      const gfx::Range& range,
-      const std::vector<gfx::Rect>& character_bounds);
-#endif
 
   // Message handlers for messages from guest.
   void OnHandleInputEventAck(
@@ -456,6 +455,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
 
   viz::LocalSurfaceId local_surface_id_;
   ScreenInfo screen_info_;
+  uint32_t capture_sequence_number_ = 0u;
 
   // Weak pointer used to ask GeolocationPermissionContext about geolocation
   // permission.

@@ -13,6 +13,7 @@
 #include <sstream>
 #include <utility>
 
+#include "constants/stream_dict_common.h"
 #include "core/fpdfapi/cpdf_modulemgr.h"
 #include "core/fpdfapi/page/cpdf_docpagedata.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
@@ -113,7 +114,7 @@ CPDF_StreamParser::~CPDF_StreamParser() {}
 std::unique_ptr<CPDF_Stream> CPDF_StreamParser::ReadInlineStream(
     CPDF_Document* pDoc,
     std::unique_ptr<CPDF_Dictionary> pDict,
-    CPDF_Object* pCSObj) {
+    const CPDF_Object* pCSObj) {
   if (m_Pos < m_pBuf.size() && PDFCharIsWhitespace(m_pBuf[m_Pos]))
     m_Pos++;
 
@@ -126,12 +127,12 @@ std::unique_ptr<CPDF_Stream> CPDF_StreamParser::ReadInlineStream(
   if (pFilter) {
     if (CPDF_Array* pArray = pFilter->AsArray()) {
       Decoder = pArray->GetStringAt(0);
-      CPDF_Array* pParams = pDict->GetArrayFor("DecodeParms");
+      CPDF_Array* pParams = pDict->GetArrayFor(pdfium::stream::kDecodeParms);
       if (pParams)
         pParam = pParams->GetDictAt(0);
     } else {
       Decoder = pFilter->GetString();
-      pParam = pDict->GetDictFor("DecodeParms");
+      pParam = pDict->GetDictFor(pdfium::stream::kDecodeParms);
     }
   }
   uint32_t width = pDict->GetIntegerFor("Width");

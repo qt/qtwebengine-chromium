@@ -8,8 +8,8 @@
 #include <utility>
 
 #include "base/debug/crash_logging.h"
-#include "base/mac/bind_objc_block.h"
 #include "base/mac/mac_util.h"
+#include "base/stl_util.h"
 #include "base/strings/sys_string_conversions.h"
 #import "content/browser/accessibility/browser_accessibility_cocoa.h"
 #import "content/browser/accessibility/browser_accessibility_mac.h"
@@ -25,6 +25,8 @@
 #include "ui/base/cocoa/cocoa_base_utils.h"
 #include "ui/display/screen.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/keycodes/dom/dom_code.h"
+#include "ui/events/keycodes/dom/keycode_converter.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
 
 using content::BrowserAccessibility;
@@ -80,7 +82,8 @@ class NoopClient : public RenderWidgetHostNSViewClient {
       const blink::WebMouseEvent& web_event) override {}
   void OnNSViewForwardWheelEvent(
       const blink::WebMouseWheelEvent& web_event) override {}
-  void OnNSViewGestureBegin(blink::WebGestureEvent begin_event) override {}
+  void OnNSViewGestureBegin(blink::WebGestureEvent begin_event,
+                            bool is_synthetically_injected) override {}
   void OnNSViewGestureUpdate(blink::WebGestureEvent update_event) override {}
   void OnNSViewGestureEnd(blink::WebGestureEvent end_event) override {}
   void OnNSViewSmartMagnify(
@@ -99,8 +102,6 @@ class NoopClient : public RenderWidgetHostNSViewClient {
       const gfx::PointF& root_point) override {}
   void OnNSViewLookUpDictionaryOverlayFromRange(
       const gfx::Range& range) override {}
-  void OnNSViewSyncGetTextInputType(
-      ui::TextInputType* text_input_type) override {}
   void OnNSViewSyncGetCharacterIndexAtPoint(const gfx::PointF& root_point,
                                             uint32_t* index) override {}
   void OnNSViewSyncGetFirstRectForRange(const gfx::Range& requested_range,
@@ -132,7 +133,7 @@ BOOL EventIsReservedBySystem(NSEvent* event) {
 }
 
 // TODO(suzhe): Upstream this function.
-blink::WebColor WebColorFromNSColor(NSColor* color) {
+SkColor SkColorFromNSColor(NSColor* color) {
   CGFloat r, g, b, a;
   [color getRed:&r green:&g blue:&b alpha:&a];
 
@@ -157,10 +158,10 @@ void ExtractUnderlines(NSAttributedString* string,
                               longestEffectiveRange:&range
                                             inRange:NSMakeRange(i, length - i)];
     if (NSNumber* style = [attrs objectForKey:NSUnderlineStyleAttributeName]) {
-      blink::WebColor color = SK_ColorBLACK;
+      SkColor color = SK_ColorBLACK;
       if (NSColor* colorAttr =
               [attrs objectForKey:NSUnderlineColorAttributeName]) {
-        color = WebColorFromNSColor(
+        color = SkColorFromNSColor(
             [colorAttr colorUsingColorSpaceName:NSDeviceRGBColorSpace]);
       }
       ui::ImeTextSpan::Thickness thickness =
@@ -188,7 +189,10 @@ void ExtractUnderlines(NSAttributedString* string,
 // RenderWidgetHostViewCocoa ---------------------------------------------------
 
 // Private methods:
-@interface RenderWidgetHostViewCocoa ()
+@interface RenderWidgetHostViewCocoa () {
+  bool keyboardLockActive_;
+  base::Optional<base::flat_set<ui::DomCode>> lockedKeys_;
+}
 - (void)processedWheelEvent:(const blink::WebMouseWheelEvent&)event
                    consumed:(BOOL)consumed;
 - (void)keyEvent:(NSEvent*)theEvent wasKeyEquivalent:(BOOL)equiv;
@@ -199,10 +203,12 @@ void ExtractUnderlines(NSAttributedString* string,
 - (void)sendViewBoundsInWindowToClient;
 - (void)sendWindowFrameInScreenToClient;
 - (bool)clientIsDisconnected;
+- (bool)isKeyLocked:(int)keyCode;
 @end
 
 @implementation RenderWidgetHostViewCocoa
 @synthesize markedRange = markedRange_;
+@synthesize textInputType = textInputType_;
 
 - (id)initWithClient:(RenderWidgetHostNSViewClient*)client {
   self = [super initWithFrame:NSZeroRect];
@@ -215,6 +221,8 @@ void ExtractUnderlines(NSAttributedString* string,
     client_ = client;
     canBeKeyView_ = YES;
     isStylusEnteringProximity_ = false;
+    keyboardLockActive_ = false;
+    textInputType_ = ui::TEXT_INPUT_TYPE_NONE;
   }
   return self;
 }
@@ -477,6 +485,11 @@ void ExtractUnderlines(NSAttributedString* string,
     }
   }
 
+  // Because |updateCursor:| changes the current cursor, we have to reset it to
+  // the default cursor on mouse exit.
+  if (type == NSMouseExited)
+    [[NSCursor arrowCursor] set];
+
   if ([self shouldIgnoreMouseEvent:theEvent]) {
     // If this is the first such event, send a mouse exit to the host view.
     if (!mouseEventWasIgnored_) {
@@ -539,6 +552,25 @@ void ExtractUnderlines(NSAttributedString* string,
                        ? blink::WebPointerProperties::PointerType::kEraser
                        : blink::WebPointerProperties::PointerType::kPen;
   }
+}
+
+- (void)lockKeyboard:(base::Optional<base::flat_set<ui::DomCode>>)keysToLock {
+  // TODO(joedow): Integrate System-level keyboard hook into this method.
+  lockedKeys_ = std::move(keysToLock);
+  keyboardLockActive_ = true;
+}
+
+- (void)unlockKeyboard {
+  keyboardLockActive_ = false;
+  lockedKeys_.reset();
+}
+
+- (bool)isKeyLocked:(int)keyCode {
+  // Note: We do not want to treat the ESC key as locked as that key is used
+  // to exit fullscreen and we don't want to prevent them from exiting.
+  ui::DomCode domCode = ui::KeycodeConverter::NativeKeycodeToDomCode(keyCode);
+  return keyboardLockActive_ && domCode != ui::DomCode::ESCAPE &&
+         (!lockedKeys_ || base::ContainsKey(lockedKeys_.value(), domCode));
 }
 
 - (BOOL)performKeyEquivalent:(NSEvent*)theEvent {
@@ -641,7 +673,12 @@ void ExtractUnderlines(NSAttributedString* string,
     latency_info.set_source_event_type(ui::SourceEventType::KEY_PRESS);
   }
 
-  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
+  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0);
+
+  // If KeyboardLock has been requested for this keyCode, then mark the event
+  // so it skips the pre-handler and is delivered straight to the website.
+  if ([self isKeyLocked:keyCode])
+    event.skip_in_browser = true;
 
   // Do not forward key up events unless preceded by a matching key down,
   // otherwise we might get an event from releasing the return key in the
@@ -658,9 +695,7 @@ void ExtractUnderlines(NSAttributedString* string,
   // function call.
   client_->OnNSViewBeginKeyboardEvent();
 
-  ui::TextInputType textInputType = ui::TEXT_INPUT_TYPE_NONE;
-  client_->OnNSViewSyncGetTextInputType(&textInputType);
-  bool shouldAutohideCursor = textInputType != ui::TEXT_INPUT_TYPE_NONE &&
+  bool shouldAutohideCursor = textInputType_ != ui::TEXT_INPUT_TYPE_NONE &&
                               eventType == NSKeyDown &&
                               !(modifierFlags & NSCommandKeyMask);
 
@@ -859,12 +894,13 @@ void ExtractUnderlines(NSAttributedString* string,
   }
 }
 
-- (void)handleBeginGestureWithEvent:(NSEvent*)event {
+- (void)handleBeginGestureWithEvent:(NSEvent*)event
+            isSyntheticallyInjected:(BOOL)isSyntheticallyInjected {
   [responderDelegate_ beginGestureWithEvent:event];
 
   WebGestureEvent gestureBeginEvent(WebGestureEventBuilder::Build(event, self));
 
-  client_->OnNSViewGestureBegin(gestureBeginEvent);
+  client_->OnNSViewGestureBegin(gestureBeginEvent, isSyntheticallyInjected);
 }
 
 - (void)handleEndGestureWithEvent:(NSEvent*)event {
@@ -895,7 +931,7 @@ void ExtractUnderlines(NSAttributedString* string,
 #endif
 
   if (shouldHandle) {
-    [self handleBeginGestureWithEvent:event];
+    [self handleBeginGestureWithEvent:event isSyntheticallyInjected:NO];
   }
 }
 
@@ -979,7 +1015,7 @@ void ExtractUnderlines(NSAttributedString* string,
   // "end" phases.
   if (base::mac::IsAtLeastOS10_11()) {
     if (event.phase == NSEventPhaseBegan) {
-      [self handleBeginGestureWithEvent:event];
+      [self handleBeginGestureWithEvent:event isSyntheticallyInjected:NO];
     }
 
     if (event.phase == NSEventPhaseEnded ||
@@ -1028,7 +1064,7 @@ void ExtractUnderlines(NSAttributedString* string,
   // "end" phases.
   if (base::mac::IsAtLeastOS10_11()) {
     if (event.phase == NSEventPhaseBegan) {
-      [self handleBeginGestureWithEvent:event];
+      [self handleBeginGestureWithEvent:event isSyntheticallyInjected:NO];
       return;
     }
 
@@ -1560,9 +1596,7 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
 // nil when the caret is in non-editable content or password box to avoid
 // making input methods do their work.
 - (NSTextInputContext*)inputContext {
-  ui::TextInputType textInputType = ui::TEXT_INPUT_TYPE_NONE;
-  client_->OnNSViewSyncGetTextInputType(&textInputType);
-  switch (textInputType) {
+  switch (textInputType_) {
     case ui::TEXT_INPUT_TYPE_NONE:
     case ui::TEXT_INPUT_TYPE_PASSWORD:
       return nil;
@@ -1717,7 +1751,7 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
   // open mouse-downs.
   if (hasOpenMouseDown_) {
     WebMouseEvent event(WebInputEvent::kMouseUp, WebInputEvent::kNoModifiers,
-                        ui::EventTimeStampToSeconds(ui::EventTimeForNow()));
+                        ui::EventTimeForNow());
     event.button = WebMouseEvent::Button::kLeft;
     client_->OnNSViewForwardMouseEvent(event);
     hasOpenMouseDown_ = NO;
@@ -1795,14 +1829,11 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
 
 - (id)validRequestorForSendType:(NSString*)sendType
                      returnType:(NSString*)returnType {
-  ui::TextInputType textInputType = ui::TEXT_INPUT_TYPE_NONE;
-  client_->OnNSViewSyncGetTextInputType(&textInputType);
-
   id requestor = nil;
   BOOL sendTypeIsString = [sendType isEqual:NSStringPboardType];
   BOOL returnTypeIsString = [returnType isEqual:NSStringPboardType];
   BOOL hasText = !textSelectionRange_.is_empty();
-  BOOL takesText = textInputType != ui::TEXT_INPUT_TYPE_NONE;
+  BOOL takesText = textInputType_ != ui::TEXT_INPUT_TYPE_NONE;
 
   if (sendTypeIsString && hasText && !returnType) {
     requestor = self;
@@ -1817,6 +1848,23 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
   return requestor;
 }
 
+- (BOOL)shouldChangeCurrentCursor {
+  // |updateCursor:| might be called outside the view bounds. Check the mouse
+  // location before setting the cursor. Also, do not set cursor if it's not a
+  // key window.
+  NSPoint location = ui::ConvertPointFromScreenToWindow(
+      [self window], [NSEvent mouseLocation]);
+  location = [self convertPoint:location fromView:nil];
+  if (![self mouse:location inRect:[self bounds]] ||
+      ![[self window] isKeyWindow])
+    return NO;
+
+  if (cursorHidden_ || showingContextMenu_)
+    return NO;
+
+  return YES;
+}
+
 - (void)updateCursor:(NSCursor*)cursor {
   if (currentCursor_ == cursor)
     return;
@@ -1826,8 +1874,8 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
 
   // NSWindow's invalidateCursorRectsForView: resets cursor rects but does not
   // update the cursor instantly. The cursor is updated when the mouse moves.
-  // Update the cursor by setting the current cursor if not hidden.
-  if (!cursorHidden_ && !showingContextMenu_)
+  // Update the cursor instantly by setting the current cursor.
+  if ([self shouldChangeCurrentCursor])
     [currentCursor_ set];
 }
 

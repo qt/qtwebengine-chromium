@@ -49,7 +49,6 @@ GestureManager::GestureManager(LocalFrame& frame,
 void GestureManager::Clear() {
   suppress_mouse_events_from_gestures_ = false;
   long_tap_should_invoke_context_menu_ = false;
-  last_show_press_timestamp_.reset();
 }
 
 void GestureManager::Trace(blink::Visitor* visitor) {
@@ -173,7 +172,7 @@ WebInputEventResult GestureManager::HandleGestureTap(
         static_cast<WebInputEvent::Modifiers>(
             modifiers |
             WebInputEvent::Modifiers::kIsCompatibilityEventForTouch),
-        gesture_event.TimeStampSeconds());
+        gesture_event.TimeStamp());
     mouse_event_manager_->SetMousePositionAndDispatchMouseEvent(
         current_hit_test.InnerNode(), current_hit_test.CanvasRegionId(),
         EventTypeNames::mousemove, fake_mouse_move);
@@ -216,7 +215,7 @@ WebInputEventResult GestureManager::HandleGestureTap(
       static_cast<WebInputEvent::Modifiers>(
           modifiers | WebInputEvent::Modifiers::kLeftButtonDown |
           WebInputEvent::Modifiers::kIsCompatibilityEventForTouch),
-      gesture_event.TimeStampSeconds());
+      gesture_event.TimeStamp());
 
   // TODO(mustaq): We suppress MEs plus all it's side effects. What would that
   // mean for for TEs?  What's the right balance here? crbug.com/617255
@@ -266,7 +265,7 @@ WebInputEventResult GestureManager::HandleGestureTap(
       WebPointerProperties::Button::kLeft, gesture_event.TapCount(),
       static_cast<WebInputEvent::Modifiers>(
           modifiers | WebInputEvent::Modifiers::kIsCompatibilityEventForTouch),
-      gesture_event.TimeStampSeconds());
+      gesture_event.TimeStamp());
   WebInputEventResult mouse_up_event_result =
       suppress_mouse_events_from_gestures_
           ? WebInputEventResult::kHandledSuppressed
@@ -283,7 +282,7 @@ WebInputEventResult GestureManager::HandleGestureTap(
       // tappedNonTextNode and currentHitTest.innerNode()) don't need to be
       // updated because commonAncestor() will exit early if their documents are
       // different.
-      tapped_element->UpdateDistribution();
+      tapped_element->UpdateDistributionForFlatTreeTraversal();
       Node* click_target_node = current_hit_test.InnerNode()->CommonAncestor(
           *tapped_element, EventHandlingUtil::ParentForClickEvent);
       click_event_result =
@@ -356,6 +355,9 @@ WebInputEventResult GestureManager::HandleGestureLongPress(
     return WebInputEventResult::kNotHandled;
   }
 
+  std::unique_ptr<UserGestureIndicator> gesture_indicator =
+      Frame::NotifyUserActivation(
+          inner_node ? inner_node->GetDocument().GetFrame() : nullptr);
   return SendContextMenuEventForGesture(targeted_event);
 }
 
@@ -391,7 +393,7 @@ WebInputEventResult GestureManager::SendContextMenuEventForGesture(
         /* clickCount */ 0,
         static_cast<WebInputEvent::Modifiers>(
             modifiers | WebInputEvent::kIsCompatibilityEventForTouch),
-        gesture_event.TimeStampSeconds());
+        gesture_event.TimeStamp());
     mouse_event_manager_->SetMousePositionAndDispatchMouseEvent(
         targeted_event.GetHitTestResult().InnerNode(),
         targeted_event.CanvasRegionId(), EventTypeNames::mousemove,
@@ -408,7 +410,7 @@ WebInputEventResult GestureManager::SendContextMenuEventForGesture(
       /* clickCount */ 0,
       static_cast<WebInputEvent::Modifiers>(
           modifiers | WebInputEvent::kIsCompatibilityEventForTouch),
-      gesture_event.TimeStampSeconds());
+      gesture_event.TimeStamp());
 
   if (!suppress_mouse_events_from_gestures_ && frame_->View()) {
     HitTestRequest request(HitTestRequest::kActive);
@@ -427,8 +429,6 @@ WebInputEventResult GestureManager::SendContextMenuEventForGesture(
 }
 
 WebInputEventResult GestureManager::HandleGestureShowPress() {
-  last_show_press_timestamp_ = CurrentTimeTicks();
-
   LocalFrameView* view = frame_->View();
   if (!view)
     return WebInputEventResult::kNotHandled;
@@ -443,11 +443,6 @@ WebInputEventResult GestureManager::HandleGestureShowPress() {
       animator->CancelAnimation();
   }
   return WebInputEventResult::kNotHandled;
-}
-
-WTF::Optional<WTF::TimeTicks> GestureManager::GetLastShowPressTimestamp()
-    const {
-  return last_show_press_timestamp_;
 }
 
 void GestureManager::ShowUnhandledTapUIIfNeeded(

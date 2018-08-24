@@ -126,8 +126,9 @@ void TableRowPainter::PaintBackgroundBehindCell(
   // doesn't need to flip in section's blocks direction. A row doesn't have
   // flipped blocks direction.
   if (!layout_table_row_.HasSelfPaintingLayer()) {
-    cell_point = layout_table_row_.Section()->FlipForWritingModeForChild(
-        &cell, cell_point);
+    cell_point =
+        layout_table_row_.Section()->FlipForWritingModeForChildForPaint(
+            &cell, cell_point);
   }
   TableCellPainter(cell).PaintContainerBackgroundBehindCell(
       paint_info, cell_point, layout_table_row_);
@@ -136,7 +137,7 @@ void TableRowPainter::PaintBackgroundBehindCell(
 void TableRowPainter::PaintCollapsedBorders(const PaintInfo& paint_info,
                                             const LayoutPoint& paint_offset,
                                             const CellSpan& dirtied_columns) {
-  Optional<DrawingRecorder> recorder;
+  base::Optional<DrawingRecorder> recorder;
 
   if (LIKELY(!layout_table_row_.Table()->ShouldPaintAllCollapsedBorders())) {
     HandleChangedPartialPaint(paint_info, dirtied_columns);
@@ -157,7 +158,7 @@ void TableRowPainter::PaintCollapsedBorders(const PaintInfo& paint_info,
        c > dirtied_columns.Start(); c--) {
     if (const auto* cell = section->OriginatingCellAt(row, c - 1)) {
       LayoutPoint cell_point =
-          section->FlipForWritingModeForChild(cell, paint_offset);
+          section->FlipForWritingModeForChildForPaint(cell, paint_offset);
       CollapsedBorderPainter(*cell).PaintCollapsedBorders(paint_info,
                                                           cell_point);
     }

@@ -235,9 +235,7 @@ class SettingGetterImplGSettings
     if (client_) {
       // gsettings client was not cleaned up.
       if (task_runner_->RunsTasksInCurrentSequence()) {
-        // We are on the UI thread so we can clean it safely. This is
-        // the case at least for ui_tests running under Valgrind in
-        // bug 16076.
+        // We are on the UI thread so we can clean it safely.
         VLOG(1) << "~SettingGetterImplGSettings: releasing gsettings client";
         ShutDown();
       } else {
@@ -1028,7 +1026,7 @@ ProxyConfigServiceLinux::Delegate::GetConfigFromSettings() {
   if (!setting_getter_->GetString(SettingGetter::PROXY_MODE, &mode)) {
     // We expect this to always be set, so if we don't see it then we probably
     // have a gsettings problem, and so we don't have a valid proxy config.
-    return base::Optional<ProxyConfigWithAnnotation>();
+    return base::nullopt;
   }
   if (mode == "none") {
     // Specifically specifies no proxy.
@@ -1047,7 +1045,7 @@ ProxyConfigServiceLinux::Delegate::GetConfigFromSettings() {
           pac_url_str = "file://" + pac_url_str;
         GURL pac_url(pac_url_str);
         if (!pac_url.is_valid())
-          return base::Optional<ProxyConfigWithAnnotation>();
+          return base::nullopt;
         config.set_pac_url(pac_url);
         return ProxyConfigWithAnnotation(
             config, NetworkTrafficAnnotationTag(traffic_annotation_));
@@ -1060,7 +1058,7 @@ ProxyConfigServiceLinux::Delegate::GetConfigFromSettings() {
 
   if (mode != "manual") {
     // Mode is unrecognized.
-    return base::Optional<ProxyConfigWithAnnotation>();
+    return base::nullopt;
   }
   bool use_http_proxy;
   if (setting_getter_->GetBool(SettingGetter::PROXY_USE_HTTP_PROXY,
@@ -1124,7 +1122,7 @@ ProxyConfigServiceLinux::Delegate::GetConfigFromSettings() {
 
   if (config.proxy_rules().empty()) {
     // Manual mode but we couldn't parse any rules.
-    return base::Optional<ProxyConfigWithAnnotation>();
+    return base::nullopt;
   }
 
   // Check for authentication, just so we can warn.
@@ -1237,7 +1235,7 @@ void ProxyConfigServiceLinux::Delegate::SetUpAndFetchInitialConfig(
   // does so even if the proxy mode is set to auto, which would
   // mislead us.
 
-  cached_config_ = base::Optional<ProxyConfigWithAnnotation>();
+  cached_config_ = base::nullopt;
   if (setting_getter_ && setting_getter_->Init(glib_task_runner)) {
     cached_config_ = GetConfigFromSettings();
   }

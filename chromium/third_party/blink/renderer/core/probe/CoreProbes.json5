@@ -1,37 +1,36 @@
 {
   settings: {
-    export_header: "core/core_export.h",
+    export_header: "third_party/blink/renderer/core/core_export.h",
     export_symbol: "CORE_EXPORT",
-    include_path: "core/inspector",
+    include_path: "third_party/blink/renderer/core/inspector",
     includes: [
-      "core/CoreProbeSink.h",
-      "core/probe/core_probes.h",
+      "third_party/blink/renderer/core/CoreProbeSink.h",
+      "third_party/blink/renderer/core/probe/core_probes.h",
     ],
   },
   observers: {
     AdTracker: {
-      class: "AdTracker",
-      include_path: "core/frame",
+      include_path: "third_party/blink/renderer/core/frame",
       probes: [
         "CallFunction",
         "ExecuteScript",
         "willSendRequest",
       ]
     },
-    Animation: {
+    InspectorAnimationAgent: {
       probes: [
         "animationPlayStateChanged",
         "didClearDocumentOfWindowObject",
         "didCreateAnimation",
       ]
     },
-    ApplicationCache: {
+    InspectorApplicationCacheAgent: {
       probes: [
         "networkStateChanged",
         "updateApplicationCacheStatus",
       ]
     },
-    CSS: {
+    InspectorCSSAgent: {
       probes: [
         "activeStyleSheetsUpdated",
         "documentDetached",
@@ -41,7 +40,7 @@
         "willChangeStyleElement",
       ]
     },
-    DOM: {
+    InspectorDOMAgent: {
       probes: [
         "characterDataModified",
         "didCommitLoad",
@@ -62,7 +61,7 @@
         "willRemoveDOMNode",
       ]
     },
-    DOMDebugger: {
+    InspectorDOMDebuggerAgent: {
       probes: [
         "breakableLocation",
         "didCreateCanvasContext",
@@ -80,24 +79,29 @@
         "willSendXMLHttpOrFetchNetworkRequest",
       ]
     },
-    Emulation: {
+    InspectorDOMSnapshotAgent: {
+      probes: [
+        "characterDataModified",
+        "didInsertDOMNode",
+     ]
+    },
+    InspectorEmulationAgent: {
       probes: [
         "frameStartedLoading",
       ]
     },
-    LayerTree: {
+    InspectorLayerTreeAgent: {
       probes: [
         "didPaint",
         "layerTreeDidChange",
       ]
     },
-    Log: {
+    InspectorLogAgent: {
       probes: [
         "consoleMessageAdded",
       ]
     },
-    Network: {
-      class: "InspectorNetworkAgent",
+    InspectorNetworkAgent: {
       probes: [
         "applyUserAgentOverride",
         "detachClientRequest",
@@ -106,11 +110,9 @@
         "didCloseWebSocket",
         "didCommitLoad",
         "didCreateWebSocket",
-        "didFailFetch",
         "didFailLoading",
         "didFailXHRLoading",
         "didFinishEventSourceRequest",
-        "didFinishFetch",
         "didFinishLoading",
         "didFinishXHRLoading",
         "didReceiveCORSRedirectResponse",
@@ -142,7 +144,7 @@
         "willStartFetch",
       ]
     },
-    Page: {
+    InspectorPageAgent: {
       probes: [
         "didChangeViewport",
         "didClearDocumentOfWindowObject",
@@ -166,9 +168,8 @@
         "windowOpen",
       ]
     },
-    Performance: {
-      class: "PerformanceMonitor",
-      include_path: "core/frame",
+    PerformanceMonitor: {
+      include_path: "third_party/blink/renderer/core/frame",
       probes: [
         "CallFunction",
         "ExecuteScript",
@@ -179,8 +180,7 @@
         "documentWriteFetchScript",
       ]
     },
-    PerformanceMetrics: {
-      class: "InspectorPerformanceAgent",
+    InspectorPerformanceAgent: {
       probes: [
         "consoleTimeStamp",
         "CallFunction",
@@ -189,8 +189,7 @@
         "UpdateLayout",
       ]
     },
-    TraceEvents: {
-      class: "InspectorTraceEvents",
+    InspectorTraceEvents: {
       probes: [
         "CallFunction",
         "ParseHTML",
@@ -198,18 +197,12 @@
         "didFinishLoading",
         "didReceiveData",
         "didReceiveResourceResponse",
+        "frameStartedLoading",
         "paintTiming",
         "willSendRequest",
       ]
     },
-    Tracing: {
-      probes: [
-        "frameStartedLoading",
-        "frameStoppedLoading",
-        "didStartWorker",
-      ]
-    },
-    Worker: {
+    InspectorWorkerAgent: {
       probes: [
         "didStartWorker",
         "shouldWaitForDebuggerOnWorkerStart",

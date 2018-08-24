@@ -35,7 +35,6 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_object_builder.h"
 #include "third_party/blink/renderer/core/animation/effect_input.h"
 #include "third_party/blink/renderer/core/animation/element_animations.h"
-#include "third_party/blink/renderer/core/animation/keyframe_effect_model.h"
 #include "third_party/blink/renderer/core/animation/keyframe_effect_options.h"
 #include "third_party/blink/renderer/core/animation/sampled_effect.h"
 #include "third_party/blink/renderer/core/animation/timing_input.h"
@@ -181,10 +180,20 @@ void KeyframeEffect::setKeyframes(ScriptState* script_state,
   if (exception_state.HadException())
     return;
 
-  Model()->SetComposite(EffectInput::ResolveCompositeOperation(
-      Model()->Composite(), new_keyframes));
+  SetKeyframes(new_keyframes);
+}
 
-  ToStringKeyframeEffectModel(Model())->SetFrames(new_keyframes);
+void KeyframeEffect::SetKeyframes(StringKeyframeVector keyframes) {
+  Model()->SetComposite(
+      EffectInput::ResolveCompositeOperation(Model()->Composite(), keyframes));
+
+  ToStringKeyframeEffectModel(Model())->SetFrames(keyframes);
+
+  // Changing the keyframes will invalidate any sampled effect, as well as
+  // potentially affect the effect owner.
+  if (sampled_effect_)
+    ClearEffects();
+  InvalidateAndNotifyOwner();
 }
 
 bool KeyframeEffect::Affects(const PropertyHandle& property) const {
@@ -228,7 +237,7 @@ KeyframeEffect::CheckCanStartAnimationOnCompositor(
 
 void KeyframeEffect::StartAnimationOnCompositor(
     int group,
-    WTF::Optional<double> start_time,
+    base::Optional<double> start_time,
     double current_time,
     double animation_playback_rate,
     CompositorAnimation* compositor_animation) {
@@ -255,7 +264,8 @@ bool KeyframeEffect::HasActiveAnimationsOnCompositor(
   return HasActiveAnimationsOnCompositor() && Affects(property);
 }
 
-bool KeyframeEffect::CancelAnimationOnCompositor() {
+bool KeyframeEffect::CancelAnimationOnCompositor(
+    CompositorAnimation* compositor_animation) {
   // FIXME: cancelAnimationOnCompositor is called from withins style recalc.
   // This queries compositingState, which is not necessarily up to date.
   // https://code.google.com/p/chromium/issues/detail?id=339847
@@ -264,10 +274,9 @@ bool KeyframeEffect::CancelAnimationOnCompositor() {
     return false;
   if (!target_ || !target_->GetLayoutObject())
     return false;
-  DCHECK(GetAnimation());
   for (const auto& compositor_animation_id : compositor_animation_ids_) {
-    CompositorAnimations::CancelAnimationOnCompositor(*target_, *GetAnimation(),
-                                                      compositor_animation_id);
+    CompositorAnimations::CancelAnimationOnCompositor(
+        *target_, compositor_animation, compositor_animation_id);
   }
   compositor_animation_ids_.clear();
   return true;
@@ -319,12 +328,12 @@ EffectModel::CompositeOperation KeyframeEffect::CompositeInternal() const {
 
 void KeyframeEffect::ApplyEffects() {
   DCHECK(IsInEffect());
-  DCHECK(GetAnimation());
   if (!target_ || !model_->HasFrames())
     return;
 
-  if (HasIncompatibleStyle())
+  if (GetAnimation() && HasIncompatibleStyle()) {
     GetAnimation()->CancelAnimationOnCompositor();
+  }
 
   double iteration = CurrentIteration();
   DCHECK_GE(iteration, 0);
@@ -358,12 +367,12 @@ void KeyframeEffect::ApplyEffects() {
 }
 
 void KeyframeEffect::ClearEffects() {
-  DCHECK(GetAnimation());
   DCHECK(sampled_effect_);
 
   sampled_effect_->Clear();
   sampled_effect_ = nullptr;
-  GetAnimation()->RestartAnimationOnCompositor();
+  if (GetAnimation())
+    GetAnimation()->RestartAnimationOnCompositor();
   target_->SetNeedsAnimationStyleRecalc();
   if (RuntimeEnabledFeatures::WebAnimationsSVGEnabled() &&
       target_->IsSVGElement())
@@ -374,7 +383,7 @@ void KeyframeEffect::ClearEffects() {
 void KeyframeEffect::UpdateChildrenAndEffects() const {
   if (!model_->HasFrames())
     return;
-  DCHECK(GetAnimation());
+  DCHECK(owner_);
   if (IsInEffect() && !owner_->EffectSuppressed())
     const_cast<KeyframeEffect*>(this)->ApplyEffects();
   else if (sampled_effect_)

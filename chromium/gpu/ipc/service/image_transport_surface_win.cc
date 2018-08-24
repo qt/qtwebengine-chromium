@@ -7,11 +7,11 @@
 #include <memory>
 
 #include "base/win/windows_version.h"
+#include "components/viz/common/features.h"
 #include "gpu/command_buffer/service/gpu_preferences.h"
 #include "gpu/ipc/service/direct_composition_surface_win.h"
 #include "gpu/ipc/service/gpu_vsync_provider_win.h"
 #include "gpu/ipc/service/pass_through_image_transport_surface.h"
-#include "gpu/ipc/service/switches.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_implementation.h"
@@ -24,6 +24,12 @@ namespace gpu {
 
 namespace {
 bool IsGpuVSyncSignalSupported() {
+  // TODO(crbug.com/787814): D3DVsync needs to be rewritten to work with
+  // OOP-D. It's no longer requires any IPC, just an ExternalBeginFrameSource,
+  // so it should be much simpler.
+  if (base::FeatureList::IsEnabled(features::kVizDisplayCompositor))
+    return false;
+
   // TODO(stanisc): http://crbug.com/467617 Limit to Windows 8.1+ for now
   // because of locking issue caused by waiting for VSync on Win7 and Win 8.0.
   return base::win::GetVersion() >= base::win::VERSION_WIN8_1 &&
@@ -40,8 +46,7 @@ scoped_refptr<gl::GLSurface> ImageTransportSurface::CreateNativeSurface(
   DCHECK_NE(surface_handle, kNullSurfaceHandle);
 
   scoped_refptr<gl::GLSurface> surface;
-  MultiWindowSwapInterval multi_window_swap_interval =
-      kMultiWindowSwapIntervalDefault;
+  bool override_vsync_for_multi_window_swap = false;
   if (gl::GetGLImplementation() == gl::kGLImplementationEGLGLES2) {
     std::unique_ptr<gfx::VSyncProvider> vsync_provider;
 
@@ -58,14 +63,15 @@ scoped_refptr<gl::GLSurface> ImageTransportSurface::CreateNativeSurface(
         return nullptr;
       surface = egl_surface;
     } else {
-      surface = gl::init::CreateNativeViewGLSurfaceEGL(
-          surface_handle, std::move(vsync_provider));
+      surface = gl::InitializeGLSurface(
+          base::MakeRefCounted<gl::NativeViewGLSurfaceEGL>(
+              surface_handle, std::move(vsync_provider)));
+      if (!surface)
+        return nullptr;
       // This is unnecessary with DirectComposition because that doesn't block
       // swaps, but instead blocks the first draw into a surface during the next
       // frame.
-      multi_window_swap_interval = kMultiWindowSwapIntervalForceZero;
-      if (!surface)
-        return nullptr;
+      override_vsync_for_multi_window_swap = true;
     }
   } else {
     surface = gl::init::CreateViewGLSurface(surface_handle);
@@ -74,7 +80,7 @@ scoped_refptr<gl::GLSurface> ImageTransportSurface::CreateNativeSurface(
   }
 
   return scoped_refptr<gl::GLSurface>(new PassThroughImageTransportSurface(
-      delegate, surface.get(), multi_window_swap_interval));
+      delegate, surface.get(), override_vsync_for_multi_window_swap));
 }
 
 }  // namespace gpu

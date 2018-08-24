@@ -640,12 +640,13 @@ ExtensionFunction::ResponseAction WindowsCreateFunction::Run() {
   // a tabbed window.
   if ((window_type == Browser::TYPE_POPUP && urls.empty()) ||
       window_type == Browser::TYPE_TABBED) {
-    if (source_tab_strip)
-      contents = source_tab_strip->DetachWebContentsAt(tab_index);
-    if (contents) {
+    if (source_tab_strip) {
+      std::unique_ptr<content::WebContents> detached_tab =
+          source_tab_strip->DetachWebContentsAt(tab_index);
+      contents = detached_tab.get();
       TabStripModel* target_tab_strip = new_window->tab_strip_model();
-      target_tab_strip->InsertWebContentsAt(urls.size(), contents,
-                                            TabStripModel::ADD_NONE);
+      target_tab_strip->InsertWebContentsAt(
+          urls.size(), std::move(detached_tab), TabStripModel::ADD_NONE);
     }
   }
   // Create a new tab if the created window is still empty. Don't create a new
@@ -655,19 +656,20 @@ ExtensionFunction::ResponseAction WindowsCreateFunction::Run() {
   }
   chrome::SelectNumberedTab(new_window, 0);
 
+  if (focused)
+    new_window->window()->Show();
+  else
+    new_window->window()->ShowInactive();
+
 #if defined(OS_CHROMEOS)
   // Lock the window fullscreen only after the new tab has been created
-  // (otherwise the tabstrip is empty).
+  // (otherwise the tabstrip is empty), and window()->show() has been called
+  // (otherwise that resets the locked mode for devices in tablet mode).
   if (create_data &&
       create_data->state == windows::WINDOW_STATE_LOCKED_FULLSCREEN) {
     SetLockedFullscreenState(new_window, true);
   }
 #endif
-
-  if (focused)
-    new_window->window()->Show();
-  else
-    new_window->window()->ShowInactive();
 
   std::unique_ptr<base::Value> result;
   if (new_window->profile()->IsOffTheRecord() &&
@@ -1366,8 +1368,9 @@ bool TabsUpdateFunction::RunAsync() {
 
   if (params->update_properties.auto_discardable.get()) {
     bool state = *params->update_properties.auto_discardable;
-    g_browser_process->GetTabManager()->SetTabAutoDiscardableState(contents,
-                                                                   state);
+    resource_coordinator::TabLifecycleUnitExternal::FromWebContents(
+        web_contents_)
+        ->SetAutoDiscardable(state);
   }
 
   if (!is_async) {
@@ -1395,11 +1398,13 @@ bool TabsUpdateFunction::UpdateURL(const std::string &url_string,
     return false;
   }
 
+  const bool is_javascript_scheme = url.SchemeIs(url::kJavaScriptScheme);
+  UMA_HISTOGRAM_BOOLEAN("Extensions.ApiTabUpdateJavascript",
+                        is_javascript_scheme);
   // JavaScript URLs can do the same kinds of things as cross-origin XHR, so
   // we need to check host permissions before allowing them.
-  if (url.SchemeIs(url::kJavaScriptScheme)) {
+  if (is_javascript_scheme) {
     if (!extension()->permissions_data()->CanAccessPage(
-            extension(),
             web_contents_->GetURL(),
             tab_id,
             &error_)) {
@@ -1564,7 +1569,7 @@ bool TabsMoveFunction::MoveTab(int tab_id,
     if (ExtensionTabUtil::GetWindowId(target_browser) !=
         ExtensionTabUtil::GetWindowId(source_browser)) {
       TabStripModel* target_tab_strip = target_browser->tab_strip_model();
-      WebContents* web_contents =
+      std::unique_ptr<content::WebContents> web_contents =
           source_tab_strip->DetachWebContentsAt(tab_index);
       if (!web_contents) {
         *error = ErrorUtils::FormatErrorMessage(keys::kTabNotFoundError,
@@ -1578,12 +1583,13 @@ bool TabsMoveFunction::MoveTab(int tab_id,
       if (*new_index > target_tab_strip->count() || *new_index < 0)
         *new_index = target_tab_strip->count();
 
-      target_tab_strip->InsertWebContentsAt(
-          *new_index, web_contents, TabStripModel::ADD_NONE);
+      content::WebContents* web_contents_raw = web_contents.get();
+      target_tab_strip->InsertWebContentsAt(*new_index, std::move(web_contents),
+                                            TabStripModel::ADD_NONE);
 
       if (has_callback()) {
         tab_values->Append(ExtensionTabUtil::CreateTabObject(
-                               web_contents, ExtensionTabUtil::kScrubTab,
+                               web_contents_raw, ExtensionTabUtil::kScrubTab,
                                extension(), target_tab_strip, *new_index)
                                ->ToValue());
       }
@@ -1739,7 +1745,7 @@ WebContents* TabsCaptureVisibleTabFunction::GetWebContentsForID(
   }
 
   if (!extension()->permissions_data()->CanCaptureVisiblePage(
-          contents->GetLastCommittedURL(), extension(),
+          contents->GetLastCommittedURL(),
           SessionTabHelper::IdForTab(contents).id(), error)) {
     return nullptr;
   }
@@ -2007,8 +2013,8 @@ bool ExecuteCodeInTabFunction::CanExecuteScriptOnPage(std::string* error) {
 
   // NOTE: This can give the wrong answer due to race conditions, but it is OK,
   // we check again in the renderer.
-  if (!extension()->permissions_data()->CanAccessPage(
-          extension(), effective_document_url, execute_tab_id_, error)) {
+  if (!extension()->permissions_data()->CanAccessPage(effective_document_url,
+                                                      execute_tab_id_, error)) {
     if (is_about_url &&
         extension()->permissions_data()->active_permissions().HasAPIPermission(
             APIPermission::kTab)) {
@@ -2084,7 +2090,7 @@ bool TabsSetZoomFunction::RunAsync() {
     return false;
 
   GURL url(web_contents->GetVisibleURL());
-  if (PermissionsData::IsRestrictedUrl(url, extension(), &error_))
+  if (extension()->permissions_data()->IsRestrictedUrl(url, &error_))
     return false;
 
   ZoomController* zoom_controller =
@@ -2136,7 +2142,7 @@ bool TabsSetZoomSettingsFunction::RunAsync() {
     return false;
 
   GURL url(web_contents->GetVisibleURL());
-  if (PermissionsData::IsRestrictedUrl(url, extension(), &error_))
+  if (extension()->permissions_data()->IsRestrictedUrl(url, &error_))
     return false;
 
   // "per-origin" scope is only available in "automatic" mode.

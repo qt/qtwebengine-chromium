@@ -408,6 +408,9 @@ jumbo_component("color_space") {
     "skia_color_space_util.cc",
     "skia_color_space_util.h",
   ]
+  deps = [
+    "//skia:skcms",
+  ]
   public_deps = [
     "//base",
     "//skia",
@@ -419,9 +422,7 @@ jumbo_component("color_space") {
     ]
   }
   if (use_x11) {
-    deps = [
-      "//ui/gfx/x",
-    ]
+    deps += [ "//ui/gfx/x" ]
     configs += [ "//build/config/linux:x11" ]
   }
   defines = [ "COLOR_SPACE_IMPLEMENTATION" ]
@@ -567,6 +568,10 @@ source_set("memory_buffer_sources") {
     deps += [ "//third_party/libdrm" ]
   }
 
+  if (is_linux || is_android) {
+    deps += [ "//third_party/libsync" ]
+  }
+
   if (is_mac) {
     sources += [
       "mac/io_surface.cc",
@@ -574,6 +579,10 @@ source_set("memory_buffer_sources") {
     ]
 
     public_deps += [ "//ui/gfx:color_space" ]
+  }
+
+  if (is_win) {
+    public_deps += [ "//ipc:message_support" ]
   }
 }
 

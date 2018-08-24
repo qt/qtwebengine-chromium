@@ -37,7 +37,7 @@ class BluetoothRemoteGATTService final : public ScriptWrappable {
                              BluetoothDevice*);
 
   // Interface required by garbage collection.
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
   // IDL exposed interface:
   String uuid() { return service_->uuid; }
@@ -58,7 +58,8 @@ class BluetoothRemoteGATTService final : public ScriptWrappable {
       mojom::blink::WebBluetoothGATTQueryQuantity,
       ScriptPromiseResolver*,
       mojom::blink::WebBluetoothResult,
-      Optional<Vector<mojom::blink::WebBluetoothRemoteGATTCharacteristicPtr>>
+      base::Optional<
+          Vector<mojom::blink::WebBluetoothRemoteGATTCharacteristicPtr>>
           characteristics);
 
   ScriptPromise GetCharacteristicsImpl(

@@ -19,14 +19,12 @@ class Time;
 }
 
 namespace content {
-class RenderFrameHost;
+class BrowserContext;
 }
 
 namespace net {
 class HttpResponseHeaders;
 }
-
-class GURL;
 
 namespace extensions {
 class InfoMap;
@@ -57,18 +55,18 @@ void SetExtensionProtocolTestHandler(ExtensionProtocolTestHandler* handler);
 // handling navigation requests to extension URLs.
 std::unique_ptr<network::mojom::URLLoaderFactory>
 CreateExtensionNavigationURLLoaderFactory(
-    content::RenderFrameHost* frame_host,
-    scoped_refptr<extensions::InfoMap> extension_info_map);
+    content::BrowserContext* browser_context,
+    bool is_web_view_request);
 
-// Attempts to create a network::mojom::URLLoaderFactory implementation suitable
-// for handling subresource requests for extension URLs from |frame_host|. May
-// return null if |frame_host| is never allowed to load extension subresources
-// from its current navigation URL.
+// Creates a network::mojom::URLLoaderFactory implementation suitable for
+// handling subresource requests for extension URLs for the frame identified by
+// |render_process_id| and |render_frame_id|.
+// This function can also be used to make a factory for other non-subresource
+// requests to extension URLs, such as for the service worker script when
+// starting a service worker. In that case, render_frame_id will be
+// MSG_ROUTING_NONE.
 std::unique_ptr<network::mojom::URLLoaderFactory>
-MaybeCreateExtensionSubresourceURLLoaderFactory(
-    content::RenderFrameHost* frame_host,
-    const GURL& frame_url,
-    scoped_refptr<extensions::InfoMap> extension_info_map);
+CreateExtensionURLLoaderFactory(int render_process_id, int render_frame_id);
 
 }  // namespace extensions
 

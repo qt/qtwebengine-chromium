@@ -53,15 +53,6 @@ class ContentSubresourceFilterDriverFactory
       const Configuration& matched_configuration,
       bool warning);
 
-  // Returns whether or not the current WebContents is allowed to create a new
-  // window.
-  bool ShouldDisallowNewWindow(const content::OpenURLParams* open_url_params);
-
-  // Returns the Configuration for the current main frame document.
-  const Configuration& GetMatchedConfigurationForLastCommittedPageLoad() const {
-    return matched_configuration_;
-  }
-
   // ContentSubresourceFilterThrottleManager::Delegate:
   void OnFirstSubresourceLoadDisallowed() override;
 
@@ -75,17 +66,11 @@ class ContentSubresourceFilterDriverFactory
   friend class ContentSubresourceFilterDriverFactoryTest;
   friend class safe_browsing::SafeBrowsingServiceTest;
 
-  const Configuration::ActivationOptions& activation_options() const {
-    return matched_configuration_.activation_options;
-  }
-
   // content::WebContentsObserver:
   void DidStartNavigation(
       content::NavigationHandle* navigation_handle) override;
   void DidFinishNavigation(
       content::NavigationHandle* navigation_handle) override;
-
-  void SetOnCommitWarningMessages();
 
   // Must outlive this class.
   SubresourceFilterClient* client_;
@@ -115,11 +100,6 @@ class ContentSubresourceFilterDriverFactory
   // a config in GetEnabledConfigurations() due to activation computation
   // changing the config (e.g. for forcing devtools activation).
   Configuration matched_configuration_;
-
-  // Messages to be logged if the most recently _committed_ non-same-document
-  // navigation in the main frame was in an activation list with warning bit
-  // set. Has the same lifetime as |matched_configuration_|.
-  std::vector<std::string> on_commit_warning_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentSubresourceFilterDriverFactory);
 };

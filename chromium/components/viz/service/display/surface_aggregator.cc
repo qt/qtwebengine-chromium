@@ -13,10 +13,10 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/numerics/ranges.h"
 #include "base/stl_util.h"
 #include "base/trace_event/trace_event.h"
 #include "cc/base/math_util.h"
-#include "cc/resources/display_resource_provider.h"
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/quads/draw_quad.h"
 #include "components/viz/common/quads/render_pass_draw_quad.h"
@@ -24,6 +24,7 @@
 #include "components/viz/common/quads/solid_color_draw_quad.h"
 #include "components/viz/common/quads/surface_draw_quad.h"
 #include "components/viz/common/quads/texture_draw_quad.h"
+#include "components/viz/service/display/display_resource_provider.h"
 #include "components/viz/service/surfaces/surface.h"
 #include "components/viz/service/surfaces/surface_client.h"
 #include "components/viz/service/surfaces/surface_manager.h"
@@ -33,6 +34,10 @@ namespace {
 
 // Maximum bucket size for the UMA stats.
 constexpr int kUmaStatMaxSurfaces = 30;
+
+// Used for determine when to treat opacity close to 1.f as opaque. The value is
+// chosen to be smaller than 1/255.
+constexpr float kOpacityEpsilon = 0.001f;
 
 const char kUmaValidSurface[] =
     "Compositing.SurfaceAggregator.SurfaceDrawQuad.ValidSurface";
@@ -77,7 +82,7 @@ bool CalculateQuadSpaceDamageRect(
 }  // namespace
 
 SurfaceAggregator::SurfaceAggregator(SurfaceManager* manager,
-                                     cc::DisplayResourceProvider* provider,
+                                     DisplayResourceProvider* provider,
                                      bool aggregate_only_damaged)
     : manager_(manager),
       provider_(provider),
@@ -323,14 +328,15 @@ void SurfaceAggregator::EmitSurfaceContent(
   referenced_surfaces_.insert(surface_id);
   // TODO(vmpstr): provider check is a hack for unittests that don't set up a
   // resource provider.
-  cc::ResourceProvider::ResourceIdMap empty_map;
+  std::unordered_map<ResourceId, ResourceId> empty_map;
   const auto& child_to_parent_map =
       provider_ ? provider_->GetChildToParentMap(ChildIdForSurface(surface))
                 : empty_map;
   gfx::Transform combined_transform = scaled_quad_to_target_transform;
   combined_transform.ConcatTransform(target_transform);
-  bool merge_pass = source_sqs->opacity == 1.f && copy_requests.empty() &&
-                    combined_transform.Preserves2dAxisAlignment();
+  bool merge_pass =
+      base::IsApproximatelyEqual(source_sqs->opacity, 1.f, kOpacityEpsilon) &&
+      copy_requests.empty() && combined_transform.Preserves2dAxisAlignment();
 
   const RenderPassList& referenced_passes = render_pass_list;
   // TODO(fsamuel): Move this to a separate helper function.
@@ -763,7 +769,7 @@ void SurfaceAggregator::CopyPasses(const CompositorFrame& frame,
 
   // TODO(vmpstr): provider check is a hack for unittests that don't set up a
   // resource provider.
-  cc::ResourceProvider::ResourceIdMap empty_map;
+  std::unordered_map<ResourceId, ResourceId> empty_map;
   const auto& child_to_parent_map =
       provider_ ? provider_->GetChildToParentMap(ChildIdForSurface(surface))
                 : empty_map;
@@ -841,11 +847,6 @@ gfx::Rect SurfaceAggregator::PrewalkTree(Surface* surface,
                                          int parent_pass_id,
                                          bool will_draw,
                                          PrewalkResult* result) {
-  // This is for debugging a possible use after free.
-  // TODO(jbauman): Remove this once we have enough information.
-  // http://crbug.com/560181
-  base::WeakPtr<SurfaceAggregator> debug_weak_this = weak_factory_.GetWeakPtr();
-
   if (referenced_surfaces_.count(surface->surface_id()))
     return gfx::Rect();
 
@@ -864,18 +865,16 @@ gfx::Rect SurfaceAggregator::PrewalkTree(Surface* surface,
     surface->RefResources(frame.resource_list);
     provider_->ReceiveFromChild(child_id, frame.resource_list);
   }
-  CHECK(debug_weak_this.get());
 
   std::vector<ResourceId> referenced_resources;
   size_t reserve_size = frame.resource_list.size();
   referenced_resources.reserve(reserve_size);
 
   bool invalid_frame = false;
-  cc::ResourceProvider::ResourceIdMap empty_map;
+  std::unordered_map<ResourceId, ResourceId> empty_map;
   const auto& child_to_parent_map =
       provider_ ? provider_->GetChildToParentMap(child_id) : empty_map;
 
-  CHECK(debug_weak_this.get());
   RenderPassId remapped_pass_id =
       RemapPassId(frame.render_pass_list.back()->id, surface->surface_id());
   if (in_moved_pixel_surface)
@@ -976,14 +975,12 @@ gfx::Rect SurfaceAggregator::PrewalkTree(Surface* surface,
 
   if (invalid_frame)
     return gfx::Rect();
-  CHECK(debug_weak_this.get());
   valid_surfaces_.insert(surface->surface_id());
 
   ResourceIdSet resource_set(std::move(referenced_resources),
                              base::KEEP_FIRST_OF_DUPES);
   if (provider_)
     provider_->DeclareUsedResourcesFromChild(child_id, resource_set);
-  CHECK(debug_weak_this.get());
 
   gfx::Rect damage_rect;
   gfx::Rect full_damage;
@@ -1050,8 +1047,6 @@ gfx::Rect SurfaceAggregator::PrewalkTree(Surface* surface,
         surface_info.target_to_surface_transform, surface_damage));
   }
 
-  CHECK(debug_weak_this.get());
-
   if (!damage_rect.IsEmpty()) {
     // The following call can cause one or more copy requests to be added to the
     // Surface. Therefore, no code before this point should have assumed
@@ -1066,8 +1061,6 @@ gfx::Rect SurfaceAggregator::PrewalkTree(Surface* surface,
   if (will_draw)
     surface->OnWillBeDrawn();
 
-  CHECK(debug_weak_this.get());
-
   for (const auto& surface_id : frame.metadata.referenced_surfaces) {
     if (!contained_surfaces_.count(surface_id)) {
       result->undrawn_surfaces.insert(surface_id);
@@ -1077,7 +1070,6 @@ gfx::Rect SurfaceAggregator::PrewalkTree(Surface* surface,
     }
   }
 
-  CHECK(debug_weak_this.get());
   for (const auto& render_pass : frame.render_pass_list) {
     if (!render_pass->copy_requests.empty()) {
       RenderPassId remapped_pass_id =
@@ -1089,8 +1081,6 @@ gfx::Rect SurfaceAggregator::PrewalkTree(Surface* surface,
   }
 
   auto it = referenced_surfaces_.find(surface->surface_id());
-  // TODO(jbauman): Remove when https://crbug.com/745684 fixed.
-  CHECK(referenced_surfaces_.end() != it);
   referenced_surfaces_.erase(it);
   if (!damage_rect.IsEmpty() && frame.metadata.may_contain_video)
     result->may_contain_video = true;

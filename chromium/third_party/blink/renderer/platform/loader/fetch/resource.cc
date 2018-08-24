@@ -49,7 +49,7 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_finish_observer.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader.h"
 #include "third_party/blink/renderer/platform/network/http_parsers.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/shared_buffer.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
@@ -99,14 +99,13 @@ const char* const kHeaderPrefixesToIgnoreAfterRevalidation[] = {
 
 static inline bool ShouldUpdateHeaderAfterRevalidation(
     const AtomicString& header) {
-  for (size_t i = 0; i < WTF_ARRAY_LENGTH(kHeadersToIgnoreAfterRevalidation);
-       i++) {
+  for (size_t i = 0; i < arraysize(kHeadersToIgnoreAfterRevalidation); i++) {
     if (DeprecatedEqualIgnoringCase(header,
                                     kHeadersToIgnoreAfterRevalidation[i]))
       return false;
   }
-  for (size_t i = 0;
-       i < WTF_ARRAY_LENGTH(kHeaderPrefixesToIgnoreAfterRevalidation); i++) {
+  for (size_t i = 0; i < arraysize(kHeaderPrefixesToIgnoreAfterRevalidation);
+       i++) {
     if (header.StartsWithIgnoringASCIICase(
             kHeaderPrefixesToIgnoreAfterRevalidation[i]))
       return false;
@@ -187,9 +186,7 @@ Resource::Resource(const ResourceRequest& request,
                    const ResourceLoaderOptions& options)
     : type_(type),
       status_(ResourceStatus::kNotStarted),
-      load_finish_time_(0),
       identifier_(0),
-      preload_discovery_time_(0.0),
       encoded_size_(0),
       encoded_size_memory_usage_(0),
       decoded_size_(0),
@@ -357,7 +354,7 @@ void Resource::FinishAsError(const ResourceError& error,
   NotifyFinished();
 }
 
-void Resource::Finish(double load_finish_time,
+void Resource::Finish(TimeTicks load_finish_time,
                       base::SingleThreadTaskRunner* task_runner) {
   DCHECK(!is_revalidating_);
   load_finish_time_ = load_finish_time;
@@ -375,7 +372,7 @@ AtomicString Resource::HttpContentType() const {
 
 bool Resource::PassesAccessControlCheck(
     const SecurityOrigin& security_origin) const {
-  WTF::Optional<network::mojom::CORSError> cors_error = CORS::CheckAccess(
+  base::Optional<network::mojom::CORSError> cors_error = CORS::CheckAccess(
       GetResponse().Url(), GetResponse().HttpStatusCode(),
       GetResponse().HttpHeaderFields(),
       LastResourceRequest().GetFetchCredentialsMode(), security_origin);
@@ -520,15 +517,6 @@ std::unique_ptr<CachedMetadataSender> Resource::CreateCachedMetadataSender()
 void Resource::ResponseReceived(const ResourceResponse& response,
                                 std::unique_ptr<WebDataConsumerHandle>) {
   response_timestamp_ = CurrentTime();
-  if (preload_discovery_time_) {
-    int time_since_discovery = static_cast<int>(
-        1000 * (CurrentTimeTicksInSeconds() - preload_discovery_time_));
-    DEFINE_STATIC_LOCAL(CustomCountHistogram,
-                        preload_discovery_to_first_byte_histogram,
-                        ("PreloadScanner.TTFB", 0, 10000, 50));
-    preload_discovery_to_first_byte_histogram.Count(time_since_discovery);
-  }
-
   if (is_revalidating_) {
     if (response.HttpStatusCode() == 304) {
       RevalidationSucceeded(response);
@@ -705,7 +693,7 @@ void Resource::DidRemoveClientOrObserver() {
 }
 
 void Resource::AllClientsAndObserversRemoved() {
-  if (loader_ && !detachable_)
+  if (loader_)
     loader_->ScheduleCancel();
 }
 
@@ -1024,14 +1012,6 @@ bool Resource::MatchPreload(const FetchParameters& params,
                             base::SingleThreadTaskRunner*) {
   DCHECK(is_unused_preload_);
   is_unused_preload_ = false;
-
-  if (preload_discovery_time_) {
-    int time_since_discovery = static_cast<int>(
-        1000 * (CurrentTimeTicksInSeconds() - preload_discovery_time_));
-    DEFINE_STATIC_LOCAL(CustomCountHistogram, preload_discovery_histogram,
-                        ("PreloadScanner.ReferenceTime", 0, 10000, 50));
-    preload_discovery_histogram.Count(time_since_discovery);
-  }
   return true;
 }
 

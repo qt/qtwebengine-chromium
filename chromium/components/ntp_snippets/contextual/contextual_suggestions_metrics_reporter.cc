@@ -4,22 +4,13 @@
 
 #include "components/ntp_snippets/contextual/contextual_suggestions_metrics_reporter.h"
 
+#include <string>
+
 #include "base/metrics/histogram_macros.h"
 #include "components/ntp_snippets/contextual/contextual_suggestions_ukm_entry.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 
 namespace contextual_suggestions {
-
-ContextualSuggestionsMetricsReporterProvider::
-    ContextualSuggestionsMetricsReporterProvider() = default;
-
-ContextualSuggestionsMetricsReporterProvider::
-    ~ContextualSuggestionsMetricsReporterProvider() = default;
-
-std::unique_ptr<ContextualSuggestionsMetricsReporter>
-ContextualSuggestionsMetricsReporterProvider::CreateMetricsReporter() {
-  return std::make_unique<ContextualSuggestionsMetricsReporter>();
-}
 
 ContextualSuggestionsMetricsReporter::ContextualSuggestionsMetricsReporter()
     : sheet_peeked_(false),
@@ -34,6 +25,7 @@ ContextualSuggestionsMetricsReporter::~ContextualSuggestionsMetricsReporter() {
 }
 
 void ContextualSuggestionsMetricsReporter::SetupForPage(
+    const std::string& url,
     ukm::SourceId source_id) {
   DCHECK(!ukm_entry_) << "Flush should be called before SetupForPage!";
   DCHECK(source_id != ukm::kInvalidSourceId);
@@ -77,7 +69,8 @@ void ContextualSuggestionsMetricsReporter::RecordUmaMetrics(
         return;
       sheet_opened_ = true;
       break;
-    case UI_CLOSED:
+    case UI_DISMISSED_WITHOUT_OPEN:
+    case UI_DISMISSED_AFTER_OPEN:
       if (sheet_closed_)
         return;
       sheet_closed_ = true;
@@ -92,9 +85,12 @@ void ContextualSuggestionsMetricsReporter::RecordUmaMetrics(
         return;
       any_suggestion_taken_ = true;
       break;
+    case UI_CLOSED_OBSOLETE:
+      NOTREACHED() << "Obsolete event, do not use!";
+      return;
     default:
       NOTREACHED() << "Unexpected event, not correctly handled!";
-      break;
+      return;
   }
   UMA_HISTOGRAM_ENUMERATION("ContextualSuggestions.Events", event);
 }

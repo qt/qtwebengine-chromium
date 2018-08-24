@@ -5,12 +5,14 @@
 #include "content/browser/frame_host/cross_process_frame_connector.h"
 
 #include "base/bind.h"
+#include "base/metrics/histogram_macros.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "components/viz/service/surfaces/surface.h"
 #include "components/viz/service/surfaces/surface_hittest.h"
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
+#include "content/browser/frame_host/render_frame_host_delegate.h"
 #include "content/browser/frame_host/render_frame_host_manager.h"
 #include "content/browser/frame_host/render_frame_proxy_host.h"
 #include "content/browser/renderer_host/cursor_manager.h"
@@ -44,6 +46,13 @@ CrossProcessFrameConnector::CrossProcessFrameConnector(
 }
 
 CrossProcessFrameConnector::~CrossProcessFrameConnector() {
+  if (!IsVisible()) {
+    // MaybeLogCrash will check 1) if there was a crash or not and 2) if the
+    // crash might have been already logged earlier as kCrashedWhileVisible or
+    // kShownAfterCrashing.
+    MaybeLogCrash(CrashVisibility::kNeverVisibleAfterCrash);
+  }
+
   // Notify the view of this object being destroyed, if the view still exists.
   SetView(nullptr);
 }
@@ -52,11 +61,14 @@ bool CrossProcessFrameConnector::OnMessageReceived(const IPC::Message& msg) {
   bool handled = true;
 
   IPC_BEGIN_MESSAGE_MAP(CrossProcessFrameConnector, msg)
-    IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateResizeParams, OnUpdateResizeParams)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_SynchronizeVisualProperties,
+                        OnSynchronizeVisualProperties)
     IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateViewportIntersection,
                         OnUpdateViewportIntersection)
     IPC_MESSAGE_HANDLER(FrameHostMsg_VisibilityChanged, OnVisibilityChanged)
     IPC_MESSAGE_HANDLER(FrameHostMsg_SetIsInert, OnSetIsInert)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_SetInheritedEffectiveTouchAction,
+                        OnSetInheritedEffectiveTouchAction)
     IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateRenderThrottlingStatus,
                         OnUpdateRenderThrottlingStatus)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -94,6 +106,14 @@ void CrossProcessFrameConnector::SetView(RenderWidgetHostViewChildFrame* view) {
   // visibility in case the frame owner is hidden in parent process. We should
   // try to move these updates to a single IPC (see https://crbug.com/750179).
   if (view_) {
+    if (has_crashed_ && !IsVisible()) {
+      // MaybeLogCrash will check 1) if there was a crash or not and 2) if the
+      // crash might have been already logged earlier as kCrashedWhileVisible or
+      // kShownAfterCrashing.
+      MaybeLogCrash(CrashVisibility::kNeverVisibleAfterCrash);
+    }
+    is_crash_already_logged_ = has_crashed_ = false;
+
     view_->SetFrameConnectorDelegate(this);
     if (is_hidden_)
       OnVisibilityChanged(false);
@@ -106,6 +126,21 @@ void CrossProcessFrameConnector::SetView(RenderWidgetHostViewChildFrame* view) {
 }
 
 void CrossProcessFrameConnector::RenderProcessGone() {
+  has_crashed_ = true;
+
+  FrameTreeNode* node = frame_proxy_in_parent_renderer_->frame_tree_node();
+  int process_id = node->current_frame_host()->GetProcess()->GetID();
+  for (node = node->parent(); node; node = node->parent()) {
+    if (node->current_frame_host()->GetProcess()->GetID() == process_id) {
+      // The crash will be already logged by the ancestor - ignore this crash in
+      // the current instance of the CrossProcessFrameConnector.
+      is_crash_already_logged_ = true;
+    }
+  }
+
+  if (IsVisible())
+    MaybeLogCrash(CrashVisibility::kCrashedWhileVisible);
+
   frame_proxy_in_parent_renderer_->Send(new FrameMsg_ChildFrameProcessGone(
       frame_proxy_in_parent_renderer_->GetRoutingID()));
 }
@@ -140,7 +175,7 @@ gfx::PointF CrossProcessFrameConnector::TransformPointToRootCoordSpace(
   return transformed_point;
 }
 
-bool CrossProcessFrameConnector::TransformPointToLocalCoordSpace(
+bool CrossProcessFrameConnector::TransformPointToLocalCoordSpaceLegacy(
     const gfx::PointF& point,
     const viz::SurfaceId& original_surface,
     const viz::SurfaceId& local_surface_id,
@@ -169,7 +204,8 @@ bool CrossProcessFrameConnector::TransformPointToCoordSpaceForView(
     const gfx::PointF& point,
     RenderWidgetHostViewBase* target_view,
     const viz::SurfaceId& local_surface_id,
-    gfx::PointF* transformed_point) {
+    gfx::PointF* transformed_point,
+    viz::EventSource source) {
   RenderWidgetHostViewBase* root_view = GetRootRenderWidgetHostView();
   if (!root_view)
     return false;
@@ -179,14 +215,14 @@ bool CrossProcessFrameConnector::TransformPointToCoordSpaceForView(
   // be siblings). To account for this, the point is first transformed into the
   // root coordinate space and then the root is asked to perform the conversion.
   if (!root_view->TransformPointToLocalCoordSpace(point, local_surface_id,
-                                                  transformed_point))
+                                                  transformed_point, source))
     return false;
 
   if (target_view == root_view)
     return true;
 
   return root_view->TransformPointToCoordSpaceForView(
-      *transformed_point, target_view, transformed_point);
+      *transformed_point, target_view, transformed_point, source);
 }
 
 void CrossProcessFrameConnector::ForwardProcessAckedTouchEvent(
@@ -270,13 +306,15 @@ void CrossProcessFrameConnector::UnlockMouse() {
     root_view->UnlockMouse();
 }
 
-void CrossProcessFrameConnector::OnUpdateResizeParams(
+void CrossProcessFrameConnector::OnSynchronizeVisualProperties(
     const viz::SurfaceId& surface_id,
-    const FrameResizeParams& resize_params) {
+    const FrameVisualProperties& visual_properties) {
   // If the |screen_space_rect| or |screen_info| of the frame has changed, then
   // the viz::LocalSurfaceId must also change.
-  if ((last_received_local_frame_size_ != resize_params.local_frame_size ||
-       screen_info_ != resize_params.screen_info) &&
+  if ((last_received_local_frame_size_ != visual_properties.local_frame_size ||
+       screen_info_ != visual_properties.screen_info ||
+       capture_sequence_number() !=
+           visual_properties.capture_sequence_number) &&
       local_surface_id_ == surface_id.local_surface_id()) {
     bad_message::ReceivedBadMessage(
         frame_proxy_in_parent_renderer_->GetProcess(),
@@ -284,8 +322,8 @@ void CrossProcessFrameConnector::OnUpdateResizeParams(
     return;
   }
 
-  last_received_local_frame_size_ = resize_params.local_frame_size;
-  UpdateResizeParams(surface_id, resize_params);
+  last_received_local_frame_size_ = visual_properties.local_frame_size;
+  SynchronizeVisualProperties(surface_id, visual_properties);
 }
 
 void CrossProcessFrameConnector::OnUpdateViewportIntersection(
@@ -296,10 +334,23 @@ void CrossProcessFrameConnector::OnUpdateViewportIntersection(
   if (view_)
     view_->UpdateViewportIntersection(viewport_intersection,
                                       compositor_visible_rect);
+
+  if (IsVisible()) {
+    // MaybeLogCrash will check 1) if there was a crash or not and 2) if the
+    // crash might have been already logged earlier as kCrashedWhileVisible or
+    // kShownAfterCrashing.
+    MaybeLogCrash(CrashVisibility::kShownAfterCrashing);
+  }
 }
 
 void CrossProcessFrameConnector::OnVisibilityChanged(bool visible) {
   is_hidden_ = !visible;
+  if (IsVisible()) {
+    // MaybeLogCrash will check 1) if there was a crash or not and 2) if the
+    // crash might have been already logged earlier as kCrashedWhileVisible or
+    // kShownAfterCrashing.
+    MaybeLogCrash(CrashVisibility::kShownAfterCrashing);
+  }
   if (!view_)
     return;
 
@@ -325,6 +376,13 @@ void CrossProcessFrameConnector::OnSetIsInert(bool inert) {
   is_inert_ = inert;
   if (view_)
     view_->SetIsInert();
+}
+
+void CrossProcessFrameConnector::OnSetInheritedEffectiveTouchAction(
+    cc::TouchAction touch_action) {
+  inherited_effective_touch_action_ = touch_action;
+  if (view_)
+    view_->UpdateInheritedEffectiveTouchAction();
 }
 
 RenderWidgetHostViewBase*
@@ -384,6 +442,11 @@ bool CrossProcessFrameConnector::IsInert() const {
   return is_inert_;
 }
 
+cc::TouchAction CrossProcessFrameConnector::InheritedEffectiveTouchAction()
+    const {
+  return inherited_effective_touch_action_;
+}
+
 bool CrossProcessFrameConnector::IsHidden() const {
   return is_hidden_;
 }
@@ -404,11 +467,10 @@ void CrossProcessFrameConnector::EmbedRendererWindowTreeClientInParent(
 }
 #endif
 
-void CrossProcessFrameConnector::ResizeDueToAutoResize(
-    const gfx::Size& new_size,
-    uint64_t sequence_number) {
-  frame_proxy_in_parent_renderer_->Send(new FrameMsg_ResizeDueToAutoResize(
-      frame_proxy_in_parent_renderer_->GetRoutingID(), sequence_number));
+void CrossProcessFrameConnector::DidUpdateVisualProperties(
+    const cc::RenderFrameMetadata& metadata) {
+  frame_proxy_in_parent_renderer_->Send(new FrameMsg_DidUpdateVisualProperties(
+      frame_proxy_in_parent_renderer_->GetRoutingID(), metadata));
 }
 
 void CrossProcessFrameConnector::SetVisibilityForChildViews(
@@ -469,6 +531,36 @@ bool CrossProcessFrameConnector::IsThrottled() const {
 
 bool CrossProcessFrameConnector::IsSubtreeThrottled() const {
   return subtree_throttled_;
+}
+
+void CrossProcessFrameConnector::MaybeLogCrash(CrashVisibility visibility) {
+  if (!has_crashed_)
+    return;
+
+  // Only log once per renderer crash.
+  if (is_crash_already_logged_)
+    return;
+  is_crash_already_logged_ = true;
+
+  // Actually log the UMA.
+  UMA_HISTOGRAM_ENUMERATION("Stability.ChildFrameCrash.Visibility", visibility);
+}
+
+bool CrossProcessFrameConnector::IsVisible() {
+  if (is_hidden_)
+    return false;
+  if (viewport_intersection_rect().IsEmpty())
+    return false;
+
+  Visibility embedder_visibility =
+      frame_proxy_in_parent_renderer_->frame_tree_node()
+          ->current_frame_host()
+          ->delegate()
+          ->GetVisibility();
+  if (embedder_visibility != Visibility::VISIBLE)
+    return false;
+
+  return true;
 }
 
 }  // namespace content

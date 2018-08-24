@@ -153,7 +153,7 @@ SQLTransaction::StateFunction SQLTransaction::StateFunctionFor(
       &SQLTransaction::DeliverSuccessCallback            // 12.
   };
 
-  DCHECK(WTF_ARRAY_LENGTH(kStateFunctions) ==
+  DCHECK(arraysize(kStateFunctions) ==
          static_cast<int>(SQLTransactionState::kNumberOfStates));
   DCHECK(state < SQLTransactionState::kNumberOfStates);
 
@@ -342,12 +342,13 @@ void SQLTransaction::executeSql(ScriptState* script_state,
              exception_state);
 }
 
-void SQLTransaction::executeSql(ScriptState* script_state,
-                                const String& sql_statement,
-                                const Optional<Vector<ScriptValue>>& arguments,
-                                V8SQLStatementCallback* callback,
-                                V8SQLStatementErrorCallback* callback_error,
-                                ExceptionState& exception_state) {
+void SQLTransaction::executeSql(
+    ScriptState* script_state,
+    const String& sql_statement,
+    const base::Optional<Vector<ScriptValue>>& arguments,
+    V8SQLStatementCallback* callback,
+    V8SQLStatementErrorCallback* callback_error,
+    ExceptionState& exception_state) {
   Vector<SQLValue> sql_values;
   if (arguments) {
     sql_values.ReserveInitialCapacity(arguments.value().size());

@@ -79,6 +79,7 @@ cr.define('cr.login', function() {
                      // not called before dispatching |authCopleted|.
                      // Default is |true|.
     'flow',          // One of 'default', 'enterprise', or 'theftprotection'.
+    'enterpriseDisplayDomain',     // Current domain name to be displayed.
     'enterpriseEnrollmentDomain',  // Domain in which hosting device is (or
                                    // should be) enrolled.
     'emailDomain',                 // Value used to prefill domain for email.
@@ -95,6 +96,7 @@ cr.define('cr.login', function() {
     'lsbReleaseBoard',           // Chrome OS Release board name
     'isFirstUser',               // True if this is non-enterprise device,
                                  // and there are no users yet.
+    'obfuscatedOwnerId',         // Obfuscated device owner ID, if neeed.
 
     // The email fields allow for the following possibilities:
     //
@@ -153,6 +155,7 @@ cr.define('cr.login', function() {
     this.samlApiUsedCallback = null;
     this.missingGaiaInfoCallback = null;
     this.needPassword = true;
+    this.services_ = null;
 
     this.bindToWebview_(webview);
 
@@ -185,6 +188,7 @@ cr.define('cr.login', function() {
     this.authFlow = AuthFlow.DEFAULT;
     this.samlHandler_.reset();
     this.videoEnabled = false;
+    this.services_ = null;
   };
 
   /**
@@ -357,9 +361,8 @@ cr.define('cr.login', function() {
         url = appendParam(url, 'chrometype', data.chromeType);
       if (data.clientId)
         url = appendParam(url, 'client_id', data.clientId);
-      if (data.enterpriseEnrollmentDomain)
-        url =
-            appendParam(url, 'manageddomain', data.enterpriseEnrollmentDomain);
+      if (data.enterpriseDisplayDomain)
+        url = appendParam(url, 'manageddomain', data.enterpriseDisplayDomain);
       if (data.clientVersion)
         url = appendParam(url, 'client_version', data.clientVersion);
       if (data.platformVersion)
@@ -383,6 +386,8 @@ cr.define('cr.login', function() {
           url = appendParam(url, 'chromeos_board', data.lsbReleaseBoard);
         if (data.isFirstUser)
           url = appendParam(url, 'is_first_user', true);
+        if (data.obfuscatedOwnerId)
+          url = appendParam(url, 'obfuscated_owner_id', data.obfuscatedOwnerId);
       }
     } else {
       url = appendParam(url, 'continue', this.continueUrl_);
@@ -655,6 +660,10 @@ cr.define('cr.login', function() {
       this.dispatchEvent(new CustomEvent(
           'identifierEntered',
           {detail: {accountIdentifier: msg.accountIdentifier}}));
+    } else if (msg.method == 'userInfo') {
+      this.services_ = msg.services;
+      if (this.email_ && this.gaiaId_ && this.sessionIndex_)
+        this.maybeCompleteAuth_();
     } else {
       console.warn('Unrecognized message from GAIA: ' + msg.method);
     }
@@ -697,6 +706,15 @@ cr.define('cr.login', function() {
       this.webview_.src = this.initialFrameUrl_;
       return;
     }
+    // TODO(https://crbug.com/837107): remove this once API is fully stabilized.
+    // @example.com is used in tests.
+    if (!this.services_ && !this.email_.endsWith('@gmail.com') &&
+        !this.email_.endsWith('@example.com')) {
+      console.warn('Forcing empty services.');
+      this.services_ = [];
+    }
+    if (!this.services_)
+      return;
 
     if (this.samlHandler_.samlApiUsed) {
       if (this.samlApiUsedCallback) {
@@ -756,6 +774,21 @@ cr.define('cr.login', function() {
     assert(
         this.skipForNow_ ||
         (this.email_ && this.gaiaId_ && this.sessionIndex_));
+    // Chrome will crash on incorrect data type, so log some error message here.
+    if (this.services_) {
+      if (!Array.isArray(this.services_)) {
+        console.error('FATAL: Bad services type:' + typeof this.services_);
+      } else {
+        for (var i = 0; i < this.services_.length; ++i) {
+          if (typeof this.services_[i] == 'string')
+            continue;
+
+          console.error(
+              'FATAL: Bad services[' + i +
+              '] type:' + typeof this.services_[i]);
+        }
+      }
+    }
     this.dispatchEvent(new CustomEvent(
         'authCompleted',
         // TODO(rsorokin): get rid of the stub values.
@@ -771,6 +804,7 @@ cr.define('cr.login', function() {
             sessionIndex: this.sessionIndex_ || '',
             trusted: this.trusted_,
             gapsCookie: this.newGapsCookie_ || this.gapsCookie_ || '',
+            services: this.services_ || [],
           }
         }));
     this.resetStates();
@@ -804,6 +838,7 @@ cr.define('cr.login', function() {
     this.authDomain = this.samlHandler_.authDomain;
     this.authFlow = AuthFlow.SAML;
 
+    this.webview_.focus();
     this.fireReadyEvent_();
   };
 

@@ -1250,7 +1250,7 @@ class WaitAllowedTestThread : public SimpleThread {
 
  private:
   void Run() override {
-    TaskTracker tracker("Test");
+    auto task_tracker = std::make_unique<TaskTracker>("Test");
 
     // Waiting is allowed by default. Expect TaskTracker to disallow it before
     // running a task without the WithBaseSyncPrimitives() trait.
@@ -1260,15 +1260,15 @@ class WaitAllowedTestThread : public SimpleThread {
           EXPECT_DCHECK_DEATH({ internal::AssertBaseSyncPrimitivesAllowed(); });
         }),
         TaskTraits(), TimeDelta());
-    EXPECT_TRUE(tracker.WillPostTask(task_without_sync_primitives));
+    EXPECT_TRUE(task_tracker->WillPostTask(task_without_sync_primitives));
     testing::StrictMock<MockCanScheduleSequenceObserver>
         never_notified_observer;
-    auto sequence_without_sync_primitives = tracker.WillScheduleSequence(
+    auto sequence_without_sync_primitives = task_tracker->WillScheduleSequence(
         test::CreateSequenceWithTask(std::move(task_without_sync_primitives)),
         &never_notified_observer);
     ASSERT_TRUE(sequence_without_sync_primitives);
-    tracker.RunAndPopNextTask(std::move(sequence_without_sync_primitives),
-                              &never_notified_observer);
+    task_tracker->RunAndPopNextTask(std::move(sequence_without_sync_primitives),
+                                    &never_notified_observer);
 
     // Disallow waiting. Expect TaskTracker to allow it before running a task
     // with the WithBaseSyncPrimitives() trait.
@@ -1279,13 +1279,17 @@ class WaitAllowedTestThread : public SimpleThread {
           internal::AssertBaseSyncPrimitivesAllowed();
         }),
         TaskTraits(WithBaseSyncPrimitives()), TimeDelta());
-    EXPECT_TRUE(tracker.WillPostTask(task_with_sync_primitives));
-    auto sequence_with_sync_primitives = tracker.WillScheduleSequence(
+    EXPECT_TRUE(task_tracker->WillPostTask(task_with_sync_primitives));
+    auto sequence_with_sync_primitives = task_tracker->WillScheduleSequence(
         test::CreateSequenceWithTask(std::move(task_with_sync_primitives)),
         &never_notified_observer);
     ASSERT_TRUE(sequence_with_sync_primitives);
-    tracker.RunAndPopNextTask(std::move(sequence_with_sync_primitives),
-                              &never_notified_observer);
+    task_tracker->RunAndPopNextTask(std::move(sequence_with_sync_primitives),
+                                    &never_notified_observer);
+
+    ScopedAllowBaseSyncPrimitivesForTesting
+        allow_wait_in_task_tracker_destructor;
+    task_tracker.reset();
   }
 
   DISALLOW_COPY_AND_ASSIGN(WaitAllowedTestThread);
@@ -1299,6 +1303,7 @@ TEST(TaskSchedulerTaskTrackerWaitAllowedTest, WaitAllowed) {
   // Run the test on the separate thread since it is not possible to reset the
   // "wait allowed" bit of a thread without being a friend of
   // ThreadRestrictions.
+  testing::GTEST_FLAG(death_test_style) = "threadsafe";
   WaitAllowedTestThread wait_allowed_test_thread;
   wait_allowed_test_thread.Start();
   wait_allowed_test_thread.Join();
@@ -1315,35 +1320,36 @@ TEST(TaskSchedulerTaskTrackerHistogramTest, TaskLatency) {
   struct {
     const TaskTraits traits;
     const char* const expected_histogram;
-  } tests[] = {{{TaskPriority::BACKGROUND},
-                "TaskScheduler.TaskLatencyMicroseconds.Test."
-                "BackgroundTaskPriority"},
-               {{MayBlock(), TaskPriority::BACKGROUND},
-                "TaskScheduler.TaskLatencyMicroseconds.Test."
-                "BackgroundTaskPriority_MayBlock"},
-               {{WithBaseSyncPrimitives(), TaskPriority::BACKGROUND},
-                "TaskScheduler.TaskLatencyMicroseconds.Test."
-                "BackgroundTaskPriority_MayBlock"},
-               {{TaskPriority::USER_VISIBLE},
-                "TaskScheduler.TaskLatencyMicroseconds.Test."
-                "UserVisibleTaskPriority"},
-               {{MayBlock(), TaskPriority::USER_VISIBLE},
-                "TaskScheduler.TaskLatencyMicroseconds.Test."
-                "UserVisibleTaskPriority_MayBlock"},
-               {{WithBaseSyncPrimitives(), TaskPriority::USER_VISIBLE},
-                "TaskScheduler.TaskLatencyMicroseconds.Test."
-                "UserVisibleTaskPriority_MayBlock"},
-               {{TaskPriority::USER_BLOCKING},
-                "TaskScheduler.TaskLatencyMicroseconds.Test."
-                "UserBlockingTaskPriority"},
-               {{MayBlock(), TaskPriority::USER_BLOCKING},
-                "TaskScheduler.TaskLatencyMicroseconds.Test."
-                "UserBlockingTaskPriority_MayBlock"},
-               {{WithBaseSyncPrimitives(), TaskPriority::USER_BLOCKING},
-                "TaskScheduler.TaskLatencyMicroseconds.Test."
-                "UserBlockingTaskPriority_MayBlock"}};
+  } static constexpr kTests[] = {
+      {{TaskPriority::BACKGROUND},
+       "TaskScheduler.TaskLatencyMicroseconds.Test."
+       "BackgroundTaskPriority"},
+      {{MayBlock(), TaskPriority::BACKGROUND},
+       "TaskScheduler.TaskLatencyMicroseconds.Test."
+       "BackgroundTaskPriority_MayBlock"},
+      {{WithBaseSyncPrimitives(), TaskPriority::BACKGROUND},
+       "TaskScheduler.TaskLatencyMicroseconds.Test."
+       "BackgroundTaskPriority_MayBlock"},
+      {{TaskPriority::USER_VISIBLE},
+       "TaskScheduler.TaskLatencyMicroseconds.Test."
+       "UserVisibleTaskPriority"},
+      {{MayBlock(), TaskPriority::USER_VISIBLE},
+       "TaskScheduler.TaskLatencyMicroseconds.Test."
+       "UserVisibleTaskPriority_MayBlock"},
+      {{WithBaseSyncPrimitives(), TaskPriority::USER_VISIBLE},
+       "TaskScheduler.TaskLatencyMicroseconds.Test."
+       "UserVisibleTaskPriority_MayBlock"},
+      {{TaskPriority::USER_BLOCKING},
+       "TaskScheduler.TaskLatencyMicroseconds.Test."
+       "UserBlockingTaskPriority"},
+      {{MayBlock(), TaskPriority::USER_BLOCKING},
+       "TaskScheduler.TaskLatencyMicroseconds.Test."
+       "UserBlockingTaskPriority_MayBlock"},
+      {{WithBaseSyncPrimitives(), TaskPriority::USER_BLOCKING},
+       "TaskScheduler.TaskLatencyMicroseconds.Test."
+       "UserBlockingTaskPriority_MayBlock"}};
 
-  for (const auto& test : tests) {
+  for (const auto& test : kTests) {
     Task task(FROM_HERE, DoNothing(), test.traits, TimeDelta());
     ASSERT_TRUE(tracker.WillPostTask(task));
 

@@ -16,11 +16,13 @@
 #include <string>
 
 #include "api/optional.h"
+#include "api/transport/bitrate_settings.h"
 #include "call/bitrate_constraints.h"
 
 namespace rtc {
 struct SentPacket;
 struct NetworkRoute;
+class TaskQueue;
 }  // namespace rtc
 namespace webrtc {
 
@@ -62,6 +64,7 @@ class TransportFeedbackObserver;
 class RtpTransportControllerSendInterface {
  public:
   virtual ~RtpTransportControllerSendInterface() {}
+  virtual rtc::TaskQueue* GetWorkerQueue() = 0;
   virtual PacketRouter* packet_router() = 0;
   virtual TransportFeedbackObserver* transport_feedback_observer() = 0;
 
@@ -106,7 +109,7 @@ class RtpTransportControllerSendInterface {
   virtual void SetSdpBitrateParameters(
       const BitrateConstraints& constraints) = 0;
   virtual void SetClientBitratePreferences(
-      const BitrateConstraintsMask& preferences) = 0;
+      const BitrateSettings& preferences) = 0;
 };
 
 }  // namespace webrtc

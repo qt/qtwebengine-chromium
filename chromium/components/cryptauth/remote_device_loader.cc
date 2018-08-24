@@ -11,7 +11,31 @@
 #include "base/bind.h"
 #include "base/memory/ptr_util.h"
 #include "chromeos/components/proximity_auth/logging/logging.h"
+#include "components/cryptauth/remote_device.h"
+#include "components/cryptauth/remote_device_ref.h"
 #include "components/cryptauth/secure_message_delegate.h"
+
+namespace {
+
+std::map<cryptauth::SoftwareFeature, cryptauth::SoftwareFeatureState>
+GetSoftwareFeatureToStateMap(const cryptauth::ExternalDeviceInfo& device) {
+  std::map<cryptauth::SoftwareFeature, cryptauth::SoftwareFeatureState>
+      software_feature_to_state_map;
+
+  for (int i = 0; i < device.supported_software_features_size(); ++i) {
+    software_feature_to_state_map[device.supported_software_features(i)] =
+        cryptauth::SoftwareFeatureState::kSupported;
+  }
+
+  for (int i = 0; i < device.enabled_software_features_size(); ++i) {
+    software_feature_to_state_map[device.enabled_software_features(i)] =
+        cryptauth::SoftwareFeatureState::kEnabled;
+  }
+
+  return software_feature_to_state_map;
+}
+
+}  // namespace
 
 namespace cryptauth {
 
@@ -101,13 +125,11 @@ void RemoteDeviceLoader::OnPSKDerived(
 
   DCHECK(iterator != remaining_devices_.end());
   remaining_devices_.erase(iterator);
-  PA_LOG(INFO) << "Derived PSK for " << device.friendly_device_name()
-               << ", " << remaining_devices_.size() << " keys remaining.";
 
-  cryptauth::RemoteDevice remote_device(
-      user_id_, device.friendly_device_name(), device.public_key(),
-      device.bluetooth_address(), psk, device.unlock_key(),
-      device.mobile_hotspot_supported(), device.last_update_time_millis());
+  RemoteDevice remote_device(
+      user_id_, device.friendly_device_name(), device.public_key(), psk,
+      device.unlock_key(), device.mobile_hotspot_supported(),
+      device.last_update_time_millis(), GetSoftwareFeatureToStateMap(device));
 
   if (should_load_beacon_seeds_) {
     std::vector<BeaconSeed> beacon_seeds;
@@ -116,10 +138,14 @@ void RemoteDeviceLoader::OnPSKDerived(
     }
     remote_device.LoadBeaconSeeds(beacon_seeds);
   }
+
   remote_devices_.push_back(remote_device);
 
-  if (remaining_devices_.empty())
+  if (remaining_devices_.empty()) {
+    PA_LOG(INFO) << "Derived keys for " << remote_devices_.size()
+                 << " devices.";
     callback_.Run(remote_devices_);
+  }
 }
 
 }  // namespace cryptauth

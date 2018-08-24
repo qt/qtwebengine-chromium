@@ -4,11 +4,21 @@
 
 module chromeos.assistant.mojom;
 
+import "ui/accessibility/mojom/ax_assistant_structure.mojom";
+import "ui/gfx/geometry/mojo/geometry.mojom";
 import "url/mojom/url.mojom";
+import "mojo/public/mojom/base/string16.mojom";
 import "mojo/public/mojom/base/time.mojom";
 
 // Interface to communicate with assistant backend.
 interface Assistant {
+  // Starts a new Assistant voice interaction.
+  StartVoiceInteraction();
+
+  // Stops the active Assistant interaction. If there is no active interaction,
+  // this method is a no-op.
+  StopActiveInteraction();
+
   // Send text query to assistant. Result will be returned through registered
   // |AssistantEventSubscriber|.
   SendTextQuery(string query);
@@ -22,11 +32,17 @@ interface Assistant {
 // untrusted third-party content. Subscriber implementations must be sure to
 // handle the response data appropriately.
 interface AssistantEventSubscriber {
+  // Assistant interaction has started.
+  OnInteractionStarted();
+
+  // Assistant interaction has ended with the specified |resolution|.
+  OnInteractionFinished(AssistantInteractionResolution resolution);
+
   // Assistant got Html response from server.
   OnHtmlResponse(string response);
 
   // Assistant got suggestions response from server.
-  OnSuggestionsResponse(array<string> response);
+  OnSuggestionsResponse(array<AssistantSuggestion> response);
 
   // Assistant got text response from server.
   OnTextResponse(string response);
@@ -55,13 +71,22 @@ interface AssistantEventSubscriber {
 interface AssistantPlatform {
   // Initiates assistant and provides interfaces for assistant to call into the
   // browser.
-  Init(Client assistant_client_interface, AudioInput audio_input_interface);
+  Init(Client assistant_client_interface, Context context_interface,
+       AudioInput audio_input_interface);
 };
 
 // Interface for assistant to call into client.
 interface Client {
   // Notifies assistant client that assistant running status has changed.
   OnAssistantStatusChanged(bool running);
+};
+
+// Interface for assistant to request view hierarchy for current focused window.
+interface Context {
+  // Request context of current window from browser.
+  RequestAssistantStructure() => (
+    ax.mojom.AssistantExtra? extra,
+    ax.mojom.AssistantTree? structure);
 };
 
 // Interface for assistant to call into browser for audio input related
@@ -82,4 +107,27 @@ interface AudioInputObserver {
                               mojo_base.mojom.TimeTicks timestamp);
   // Notifies that audio input stream is closed.
   OnAudioInputClosed();
+};
+
+// Enumeration of possible completions for an Assistant interaction.
+enum AssistantInteractionResolution {
+  // Assistant interaction completed normally.
+  kNormal,
+  // Assistant interaction completed due to barge in or cancellation.
+  kInterruption,
+  // Assistant interaction completed due to error.
+  kError,
+  // Assistant interaction completed due to multi-device hotword loss.
+  kMultiDeviceHotwordLoss,
+};
+
+// Models an Assistant suggestion.
+struct AssistantSuggestion {
+  // Display text. e.g. "Cancel".
+  string text;
+  // Optional URL for icon. e.g. "https://www.gstatic.com/icon.png".
+  url.mojom.Url icon_url;
+  // Optional URL for action. e.g.
+  // "https://www.google.com/search?query=action".
+  url.mojom.Url action_url;
 };

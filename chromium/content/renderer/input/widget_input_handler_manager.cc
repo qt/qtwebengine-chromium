@@ -11,7 +11,6 @@
 #include "content/common/input_messages.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
 #include "content/renderer/ime_event_guard.h"
-#include "content/renderer/input/input_handler_manager.h"
 #include "content/renderer/input/widget_input_handler_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_widget.h"
@@ -41,6 +40,26 @@ void CallCallback(mojom::WidgetInputHandler::DispatchEventCallback callback,
           ? base::Optional<ui::DidOverscrollParams>(*overscroll_params)
           : base::nullopt,
       touch_action);
+}
+
+InputEventAckState InputEventDispositionToAck(
+    ui::InputHandlerProxy::EventDisposition disposition) {
+  switch (disposition) {
+    case ui::InputHandlerProxy::DID_HANDLE:
+      return INPUT_EVENT_ACK_STATE_CONSUMED;
+    case ui::InputHandlerProxy::DID_NOT_HANDLE:
+      return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
+    case ui::InputHandlerProxy::DID_NOT_HANDLE_NON_BLOCKING_DUE_TO_FLING:
+      return INPUT_EVENT_ACK_STATE_SET_NON_BLOCKING_DUE_TO_FLING;
+    case ui::InputHandlerProxy::DROP_EVENT:
+      return INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS;
+    case ui::InputHandlerProxy::DID_HANDLE_NON_BLOCKING:
+      return INPUT_EVENT_ACK_STATE_SET_NON_BLOCKING;
+    case ui::InputHandlerProxy::DID_HANDLE_SHOULD_BUBBLE:
+      return INPUT_EVENT_ACK_STATE_CONSUMED_SHOULD_BUBBLE;
+  }
+  NOTREACHED();
+  return INPUT_EVENT_ACK_STATE_UNKNOWN;
 }
 
 }  // namespace
@@ -341,8 +360,7 @@ void WidgetInputHandlerManager::DispatchEvent(
   // platform timestamp in this process. Instead use the time that the event is
   // received as the event's timestamp.
   if (!base::TimeTicks::IsConsistentAcrossProcesses()) {
-    event->web_event->SetTimeStampSeconds(
-        ui::EventTimeStampToSeconds(base::TimeTicks::Now()));
+    event->web_event->SetTimeStamp(base::TimeTicks::Now());
   }
 
   if (compositor_task_runner_) {
@@ -437,25 +455,21 @@ void WidgetInputHandlerManager::DidHandleInputEventAndOverscroll(
     const ui::LatencyInfo& latency_info,
     std::unique_ptr<ui::DidOverscrollParams> overscroll_params) {
   InputEventAckState ack_state = InputEventDispositionToAck(event_disposition);
-  switch (ack_state) {
-    case INPUT_EVENT_ACK_STATE_CONSUMED:
-      main_thread_scheduler_->DidHandleInputEventOnCompositorThread(
-          *input_event, blink::scheduler::WebMainThreadScheduler::
-                            InputEventState::EVENT_CONSUMED_BY_COMPOSITOR);
-      break;
-    case INPUT_EVENT_ACK_STATE_NOT_CONSUMED:
-    case INPUT_EVENT_ACK_STATE_SET_NON_BLOCKING_DUE_TO_FLING:
-      main_thread_scheduler_->DidHandleInputEventOnCompositorThread(
-          *input_event, blink::scheduler::WebMainThreadScheduler::
-                            InputEventState::EVENT_FORWARDED_TO_MAIN_THREAD);
-      break;
-    default:
-      break;
+  if (ack_state == INPUT_EVENT_ACK_STATE_CONSUMED) {
+    main_thread_scheduler_->DidHandleInputEventOnCompositorThread(
+        *input_event, blink::scheduler::WebMainThreadScheduler::
+                          InputEventState::EVENT_CONSUMED_BY_COMPOSITOR);
+  } else if (MainThreadEventQueue::IsForwardedAndSchedulerKnown(ack_state)) {
+    main_thread_scheduler_->DidHandleInputEventOnCompositorThread(
+        *input_event, blink::scheduler::WebMainThreadScheduler::
+                          InputEventState::EVENT_FORWARDED_TO_MAIN_THREAD);
   }
+
   if (ack_state == INPUT_EVENT_ACK_STATE_SET_NON_BLOCKING ||
       ack_state == INPUT_EVENT_ACK_STATE_SET_NON_BLOCKING_DUE_TO_FLING ||
       ack_state == INPUT_EVENT_ACK_STATE_NOT_CONSUMED) {
     DCHECK(!overscroll_params);
+    DCHECK(!latency_info.coalesced());
     InputEventDispatchType dispatch_type = callback.is_null()
                                                ? DISPATCH_TYPE_NON_BLOCKING
                                                : DISPATCH_TYPE_BLOCKING;

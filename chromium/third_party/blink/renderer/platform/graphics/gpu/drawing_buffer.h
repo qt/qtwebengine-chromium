@@ -50,6 +50,10 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/color_space.h"
 
+namespace cc {
+class Layer;
+}
+
 namespace gfx {
 class GpuMemoryBuffer;
 }
@@ -64,13 +68,11 @@ namespace blink {
 class CanvasColorParams;
 class Extensions3DUtil;
 class StaticBitmapImage;
-class WebExternalTextureLayer;
 class WebGraphicsContext3DProvider;
 class WebGraphicsContext3DProviderWrapper;
-class WebLayer;
 
 // Manages a rendering target (framebuffer + attachment) for a canvas.  Can
-// publish its rendering results to a WebLayer for compositing.
+// publish its rendering results to a cc::Layer for compositing.
 class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
                                       public RefCounted<DrawingBuffer> {
   WTF_MAKE_NONCOPYABLE(DrawingBuffer);
@@ -191,7 +193,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   // default framebuffer.
   bool DefaultBufferRequiresAlphaChannelToBePreserved();
 
-  WebLayer* PlatformLayer();
+  cc::Layer* CcLayer();
 
   gpu::gles2::GLES2Interface* ContextGL();
   WebGraphicsContext3DProvider* ContextProvider();
@@ -238,6 +240,11 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
 
   // Restore all state that may have been dirtied by any call.
   void RestoreAllState();
+
+  // Run the previous release callback if it exists. If the release_callback is
+  // not null, assign it to the previous_image_release_callback_.
+  void SwapPreviousFrameCallback(
+      std::unique_ptr<viz::SingleReleaseCallback> release_callback);
 
   // This class helps implement correct semantics for BlitFramebuffer
   // when the DrawingBuffer is using a CHROMIUM image for its backing
@@ -401,7 +408,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   // the operation was successful.
   bool ResizeDefaultFramebuffer(const IntSize&);
 
-  void ClearPlatformLayer();
+  void ClearCcLayer();
 
   RegisteredBitmap CreateOrRecycleBitmap(
       cc::SharedBitmapIdRegistrar* bitmap_registrar);
@@ -558,7 +565,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   bool is_hidden_ = false;
   SkFilterQuality filter_quality_ = kLow_SkFilterQuality;
 
-  std::unique_ptr<WebExternalTextureLayer> layer_;
+  scoped_refptr<cc::TextureLayer> layer_;
 
   // Mailboxes that were released by the compositor can be used again by this
   // DrawingBuffer.
@@ -578,6 +585,10 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   // DisallowChromiumImage in the case of OffscreenCanvas.
   ChromiumImageUsage chromium_image_usage_;
   bool ShouldUseChromiumImage();
+
+  // A release callback that is run when the previouis image passed to
+  // OffscreenCanvas::Commit() is no longer needed.
+  std::unique_ptr<viz::SingleReleaseCallback> previous_image_release_callback_;
 };
 
 }  // namespace blink

@@ -193,7 +193,7 @@ bool FormDataImporter::ImportAddressProfiles(const FormStructure& form) {
   std::set<std::string> sections;
   for (const auto& field : form) {
     if (field->Type().group() != CREDIT_CARD)
-      sections.insert(field->section());
+      sections.insert(field->section);
   }
 
   // We save a maximum of 2 profiles per submitted form (e.g. for shipping and
@@ -217,7 +217,6 @@ bool FormDataImporter::ImportAddressProfileForSection(
   // The candidate for profile import. There are many ways for the candidate to
   // be rejected (see everywhere this function returns false).
   AutofillProfile candidate_profile;
-  candidate_profile.set_origin(form.source_url().spec());
 
   // We only set complete phone, so aggregate phone parts in these vars and set
   // complete at the end.
@@ -230,7 +229,7 @@ bool FormDataImporter::ImportAddressProfileForSection(
   // Go through each |form| field and attempt to constitute a valid profile.
   for (const auto& field : form) {
     // Reject fields that are not within the specified |section|.
-    if (field->section() != section)
+    if (field->section != section)
       continue;
 
     base::string16 value;
@@ -300,7 +299,7 @@ bool FormDataImporter::ImportCreditCard(
     const FormStructure& form,
     bool should_return_local_card,
     std::unique_ptr<CreditCard>* imported_credit_card) {
-  DCHECK(!imported_credit_card->get());
+  DCHECK(!*imported_credit_card);
 
   // The candidate for credit card import. There are many ways for the candidate
   // to be rejected (see everywhere this function returns false, below).
@@ -390,7 +389,6 @@ CreditCard FormDataImporter::ExtractCreditCardFromForm(
   *has_duplicate_field_type = false;
 
   CreditCard candidate_credit_card;
-  candidate_credit_card.set_origin(form.source_url().spec());
 
   std::set<ServerFieldType> types_seen;
   for (const auto& field : form) {

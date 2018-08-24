@@ -5,6 +5,7 @@
 #include "net/base/escape.h"
 
 #include "base/logging.h"
+#include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversion_utils.h"
 #include "base/strings/utf_string_conversions.h"
@@ -82,8 +83,9 @@ std::string Escape(base::StringPiece text,
 // allowed in query strings according to http://www.ietf.org/rfc/rfc3261.txt are
 // not unescaped, to avoid turning a valid url according to spec into an
 // invalid one.
+// clang-format off
 const char kUrlUnescape[128] = {
-//   NULL, control chars...
+//   Null, control chars...
      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 //  ' ' !  "  #  $  %  &  '  (  )  *  +  ,  -  .  /
@@ -97,8 +99,9 @@ const char kUrlUnescape[128] = {
 //   `  a  b  c  d  e  f  g  h  i  j  k  l  m  n  o
      0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 //   p  q  r  s  t  u  v  w  x  y  z  {  |  }  ~  <NBSP>
-     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0
+     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0,
 };
+// clang-format on
 
 // Attempts to unescape the sequence at |index| within |escaped_text|.  If
 // successful, sets |value| to the unescaped value.  Returns whether
@@ -143,7 +146,7 @@ bool UnescapeUTF8CharacterAtIndex(base::StringPiece escaped_text,
     // reach max character length number of bytes, or hit an unescaped
     // character. No need to check length of escaped_text, as
     // UnescapeUnsignedByteAtIndex checks lengths.
-    while (num_bytes < arraysize(bytes) &&
+    while (num_bytes < base::size(bytes) &&
            UnescapeUnsignedByteAtIndex(escaped_text, index + num_bytes * 3,
                                        &bytes[num_bytes]) &&
            CBU8_IS_TRAIL(bytes[num_bytes])) {
@@ -179,30 +182,19 @@ bool ShouldUnescapeCodePoint(UnescapeRule::Type rules, uint32_t code_point) {
            ((code_point == '/' || code_point == '\\') &&
             (rules & UnescapeRule::PATH_SEPARATORS)) ||
            (code_point > ' ' && code_point != '/' && code_point != '\\' &&
-            (rules & UnescapeRule::URL_SPECIAL_CHARS_EXCEPT_PATH_SEPARATORS)) ||
-           // Additionally allow non-display characters if requested.
-           (code_point < ' ' &&
-            (rules & UnescapeRule::SPOOFING_AND_CONTROL_CHARS));
+            (rules & UnescapeRule::URL_SPECIAL_CHARS_EXCEPT_PATH_SEPARATORS));
   }
 
-  // Some schemes such as data: and file: need to parse the exact binary data
-  // when loading the URL. For that reason, SPOOFING_AND_CONTROL_CHARS allows
-  // unescaping UTF-8 byte sequences that are not safe to display. DO NOT use
-  // SPOOFING_AND_CONTROL_CHARS if the parsed URL is going to be displayed in
-  // the UI.
-  if (rules & UnescapeRule::SPOOFING_AND_CONTROL_CHARS)
-    return true;
-
-  // Compare the codepoint against a list of characters that can be used
+  // Compare the code point against a list of characters that can be used
   // to spoof other URLs.
   //
   // Can't use icu to make this cleaner, because Cronet cannot depend on
   // icu, and currently uses this file.
   // TODO(https://crbug.com/829873): Try to make this use icu, both to
-  // protect against regressions as the Unicode stndard is updated and to
+  // protect against regressions as the Unicode standard is updated and to
   // reduce the number of long lists of characters.
-  // TODO(https://crbug.com/824715): Add default ignoreable and formatting
-  // codepoints.
+  // TODO(https://crbug.com/824715): Add default ignorable and formatting
+  // code points.
   return !(
       // Per http://tools.ietf.org/html/rfc3987#section-4.1, certain BiDi
       // control characters are not allowed to appear unescaped in URLs.
@@ -231,29 +223,31 @@ bool ShouldUnescapeCodePoint(UnescapeRule::Type rules, uint32_t code_point) {
       code_point == 0x1F513 ||  // OPEN LOCK            (%F0%9F%94%93)
 
       // Spaces are also banned, as they can be used to scroll text out of view.
-      code_point == 0x0085 ||  // NEXT LINE                  (%C2%85)
-      code_point == 0x00A0 ||  // NO-BREAK SPACE             (%C2%A0)
-      code_point == 0x1680 ||  // OGHAM SPACE MARK           (%E1%9A%80)
-      code_point == 0x2000 ||  // EN QUAD                    (%E2%80%80)
-      code_point == 0x2001 ||  // EM QUAD                    (%E2%80%81)
-      code_point == 0x2002 ||  // EN SPACE                   (%E2%80%82)
-      code_point == 0x2003 ||  // EM SPACE                   (%E2%80%83)
-      code_point == 0x2004 ||  // THREE-PER-EM SPACE         (%E2%80%84)
-      code_point == 0x2005 ||  // FOUR-PER-EM SPACE          (%E2%80%85)
-      code_point == 0x2006 ||  // SIX-PER-EM SPACE           (%E2%80%86)
-      code_point == 0x2007 ||  // FIGURE SPACE               (%E2%80%87)
-      code_point == 0x2008 ||  // PUNCTUATION SPACE          (%E2%80%88)
-      code_point == 0x2009 ||  // THIN SPACE                 (%E2%80%89)
-      code_point == 0x200A ||  // HAIR SPACE                 (%E2%80%8A)
-      code_point == 0x2028 ||  // LINE SEPARATOR             (%E2%80%A8)
-      code_point == 0x2029 ||  // PARAGRAPH SEPARATOR        (%E2%80%A9)
-      code_point == 0x202F ||  // NARROW NO-BREAK SPACE      (%E2%80%AF)
-      code_point == 0x205F ||  // MEDIUM MATHEMATICAL SPACE  (%E2%81%9F)
-      code_point == 0x3000);   // IDEOGRAPHIC SPACE          (%E3%80%80)
+      (!(rules & UnescapeRule::NONASCII_SPACES) &&
+       (code_point == 0x0085 ||  // NEXT LINE                  (%C2%85)
+        code_point == 0x00A0 ||  // NO-BREAK SPACE             (%C2%A0)
+        code_point == 0x1680 ||  // OGHAM SPACE MARK           (%E1%9A%80)
+        code_point == 0x2000 ||  // EN QUAD                    (%E2%80%80)
+        code_point == 0x2001 ||  // EM QUAD                    (%E2%80%81)
+        code_point == 0x2002 ||  // EN SPACE                   (%E2%80%82)
+        code_point == 0x2003 ||  // EM SPACE                   (%E2%80%83)
+        code_point == 0x2004 ||  // THREE-PER-EM SPACE         (%E2%80%84)
+        code_point == 0x2005 ||  // FOUR-PER-EM SPACE          (%E2%80%85)
+        code_point == 0x2006 ||  // SIX-PER-EM SPACE           (%E2%80%86)
+        code_point == 0x2007 ||  // FIGURE SPACE               (%E2%80%87)
+        code_point == 0x2008 ||  // PUNCTUATION SPACE          (%E2%80%88)
+        code_point == 0x2009 ||  // THIN SPACE                 (%E2%80%89)
+        code_point == 0x200A ||  // HAIR SPACE                 (%E2%80%8A)
+        code_point == 0x2028 ||  // LINE SEPARATOR             (%E2%80%A8)
+        code_point == 0x2029 ||  // PARAGRAPH SEPARATOR        (%E2%80%A9)
+        code_point == 0x202F ||  // NARROW NO-BREAK SPACE      (%E2%80%AF)
+        code_point == 0x205F ||  // MEDIUM MATHEMATICAL SPACE  (%E2%81%9F)
+        code_point == 0x3000     // IDEOGRAPHIC SPACE          (%E3%80%80)
+        )));
 }
 
 // Unescapes |escaped_text| according to |rules|, returning the resulting
-// string.  Fills in an |adjustments| parameter, if non-NULL, so it reflects
+// string.  Fills in an |adjustments| parameter, if non-nullptr, so it reflects
 // the alterations done to the string that are not one-character-to-one-
 // character.  The resulting |adjustments| will always be sorted by increasing
 // offset.
@@ -284,9 +278,8 @@ std::string UnescapeURLWithAdjustmentsImpl(
       // character. In that case, just unescaped and write the non-sense
       // character.
       //
-      // TODO(https://crbug.com/829868): Do not unescape illegal UTF-8 sequences
-      // unless SPOOFING_AND_CONTROL_CHARS is given. Should also split that
-      // behaviour off into a separate function.
+      // TODO(https://crbug.com/829868): Do not unescape illegal UTF-8
+      // sequences.
       unsigned char non_utf8_byte;
       if (UnescapeUnsignedByteAtIndex(escaped_text, i, &non_utf8_byte)) {
         result.push_back(non_utf8_byte);
@@ -333,31 +326,27 @@ std::string UnescapeURLWithAdjustmentsImpl(
   return result;
 }
 
+// Convert a character |c| to a form that will not be mistaken as HTML.
 template <class str>
 void AppendEscapedCharForHTMLImpl(typename str::value_type c, str* output) {
-  static const struct {
+  static constexpr struct {
     char key;
-    const char* replacement;
+    base::StringPiece replacement;
   } kCharsToEscape[] = {
-    { '<', "&lt;" },
-    { '>', "&gt;" },
-    { '&', "&amp;" },
-    { '"', "&quot;" },
-    { '\'', "&#39;" },
+      {'<', "&lt;"},   {'>', "&gt;"},   {'&', "&amp;"},
+      {'"', "&quot;"}, {'\'', "&#39;"},
   };
-  size_t k;
-  for (k = 0; k < arraysize(kCharsToEscape); ++k) {
-    if (c == kCharsToEscape[k].key) {
-      const char* p = kCharsToEscape[k].replacement;
-      while (*p)
-        output->push_back(*p++);
-      break;
+  for (const auto& char_to_escape : kCharsToEscape) {
+    if (c == char_to_escape.key) {
+      output->append(std::begin(char_to_escape.replacement),
+                     std::end(char_to_escape.replacement));
+      return;
     }
   }
-  if (k == arraysize(kCharsToEscape))
-    output->push_back(c);
+  output->push_back(c);
 }
 
+// Convert |input| string to a form that will not be interpreted as HTML.
 template <class str>
 str EscapeForHTMLImpl(base::BasicStringPiece<str> input) {
   str result;
@@ -452,12 +441,12 @@ base::string16 EscapeForHTML(base::StringPiece16 input) {
 
 std::string UnescapeURLComponent(base::StringPiece escaped_text,
                                  UnescapeRule::Type rules) {
-  return UnescapeURLWithAdjustmentsImpl(escaped_text, rules, NULL);
+  return UnescapeURLWithAdjustmentsImpl(escaped_text, rules, nullptr);
 }
 
 base::string16 UnescapeAndDecodeUTF8URLComponent(base::StringPiece text,
                                                  UnescapeRule::Type rules) {
-  return UnescapeAndDecodeUTF8URLComponentWithAdjustments(text, rules, NULL);
+  return UnescapeAndDecodeUTF8URLComponentWithAdjustments(text, rules, nullptr);
 }
 
 base::string16 UnescapeAndDecodeUTF8URLComponentWithAdjustments(
@@ -482,29 +471,64 @@ base::string16 UnescapeAndDecodeUTF8URLComponentWithAdjustments(
   return base::UTF8ToUTF16WithAdjustments(text, adjustments);
 }
 
+std::string UnescapeBinaryURLComponent(base::StringPiece escaped_text,
+                                       UnescapeRule::Type rules) {
+  // Only NORMAL and REPLACE_PLUS_WITH_SPACE are supported.
+  DCHECK(rules != UnescapeRule::NONE);
+  DCHECK(!(rules &
+           ~(UnescapeRule::NORMAL | UnescapeRule::REPLACE_PLUS_WITH_SPACE)));
+
+  // The output of the unescaping is always smaller than the input, so we can
+  // reserve the input size to make sure we have enough buffer and don't have
+  // to allocate in the loop below.
+  std::string result;
+  result.reserve(escaped_text.length());
+
+  for (size_t i = 0, max = escaped_text.size(); i < max;) {
+    unsigned char byte;
+    // UnescapeUnsignedByteAtIndex does bounds checking, so this is always safe
+    // to call.
+    if (UnescapeUnsignedByteAtIndex(escaped_text, i, &byte)) {
+      result.push_back(byte);
+      i += 3;
+      continue;
+    }
+
+    if ((rules & UnescapeRule::REPLACE_PLUS_WITH_SPACE) &&
+        escaped_text[i] == '+') {
+      result.push_back(' ');
+      ++i;
+      continue;
+    }
+
+    result.push_back(escaped_text[i]);
+    ++i;
+  }
+
+  return result;
+}
+
 base::string16 UnescapeForHTML(base::StringPiece16 input) {
   static const struct {
     const char* ampersand_code;
     const char replacement;
   } kEscapeToChars[] = {
-    { "&lt;", '<' },
-    { "&gt;", '>' },
-    { "&amp;", '&' },
-    { "&quot;", '"' },
-    { "&#39;", '\''},
+      {"&lt;", '<'},   {"&gt;", '>'},   {"&amp;", '&'},
+      {"&quot;", '"'}, {"&#39;", '\''},
   };
+  constexpr size_t kEscapeToCharsCount = base::size(kEscapeToChars);
 
   if (input.find(base::ASCIIToUTF16("&")) == std::string::npos)
     return input.as_string();
 
-  base::string16 ampersand_chars[arraysize(kEscapeToChars)];
+  base::string16 ampersand_chars[kEscapeToCharsCount];
   base::string16 text = input.as_string();
   for (base::string16::iterator iter = text.begin();
        iter != text.end(); ++iter) {
     if (*iter == '&') {
       // Potential ampersand encode char.
       size_t index = iter - text.begin();
-      for (size_t i = 0; i < arraysize(kEscapeToChars); i++) {
+      for (size_t i = 0; i < base::size(kEscapeToChars); i++) {
         if (ampersand_chars[i].empty()) {
           ampersand_chars[i] =
               base::ASCIIToUTF16(kEscapeToChars[i].ampersand_code);

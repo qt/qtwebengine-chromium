@@ -72,11 +72,6 @@ bool SiteIsolationPolicy::IsTopDocumentIsolationEnabled() {
   if (UseDedicatedProcessesForAllSites())
     return false;
 
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableSiteIsolationTrials)) {
-    return false;
-  }
-
   // The feature needs to be checked last, because checking the feature
   // activates the field trial and assigns the client either to a control or an
   // experiment group - such assignment should be final.
@@ -105,7 +100,11 @@ bool SiteIsolationPolicy::AreIsolatedOriginsEnabled() {
 }
 
 // static
+bool SiteIsolationPolicy::IsErrorPageIsolationEnabled(bool in_main_frame) {
+  return GetContentClient()->browser()->ShouldIsolateErrorPage(in_main_frame);
+}
 
+// static
 bool SiteIsolationPolicy::ShouldPdfCompositorBeEnabledForOopifs() {
   // TODO(weili): We only create pdf compositor client and use pdf compositor
   // service when site-per-process or isolate-origins flag/feature is enabled,

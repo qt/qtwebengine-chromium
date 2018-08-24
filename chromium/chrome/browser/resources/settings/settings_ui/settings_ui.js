@@ -20,7 +20,11 @@ settings.defaultResourceLoaded = true;
 Polymer({
   is: 'settings-ui',
 
-  behaviors: [settings.RouteObserverBehavior, CrContainerShadowBehavior],
+  behaviors: [
+    settings.RouteObserverBehavior,
+    CrContainerShadowBehavior,
+    settings.FindShortcutBehavior,
+  ],
 
   properties: {
     /**
@@ -45,6 +49,9 @@ Polymer({
      * @private {!GuestModePageVisibility}
      */
     pageVisibility_: {type: Object, value: settings.pageVisibility},
+
+    /** @private */
+    showCrostini_: Boolean,
 
     /** @private */
     showAndroidApps_: Boolean,
@@ -130,6 +137,8 @@ Polymer({
     };
     // </if>
 
+    this.showCrostini_ = loadTimeData.valueExists('showCrostini') &&
+        loadTimeData.getBoolean('showCrostini');
     this.showAndroidApps_ = loadTimeData.valueExists('androidAppsVisible') &&
         loadTimeData.getBoolean('androidAppsVisible');
     this.showMultidevice_ = this.showAndroidApps_ &&
@@ -188,6 +197,16 @@ Polymer({
     }
 
     this.$.main.searchContents(urlSearchQuery);
+  },
+
+  // Override settings.FindShortcutBehavior methods.
+  canHandleFindShortcut: function() {
+    return !this.$.drawer.open &&
+        !document.querySelector('* /deep/ cr-dialog[open]');
+  },
+
+  handleFindShortcut: function() {
+    this.$$('cr-toolbar').getSearchField().showAndFocus();
   },
 
   /**

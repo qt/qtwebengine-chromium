@@ -26,7 +26,7 @@
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
-#include "public/cpp/fpdf_deleters.h"
+#include "public/cpp/fpdf_scopers.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 
@@ -168,7 +168,7 @@ const CPDF_Object* PageDictGetInheritableTag(const CPDF_Dictionary* pDict,
 CFX_FloatRect GetMediaBox(const CPDF_Dictionary* pPageDict) {
   const CPDF_Object* pMediaBox =
       PageDictGetInheritableTag(pPageDict, "MediaBox");
-  CPDF_Array* pArray = ToArray(pMediaBox->GetDirect());
+  const CPDF_Array* pArray = ToArray(pMediaBox->GetDirect());
   if (!pArray)
     return CFX_FloatRect();
   return pArray->GetRect();
@@ -466,7 +466,7 @@ bool CPDF_PageExporter::ExportPage(const std::vector<uint32_t>& pageNums,
   auto pObjNumberMap = pdfium::MakeUnique<ObjectNumberMap>();
   for (size_t i = 0; i < pageNums.size(); ++i) {
     CPDF_Dictionary* pDestPageDict = dest()->CreateNewPage(curpage);
-    const CPDF_Dictionary* pSrcPageDict = src()->GetPage(pageNums[i] - 1);
+    auto* pSrcPageDict = src()->GetPageDictionary(pageNums[i] - 1);
     if (!pSrcPageDict || !pDestPageDict)
       return false;
 
@@ -614,7 +614,7 @@ bool CPDF_NPageToOneExporter::ExportNPagesToOne(
     // Mapping of XObject name and XObject object number of one page.
     XObjectNameNumberMap xObjNameNumberMap;
     for (size_t innerPage = outerPage; innerPage < innerPageMax; ++innerPage) {
-      CPDF_Dictionary* pSrcPageDict = src()->GetPage(pageNums[innerPage] - 1);
+      auto* pSrcPageDict = src()->GetPageDictionary(pageNums[innerPage] - 1);
       if (!pSrcPageDict)
         return false;
 
@@ -695,7 +695,7 @@ uint32_t CPDF_NPageToOneExporter::MakeXObject(
   if (const CPDF_Array* pSrcContentArray = ToArray(pSrcContentObj)) {
     ByteString bsSrcContentStream;
     for (size_t i = 0; i < pSrcContentArray->GetCount(); ++i) {
-      CPDF_Stream* pStream = pSrcContentArray->GetStreamAt(i);
+      const CPDF_Stream* pStream = pSrcContentArray->GetStreamAt(i);
       auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
       pAcc->LoadAllDataFiltered();
       ByteString bsStream(pAcc->GetData(), pAcc->GetSize());
@@ -778,8 +778,7 @@ FPDF_ImportNPagesToOne(FPDF_DOCUMENT src_doc,
     return nullptr;
   }
 
-  std::unique_ptr<void, FPDFDocumentDeleter> output_doc(
-      FPDF_CreateNewDocument());
+  ScopedFPDFDocument output_doc(FPDF_CreateNewDocument());
   if (!output_doc)
     return nullptr;
 

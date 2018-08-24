@@ -14,7 +14,6 @@
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
-#include "base/message_loop/message_loop.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -52,6 +51,9 @@ class ProtoDatabaseImpl : public ProtoDatabase<T> {
       std::unique_ptr<KeyVector> keys_to_remove,
       typename ProtoDatabase<T>::UpdateCallback callback) override;
   void LoadEntries(typename ProtoDatabase<T>::LoadCallback callback) override;
+  void LoadEntriesWithFilter(
+      const LevelDB::KeyFilter& key_filter,
+      typename ProtoDatabase<T>::LoadCallback callback) override;
   void LoadKeys(typename ProtoDatabase<T>::LoadKeysCallback callback) override;
   void GetEntry(const std::string& key,
                 typename ProtoDatabase<T>::GetCallback callback) override;
@@ -153,6 +155,7 @@ void UpdateEntriesFromTaskRunner(
 
 template <typename T>
 void LoadEntriesFromTaskRunner(LevelDB* database,
+                               const LevelDB::KeyFilter& filter,
                                std::vector<T>* entries,
                                bool* success) {
   DCHECK(success);
@@ -161,7 +164,7 @@ void LoadEntriesFromTaskRunner(LevelDB* database,
   entries->clear();
 
   std::vector<std::string> loaded_entries;
-  *success = database->Load(&loaded_entries);
+  *success = database->LoadWithFilter(filter, &loaded_entries);
 
   for (const auto& serialized_entry : loaded_entries) {
     T entry;
@@ -287,6 +290,13 @@ void ProtoDatabaseImpl<T>::UpdateEntries(
 template <typename T>
 void ProtoDatabaseImpl<T>::LoadEntries(
     typename ProtoDatabase<T>::LoadCallback callback) {
+  LoadEntriesWithFilter(LevelDB::KeyFilter(), std::move(callback));
+}
+
+template <typename T>
+void ProtoDatabaseImpl<T>::LoadEntriesWithFilter(
+    const LevelDB::KeyFilter& key_filter,
+    typename ProtoDatabase<T>::LoadCallback callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
   bool* success = new bool(false);
 
@@ -297,7 +307,7 @@ void ProtoDatabaseImpl<T>::LoadEntries(
   task_runner_->PostTaskAndReply(
       FROM_HERE,
       base::BindOnce(LoadEntriesFromTaskRunner<T>, base::Unretained(db_.get()),
-                     entries_ptr, success),
+                     key_filter, entries_ptr, success),
       base::BindOnce(RunLoadCallback<T>, std::move(callback),
                      base::Owned(success), std::move(entries)));
 }

@@ -24,6 +24,7 @@
 
 #include "third_party/blink/renderer/core/svg/svg_element.h"
 
+#include "base/auto_reset.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_event_listener.h"
 #include "third_party/blink/renderer/core/animation/document_animations.h"
 #include "third_party/blink/renderer/core/animation/effect_stack.h"
@@ -55,7 +56,6 @@
 #include "third_party/blink/renderer/core/svg/svg_use_element.h"
 #include "third_party/blink/renderer/core/svg_names.h"
 #include "third_party/blink/renderer/core/xml_names.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 #include "third_party/blink/renderer/platform/wtf/threading.h"
 
 namespace blink {
@@ -501,7 +501,7 @@ CSSPropertyID SVGElement::CssPropertyIdForSVGAttributeName(
         &word_spacingAttr,
         &writing_modeAttr,
     };
-    for (size_t i = 0; i < WTF_ARRAY_LENGTH(attr_names); i++) {
+    for (size_t i = 0; i < arraysize(attr_names); i++) {
       CSSPropertyID property_id = cssPropertyID(attr_names[i]->LocalName());
       DCHECK_GT(property_id, 0);
       property_name_to_id_map->Set(attr_names[i]->LocalName().Impl(),
@@ -573,7 +573,7 @@ void SVGElement::InvalidateRelativeLengthClients(
 
 #if DCHECK_IS_ON()
   DCHECK(!in_relative_length_clients_invalidation_);
-  AutoReset<bool> in_relative_length_clients_invalidation_change(
+  base::AutoReset<bool> in_relative_length_clients_invalidation_change(
       &in_relative_length_clients_invalidation_, true);
 #endif
 
@@ -791,7 +791,7 @@ AnimatedPropertyType SVGElement::AnimatedPropertyTypeForCSSAttribute(
         {visibilityAttr, kAnimatedString},
         {word_spacingAttr, kAnimatedLength},
     };
-    for (size_t i = 0; i < WTF_ARRAY_LENGTH(attr_to_types); i++)
+    for (size_t i = 0; i < arraysize(attr_to_types); i++)
       css_property_map.Set(attr_to_types[i].attr, attr_to_types[i].prop_type);
   }
   return css_property_map.at(attribute_name);
@@ -1308,6 +1308,16 @@ void SVGElement::RemoveAllOutgoingReferences() {
     target_element->EnsureSVGRareData()->IncomingReferences().erase(this);
   }
   outgoing_references.clear();
+}
+
+SVGResourceClient* SVGElement::GetSVGResourceClient() {
+  if (!HasSVGRareData())
+    return nullptr;
+  return SvgRareData()->GetSVGResourceClient();
+}
+
+SVGResourceClient& SVGElement::EnsureSVGResourceClient() {
+  return EnsureSVGRareData()->EnsureSVGResourceClient(this);
 }
 
 void SVGElement::Trace(blink::Visitor* visitor) {

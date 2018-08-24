@@ -8,8 +8,6 @@
 #include "components/subresource_filter/content/browser/verified_ruleset_dealer.h"
 #include "content/public/browser/web_contents.h"
 
-class GURL;
-
 namespace content {
 class NavigationHandle;
 }  // namespace content
@@ -35,11 +33,7 @@ class SubresourceFilterClient {
   // Precondition: The navigation must be a main frame navigation.
   virtual bool OnPageActivationComputed(
       content::NavigationHandle* navigation_handle,
-      bool activated,
-      bool suppressing_notifications) = 0;
-
-  // Adds |url| to a per-WebContents whitelist.
-  virtual void WhitelistInCurrentWebContents(const GURL& url) = 0;
+      bool activated) = 0;
 
   virtual VerifiedRulesetDealer::Handle* GetRulesetDealer() = 0;
 

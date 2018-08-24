@@ -64,8 +64,6 @@ const char kKeyInfoEndMarker[] = "KEY-----";
 const char kPublic[] = "PUBLIC";
 const char kPrivate[] = "PRIVATE";
 
-bool g_allow_legacy_extensions = false;
-
 bool ContainsReservedCharacters(const base::FilePath& path) {
   // We should disallow backslash '\\' as file path separator even on Windows,
   // because the backslash is not regarded as file path separator on Linux/Mac.
@@ -92,7 +90,6 @@ bool IsManifestSupported(int manifest_version,
   // handling has been removed, which means they will effectively be treated as
   // v2s.
   bool allow_legacy_extensions =
-      g_allow_legacy_extensions ||
       base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kAllowLegacyExtensionManifests);
   if (type == Manifest::TYPE_EXTENSION && allow_legacy_extensions)
@@ -476,14 +473,6 @@ void Extension::AddWebExtentPattern(const URLPattern& pattern) {
   extent_.AddPattern(pattern);
 }
 
-Extension::ScopedAllowLegacyExtensions
-Extension::allow_legacy_extensions_for_testing() {
-  DCHECK(!g_allow_legacy_extensions)
-      << "Multiple ScopedAllowLegacyExtensions objects are not allowed.";
-  return std::make_unique<base::AutoReset<bool>>(&g_allow_legacy_extensions,
-                                                 true);
-}
-
 // static
 bool Extension::InitExtensionID(extensions::Manifest* manifest,
                                 const base::FilePath& path,
@@ -586,7 +575,9 @@ bool Extension::InitFromValue(int flags, base::string16* error) {
 
   finished_parsing_manifest_ = true;
 
-  permissions_data_.reset(new PermissionsData(this));
+  permissions_data_ = std::make_unique<PermissionsData>(
+      id(), GetType(), location(),
+      PermissionsParser::GetRequiredPermissions(this).Clone());
 
   return true;
 }

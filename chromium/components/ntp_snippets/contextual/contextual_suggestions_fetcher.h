@@ -5,14 +5,14 @@
 #ifndef COMPONENTS_NTP_SNIPPETS_CONTEXTUAL_CONTEXTUAL_SUGGESTIONS_FETCHER_H_
 #define COMPONENTS_NTP_SNIPPETS_CONTEXTUAL_CONTEXTUAL_SUGGESTIONS_FETCHER_H_
 
-#include "components/ntp_snippets/contextual/cluster.h"
 #include "components/ntp_snippets/contextual/contextual_suggestion.h"
 #include "components/ntp_snippets/contextual/contextual_suggestions_metrics_reporter.h"
+#include "components/ntp_snippets/contextual/contextual_suggestions_result.h"
 
 using contextual_suggestions::FetchClustersCallback;
 using contextual_suggestions::ReportFetchMetricsCallback;
 
-namespace ntp_snippets {
+namespace contextual_suggestions {
 
 // Fetches contextual suggestions from the server.
 class ContextualSuggestionsFetcher {
@@ -28,6 +28,6 @@ class ContextualSuggestionsFetcher {
       ReportFetchMetricsCallback metrics_callback) = 0;
 };
 
-}  // namespace ntp_snippets
+}  // namespace contextual_suggestions
 
 #endif  // COMPONENTS_NTP_SNIPPETS_CONTEXTUAL_CONTEXTUAL_SUGGESTIONS_FETCHER_H_

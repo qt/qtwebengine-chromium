@@ -17,6 +17,7 @@
 #include "base/synchronization/lock.h"
 #include "media/base/cdm_key_information.h"
 #include "media/base/cdm_promise.h"
+#include "media/cdm/api/content_decryption_module.h"
 #include "media/cdm/library_cdm/clear_key_cdm/clear_key_persistent_session_cdm.h"
 
 namespace media {
@@ -32,7 +33,8 @@ const int64_t kInitialTimerDelayMs = 200;
 
 // Clear key implementation of the cdm::ContentDecryptionModule interfaces.
 class ClearKeyCdm : public cdm::ContentDecryptionModule_9,
-                    public cdm::ContentDecryptionModule_10 {
+                    public cdm::ContentDecryptionModule_10,
+                    public cdm::ContentDecryptionModule_11 {
  public:
   template <typename HostInterface>
   ClearKeyCdm(HostInterface* host, const std::string& key_system);
@@ -53,7 +55,7 @@ class ClearKeyCdm : public cdm::ContentDecryptionModule_9,
       const cdm::InputBuffer_1& encrypted_buffer,
       cdm::AudioFrames* audio_frames) override;
 
-  // cdm::ContentDecryptionModule_10 implementation.
+  // cdm::ContentDecryptionModule_10/11 implementation.
   void Initialize(bool allow_distinctive_identifier,
                   bool allow_persistent_state,
                   bool use_hw_secure_codecs) override;

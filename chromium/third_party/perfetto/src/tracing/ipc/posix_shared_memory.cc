@@ -29,8 +29,9 @@
 
 #include "perfetto/base/build_config.h"
 #include "perfetto/base/logging.h"
+#include "perfetto/base/temp_file.h"
 
-#if BUILDFLAG(OS_ANDROID)
+#if PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
 #include <linux/memfd.h>
 #include <sys/syscall.h>
 #endif
@@ -40,10 +41,10 @@ namespace perfetto {
 // static
 std::unique_ptr<PosixSharedMemory> PosixSharedMemory::Create(size_t size) {
   base::ScopedFile fd;
-#if BUILDFLAG(OS_ANDROID)
+#if PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
   bool is_memfd = false;
-  fd.reset(syscall(__NR_memfd_create, "perfetto_shmem",
-                   MFD_CLOEXEC | MFD_ALLOW_SEALING));
+  fd.reset(static_cast<int>(syscall(__NR_memfd_create, "perfetto_shmem",
+                                    MFD_CLOEXEC | MFD_ALLOW_SEALING)));
   is_memfd = !!fd;
 
   if (!fd) {
@@ -52,16 +53,13 @@ std::unique_ptr<PosixSharedMemory> PosixSharedMemory::Create(size_t size) {
   }
 #endif
 
-  if (!fd) {
-    FILE* tmp_file = tmpfile();
-    PERFETTO_CHECK(tmp_file);
-    fd.reset(fileno(tmp_file));
-  }
+  if (!fd)
+    fd = base::TempFile::CreateUnlinked().ReleaseFD();
 
   PERFETTO_CHECK(fd);
   int res = ftruncate(fd.get(), static_cast<off_t>(size));
   PERFETTO_CHECK(res == 0);
-#if BUILDFLAG(OS_ANDROID)
+#if PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
   if (is_memfd) {
     res = fcntl(*fd, F_ADD_SEALS, F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_SEAL);
     PERFETTO_DCHECK(res == 0);
@@ -84,7 +82,8 @@ std::unique_ptr<PosixSharedMemory> PosixSharedMemory::MapFD(base::ScopedFile fd,
                                                             size_t size) {
   PERFETTO_DCHECK(fd);
   PERFETTO_DCHECK(size > 0);
-  void* start = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd.get(), 0);
+  void* start =
+      mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd.get(), 0);
   PERFETTO_CHECK(start != MAP_FAILED);
   return std::unique_ptr<PosixSharedMemory>(
       new PosixSharedMemory(start, size, std::move(fd)));

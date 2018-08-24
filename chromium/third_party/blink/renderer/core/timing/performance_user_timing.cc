@@ -99,11 +99,11 @@ static void ClearPeformanceEntries(PerformanceEntryMap& performance_entry_map,
     performance_entry_map.erase(name);
 }
 
-PerformanceEntry* UserTiming::Mark(ScriptState* script_state,
-                                   const String& mark_name,
-                                   const DOMHighResTimeStamp& start_time,
-                                   const ScriptValue& detail,
-                                   ExceptionState& exception_state) {
+PerformanceMark* UserTiming::Mark(ScriptState* script_state,
+                                  const String& mark_name,
+                                  const DOMHighResTimeStamp& start_time,
+                                  const ScriptValue& detail,
+                                  ExceptionState& exception_state) {
   if (GetRestrictedKeyMap().Contains(mark_name)) {
     exception_state.ThrowDOMException(
         kSyntaxError, "'" + mark_name +
@@ -113,14 +113,14 @@ PerformanceEntry* UserTiming::Mark(ScriptState* script_state,
   }
 
   TRACE_EVENT_COPY_MARK("blink.user_timing", mark_name.Utf8().data());
-  PerformanceEntry* entry =
+  PerformanceMark* mark =
       PerformanceMark::Create(script_state, mark_name, start_time, detail);
-  InsertPerformanceEntry(marks_map_, *entry);
+  InsertPerformanceEntry(marks_map_, *mark);
   DEFINE_THREAD_SAFE_STATIC_LOCAL(CustomCountHistogram,
                                   user_timing_mark_histogram,
                                   ("PLT.UserTiming_Mark", 0, 600000, 100));
   user_timing_mark_histogram.Count(static_cast<int>(start_time));
-  return entry;
+  return mark;
 }
 
 void UserTiming::ClearMarks(const String& mark_name) {
@@ -151,25 +151,37 @@ double UserTiming::FindExistingMarkStartTime(const String& mark_name,
   return 0.0;
 }
 
-PerformanceEntry* UserTiming::Measure(const String& measure_name,
-                                      const String& start_mark,
-                                      const String& end_mark,
-                                      ExceptionState& exception_state) {
+double UserTiming::FindStartMarkOrTime(const StringOrDouble& start,
+                                       ExceptionState& exception_state) {
+  if (start.IsString())
+    return FindExistingMarkStartTime(start.GetAsString(), exception_state);
+  if (start.IsDouble())
+    return start.GetAsDouble();
+  NOTREACHED();
+  return 0;
+}
+
+PerformanceMeasure* UserTiming::Measure(ScriptState* script_state,
+                                        const String& measure_name,
+                                        const StringOrDouble& start,
+                                        const StringOrDouble& end,
+                                        const ScriptValue& detail,
+                                        ExceptionState& exception_state) {
   double start_time = 0.0;
   double end_time = 0.0;
 
-  if (start_mark.IsNull()) {
+  if (start.IsNull()) {
     end_time = performance_->now();
-  } else if (end_mark.IsNull()) {
+  } else if (end.IsNull()) {
     end_time = performance_->now();
-    start_time = FindExistingMarkStartTime(start_mark, exception_state);
+    start_time = FindStartMarkOrTime(start, exception_state);
     if (exception_state.HadException())
       return nullptr;
   } else {
-    end_time = FindExistingMarkStartTime(end_mark, exception_state);
+    end_time = FindStartMarkOrTime(end, exception_state);
     if (exception_state.HadException())
       return nullptr;
-    start_time = FindExistingMarkStartTime(start_mark, exception_state);
+    start_time = FindStartMarkOrTime(start, exception_state);
     if (exception_state.HadException())
       return nullptr;
   }
@@ -190,16 +202,16 @@ PerformanceEntry* UserTiming::Measure(const String& measure_name,
       WTF::StringHash::GetHash(measure_name),
       TraceEvent::ToTraceTimestamp(end_time_monotonic));
 
-  PerformanceEntry* entry =
-      PerformanceMeasure::Create(measure_name, start_time, end_time);
-  InsertPerformanceEntry(measures_map_, *entry);
+  PerformanceMeasure* measure = PerformanceMeasure::Create(
+      script_state, measure_name, start_time, end_time, detail);
+  InsertPerformanceEntry(measures_map_, *measure);
   if (end_time >= start_time) {
     DEFINE_THREAD_SAFE_STATIC_LOCAL(
         CustomCountHistogram, measure_duration_histogram,
         ("PLT.UserTiming_MeasureDuration", 0, 600000, 100));
     measure_duration_histogram.Count(static_cast<int>(end_time - start_time));
   }
-  return entry;
+  return measure;
 }
 
 void UserTiming::ClearMeasures(const String& measure_name) {

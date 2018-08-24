@@ -7,7 +7,7 @@
 
 #include "cc/paint/paint_op_buffer.h"
 
-#include "third_party/skia/include/utils/SkNoDrawCanvas.h"
+#include "third_party/skia/src/core/SkRemoteGlyphCache.h"
 #include "ui/gfx/geometry/rect_f.h"
 
 namespace cc {
@@ -20,7 +20,10 @@ class CC_PAINT_EXPORT PaintOpBufferSerializer {
 
   PaintOpBufferSerializer(SerializeCallback serialize_cb,
                           ImageProvider* image_provider,
-                          TransferCacheSerializeHelper* transfer_cache);
+                          TransferCacheSerializeHelper* transfer_cache,
+                          SkStrikeServer* strike_server,
+                          SkColorSpace* color_space,
+                          bool can_use_lcd_text);
   virtual ~PaintOpBufferSerializer();
 
   struct Preamble {
@@ -59,9 +62,14 @@ class CC_PAINT_EXPORT PaintOpBufferSerializer {
   // generally be used for internal PaintOpBuffers in PaintShaders that have
   // a scale and a tiling, but don't want the clearing or other complicated
   // logic of the top level Serialize.
+  // post_matrix_for_analysis adds a scale that is not added to the serialized
+  // buffer, but used in analysis. This is required for cases that don't modify
+  // the record during serialization, but need to send resources based on the
+  // raster scale (mainly PaintRecord backed PaintFilters).
   void Serialize(const PaintOpBuffer* buffer,
                  const gfx::Rect& playback_rect,
-                 const gfx::SizeF& post_scale);
+                 const gfx::SizeF& post_scale,
+                 const SkMatrix& post_matrix_for_analysis);
 
   bool valid() const { return valid_; }
 
@@ -85,9 +93,14 @@ class CC_PAINT_EXPORT PaintOpBufferSerializer {
                       const PlaybackParams& params);
 
   SerializeCallback serialize_cb_;
-  SkNoDrawCanvas canvas_;
   ImageProvider* image_provider_;
   TransferCacheSerializeHelper* transfer_cache_;
+  SkStrikeServer* strike_server_;
+  SkColorSpace* color_space_;
+  bool can_use_lcd_text_;
+
+  SkTextBlobCacheDiffCanvas text_blob_canvas_;
+  std::unique_ptr<SkCanvas> canvas_;
   bool valid_ = true;
 };
 
@@ -97,7 +110,10 @@ class CC_PAINT_EXPORT SimpleBufferSerializer : public PaintOpBufferSerializer {
   SimpleBufferSerializer(void* memory,
                          size_t size,
                          ImageProvider* image_provider,
-                         TransferCacheSerializeHelper* transfer_cache);
+                         TransferCacheSerializeHelper* transfer_cache,
+                         SkStrikeServer* strike_server,
+                         SkColorSpace* color_space,
+                         bool can_use_lcd_text);
   ~SimpleBufferSerializer() override;
 
   size_t written() const { return written_; }

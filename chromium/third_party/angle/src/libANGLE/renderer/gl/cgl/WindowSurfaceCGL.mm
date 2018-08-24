@@ -147,15 +147,13 @@
                                        EGLNativeWindowType layer,
                                        const FunctionsGL *functions,
                                        CGLContextObj context)
-        : SurfaceGL(state, renderer),
+        : SurfaceGL(state),
           mSwapLayer(nil),
           mCurrentSwapId(0),
           mLayer(reinterpret_cast<CALayer *>(layer)),
           mContext(context),
           mFunctions(functions),
           mStateManager(renderer->getStateManager()),
-          mRenderer(renderer),
-          mWorkarounds(renderer->getWorkarounds()),
           mFramebuffer(0),
           mDSRenderbuffer(0)
     {
@@ -288,13 +286,15 @@ egl::Error WindowSurfaceCGL::querySurfacePointerANGLE(EGLint attribute, void **v
     return egl::Error(EGL_SUCCESS);
 }
 
-egl::Error WindowSurfaceCGL::bindTexImage(gl::Texture *texture, EGLint buffer)
+egl::Error WindowSurfaceCGL::bindTexImage(const gl::Context *context,
+                                          gl::Texture *texture,
+                                          EGLint buffer)
 {
     UNIMPLEMENTED();
     return egl::Error(EGL_SUCCESS);
 }
 
-egl::Error WindowSurfaceCGL::releaseTexImage(EGLint buffer)
+egl::Error WindowSurfaceCGL::releaseTexImage(const gl::Context *context, EGLint buffer)
 {
     UNIMPLEMENTED();
     return egl::Error(EGL_SUCCESS);
@@ -329,8 +329,7 @@ EGLint WindowSurfaceCGL::getSwapBehavior() const
 FramebufferImpl *WindowSurfaceCGL::createDefaultFramebuffer(const gl::FramebufferState &state)
 {
     // TODO(cwallez) assert it happens only once?
-    return new FramebufferGL(mFramebuffer, state, mFunctions, mWorkarounds, mRenderer->getBlitter(),
-                             mRenderer->getMultiviewClearer(), mStateManager);
+    return new FramebufferGL(state, mFramebuffer, true);
 }
 
 }  // namespace rx

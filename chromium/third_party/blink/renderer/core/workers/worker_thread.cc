@@ -52,7 +52,7 @@
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/child/webthread_impl_for_worker_scheduler.h"
-#include "third_party/blink/renderer/platform/scheduler/child/worker_global_scope_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/child/worker_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/public/non_main_thread_scheduler.h"
 #include "third_party/blink/renderer/platform/waitable_event.h"
 #include "third_party/blink/renderer/platform/web_thread_supporting_gc.h"
@@ -101,7 +101,7 @@ WorkerThread::~WorkerThread() {
 
 void WorkerThread::Start(
     std::unique_ptr<GlobalScopeCreationParams> global_scope_creation_params,
-    const WTF::Optional<WorkerBackingThreadStartupData>& thread_startup_data,
+    const base::Optional<WorkerBackingThreadStartupData>& thread_startup_data,
     WorkerInspectorProxy::PauseOnWorkerStart pause_on_start,
     ParentExecutionContextTaskRunners* parent_execution_context_task_runners) {
   DCHECK_CALLED_ON_VALID_THREAD(parent_thread_checker_);
@@ -137,7 +137,7 @@ void WorkerThread::EvaluateClassicScript(
     const v8_inspector::V8StackTraceId& stack_id) {
   DCHECK_CALLED_ON_VALID_THREAD(parent_thread_checker_);
   PostCrossThreadTask(
-      *GetTaskRunner(TaskType::kUnthrottled), FROM_HERE,
+      *GetTaskRunner(TaskType::kInternalWorker), FROM_HERE,
       CrossThreadBind(&WorkerThread::EvaluateClassicScriptOnWorkerThread,
                       CrossThreadUnretained(this), script_url, source_code,
                       WTF::Passed(std::move(cached_meta_data)), stack_id));
@@ -148,7 +148,7 @@ void WorkerThread::ImportModuleScript(
     network::mojom::FetchCredentialsMode credentials_mode) {
   DCHECK_CALLED_ON_VALID_THREAD(parent_thread_checker_);
   PostCrossThreadTask(
-      *GetTaskRunner(TaskType::kUnthrottled), FROM_HERE,
+      *GetTaskRunner(TaskType::kInternalWorker), FROM_HERE,
       CrossThreadBind(&WorkerThread::ImportModuleScriptOnWorkerThread,
                       CrossThreadUnretained(this), script_url,
                       credentials_mode));
@@ -156,7 +156,7 @@ void WorkerThread::ImportModuleScript(
 
 void WorkerThread::TerminateChildThreadsOnWorkerThread() {
   DCHECK(IsCurrentThread());
-  PerformShutdownOnWorkerThread();
+  PrepareForShutdownOnWorkerThread();
   for (WorkerThread* child : child_threads_)
     child->Terminate();
 }
@@ -332,9 +332,9 @@ ExitCode WorkerThread::GetExitCodeForTesting() {
   return exit_code_;
 }
 
-scheduler::WorkerGlobalScopeScheduler* WorkerThread::GetScheduler() {
+scheduler::WorkerScheduler* WorkerThread::GetScheduler() {
   DCHECK(IsCurrentThread());
-  return global_scope_scheduler_.get();
+  return worker_scheduler_.get();
 }
 
 void WorkerThread::ChildThreadStartedOnWorkerThread(WorkerThread* child) {
@@ -368,7 +368,7 @@ WorkerThread::WorkerThread(ThreadableLoadingContext* loading_context,
 void WorkerThread::ScheduleToTerminateScriptExecution() {
   DCHECK(!forcible_termination_task_handle_.IsActive());
   forcible_termination_task_handle_ = PostDelayedCancellableTask(
-      *parent_execution_context_task_runners_->Get(TaskType::kUnspecedTimer),
+      *parent_execution_context_task_runners_->Get(TaskType::kInternalDefault),
       FROM_HERE,
       WTF::Bind(&WorkerThread::EnsureScriptExecutionTerminates,
                 WTF::Unretained(this), ExitCode::kAsyncForciblyTerminated),
@@ -413,19 +413,18 @@ void WorkerThread::EnsureScriptExecutionTerminates(ExitCode exit_code) {
 void WorkerThread::InitializeSchedulerOnWorkerThread(
     WaitableEvent* waitable_event) {
   DCHECK(IsCurrentThread());
-  DCHECK(!global_scope_scheduler_);
+  DCHECK(!worker_scheduler_);
   scheduler::WebThreadImplForWorkerScheduler& web_thread_for_worker =
       static_cast<scheduler::WebThreadImplForWorkerScheduler&>(
           GetWorkerBackingThread().BackingThread().PlatformThread());
-  global_scope_scheduler_ =
-      std::make_unique<scheduler::WorkerGlobalScopeScheduler>(
-          web_thread_for_worker.GetNonMainThreadScheduler());
+  worker_scheduler_ = std::make_unique<scheduler::WorkerScheduler>(
+      web_thread_for_worker.GetNonMainThreadScheduler());
   waitable_event->Signal();
 }
 
 void WorkerThread::InitializeOnWorkerThread(
     std::unique_ptr<GlobalScopeCreationParams> global_scope_creation_params,
-    const WTF::Optional<WorkerBackingThreadStartupData>& thread_startup_data,
+    const base::Optional<WorkerBackingThreadStartupData>& thread_startup_data,
     WorkerInspectorProxy::PauseOnWorkerStart pause_on_start) {
   DCHECK(IsCurrentThread());
   {
@@ -527,7 +526,7 @@ void WorkerThread::PrepareForShutdownOnWorkerThread() {
     worker_inspector_controller_->Dispose();
     worker_inspector_controller_.Clear();
   }
-  global_scope_scheduler_->Dispose();
+  worker_scheduler_->Dispose();
   GlobalScope()->Dispose();
   global_scope_ = nullptr;
 

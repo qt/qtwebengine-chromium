@@ -12,8 +12,10 @@
 
 namespace blink {
 
+class ComputedStyle;
 class FloatRect;
 class LayoutRect;
+struct NGPhysicalBoxStrut;
 
 // NGPhysicalOffsetRect is the position and size of a rect (typically a
 // fragment) relative to its parent rect in the physical coordinate system.
@@ -36,10 +38,15 @@ struct CORE_EXPORT NGPhysicalOffsetRect {
 
   void Unite(const NGPhysicalOffsetRect&);
 
+  void Expand(const NGPhysicalBoxStrut&);
+
   // Conversions from/to existing code. New code prefers type safety for
   // logical/physical distinctions.
   explicit NGPhysicalOffsetRect(const LayoutRect&);
   LayoutRect ToLayoutRect() const;
+  LayoutRect ToLayoutFlippedRect(const ComputedStyle&,
+                                 const NGPhysicalSize&) const;
+
   FloatRect ToFloatRect() const;
 
   String ToString() const;

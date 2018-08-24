@@ -12,6 +12,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
+#include "components/viz/common/features.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "components/viz/service/surfaces/surface.h"
 #include "components/viz/service/surfaces/surface_manager.h"
@@ -147,8 +148,7 @@ class RenderWidgetHostViewGuestSurfaceTest
     browser_context_.reset(new TestBrowserContext);
     MockRenderProcessHost* process_host =
         new MockRenderProcessHost(browser_context_.get());
-    web_contents_.reset(
-        TestWebContents::Create(browser_context_.get(), nullptr));
+    web_contents_ = TestWebContents::Create(browser_context_.get(), nullptr);
     // We don't own the BPG, the WebContents does.
     browser_plugin_guest_ = new TestBrowserPluginGuest(
         web_contents_.get(), &browser_plugin_guest_delegate_);
@@ -199,7 +199,6 @@ class RenderWidgetHostViewGuestSurfaceTest
   }
 
  protected:
-  ScopedMockRenderProcessHostFactory rph_factory_;
   TestBrowserThreadBundle thread_bundle_;
   std::unique_ptr<BrowserContext> browser_context_;
   MockRenderWidgetHostDelegate delegate_;
@@ -237,9 +236,12 @@ viz::CompositorFrame CreateDelegatedFrame(float scale_factor,
 }  // anonymous namespace
 
 TEST_F(RenderWidgetHostViewGuestSurfaceTest, TestGuestSurface) {
-  // TODO: fix for mash.
-  if (base::FeatureList::IsEnabled(features::kMash))
+  // TODO(jonross): Delete this test once Viz launches as it will be obsolete.
+  // https://crbug.com/844469
+  if (base::FeatureList::IsEnabled(features::kVizDisplayCompositor) ||
+      base::FeatureList::IsEnabled(features::kMash)) {
     return;
+  }
 
   gfx::Size view_size(100, 100);
   gfx::Rect view_rect(view_size);
@@ -254,7 +256,7 @@ TEST_F(RenderWidgetHostViewGuestSurfaceTest, TestGuestSurface) {
   browser_plugin_guest_->set_attached(true);
   view_->SubmitCompositorFrame(
       local_surface_id,
-      CreateDelegatedFrame(scale_factor, view_size, view_rect), nullptr);
+      CreateDelegatedFrame(scale_factor, view_size, view_rect), base::nullopt);
 
   viz::SurfaceId id = GetSurfaceId();
 
@@ -278,7 +280,7 @@ TEST_F(RenderWidgetHostViewGuestSurfaceTest, TestGuestSurface) {
 
   view_->SubmitCompositorFrame(
       local_surface_id,
-      CreateDelegatedFrame(scale_factor, view_size, view_rect), nullptr);
+      CreateDelegatedFrame(scale_factor, view_size, view_rect), base::nullopt);
 
   // Since we have not changed the frame size and scale factor, the same surface
   // id must be used.

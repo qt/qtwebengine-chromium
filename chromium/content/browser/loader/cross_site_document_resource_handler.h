@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_LOADER_CROSS_SITE_DOCUMENT_RESOURCE_HANDLER_H_
 
 #include <memory>
+#include <vector>
 
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
@@ -55,30 +56,6 @@ namespace content {
 class CONTENT_EXPORT CrossSiteDocumentResourceHandler
     : public LayeredResourceHandler {
  public:
-  class ConfirmationSniffer;
-
-  // This enum backs a histogram, so do not change the order of entries or
-  // remove entries. Put new entries before |kCount| and update enums.xml (see
-  // the SiteIsolationResponseAction enum).
-  enum class Action {
-    // Logged at OnResponseStarted.
-    kResponseStarted = 0,
-
-    // Logged when a response is blocked without requiring sniffing.
-    kBlockedWithoutSniffing = 1,
-
-    // Logged when a response is blocked as a result of sniffing the content.
-    kBlockedAfterSniffing = 2,
-
-    // Logged when a response is allowed without requiring sniffing.
-    kAllowedWithoutSniffing = 3,
-
-    // Logged when a response is allowed as a result of sniffing the content.
-    kAllowedAfterSniffing = 4,
-
-    kCount
-  };
-
   CrossSiteDocumentResourceHandler(
       std::unique_ptr<ResourceHandler> next_handler,
       net::URLRequest* request,
@@ -98,14 +75,6 @@ class CONTENT_EXPORT CrossSiteDocumentResourceHandler
       const net::URLRequestStatus& status,
       std::unique_ptr<ResourceController> controller) override;
 
-  // Returns explicitly named headers from
-  // https://fetch.spec.whatwg.org/#cors-safelisted-response-header-name.
-  //
-  // Note that XSDB doesn't block responses allowed through CORS - this means
-  // that the list of allowed headers below doesn't have to consider header
-  // names listed in the Access-Control-Expose-Headers header.
-  static std::vector<std::string> GetCorsSafelistedHeadersForTesting();
-
  private:
   FRIEND_TEST_ALL_PREFIXES(CrossSiteDocumentResourceHandlerTest,
                            ResponseBlocking);
@@ -120,7 +89,7 @@ class CONTENT_EXPORT CrossSiteDocumentResourceHandler
   // Computes whether this response contains a cross-site document that needs to
   // be blocked from the renderer process.  This is a first approximation based
   // on the headers, and may be revised after some of the data is sniffed.
-  bool ShouldBlockBasedOnHeaders(network::ResourceResponse* response);
+  bool ShouldBlockBasedOnHeaders(const network::ResourceResponse& response);
 
   // Once the downstream handler has allocated the buffer for OnWillRead
   // (possibly after deferring), this sets up sniffing into a local buffer.
@@ -140,12 +109,8 @@ class CONTENT_EXPORT CrossSiteDocumentResourceHandler
       ResourceType resource_type,
       int http_response_code,
       int64_t content_length);
-  static void LogBlockedResponse(
-      ResourceRequestInfoImpl* resource_request_info,
-      bool needed_sniffing,
-      network::CrossOriginReadBlocking::MimeType canonical_mime_type,
-      int http_response_code,
-      int64_t content_length);
+  void LogBlockedResponse(ResourceRequestInfoImpl* resource_request_info,
+                          int http_response_code);
 
   // WeakPtrFactory for |next_handler_|.
   base::WeakPtrFactory<ResourceHandler> weak_next_handler_;
@@ -169,10 +134,9 @@ class CONTENT_EXPORT CrossSiteDocumentResourceHandler
   // The size of |next_handler_buffer_|.
   int next_handler_buffer_size_ = 0;
 
-  // A canonicalization of the specified MIME type, to determine if blocking the
-  // response is needed, as well as which type of sniffing to perform.
-  network::CrossOriginReadBlocking::MimeType canonical_mime_type_ =
-      network::CrossOriginReadBlocking::MimeType::kInvalid;
+  // The helper class that encapsulates the logic for deciding whether to block
+  // the response or not.
+  std::unique_ptr<network::CrossOriginReadBlocking::ResponseAnalyzer> analyzer_;
 
   // Indicates whether this request was made by a plugin and was not using CORS.
   // Such requests are exempt from blocking, while other plugin requests must be
@@ -190,12 +154,6 @@ class CONTENT_EXPORT CrossSiteDocumentResourceHandler
   // should only be read afterwards.
   bool should_block_based_on_headers_ = false;
 
-  // Whether the response data should be sniffed before blocking it, to avoid
-  // blocking mislabeled responses (e.g., JSONP labeled as HTML).  This is
-  // usually true when |should_block_based_on_headers_| is set, unless there is
-  // a nosniff header or range request.
-  bool needs_sniffing_ = false;
-
   // Whether this response will be allowed through despite being flagged for
   // blocking (via |should_block_based_on_headers_), because sniffing determined
   // it was incorrectly labeled and might be needed for compatibility (e.g.,
@@ -209,12 +167,6 @@ class CONTENT_EXPORT CrossSiteDocumentResourceHandler
   // The HTTP response code (e.g. 200 or 404) received in response to this
   // resource request.
   int http_response_code_ = 0;
-
-  // Content length if available. -1 if not available.
-  int64_t content_length_ = -1;
-
-  // The sniffers to be used.
-  std::vector<std::unique_ptr<ConfirmationSniffer>> sniffers_;
 
   base::WeakPtrFactory<CrossSiteDocumentResourceHandler> weak_this_;
 

@@ -85,7 +85,8 @@ class CONTENT_EXPORT MojoAsyncResourceHandler
   void OnDataDownloaded(int bytes_downloaded) override;
 
   // network::mojom::URLLoader implementation:
-  void FollowRedirect() override;
+  void FollowRedirect(const base::Optional<net::HttpRequestHeaders>&
+                          modified_request_headers) override;
   void ProceedWithResponse() override;
   void SetPriority(net::RequestPriority priority,
                    int32_t intra_priority_value) override;
@@ -130,8 +131,6 @@ class CONTENT_EXPORT MojoAsyncResourceHandler
       const base::Location& from_here,
       network::UploadProgressTracker::UploadProgressReportCallback callback);
 
-  void OnTransfer(network::mojom::URLLoaderRequest mojo_request,
-                  network::mojom::URLLoaderClientPtr url_loader_client);
   void SendUploadProgress(const net::UploadProgress& progress);
   void OnUploadProgressACK();
   static void InitializeResourceBufferConstants();

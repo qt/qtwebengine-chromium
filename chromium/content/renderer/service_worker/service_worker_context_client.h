@@ -52,10 +52,6 @@ class WebServiceWorkerResponse;
 class WebURLResponse;
 }
 
-namespace IPC {
-class Message;
-}
-
 namespace content {
 
 struct PlatformNotificationData;
@@ -64,6 +60,7 @@ class EmbeddedWorkerInstanceClientImpl;
 class ServiceWorkerNetworkProvider;
 class ServiceWorkerProviderContext;
 class ServiceWorkerTimeoutTimer;
+class WebServiceWorkerImpl;
 class WebWorkerFetchContext;
 
 // ServiceWorkerContextClient is a "client" of a service worker execution
@@ -93,12 +90,10 @@ class CONTENT_EXPORT ServiceWorkerContextClient
       bool is_script_streaming,
       mojom::ServiceWorkerEventDispatcherRequest dispatcher_request,
       mojom::ControllerServiceWorkerRequest controller_request,
-      blink::mojom::ServiceWorkerHostAssociatedPtrInfo service_worker_host,
       mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
       mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
       std::unique_ptr<EmbeddedWorkerInstanceClientImpl> embedded_worker_client,
-      scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner,
-      scoped_refptr<base::SingleThreadTaskRunner> io_thread_task_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner);
   ~ServiceWorkerContextClient() override;
 
   // Called on the main thread.
@@ -109,6 +104,11 @@ class CONTENT_EXPORT ServiceWorkerContextClient
       base::TimeTicks start_worker_received_time) {
     start_worker_received_time_ = start_worker_received_time;
   }
+
+  // Returns the service worker object described by |info|. Creates a new object
+  // if needed, or else returns the existing one.
+  scoped_refptr<WebServiceWorkerImpl> GetOrCreateServiceWorkerObject(
+      blink::mojom::ServiceWorkerObjectInfoPtr info);
 
   // WebServiceWorkerContextClient overrides.
   void GetClient(
@@ -165,6 +165,9 @@ class CONTENT_EXPORT ServiceWorkerContextClient
       int request_id,
       blink::mojom::ServiceWorkerEventStatus status,
       double dispatch_event_time) override;
+  void DidHandleCookieChangeEvent(int request_id,
+                                  blink::mojom::ServiceWorkerEventStatus status,
+                                  double dispatch_event_time) override;
   void DidHandleExtendableMessageEvent(
       int request_id,
       blink::mojom::ServiceWorkerEventStatus status,
@@ -257,6 +260,7 @@ class CONTENT_EXPORT ServiceWorkerContextClient
   class NavigationPreloadRequest;
   friend class ControllerServiceWorkerImpl;
   friend class ServiceWorkerContextClientTest;
+  friend class WebServiceWorkerImpl;
   FRIEND_TEST_ALL_PREFIXES(
       ServiceWorkerContextClientTest,
       DispatchOrQueueFetchEvent_RequestedTerminationAndDie);
@@ -270,15 +274,20 @@ class CONTENT_EXPORT ServiceWorkerContextClient
   // in the browser process.
   int GetRoutingID() const { return embedded_worker_id_; }
 
-  void Send(IPC::Message* message);
   void SendWorkerStarted();
 
-  // mojom::ServiceWorkerEventDispatcher
+  // Implements mojom::ServiceWorkerEventDispatcher.
+  void InitializeGlobalScope(
+      blink::mojom::ServiceWorkerHostAssociatedPtrInfo service_worker_host,
+      blink::mojom::ServiceWorkerRegistrationObjectInfoPtr registration_info)
+      override;
   void DispatchInstallEvent(
       DispatchInstallEventCallback callback) override;
   void DispatchActivateEvent(DispatchActivateEventCallback callback) override;
   void DispatchBackgroundFetchAbortEvent(
       const std::string& developer_id,
+      const std::string& unique_id,
+      const std::vector<BackgroundFetchSettledFetch>& fetches,
       DispatchBackgroundFetchAbortEventCallback callback) override;
   void DispatchBackgroundFetchClickEvent(
       const std::string& developer_id,
@@ -286,6 +295,7 @@ class CONTENT_EXPORT ServiceWorkerContextClient
       DispatchBackgroundFetchClickEventCallback callback) override;
   void DispatchBackgroundFetchFailEvent(
       const std::string& developer_id,
+      const std::string& unique_id,
       const std::vector<BackgroundFetchSettledFetch>& fetches,
       DispatchBackgroundFetchFailEventCallback callback) override;
   void DispatchBackgroundFetchedEvent(
@@ -330,6 +340,10 @@ class CONTENT_EXPORT ServiceWorkerContextClient
       payments::mojom::PaymentRequestEventDataPtr event_data,
       payments::mojom::PaymentHandlerResponseCallbackPtr response_callback,
       DispatchPaymentRequestEventCallback callback) override;
+  void DispatchCookieChangeEvent(
+      const net::CanonicalCookie& cookie,
+      ::network::mojom::CookieChangeCause cause,
+      DispatchCookieChangeEventCallback callback) override;
   void Ping(PingCallback callback) override;
   void SetIdleTimerDelayToZero() override;
 
@@ -382,6 +396,11 @@ class CONTENT_EXPORT ServiceWorkerContextClient
   // process. It does this due to idle timeout.
   bool RequestedTermination() const;
 
+  // Keeps the mapping from version id to ServiceWorker object.
+  void AddServiceWorkerObject(int64_t version_id, WebServiceWorkerImpl* worker);
+  void RemoveServiceWorkerObject(int64_t version_id);
+  bool ContainsServiceWorkerObjectForTesting(int64_t version_id);
+
   base::WeakPtr<ServiceWorkerContextClient> GetWeakPtr();
 
   static void ResetThreadSpecificInstanceForTesting();
@@ -394,7 +413,6 @@ class CONTENT_EXPORT ServiceWorkerContextClient
   const GURL script_url_;
 
   scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
-  scoped_refptr<base::SingleThreadTaskRunner> io_thread_task_runner_;
   scoped_refptr<base::TaskRunner> worker_task_runner_;
 
   scoped_refptr<ServiceWorkerProviderContext> provider_context_;
@@ -405,7 +423,6 @@ class CONTENT_EXPORT ServiceWorkerContextClient
   // These Mojo objects are bound on the worker thread.
   mojom::ServiceWorkerEventDispatcherRequest pending_dispatcher_request_;
   mojom::ControllerServiceWorkerRequest pending_controller_request_;
-  blink::mojom::ServiceWorkerHostAssociatedPtrInfo pending_service_worker_host_;
 
   // This is bound on the main thread.
   scoped_refptr<mojom::ThreadSafeEmbeddedWorkerInstanceHostAssociatedPtr>

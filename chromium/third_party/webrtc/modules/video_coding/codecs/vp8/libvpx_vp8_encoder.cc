@@ -252,7 +252,7 @@ int LibvpxVp8Encoder::Release() {
   return ret_val;
 }
 
-int LibvpxVp8Encoder::SetRateAllocation(const BitrateAllocation& bitrate,
+int LibvpxVp8Encoder::SetRateAllocation(const VideoBitrateAllocation& bitrate,
                                         uint32_t new_framerate) {
   if (!inited_)
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
@@ -440,17 +440,9 @@ int LibvpxVp8Encoder::InitEncode(const VideoCodec* inst,
   configurations_[0].g_timebase.den = 90000;
   configurations_[0].g_lag_in_frames = 0;  // 0- no frame lagging
 
-  // Set the error resilience mode according to user settings.
-  switch (inst->VP8().resilience) {
-    case kResilienceOff:
-      configurations_[0].g_error_resilient = 0;
-      break;
-    case kResilientStream:
-      configurations_[0].g_error_resilient = VPX_ERROR_RESILIENT_DEFAULT;
-      break;
-    case kResilientFrames:
-      return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;  // Not supported
-  }
+  // Set the error resilience mode for temporal layers (but not simulcast).
+  configurations_[0].g_error_resilient =
+      (num_temporal_layers > 1) ? VPX_ERROR_RESILIENT_DEFAULT : 0;
 
   // rate control settings
   configurations_[0].rc_dropframe_thresh = inst->VP8().frameDroppingOn ? 30 : 0;
@@ -520,7 +512,7 @@ int LibvpxVp8Encoder::InitEncode(const VideoCodec* inst,
   // at position 0 and they have highest resolution at position 0.
   int stream_idx = encoders_.size() - 1;
   SimulcastRateAllocator init_allocator(codec_);
-  BitrateAllocation allocation = init_allocator.GetAllocation(
+  VideoBitrateAllocation allocation = init_allocator.GetAllocation(
       inst->startBitrate * 1000, inst->maxFramerate);
   std::vector<uint32_t> stream_bitrates;
   for (int i = 0; i == 0 || i < inst->numberOfSimulcastStreams; ++i) {
@@ -675,7 +667,7 @@ int LibvpxVp8Encoder::InitAndSetControlSettings() {
     vpx_codec_control(&(encoders_[i]), VP8E_SET_SCREEN_CONTENT_MODE,
                       codec_.mode == kScreensharing ? 2 : 0);
     // Apply boost on golden frames (has only effect when resilience is off).
-    if (use_gf_boost_ && codec_.VP8()->resilience == kResilienceOff) {
+    if (use_gf_boost_ && configurations_[0].g_error_resilient == 0) {
       int gf_boost_percent;
       if (GetGfBoostPercentageFromFieldTrialGroup(&gf_boost_percent)) {
         vpx_codec_control(&(encoders_[i]), VP8E_SET_GF_CBR_BOOST_PCT,

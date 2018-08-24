@@ -15,10 +15,11 @@
 #include <vector>
 
 #include "base/memory/shared_memory.h"
+#include "base/optional.h"
 #include "base/process/process.h"
 #include "base/strings/string16.h"
 #include "build/build_config.h"
-#include "cc/ipc/cc_param_traits.h"
+#include "cc/input/touch_action.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/quads/shared_bitmap.h"
@@ -27,9 +28,9 @@
 #include "content/common/date_time_suggestion.h"
 #include "content/common/frame_replication_state.h"
 #include "content/common/navigation_gesture.h"
-#include "content/common/resize_params.h"
 #include "content/common/text_input_state.h"
 #include "content/common/view_message_enums.h"
+#include "content/common/visual_properties.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/menu_item.h"
 #include "content/public/common/page_state.h"
@@ -45,8 +46,8 @@
 #include "media/capture/ipc/capture_param_traits.h"
 #include "net/base/network_change_notifier.h"
 #include "ppapi/buildflags/buildflags.h"
-#include "third_party/blink/public/platform/modules/screen_orientation/web_screen_orientation_type.h"
-#include "third_party/blink/public/platform/web_display_mode.h"
+#include "third_party/blink/public/common/manifest/web_display_mode.h"
+#include "third_party/blink/public/common/screen_orientation/web_screen_orientation_type.h"
 #include "third_party/blink/public/platform/web_float_point.h"
 #include "third_party/blink/public/platform/web_float_rect.h"
 #include "third_party/blink/public/platform/web_intrinsic_sizing_info.h"
@@ -160,12 +161,11 @@ IPC_STRUCT_TRAITS_BEGIN(blink::WebDeviceEmulationParams)
   IPC_STRUCT_TRAITS_MEMBER(screen_orientation_type)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(content::ResizeParams)
+IPC_STRUCT_TRAITS_BEGIN(content::VisualProperties)
   IPC_STRUCT_TRAITS_MEMBER(screen_info)
   IPC_STRUCT_TRAITS_MEMBER(auto_resize_enabled)
   IPC_STRUCT_TRAITS_MEMBER(min_size_for_auto_resize)
   IPC_STRUCT_TRAITS_MEMBER(max_size_for_auto_resize)
-  IPC_STRUCT_TRAITS_MEMBER(auto_resize_sequence_number)
   IPC_STRUCT_TRAITS_MEMBER(new_size)
   IPC_STRUCT_TRAITS_MEMBER(compositor_viewport_pixel_size)
   IPC_STRUCT_TRAITS_MEMBER(browser_controls_shrink_blink_size)
@@ -176,8 +176,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::ResizeParams)
   IPC_STRUCT_TRAITS_MEMBER(visible_viewport_size)
   IPC_STRUCT_TRAITS_MEMBER(is_fullscreen_granted)
   IPC_STRUCT_TRAITS_MEMBER(display_mode)
-  IPC_STRUCT_TRAITS_MEMBER(needs_resize_ack)
-  IPC_STRUCT_TRAITS_MEMBER(content_source_id)
+  IPC_STRUCT_TRAITS_MEMBER(capture_sequence_number)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::MenuItem)
@@ -281,33 +280,6 @@ IPC_STRUCT_BEGIN(ViewHostMsg_SelectionBounds_Params)
   IPC_STRUCT_MEMBER(bool, is_anchor_first)
 IPC_STRUCT_END()
 
-IPC_STRUCT_BEGIN(ViewHostMsg_ResizeOrRepaint_ACK_Params)
-  // The size of the RenderView when this message was generated.  This is
-  // included so the host knows how large the view is from the perspective of
-  // the renderer process.  This is necessary in case a resize operation is in
-  // progress. If auto-resize is enabled, this should update the corresponding
-  // view size.
-  IPC_STRUCT_MEMBER(gfx::Size, view_size)
-
-  // The following describes the various bits that may be set in flags:
-  //
-  //   ViewHostMsg_ResizeOrRepaint_ACK_Flags::IS_RESIZE_ACK
-  //     Indicates that this is a response to a ViewMsg_Resize message.
-  //
-  //   ViewHostMsg_ResizeOrRepaint_ACK_Flags::IS_REPAINT_ACK
-  //     Indicates that this is a response to a ViewMsg_Repaint message.
-  //
-  // If flags is zero, then this message corresponds to an unsolicited paint
-  // request by the render view.  Any of the above bits may be set in flags,
-  // which would indicate that this paint message is an ACK for multiple
-  // request messages.
-  IPC_STRUCT_MEMBER(int, flags)
-
-  // A unique monotonically increasing sequence number used to identify this
-  // ACK.
-  IPC_STRUCT_MEMBER(uint64_t, sequence_number)
-IPC_STRUCT_END()
-
 // Messages sent from the browser to the renderer.
 
 #if defined(OS_ANDROID)
@@ -340,12 +312,14 @@ IPC_MESSAGE_ROUTED1(ViewMsg_UpdateWebPreferences,
 // Expects a Close_ACK message when finished.
 IPC_MESSAGE_ROUTED0(ViewMsg_Close)
 
-// Tells the render view to change its size.  A ViewHostMsg_ResizeOrRepaint_ACK
-// message is generated in response provided new_size is not empty and not equal
-// to the view's current size.  The generated ViewHostMsg_ResizeOrRepaint_ACK
+// Tells the renderer to update visual properties.  A
+// ViewHostMsg_ResizeOrRepaint_ACK  message is generated in response provided
+// new_size is not empty and not equal to the view's current size.  The
+// generated ViewHostMsg_ResizeOrRepaint_ACK
 // message will have the IS_RESIZE_ACK flag set. It also receives the resizer
 // rect so that we don't have to fetch it every time WebKit asks for it.
-IPC_MESSAGE_ROUTED1(ViewMsg_Resize, content::ResizeParams /* params */)
+IPC_MESSAGE_ROUTED1(ViewMsg_SynchronizeVisualProperties,
+                    content::VisualProperties /* params */)
 
 // Enables device emulation. See WebDeviceEmulationParams for description.
 IPC_MESSAGE_ROUTED1(ViewMsg_EnableDeviceEmulation,
@@ -412,11 +386,6 @@ IPC_MESSAGE_ROUTED2(ViewMsg_EnumerateDirectoryResponse,
 //
 // Expects a ClosePage_ACK message when finished.
 IPC_MESSAGE_ROUTED0(ViewMsg_ClosePage)
-
-// Notifies the renderer that a paint is to be generated for the rectangle
-// passed in.
-IPC_MESSAGE_ROUTED1(ViewMsg_Repaint,
-                    gfx::Size /* The view size to be repainted */)
 
 // Notification that a move or resize renderer's containing window has
 // started.
@@ -502,7 +471,7 @@ IPC_MESSAGE_ROUTED1(ViewMsg_PpapiBrokerPermissionResult,
 // inside the popup, instruct the renderer to generate a synthetic tap at that
 // offset.
 IPC_MESSAGE_ROUTED3(ViewMsg_ResolveTapDisambiguation,
-                    double /* timestamp_seconds */,
+                    base::TimeTicks /* timestamp */,
                     gfx::Point /* tap_viewport_offset */,
                     bool /* is_long_press */)
 
@@ -522,6 +491,9 @@ IPC_MESSAGE_ROUTED2(ViewMsg_SetViewportIntersection,
 
 // Sets the inert bit on an out-of-process iframe.
 IPC_MESSAGE_ROUTED1(ViewMsg_SetIsInert, bool /* inert */)
+
+// Sets the inherited effective touch action on an out-of-process iframe.
+IPC_MESSAGE_ROUTED1(ViewMsg_SetInheritedEffectiveTouchAction, cc::TouchAction)
 
 // Toggles render throttling for an out-of-process iframe.
 IPC_MESSAGE_ROUTED2(ViewMsg_UpdateRenderThrottlingStatus,
@@ -578,12 +550,6 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_UpdateTargetURL,
 // finished.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_DocumentAvailableInMainFrame,
                     bool /* uses_temporary_zoom_level */)
-
-// Sent as an acknowledgement to a previous resize request. This indicates that
-// the compositor has received a frame from the renderer corresponding to the
-// previous reszie request.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_ResizeOrRepaint_ACK,
-                    ViewHostMsg_ResizeOrRepaint_ACK_Params)
 
 IPC_MESSAGE_ROUTED0(ViewHostMsg_Focus)
 

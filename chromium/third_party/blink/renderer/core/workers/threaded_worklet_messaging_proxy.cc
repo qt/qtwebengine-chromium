@@ -12,6 +12,7 @@
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/inspector/thread_debugger.h"
 #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
+#include "third_party/blink/renderer/core/script/script.h"
 #include "third_party/blink/renderer/core/workers/global_scope_creation_params.h"
 #include "third_party/blink/renderer/core/workers/threaded_worklet_object_proxy.h"
 #include "third_party/blink/renderer/core/workers/worker_clients.h"
@@ -44,9 +45,10 @@ void ThreadedWorkletMessagingProxy::Initialize(
 
   auto global_scope_creation_params =
       std::make_unique<GlobalScopeCreationParams>(
-          document->Url(), document->UserAgent(), csp->Headers().get(),
-          document->GetReferrerPolicy(), document->GetSecurityOrigin(),
-          document->IsSecureContext(), worker_clients, document->AddressSpace(),
+          document->Url(), ScriptType::kModule, document->UserAgent(),
+          csp->Headers().get(), document->GetReferrerPolicy(),
+          document->GetSecurityOrigin(), document->IsSecureContext(),
+          worker_clients, document->AddressSpace(),
           OriginTrialContext::GetTokens(document).get(),
           base::UnguessableToken::Create(),
           std::make_unique<WorkerSettings>(document->GetSettings()),
@@ -54,7 +56,8 @@ void ThreadedWorkletMessagingProxy::Initialize(
 
   // Worklets share the pre-initialized backing thread so that we don't have to
   // specify the backing thread startup data.
-  InitializeWorkerThread(std::move(global_scope_creation_params), WTF::nullopt);
+  InitializeWorkerThread(std::move(global_scope_creation_params),
+                         base::nullopt);
 }
 
 void ThreadedWorkletMessagingProxy::Trace(blink::Visitor* visitor) {

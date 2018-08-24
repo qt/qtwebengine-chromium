@@ -4,7 +4,6 @@
 
 #include "components/cdm/renderer/widevine_key_system_properties.h"
 
-#include "media/media_buildflags.h"
 #include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
 
 #if defined(WIDEVINE_CDM_AVAILABLE)
@@ -39,6 +38,7 @@ Robustness ConvertRobustness(const std::string& robustness) {
 }  // namespace
 
 WidevineKeySystemProperties::WidevineKeySystemProperties(
+    base::flat_set<media::EncryptionMode> supported_encryption_schemes,
     media::SupportedCodecs supported_codecs,
 #if defined(OS_ANDROID)
     media::SupportedCodecs supported_secure_codecs,
@@ -49,7 +49,8 @@ WidevineKeySystemProperties::WidevineKeySystemProperties(
     media::EmeSessionTypeSupport persistent_release_message_support,
     media::EmeFeatureSupport persistent_state_support,
     media::EmeFeatureSupport distinctive_identifier_support)
-    : supported_codecs_(supported_codecs),
+    : supported_encryption_schemes_(std::move(supported_encryption_schemes)),
+      supported_codecs_(supported_codecs),
 #if defined(OS_ANDROID)
       supported_secure_codecs_(supported_secure_codecs),
 #endif  // defined(OS_ANDROID)
@@ -60,6 +61,8 @@ WidevineKeySystemProperties::WidevineKeySystemProperties(
       persistent_state_support_(persistent_state_support),
       distinctive_identifier_support_(distinctive_identifier_support) {
 }
+
+WidevineKeySystemProperties::~WidevineKeySystemProperties() = default;
 
 std::string WidevineKeySystemProperties::GetKeySystemName() const {
   return kWidevineKeySystem;
@@ -72,12 +75,15 @@ bool WidevineKeySystemProperties::IsSupportedInitDataType(
   // |init_data_type| x |container| pairings.
   if (init_data_type == EmeInitDataType::WEBM)
     return (supported_codecs_ & media::EME_CODEC_WEBM_ALL) != 0;
-#if BUILDFLAG(USE_PROPRIETARY_CODECS)
   if (init_data_type == EmeInitDataType::CENC)
     return (supported_codecs_ & media::EME_CODEC_MP4_ALL) != 0;
-#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
 
   return false;
+}
+
+bool WidevineKeySystemProperties::IsEncryptionSchemeSupported(
+    media::EncryptionMode encryption_scheme) const {
+  return supported_encryption_schemes_.count(encryption_scheme) != 0;
 }
 
 SupportedCodecs WidevineKeySystemProperties::GetSupportedCodecs() const {

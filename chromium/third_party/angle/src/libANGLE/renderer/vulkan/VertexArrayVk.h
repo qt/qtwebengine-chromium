@@ -32,7 +32,7 @@ class DynamicBuffer;
 class VertexArrayVk : public VertexArrayImpl
 {
   public:
-    VertexArrayVk(const gl::VertexArrayState &state);
+    VertexArrayVk(const gl::VertexArrayState &state, RendererVk *renderer);
     ~VertexArrayVk() override;
 
     void destroy(const gl::Context *context) override;
@@ -99,6 +99,10 @@ class VertexArrayVk : public VertexArrayImpl
                             vk::CommandGraphNode *drawNode,
                             bool newCommandBuffer);
 
+    void syncDirtyAttrib(const gl::VertexAttribute &attrib,
+                         const gl::VertexBinding &binding,
+                         size_t attribIndex);
+
     gl::AttribArray<VkBuffer> mCurrentArrayBufferHandles;
     gl::AttribArray<VkDeviceSize> mCurrentArrayBufferOffsets;
     gl::AttribArray<vk::CommandGraphResource *> mCurrentArrayBufferResources;
@@ -111,10 +115,6 @@ class VertexArrayVk : public VertexArrayImpl
     gl::AttributesMask mDirtyPackedInputs;
     vk::VertexInputBindings mPackedInputBindings;
     vk::VertexInputAttributes mPackedInputAttributes;
-
-    // Which attributes need to be copied from client memory.
-    // TODO(jmadill): Move this to VertexArrayState. http://anglebug.com/2389
-    gl::AttributesMask mClientMemoryAttribs;
 
     vk::DynamicBuffer mDynamicVertexData;
     vk::DynamicBuffer mDynamicIndexData;

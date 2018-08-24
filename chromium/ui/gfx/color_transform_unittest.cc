@@ -14,6 +14,9 @@
 
 namespace gfx {
 
+// Allowed error in most test.
+const float kEpsilon = 1.5f / 255.f;
+
 // Internal functions, exposted for testing.
 GFX_EXPORT Transform GetTransferMatrix(ColorSpace::MatrixID id);
 
@@ -262,21 +265,21 @@ TEST(SimpleColorSpace, ICCProfileOnlyXYZ) {
   ColorTransform::TriStim expected_transformed_value(
       0.34090986847877502f, 0.42633286118507385f, 0.3408740758895874f);
 
-  // One step should be needed, namely, the SkColorSpaceXform.
+  // Two steps should be needed, transfer fn and matrix.
   std::unique_ptr<ColorTransform> icc_to_xyzd50(
       ColorTransform::NewColorTransform(
           icc_space, xyzd50, ColorTransform::Intent::INTENT_ABSOLUTE));
-  EXPECT_EQ(icc_to_xyzd50->NumberOfStepsForTesting(), 1u);
+  EXPECT_EQ(icc_to_xyzd50->NumberOfStepsForTesting(), 2u);
   icc_to_xyzd50->Transform(&transformed_value, 1);
   EXPECT_NEAR(transformed_value.x(), expected_transformed_value.x(), kEpsilon);
   EXPECT_NEAR(transformed_value.y(), expected_transformed_value.y(), kEpsilon);
   EXPECT_NEAR(transformed_value.z(), expected_transformed_value.z(), kEpsilon);
 
-  // One step should be needed, namely, the SkColorSpaceXform.
+  // Two steps should be needed, matrix and transfer fn.
   std::unique_ptr<ColorTransform> xyzd50_to_icc(
       ColorTransform::NewColorTransform(
           xyzd50, icc_space, ColorTransform::Intent::INTENT_ABSOLUTE));
-  EXPECT_EQ(xyzd50_to_icc->NumberOfStepsForTesting(), 1u);
+  EXPECT_EQ(xyzd50_to_icc->NumberOfStepsForTesting(), 2u);
   xyzd50_to_icc->Transform(&transformed_value, 1);
   EXPECT_NEAR(input_value.x(), transformed_value.x(), kEpsilon);
   EXPECT_NEAR(input_value.y(), transformed_value.y(), kEpsilon);
@@ -284,11 +287,10 @@ TEST(SimpleColorSpace, ICCProfileOnlyXYZ) {
 }
 
 TEST(SimpleColorSpace, ICCProfileOnlyColorSpin) {
-  const float kEpsilon = 2.5f / 255.f;
+  const float kEpsilon = 3.0f / 255.f;
   ICCProfile icc_profile = ICCProfileForTestingNoAnalyticTrFn();
   ColorSpace icc_space = icc_profile.GetColorSpace();
-  ColorSpace colorspin =
-      ICCProfileForTestingColorSpin().GetParametricColorSpace();
+  ColorSpace colorspin = ICCProfileForTestingColorSpin().GetColorSpace();
 
   ColorTransform::TriStim input_value(0.25f, 0.5f, 0.75f);
   ColorTransform::TriStim transformed_value = input_value;
@@ -321,7 +323,6 @@ TEST(SimpleColorSpace, GetColorSpace) {
   ICCProfile srgb_icc = ICCProfileForTestingSRGB();
   ColorSpace sRGB = srgb_icc.GetColorSpace();
   ColorSpace sRGB2 = sRGB;
-  const float kEpsilon = 1.5f / 255.f;
 
   // Prevent sRGB2 from using a cached ICC profile.
   sRGB2.icc_profile_id_ = 0;
@@ -353,6 +354,19 @@ TEST(SimpleColorSpace, GetColorSpace) {
   EXPECT_NEAR(tmp.y(), 0.0f, kEpsilon);
   EXPECT_NEAR(tmp.z(), 1.0f, kEpsilon);
 }
+
+TEST(SimpleColorSpace, Scale) {
+  ColorSpace srgb = ColorSpace::CreateSRGB();
+  ColorSpace srgb_scaled = srgb.GetScaledColorSpace(2.0f);
+  std::unique_ptr<ColorTransform> t(ColorTransform::NewColorTransform(
+      srgb, srgb_scaled, ColorTransform::Intent::INTENT_PERCEPTUAL));
+
+  ColorTransform::TriStim tmp(1.0f, 1.0f, 1.0f);
+  t->Transform(&tmp, 1);
+  EXPECT_NEAR(tmp.x(), 0.735356983052449f, kEpsilon);
+  EXPECT_NEAR(tmp.y(), 0.735356983052449f, kEpsilon);
+  EXPECT_NEAR(tmp.z(), 0.735356983052449f, kEpsilon);
+};
 
 TEST(SimpleColorSpace, ToUndefined) {
   ColorSpace null;

@@ -776,7 +776,7 @@ void EnableCrashDumping(bool unattended) {
   g_is_crash_reporter_enabled = true;
 
   base::FilePath tmp_path("/tmp");
-  PathService::Get(base::DIR_TEMP, &tmp_path);
+  base::PathService::Get(base::DIR_TEMP, &tmp_path);
 
   base::FilePath dumps_path(tmp_path);
   if (GetCrashReporterClient()->GetCrashDumpLocation(&dumps_path)) {
@@ -992,8 +992,7 @@ class NonBrowserCrashHandler : public google_breakpad::CrashGenerationClient {
  public:
   NonBrowserCrashHandler()
       : server_fd_(base::GlobalDescriptors::GetInstance()->Get(
-            kCrashDumpSignal)) {
-  }
+            service_manager::kCrashDumpSignal)) {}
 
   ~NonBrowserCrashHandler() override {}
 

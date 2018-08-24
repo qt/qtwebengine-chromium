@@ -51,7 +51,6 @@ namespace blink {
 class WebAudioSourceProvider;
 class WebContentDecryptionModule;
 class WebMediaPlayerSource;
-class WebSecurityOrigin;
 class WebString;
 class WebURL;
 enum class WebFullscreenVideoStatus;
@@ -117,6 +116,14 @@ class WebMediaPlayer {
     bool skipped = false;
   };
 
+  // Callback to get notified when the Picture-in-Picture window is opened.
+  using PipWindowOpenedCallback = base::OnceCallback<void(const WebSize&)>;
+  // Callback to get notified when Picture-in-Picture window is closed.
+  using PipWindowClosedCallback = base::OnceClosure;
+  // Callback to get notified when the Picture-in-Picture window is resized.
+  using PipWindowResizedCallback =
+      base::RepeatingCallback<void(const WebSize&)>;
+
   virtual ~WebMediaPlayer() = default;
 
   virtual void Load(LoadType, const WebMediaPlayerSource&, CORSMode) = 0;
@@ -127,13 +134,23 @@ class WebMediaPlayer {
   virtual void Seek(double seconds) = 0;
   virtual void SetRate(double) = 0;
   virtual void SetVolume(double) = 0;
-  virtual void EnterPictureInPicture() = 0;
-  virtual void ExitPictureInPicture() = 0;
+
+  // Enter Picture-in-Picture and notifies Blink with window size
+  // when video successfully enters Picture-in-Picture.
+  virtual void EnterPictureInPicture(PipWindowOpenedCallback) = 0;
+  // Exit Picture-in-Picture and notifies Blink when it's done.
+  virtual void ExitPictureInPicture(PipWindowClosedCallback) = 0;
+  // Register a callback that will be run when the Picture-in-Picture window
+  // is resized.
+  virtual void RegisterPictureInPictureWindowResizeCallback(
+      PipWindowResizedCallback) = 0;
 
   virtual void RequestRemotePlayback() {}
   virtual void RequestRemotePlaybackControl() {}
   virtual void RequestRemotePlaybackStop() {}
   virtual void RequestRemotePlaybackDisabled(bool disabled) {}
+  virtual void FlingingStarted() {}
+  virtual void FlingingStopped() {}
   virtual void SetPreload(Preload) {}
   virtual WebTimeRanges Buffered() const = 0;
   virtual WebTimeRanges Seekable() const = 0;
@@ -146,7 +163,6 @@ class WebMediaPlayer {
   // destructors, run in the same thread where the object is created
   // (i.e., the blink thread).
   virtual void SetSinkId(const WebString& sink_id,
-                         const WebSecurityOrigin&,
                          WebSetSinkIdCallbacks*) = 0;
 
   // True if the loaded media has a playable video/audio track.
@@ -335,4 +351,4 @@ class WebMediaPlayer {
 
 }  // namespace blink
 
-#endif
+#endif  // THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_MEDIA_PLAYER_H_

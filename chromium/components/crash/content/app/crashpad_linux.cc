@@ -11,6 +11,7 @@
 
 #include <algorithm>
 
+#include "base/environment.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
 #include "base/logging.h"
@@ -41,7 +42,8 @@ class SandboxedHandler {
   }
 
   bool Initialize() {
-    server_fd_ = base::GlobalDescriptors::GetInstance()->Get(kCrashDumpSignal);
+    server_fd_ = base::GlobalDescriptors::GetInstance()->Get(
+        service_manager::kCrashDumpSignal);
 
     return Signals::InstallCrashHandlers(HandleCrash, 0, nullptr);
   }
@@ -50,7 +52,7 @@ class SandboxedHandler {
   SandboxedHandler() = default;
   ~SandboxedHandler() = delete;
 
-  int ConnectToHandler(base::ScopedFD* connection) {
+  int ConnectToHandler(int signo, base::ScopedFD* connection) {
     int fds[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0) {
       return errno;
@@ -58,11 +60,15 @@ class SandboxedHandler {
     base::ScopedFD local_connection(fds[0]);
     base::ScopedFD handlers_socket(fds[1]);
 
+    iovec iov;
+    iov.iov_base = &signo;
+    iov.iov_len = sizeof(signo);
+
     msghdr msg;
     msg.msg_name = nullptr;
     msg.msg_namelen = 0;
-    msg.msg_iov = nullptr;
-    msg.msg_iovlen = 0;
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
 
     char cmsg_buf[CMSG_SPACE(sizeof(int))];
     msg.msg_control = cmsg_buf;
@@ -86,7 +92,7 @@ class SandboxedHandler {
     SandboxedHandler* state = Get();
 
     base::ScopedFD connection;
-    if (state->ConnectToHandler(&connection) == 0) {
+    if (state->ConnectToHandler(signo, &connection) == 0) {
       ExceptionInformation exception_information;
       exception_information.siginfo_address =
           FromPointerCast<decltype(exception_information.siginfo_address)>(
@@ -120,6 +126,26 @@ class SandboxedHandler {
 namespace crash_reporter {
 namespace internal {
 
+bool SetLdLibraryPath(const base::FilePath& lib_path) {
+#if defined(OS_ANDROID) && defined(COMPONENT_BUILD)
+  std::string library_path(lib_path.value());
+
+  static constexpr char kLibraryPathVar[] = "LD_LIBRARY_PATH";
+  std::unique_ptr<base::Environment> env(base::Environment::Create());
+  std::string old_path;
+  if (env->GetVar(kLibraryPathVar, &old_path)) {
+    library_path.push_back(':');
+    library_path.append(old_path);
+  }
+
+  if (!env->SetVar(kLibraryPathVar, library_path)) {
+    return false;
+  }
+#endif
+
+  return true;
+}
+
 bool BuildHandlerArgs(base::FilePath* handler_path,
                       base::FilePath* database_path,
                       base::FilePath* metrics_path,
@@ -128,32 +154,47 @@ bool BuildHandlerArgs(base::FilePath* handler_path,
                       std::vector<std::string>* arguments) {
   base::FilePath exe_dir;
 #if defined(OS_ANDROID)
-  if (!PathService::Get(base::DIR_MODULE, &exe_dir)) {
+  if (!base::PathService::Get(base::DIR_MODULE, &exe_dir)) {
 #else
-  if (!PathService::Get(base::DIR_EXE, &exe_dir)) {
+  if (!base::PathService::Get(base::DIR_EXE, &exe_dir)) {
 #endif  // OS_ANDROID
     DCHECK(false);
     return false;
   }
+#if defined(OS_ANDROID)
+  // There is not any normal way to package native executables in an Android
+  // APK. The Crashpad handler is packaged like a loadable module, which
+  // Android's APK installer expects to be named like a shared library, but it
+  // is in fact a standalone executable.
+  *handler_path = exe_dir.Append("libcrashpad_handler.so");
+#else
   *handler_path = exe_dir.Append("crashpad_handler");
+#endif
+
+  static bool env_setup = SetLdLibraryPath(exe_dir);
+  if (!env_setup) {
+    return false;
+  }
 
   CrashReporterClient* crash_reporter_client = GetCrashReporterClient();
   crash_reporter_client->GetCrashDumpLocation(database_path);
   crash_reporter_client->GetCrashMetricsLocation(metrics_path);
 
-#if defined(GOOGLE_CHROME_BUILD) && defined(OFFICIAL_BUILD)
+// TODO(jperaza): Set URL for Android when Crashpad takes over report upload.
+#if defined(GOOGLE_CHROME_BUILD) && defined(OFFICIAL_BUILD) && \
+    !defined(OS_ANDROID)
   *url = "https://clients2.google.com/cr/report";
 #else
   *url = std::string();
 #endif
 
-  const char* product_name;
-  const char* product_version;
-  const char* channel;
+  std::string product_name;
+  std::string product_version;
+  std::string channel;
   crash_reporter_client->GetProductNameAndVersion(&product_name,
                                                   &product_version, &channel);
-  (*process_annotations)["prod"] = std::string(product_name);
-  (*process_annotations)["ver"] = std::string(product_version);
+  (*process_annotations)["prod"] = product_name;
+  (*process_annotations)["ver"] = product_version;
 
 #if defined(GOOGLE_CHROME_BUILD)
   // Empty means stable.
@@ -161,9 +202,8 @@ bool BuildHandlerArgs(base::FilePath* handler_path,
 #else
   const bool allow_empty_channel = false;
 #endif
-  std::string channel_string(channel);
-  if (allow_empty_channel || !channel_string.empty()) {
-    (*process_annotations)["channel"] = channel_string;
+  if (allow_empty_channel || !channel.empty()) {
+    (*process_annotations)["channel"] = channel;
   }
 
 #if defined(OS_ANDROID)

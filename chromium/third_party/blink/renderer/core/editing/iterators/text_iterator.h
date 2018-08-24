@@ -74,12 +74,18 @@ class CORE_TEMPLATE_CLASS_EXPORT TextIteratorAlgorithm {
   EphemeralRangeTemplate<Strategy> Range() const;
   const Node* GetNode() const;
 
-  Document* OwnerDocument() const;
-  const Node* CurrentContainer() const;
+  const Document& OwnerDocument() const;
+  const Node& CurrentContainer() const;
   int StartOffsetInCurrentContainer() const;
   int EndOffsetInCurrentContainer() const;
   PositionTemplate<Strategy> StartPositionInCurrentContainer() const;
   PositionTemplate<Strategy> EndPositionInCurrentContainer() const;
+
+  // Returns the position before |char16_offset| in current text run.
+  PositionTemplate<Strategy> GetPositionBefore(int char16_offset) const;
+
+  // Returns the position after |char16_offset| in current text run.
+  PositionTemplate<Strategy> GetPositionAfter(int char16_offset) const;
 
   const TextIteratorTextState& GetText() const { return text_state_; }
   int length() const { return text_state_.length(); }
@@ -130,6 +136,10 @@ class CORE_TEMPLATE_CLASS_EXPORT TextIteratorAlgorithm {
     kHandledChildren
   };
 
+  void EmitChar16AfterNode(UChar code_unit, const Node& node);
+  void EmitChar16AsNode(UChar code_unit, const Node& node);
+  void EmitChar16BeforeNode(UChar code_unit, const Node& node);
+
   void ExitNode();
   bool ShouldRepresentNodeOffsetZero();
   bool ShouldEmitSpaceBeforeAndAfterNode(const Node&);
@@ -141,11 +151,6 @@ class CORE_TEMPLATE_CLASS_EXPORT TextIteratorAlgorithm {
   void HandleTextNode();
   void HandleReplacedElement();
   void HandleNonTextNode();
-  void SpliceBuffer(UChar,
-                    const Node* text_node,
-                    const Node* offset_base_node,
-                    unsigned text_start_offset,
-                    unsigned text_end_offset);
 
   // Used by selection preservation code. There should be one character emitted
   // between every VisiblePosition in the Range used to create the TextIterator.
@@ -201,6 +206,9 @@ class CORE_TEMPLATE_CLASS_EXPORT TextIteratorAlgorithm {
   void CopyCodeUnitsTo(ForwardsTextBuffer* output,
                        unsigned position,
                        unsigned copy_length) const;
+
+  // Ensure container node of current text run for computing position.
+  void EnsurePositionContainer() const;
 
   // The range.
   const Member<const Node> start_container_;

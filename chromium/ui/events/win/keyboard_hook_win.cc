@@ -13,6 +13,10 @@
 #include "base/optional.h"
 #include "base/threading/thread_checker.h"
 #include "ui/events/event.h"
+#include "ui/events/event_utils.h"
+#include "ui/events/keycodes/dom/dom_code.h"
+#include "ui/events/keycodes/dom/keycode_converter.h"
+#include "ui/gfx/native_widget_types.h"
 
 namespace ui {
 
@@ -33,7 +37,7 @@ bool IsOSReservedKey(DWORD vk) {
 
 class KeyboardHookWin : public KeyboardHookBase {
  public:
-  KeyboardHookWin(base::Optional<base::flat_set<int>> native_key_codes,
+  KeyboardHookWin(base::Optional<base::flat_set<DomCode>> dom_codes,
                   KeyEventCallback callback);
   ~KeyboardHookWin() override;
 
@@ -55,9 +59,10 @@ class KeyboardHookWin : public KeyboardHookBase {
 // static
 KeyboardHookWin* KeyboardHookWin::instance_ = nullptr;
 
-KeyboardHookWin::KeyboardHookWin(base::Optional<base::flat_set<int>> key_codes,
-                                 KeyEventCallback callback)
-    : KeyboardHookBase(std::move(key_codes), std::move(callback)) {}
+KeyboardHookWin::KeyboardHookWin(
+    base::Optional<base::flat_set<DomCode>> dom_codes,
+    KeyEventCallback callback)
+    : KeyboardHookBase(std::move(dom_codes), std::move(callback)) {}
 
 KeyboardHookWin::~KeyboardHookWin() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
@@ -101,12 +106,15 @@ LRESULT CALLBACK KeyboardHookWin::ProcessKeyEvent(int code,
   DCHECK_CALLED_ON_VALID_THREAD(instance_->thread_checker_);
 
   KBDLLHOOKSTRUCT* ll_hooks = reinterpret_cast<KBDLLHOOKSTRUCT*>(l_param);
+  DomCode dom_code =
+      KeycodeConverter::NativeKeycodeToDomCode(ll_hooks->scanCode);
   if (!IsOSReservedKey(ll_hooks->vkCode) &&
-      instance_->ShouldCaptureKeyEvent(ll_hooks->scanCode)) {
+      instance_->ShouldCaptureKeyEvent(dom_code)) {
     MSG msg = {nullptr, w_param, ll_hooks->vkCode,
                (ll_hooks->scanCode << 16) | (ll_hooks->flags & 0xFFFF),
                ll_hooks->time};
-    instance_->ForwardCapturedKeyEvent(std::make_unique<KeyEvent>(msg));
+    KeyEvent key_event = KeyEventFromMSG(msg);
+    instance_->ForwardCapturedKeyEvent(std::make_unique<KeyEvent>(key_event));
     return 1;
   }
   return CallNextHookEx(nullptr, code, w_param, l_param);
@@ -116,10 +124,11 @@ LRESULT CALLBACK KeyboardHookWin::ProcessKeyEvent(int code,
 
 // static
 std::unique_ptr<KeyboardHook> KeyboardHook::Create(
-    base::Optional<base::flat_set<int>> key_codes,
+    base::Optional<base::flat_set<DomCode>> dom_codes,
+    gfx::AcceleratedWidget accelerated_widget,
     KeyEventCallback callback) {
   std::unique_ptr<KeyboardHookWin> keyboard_hook =
-      std::make_unique<KeyboardHookWin>(std::move(key_codes),
+      std::make_unique<KeyboardHookWin>(std::move(dom_codes),
                                         std::move(callback));
 
   if (!keyboard_hook->Register())

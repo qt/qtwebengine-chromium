@@ -11,8 +11,8 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "components/apdu/apdu_response.h"
 #include "device/fido/fido_constants.h"
+#include "device/fido/fido_parsing_utils.h"
 #include "device/fido/fido_test_data.h"
-#include "device/fido/u2f_parsing_utils.h"
 
 namespace device {
 
@@ -74,16 +74,6 @@ void MockFidoDevice::NoErrorRegister(const std::vector<uint8_t>& command,
 }
 
 // static
-void MockFidoDevice::NoErrorVersion(const std::vector<uint8_t>& command,
-                                    DeviceCallback& cb) {
-  std::move(cb).Run(
-      apdu::ApduResponse(std::vector<uint8_t>(kU2fVersionResponse.cbegin(),
-                                              kU2fVersionResponse.cend()),
-                         apdu::ApduResponse::Status::SW_NO_ERROR)
-          .GetEncodedResponse());
-}
-
-// static
 void MockFidoDevice::SignWithCorruptedResponse(
     const std::vector<uint8_t>& command,
     DeviceCallback& cb) {
@@ -109,7 +99,7 @@ void MockFidoDevice::ExpectCtap2CommandAndRespondWith(
     CtapRequestCommand command,
     base::Optional<base::span<const uint8_t>> response,
     base::TimeDelta delay) {
-  auto data = u2f_parsing_utils::MaterializeOrNull(response);
+  auto data = fido_parsing_utils::MaterializeOrNull(response);
   auto send_response = [ data(std::move(data)), delay ](DeviceCallback & cb) {
     base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
         FROM_HERE, base::BindOnce(std::move(cb), std::move(data)), delay);
@@ -123,13 +113,13 @@ void MockFidoDevice::ExpectRequestAndRespondWith(
     base::span<const uint8_t> request,
     base::Optional<base::span<const uint8_t>> response,
     base::TimeDelta delay) {
-  auto data = u2f_parsing_utils::MaterializeOrNull(response);
+  auto data = fido_parsing_utils::MaterializeOrNull(response);
   auto send_response = [ data(std::move(data)), delay ](DeviceCallback & cb) {
     base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
         FROM_HERE, base::BindOnce(std::move(cb), std::move(data)), delay);
   };
 
-  auto request_as_vector = u2f_parsing_utils::Materialize(request);
+  auto request_as_vector = fido_parsing_utils::Materialize(request);
   EXPECT_CALL(*this,
               DeviceTransactPtr(std::move(request_as_vector), ::testing::_))
       .WillOnce(::testing::WithArg<1>(::testing::Invoke(send_response)));
@@ -142,7 +132,7 @@ void MockFidoDevice::ExpectCtap2CommandAndDoNotRespond(
 
 void MockFidoDevice::ExpectRequestAndDoNotRespond(
     base::span<const uint8_t> request) {
-  auto request_as_vector = u2f_parsing_utils::Materialize(request);
+  auto request_as_vector = fido_parsing_utils::Materialize(request);
   EXPECT_CALL(*this,
               DeviceTransactPtr(std::move(request_as_vector), ::testing::_));
 }

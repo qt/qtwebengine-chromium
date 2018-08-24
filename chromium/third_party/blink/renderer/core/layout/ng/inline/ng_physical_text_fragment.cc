@@ -5,15 +5,30 @@
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_physical_text_fragment.h"
 
 #include "third_party/blink/renderer/core/dom/node.h"
-#include "third_party/blink/renderer/core/editing/position_with_affinity.h"
 #include "third_party/blink/renderer/core/layout/layout_text_fragment.h"
-#include "third_party/blink/renderer/core/layout/ng/geometry/ng_logical_rect.h"
+#include "third_party/blink/renderer/core/layout/line/line_orientation_utils.h"
 #include "third_party/blink/renderer/core/layout/ng/geometry/ng_physical_offset_rect.h"
-#include "third_party/blink/renderer/core/layout/ng/inline/ng_line_height_metrics.h"
-#include "third_party/blink/renderer/core/layout/ng/inline/ng_offset_mapping.h"
+#include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_item.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 
 namespace blink {
+
+// Convert logical cooridnate to local physical coordinate.
+NGPhysicalOffsetRect NGPhysicalTextFragment::ConvertToLocal(
+    const LayoutRect& logical_rect) const {
+  switch (LineOrientation()) {
+    case NGLineOrientation::kHorizontal:
+      return NGPhysicalOffsetRect(logical_rect);
+    case NGLineOrientation::kClockWiseVertical:
+      return {{size_.width - logical_rect.MaxY(), logical_rect.X()},
+              {logical_rect.Height(), logical_rect.Width()}};
+    case NGLineOrientation::kCounterClockWiseVertical:
+      return {{logical_rect.Y(), size_.height - logical_rect.MaxX()},
+              {logical_rect.Height(), logical_rect.Width()}};
+  }
+  NOTREACHED();
+  return NGPhysicalOffsetRect(logical_rect);
+}
 
 // Compute the inline position from text offset, in logical coordinate relative
 // to this fragment.
@@ -75,8 +90,8 @@ NGPhysicalOffsetRect NGPhysicalTextFragment::LocalRect(
 }
 
 NGPhysicalOffsetRect NGPhysicalTextFragment::SelfVisualRect() const {
-  if (!shape_result_)
-    return {};
+  if (UNLIKELY(!shape_result_))
+    return LocalRect();
 
   // Glyph bounds is in logical coordinate, origin at the alphabetic baseline.
   LayoutRect visual_rect = EnclosingLayoutRect(shape_result_->Bounds());
@@ -84,8 +99,7 @@ NGPhysicalOffsetRect NGPhysicalTextFragment::SelfVisualRect() const {
   // Make the origin at the logical top of this fragment.
   const ComputedStyle& style = Style();
   const Font& font = style.GetFont();
-  const SimpleFontData* font_data = font.PrimaryFont();
-  if (font_data) {
+  if (const SimpleFontData* font_data = font.PrimaryFont()) {
     visual_rect.SetY(visual_rect.Y() + font_data->GetFontMetrics().FixedAscent(
                                            kAlphabeticBaseline));
   }
@@ -111,26 +125,38 @@ NGPhysicalOffsetRect NGPhysicalTextFragment::SelfVisualRect() const {
 
   if (ShadowList* text_shadow = style.TextShadow()) {
     LayoutRectOutsets text_shadow_logical_outsets =
-        LayoutRectOutsets(text_shadow->RectOutsetsIncludingOriginal())
-            .LineOrientationOutsets(style.GetWritingMode());
+        LineOrientationLayoutRectOutsets(
+            LayoutRectOutsets(text_shadow->RectOutsetsIncludingOriginal()),
+            style.GetWritingMode());
     text_shadow_logical_outsets.ClampNegativeToZero();
     visual_rect.Expand(text_shadow_logical_outsets);
   }
 
   visual_rect = LayoutRect(EnclosingIntRect(visual_rect));
 
-  switch (LineOrientation()) {
-    case NGLineOrientation::kHorizontal:
-      return NGPhysicalOffsetRect(visual_rect);
-    case NGLineOrientation::kClockWiseVertical:
-      return {{size_.width - visual_rect.MaxY(), visual_rect.X()},
-              {visual_rect.Height(), visual_rect.Width()}};
-    case NGLineOrientation::kCounterClockWiseVertical:
-      return {{visual_rect.Y(), size_.height - visual_rect.MaxX()},
-              {visual_rect.Height(), visual_rect.Width()}};
-  }
-  NOTREACHED();
-  return {};
+  // Uniting the frame rect ensures that non-ink spaces such side bearings, or
+  // even space characters, are included in the visual rect for decorations.
+  NGPhysicalOffsetRect local_visual_rect = ConvertToLocal(visual_rect);
+  local_visual_rect.Unite(LocalRect());
+  return local_visual_rect;
+}
+
+scoped_refptr<NGPhysicalFragment> NGPhysicalTextFragment::TrimText(
+    unsigned new_start_offset,
+    unsigned new_end_offset) const {
+  DCHECK(shape_result_);
+  DCHECK_GE(new_start_offset, StartOffset());
+  DCHECK_GT(new_end_offset, new_start_offset);
+  DCHECK_LE(new_end_offset, EndOffset());
+  scoped_refptr<ShapeResult> new_shape_result =
+      shape_result_->SubRange(new_start_offset, new_end_offset);
+  LayoutUnit new_inline_size = new_shape_result->SnappedWidth();
+  return base::AdoptRef(new NGPhysicalTextFragment(
+      layout_object_, Style(), static_cast<NGStyleVariant>(style_variant_),
+      TextType(), text_, new_start_offset, new_end_offset,
+      IsHorizontal() ? NGPhysicalSize{new_inline_size, size_.height}
+                     : NGPhysicalSize{size_.width, new_inline_size},
+      LineOrientation(), EndEffect(), std::move(new_shape_result)));
 }
 
 scoped_refptr<NGPhysicalFragment> NGPhysicalTextFragment::CloneWithoutOffset()
@@ -164,15 +190,24 @@ unsigned NGPhysicalTextFragment::TextOffsetForPoint(
          StartOffset();
 }
 
-PositionWithAffinity NGPhysicalTextFragment::PositionForPoint(
-    const NGPhysicalOffset& point) const {
-  if (IsAnonymousText())
-    return PositionWithAffinity();
-  const unsigned text_offset = TextOffsetForPoint(point);
-  const Position position =
-      NGOffsetMapping::GetFor(GetLayoutObject())->GetFirstPosition(text_offset);
-  // TODO(xiaochengh): Adjust TextAffinity.
-  return PositionWithAffinity(position, TextAffinity::kDownstream);
+UBiDiLevel NGPhysicalTextFragment::BidiLevel() const {
+  // TODO(xiaochengh): Make the implementation more efficient with, e.g.,
+  // binary search and/or LayoutNGText::InlineItems().
+  const auto& items = InlineItemsOfContainingBlock();
+  const NGInlineItem* containing_item = std::find_if(
+      items.begin(), items.end(), [this](const NGInlineItem& item) {
+        return item.StartOffset() <= StartOffset() &&
+               item.EndOffset() >= EndOffset();
+      });
+  DCHECK(containing_item);
+  DCHECK_NE(containing_item, items.end());
+  return containing_item->BidiLevel();
+}
+
+TextDirection NGPhysicalTextFragment::ResolvedDirection() const {
+  if (TextShapeResult())
+    return TextShapeResult()->Direction();
+  return NGPhysicalFragment::ResolvedDirection();
 }
 
 }  // namespace blink

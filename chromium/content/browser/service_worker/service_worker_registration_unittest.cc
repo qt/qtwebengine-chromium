@@ -23,7 +23,6 @@
 #include "content/browser/service_worker/service_worker_registration_object_host.h"
 #include "content/browser/service_worker/service_worker_test_utils.h"
 #include "content/common/service_worker/service_worker_utils.h"
-#include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/test/test_content_browser_client.h"
 #include "mojo/edk/embedder/embedder.h"
@@ -78,6 +77,9 @@ class MockServiceWorkerRegistrationObject
   int set_version_attributes_called_count() const {
     return set_version_attributes_called_count_;
   };
+  int set_update_via_cache_called_count() const {
+    return set_update_via_cache_called_count_;
+  }
   int changed_mask() const { return changed_mask_; }
   const blink::mojom::ServiceWorkerObjectInfoPtr& installing() const {
     return installing_;
@@ -87,6 +89,9 @@ class MockServiceWorkerRegistrationObject
   }
   const blink::mojom::ServiceWorkerObjectInfoPtr& active() const {
     return active_;
+  }
+  blink::mojom::ServiceWorkerUpdateViaCache update_via_cache() const {
+    return update_via_cache_;
   }
 
  private:
@@ -102,14 +107,22 @@ class MockServiceWorkerRegistrationObject
     waiting_ = std::move(waiting);
     active_ = std::move(active);
   }
+  void SetUpdateViaCache(
+      blink::mojom::ServiceWorkerUpdateViaCache update_via_cache) override {
+    set_update_via_cache_called_count_++;
+    update_via_cache_ = update_via_cache;
+  }
   void UpdateFound() override { update_found_called_count_++; }
 
   int update_found_called_count_ = 0;
   int set_version_attributes_called_count_ = 0;
+  int set_update_via_cache_called_count_ = 0;
   int changed_mask_ = 0;
   blink::mojom::ServiceWorkerObjectInfoPtr installing_;
   blink::mojom::ServiceWorkerObjectInfoPtr waiting_;
   blink::mojom::ServiceWorkerObjectInfoPtr active_;
+  blink::mojom::ServiceWorkerUpdateViaCache update_via_cache_ =
+      blink::mojom::ServiceWorkerUpdateViaCache::kImports;
 
   mojo::AssociatedBinding<blink::mojom::ServiceWorkerRegistrationObject>
       binding_;
@@ -258,8 +271,7 @@ TEST_F(ServiceWorkerRegistrationTest, FailedRegistrationNoCrash) {
   auto registration = base::MakeRefCounted<ServiceWorkerRegistration>(
       options, kRegistrationId, context()->AsWeakPtr());
   auto dispatcher_host = base::MakeRefCounted<ServiceWorkerDispatcherHost>(
-      helper_->mock_render_process_id(),
-      helper_->browser_context()->GetResourceContext());
+      helper_->mock_render_process_id());
   // Prepare a ServiceWorkerProviderHost.
   ServiceWorkerRemoteProviderEndpoint remote_endpoint;
   std::unique_ptr<ServiceWorkerProviderHost> provider_host =
@@ -448,7 +460,7 @@ TEST_F(ServiceWorkerActivationTest, NoInflightRequest) {
 
   // Remove the controllee. Since there is an in-flight request,
   // activation should not yet happen.
-  version_1->RemoveControllee(controllee());
+  version_1->RemoveControllee(controllee()->client_uuid());
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(version_1.get(), reg->active_version());
 
@@ -473,7 +485,7 @@ TEST_F(ServiceWorkerActivationTest, NoControllee) {
   EXPECT_EQ(version_1.get(), reg->active_version());
 
   // Remove the controllee. Activation should happen.
-  version_1->RemoveControllee(controllee());
+  version_1->RemoveControllee(controllee()->client_uuid());
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(version_2.get(), reg->active_version());
 }
@@ -603,7 +615,7 @@ TEST_F(ServiceWorkerActivationTest, LameDuckTime_NoControllee) {
   // Remove the controllee. Since there is still an in-flight request,
   // activation should not happen. But the lame duck timer should start.
   EXPECT_FALSE(IsLameDuckTimerRunning());
-  version_1->RemoveControllee(controllee());
+  version_1->RemoveControllee(controllee()->client_uuid());
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(version_1.get(), reg->active_version());
   EXPECT_TRUE(IsLameDuckTimerRunning());
@@ -618,7 +630,7 @@ TEST_F(ServiceWorkerActivationTest, LameDuckTime_NoControllee) {
   EXPECT_TRUE(IsLameDuckTimerRunning());
 
   // Remove the controllee.
-  version_1->RemoveControllee(controllee());
+  version_1->RemoveControllee(controllee()->client_uuid());
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(IsLameDuckTimerRunning());
 
@@ -884,10 +896,11 @@ TEST_F(ServiceWorkerRegistrationObjectHostTest, Unregister_Success) {
   blink::mojom::ServiceWorkerRegistrationObjectInfoPtr info =
       GetRegistrationFromRemote(remote_endpoint.host_ptr()->get(), kScope);
   registration_host_ptr.Bind(std::move(info->host_ptr_info));
-  // Ignore the messages to the registration object, otherwise the callbacks
-  // issued from |registration_host_ptr| may wait for receiving the messages to
-  // |info->request|.
+  // Ignore the messages to the registration object and corresponding service
+  // worker objects, otherwise the callbacks issued from |registration_host_ptr|
+  // may wait for receiving the messages to them.
   info->request = nullptr;
+  info->waiting->request = nullptr;
 
   EXPECT_EQ(SERVICE_WORKER_OK,
             FindRegistrationInStorage(registration_id, kScope));
@@ -1041,6 +1054,58 @@ TEST_F(ServiceWorkerRegistrationObjectHostTest, SetVersionAttributes) {
     EXPECT_FALSE(mask.active_changed());
     EXPECT_FALSE(mock_registration_object->active());
   }
+}
+
+TEST_F(ServiceWorkerRegistrationObjectHostTest, SetUpdateViaCache) {
+  const GURL kScope("https://www.example.com/");
+  const GURL kScriptUrl("https://www.example.com/sw.js");
+  int64_t registration_id = SetUpRegistration(kScope, kScriptUrl);
+  const int64_t kProviderId = 99;  // Dummy value
+  ServiceWorkerRemoteProviderEndpoint remote_endpoint =
+      PrepareProviderHost(kProviderId, kScope);
+  blink::mojom::ServiceWorkerRegistrationObjectInfoPtr info =
+      GetRegistrationFromRemote(remote_endpoint.host_ptr()->get(), kScope);
+  EXPECT_EQ(registration_id, info->registration_id);
+  EXPECT_TRUE(info->request.is_pending());
+  auto mock_registration_object =
+      std::make_unique<MockServiceWorkerRegistrationObject>(
+          std::move(info->request));
+
+  ServiceWorkerRegistration* registration =
+      context()->GetLiveRegistration(registration_id);
+  ASSERT_EQ(blink::mojom::ServiceWorkerUpdateViaCache::kImports,
+            registration->update_via_cache());
+  ASSERT_EQ(0, mock_registration_object->set_update_via_cache_called_count());
+  ASSERT_EQ(blink::mojom::ServiceWorkerUpdateViaCache::kImports,
+            mock_registration_object->update_via_cache());
+
+  registration->SetUpdateViaCache(
+      blink::mojom::ServiceWorkerUpdateViaCache::kImports);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(0, mock_registration_object->set_update_via_cache_called_count());
+  EXPECT_EQ(blink::mojom::ServiceWorkerUpdateViaCache::kImports,
+            mock_registration_object->update_via_cache());
+
+  registration->SetUpdateViaCache(
+      blink::mojom::ServiceWorkerUpdateViaCache::kAll);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(1, mock_registration_object->set_update_via_cache_called_count());
+  EXPECT_EQ(blink::mojom::ServiceWorkerUpdateViaCache::kAll,
+            mock_registration_object->update_via_cache());
+
+  registration->SetUpdateViaCache(
+      blink::mojom::ServiceWorkerUpdateViaCache::kNone);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(2, mock_registration_object->set_update_via_cache_called_count());
+  EXPECT_EQ(blink::mojom::ServiceWorkerUpdateViaCache::kNone,
+            mock_registration_object->update_via_cache());
+
+  registration->SetUpdateViaCache(
+      blink::mojom::ServiceWorkerUpdateViaCache::kImports);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(3, mock_registration_object->set_update_via_cache_called_count());
+  EXPECT_EQ(blink::mojom::ServiceWorkerUpdateViaCache::kImports,
+            mock_registration_object->update_via_cache());
 }
 
 TEST_F(ServiceWorkerRegistrationObjectHostTest, UpdateFound) {

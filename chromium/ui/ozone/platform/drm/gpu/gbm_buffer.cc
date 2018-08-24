@@ -40,6 +40,7 @@ GbmBuffer::GbmBuffer(const scoped_refptr<GbmDevice>& gbm,
                      const std::vector<gfx::NativePixmapPlane>&& planes)
     : drm_(gbm),
       bo_(bo),
+      format_modifier_(modifier),
       format_(format),
       flags_(flags),
       fds_(std::move(fds)),
@@ -50,7 +51,6 @@ GbmBuffer::GbmBuffer(const scoped_refptr<GbmDevice>& gbm,
     framebuffer_pixel_format_ = format;
     opaque_framebuffer_pixel_format_ = GetFourCCFormatForOpaqueFramebuffer(
         GetBufferFormatFromFourCCFormat(format));
-    format_modifier_ = modifier;
 
     uint32_t handles[4] = {0};
     uint32_t strides[4] = {0};
@@ -75,28 +75,14 @@ GbmBuffer::GbmBuffer(const scoped_refptr<GbmDevice>& gbm,
     bool ret = drm_->AddFramebuffer2(
         gbm_bo_get_width(bo), gbm_bo_get_height(bo), framebuffer_pixel_format_,
         handles, strides, offsets, modifiers, &framebuffer_, addfb_flags);
-    // TODO(dcastagna): remove debugging info once we figure out why
-    // AddFramebuffer2 is failing. crbug.com/789292
-    if (!ret) {
-      PLOG(ERROR) << "AddFramebuffer2 failed: ";
-      LOG(ERROR) << base::StringPrintf(
-          "planes: %zu, width: %u, height: %u, addfb_flags: %u",
-          gbm_bo_get_num_planes(bo), gbm_bo_get_width(bo),
-          gbm_bo_get_height(bo), addfb_flags);
-      for (size_t i = 0; i < gbm_bo_get_num_planes(bo); ++i) {
-        LOG(ERROR) << "handles: " << handles[i] << ", stride: " << strides[i]
-                   << ", offset: " << offsets[i]
-                   << ", modifier: " << modifiers[i];
-      }
-    }
-    DCHECK(ret);
+    PLOG_IF(ERROR, !ret) << "AddFramebuffer2 failed";
+
     if (opaque_framebuffer_pixel_format_ != framebuffer_pixel_format_) {
       ret = drm_->AddFramebuffer2(gbm_bo_get_width(bo), gbm_bo_get_height(bo),
                                   opaque_framebuffer_pixel_format_, handles,
                                   strides, offsets, modifiers,
                                   &opaque_framebuffer_, addfb_flags);
       PLOG_IF(ERROR, !ret) << "AddFramebuffer2 failed";
-      DCHECK(ret);
     }
   }
 }
@@ -386,11 +372,17 @@ bool GbmPixmap::ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
                                      gfx::OverlayTransform plane_transform,
                                      const gfx::Rect& display_bounds,
                                      const gfx::RectF& crop_rect,
-                                     bool enable_blend) {
+                                     bool enable_blend,
+                                     gfx::GpuFence* gpu_fence) {
   DCHECK(buffer_->GetFlags() & GBM_BO_USE_SCANOUT);
-  surface_manager_->GetSurface(widget)->QueueOverlayPlane(
-      OverlayPlane(buffer_, plane_z_order, plane_transform, display_bounds,
-                   crop_rect, enable_blend, base::kInvalidPlatformFile));
+  // |framebuffer_id| might be 0 if AddFramebuffer2 failed, in that case we
+  // already logged the error in GbmBuffer ctor. We avoid logging the error
+  // here since this method might be called every pageflip.
+  if (buffer_->GetFramebufferId()) {
+    surface_manager_->GetSurface(widget)->QueueOverlayPlane(
+        OverlayPlane(buffer_, plane_z_order, plane_transform, display_bounds,
+                     crop_rect, enable_blend, gpu_fence));
+  }
 
   return true;
 }

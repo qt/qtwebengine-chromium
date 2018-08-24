@@ -287,7 +287,7 @@ bool MenuButton::OnKeyReleased(const ui::KeyEvent& event) {
 void MenuButton::GetAccessibleNodeData(ui::AXNodeData* node_data) {
   Button::GetAccessibleNodeData(node_data);
   node_data->role = ax::mojom::Role::kPopUpButton;
-  node_data->AddState(ax::mojom::State::kHaspopup);
+  node_data->SetHasPopup(ax::mojom::HasPopup::kMenu);
   if (enabled())
     node_data->SetDefaultActionVerb(ax::mojom::DefaultActionVerb::kOpen);
 }
@@ -385,7 +385,8 @@ void MenuButton::DecrementPressedLocked() {
     if (should_disable_after_press_) {
       desired_state = STATE_DISABLED;
       should_disable_after_press_ = false;
-    } else if (ShouldEnterHoveredState()) {
+    } else if (GetWidget() && !GetWidget()->dragged_view() &&
+               ShouldEnterHoveredState()) {
       desired_state = STATE_HOVERED;
       GetInkDrop()->SetHovered(true);
     }

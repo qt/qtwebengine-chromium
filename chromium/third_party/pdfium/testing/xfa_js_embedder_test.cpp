@@ -44,28 +44,39 @@ void XFAJSEmbedderTest::TearDown() {
 }
 
 CXFA_Document* XFAJSEmbedderTest::GetXFADocument() {
-  return UnderlyingFromFPDFDocument(document())->GetXFADoc()->GetXFADoc();
+  auto* pDoc = CPDFDocumentFromFPDFDocument(document());
+  if (!pDoc)
+    return nullptr;
+
+  auto* pContext = static_cast<CPDFXFA_Context*>(pDoc->GetExtension());
+  if (!pContext)
+    return nullptr;
+
+  return pContext->GetXFADoc()->GetXFADoc();
 }
 
-bool XFAJSEmbedderTest::OpenDocumentWithOptions(const std::string& filename,
-                                                const char* password,
-                                                bool must_linearize) {
-  if (!EmbedderTest::OpenDocumentWithOptions(filename, password,
-                                             must_linearize))
+bool XFAJSEmbedderTest::OpenDocumentWithOptions(
+    const std::string& filename,
+    const char* password,
+    LinearizeOption linearize_option,
+    JavaScriptOption javascript_option) {
+  // JS required for XFA.
+  ASSERT(javascript_option == JavaScriptOption::kEnableJavaScript);
+  if (!EmbedderTest::OpenDocumentWithOptions(
+          filename, password, linearize_option, javascript_option)) {
     return false;
-
+  }
   script_context_ = GetXFADocument()->GetScriptContext();
   return true;
 }
 
 bool XFAJSEmbedderTest::Execute(const ByteStringView& input) {
-  if (ExecuteHelper(input)) {
+  if (ExecuteHelper(input))
     return true;
-  }
 
   CFXJSE_Value msg(GetIsolate());
   value_->GetObjectPropertyByIdx(1, &msg);
-  fprintf(stderr, "JS: %.*s\n", static_cast<int>(input.GetLength()),
+  fprintf(stderr, "FormCalc: %.*s\n", static_cast<int>(input.GetLength()),
           input.unterminated_c_str());
   // If the parsing of the input fails, then v8 will not run, so there will be
   // no value here to print.

@@ -377,8 +377,7 @@ RTCPSender::FeedbackState ModuleRtpRtcpImpl::GetFeedbackState() {
                   &state.last_rr_ntp_frac,
                   &state.remote_sr);
 
-  state.has_last_xr_rr =
-      rtcp_receiver_.LastReceivedXrReferenceTimeInfo(&state.last_xr_rr);
+  state.last_xr_rtis = rtcp_receiver_.ConsumeReceivedXrReferenceTimeInfo();
 
   return state;
 }
@@ -928,7 +927,7 @@ StreamDataCountersCallback*
 }
 
 void ModuleRtpRtcpImpl::SetVideoBitrateAllocation(
-    const BitrateAllocation& bitrate) {
+    const VideoBitrateAllocation& bitrate) {
   rtcp_sender_.SetVideoBitrateAllocation(bitrate);
 }
 }  // namespace webrtc

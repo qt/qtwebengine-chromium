@@ -45,7 +45,6 @@ namespace blink {
 class CanvasImageSource;
 class HTMLCanvasElement;
 class ImageBitmap;
-class WebLayer;
 
 constexpr const char* kSRGBCanvasColorSpaceName = "srgb";
 constexpr const char* kRec2020CanvasColorSpaceName = "rec2020";
@@ -61,13 +60,10 @@ class CORE_EXPORT CanvasRenderingContext : public ScriptWrappable,
   USING_PRE_FINALIZER(CanvasRenderingContext, Dispose);
 
  public:
-  virtual ~CanvasRenderingContext() = default;
+  ~CanvasRenderingContext() override = default;
 
-  // A Canvas can either be "2D" or "webgl" but never both. If you request a 2D
-  // canvas and the existing context is already 2D, just return that. If the
-  // existing context is WebGL, then destroy it before creating a new 2D
-  // context. Vice versa when requesting a WebGL canvas. Requesting a context
-  // with any other type string will destroy any existing context.
+  // A Canvas can either be "2D" or "webgl" but never both. Requesting a context
+  // with a type different from an existing will destroy the latter.
   enum ContextType {
     // Do not change assigned numbers of existing items: add new features to the
     // end of the list.
@@ -111,7 +107,7 @@ class CORE_EXPORT CanvasRenderingContext : public ScriptWrappable,
     return false;
   }
 
-  virtual WebLayer* PlatformLayer() const { return nullptr; }
+  virtual cc::Layer* CcLayer() const { return nullptr; }
 
   enum LostContextMode {
     kNotLostContext,
@@ -177,6 +173,7 @@ class CORE_EXPORT CanvasRenderingContext : public ScriptWrappable,
   }
 
   // OffscreenCanvas-specific methods
+  virtual void PushFrame() {}
   virtual ImageBitmap* TransferToImageBitmap(ScriptState*) { return nullptr; }
 
   bool WouldTaintOrigin(CanvasImageSource*, const SecurityOrigin*);
@@ -188,7 +185,7 @@ class CORE_EXPORT CanvasRenderingContext : public ScriptWrappable,
     return creation_attributes_;
   }
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
   virtual void Stop() = 0;
 
  protected:

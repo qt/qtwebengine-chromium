@@ -62,7 +62,7 @@ source_set("channel_info") {
     "channel_info_win.cc",
   ]
 
-  if (!is_android && !is_chromeos && !is_mac) {
+  if (is_posix && !is_android && !is_chromeos && !is_mac) {
     sources += [ "channel_info_posix.cc" ]
   }
   public_deps = [
@@ -403,7 +403,7 @@ static_library("common") {
   }
 
   # Printing.
-  if (enable_basic_printing || enable_print_preview) {
+  if (enable_basic_printing) {
     public_deps += [
       "//chrome/common/cloud_print",
       "//components/printing/common",
@@ -415,10 +415,14 @@ static_library("common") {
         "service_process_util.h",
         "service_process_util_linux.cc",
         "service_process_util_mac.mm",
-        "service_process_util_posix.cc",
-        "service_process_util_posix.h",
         "service_process_util_win.cc",
       ]
+      if (is_posix) {
+        sources += [
+          "service_process_util_posix.cc",
+          "service_process_util_posix.h",
+        ]
+      }
     }
     if (enable_print_preview && is_win) {
       sources += [ "chrome_utility_printing_messages.h" ]
@@ -474,9 +478,6 @@ static_library("common") {
       "pepper_permission_util.cc",
       "pepper_permission_util.h",
     ]
-  }
-  if (!enable_webrtc) {
-    sources -= [ "media/webrtc_logging_messages.h" ]
   }
 
   if (safe_browsing_mode != 0) {
@@ -661,6 +662,8 @@ source_set("app_mode_app_support") {
 }
 
 mojom("mojo_bindings") {
+  disable_variants = true
+
   sources = [
     "cache_stats_recorder.mojom",
     "chrome_render_frame.mojom",
@@ -690,7 +693,6 @@ mojom("mojo_bindings") {
   public_deps = [
     "//components/content_settings/core/common:mojo_bindings",
     "//content/public/common:interfaces",
-    "//mojo/common:common_custom_types",
     "//mojo/public/mojom/base",
     "//third_party/blink/public:mojo_bindings",
     "//ui/gfx/geometry/mojo",
@@ -719,7 +721,6 @@ mojom("search_mojom") {
   ]
 
   public_deps = [
-    "//mojo/common:common_custom_types",
     "//mojo/public/mojom/base",
     "//url/mojom:url_mojom_gurl",
   ]

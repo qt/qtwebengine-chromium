@@ -17,9 +17,11 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/histogram_tester.h"
+#include "base/test/scoped_task_environment.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "components/autofill/core/common/password_form.h"
+#include "components/os_crypt/os_crypt.h"
 #include "components/os_crypt/os_crypt_mocker.h"
 #include "components/password_manager/core/browser/password_manager_test_utils.h"
 #include "components/password_manager/core/browser/psl_matching_helper.h"
@@ -90,6 +92,28 @@ template<> int64_t GetFirstColumn(const sql::Statement& s) {
 
 template<> std::string GetFirstColumn(const sql::Statement& s) {
   return s.ColumnString(0);
+}
+
+// Returns an empty vector on failure. Otherwise returns values in the column
+// |column_name| of the logins table. The order of the
+// returned rows is well-defined.
+template <class T>
+std::vector<T> GetColumnValuesFromDatabase(const base::FilePath& database_path,
+                                           const std::string& column_name) {
+  sql::Connection db;
+  std::vector<T> results;
+  CHECK(db.Open(database_path));
+
+  std::string statement = base::StringPrintf(
+      "SELECT %s FROM logins ORDER BY username_value, %s DESC",
+      column_name.c_str(), column_name.c_str());
+  sql::Statement s(db.GetCachedStatement(SQL_FROM_HERE, statement.c_str()));
+  EXPECT_TRUE(s.is_valid());
+
+  while (s.Step())
+    results.push_back(GetFirstColumn<T>(s));
+
+  return results;
 }
 
 bool AddZeroClickableLogin(LoginDatabase* db,
@@ -231,6 +255,7 @@ class LoginDatabaseTest : public testing::Test {
   base::ScopedTempDir temp_dir_;
   base::FilePath file_;
   std::unique_ptr<LoginDatabase> db_;
+  base::test::ScopedTaskEnvironment scoped_task_environment_;
 };
 
 TEST_F(LoginDatabaseTest, Logins) {
@@ -1693,6 +1718,45 @@ TEST_F(LoginDatabaseTest, FilePermissions) {
 }
 #endif  // defined(OS_POSIX)
 
+#if !defined(OS_IOS)
+// Test that LoginDatabase encrypts the password values that it stores.
+TEST_F(LoginDatabaseTest, EncryptionEnabled) {
+  PasswordForm password_form;
+  GenerateExamplePasswordForm(&password_form);
+  base::FilePath file = temp_dir_.GetPath().AppendASCII("TestUnencryptedDB");
+  {
+    LoginDatabase db(file);
+    ASSERT_TRUE(db.Init());
+    EXPECT_EQ(AddChangeForForm(password_form), db.AddLogin(password_form));
+  }
+  base::string16 decrypted_pw;
+  ASSERT_TRUE(OSCrypt::DecryptString16(
+      GetColumnValuesFromDatabase<std::string>(file, "password_value").at(0),
+      &decrypted_pw));
+  EXPECT_EQ(decrypted_pw, password_form.password_value);
+}
+#endif  // !defined(OS_IOS)
+
+#if defined(OS_LINUX)
+// Test that LoginDatabase does not encrypt values when encryption is disabled.
+// TODO(crbug.com/829857) This is supported only for Linux, while transitioning
+// into LoginDB with full encryption.
+TEST_F(LoginDatabaseTest, EncryptionDisabled) {
+  PasswordForm password_form;
+  GenerateExamplePasswordForm(&password_form);
+  base::FilePath file = temp_dir_.GetPath().AppendASCII("TestUnencryptedDB");
+  {
+    LoginDatabase db(file);
+    db.disable_encryption();
+    ASSERT_TRUE(db.Init());
+    EXPECT_EQ(AddChangeForForm(password_form), db.AddLogin(password_form));
+  }
+  EXPECT_EQ(
+      GetColumnValuesFromDatabase<std::string>(file, "password_value").at(0),
+      base::UTF16ToUTF8(password_form.password_value));
+}
+#endif  // defined(OS_LINUX)
+
 // If the database initialisation fails, the initialisation transaction should
 // roll back without crashing.
 TEST(LoginDatabaseFailureTest, Init_NoCrashOnFailedRollback) {
@@ -1735,7 +1799,7 @@ class LoginDatabaseMigrationTest : public testing::TestWithParam<int> {
   // Creates the database from |sql_file|.
   void CreateDatabase(base::StringPiece sql_file) {
     base::FilePath database_dump;
-    ASSERT_TRUE(PathService::Get(base::DIR_SOURCE_ROOT, &database_dump));
+    ASSERT_TRUE(base::PathService::Get(base::DIR_SOURCE_ROOT, &database_dump));
     database_dump =
         database_dump.Append(database_dump_location_).AppendASCII(sql_file);
     ASSERT_TRUE(
@@ -1745,33 +1809,6 @@ class LoginDatabaseMigrationTest : public testing::TestWithParam<int> {
   void DestroyDatabase() {
     if (!database_path_.empty())
       sql::Connection::Delete(database_path_);
-  }
-
-  // Returns an empty vector on failure. Otherwise returns values in the column
-  // |column_name| of the logins table. The order of the
-  // returned rows is well-defined.
-  template <class T>
-  std::vector<T> GetValues(const std::string& column_name) {
-    sql::Connection db;
-    std::vector<T> results;
-    if (!db.Open(database_path_))
-      return results;
-
-    std::string statement = base::StringPrintf(
-        "SELECT %s FROM logins ORDER BY username_value, %s DESC",
-        column_name.c_str(), column_name.c_str());
-    sql::Statement s(db.GetCachedStatement(SQL_FROM_HERE, statement.c_str()));
-    if (!s.is_valid()) {
-      db.Close();
-      return results;
-    }
-
-    while (s.Step())
-      results.push_back(GetFirstColumn<T>(s));
-
-    s.Clear();
-    db.Close();
-    return results;
   }
 
   // Returns the database version for the test.
@@ -1785,6 +1822,7 @@ class LoginDatabaseMigrationTest : public testing::TestWithParam<int> {
  private:
   base::FilePath database_dump_location_;
   base::ScopedTempDir temp_dir_;
+  base::test::ScopedTaskEnvironment scoped_task_environment_;
 };
 
 void LoginDatabaseMigrationTest::MigrationToVCurrent(
@@ -1792,7 +1830,8 @@ void LoginDatabaseMigrationTest::MigrationToVCurrent(
   SCOPED_TRACE(testing::Message("Version file = ") << sql_file);
   CreateDatabase(sql_file);
   // Original date, in seconds since UTC epoch.
-  std::vector<int64_t> date_created(GetValues<int64_t>("date_created"));
+  std::vector<int64_t> date_created(
+      GetColumnValuesFromDatabase<int64_t>(database_path_, "date_created"));
   if (version() == 10)  // Version 10 has a duplicate entry.
     ASSERT_EQ(4U, date_created.size());
   else
@@ -1840,7 +1879,8 @@ void LoginDatabaseMigrationTest::MigrationToVCurrent(
     EXPECT_TRUE(db.RemoveLogin(form));
   }
   // New date, in microseconds since platform independent epoch.
-  std::vector<int64_t> new_date_created(GetValues<int64_t>("date_created"));
+  std::vector<int64_t> new_date_created(
+      GetColumnValuesFromDatabase<int64_t>(database_path_, "date_created"));
   ASSERT_EQ(3U, new_date_created.size());
   if (version() <= 8) {
     // Check that the two dates match up.
@@ -1858,7 +1898,8 @@ void LoginDatabaseMigrationTest::MigrationToVCurrent(
     // The "avatar_url" column first appeared in version 7. In version 14,
     // it was renamed to "icon_url". Migration from a version <= 13
     // to >= 14 should not break theses URLs.
-    std::vector<std::string> urls(GetValues<std::string>("icon_url"));
+    std::vector<std::string> urls(
+        GetColumnValuesFromDatabase<std::string>(database_path_, "icon_url"));
 
     EXPECT_THAT(urls, UnorderedElementsAre("", "https://www.google.com/icon",
                                            "https://www.google.com/icon"));

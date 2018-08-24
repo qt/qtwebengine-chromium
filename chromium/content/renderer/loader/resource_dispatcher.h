@@ -12,6 +12,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/containers/circular_deque.h"
 #include "base/containers/hash_tables.h"
@@ -22,9 +23,11 @@
 #include "base/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "content/common/content_export.h"
+#include "content/public/common/resource_load_info.mojom.h"
 #include "content/public/common/resource_type.h"
 #include "content/public/common/url_loader_throttle.h"
 #include "mojo/public/cpp/system/data_pipe.h"
+#include "net/base/host_port_pair.h"
 #include "net/base/request_priority.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
@@ -52,6 +55,7 @@ class URLLoaderFactory;
 }
 
 namespace content {
+struct NavigationResponseOverrideParameters;
 class RequestPeer;
 class ResourceDispatcherDelegate;
 struct SyncLoadResponse;
@@ -96,7 +100,8 @@ class CONTENT_EXPORT ResourceDispatcher {
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
       double timeout,
-      blink::mojom::BlobRegistryPtrInfo download_to_blob_registry);
+      blink::mojom::BlobRegistryPtrInfo download_to_blob_registry,
+      std::unique_ptr<RequestPeer> peer);
 
   // Call this method to initiate the request. If this method succeeds, then
   // the peer's methods will be called asynchronously to report various events.
@@ -122,7 +127,8 @@ class CONTENT_EXPORT ResourceDispatcher {
       std::unique_ptr<RequestPeer> peer,
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
-      network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
+      std::unique_ptr<NavigationResponseOverrideParameters>
+          response_override_params,
       base::OnceClosure* continue_navigation_function);
 
   network::mojom::DownloadedTempFilePtr TakeDownloadedTempFile(int request_id);
@@ -179,7 +185,9 @@ class CONTENT_EXPORT ResourceDispatcher {
                        const GURL& request_url,
                        const std::string& method,
                        const GURL& referrer,
-                       bool download_to_file);
+                       bool download_to_file,
+                       std::unique_ptr<NavigationResponseOverrideParameters>
+                           response_override_params);
 
     ~PendingRequestInfo();
 
@@ -196,14 +204,21 @@ class CONTENT_EXPORT ResourceDispatcher {
     GURL response_referrer;
     bool download_to_file;
     bool has_pending_redirect = false;
-    base::TimeTicks request_start;
-    base::TimeTicks response_start;
-    base::TimeTicks completion_time;
+    base::TimeTicks local_request_start;
+    base::TimeTicks local_response_start;
+    base::TimeTicks remote_request_start;
+    net::LoadTimingInfo load_timing_info;
     linked_ptr<base::SharedMemory> buffer;
     int buffer_size;
-    net::IPAddress parsed_ip;
+    net::HostPortPair host_port_pair;
     bool network_accessed = false;
     std::string mime_type;
+    std::unique_ptr<NavigationResponseOverrideParameters>
+        navigation_response_override;
+    bool should_follow_redirect = true;
+    bool always_access_network = false;
+
+    std::vector<content::mojom::RedirectInfoPtr> redirect_info_chain;
 
     // For mojo loading.
     std::unique_ptr<ThrottlingURLLoader> url_loader;
@@ -239,13 +254,7 @@ class CONTENT_EXPORT ResourceDispatcher {
       const network::ResourceResponseHead& browser_info,
       network::ResourceResponseInfo* renderer_info) const;
 
-  base::TimeTicks ToRendererCompletionTime(
-      const PendingRequestInfo& request_info,
-      const base::TimeTicks& browser_completion_time) const;
-
-  void ContinueForNavigation(
-      int request_id,
-      network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints);
+  void ContinueForNavigation(int request_id);
 
   // All pending requests issued to the host
   PendingRequestMap pending_requests_;

@@ -4,9 +4,12 @@
 
 #include "chrome/browser/extensions/api/media_perception_private/media_perception_api_delegate_chromeos.h"
 
+#include <string>
+#include <utility>
+
 #include "base/bind.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/component_updater/cros_component_installer.h"
+#include "chrome/browser/component_updater/cros_component_installer_chromeos.h"
 
 namespace media_perception = extensions::api::media_perception_private;
 
@@ -36,7 +39,9 @@ void OnLoadComponent(
     MediaPerceptionAPIDelegate::LoadCrOSComponentCallback load_callback,
     component_updater::CrOSComponentManager::Error error,
     const base::FilePath& mount_point) {
-  std::move(load_callback).Run(mount_point);
+  std::move(load_callback)
+      .Run(error == component_updater::CrOSComponentManager::Error::NONE,
+           mount_point);
 }
 
 }  // namespace

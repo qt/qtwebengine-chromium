@@ -390,7 +390,7 @@ void HTMLAnchorElement::HandleClick(Event* event) {
     frame_request.SetShouldSetOpener(kNeverSetOpener);
   // TODO(japhet): Link clicks can be emulated via JS without a user gesture.
   // Why doesn't this go through NavigationScheduler?
-  frame->Loader().Load(frame_request);
+  frame->Loader().StartNavigation(frame_request);
 }
 
 bool IsEnterKeyKeydownEvent(Event* event) {
@@ -432,8 +432,7 @@ void HTMLAnchorElement::Trace(blink::Visitor* visitor) {
   HTMLElement::Trace(visitor);
 }
 
-void HTMLAnchorElement::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+void HTMLAnchorElement::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(rel_list_);
   HTMLElement::TraceWrappers(visitor);
 }

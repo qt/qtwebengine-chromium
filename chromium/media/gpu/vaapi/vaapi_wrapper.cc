@@ -24,6 +24,8 @@
 #include "base/sys_info.h"
 #include "build/build_config.h"
 
+#include "media/base/media_switches.h"
+
 // Auto-generated for dlopen libva libraries
 #include "media/gpu/vaapi/va_stubs.h"
 
@@ -124,7 +126,7 @@ namespace {
 
 // Maximum framerate of encoded profile. This value is an arbitary limit
 // and not taken from HW documentation.
-const int kMaxEncoderFramerate = 30;
+constexpr int kMaxEncoderFramerate = 30;
 
 // A map between VideoCodecProfile and VAProfile.
 static const struct {
@@ -176,6 +178,14 @@ bool IsBlackListedDriver(const std::string& va_vendor_string,
       return true;
     }
   }
+
+  // TODO(posciak): Remove once VP8 encoding is to be enabled by default.
+  if (mode == VaapiWrapper::CodecMode::kEncode &&
+      va_profile == VAProfileVP8Version0_3 &&
+      !base::FeatureList::IsEnabled(kVaapiVP8Encoder)) {
+    return true;
+  }
+
   return false;
 }
 
@@ -925,7 +935,7 @@ bool VaapiWrapper::SubmitBuffer(VABufferType va_buffer_type,
 bool VaapiWrapper::SubmitVAEncMiscParamBuffer(
     VAEncMiscParameterType misc_param_type,
     size_t size,
-    void* buffer) {
+    const void* buffer) {
   base::AutoLock auto_lock(*va_lock_);
 
   VABufferID buffer_id;

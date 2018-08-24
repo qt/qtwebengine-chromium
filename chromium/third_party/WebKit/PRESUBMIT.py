@@ -8,26 +8,7 @@ See http://dev.chromium.org/developers/how-tos/depottools/presubmit-scripts
 for more details about the presubmit API built into gcl.
 """
 
-import imp
-import inspect
 import os
-import re
-
-try:
-    # pylint: disable=C0103
-    audit_non_blink_usage = imp.load_source(
-        'audit_non_blink_usage',
-        os.path.join(os.path.dirname(inspect.stack()[0][1]), 'Tools/Scripts/audit-non-blink-usage.py'))
-except IOError:
-    # One of the presubmit upload tests tries to exec this script, which doesn't interact so well
-    # with the import hack... just ignore the exception here and hope for the best.
-    pass
-
-
-_EXCLUDED_PATHS = (
-    # This directory is created and updated via a script.
-    r'^third_party[\\\/]WebKit[\\\/]Tools[\\\/]Scripts[\\\/]webkitpy[\\\/]thirdparty[\\\/]wpt[\\\/]wpt[\\\/].*',
-)
 
 
 def _CommonChecks(input_api, output_api):
@@ -37,14 +18,13 @@ def _CommonChecks(input_api, output_api):
 
     results = []
     results.extend(input_api.canned_checks.PanProjectChecks(
-        input_api, output_api, excluded_paths=_EXCLUDED_PATHS,
-        maxlen=800, license_header=license_header))
+        input_api, output_api, maxlen=800, license_header=license_header))
     return results
 
 
 def _CheckStyle(input_api, output_api):
-    style_checker_path = input_api.os_path.join(input_api.PresubmitLocalPath(),
-                                                'Tools', 'Scripts', 'check-webkit-style')
+    style_checker_path = input_api.os_path.join(input_api.PresubmitLocalPath(), '..', 'blink',
+                                                'tools', 'check_blink_style.py')
     args = [input_api.python_executable, style_checker_path, '--diff-files']
     files = []
     for f in input_api.AffectedFiles():
@@ -53,7 +33,7 @@ def _CheckStyle(input_api, output_api):
         if 'LayoutTests' + input_api.os_path.sep in file_path and 'TestExpectations' not in file_path:
             continue
         files.append(input_api.os_path.join('..', '..', file_path))
-    # Do not call check-webkit-style with empty affected file list if all
+    # Do not call check_blink_style.py with empty affected file list if all
     # input_api.AffectedFiles got filtered.
     if not files:
         return []
@@ -66,10 +46,10 @@ def _CheckStyle(input_api, output_api):
         _, stderrdata = child.communicate()
         if child.returncode != 0:
             results.append(output_api.PresubmitError(
-                'check-webkit-style failed', [stderrdata]))
+                'check_blink_style.py failed', [stderrdata]))
     except Exception as e:
         results.append(output_api.PresubmitNotifyResult(
-            'Could not run check-webkit-style', [str(e)]))
+            'Could not run check_blink_style.py', [str(e)]))
 
     return results
 

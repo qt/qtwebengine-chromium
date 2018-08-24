@@ -50,16 +50,12 @@ const uint32_t kServiceWorkerFilteredMessageClasses[] = {
 
 }  // namespace
 
-ServiceWorkerDispatcherHost::ServiceWorkerDispatcherHost(
-    int render_process_id,
-    ResourceContext* resource_context)
+ServiceWorkerDispatcherHost::ServiceWorkerDispatcherHost(int render_process_id)
     : BrowserMessageFilter(kServiceWorkerFilteredMessageClasses,
                            arraysize(kServiceWorkerFilteredMessageClasses)),
       BrowserAssociatedInterface<mojom::ServiceWorkerDispatcherHost>(this,
                                                                      this),
       render_process_id_(render_process_id),
-      resource_context_(resource_context),
-      channel_ready_(false),
       weak_ptr_factory_(this) {}
 
 ServiceWorkerDispatcherHost::~ServiceWorkerDispatcherHost() {
@@ -90,18 +86,6 @@ void ServiceWorkerDispatcherHost::Init(
   phase_ = Phase::kAddedToContext;
 }
 
-void ServiceWorkerDispatcherHost::OnFilterAdded(IPC::Channel* channel) {
-  TRACE_EVENT0("ServiceWorker",
-               "ServiceWorkerDispatcherHost::OnFilterAdded");
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  channel_ready_ = true;
-  std::vector<std::unique_ptr<IPC::Message>> messages;
-  messages.swap(pending_messages_);
-  for (auto& message : messages) {
-    BrowserMessageFilter::Send(message.release());
-  }
-}
-
 void ServiceWorkerDispatcherHost::OnFilterRemoved() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   // Don't wait until the destructor to teardown since a new dispatcher host
@@ -112,7 +96,6 @@ void ServiceWorkerDispatcherHost::OnFilterRemoved() {
   }
   phase_ = Phase::kRemovedFromContext;
   context_wrapper_ = nullptr;
-  channel_ready_ = false;
 }
 
 void ServiceWorkerDispatcherHost::OnDestruct() const {
@@ -124,17 +107,6 @@ void ServiceWorkerDispatcherHost::OnDestruct() const {
 bool ServiceWorkerDispatcherHost::OnMessageReceived(
     const IPC::Message& message) {
   return false;
-}
-
-bool ServiceWorkerDispatcherHost::Send(IPC::Message* message) {
-  if (channel_ready_) {
-    BrowserMessageFilter::Send(message);
-    // Don't bother passing through Send()'s result: it's not reliable.
-    return true;
-  }
-
-  pending_messages_.push_back(base::WrapUnique(message));
-  return true;
 }
 
 base::WeakPtr<ServiceWorkerDispatcherHost>
@@ -164,13 +136,10 @@ void ServiceWorkerDispatcherHost::OnProviderCreated(
       return;
     }
 
-    // Retrieve the provider host previously created for navigation requests.
-    std::unique_ptr<ServiceWorkerProviderHost> provider_host;
-    ServiceWorkerNavigationHandleCore* navigation_handle_core =
-        GetContext()->GetNavigationHandleCore(info.provider_id);
-    if (navigation_handle_core != nullptr)
-      provider_host = navigation_handle_core->RetrievePreCreatedHost();
-
+    // Retrieve the provider host pre-created for the navigation.
+    std::unique_ptr<ServiceWorkerProviderHost> provider_host =
+        GetContext()->ReleaseProviderHost(ChildProcessHost::kInvalidUniqueID,
+                                          info.provider_id);
     // If no host is found, create one.
     // TODO(crbug.com/789111#c14): This is probably not right, see bug.
     if (!provider_host) {

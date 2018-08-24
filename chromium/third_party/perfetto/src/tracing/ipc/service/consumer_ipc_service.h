@@ -17,6 +17,7 @@
 #ifndef SRC_TRACING_IPC_SERVICE_CONSUMER_IPC_SERVICE_H_
 #define SRC_TRACING_IPC_SERVICE_CONSUMER_IPC_SERVICE_H_
 
+#include <list>
 #include <map>
 #include <memory>
 #include <string>
@@ -26,7 +27,7 @@
 #include "perfetto/tracing/core/consumer.h"
 #include "perfetto/tracing/core/service.h"
 
-#include "protos/tracing_service/consumer_port.ipc.h"
+#include "perfetto/ipc/consumer_port.ipc.h"
 
 namespace perfetto {
 
@@ -37,21 +38,22 @@ class Host;
 // Implements the Consumer port of the IPC service. This class proxies requests
 // and responses between the core service logic (|svc_|) and remote Consumer(s)
 // on the IPC socket, through the methods overriddden from ConsumerPort.
-class ConsumerIPCService : public ConsumerPort /* from consumer_port.proto */ {
+class ConsumerIPCService : public protos::ConsumerPort {
  public:
   using Service = ::perfetto::Service;  // To avoid collisions w/ ipc::Service.
   explicit ConsumerIPCService(Service* core_service);
   ~ConsumerIPCService() override;
 
   // ConsumerPort implementation (from .proto IPC definition).
-  void EnableTracing(const EnableTracingRequest&,
+  void EnableTracing(const protos::EnableTracingRequest&,
                      DeferredEnableTracingResponse) override;
-  void DisableTracing(const DisableTracingRequest&,
+  void DisableTracing(const protos::DisableTracingRequest&,
                       DeferredDisableTracingResponse) override;
-  void ReadBuffers(const ReadBuffersRequest&,
+  void ReadBuffers(const protos::ReadBuffersRequest&,
                    DeferredReadBuffersResponse) override;
-  void FreeBuffers(const FreeBuffersRequest&,
+  void FreeBuffers(const protos::FreeBuffersRequest&,
                    DeferredFreeBuffersResponse) override;
+  void Flush(const protos::FlushRequest&, DeferredFlushResponse) override;
   void OnClientDisconnected() override;
 
  private:
@@ -67,6 +69,7 @@ class ConsumerIPCService : public ConsumerPort /* from consumer_port.proto */ {
     // no connection here, these methods are posted straight away.
     void OnConnect() override;
     void OnDisconnect() override;
+    void OnTracingDisabled() override;
     void OnTraceData(std::vector<TracePacket>, bool has_more) override;
 
     // The interface obtained from the core service business logic through
@@ -77,7 +80,14 @@ class ConsumerIPCService : public ConsumerPort /* from consumer_port.proto */ {
     // After DisableTracing() is invoked, this binds the async callback that
     // allows to stream trace packets back to the client.
     DeferredReadBuffersResponse read_buffers_response;
+
+    // After EnableTracing() is invoked, this binds the async callback that
+    // allows to send the OnTracingDisabled notification.
+    DeferredEnableTracingResponse enable_tracing_response;
   };
+
+  // This has to be a container that doesn't invalidate iterators.
+  using PendingFlushResponses = std::list<DeferredFlushResponse>;
 
   ConsumerIPCService(const ConsumerIPCService&) = delete;
   ConsumerIPCService& operator=(const ConsumerIPCService&) = delete;
@@ -86,13 +96,17 @@ class ConsumerIPCService : public ConsumerPort /* from consumer_port.proto */ {
   // the current IPC request.
   RemoteConsumer* GetConsumerForCurrentRequest();
 
+  void OnFlushCallback(bool success, PendingFlushResponses::iterator);
+
   Service* const core_service_;
 
   // Maps IPC clients to ConsumerEndpoint instances registered on the
   // |core_service_| business logic.
   std::map<ipc::ClientID, std::unique_ptr<RemoteConsumer>> consumers_;
 
-  base::WeakPtrFactory<ConsumerIPCService> weak_ptr_factory_;
+  PendingFlushResponses pending_flush_responses_;
+
+  base::WeakPtrFactory<ConsumerIPCService> weak_ptr_factory_;  // Keep last.
 };
 
 }  // namespace perfetto

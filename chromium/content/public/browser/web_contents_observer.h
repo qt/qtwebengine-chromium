@@ -256,9 +256,10 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener {
       const std::string& mime_type,
       ResourceType resource_type) {}
 
-  // This method is invoked when a resource has been loaded, successfully or
-  // not.
+  // This method is invoked when a resource associate with the frame
+  // |render_frame_host| has been loaded, successfully or not.
   virtual void ResourceLoadComplete(
+      RenderFrameHost* render_frame_host,
       const mojom::ResourceLoadInfo& resource_load_info) {}
 
   // This method is invoked when a new non-pending navigation entry is created.
@@ -386,6 +387,9 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener {
   // Invoked when new FaviconURL candidates are received from the renderer
   // process.
   virtual void DidUpdateFaviconURL(const std::vector<FaviconURL>& candidates) {}
+
+  // Called when an audio change occurs.
+  virtual void OnAudioStateChanged(bool audible) {}
 
   // Invoked when the WebContents is muted/unmuted.
   virtual void DidUpdateAudioMutingState(bool muted) {}

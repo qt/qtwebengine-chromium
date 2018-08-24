@@ -11,6 +11,7 @@
 
 #include "base/macros.h"
 #include "base/sequence_checker.h"
+#include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "media/capture/video/chromeos/mojo/camera3.mojom.h"
@@ -63,16 +64,16 @@ class CAPTURE_EXPORT CameraHalDelegate final
   // Asynchronous method to get the camera info of |camera_id|.  This method may
   // be called on any thread.
   using GetCameraInfoCallback =
-      base::Callback<void(int32_t, cros::mojom::CameraInfoPtr)>;
-  void GetCameraInfo(int32_t camera_id, const GetCameraInfoCallback& callback);
+      base::OnceCallback<void(int32_t, cros::mojom::CameraInfoPtr)>;
+  void GetCameraInfo(int32_t camera_id, GetCameraInfoCallback callback);
 
   // Asynchronous method to open the camera device designated by |camera_id|.
   // This method may be called on any thread; |callback| will run on
   // |ipc_task_runner_|.
-  using OpenDeviceCallback = base::Callback<void(int32_t)>;
+  using OpenDeviceCallback = base::OnceCallback<void(int32_t)>;
   void OpenDevice(int32_t camera_id,
                   cros::mojom::Camera3DeviceOpsRequest device_ops_request,
-                  const OpenDeviceCallback& callback);
+                  OpenDeviceCallback callback);
 
  private:
   friend class base::RefCountedThreadSafe<CameraHalDelegate>;
@@ -98,7 +99,7 @@ class CAPTURE_EXPORT CameraHalDelegate final
   // to |camera_module_|.
   void OnSetCallbacksOnIpcThread(int32_t result);
   void GetCameraInfoOnIpcThread(int32_t camera_id,
-                                const GetCameraInfoCallback& callback);
+                                GetCameraInfoCallback callback);
   void OnGotCameraInfoOnIpcThread(int32_t camera_id,
                                   int32_t result,
                                   cros::mojom::CameraInfoPtr camera_info);
@@ -108,7 +109,7 @@ class CAPTURE_EXPORT CameraHalDelegate final
   void OpenDeviceOnIpcThread(
       int32_t camera_id,
       cros::mojom::Camera3DeviceOpsRequest device_ops_request,
-      const OpenDeviceCallback& callback);
+      OpenDeviceCallback callback);
 
   // CameraModuleCallbacks implementation. Operates on |ipc_task_runner_|.
   void CameraDeviceStatusChange(

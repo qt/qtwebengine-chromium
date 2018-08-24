@@ -38,7 +38,7 @@
 #include "third_party/blink/renderer/core/paint/table_cell_paint_invalidator.h"
 #include "third_party/blink/renderer/core/paint/table_cell_painter.h"
 #include "third_party/blink/renderer/platform/geometry/float_quad.h"
-#include "third_party/blink/renderer/platform/geometry/transform_state.h"
+#include "third_party/blink/renderer/platform/transforms/transform_state.h"
 
 namespace blink {
 
@@ -189,14 +189,13 @@ void LayoutTableCell::ComputePreferredLogicalWidths() {
   // notional height on the cell, such as can happen when a percent sized image
   // scales up its width to match the available height. Setting a zero override
   // height prevents this from happening.
-  LayoutUnit content_height = HasOverrideLogicalContentHeight()
-                                  ? OverrideLogicalContentHeight()
-                                  : LayoutUnit(-1);
-  if (content_height > -1)
-    SetOverrideLogicalContentHeight(LayoutUnit());
+  LayoutUnit logical_height =
+      HasOverrideLogicalHeight() ? OverrideLogicalHeight() : LayoutUnit(-1);
+  if (logical_height > -1)
+    SetOverrideLogicalHeight(LayoutUnit());
   LayoutBlockFlow::ComputePreferredLogicalWidths();
-  if (content_height > -1)
-    SetOverrideLogicalContentHeight(content_height);
+  if (logical_height > -1)
+    SetOverrideLogicalHeight(logical_height);
 
   if (GetNode() && Style()->AutoWrap()) {
     // See if nowrap was set.
@@ -347,18 +346,19 @@ LayoutUnit LayoutTableCell::PaddingRight() const {
                                             : LayoutUnit(result.ToInt());
 }
 
-void LayoutTableCell::SetOverrideLogicalContentHeightFromRowHeight(
+void LayoutTableCell::SetOverrideLogicalHeightFromRowHeight(
     LayoutUnit row_height) {
   ClearIntrinsicPadding();
-  SetOverrideLogicalContentHeight(
-      (row_height - CollapsedBorderAndCSSPaddingLogicalHeight())
-          .ClampNegativeToZero());
+  SetOverrideLogicalHeight(row_height);
 }
 
-LayoutSize LayoutTableCell::OffsetFromContainer(const LayoutObject* o) const {
+LayoutSize LayoutTableCell::OffsetFromContainerInternal(
+    const LayoutObject* o,
+    bool ignore_scroll_offset) const {
   DCHECK_EQ(o, Container());
 
-  LayoutSize offset = LayoutBlockFlow::OffsetFromContainer(o);
+  LayoutSize offset =
+      LayoutBlockFlow::OffsetFromContainerInternal(o, ignore_scroll_offset);
   if (Parent())
     offset -= ParentBox()->PhysicalLocationOffset();
 

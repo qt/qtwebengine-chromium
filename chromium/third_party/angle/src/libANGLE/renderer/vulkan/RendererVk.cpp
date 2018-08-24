@@ -220,9 +220,11 @@ RendererVk::~RendererVk()
     }
 
     mGraphicsPipelineLayout.destroy(mDevice);
+    mInternalPushConstantPipelineLayout.destroy(mDevice);
 
     mRenderPassCache.destroy(mDevice);
     mPipelineCache.destroy(mDevice);
+    mShaderLibrary.destroy(mDevice);
 
     if (mGlslangWrapper)
     {
@@ -579,22 +581,7 @@ vk::ErrorOrResult<uint32_t> RendererVk::selectPresentQueueForSurface(VkSurfaceKH
 
 std::string RendererVk::getVendorString() const
 {
-    switch (mPhysicalDeviceProperties.vendorID)
-    {
-        case VENDOR_ID_AMD:
-            return "Advanced Micro Devices";
-        case VENDOR_ID_NVIDIA:
-            return "NVIDIA";
-        case VENDOR_ID_INTEL:
-            return "Intel";
-        default:
-        {
-            // TODO(jmadill): More vendor IDs.
-            std::stringstream strstr;
-            strstr << "Vendor ID: " << mPhysicalDeviceProperties.vendorID;
-            return strstr.str();
-        }
-    }
+    return GetVendorString(mPhysicalDeviceProperties.vendorID);
 }
 
 std::string RendererVk::getRendererDescription() const
@@ -608,7 +595,18 @@ std::string RendererVk::getRendererDescription() const
     strstr << VK_VERSION_MINOR(apiVersion) << ".";
     strstr << VK_VERSION_PATCH(apiVersion);
 
-    strstr << "(" << mPhysicalDeviceProperties.deviceName << ")";
+    strstr << "(";
+
+    // In the case of NVIDIA, deviceName does not necessarily contain "NVIDIA". Add "NVIDIA" so that
+    // Vulkan end2end tests can be selectively disabled on NVIDIA. TODO(jmadill): should not be
+    // needed after http://anglebug.com/1874 is fixed and end2end_tests use more sophisticated
+    // driver detection.
+    if (mPhysicalDeviceProperties.vendorID == VENDOR_ID_NVIDIA)
+    {
+        strstr << GetVendorString(mPhysicalDeviceProperties.vendorID) << " ";
+    }
+
+    strstr << mPhysicalDeviceProperties.deviceName << ")";
 
     return strstr.str();
 }
@@ -877,7 +875,7 @@ vk::Error RendererVk::initGraphicsPipelineLayout()
     uint32_t blockCount = 0;
 
     {
-        auto &layoutBinding = uniformBindings[blockCount];
+        VkDescriptorSetLayoutBinding &layoutBinding = uniformBindings[blockCount];
 
         layoutBinding.binding            = blockCount;
         layoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
@@ -889,7 +887,7 @@ vk::Error RendererVk::initGraphicsPipelineLayout()
     }
 
     {
-        auto &layoutBinding = uniformBindings[blockCount];
+        VkDescriptorSetLayoutBinding &layoutBinding = uniformBindings[blockCount];
 
         layoutBinding.binding            = blockCount;
         layoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
@@ -954,18 +952,48 @@ vk::Error RendererVk::initGraphicsPipelineLayout()
     return vk::NoError();
 }
 
-Serial RendererVk::issueProgramSerial()
+vk::Error RendererVk::getInternalPushConstantPipelineLayout(
+    const vk::PipelineLayout **pipelineLayoutOut)
 {
-    return mProgramSerialFactory.generate();
+    *pipelineLayoutOut = &mInternalPushConstantPipelineLayout;
+    if (mInternalPushConstantPipelineLayout.valid())
+    {
+        return vk::NoError();
+    }
+
+    VkPushConstantRange pushConstantRange;
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstantRange.offset     = 0;
+    pushConstantRange.size       = sizeof(VkClearColorValue);
+
+    VkPipelineLayoutCreateInfo createInfo;
+    createInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    createInfo.pNext                  = nullptr;
+    createInfo.flags                  = 0;
+    createInfo.setLayoutCount         = 0;
+    createInfo.pSetLayouts            = nullptr;
+    createInfo.pushConstantRangeCount = 1;
+    createInfo.pPushConstantRanges    = &pushConstantRange;
+
+    ANGLE_TRY(mInternalPushConstantPipelineLayout.init(mDevice, createInfo));
+
+    return vk::NoError();
 }
 
-vk::Error RendererVk::getPipeline(const ProgramVk *programVk,
-                                  const vk::PipelineDesc &desc,
-                                  const gl::AttributesMask &activeAttribLocationsMask,
-                                  vk::PipelineAndSerial **pipelineOut)
+Serial RendererVk::issueShaderSerial()
 {
-    ASSERT(programVk->getVertexModuleSerial() == desc.getShaderStageInfo()[0].moduleSerial);
-    ASSERT(programVk->getFragmentModuleSerial() == desc.getShaderStageInfo()[1].moduleSerial);
+    return mShaderSerialFactory.generate();
+}
+
+vk::Error RendererVk::getAppPipeline(const ProgramVk *programVk,
+                                     const vk::PipelineDesc &desc,
+                                     const gl::AttributesMask &activeAttribLocationsMask,
+                                     vk::PipelineAndSerial **pipelineOut)
+{
+    ASSERT(programVk->getVertexModuleSerial() ==
+           desc.getShaderStageInfo()[vk::ShaderType::VertexShader].moduleSerial);
+    ASSERT(programVk->getFragmentModuleSerial() ==
+           desc.getShaderStageInfo()[vk::ShaderType::FragmentShader].moduleSerial);
 
     // Pull in a compatible RenderPass.
     vk::RenderPass *compatibleRenderPass = nullptr;
@@ -974,6 +1002,32 @@ vk::Error RendererVk::getPipeline(const ProgramVk *programVk,
     return mPipelineCache.getPipeline(mDevice, *compatibleRenderPass, mGraphicsPipelineLayout,
                                       activeAttribLocationsMask, programVk->getLinkedVertexModule(),
                                       programVk->getLinkedFragmentModule(), desc, pipelineOut);
+}
+
+vk::Error RendererVk::getInternalPipeline(const vk::ShaderAndSerial &vertexShader,
+                                          const vk::ShaderAndSerial &fragmentShader,
+                                          const vk::PipelineLayout &pipelineLayout,
+                                          const vk::PipelineDesc &pipelineDesc,
+                                          const gl::AttributesMask &activeAttribLocationsMask,
+                                          vk::PipelineAndSerial **pipelineOut)
+{
+    ASSERT(vertexShader.queueSerial() ==
+           pipelineDesc.getShaderStageInfo()[vk::ShaderType::VertexShader].moduleSerial);
+    ASSERT(fragmentShader.queueSerial() ==
+           pipelineDesc.getShaderStageInfo()[vk::ShaderType::FragmentShader].moduleSerial);
+
+    // Pull in a compatible RenderPass.
+    vk::RenderPass *compatibleRenderPass = nullptr;
+    ANGLE_TRY(getCompatibleRenderPass(pipelineDesc.getRenderPassDesc(), &compatibleRenderPass));
+
+    return mPipelineCache.getPipeline(mDevice, *compatibleRenderPass, pipelineLayout,
+                                      activeAttribLocationsMask, vertexShader.get(),
+                                      fragmentShader.get(), pipelineDesc, pipelineOut);
+}
+
+vk::ShaderLibrary *RendererVk::getShaderLibrary()
+{
+    return &mShaderLibrary;
 }
 
 }  // namespace rx

@@ -12,6 +12,8 @@
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/xml/cfx_xmltext.h"
 
+class CFX_XMLDocument;
+
 class CFX_XMLCharData : public CFX_XMLText {
  public:
   explicit CFX_XMLCharData(const WideString& wsCData);
@@ -19,8 +21,8 @@ class CFX_XMLCharData : public CFX_XMLText {
 
   // CFX_XMLNode
   FX_XMLNODETYPE GetType() const override;
-  std::unique_ptr<CFX_XMLNode> Clone() override;
-  void Save(const RetainPtr<CFX_SeekableStreamProxy>& pXMLStream) override;
+  CFX_XMLNode* Clone(CFX_XMLDocument* doc) override;
+  void Save(const RetainPtr<IFX_SeekableWriteStream>& pXMLStream) override;
 };
 
 #endif  // CORE_FXCRT_XML_CFX_XMLCHARDATA_H_

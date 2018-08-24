@@ -19,12 +19,12 @@
 #include "base/task_runner.h"
 #include "base/task_scheduler/post_task.h"
 #include "content/browser/resource_context_impl.h"
-#include "content/common/wrapper_shared_url_loader_factory.h"
 #include "content/public/browser/blob_handle.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_features.h"
 #include "services/network/public/cpp/resource_request_body.h"
+#include "services/network/public/cpp/wrapper_shared_url_loader_factory.h"
 #include "storage/browser/blob/blob_data_builder.h"
 #include "storage/browser/blob/blob_impl.h"
 #include "storage/browser/blob/blob_memory_controller.h"
@@ -174,27 +174,6 @@ std::unique_ptr<BlobHandle> ChromeBlobStorageContext::CreateMemoryBackedBlob(
   return blob_handle;
 }
 
-std::unique_ptr<BlobHandle> ChromeBlobStorageContext::CreateFileBackedBlob(
-    const FilePath& path,
-    int64_t offset,
-    int64_t size,
-    const base::Time& expected_modification_time) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-
-  std::string uuid(base::GenerateGUID());
-  auto blob_data_builder = std::make_unique<storage::BlobDataBuilder>(uuid);
-  blob_data_builder->AppendFile(path, offset, size, expected_modification_time);
-
-  std::unique_ptr<storage::BlobDataHandle> blob_data_handle =
-      context_->AddFinishedBlob(std::move(blob_data_builder));
-  if (!blob_data_handle)
-    return std::unique_ptr<BlobHandle>();
-
-  std::unique_ptr<BlobHandle> blob_handle(
-      new BlobHandleImpl(std::move(blob_data_handle)));
-  return blob_handle;
-}
-
 // static
 scoped_refptr<network::SharedURLLoaderFactory>
 ChromeBlobStorageContext::URLLoaderFactoryForToken(
@@ -214,7 +193,7 @@ ChromeBlobStorageContext::URLLoaderFactoryForToken(
           },
           base::WrapRefCounted(GetFor(browser_context)),
           MakeRequest(&blob_url_loader_factory_ptr), token.PassInterface()));
-  return base::MakeRefCounted<WrapperSharedURLLoaderFactory>(
+  return base::MakeRefCounted<network::WrapperSharedURLLoaderFactory>(
       std::move(blob_url_loader_factory_ptr));
 }
 

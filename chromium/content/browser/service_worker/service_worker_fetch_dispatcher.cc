@@ -53,7 +53,13 @@ class DelegatingURLLoader final : public network::mojom::URLLoader {
       : binding_(this), loader_(std::move(loader)) {}
   ~DelegatingURLLoader() override {}
 
-  void FollowRedirect() override { loader_->FollowRedirect(); }
+  void FollowRedirect(const base::Optional<net::HttpRequestHeaders>&
+                          modified_request_headers) override {
+    DCHECK(!modified_request_headers.has_value())
+        << "Redirect with modified headers was not supported yet. "
+           "crbug.com/845683";
+    loader_->FollowRedirect(base::nullopt);
+  }
   void ProceedWithResponse() override { NOTREACHED(); }
 
   void SetPriority(net::RequestPriority priority,
@@ -103,13 +109,13 @@ void NotifyNavigationPreloadRequestSentOnUI(
 
 void NotifyNavigationPreloadResponseReceivedOnUI(
     const GURL& url,
-    const network::ResourceResponseHead& head,
+    scoped_refptr<network::ResourceResponse> response,
     const std::pair<int, int>& worker_id,
     const std::string& request_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   ServiceWorkerDevToolsManager::GetInstance()
       ->NavigationPreloadResponseReceived(worker_id.first, worker_id.second,
-                                          request_id, url, head);
+                                          request_id, url, response->head);
 }
 
 void NotifyNavigationPreloadCompletedOnUI(
@@ -134,9 +140,12 @@ class DelegatingURLLoaderClient final : public network::mojom::URLLoaderClient {
       : binding_(this),
         client_(std::move(client)),
         on_response_(std::move(on_response)),
-        url_(request.url) {
+        url_(request.url),
+        devtools_enabled_(request.report_raw_headers) {
+    if (!devtools_enabled_)
+      return;
     AddDevToolsCallback(
-        base::Bind(&NotifyNavigationPreloadRequestSentOnUI, request));
+        base::BindOnce(&NotifyNavigationPreloadRequestSentOnUI, request));
   }
   ~DelegatingURLLoaderClient() override {
     if (!completed_) {
@@ -144,8 +153,10 @@ class DelegatingURLLoaderClient final : public network::mojom::URLLoaderClient {
       network::URLLoaderCompletionStatus status;
       status.error_code = net::ERR_ABORTED;
       client_->OnComplete(status);
+      if (!devtools_enabled_)
+        return;
       AddDevToolsCallback(
-          base::Bind(&NotifyNavigationPreloadCompletedOnUI, status));
+          base::BindOnce(&NotifyNavigationPreloadCompletedOnUI, status));
     }
   }
 
@@ -176,8 +187,14 @@ class DelegatingURLLoaderClient final : public network::mojom::URLLoaderClient {
     client_->OnReceiveResponse(head, std::move(downloaded_file));
     DCHECK(on_response_);
     std::move(on_response_).Run();
+    if (!devtools_enabled_)
+      return;
+    // Make a deep copy of ResourceResponseHead before passing it cross-thread.
+    auto resource_response = base::MakeRefCounted<network::ResourceResponse>();
+    resource_response->head = head;
     AddDevToolsCallback(
-        base::Bind(&NotifyNavigationPreloadResponseReceivedOnUI, url_, head));
+        base::BindOnce(&NotifyNavigationPreloadResponseReceivedOnUI, url_,
+                       resource_response->DeepCopy()));
   }
   void OnReceiveRedirect(const net::RedirectInfo& redirect_info,
                          const network::ResourceResponseHead& head) override {
@@ -186,11 +203,18 @@ class DelegatingURLLoaderClient final : public network::mojom::URLLoaderClient {
     // OnReceiveRedirect IPC and don't send OnComplete IPC. The service worker
     // will clean up the preload request when OnReceiveRedirect() is called.
     client_->OnReceiveRedirect(redirect_info, head);
+
+    if (!devtools_enabled_)
+      return;
+    // Make a deep copy of ResourceResponseHead before passing it cross-thread.
+    auto resource_response = base::MakeRefCounted<network::ResourceResponse>();
+    resource_response->head = head;
     AddDevToolsCallback(
-        base::Bind(&NotifyNavigationPreloadResponseReceivedOnUI, url_, head));
+        base::BindOnce(&NotifyNavigationPreloadResponseReceivedOnUI, url_,
+                       resource_response->DeepCopy()));
     network::URLLoaderCompletionStatus status;
     AddDevToolsCallback(
-        base::Bind(&NotifyNavigationPreloadCompletedOnUI, status));
+        base::BindOnce(&NotifyNavigationPreloadCompletedOnUI, status));
   }
   void OnStartLoadingResponseBody(
       mojo::ScopedDataPipeConsumerHandle body) override {
@@ -201,8 +225,10 @@ class DelegatingURLLoaderClient final : public network::mojom::URLLoaderClient {
       return;
     completed_ = true;
     client_->OnComplete(status);
+    if (!devtools_enabled_)
+      return;
     AddDevToolsCallback(
-        base::Bind(&NotifyNavigationPreloadCompletedOnUI, status));
+        base::BindOnce(&NotifyNavigationPreloadCompletedOnUI, status));
   }
 
   void Bind(network::mojom::URLLoaderClientPtr* ptr_info) {
@@ -211,7 +237,7 @@ class DelegatingURLLoaderClient final : public network::mojom::URLLoaderClient {
 
  private:
   void MaybeRunDevToolsCallbacks() {
-    if (!worker_id_)
+    if (!worker_id_ || !devtools_enabled_)
       return;
     while (!devtools_callbacks.empty()) {
       BrowserThread::PostTask(
@@ -222,7 +248,7 @@ class DelegatingURLLoaderClient final : public network::mojom::URLLoaderClient {
     }
   }
   void AddDevToolsCallback(
-      base::Callback<void(const WorkerId&, const std::string&)> callback) {
+      base::OnceCallback<void(const WorkerId&, const std::string&)> callback) {
     devtools_callbacks.push(std::move(callback));
     MaybeRunDevToolsCallbacks();
   }
@@ -232,10 +258,11 @@ class DelegatingURLLoaderClient final : public network::mojom::URLLoaderClient {
   base::OnceClosure on_response_;
   bool completed_ = false;
   const GURL url_;
+  const bool devtools_enabled_;
 
   base::Optional<std::pair<int, int>> worker_id_;
   std::string devtools_request_id_;
-  base::queue<base::Callback<void(const WorkerId&, const std::string&)>>
+  base::queue<base::OnceCallback<void(const WorkerId&, const std::string&)>>
       devtools_callbacks;
   DISALLOW_COPY_AND_ASSIGN(DelegatingURLLoaderClient);
 };

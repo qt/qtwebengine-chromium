@@ -4,14 +4,14 @@
 
 #include "third_party/blink/renderer/platform/graphics/paint/paint_chunk.h"
 
+#include "base/optional.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/testing/fake_display_item_client.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 
 namespace blink {
 
-TEST(PaintChunkTest, matchesSame) {
-  PaintChunkProperties properties;
+TEST(PaintChunkTest, MatchesSame) {
+  auto properties = PropertyTreeState::Root();
   FakeDisplayItemClient client;
   client.UpdateCacheGeneration();
   DisplayItem::Id id(client, DisplayItem::kDrawingFirst);
@@ -19,8 +19,8 @@ TEST(PaintChunkTest, matchesSame) {
                   .Matches(PaintChunk(0, 1, id, properties)));
 }
 
-TEST(PaintChunkTest, matchesEqual) {
-  PaintChunkProperties properties;
+TEST(PaintChunkTest, MatchesEqual) {
+  auto properties = PropertyTreeState::Root();
   FakeDisplayItemClient client;
   client.UpdateCacheGeneration();
   DisplayItem::Id id(client, DisplayItem::kDrawingFirst);
@@ -32,7 +32,7 @@ TEST(PaintChunkTest, matchesEqual) {
 }
 
 TEST(PaintChunkTest, IdNotMatches) {
-  PaintChunkProperties properties;
+  auto properties = PropertyTreeState::Root();
   FakeDisplayItemClient client1;
   client1.UpdateCacheGeneration();
   DisplayItem::Id id1(client1, DisplayItem::kDrawingFirst);
@@ -45,7 +45,7 @@ TEST(PaintChunkTest, IdNotMatches) {
 }
 
 TEST(PaintChunkTest, IdNotMatchesUncacheable) {
-  PaintChunkProperties properties;
+  auto properties = PropertyTreeState::Root();
   FakeDisplayItemClient client;
   client.UpdateCacheGeneration();
   DisplayItem::Id id(client, DisplayItem::kDrawingFirst);
@@ -60,8 +60,8 @@ TEST(PaintChunkTest, IdNotMatchesUncacheable) {
 }
 
 TEST(PaintChunkTest, IdNotMatchesJustCreated) {
-  PaintChunkProperties properties;
-  Optional<FakeDisplayItemClient> client;
+  auto properties = PropertyTreeState::Root();
+  base::Optional<FakeDisplayItemClient> client;
   client.emplace();
   EXPECT_TRUE(client->IsJustCreated());
   // Invalidation won't change the "just created" status.
@@ -79,7 +79,7 @@ TEST(PaintChunkTest, IdNotMatchesJustCreated) {
                   .Matches(PaintChunk(0, 1, id, properties)));
 
   // Delete the current object and create a new object at the same address.
-  client = WTF::nullopt;
+  client = base::nullopt;
   client.emplace();
   EXPECT_TRUE(client->IsJustCreated());
   EXPECT_FALSE(PaintChunk(0, 1, id, properties)

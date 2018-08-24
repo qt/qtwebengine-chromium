@@ -37,8 +37,8 @@ const AtomicString& CanMakePaymentEvent::InterfaceName() const {
   return EventNames::CanMakePaymentEvent;
 }
 
-const String& CanMakePaymentEvent::topLevelOrigin() const {
-  return top_level_origin_;
+const String& CanMakePaymentEvent::topOrigin() const {
+  return top_origin_;
 }
 
 const String& CanMakePaymentEvent::paymentRequestOrigin() const {
@@ -57,6 +57,13 @@ const HeapVector<PaymentDetailsModifier>& CanMakePaymentEvent::modifiers()
 void CanMakePaymentEvent::respondWith(ScriptState* script_state,
                                       ScriptPromise script_promise,
                                       ExceptionState& exception_state) {
+  if (!isTrusted()) {
+    exception_state.ThrowDOMException(
+        kInvalidStateError,
+        "Cannot respond with data when the event is not trusted");
+    return;
+  }
+
   stopImmediatePropagation();
   if (observer_) {
     observer_->RespondWith(script_state, script_promise, exception_state);
@@ -76,7 +83,7 @@ CanMakePaymentEvent::CanMakePaymentEvent(
     RespondWithObserver* respond_with_observer,
     WaitUntilObserver* wait_until_observer)
     : ExtendableEvent(type, initializer, wait_until_observer),
-      top_level_origin_(initializer.topLevelOrigin()),
+      top_origin_(initializer.topOrigin()),
       payment_request_origin_(initializer.paymentRequestOrigin()),
       method_data_(std::move(initializer.methodData())),
       modifiers_(initializer.modifiers()),

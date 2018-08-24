@@ -6,11 +6,14 @@
 #define CONTENT_RENDERER_SERVICE_WORKER_SERVICE_WORKER_MESSAGE_FILTER_H_
 
 #include "base/macros.h"
+#include "base/single_thread_task_runner.h"
 #include "content/common/content_export.h"
 #include "content/renderer/worker_thread_message_filter.h"
 
 namespace content {
 
+// TODO(leonhsl): Eliminate this class since we're in a pure Mojo world now, no
+// longer need to handle any legacy IPCs.
 class CONTENT_EXPORT ServiceWorkerMessageFilter
     : public WorkerThreadMessageFilter {
  public:

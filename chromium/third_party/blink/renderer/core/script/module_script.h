@@ -61,8 +61,8 @@ class CORE_EXPORT ModuleScript final : public Script, public TraceWrapperBase {
   KURL ResolveModuleSpecifier(const String& module_request,
                               String* failure_reason = nullptr);
 
-  void Trace(blink::Visitor*);
-  void TraceWrappers(const ScriptWrappableVisitor*) const override;
+  void Trace(blink::Visitor*) override;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override { return "ModuleScript"; }
 
  private:

@@ -8,11 +8,15 @@
 
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/service/scheduler.h"
 #include "gpu/command_buffer/service/texture_manager.h"
+#include "gpu/ipc/service/gpu_channel.h"
 #include "media/base/bind_to_current_loop.h"
+#include "media/base/cdm_context.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/video_decoder_config.h"
 #include "media/base/video_frame.h"
+#include "media/base/video_util.h"
 #include "media/gpu/windows/d3d11_picture_buffer.h"
 #include "ui/gl/gl_angle_util_win.h"
 #include "ui/gl/gl_bindings.h"
@@ -34,6 +38,9 @@ D3D11VideoDecoderImpl::D3D11VideoDecoderImpl(
 D3D11VideoDecoderImpl::~D3D11VideoDecoderImpl() {
   // TODO(liberato): be sure to clear |picture_buffers_| on the main thread.
   // For now, we always run on the main thread anyway.
+
+  if (stub_ && !wait_sequence_id_.is_null())
+    stub_->channel()->scheduler()->DestroySequence(wait_sequence_id_);
 }
 
 std::string D3D11VideoDecoderImpl::GetDisplayName() const {
@@ -50,6 +57,7 @@ void D3D11VideoDecoderImpl::Initialize(
     const WaitingForDecryptionKeyCB& waiting_for_decryption_key_cb) {
   init_cb_ = init_cb;
   output_cb_ = output_cb;
+  is_encrypted_ = config.is_encrypted();
 
   stub_ = get_stub_cb_.Run();
   if (!MakeContextCurrent(stub_)) {
@@ -58,6 +66,8 @@ void D3D11VideoDecoderImpl::Initialize(
   }
   // TODO(liberato): see GpuVideoFrameFactory.
   // stub_->AddDestructionObserver(this);
+  wait_sequence_id_ = stub_->channel()->scheduler()->CreateSequence(
+      gpu::SchedulingPriority::kNormal);
 
   // Use the ANGLE device, rather than create our own.  It would be nice if we
   // could use our own device, and run on the mojo thread, but texture sharing
@@ -67,7 +77,8 @@ void D3D11VideoDecoderImpl::Initialize(
 
   HRESULT hr;
 
-  // TODO(liberato): Handle cleanup better.
+  // TODO(liberato): Handle cleanup better.  Also consider being less chatty in
+  // the logs, since this will fall back.
   hr = device_context_.CopyTo(video_context_.GetAddressOf());
   if (!SUCCEEDED(hr)) {
     NotifyError("Failed to get device context");
@@ -145,6 +156,9 @@ void D3D11VideoDecoderImpl::Initialize(
     return;
   }
 
+  if (is_encrypted_)
+    dec_config.guidConfigBitstreamEncryption = D3D11_DECODER_ENCRYPTION_HW_CENC;
+
   memcpy(&decoder_guid_, &decoder_guid, sizeof decoder_guid_);
 
   Microsoft::WRL::ComPtr<ID3D11VideoDecoder> video_decoder;
@@ -158,6 +172,13 @@ void D3D11VideoDecoderImpl::Initialize(
   accelerated_video_decoder_ =
       std::make_unique<H264Decoder>(std::make_unique<D3D11H264Accelerator>(
           this, video_decoder, video_device_, video_context_));
+
+  // |cdm_context| could be null for clear playback.
+  if (cdm_context) {
+    new_key_callback_registration_ =
+        cdm_context->RegisterNewKeyCB(base::BindRepeating(
+            &D3D11VideoDecoderImpl::NotifyNewKey, weak_factory_.GetWeakPtr()));
+  }
 
   state_ = State::kRunning;
   std::move(init_cb_).Run(true);
@@ -189,7 +210,6 @@ void D3D11VideoDecoderImpl::DoDecode() {
     }
     current_buffer_ = std::move(input_buffer_queue_.front().first);
     current_decode_cb_ = input_buffer_queue_.front().second;
-    current_timestamp_ = current_buffer_->timestamp();
     input_buffer_queue_.pop_front();
     if (current_buffer_->end_of_stream()) {
       // Flush, then signal the decode cb once all pictures have been output.
@@ -204,9 +224,13 @@ void D3D11VideoDecoderImpl::DoDecode() {
       std::move(current_decode_cb_).Run(DecodeStatus::OK);
       return;
     }
-    accelerated_video_decoder_->SetStream(
-        -1, (const uint8_t*)current_buffer_->data(),
-        current_buffer_->data_size());
+    // This must be after checking for EOS because there is no timestamp for an
+    // EOS buffer.
+    current_timestamp_ = current_buffer_->timestamp();
+
+    accelerated_video_decoder_->SetStream(-1, current_buffer_->data(),
+                                          current_buffer_->data_size(),
+                                          current_buffer_->decrypt_config());
   }
 
   while (true) {
@@ -230,6 +254,10 @@ void D3D11VideoDecoderImpl::DoDecode() {
       CreatePictureBuffers();
     } else if (result == media::AcceleratedVideoDecoder::kAllocateNewSurfaces) {
       CreatePictureBuffers();
+    } else if (result == media::AcceleratedVideoDecoder::kNoKey) {
+      state_ = State::kWaitingForNewKey;
+      // Note that another DoDecode() task would be posted in NotifyNewKey().
+      return;
     } else {
       LOG(ERROR) << "VDA Error " << result;
       NotifyError("Accelerated decode failed");
@@ -289,6 +317,8 @@ void D3D11VideoDecoderImpl::CreatePictureBuffers() {
   texture_desc.Usage = D3D11_USAGE_DEFAULT;
   texture_desc.BindFlags = D3D11_BIND_DECODER | D3D11_BIND_SHADER_RESOURCE;
   texture_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
+  if (is_encrypted_)
+    texture_desc.MiscFlags |= D3D11_RESOURCE_MISC_HW_PROTECTED;
 
   Microsoft::WRL::ComPtr<ID3D11Texture2D> out_texture;
   HRESULT hr = device_->CreateTexture2D(&texture_desc, nullptr,
@@ -332,18 +362,27 @@ void D3D11VideoDecoderImpl::OutputResult(D3D11PictureBuffer* buffer) {
 
   // Note: The pixel format doesn't matter.
   gfx::Rect visible_rect(buffer->size());
-  gfx::Size natural_size = buffer->size();
+  // TODO(liberato): Pixel aspect ratio should come from the VideoDecoderConfig
+  // (except when it should come from the SPS).
+  // https://crbug.com/837337
+  double pixel_aspect_ratio = 1.0;
   base::TimeDelta timestamp = buffer->timestamp_;
   auto frame = VideoFrame::WrapNativeTextures(
       PIXEL_FORMAT_NV12, buffer->mailbox_holders(),
-      VideoFrame::ReleaseMailboxCB(), buffer->size(), visible_rect,
-      natural_size, timestamp);
+      VideoFrame::ReleaseMailboxCB(), visible_rect.size(), visible_rect,
+      GetNaturalSize(visible_rect, pixel_aspect_ratio), timestamp);
 
   frame->SetReleaseMailboxCB(media::BindToCurrentLoop(base::BindOnce(
       &D3D11VideoDecoderImpl::OnMailboxReleased, weak_factory_.GetWeakPtr(),
       scoped_refptr<D3D11PictureBuffer>(buffer))));
   frame->metadata()->SetBoolean(VideoFrameMetadata::POWER_EFFICIENT, true);
+  // For NV12, overlay is allowed by default. If the decoder is going to support
+  // non-NV12 textures, then this may have to be conditionally set. Also note
+  // that ALLOW_OVERLAY is required for encrypted video path.
+  frame->metadata()->SetBoolean(VideoFrameMetadata::ALLOW_OVERLAY, true);
 
+  if (is_encrypted_)
+    frame->metadata()->SetBoolean(VideoFrameMetadata::PROTECTED_VIDEO, true);
   output_cb_.Run(frame);
 }
 
@@ -353,7 +392,16 @@ void D3D11VideoDecoderImpl::OnMailboxReleased(
   // Note that |buffer| might no longer be in |picture_buffers_| if we've
   // replaced them.  That's okay.
 
-  // TODO(liberato): what about the sync token?
+  stub_->channel()->scheduler()->ScheduleTask(gpu::Scheduler::Task(
+      wait_sequence_id_,
+      base::BindOnce(&D3D11VideoDecoderImpl::OnSyncTokenReleased, GetWeakPtr(),
+                     std::move(buffer)),
+      std::vector<gpu::SyncToken>({sync_token})));
+}
+
+void D3D11VideoDecoderImpl::OnSyncTokenReleased(
+    scoped_refptr<D3D11PictureBuffer> buffer) {
+  // Note that |buffer| might no longer be in |picture_buffers_|.
   buffer->set_in_client_use(false);
 
   // Also re-start decoding in case it was waiting for more pictures.
@@ -361,11 +409,26 @@ void D3D11VideoDecoderImpl::OnMailboxReleased(
   // probably check.
   base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
-      base::Bind(&D3D11VideoDecoderImpl::DoDecode, weak_factory_.GetWeakPtr()));
+      base::BindOnce(&D3D11VideoDecoderImpl::DoDecode, GetWeakPtr()));
 }
 
 base::WeakPtr<D3D11VideoDecoderImpl> D3D11VideoDecoderImpl::GetWeakPtr() {
   return weak_factory_.GetWeakPtr();
+}
+
+void D3D11VideoDecoderImpl::NotifyNewKey() {
+  if (state_ != State::kWaitingForNewKey) {
+    // Note that this method may be called before DoDecode() because the key
+    // acquisition stack may be running independently of the media decoding
+    // stack. So if this isn't in kWaitingForNewKey state no "resuming" is
+    // required therefore no special action taken here.
+    return;
+  }
+
+  state_ = State::kRunning;
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::BindOnce(&D3D11VideoDecoderImpl::DoDecode,
+                                weak_factory_.GetWeakPtr()));
 }
 
 void D3D11VideoDecoderImpl::NotifyError(const char* reason) {

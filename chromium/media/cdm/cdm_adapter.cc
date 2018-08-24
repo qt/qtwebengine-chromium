@@ -11,7 +11,6 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -19,6 +18,7 @@
 #include "base/trace_event/trace_event.h"
 #include "components/crash/core/common/crash_key.h"
 #include "media/base/audio_decoder_config.h"
+#include "media/base/callback_registry.h"
 #include "media/base/cdm_initialized_promise.h"
 #include "media/base/cdm_key_information.h"
 #include "media/base/channel_layout.h"
@@ -31,9 +31,9 @@
 #include "media/base/video_decoder_config.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_types.h"
+#include "media/base/video_util.h"
 #include "media/cdm/cdm_auxiliary_helper.h"
 #include "media/cdm/cdm_helpers.h"
-#include "media/cdm/cdm_module.h"
 #include "media/cdm/cdm_wrapper.h"
 #include "ui/gfx/geometry/rect.h"
 #include "url/origin.h"
@@ -48,6 +48,13 @@ namespace {
 constexpr int kSizeKBMin = 1;
 constexpr int kSizeKBMax = 512 * 1024;  // 512MB
 constexpr int kSizeKBBuckets = 100;
+
+// Only support version 1 of Storage Id. However, the "latest" version can also
+// be requested.
+constexpr uint32_t kRequestLatestStorageIdVersion = 0;
+constexpr uint32_t kCurrentStorageIdVersion = 1;
+static_assert(kCurrentStorageIdVersion < 0x80000000,
+              "Versions 0x80000000 and above are reserved.");
 
 cdm::HdcpVersion ToCdmHdcpVersion(HdcpVersion hdcp_version) {
   switch (hdcp_version) {
@@ -119,29 +126,6 @@ CdmPromise::Exception ToMediaExceptionType(cdm::Exception exception) {
 
   NOTREACHED() << "Unexpected cdm::Exception " << exception;
   return CdmPromise::Exception::INVALID_STATE_ERROR;
-}
-
-cdm::Exception ToCdmExceptionType(cdm::Error error) {
-  switch (error) {
-    case cdm::kNotSupportedError:
-      return cdm::kExceptionNotSupportedError;
-    case cdm::kInvalidStateError:
-      return cdm::kExceptionInvalidStateError;
-    case cdm::kInvalidAccessError:
-      return cdm::kExceptionTypeError;
-    case cdm::kQuotaExceededError:
-      return cdm::kExceptionQuotaExceededError;
-
-    // TODO(jrummell): Remove these once CDM_8 is no longer supported.
-    // https://crbug.com/737296.
-    case cdm::kUnknownError:
-    case cdm::kClientError:
-    case cdm::kOutputError:
-      return cdm::kExceptionNotSupportedError;
-  }
-
-  NOTREACHED() << "Unexpected cdm::Error " << error;
-  return cdm::kExceptionInvalidStateError;
 }
 
 CdmMessageType ToMediaMessageType(cdm::MessageType message_type) {
@@ -338,9 +322,22 @@ cdm::EncryptionScheme ToCdmEncryptionScheme(const EncryptionScheme& scheme) {
         return cdm::EncryptionScheme::kCenc;
       break;
     case EncryptionScheme::CIPHER_MODE_AES_CBC:
-      if (scheme.pattern().IsInEffect())
-        return cdm::EncryptionScheme::kCbcs;
-      break;
+      // Pattern should be required for 'cbcs' but is currently optional.
+      return cdm::EncryptionScheme::kCbcs;
+  }
+
+  NOTREACHED();
+  return cdm::EncryptionScheme::kUnencrypted;
+}
+
+cdm::EncryptionScheme ToCdmEncryptionScheme(const EncryptionMode& mode) {
+  switch (mode) {
+    case EncryptionMode::kUnencrypted:
+      return cdm::EncryptionScheme::kUnencrypted;
+    case EncryptionMode::kCenc:
+      return cdm::EncryptionScheme::kCenc;
+    case EncryptionMode::kCbcs:
+      return cdm::EncryptionScheme::kCbcs;
   }
 
   NOTREACHED();
@@ -407,11 +404,13 @@ void ToCdmInputBuffer(const DecoderBuffer& encrypted_buffer,
   input_buffer->subsamples = subsamples->data();
   input_buffer->num_subsamples = num_subsamples;
 
-  // TODO(crbug.com/658026): Add encryption scheme to DecoderBuffer.
-  input_buffer->encryption_scheme = (decrypt_config->is_encrypted())
-                                        ? cdm::EncryptionScheme::kCenc
-                                        : cdm::EncryptionScheme::kUnencrypted;
-  input_buffer->pattern = {0, 0};
+  input_buffer->encryption_scheme =
+      ToCdmEncryptionScheme(decrypt_config->encryption_mode());
+  if (decrypt_config->HasPattern()) {
+    input_buffer->pattern = {
+        decrypt_config->encryption_pattern()->crypt_byte_block(),
+        decrypt_config->encryption_pattern()->skip_byte_block()};
+  }
 }
 
 void* GetCdmHost(int host_interface_version, void* user_data) {
@@ -419,32 +418,21 @@ void* GetCdmHost(int host_interface_version, void* user_data) {
     return nullptr;
 
   static_assert(
-      cdm::ContentDecryptionModule::Host::kVersion == cdm::Host_9::kVersion,
-      "update the code below");
+      CheckSupportedCdmHostVersions(cdm::Host_9::kVersion,
+                                    cdm::Host_11::kVersion),
+      "Mismatch between GetCdmHost() and IsSupportedCdmHostVersion()");
 
-  // Ensure IsSupportedCdmHostVersion matches implementation of this function.
-  // Always update this DCHECK when updating this function.
-  // If this check fails, update this function and DCHECK or update
-  // IsSupportedCdmHostVersion.
-
-  // TODO(xhwang): Static assert these at compile time.
-  const int kMinVersion = cdm::ContentDecryptionModule_8::kVersion;
-  const int kMaxVersion = cdm::ContentDecryptionModule_10::kVersion;
-  DCHECK(!IsSupportedCdmInterfaceVersion(kMinVersion - 1));
-  for (int version = kMinVersion; version <= kMaxVersion; ++version)
-    DCHECK(IsSupportedCdmInterfaceVersion(version));
-  DCHECK(!IsSupportedCdmInterfaceVersion(kMaxVersion + 1));
   DCHECK(IsSupportedCdmHostVersion(host_interface_version));
 
   CdmAdapter* cdm_adapter = static_cast<CdmAdapter*>(user_data);
   DVLOG(1) << "Create CDM Host with version " << host_interface_version;
   switch (host_interface_version) {
-    case cdm::Host_8::kVersion:
-      return static_cast<cdm::Host_8*>(cdm_adapter);
     case cdm::Host_9::kVersion:
       return static_cast<cdm::Host_9*>(cdm_adapter);
     case cdm::Host_10::kVersion:
       return static_cast<cdm::Host_10*>(cdm_adapter);
+    case cdm::Host_11::kVersion:
+      return static_cast<cdm::Host_11*>(cdm_adapter);
     default:
       NOTREACHED() << "Unexpected host interface version "
                    << host_interface_version;
@@ -482,6 +470,7 @@ void CdmAdapter::Create(
     const std::string& key_system,
     const url::Origin& security_origin,
     const CdmConfig& cdm_config,
+    CreateCdmFunc create_cdm_func,
     std::unique_ptr<CdmAuxiliaryHelper> helper,
     const SessionMessageCB& session_message_cb,
     const SessionClosedCB& session_closed_cb,
@@ -495,8 +484,8 @@ void CdmAdapter::Create(
   DCHECK(!session_expiration_update_cb.is_null());
 
   scoped_refptr<CdmAdapter> cdm =
-      new CdmAdapter(key_system, security_origin, cdm_config, std::move(helper),
-                     session_message_cb, session_closed_cb,
+      new CdmAdapter(key_system, security_origin, cdm_config, create_cdm_func,
+                     std::move(helper), session_message_cb, session_closed_cb,
                      session_keys_change_cb, session_expiration_update_cb);
 
   // |cdm| ownership passed to the promise.
@@ -507,6 +496,7 @@ CdmAdapter::CdmAdapter(
     const std::string& key_system,
     const url::Origin& security_origin,
     const CdmConfig& cdm_config,
+    CreateCdmFunc create_cdm_func,
     std::unique_ptr<CdmAuxiliaryHelper> helper,
     const SessionMessageCB& session_message_cb,
     const SessionClosedCB& session_closed_cb,
@@ -515,26 +505,32 @@ CdmAdapter::CdmAdapter(
     : key_system_(key_system),
       origin_string_(security_origin.Serialize()),
       cdm_config_(cdm_config),
+      create_cdm_func_(create_cdm_func),
+      helper_(std::move(helper)),
       session_message_cb_(session_message_cb),
       session_closed_cb_(session_closed_cb),
       session_keys_change_cb_(session_keys_change_cb),
       session_expiration_update_cb_(session_expiration_update_cb),
-      helper_(std::move(helper)),
       task_runner_(base::ThreadTaskRunnerHandle::Get()),
       pool_(new AudioBufferMemoryPool()),
       weak_factory_(this) {
+  DVLOG(1) << __func__;
+
   DCHECK(!key_system_.empty());
-  DCHECK(!session_message_cb_.is_null());
-  DCHECK(!session_closed_cb_.is_null());
-  DCHECK(!session_keys_change_cb_.is_null());
-  DCHECK(!session_expiration_update_cb_.is_null());
+  DCHECK(create_cdm_func_);
   DCHECK(helper_);
+  DCHECK(session_message_cb_);
+  DCHECK(session_closed_cb_);
+  DCHECK(session_keys_change_cb_);
+  DCHECK(session_expiration_update_cb_);
 
   helper_->SetFileReadCB(
       base::Bind(&CdmAdapter::OnFileRead, weak_factory_.GetWeakPtr()));
 }
 
 CdmAdapter::~CdmAdapter() {
+  DVLOG(1) << __func__;
+
   // Reject any outstanding promises and close all the existing sessions.
   cdm_promise_adapter_.Clear();
 
@@ -547,13 +543,7 @@ CdmAdapter::~CdmAdapter() {
 CdmWrapper* CdmAdapter::CreateCdmInstance(const std::string& key_system) {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
-  CreateCdmFunc create_cdm_func = CdmModule::GetInstance()->GetCreateCdmFunc();
-  if (!create_cdm_func) {
-    LOG(ERROR) << "Failed to get CreateCdmFunc!";
-    return nullptr;
-  }
-
-  CdmWrapper* cdm = CdmWrapper::Create(create_cdm_func, key_system.data(),
+  CdmWrapper* cdm = CdmWrapper::Create(create_cdm_func_, key_system.data(),
                                        key_system.size(), GetCdmHost, this);
   DVLOG(1) << "CDM instance for " + key_system + (cdm ? "" : " could not be") +
                   " created.";
@@ -563,14 +553,15 @@ CdmWrapper* CdmAdapter::CreateCdmInstance(const std::string& key_system) {
     // instead of a sparse histogram is okay. The following DCHECK asserts this.
     DCHECK(cdm->GetInterfaceVersion() <= 30);
     UMA_HISTOGRAM_ENUMERATION("Media.EME.CdmInterfaceVersion",
-                              cdm->GetInterfaceVersion(),
-                              cdm::ContentDecryptionModule::kVersion + 1);
+                              cdm->GetInterfaceVersion(), 30);
   }
 
   return cdm;
 }
 
 void CdmAdapter::Initialize(std::unique_ptr<media::SimpleCdmPromise> promise) {
+  DVLOG(1) << __func__;
+
   cdm_.reset(CreateCdmInstance(key_system_));
   if (!cdm_) {
     promise->reject(CdmPromise::Exception::INVALID_STATE_ERROR, 0,
@@ -684,8 +675,20 @@ CdmContext* CdmAdapter::GetCdmContext() {
   return this;
 }
 
+std::unique_ptr<CallbackRegistration> CdmAdapter::RegisterNewKeyCB(
+    base::RepeatingClosure new_key_cb) {
+  NOTIMPLEMENTED();
+  return nullptr;
+}
+
 Decryptor* CdmAdapter::GetDecryptor() {
   DCHECK(task_runner_->BelongsToCurrentThread());
+
+  // When using HW secure codecs, we cannot and should not use the CDM instance
+  // to do decrypt and/or decode. Instead, we should use the CdmProxy.
+  if (cdm_config_.use_hw_secure_codecs)
+    return nullptr;
+
   return this;
 }
 
@@ -806,7 +809,7 @@ void CdmAdapter::InitializeVideoDecoder(const VideoDecoderConfig& config,
     return;
   }
 
-  natural_size_ = config.natural_size();
+  pixel_aspect_ratio_ = config.GetPixelAspectRatio();
 
   if (status == cdm::kDeferredInitialization) {
     DVLOG(1) << "Deferred initialization in " << __func__;
@@ -874,8 +877,9 @@ void CdmAdapter::DecryptAndDecodeVideo(scoped_refptr<DecoderBuffer> encrypted,
     return;
   }
 
-  scoped_refptr<VideoFrame> decoded_frame =
-      video_frame->TransformToVideoFrame(natural_size_);
+  gfx::Rect visible_rect(video_frame->Size().width, video_frame->Size().height);
+  scoped_refptr<VideoFrame> decoded_frame = video_frame->TransformToVideoFrame(
+      GetNaturalSize(visible_rect, pixel_aspect_ratio_));
   if (!decoded_frame) {
     DLOG(ERROR) << __func__ << ": TransformToVideoFrame failed.";
     video_decode_cb.Run(Decryptor::kError, nullptr);
@@ -901,7 +905,7 @@ void CdmAdapter::DeinitializeDecoder(StreamType stream_type) {
       audio_channel_layout_ = CHANNEL_LAYOUT_NONE;
       break;
     case Decryptor::kVideo:
-      natural_size_ = gfx::Size();
+      pixel_aspect_ratio_ = 0.0;
       break;
   }
 }
@@ -972,17 +976,6 @@ void CdmAdapter::OnRejectPromise(uint32_t promise_id,
       std::string(error_message, error_message_size));
 }
 
-void CdmAdapter::OnRejectPromise(uint32_t promise_id,
-                                 cdm::Error error,
-                                 uint32_t system_code,
-                                 const char* error_message,
-                                 uint32_t error_message_size) {
-  // cdm::Host_8 version. Remove when CDM_8 no longer supported.
-  // https://crbug.com/737296.
-  OnRejectPromise(promise_id, ToCdmExceptionType(error), system_code,
-                  error_message, error_message_size);
-}
-
 void CdmAdapter::OnSessionMessage(const char* session_id,
                                   uint32_t session_id_size,
                                   cdm::MessageType message_type,
@@ -994,19 +987,6 @@ void CdmAdapter::OnSessionMessage(const char* session_id,
       std::string(session_id, session_id_size),
       ToMediaMessageType(message_type),
       std::vector<uint8_t>(message_ptr, message_ptr + message_size));
-}
-
-void CdmAdapter::OnSessionMessage(const char* session_id,
-                                  uint32_t session_id_size,
-                                  cdm::MessageType message_type,
-                                  const char* message,
-                                  uint32_t message_size,
-                                  const char* /* legacy_destination_url */,
-                                  uint32_t /* legacy_destination_url_size */) {
-  // cdm::Host_8 version. Remove when CDM_8 no longer supported.
-  // https://crbug.com/737296.
-  OnSessionMessage(session_id, session_id_size, message_type, message,
-                   message_size);
 }
 
 void CdmAdapter::OnSessionKeysChange(const char* session_id,
@@ -1054,22 +1034,19 @@ void CdmAdapter::OnSessionClosed(const char* session_id,
   session_closed_cb_.Run(std::string(session_id, session_id_size));
 }
 
-void CdmAdapter::OnLegacySessionError(const char* session_id,
-                                      uint32_t session_id_size,
-                                      cdm::Error error,
-                                      uint32_t system_code,
-                                      const char* error_message,
-                                      uint32_t error_message_size) {
-  // cdm::Host_8 version. Remove when CDM_8 no longer supported.
-  // https://crbug.com/737296.
-  DCHECK(task_runner_->BelongsToCurrentThread());
-}
-
 void CdmAdapter::SendPlatformChallenge(const char* service_id,
                                        uint32_t service_id_size,
                                        const char* challenge,
                                        uint32_t challenge_size) {
   DCHECK(task_runner_->BelongsToCurrentThread());
+
+  if (!cdm_config_.allow_distinctive_identifier) {
+    task_runner_->PostTask(
+        FROM_HERE,
+        base::BindRepeating(&CdmAdapter::OnChallengePlatformDone,
+                            weak_factory_.GetWeakPtr(), false, "", "", ""));
+    return;
+  }
 
   helper_->ChallengePlatform(std::string(service_id, service_id_size),
                              std::string(challenge, challenge_size),
@@ -1213,13 +1190,25 @@ cdm::FileIO* CdmAdapter::CreateFileIO(cdm::FileIOClient* client) {
   DVLOG(3) << __func__;
   DCHECK(task_runner_->BelongsToCurrentThread());
 
+  if (!cdm_config_.allow_persistent_state) {
+    DVLOG(1) << __func__ << ": Persistent state not allowed.";
+    return nullptr;
+  }
+
   return helper_->CreateCdmFileIO(client);
 }
 
 void CdmAdapter::RequestStorageId(uint32_t version) {
-  if (version >= 0x80000000) {
-    // Versions 0x80000000 and above are reserved.
-    cdm_->OnStorageId(version, nullptr, 0);
+  if (!cdm_config_.allow_persistent_state ||
+      !(version == kCurrentStorageIdVersion ||
+        version == kRequestLatestStorageIdVersion)) {
+    DVLOG(1) << __func__ << ": Persistent state not allowed ("
+             << cdm_config_.allow_persistent_state
+             << ") or invalid storage ID version (" << version << ").";
+    task_runner_->PostTask(
+        FROM_HERE, base::BindRepeating(&CdmAdapter::OnStorageIdObtained,
+                                       weak_factory_.GetWeakPtr(), version,
+                                       std::vector<uint8_t>()));
     return;
   }
 

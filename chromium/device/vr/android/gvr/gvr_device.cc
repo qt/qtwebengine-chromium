@@ -155,9 +155,11 @@ GvrDevice::GvrDevice() : weak_ptr_factory_(this) {
       env, non_presenting_context_);
   gvr_api_ = gvr::GvrApi::WrapNonOwned(reinterpret_cast<gvr_context*>(context));
   SetVRDisplayInfo(CreateVRDisplayInfo(gvr_api_.get(), GetId()));
+  GvrDelegateProviderFactory::SetDevice(this);
 }
 
 GvrDevice::~GvrDevice() {
+  GvrDelegateProviderFactory::SetDevice(nullptr);
   if (!non_presenting_context_.obj())
     return;
   JNIEnv* env = base::android::AttachCurrentThread();
@@ -165,7 +167,6 @@ GvrDevice::~GvrDevice() {
 }
 
 void GvrDevice::RequestPresent(
-    VRDisplayImpl* display,
     mojom::VRSubmitFrameClientPtr submit_client,
     mojom::VRPresentationProviderRequest request,
     mojom::VRRequestPresentOptionsPtr present_options,
@@ -182,17 +183,15 @@ void GvrDevice::RequestPresent(
       std::move(submit_client), std::move(request), GetVRDisplayInfo(),
       std::move(present_options),
       base::BindOnce(&GvrDevice::OnRequestPresentResult,
-                     weak_ptr_factory_.GetWeakPtr(), std::move(callback),
-                     base::Unretained(display)));
+                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
 }
 
 void GvrDevice::OnRequestPresentResult(
     mojom::VRDisplayHost::RequestPresentCallback callback,
-    VRDisplayImpl* display,
     bool result,
     mojom::VRDisplayFrameTransportOptionsPtr transport_options) {
   if (result)
-    SetPresentingDisplay(display);
+    SetIsPresenting();
   std::move(callback).Run(result, std::move(transport_options));
 }
 

@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/events/touch_event.h"
 
+#include "base/time/time.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/core/frame/frame_console.h"
@@ -60,7 +61,8 @@ class TouchEventTest : public PageTestBase {
   LocalDOMWindow& Window() { return *GetFrame().DomWindow(); }
 
   TouchEvent* EventWithDispatchType(WebInputEvent::DispatchType dispatch_type) {
-    WebTouchEvent web_touch_event(WebInputEvent::kTouchStart, 0, 0);
+    WebTouchEvent web_touch_event(WebInputEvent::kTouchStart, 0,
+                                  base::TimeTicks());
     web_touch_event.dispatch_type = dispatch_type;
     return TouchEvent::Create(WebCoalescedInputEvent(web_touch_event), nullptr,
                               nullptr, nullptr, "touchstart", &Window(),
@@ -71,49 +73,6 @@ class TouchEventTest : public PageTestBase {
   Persistent<ConsoleCapturingChromeClient> chrome_client_;
   std::unique_ptr<DummyPageHolder> page_holder_;
 };
-
-TEST_F(TouchEventTest, PreventDefaultUncancelable) {
-  TouchEvent* event = EventWithDispatchType(WebInputEvent::kEventNonBlocking);
-  event->SetHandlingPassive(Event::PassiveMode::kNotPassiveDefault);
-
-  EXPECT_THAT(Messages(), ElementsAre());
-  event->preventDefault();
-  EXPECT_THAT(Messages(),
-              ElementsAre("Ignored attempt to cancel a touchstart event with "
-                          "cancelable=false, for example because scrolling is "
-                          "in progress and cannot be interrupted."));
-  EXPECT_THAT(MessageSources(), ElementsAre(kInterventionMessageSource));
-
-  EXPECT_TRUE(UseCounter::IsCounted(
-      GetDocument(), WebFeature::kUncancelableTouchEventPreventDefaulted));
-  EXPECT_FALSE(UseCounter::IsCounted(
-      GetDocument(),
-      WebFeature::
-          kUncancelableTouchEventDueToMainThreadResponsivenessPreventDefaulted));
-}
-
-TEST_F(TouchEventTest,
-       PreventDefaultUncancelableDueToMainThreadResponsiveness) {
-  TouchEvent* event = EventWithDispatchType(
-      WebInputEvent::kListenersForcedNonBlockingDueToMainThreadResponsiveness);
-  event->SetHandlingPassive(Event::PassiveMode::kNotPassiveDefault);
-
-  EXPECT_THAT(Messages(), ElementsAre());
-  event->preventDefault();
-  EXPECT_THAT(Messages(),
-              ElementsAre("Ignored attempt to cancel a touchstart event with "
-                          "cancelable=false. This event was forced to be "
-                          "non-cancellable because the page was too busy to "
-                          "handle the event promptly."));
-  EXPECT_THAT(MessageSources(), ElementsAre(kInterventionMessageSource));
-
-  EXPECT_TRUE(UseCounter::IsCounted(
-      GetDocument(), WebFeature::kUncancelableTouchEventPreventDefaulted));
-  EXPECT_TRUE(UseCounter::IsCounted(
-      GetDocument(),
-      WebFeature::
-          kUncancelableTouchEventDueToMainThreadResponsivenessPreventDefaulted));
-}
 
 TEST_F(TouchEventTest,
        PreventDefaultPassiveDueToDocumentLevelScrollerIntervention) {

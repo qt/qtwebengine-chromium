@@ -232,7 +232,7 @@ std::unique_ptr<JSONObject> ObjectForSkPath(const SkPath& path) {
     std::unique_ptr<JSONObject> path_point_item = JSONObject::Create();
     path_point_item->SetString("verb", verb_params.name);
     DCHECK_LE(verb_params.point_count + verb_params.point_offset,
-              WTF_ARRAY_LENGTH(points));
+              arraysize(points));
     path_point_item->SetArray(
         "points", ArrayForSkPoints(verb_params.point_count,
                                    points + verb_params.point_offset));
@@ -483,11 +483,8 @@ std::unique_ptr<JSONObject> ObjectForSkPaint(const SkPaint& paint) {
   paint_item->SetString("hinting", HintingName(paint.getHinting()));
   if (paint.getBlendMode() != SkBlendMode::kSrcOver)
     paint_item->SetString("blendMode", SkBlendMode_Name(paint.getBlendMode()));
-  if (const auto* filter = paint.getImageFilter()) {
-    SkString str;
-    filter->toString(&str);
-    paint_item->SetString("imageFilter", str.c_str());
-  }
+  if (paint.getImageFilter())
+    paint_item->SetString("imageFilter", "SkImageFilter");
   return paint_item;
 }
 

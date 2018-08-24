@@ -101,11 +101,6 @@ void ServiceWorkerRemoteProviderEndpoint::BindWithProviderInfo(
     mojom::ServiceWorkerProviderInfoForStartWorkerPtr info) {
   client_request_ = std::move(info->client_request);
   host_ptr_.Bind(std::move(info->host_ptr_info));
-  registration_object_info_ = std::move(info->registration);
-  // To enable the caller end point to make calls safely with no need to pass
-  // |registration_object_info_->request| through a message pipe endpoint.
-  mojo::AssociateWithDisconnectedPipe(
-      registration_object_info_->request.PassHandle());
 }
 
 std::unique_ptr<ServiceWorkerProviderHost> CreateProviderHostForWindow(
@@ -136,8 +131,10 @@ CreateProviderHostForServiceWorkerContext(
       is_parent_frame_secure);
   std::unique_ptr<ServiceWorkerProviderHost> host =
       ServiceWorkerProviderHost::PreCreateForController(std::move(context));
+  host->SetDocumentUrl(hosted_version->script_url());
   mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info =
-      host->CompleteStartWorkerPreparation(process_id, hosted_version);
+      host->CompleteStartWorkerPreparation(
+          process_id, hosted_version, nullptr /* non_network_loader_factory */);
   output_endpoint->BindWithProviderInfo(std::move(provider_info));
   return host;
 }

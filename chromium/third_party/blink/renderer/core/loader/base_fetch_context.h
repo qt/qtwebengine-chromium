@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_LOADER_BASE_FETCH_CONTEXT_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LOADER_BASE_FETCH_CONTEXT_H_
 
+#include "base/optional.h"
 #include "third_party/blink/public/mojom/net/ip_address_space.mojom-blink.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/core/core_export.h"
@@ -14,7 +15,6 @@
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_context.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
 #include "third_party/blink/renderer/platform/weborigin/referrer_policy.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 
 namespace blink {
 
@@ -22,6 +22,7 @@ class ConsoleMessage;
 class KURL;
 class SecurityOrigin;
 class SubresourceFilter;
+class WebSocketHandshakeThrottle;
 
 // A core-level implementaiton of FetchContext that does not depend on
 // Frame. This class provides basic default implementation for some methods.
@@ -29,7 +30,7 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
  public:
   void AddAdditionalRequestHeaders(ResourceRequest&,
                                    FetchResourceType) override;
-  ResourceRequestBlockedReason CanRequest(
+  base::Optional<ResourceRequestBlockedReason> CanRequest(
       Resource::Type,
       const ResourceRequest&,
       const KURL&,
@@ -37,13 +38,13 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
       SecurityViolationReportingPolicy,
       FetchParameters::OriginRestriction,
       ResourceRequest::RedirectStatus) const override;
-  ResourceRequestBlockedReason CheckCSPForRequest(
+  base::Optional<ResourceRequestBlockedReason> CheckCSPForRequest(
       WebURLRequest::RequestContext,
       const KURL&,
       const ResourceLoaderOptions&,
       SecurityViolationReportingPolicy,
       ResourceRequest::RedirectStatus) const override;
-  ResourceRequestBlockedReason CheckResponseNosniff(
+  base::Optional<ResourceRequestBlockedReason> CheckResponseNosniff(
       WebURLRequest::RequestContext,
       const ResourceResponse&) const override;
 
@@ -54,6 +55,8 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
   virtual void CountUsage(WebFeature) const = 0;
   virtual void CountDeprecation(WebFeature) const = 0;
   virtual bool ShouldBlockWebSocketByMixedContentCheck(const KURL&) const = 0;
+  virtual std::unique_ptr<WebSocketHandshakeThrottle>
+  CreateWebSocketHandshakeThrottle() = 0;
 
   void AddWarningConsoleMessage(const String&, LogSource) const override;
   void AddErrorConsoleMessage(const String&, LogSource) const override;
@@ -87,7 +90,7 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
   virtual String GetOutgoingReferrer() const = 0;
   virtual const KURL& Url() const = 0;
   virtual const SecurityOrigin* GetParentSecurityOrigin() const = 0;
-  virtual Optional<mojom::IPAddressSpace> GetAddressSpace() const = 0;
+  virtual base::Optional<mojom::IPAddressSpace> GetAddressSpace() const = 0;
   virtual const ContentSecurityPolicy* GetContentSecurityPolicy() const = 0;
 
   virtual void AddConsoleMessage(ConsoleMessage*) const = 0;
@@ -99,7 +102,7 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
  private:
   // Utility methods that are used in default implement for CanRequest,
   // CanFollowRedirect and AllowResponse.
-  ResourceRequestBlockedReason CanRequestInternal(
+  base::Optional<ResourceRequestBlockedReason> CanRequestInternal(
       Resource::Type,
       const ResourceRequest&,
       const KURL&,
@@ -108,7 +111,7 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
       FetchParameters::OriginRestriction,
       ResourceRequest::RedirectStatus) const;
 
-  ResourceRequestBlockedReason CheckCSPForRequestInternal(
+  base::Optional<ResourceRequestBlockedReason> CheckCSPForRequestInternal(
       WebURLRequest::RequestContext,
       const KURL&,
       const ResourceLoaderOptions&,

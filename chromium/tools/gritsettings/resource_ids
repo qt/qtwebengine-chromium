@@ -290,10 +290,12 @@
   "ash/components/resources/ash_components_resources.grd": {
     "structures": [24250],
   },
-  "ash/resources/ash_resources.grd": {
-    "structures": [24260],
+  "ash/public/cpp/resources/ash_public_unscaled_resources.grd": {
+    "includes": [24260],
   },
-
+  "ash/shell/ash_shell_resources.grd": {
+    "includes": [24290],
+  },
   "chromecast/browser/cast_browser_resources.grd": {
     "includes": [24300],
   },
@@ -399,6 +401,10 @@
   },
   "devtools_resources.grd": {
     "includes": [28750],
+  },
+
+  "chromecast/renderer/resources/extensions_renderer_resources.grd": {
+    "includes": [28900],
   },
 
   # END "everything else" section.

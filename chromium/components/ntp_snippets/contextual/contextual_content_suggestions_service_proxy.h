@@ -12,8 +12,8 @@
 
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "components/ntp_snippets/contextual/cluster.h"
 #include "components/ntp_snippets/contextual/contextual_content_suggestions_service.h"
+#include "components/ntp_snippets/contextual/contextual_suggestions_result.h"
 
 class GURL;
 
@@ -25,16 +25,14 @@ namespace contextual_suggestions {
 // torn down with a part of UI that owns it, which doesn't affect other proxies.
 class ContextualContentSuggestionsServiceProxy {
  public:
-  using ClustersCallback = ntp_snippets::FetchClustersCallback;
-  using Cluster = ntp_snippets::Cluster;
-
   ContextualContentSuggestionsServiceProxy(
-      ntp_snippets::ContextualContentSuggestionsService* service,
-      std::unique_ptr<ContextualSuggestionsMetricsReporter> metrics_reporter);
+      ContextualContentSuggestionsService* service,
+      std::unique_ptr<ContextualSuggestionsReporter> reporter);
   ~ContextualContentSuggestionsServiceProxy();
 
   // Fetches contextual suggestions for a given |url|.
-  void FetchContextualSuggestions(const GURL& url, ClustersCallback callback);
+  void FetchContextualSuggestions(const GURL& url,
+                                  FetchClustersCallback callback);
 
   // Fetches an image for a contextual suggestion with specified
   // |suggestion_id|.
@@ -52,7 +50,9 @@ class ContextualContentSuggestionsServiceProxy {
   void ClearState();
 
   // Reports user interface event to the service.
-  void ReportEvent(ukm::SourceId, ContextualSuggestionsEvent event);
+  void ReportEvent(ukm::SourceId,
+                   const std::string& url,
+                   ContextualSuggestionsEvent event);
 
   // Ensures that all metrics are properly flushed.
   void FlushMetrics();
@@ -62,17 +62,16 @@ class ContextualContentSuggestionsServiceProxy {
                       const std::string& image_id,
                       ntp_snippets::ImageFetchedCallback callback);
 
-  void CacheSuggestions(ClustersCallback callback,
-                        std::string peek_text,
-                        std::vector<Cluster> clusters);
+  void CacheSuggestions(FetchClustersCallback callback,
+                        ContextualSuggestionsResult result);
   // Pointer to the service.
-  ntp_snippets::ContextualContentSuggestionsService* service_;
+  ContextualContentSuggestionsService* service_;
   // Cache of contextual suggestions.
-  std::map<std::string, ntp_snippets::ContextualSuggestion> suggestions_;
+  std::map<std::string, ContextualSuggestion> suggestions_;
 
   // Sink for reporting metrics for this proxy.
-  std::unique_ptr<contextual_suggestions::ContextualSuggestionsMetricsReporter>
-      metrics_reporter_;
+  std::unique_ptr<contextual_suggestions::ContextualSuggestionsReporter>
+      reporter_;
 
   // The most recent SourceId in use by metrics_reporter_, or
   // ukm::kInvalidSourceId.

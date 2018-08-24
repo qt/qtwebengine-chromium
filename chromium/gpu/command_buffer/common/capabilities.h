@@ -25,7 +25,7 @@
 namespace gpu {
 
 // NOTE: When adding members to this struct, also add corresponding
-// entries in gpu/ipc/gpu_command_buffer_traits_multi.h.
+// entries in gpu/ipc/common/gpu_command_buffer_traits_multi.h.
 
 struct GPU_EXPORT Capabilities {
   struct ShaderPrecision {
@@ -163,6 +163,7 @@ struct GPU_EXPORT Capabilities {
   // True if DirectComposition layers are enabled.
   bool dc_layers = false;
   bool use_dc_overlays_for_video = false;
+  bool protected_video_swap_chain = false;
 
   // When this parameter is true, a CHROMIUM image created with RGB format will
   // actually have RGBA format. The client is responsible for handling most of
@@ -185,6 +186,10 @@ struct GPU_EXPORT Capabilities {
   bool chromium_gpu_fence = false;
 
   bool unpremultiply_and_dither_copy = false;
+
+  bool separate_stencil_ref_mask_writemask = false;
+
+  bool use_gpu_fences_for_overlay_planes = false;
 
   int major_version = 2;
   int minor_version = 0;

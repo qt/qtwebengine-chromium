@@ -53,10 +53,8 @@ class TestBrowserContextWithRealURLRequestContextGetter
     : public TestBrowserContext {
  public:
   TestBrowserContextWithRealURLRequestContextGetter() {
-    request_context_ =
-        base::MakeRefCounted<net::TrivialURLRequestContextGetter>(
-            &context_,
-            BrowserThread::GetTaskRunnerForThread(BrowserThread::IO));
+    request_context_ = base::MakeRefCounted<net::TestURLRequestContextGetter>(
+        BrowserThread::GetTaskRunnerForThread(BrowserThread::IO));
     salt_ = TestBrowserContext::GetMediaDeviceIDSalt();
   }
 
@@ -73,8 +71,7 @@ class TestBrowserContextWithRealURLRequestContextGetter
   void set_media_device_id_salt(std::string salt) { salt_ = std::move(salt); }
 
  private:
-  net::TestURLRequestContext context_;
-  scoped_refptr<net::URLRequestContextGetter> request_context_;
+  scoped_refptr<net::TestURLRequestContextGetter> request_context_;
   std::string salt_;
 };
 

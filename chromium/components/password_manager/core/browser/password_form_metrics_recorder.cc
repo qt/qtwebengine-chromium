@@ -39,14 +39,14 @@ PasswordFormMetricsRecorder::BubbleDismissalReason GetBubbleDismissalReason(
 
     // Ignore these for metrics collection:
     case metrics_util::CLICKED_MANAGE:
-    case metrics_util::CLICKED_DONE:
-    case metrics_util::CLICKED_OK:
     case metrics_util::CLICKED_BRAND_NAME:
     case metrics_util::CLICKED_PASSWORDS_DASHBOARD:
     case metrics_util::AUTO_SIGNIN_TOAST_TIMEOUT:
       break;
 
     // These should not reach here:
+    case metrics_util::CLICKED_DONE_OBSOLETE:
+    case metrics_util::CLICKED_OK_OBSOLETE:
     case metrics_util::CLICKED_UNBLACKLIST_OBSOLETE:
     case metrics_util::CLICKED_CREDENTIAL_OBSOLETE:
     case metrics_util::AUTO_SIGNIN_TOAST_CLICKED_OBSOLETE:
@@ -118,17 +118,20 @@ PasswordFormMetricsRecorder::~PasswordFormMetricsRecorder() {
         ukm_entry_builder_.SetUser_Action_TriggeredManualFallbackForSaving(
             action.second);
         break;
-      case DetailedUserAction::kTriggeredManualFallbackForUpdating:
-        ukm_entry_builder_.SetUser_Action_TriggeredManualFallbackForUpdating(
-            action.second);
-        break;
       case DetailedUserAction::kCorrectedUsernameInForm:
         ukm_entry_builder_.SetUser_Action_CorrectedUsernameInForm(
             action.second);
         break;
+      case DetailedUserAction::kObsoleteTriggeredManualFallbackForUpdating:
+        NOTREACHED();
+        break;
     }
   }
 
+  if (showed_manual_fallback_for_saving_) {
+    ukm_entry_builder_.SetSaving_ShowedManualFallbackForSaving(
+        showed_manual_fallback_for_saving_.value());
+  }
   ukm_entry_builder_.Record(ukm::UkmRecorder::Get());
 }
 
@@ -200,6 +203,11 @@ void PasswordFormMetricsRecorder::SetSubmittedFormType(
   submitted_form_type_ = form_type;
 }
 
+void PasswordFormMetricsRecorder::SetSubmissionIndicatorEvent(
+    autofill::PasswordForm::SubmissionIndicatorEvent event) {
+  ukm_entry_builder_.SetSubmission_Indicator(static_cast<int>(event));
+}
+
 int PasswordFormMetricsRecorder::GetActionsTakenNew() const {
   // Merge kManagerActionNone and kManagerActionBlacklisted_Obsolete. This
   // lowers the number of histogram buckets used by 33%.
@@ -229,6 +237,13 @@ void PasswordFormMetricsRecorder::RecordFormSignature(
     autofill::FormSignature form_signature) {
   ukm_entry_builder_.SetContext_FormSignature(
       HashFormSignature(form_signature));
+}
+
+void PasswordFormMetricsRecorder::RecordShowManualFallbackForSaving(
+    bool has_generated_password,
+    bool is_update) {
+  showed_manual_fallback_for_saving_ =
+      1 + (has_generated_password ? 2 : 0) + (is_update ? 4 : 0);
 }
 
 int PasswordFormMetricsRecorder::GetActionsTaken() const {

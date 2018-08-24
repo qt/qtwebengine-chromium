@@ -54,8 +54,8 @@ class MakeElementFactoryWriter(MakeQualifiedNamesWriter):
     })
     filters = MakeQualifiedNamesWriter.filters
 
-    def __init__(self, json5_file_paths):
-        super(MakeElementFactoryWriter, self).__init__(json5_file_paths)
+    def __init__(self, json5_file_paths, output_dir):
+        super(MakeElementFactoryWriter, self).__init__(json5_file_paths, output_dir)
 
         basename = self.namespace.lower() + '_element_factory'
         self._outputs.update({
@@ -99,14 +99,10 @@ class MakeElementFactoryWriter(MakeQualifiedNamesWriter):
     def _interface(self, tag):
         if tag['interfaceName']:
             return tag['interfaceName']
-        name = name_utilities.upper_first(tag['name'])
+        name = tag['tokenized_name'].to_upper_camel_case()
         # FIXME: We shouldn't hard-code HTML here.
         if name == 'HTML':
             name = 'Html'
-        dash = name.find('-')
-        while dash != -1:
-            name = name[:dash] + name[dash + 1].upper() + name[dash + 2:]
-            dash = name.find('-')
         return '%s%sElement' % (self.namespace, name)
 
     def _js_interface(self, tag):
@@ -120,7 +116,7 @@ class MakeElementFactoryWriter(MakeQualifiedNamesWriter):
     def _interface_header_dir(self, tag):
         if tag['interfaceHeaderDir']:
             return tag['interfaceHeaderDir']
-        return 'core/' + self.namespace.lower()
+        return 'third_party/blink/renderer/core/' + self.namespace.lower()
 
 
 if __name__ == "__main__":

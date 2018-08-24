@@ -12,6 +12,7 @@
 
 #include "libANGLE/renderer/FramebufferImpl.h"
 #include "libANGLE/renderer/RenderTargetCache.h"
+#include "libANGLE/renderer/vulkan/BufferVk.h"
 #include "libANGLE/renderer/vulkan/CommandGraph.h"
 #include "libANGLE/renderer/vulkan/vk_cache_utils.h"
 
@@ -35,7 +36,6 @@ class FramebufferVk : public FramebufferImpl, public vk::CommandGraphResource
 
     ~FramebufferVk() override;
     void destroy(const gl::Context *context) override;
-    void destroyDefault(const egl::Display *display) override;
 
     gl::Error discard(const gl::Context *context, size_t count, const GLenum *attachments) override;
     gl::Error invalidate(const gl::Context *context,
@@ -72,7 +72,6 @@ class FramebufferVk : public FramebufferImpl, public vk::CommandGraphResource
                          GLenum format,
                          GLenum type,
                          void *pixels) override;
-
     gl::Error blit(const gl::Context *context,
                    const gl::Rectangle &sourceArea,
                    const gl::Rectangle &destArea,
@@ -84,31 +83,49 @@ class FramebufferVk : public FramebufferImpl, public vk::CommandGraphResource
     gl::Error syncState(const gl::Context *context,
                         const gl::Framebuffer::DirtyBits &dirtyBits) override;
 
-    gl::Error getSamplePosition(size_t index, GLfloat *xy) const override;
+    gl::Error getSamplePosition(const gl::Context *context,
+                                size_t index,
+                                GLfloat *xy) const override;
 
-    const vk::RenderPassDesc &getRenderPassDesc(const gl::Context *context);
-    gl::Error getCommandGraphNodeForDraw(const gl::Context *context,
-                                         vk::CommandGraphNode **nodeOut);
+    const vk::RenderPassDesc &getRenderPassDesc();
+    gl::Error getCommandGraphNodeForDraw(ContextVk *contextVk, vk::CommandGraphNode **nodeOut);
+
+    // Internal helper function for readPixels operations.
+    gl::Error readPixelsImpl(const gl::Context *context,
+                             const gl::Rectangle &area,
+                             const PackPixelsParams &packPixelsParams,
+                             void *pixels);
+
+    const gl::Extents &getReadImageExtents() const;
 
   private:
     FramebufferVk(const gl::FramebufferState &state);
     FramebufferVk(const gl::FramebufferState &state, WindowSurfaceVk *backbuffer);
 
-    gl::ErrorOrResult<vk::Framebuffer *> getFramebuffer(const gl::Context *context,
-                                                        RendererVk *rendererVk);
+    gl::ErrorOrResult<vk::Framebuffer *> getFramebuffer(RendererVk *rendererVk);
 
-    gl::Error clearAttachmentsWithScissorRegion(const gl::Context *context,
-                                                bool clearColor,
-                                                bool clearDepth,
-                                                bool clearStencil);
+    gl::Error clearWithClearAttachments(ContextVk *contextVk,
+                                        bool clearColor,
+                                        bool clearDepth,
+                                        bool clearStencil);
+    gl::Error clearWithDraw(ContextVk *contextVk, VkColorComponentFlags colorMaskFlags);
+    void updateActiveColorMasks(size_t colorIndex, bool r, bool g, bool b, bool a);
+    RenderTargetVk *getColorReadRenderTarget() const;
 
     WindowSurfaceVk *mBackbuffer;
 
     Optional<vk::RenderPassDesc> mRenderPassDesc;
     vk::Framebuffer mFramebuffer;
     RenderTargetCache<RenderTargetVk> mRenderTargetCache;
-};
 
+    // These two variables are used to quickly compute if we need to do a masked clear. If a color
+    // channel is masked out, we check against the Framebuffer Attachments (RenderTargets) to see
+    // if the masked out channel is present in any of the attachments.
+    VkColorComponentFlags mActiveColorComponents;
+    gl::DrawBufferMask mActiveColorComponentMasks[4];
+
+    vk::DynamicBuffer mReadPixelsBuffer;
+};
 }  // namespace rx
 
 #endif  // LIBANGLE_RENDERER_VULKAN_FRAMEBUFFERVK_H_

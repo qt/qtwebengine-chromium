@@ -35,7 +35,7 @@
 
 #include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
 #include "third_party/blink/renderer/core/dom/element.h"
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/traced_value.h"
 #include "third_party/blink/renderer/platform/wtf/compiler.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
@@ -62,16 +62,11 @@ void InvalidationSet::CacheTracingFlag() {
 
 InvalidationSet::InvalidationSet(InvalidationType type)
     : type_(type),
-      all_descendants_might_be_invalid_(false),
       invalidates_self_(false),
-      custom_pseudo_invalid_(false),
-      tree_boundary_crossing_(false),
-      insertion_point_crossing_(false),
-      invalidates_slotted_(false),
       is_alive_(true) {}
 
 bool InvalidationSet::InvalidatesElement(Element& element) const {
-  if (all_descendants_might_be_invalid_)
+  if (invalidation_flags_.WholeSubtreeInvalid())
     return true;
 
   if (tag_names_ && tag_names_->Contains(element.TagQName().LocalName())) {
@@ -108,6 +103,12 @@ bool InvalidationSet::InvalidatesElement(Element& element) const {
         return true;
       }
     }
+  }
+
+  if (element.HasPartName() && invalidation_flags_.InvalidatesParts()) {
+    TRACE_STYLE_INVALIDATOR_INVALIDATION_SELECTORPART_IF_ENABLED(
+        element, kInvalidationSetMatchedPart, *this, "");
+    return true;
   }
 
   return false;
@@ -182,6 +183,9 @@ void InvalidationSet::Combine(const InvalidationSet& other) {
 
   if (other.InvalidatesSlotted())
     SetInvalidatesSlotted();
+
+  if (other.InvalidatesParts())
+    SetInvalidatesParts();
 
   if (other.classes_) {
     for (const auto& class_name : *other.classes_)
@@ -264,14 +268,15 @@ void InvalidationSet::AddAttribute(const AtomicString& attribute) {
 }
 
 void InvalidationSet::SetWholeSubtreeInvalid() {
-  if (all_descendants_might_be_invalid_)
+  if (invalidation_flags_.WholeSubtreeInvalid())
     return;
 
-  all_descendants_might_be_invalid_ = true;
-  custom_pseudo_invalid_ = false;
-  tree_boundary_crossing_ = false;
-  insertion_point_crossing_ = false;
-  invalidates_slotted_ = false;
+  invalidation_flags_.SetWholeSubtreeInvalid(true);
+  invalidation_flags_.SetInvalidateCustomPseudo(false);
+  invalidation_flags_.SetTreeBoundaryCrossing(false);
+  invalidation_flags_.SetInsertionPointCrossing(false);
+  invalidation_flags_.SetInvalidatesSlotted(false);
+  invalidation_flags_.SetInvalidatesParts(false);
   classes_ = nullptr;
   ids_ = nullptr;
   tag_names_ = nullptr;
@@ -298,16 +303,18 @@ void InvalidationSet::ToTracedValue(TracedValue* value) const {
 
   value->SetString("id", DescendantInvalidationSetToIdString(*this));
 
-  if (all_descendants_might_be_invalid_)
+  if (invalidation_flags_.WholeSubtreeInvalid())
     value->SetBoolean("allDescendantsMightBeInvalid", true);
-  if (custom_pseudo_invalid_)
+  if (invalidation_flags_.InvalidateCustomPseudo())
     value->SetBoolean("customPseudoInvalid", true);
-  if (tree_boundary_crossing_)
+  if (invalidation_flags_.TreeBoundaryCrossing())
     value->SetBoolean("treeBoundaryCrossing", true);
-  if (insertion_point_crossing_)
+  if (invalidation_flags_.InsertionPointCrossing())
     value->SetBoolean("insertionPointCrossing", true);
-  if (invalidates_slotted_)
+  if (invalidation_flags_.InvalidatesSlotted())
     value->SetBoolean("invalidatesSlotted", true);
+  if (invalidation_flags_.InvalidatesParts())
+    value->SetBoolean("invalidatesParts", true);
 
   if (ids_) {
     value->BeginArray("ids");

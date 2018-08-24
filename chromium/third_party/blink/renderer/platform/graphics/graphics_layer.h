@@ -28,32 +28,38 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_GRAPHICS_LAYER_H_
 
 #include <memory>
+
 #include "base/memory/weak_ptr.h"
+#include "cc/input/overscroll_behavior.h"
+#include "cc/layers/content_layer_client.h"
 #include "cc/layers/layer_client.h"
-#include "third_party/blink/public/platform/web_content_layer.h"
-#include "third_party/blink/public/platform/web_content_layer_client.h"
-#include "third_party/blink/public/platform/web_image_layer.h"
-#include "third_party/blink/public/platform/web_layer_sticky_position_constraint.h"
-#include "third_party/blink/public/platform/web_overscroll_behavior.h"
 #include "third_party/blink/renderer/platform/geometry/float_point.h"
 #include "third_party/blink/renderer/platform/geometry/float_point_3d.h"
 #include "third_party/blink/renderer/platform/geometry/float_size.h"
 #include "third_party/blink/renderer/platform/geometry/int_rect.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
+#include "third_party/blink/renderer/platform/graphics/compositing_reasons.h"
 #include "third_party/blink/renderer/platform/graphics/compositor_element_id.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer_client.h"
-#include "third_party/blink/renderer/platform/graphics/graphics_layer_debug_info.h"
+#include "third_party/blink/renderer/platform/graphics/graphics_types.h"
 #include "third_party/blink/renderer/platform/graphics/image_orientation.h"
 #include "third_party/blink/renderer/platform/graphics/paint/display_item_client.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_controller.h"
 #include "third_party/blink/renderer/platform/graphics/paint_invalidation_reason.h"
+#include "third_party/blink/renderer/platform/graphics/squashing_disallowed_reasons.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/transforms/transformation_matrix.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "third_party/skia/include/core/SkFilterQuality.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
+
+namespace cc {
+class Layer;
+class PictureImageLayer;
+class PictureLayer;
+}
 
 namespace blink {
 
@@ -65,7 +71,6 @@ class LinkHighlight;
 class PaintController;
 class RasterInvalidationTracking;
 class ScrollableArea;
-class WebLayer;
 
 typedef Vector<GraphicsLayer*, 64> GraphicsLayerVector;
 
@@ -73,7 +78,7 @@ typedef Vector<GraphicsLayer*, 64> GraphicsLayerVector;
 // which may have associated transformation and animations.
 class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
                                       public DisplayItemClient,
-                                      private WebContentLayerClient {
+                                      private cc::ContentLayerClient {
   WTF_MAKE_NONCOPYABLE(GraphicsLayer);
   USING_FAST_MALLOC(GraphicsLayer);
 
@@ -84,14 +89,16 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
 
   GraphicsLayerClient& Client() const { return client_; }
 
-  GraphicsLayerDebugInfo& DebugInfo();
-
-  void SetCompositingReasons(CompositingReasons);
-  CompositingReasons GetCompositingReasons() const {
-    return debug_info_.GetCompositingReasons();
+  void SetCompositingReasons(CompositingReasons reasons) {
+    compositing_reasons_ = reasons;
   }
-  void SetSquashingDisallowedReasons(SquashingDisallowedReasons);
-  void SetOwnerNodeId(int);
+  CompositingReasons GetCompositingReasons() const {
+    return compositing_reasons_;
+  }
+  void SetSquashingDisallowedReasons(SquashingDisallowedReasons reasons) {
+    squashing_disallowed_reasons_ = reasons;
+  }
+  void SetOwnerNodeId(int id) { owner_node_id_ = id; }
 
   GraphicsLayer* Parent() const { return parent_; }
   void SetParent(GraphicsLayer*);  // Internal use only.
@@ -145,8 +152,8 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   void SetTransformOrigin(const FloatPoint3D&);
 
   // The size of the layer.
-  const FloatSize& Size() const { return size_; }
-  void SetSize(const FloatSize&);
+  const IntSize& Size() const { return size_; }
+  void SetSize(const IntSize&);
 
   const TransformationMatrix& Transform() const { return transform_; }
   void SetTransform(const TransformationMatrix&);
@@ -162,8 +169,8 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   bool ContentsAreVisible() const { return contents_visible_; }
   void SetContentsVisible(bool);
 
-  void SetScrollParent(WebLayer*);
-  void SetClipParent(WebLayer*);
+  void SetScrollParent(cc::Layer*);
+  void SetClipParent(cc::Layer*);
 
   // For special cases, e.g. drawing missing tiles on Android.
   // The compositor should never paint this color in normal cases because the
@@ -171,7 +178,7 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   Color BackgroundColor() const { return background_color_; }
   void SetBackgroundColor(const Color&);
 
-  // opaque means that we know the layer contents have no alpha
+  // Opaque means that we know the layer contents have no alpha.
   bool ContentsOpaque() const { return contents_opaque_; }
   void SetContentsOpaque(bool);
 
@@ -181,7 +188,7 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   float Opacity() const { return opacity_; }
   void SetOpacity(float);
 
-  void SetBlendMode(WebBlendMode);
+  void SetBlendMode(BlendMode);
   void SetIsRootForIsolatedGroup(bool);
 
   void SetHitTestableWithoutDrawsContent(bool);
@@ -192,7 +199,7 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   void SetFilters(CompositorFilterOperations);
   void SetBackdropFilters(CompositorFilterOperations);
 
-  void SetStickyPositionConstraint(const WebLayerStickyPositionConstraint&);
+  void SetStickyPositionConstraint(const cc::LayerStickyPositionConstraint&);
 
   void SetFilterQuality(SkFilterQuality);
 
@@ -216,11 +223,19 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
       Image*,
       Image::ImageDecodingMode decode_mode,
       RespectImageOrientationEnum = kDoNotRespectImageOrientation);
-  void SetContentsToPlatformLayer(WebLayer* layer) { SetContentsTo(layer); }
+  // If |prevent_contents_opaque_changes| is set to true, then calls to
+  // SetContentsOpaque() will not be passed on to the |layer|. Use when
+  // the client wants to have control of the opaqueness of the contents
+  // |layer| independently of what outcome painting produces.
+  void SetContentsToCcLayer(cc::Layer* layer,
+                            bool prevent_contents_opaque_changes) {
+    SetContentsTo(layer, prevent_contents_opaque_changes);
+  }
   bool HasContentsLayer() const { return contents_layer_; }
+  cc::Layer* ContentsLayer() const { return contents_layer_; }
 
   // For hosting this GraphicsLayer in a native layer hierarchy.
-  WebLayer* PlatformLayer() const;
+  cc::Layer* CcLayer() const;
 
   int PaintCount() const { return paint_count_; }
 
@@ -248,10 +263,12 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   void SetScrollableArea(ScrollableArea*);
   ScrollableArea* GetScrollableArea() const { return scrollable_area_; }
 
-  WebContentLayer* ContentLayer() const { return layer_.get(); }
+  void ScrollableAreaDisposed();
 
-  static void RegisterContentsLayer(WebLayer*);
-  static void UnregisterContentsLayer(WebLayer*);
+  cc::PictureLayer* ContentLayer() const { return layer_.get(); }
+
+  static void RegisterContentsLayer(cc::Layer*);
+  static void UnregisterContentsLayer(cc::Layer*);
 
   IntRect InterestRect();
   void PaintRecursively();
@@ -260,20 +277,14 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
              GraphicsContext::DisabledMode = GraphicsContext::kNothingDisabled);
 
   // cc::LayerClient implementation.
-  std::unique_ptr<base::trace_event::ConvertableToTraceFormat> TakeDebugInfo(
+  std::unique_ptr<base::trace_event::TracedValue> TakeDebugInfo(
       cc::Layer*) override;
-  void didUpdateMainThreadScrollingReasons() override;
-  void didChangeScrollbarsHiddenIfOverlay(bool) override;
+  void DidChangeScrollbarsHiddenIfOverlay(bool) override;
 
   PaintController& GetPaintController() const;
 
-  // Exposed for tests.
-  WebLayer* ContentsLayer() const { return contents_layer_; }
-
   void SetElementId(const CompositorElementId&);
   CompositorElementId GetElementId() const;
-
-  WebContentLayerClient& WebContentLayerClientForTesting() { return *this; }
 
   // DisplayItemClient methods
   String DebugName() const final { return client_.DebugName(this); }
@@ -281,14 +292,18 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
 
   void SetHasWillChangeTransformHint(bool);
 
-  void SetOverscrollBehavior(const WebOverscrollBehavior&);
+  void SetOverscrollBehavior(const cc::OverscrollBehavior&);
 
-  void SetSnapContainerData(Optional<cc::SnapContainerData>);
+  void SetSnapContainerData(base::Optional<cc::SnapContainerData>);
 
   void SetIsResizedByBrowserControls(bool);
   void SetIsContainerForFixedPositionLayers(bool);
 
   void SetLayerState(const PropertyTreeState&, const IntPoint& layer_offset);
+  const PropertyTreeState& GetPropertyTreeState() const {
+    return layer_state_->state;
+  }
+  IntPoint GetOffsetFromTransformNode() const { return layer_state_->offset; }
 
   // Capture the last painted result into a PaintRecord. This GraphicsLayer
   // must DrawsContent. The result is never nullptr.
@@ -309,11 +324,12 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   friend class GraphicsLayerTest;
 
  private:
-  // WebContentLayerClient implementation.
+  // cc::ContentLayerClient implementation.
   gfx::Rect PaintableRegion() final { return InterestRect(); }
-  void PaintContents(WebDisplayItemList*,
-                     PaintingControlSetting = kPaintDefaultBehavior) final;
-  size_t ApproximateUnsharedMemoryUsage() const final;
+  scoped_refptr<cc::DisplayItemList> PaintContentsToDisplayList(
+      PaintingControlSetting painting_control) final;
+  bool FillsBoundsCompletely() const override { return false; }
+  size_t GetApproximateUnsharedMemoryUsage() const final;
 
   void PaintRecursivelyInternal(Vector<GraphicsLayer*>& repainted_layers);
 
@@ -337,11 +353,11 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   void UpdateLayerIsDrawable();
   void UpdateContentsRect();
 
-  void SetContentsTo(WebLayer*);
-  void SetupContentsLayer(WebLayer*);
+  void SetContentsTo(cc::Layer*, bool prevent_contents_opaque_changes);
+  void SetupContentsLayer(cc::Layer*);
   void ClearContentsLayerIfUnregistered();
-  WebLayer* ContentsLayerIfRegistered();
-  void SetContentsLayer(WebLayer*);
+  cc::Layer* ContentsLayerIfRegistered();
+  void SetContentsLayer(cc::Layer*);
 
   typedef HashMap<int, int> RenderingContextMap;
   std::unique_ptr<JSONObject> LayerTreeAsJSONInternal(
@@ -367,7 +383,7 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
 
   // Position is relative to the parent GraphicsLayer
   FloatPoint position_;
-  FloatSize size_;
+  IntSize size_;
 
   TransformationMatrix transform_;
   FloatPoint3D transform_origin_;
@@ -375,10 +391,11 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   Color background_color_;
   float opacity_;
 
-  WebBlendMode blend_mode_;
+  BlendMode blend_mode_;
 
   bool has_transform_origin_ : 1;
   bool contents_opaque_ : 1;
+  bool prevent_contents_opaque_changes_ : 1;
   bool should_flatten_transform_ : 1;
   bool backface_visibility_ : 1;
   bool draws_content_ : 1;
@@ -397,29 +414,35 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   Vector<GraphicsLayer*> children_;
   GraphicsLayer* parent_;
 
-  GraphicsLayer* mask_layer_;  // Reference to mask layer. We don't own this.
-  GraphicsLayer* contents_clipping_mask_layer_;  // Reference to clipping mask
-                                                 // layer. We don't own this.
+  // Reference to mask layer. We don't own this.
+  GraphicsLayer* mask_layer_;
+  // Reference to clipping mask layer. We don't own this.
+  GraphicsLayer* contents_clipping_mask_layer_;
 
   IntRect contents_rect_;
 
   int paint_count_;
 
-  std::unique_ptr<WebContentLayer> layer_;
-  std::unique_ptr<WebImageLayer> image_layer_;
-  WebLayer* contents_layer_;
-  // We don't have ownership of m_contentsLayer, but we do want to know if a
-  // given layer is the same as our current layer in setContentsTo(). Since
-  // |m_contentsLayer| may be deleted at this point, we stash an ID away when we
-  // know |m_contentsLayer| is alive and use that for comparisons from that
+  scoped_refptr<cc::PictureLayer> layer_;
+  scoped_refptr<cc::PictureImageLayer> image_layer_;
+  IntSize image_size_;
+  cc::Layer* contents_layer_;
+  // We don't have ownership of contents_layer_, but we do want to know if a
+  // given layer is the same as our current layer in SetContentsTo(). Since
+  // |contents_layer_| may be deleted at this point, we stash an ID away when we
+  // know |contents_layer_| is alive and use that for comparisons from that
   // point on.
   int contents_layer_id_;
 
   Vector<LinkHighlight*> link_highlights_;
 
   WeakPersistent<ScrollableArea> scrollable_area_;
-  GraphicsLayerDebugInfo debug_info_;
   int rendering_context3d_;
+
+  CompositingReasons compositing_reasons_ = CompositingReason::kNone;
+  SquashingDisallowedReasons squashing_disallowed_reasons_ =
+      SquashingDisallowedReason::kNone;
+  int owner_node_id_ = 0;
 
   mutable std::unique_ptr<PaintController> paint_controller_;
 

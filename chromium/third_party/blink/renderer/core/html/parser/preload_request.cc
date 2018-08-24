@@ -17,13 +17,6 @@
 
 namespace blink {
 
-bool PreloadRequest::IsSafeToSendToAnotherThread() const {
-  return initiator_name_.IsSafeToSendToAnotherThread() &&
-         charset_.IsSafeToSendToAnotherThread() &&
-         resource_url_.IsSafeToSendToAnotherThread() &&
-         base_url_.IsSafeToSendToAnotherThread();
-}
-
 KURL PreloadRequest::CompleteURL(Document* document) {
   if (!base_url_.IsEmpty())
     return document->CompleteURLWithOverride(resource_url_, base_url_);
@@ -98,7 +91,7 @@ Resource* PreloadRequest::Start(Document* document,
     speculative_preload_type =
         FetchParameters::SpeculativePreloadType::kInserted;
   }
-  params.SetSpeculativePreloadType(speculative_preload_type, discovery_time_);
+  params.SetSpeculativePreloadType(speculative_preload_type);
 
   if (resource_type_ == Resource::kScript) {
     MaybeDisallowFetchForDocWrittenScript(params, *document);

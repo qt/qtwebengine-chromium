@@ -23,9 +23,6 @@ const char kEnableGpuRasterization[] = "enable-gpu-rasterization";
 // would have been used.  Enables the chromium_raster_transport extension.
 const char kEnableOOPRasterization[] = "enable-oop-rasterization";
 
-// Use a dedicated RasterDecoder instead of generic GLES2Decoder.
-const char kEnableRasterDecoder[] = "enable-raster-decoder";
-
 // Passes encoded GpuPreferences to GPU process.
 const char kGpuPreferences[] = "gpu-preferences";
 
@@ -39,5 +36,9 @@ const char kGpuBlacklistTestGroup[] = "gpu-blacklist-test-group";
 // Select a different set of GPU driver bug list entries with the specificed
 // test_group ID.
 const char kGpuDriverBugListTestGroup[] = "gpu-driver-bug-list-test-group";
+
+// Use GpuFence objects to synchronize display of overlay planes.
+const char kUseGpuFencesForOverlayPlanes[] =
+    "use-gpu-fences-for-overlay-planes";
 
 }  // namespace switches

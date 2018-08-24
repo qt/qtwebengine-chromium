@@ -4,6 +4,7 @@
 
 #include "cc/trees/layer_tree_frame_sink.h"
 
+#include "base/single_thread_task_runner.h"
 #include "base/test/test_simple_task_runner.h"
 #include "cc/test/fake_layer_tree_frame_sink_client.h"
 #include "components/viz/common/quads/compositor_frame.h"
@@ -25,7 +26,6 @@ class StubLayerTreeFrameSink : public LayerTreeFrameSink {
       : LayerTreeFrameSink(std::move(context_provider),
                            std::move(worker_context_provider),
                            std::move(compositor_task_runner),
-                           nullptr,
                            nullptr) {}
 
   void SubmitCompositorFrame(viz::CompositorFrame frame) override {

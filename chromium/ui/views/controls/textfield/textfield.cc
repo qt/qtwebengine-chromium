@@ -57,7 +57,6 @@
 
 #if defined(OS_WIN)
 #include "base/win/win_util.h"
-#include "ui/base/ime/win/osk_display_manager.h"
 #endif
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
@@ -81,12 +80,6 @@
 namespace views {
 
 namespace {
-
-#if defined(OS_MACOSX)
-const ui::EventFlags kPlatformModifier = ui::EF_COMMAND_DOWN;
-#else
-const ui::EventFlags kPlatformModifier = ui::EF_CONTROL_DOWN;
-#endif  // OS_MACOSX
 
 #if defined(OS_MACOSX)
 const gfx::SelectionBehavior kLineSelectionBehavior = gfx::SELECTION_EXTEND;
@@ -298,6 +291,9 @@ Textfield::Textfield()
   GetRenderText()->SetFontList(GetDefaultFontList());
   UpdateBorder();
   SetFocusBehavior(FocusBehavior::ALWAYS);
+
+  if (use_focus_ring_)
+    focus_ring_ = FocusRing::Install(this);
 
 #if !defined(OS_MACOSX)
   // Do not map accelerators on Mac. E.g. They might not reflect custom
@@ -595,12 +591,8 @@ void Textfield::SetInvalid(bool invalid) {
     return;
   invalid_ = invalid;
   UpdateBorder();
-
-  if (HasFocus() && use_focus_ring_) {
-    FocusRing::Install(this, invalid_
-                                 ? ui::NativeTheme::kColorId_AlertSeverityHigh
-                                 : ui::NativeTheme::kColorId_NumColors);
-  }
+  if (focus_ring_)
+    focus_ring_->SetInvalid(invalid);
 }
 
 void Textfield::ClearEditHistory() {
@@ -646,9 +638,9 @@ const char* Textfield::GetClassName() const {
 }
 
 void Textfield::SetBorder(std::unique_ptr<Border> b) {
-  if (use_focus_ring_ && HasFocus())
-    FocusRing::Uninstall(this);
   use_focus_ring_ = false;
+  if (focus_ring_)
+    focus_ring_.reset();
   View::SetBorder(std::move(b));
 }
 
@@ -664,16 +656,22 @@ gfx::NativeCursor Textfield::GetCursor(const ui::MouseEvent& event) {
 bool Textfield::OnMousePressed(const ui::MouseEvent& event) {
   const bool had_focus = HasFocus();
   bool handled = controller_ && controller_->HandleMouseEvent(this, event);
+
+  // If the controller triggered the focus, then record the focus reason as
+  // other.
+  if (!had_focus && HasFocus())
+    focus_reason_ = ui::TextInputClient::FOCUS_REASON_OTHER;
+
   if (!handled &&
       (event.IsOnlyLeftMouseButton() || event.IsOnlyRightMouseButton())) {
     if (!had_focus)
-      RequestFocus();
+      RequestFocusWithPointer(ui::EventPointerType::POINTER_TYPE_MOUSE);
     ShowImeIfNeeded();
   }
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   if (!handled && !had_focus && event.IsOnlyMiddleMouseButton())
-    RequestFocus();
+    RequestFocusWithPointer(ui::EventPointerType::POINTER_TYPE_MOUSE);
 #endif
 
   return selection_controller_.OnMousePressed(
@@ -747,7 +745,7 @@ bool Textfield::OnKeyReleased(const ui::KeyEvent& event) {
 void Textfield::OnGestureEvent(ui::GestureEvent* event) {
   switch (event->type()) {
     case ui::ET_GESTURE_TAP_DOWN:
-      RequestFocus();
+      RequestFocusWithPointer(event->details().primary_pointer_type());
       ShowImeIfNeeded();
       event->SetHandled();
       break;
@@ -776,13 +774,6 @@ void Textfield::OnGestureEvent(ui::GestureEvent* event) {
         OnAfterUserAction();
       }
       CreateTouchSelectionControllerAndNotifyIt();
-#if defined(OS_WIN)
-      if (!read_only()) {
-        DCHECK(ui::OnScreenKeyboardDisplayManager::GetInstance());
-        ui::OnScreenKeyboardDisplayManager::GetInstance()
-            ->DisplayVirtualKeyboard(nullptr);
-      }
-#endif
       event->SetHandled();
       break;
     case ui::ET_GESTURE_LONG_PRESS:
@@ -855,6 +846,28 @@ bool Textfield::AcceleratorPressed(const ui::Accelerator& accelerator) {
 
 bool Textfield::CanHandleAccelerators() const {
   return GetRenderText()->focused() && View::CanHandleAccelerators();
+}
+
+void Textfield::RequestFocusWithPointer(ui::EventPointerType pointer_type) {
+  if (HasFocus())
+    return;
+
+  switch (pointer_type) {
+    case ui::EventPointerType::POINTER_TYPE_MOUSE:
+      focus_reason_ = ui::TextInputClient::FOCUS_REASON_MOUSE;
+      break;
+    case ui::EventPointerType::POINTER_TYPE_PEN:
+      focus_reason_ = ui::TextInputClient::FOCUS_REASON_PEN;
+      break;
+    case ui::EventPointerType::POINTER_TYPE_TOUCH:
+      focus_reason_ = ui::TextInputClient::FOCUS_REASON_TOUCH;
+      break;
+    default:
+      focus_reason_ = ui::TextInputClient::FOCUS_REASON_OTHER;
+      break;
+  }
+
+  View::RequestFocus();
 }
 
 void Textfield::AboutToRequestFocusFromTabTraversal(bool reverse) {
@@ -1074,6 +1087,10 @@ void Textfield::OnPaint(gfx::Canvas* canvas) {
 }
 
 void Textfield::OnFocus() {
+  // Set focus reason if focused was gained without mouse or touch input.
+  if (focus_reason_ == ui::TextInputClient::FOCUS_REASON_NONE)
+    focus_reason_ = ui::TextInputClient::FOCUS_REASON_OTHER;
+
 #if defined(OS_MACOSX)
   if (text_input_type_ == ui::TEXT_INPUT_TYPE_PASSWORD)
     password_input_enabler_.reset(new ui::ScopedPasswordInputEnabler());
@@ -1089,16 +1106,13 @@ void Textfield::OnFocus() {
   OnCaretBoundsChanged();
   if (ShouldBlinkCursor())
     StartBlinkingCursor();
-  if (use_focus_ring_) {
-    FocusRing::Install(this, invalid_
-                                 ? ui::NativeTheme::kColorId_AlertSeverityHigh
-                                 : ui::NativeTheme::kColorId_NumColors);
-  }
   SchedulePaint();
   View::OnFocus();
 }
 
 void Textfield::OnBlur() {
+  focus_reason_ = ui::TextInputClient::FOCUS_REASON_NONE;
+
   gfx::RenderText* render_text = GetRenderText();
   render_text->set_focused(false);
 
@@ -1118,8 +1132,6 @@ void Textfield::OnBlur() {
 
   DestroyTouchSelection();
 
-  if (use_focus_ring_)
-    FocusRing::Uninstall(this);
   SchedulePaint();
   View::OnBlur();
 
@@ -1354,23 +1366,23 @@ bool Textfield::GetAcceleratorForCommandId(int command_id,
                                            ui::Accelerator* accelerator) const {
   switch (command_id) {
     case IDS_APP_UNDO:
-      *accelerator = ui::Accelerator(ui::VKEY_Z, kPlatformModifier);
+      *accelerator = ui::Accelerator(ui::VKEY_Z, ui::EF_PLATFORM_ACCELERATOR);
       return true;
 
     case IDS_APP_CUT:
-      *accelerator = ui::Accelerator(ui::VKEY_X, kPlatformModifier);
+      *accelerator = ui::Accelerator(ui::VKEY_X, ui::EF_PLATFORM_ACCELERATOR);
       return true;
 
     case IDS_APP_COPY:
-      *accelerator = ui::Accelerator(ui::VKEY_C, kPlatformModifier);
+      *accelerator = ui::Accelerator(ui::VKEY_C, ui::EF_PLATFORM_ACCELERATOR);
       return true;
 
     case IDS_APP_PASTE:
-      *accelerator = ui::Accelerator(ui::VKEY_V, kPlatformModifier);
+      *accelerator = ui::Accelerator(ui::VKEY_V, ui::EF_PLATFORM_ACCELERATOR);
       return true;
 
     case IDS_APP_SELECT_ALL:
-      *accelerator = ui::Accelerator(ui::VKEY_A, kPlatformModifier);
+      *accelerator = ui::Accelerator(ui::VKEY_A, ui::EF_PLATFORM_ACCELERATOR);
       return true;
 
     case IDS_CONTENT_CONTEXT_EMOJI:
@@ -1535,6 +1547,10 @@ bool Textfield::HasCompositionText() const {
   return model_->HasCompositionText();
 }
 
+ui::TextInputClient::FocusReason Textfield::GetFocusReason() const {
+  return focus_reason_;
+}
+
 bool Textfield::GetTextRange(gfx::Range* range) const {
   if (!ImeEditingAllowed())
     return false;
@@ -1601,13 +1617,14 @@ bool Textfield::ChangeTextDirectionAndLayoutAlignment(
   // Restore text directionality mode when the indicated direction matches the
   // current forced mode; otherwise, force the mode indicated. This helps users
   // manage BiDi text layout without getting stuck in forced LTR or RTL modes.
-  const gfx::DirectionalityMode mode = direction == base::i18n::RIGHT_TO_LEFT
-                                           ? gfx::DIRECTIONALITY_FORCE_RTL
-                                           : gfx::DIRECTIONALITY_FORCE_LTR;
-  if (mode == GetRenderText()->directionality_mode())
-    GetRenderText()->SetDirectionalityMode(gfx::DIRECTIONALITY_FROM_TEXT);
-  else
-    GetRenderText()->SetDirectionalityMode(mode);
+  const bool default_rtl = direction == base::i18n::RIGHT_TO_LEFT;
+  const auto new_mode = default_rtl ? gfx::DIRECTIONALITY_FORCE_RTL
+                                    : gfx::DIRECTIONALITY_FORCE_LTR;
+  auto* render_text = GetRenderText();
+  const bool modes_match = new_mode == render_text->directionality_mode();
+  render_text->SetDirectionalityMode(modes_match ? gfx::DIRECTIONALITY_FROM_TEXT
+                                                 : new_mode);
+  SetHorizontalAlignment(default_rtl ? gfx::ALIGN_RIGHT : gfx::ALIGN_LEFT);
   SchedulePaint();
   return true;
 }
@@ -1730,6 +1747,12 @@ const std::string& Textfield::GetClientSourceInfo() const {
   // TODO(yhanada): Implement this method.
   NOTIMPLEMENTED_LOG_ONCE();
   return base::EmptyString();
+}
+
+bool Textfield::ShouldDoLearning() {
+  // TODO(https://crbug.com/311180): Implement this method.
+  NOTIMPLEMENTED_LOG_ONCE();
+  return false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2157,7 +2180,9 @@ void Textfield::OnCaretBoundsChanged() {
 #if defined(OS_MACOSX)
   // On Mac, the context menu contains a look up item which displays the
   // selected text. As such, the menu needs to be updated if the selection has
-  // changed.
+  // changed. Be careful to reset the MenuRunner first so it doesn't reference
+  // the old model.
+  context_menu_runner_.reset();
   context_menu_contents_.reset();
 #endif
 

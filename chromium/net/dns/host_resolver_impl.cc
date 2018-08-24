@@ -6,11 +6,8 @@
 
 #if defined(OS_WIN)
 #include <Winsock2.h>
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
 #include <netdb.h>
-#endif
-
-#if defined(OS_POSIX)
 #include <netinet/in.h>
 #if !defined(OS_NACL)
 #include <net/if.h>
@@ -18,7 +15,7 @@
 #include <ifaddrs.h>
 #endif  // !defined(OS_ANDROID)
 #endif  // !defined(OS_NACL)
-#endif  // defined(OS_POSIX)
+#endif  // defined(OS_WIN)
 
 #include <cmath>
 #include <memory>
@@ -30,7 +27,7 @@
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/compiler_specific.h"
-#include "base/containers/circular_deque.h"
+#include "base/containers/linked_list.h"
 #include "base/debug/debugger.h"
 #include "base/debug/stack_trace.h"
 #include "base/macros.h"
@@ -48,6 +45,7 @@
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "net/base/address_family.h"
 #include "net/base/address_list.h"
 #include "net/base/host_port_pair.h"
@@ -124,7 +122,7 @@ const char kOSErrorsForGetAddrinfoHistogramName[] =
     "Net.OSErrorsForGetAddrinfo_Mac";
 #elif defined(OS_LINUX)
     "Net.OSErrorsForGetAddrinfo_Linux";
-#else
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
     "Net.OSErrorsForGetAddrinfo";
 #endif
 
@@ -133,7 +131,21 @@ const char kOSErrorsForGetAddrinfoHistogramName[] =
 // a histogram.
 std::vector<int> GetAllGetAddrinfoOSErrors() {
   int os_errors[] = {
-#if defined(OS_POSIX)
+#if defined(OS_WIN)
+    // See: http://msdn.microsoft.com/en-us/library/ms738520(VS.85).aspx
+    WSA_NOT_ENOUGH_MEMORY,
+    WSAEAFNOSUPPORT,
+    WSAEINVAL,
+    WSAESOCKTNOSUPPORT,
+    WSAHOST_NOT_FOUND,
+    WSANO_DATA,
+    WSANO_RECOVERY,
+    WSANOTINITIALISED,
+    WSATRY_AGAIN,
+    WSATYPE_NOT_FOUND,
+    // The following are not in doc, but might be to appearing in results :-(.
+    WSA_INVALID_HANDLE,
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
 #if !defined(OS_FREEBSD)
 #if !defined(OS_ANDROID)
     // EAI_ADDRFAMILY has been declared obsolete in Android's and
@@ -152,20 +164,6 @@ std::vector<int> GetAllGetAddrinfoOSErrors() {
     EAI_SERVICE,
     EAI_SOCKTYPE,
     EAI_SYSTEM,
-#elif defined(OS_WIN)
-    // See: http://msdn.microsoft.com/en-us/library/ms738520(VS.85).aspx
-    WSA_NOT_ENOUGH_MEMORY,
-    WSAEAFNOSUPPORT,
-    WSAEINVAL,
-    WSAESOCKTNOSUPPORT,
-    WSAHOST_NOT_FOUND,
-    WSANO_DATA,
-    WSANO_RECOVERY,
-    WSANOTINITIALISED,
-    WSATRY_AGAIN,
-    WSATYPE_NOT_FOUND,
-    // The following are not in doc, but might be to appearing in results :-(.
-    WSA_INVALID_HANDLE,
 #endif
   };
 
@@ -174,8 +172,7 @@ std::vector<int> GetAllGetAddrinfoOSErrors() {
     os_errors[i] = std::abs(os_errors[i]);
   }
 
-  return base::CustomHistogram::ArrayToCustomRanges(os_errors,
-                                                    arraysize(os_errors));
+  return base::CustomHistogram::ArrayToCustomEnumRanges(os_errors);
 }
 
 enum DnsResolveStatus {
@@ -333,12 +330,16 @@ bool IsAllIPv4Loopback(const AddressList& addresses) {
 // Also returns false if it cannot determine this.
 bool HaveOnlyLoopbackAddresses() {
   base::ScopedBlockingCall scoped_blocking_call(base::BlockingType::WILL_BLOCK);
-#if defined(OS_ANDROID)
+#if defined(OS_WIN)
+  // TODO(wtc): implement with the GetAdaptersAddresses function.
+  NOTIMPLEMENTED();
+  return false;
+#elif defined(OS_ANDROID)
   return android::HaveOnlyLoopbackAddresses();
 #elif defined(OS_NACL)
   NOTIMPLEMENTED();
   return false;
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   struct ifaddrs* interface_addr = NULL;
   int rv = getifaddrs(&interface_addr);
   if (rv != 0) {
@@ -373,13 +374,6 @@ bool HaveOnlyLoopbackAddresses() {
   }
   freeifaddrs(interface_addr);
   return result;
-#elif defined(OS_WIN)
-  // TODO(wtc): implement with the GetAdaptersAddresses function.
-  NOTIMPLEMENTED();
-  return false;
-#else
-  NOTIMPLEMENTED();
-  return false;
 #endif  // defined(various platforms)
 }
 
@@ -397,9 +391,7 @@ std::unique_ptr<base::Value> NetLogProcTaskFailedCallback(
 
   if (os_error) {
     dict->SetInteger("os_error", os_error);
-#if defined(OS_POSIX)
-    dict->SetString("os_error_string", gai_strerror(os_error));
-#elif defined(OS_WIN)
+#if defined(OS_WIN)
     // Map the error code to a human-readable string.
     LPWSTR error_string = nullptr;
     FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
@@ -411,6 +403,8 @@ std::unique_ptr<base::Value> NetLogProcTaskFailedCallback(
                   0);  // Arguments (unused).
     dict->SetString("os_error_string", base::WideToUTF8(error_string));
     LocalFree(error_string);
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
+    dict->SetString("os_error_string", gai_strerror(os_error));
 #endif
   }
 
@@ -585,10 +579,19 @@ bool ResolveLocalHostname(base::StringPiece host,
 
 const unsigned HostResolverImpl::kMaximumDnsFailures = 16;
 
-// Holds the data for a request that could not be completed synchronously.
-// It is owned by a Job. Canceled Requests are only marked as canceled rather
-// than removed from the Job's |requests_| list.
-class HostResolverImpl::RequestImpl : public HostResolver::Request {
+// Holds the callback and request parameters for an outstanding request.
+//
+// The RequestImpl is owned by the end user of host resolution. Deletion prior
+// to the request having completed means the request was cancelled by the
+// caller.
+//
+// Both the RequestImpl and its associated Job hold non-owning pointers to each
+// other. Care must be taken to clear the corresponding pointer when
+// cancellation is initiated by the Job (OnJobCancelled) vs by the end user
+// (~RequestImpl).
+class HostResolverImpl::RequestImpl
+    : public HostResolver::Request,
+      public base::LinkNode<HostResolverImpl::RequestImpl> {
  public:
   RequestImpl(const NetLogWithSource& source_net_log,
               const RequestInfo& info,
@@ -1031,6 +1034,8 @@ class HostResolverImpl::DnsTask : public base::SupportsWeakPtr<DnsTask> {
     StartAAAA();
   }
 
+  base::TimeDelta ttl() { return ttl_; }
+
  private:
   void StartA() {
     DCHECK(!transaction_a_);
@@ -1067,7 +1072,9 @@ class HostResolverImpl::DnsTask : public base::SupportsWeakPtr<DnsTask> {
                              const DnsResponse* response) {
     DCHECK(transaction);
     base::TimeDelta duration = base::TimeTicks::Now() - start_time;
-    if (net_error != OK) {
+
+    if (net_error != OK && !(net_error == ERR_NAME_NOT_RESOLVED && response &&
+                             response->IsValid())) {
       UMA_HISTOGRAM_LONG_TIMES_100("AsyncDNS.TransactionFailure", duration);
       OnFailure(net_error, DnsResponse::DNS_PARSE_OK);
       return;
@@ -1170,8 +1177,13 @@ class HostResolverImpl::DnsTask : public base::SupportsWeakPtr<DnsTask> {
     net_log_.EndEvent(
         NetLogEventType::HOST_RESOLVER_IMPL_DNS_TASK,
         base::Bind(&NetLogDnsTaskFailedCallback, net_error, result));
+    base::TimeDelta ttl = ttl_ < base::TimeDelta::FromSeconds(
+                                     std::numeric_limits<uint32_t>::max()) &&
+                                  num_completed_transactions_ > 0
+                              ? ttl_
+                              : base::TimeDelta::FromSeconds(0);
     delegate_->OnDnsTaskComplete(task_start_time_, net_error, AddressList(),
-                                 base::TimeDelta());
+                                 ttl);
   }
 
   void OnSuccess(const AddressList& addr_list) {
@@ -1254,14 +1266,13 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
       net_log_.EndEvent(NetLogEventType::HOST_RESOLVER_IMPL_JOB);
     }
     // else CompleteRequests logged EndEvent.
-    if (!requests_.empty()) {
+    while (!requests_.empty()) {
       // Log any remaining Requests as cancelled.
-      for (RequestImpl* req : requests_) {
-        DCHECK_EQ(this, req->job());
-        LogCancelRequest(req->source_net_log(), req->info());
-        req->OnJobCancelled(this);
-      }
-      requests_.clear();
+      RequestImpl* req = requests_.head()->value();
+      req->RemoveFromList();
+      DCHECK_EQ(this, req->job());
+      LogCancelRequest(req->source_net_log(), req->info());
+      req->OnJobCancelled(this);
     }
   }
 
@@ -1301,7 +1312,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
     if (!request->info().is_speculative())
       had_non_speculative_request_ = true;
 
-    requests_.push_back(request);
+    requests_.Append(request);
 
     UpdatePriority();
   }
@@ -1331,19 +1342,13 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
 
     if (num_active_requests() > 0) {
       UpdatePriority();
-      RemoveRequest(request);
+      request->RemoveFromList();
     } else {
       // If we were called from a Request's callback within CompleteRequests,
       // that Request could not have been cancelled, so num_active_requests()
       // could not be 0. Therefore, we are not in CompleteRequests().
       CompleteRequestsWithError(OK /* cancelled */);
     }
-  }
-
-  void RemoveRequest(RequestImpl* request) {
-    auto it = std::find(requests_.begin(), requests_.end(), request);
-    DCHECK(it != requests_.end());
-    requests_.erase(it);
   }
 
   // Called from AbortAllInProgressJobs. Completes all requests and destroys
@@ -1381,8 +1386,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
   bool ServeFromHosts() {
     DCHECK_GT(num_active_requests(), 0u);
     AddressList addr_list;
-    if (resolver_->ServeFromHosts(key(),
-                                  requests_.front()->info(),
+    if (resolver_->ServeFromHosts(key(), requests_.head()->value()->info(),
                                   &addr_list)) {
       // This will destroy the Job.
       CompleteRequests(
@@ -1452,7 +1456,8 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
   AddressList MakeAddressListForRequest(const AddressList& list) const {
     if (requests_.empty())
       return list;
-    return AddressList::CopyWithPort(list, requests_.front()->info().port());
+    return AddressList::CopyWithPort(list,
+                                     requests_.head()->value()->info().port());
   }
 
   void UpdatePriority() {
@@ -1606,7 +1611,16 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
       StartProcTask();
     } else {
       UmaAsyncDnsResolveStatus(RESOLVE_STATUS_FAIL);
-      CompleteRequestsWithError(net_error);
+      // If the ttl is max, we didn't get one from the record, so set it to 0
+      base::TimeDelta ttl =
+          dns_task->ttl() < base::TimeDelta::FromSeconds(
+                                std::numeric_limits<uint32_t>::max())
+              ? dns_task->ttl()
+              : base::TimeDelta::FromSeconds(0);
+      CompleteRequests(
+          HostCache::Entry(net_error, AddressList(),
+                           HostCache::Entry::Source::SOURCE_UNKNOWN, ttl),
+          ttl);
     }
   }
 
@@ -1792,8 +1806,8 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
     // Complete all of the requests that were attached to the job and
     // detach them.
     while (!requests_.empty()) {
-      RequestImpl* req = requests_.front();
-      requests_.pop_front();
+      RequestImpl* req = requests_.head()->value();
+      req->RemoveFromList();
       DCHECK_EQ(this, req->job());
       // Update the net log and notify registered observers.
       LogFinishRequest(req->source_net_log(), req->info(), entry.error());
@@ -1865,7 +1879,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
   std::unique_ptr<DnsTask> dns_task_;
 
   // All Requests waiting for the result of this Job. Some can be canceled.
-  base::circular_deque<RequestImpl*> requests_;
+  base::LinkedList<RequestImpl> requests_;
 
   // A handle used in |HostResolverImpl::dispatcher_|.
   PrioritizedDispatcher::Handle handle_;
@@ -1997,14 +2011,15 @@ HostResolverImpl::HostResolverImpl(const Options& options, NetLog* net_log)
 #if defined(OS_WIN)
   EnsureWinsockInit();
 #endif
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#if (defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)) || \
+    defined(OS_FUCHSIA)
   RunLoopbackProbeJob();
 #endif
   NetworkChangeNotifier::AddIPAddressObserver(this);
   NetworkChangeNotifier::AddConnectionTypeObserver(this);
   NetworkChangeNotifier::AddDNSObserver(this);
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_OPENBSD) && \
-    !defined(OS_ANDROID) && !defined(OS_FUCHSIA)
+    !defined(OS_ANDROID)
   EnsureDnsReloaderInit();
 #endif
 
@@ -2523,7 +2538,8 @@ void HostResolverImpl::OnIPAddressChanged() {
   probe_weak_ptr_factory_.InvalidateWeakPtrs();
   if (cache_.get())
     cache_->OnNetworkChange();
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#if (defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)) || \
+    defined(OS_FUCHSIA)
   RunLoopbackProbeJob();
 #endif
   AbortAllInProgressJobs();

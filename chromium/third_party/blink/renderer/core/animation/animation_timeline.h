@@ -14,11 +14,12 @@ class CORE_EXPORT AnimationTimeline : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
-  virtual ~AnimationTimeline() = default;
+  ~AnimationTimeline() override = default;
 
   virtual double currentTime(bool&) = 0;
 
   virtual bool IsDocumentTimeline() const { return false; }
+  virtual bool IsScrollTimeline() const { return false; }
 };
 
 }  // namespace blink

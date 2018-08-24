@@ -190,6 +190,10 @@ inline LayoutSize operator-(const LayoutSize& size) {
   return LayoutSize(-size.Width(), -size.Height());
 }
 
+inline LayoutSize operator*(const LayoutSize& a, const float scale) {
+  return LayoutSize(a.Width() * scale, a.Height() * scale);
+}
+
 inline bool operator==(const LayoutSize& a, const LayoutSize& b) {
   return a.Width() == b.Width() && a.Height() == b.Height();
 }
@@ -199,6 +203,10 @@ inline bool operator==(const LayoutSize& a, const IntSize& b) {
 }
 
 inline bool operator!=(const LayoutSize& a, const LayoutSize& b) {
+  return a.Width() != b.Width() || a.Height() != b.Height();
+}
+
+inline bool operator!=(const LayoutSize& a, const IntSize& b) {
   return a.Width() != b.Width() || a.Height() != b.Height();
 }
 
@@ -219,6 +227,8 @@ inline LayoutSize RoundedLayoutSize(const FloatSize& s) {
 }
 
 PLATFORM_EXPORT std::ostream& operator<<(std::ostream&, const LayoutSize&);
+PLATFORM_EXPORT WTF::TextStream& operator<<(WTF::TextStream&,
+                                            const LayoutSize&);
 
 }  // namespace blink
 

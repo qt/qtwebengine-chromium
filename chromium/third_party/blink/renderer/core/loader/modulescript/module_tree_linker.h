@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_LOADER_MODULESCRIPT_MODULE_TREE_LINKER_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LOADER_MODULESCRIPT_MODULE_TREE_LINKER_H_
 
+#include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/script/modulator.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
@@ -35,7 +36,13 @@ class ModuleTreeLinkerRegistry;
 class CORE_EXPORT ModuleTreeLinker final : public SingleModuleClient {
  public:
   // https://html.spec.whatwg.org/#fetch-a-module-script-tree
-  static ModuleTreeLinker* Fetch(const ModuleScriptFetchRequest&,
+  //
+  // TODO(hiroshige): |base_url| is used only for Layered APIs and will be
+  // removed soon once an upcoming spec change lands.
+  static ModuleTreeLinker* Fetch(const KURL&,
+                                 const KURL& base_url,
+                                 WebURLRequest::RequestContext destination,
+                                 const ScriptFetchOptions&,
                                  Modulator*,
                                  ModuleTreeLinkerRegistry*,
                                  ModuleTreeClient*);
@@ -43,13 +50,14 @@ class CORE_EXPORT ModuleTreeLinker final : public SingleModuleClient {
   // [FDaI] for an inline script.
   static ModuleTreeLinker* FetchDescendantsForInlineScript(
       ModuleScript*,
+      WebURLRequest::RequestContext destination,
       Modulator*,
       ModuleTreeLinkerRegistry*,
       ModuleTreeClient*);
 
   ~ModuleTreeLinker() override = default;
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(const ScriptWrappableVisitor*) const override;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
   bool IsFetching() const {
     return State::kFetchingSelf <= state_ && state_ < State::kFinished;
@@ -57,7 +65,10 @@ class CORE_EXPORT ModuleTreeLinker final : public SingleModuleClient {
   bool HasFinished() const { return state_ == State::kFinished; }
 
  private:
-  ModuleTreeLinker(Modulator*, ModuleTreeLinkerRegistry*, ModuleTreeClient*);
+  ModuleTreeLinker(WebURLRequest::RequestContext destination,
+                   Modulator*,
+                   ModuleTreeLinkerRegistry*,
+                   ModuleTreeClient*);
 
   enum class State {
     kInitial,
@@ -74,7 +85,7 @@ class CORE_EXPORT ModuleTreeLinker final : public SingleModuleClient {
 #endif
   void AdvanceState(State);
 
-  void FetchRoot(const ModuleScriptFetchRequest&);
+  void FetchRoot(const KURL&, const KURL& base_url, const ScriptFetchOptions&);
   void FetchRootInline(ModuleScript*);
 
   // Steps 1--2 of [IMSGF].
@@ -97,6 +108,7 @@ class CORE_EXPORT ModuleTreeLinker final : public SingleModuleClient {
   ScriptValue FindFirstParseError(ModuleScript*,
                                   HeapHashSet<Member<ModuleScript>>*) const;
 
+  const WebURLRequest::RequestContext destination_;
   const Member<Modulator> modulator_;
   HashSet<KURL> visited_set_;
   const Member<ModuleTreeLinkerRegistry> registry_;
@@ -112,6 +124,7 @@ class CORE_EXPORT ModuleTreeLinker final : public SingleModuleClient {
   size_t num_incomplete_fetches_ = 0;
 
 #if DCHECK_IS_ON()
+  KURL original_url_;
   KURL url_;
   bool root_is_inline_;
 

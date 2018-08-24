@@ -27,7 +27,6 @@
 #include "modules/audio_processing/include/mock_audio_processing.h"
 #include "modules/audio_processing/test/protobuf_utils.h"
 #include "modules/audio_processing/test/test_utils.h"
-#include "modules/include/module_common_types.h"
 #include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/gtest_prod_util.h"
@@ -36,6 +35,7 @@
 #include "rtc_base/numerics/safe_minmax.h"
 #include "rtc_base/protobuf_utils.h"
 #include "rtc_base/refcountedobject.h"
+#include "rtc_base/swap_queue.h"
 #include "rtc_base/task_queue.h"
 #include "rtc_base/thread.h"
 #include "system_wrappers/include/event_wrapper.h"
@@ -2820,9 +2820,36 @@ INSTANTIATE_TEST_CASE_P(
 
 }  // namespace
 
+TEST(RuntimeSettingTest, TestDefaultCtor) {
+  auto s = AudioProcessing::RuntimeSetting();
+  EXPECT_EQ(AudioProcessing::RuntimeSetting::Type::kNotSpecified, s.type());
+}
+
+TEST(RuntimeSettingTest, TestCapturePreGain) {
+  using Type = AudioProcessing::RuntimeSetting::Type;
+  {
+    auto s = AudioProcessing::RuntimeSetting::CreateCapturePreGain(1.25f);
+    EXPECT_EQ(Type::kCapturePreGain, s.type());
+    float v;
+    s.GetFloat(&v);
+    EXPECT_EQ(1.25f, v);
+  }
+
+#if RTC_DCHECK_IS_ON && GTEST_HAS_DEATH_TEST && !defined(WEBRTC_ANDROID)
+  EXPECT_DEATH(AudioProcessing::RuntimeSetting::CreateCapturePreGain(0.1f), "");
+#endif
+}
+
+TEST(RuntimeSettingTest, TestUsageWithSwapQueue) {
+  SwapQueue<AudioProcessing::RuntimeSetting> q(1);
+  auto s = AudioProcessing::RuntimeSetting();
+  ASSERT_TRUE(q.Insert(&s));
+  ASSERT_TRUE(q.Remove(&s));
+  EXPECT_EQ(AudioProcessing::RuntimeSetting::Type::kNotSpecified, s.type());
+}
+
 TEST(ApmConfiguration, EnablePostProcessing) {
   // Verify that apm uses a capture post processing module if one is provided.
-  webrtc::Config webrtc_config;
   auto mock_post_processor_ptr =
       new testing::NiceMock<test::MockCustomProcessing>();
   auto mock_post_processor =
@@ -2830,7 +2857,7 @@ TEST(ApmConfiguration, EnablePostProcessing) {
   rtc::scoped_refptr<AudioProcessing> apm =
       AudioProcessingBuilder()
           .SetCapturePostProcessing(std::move(mock_post_processor))
-          .Create(webrtc_config);
+          .Create();
 
   AudioFrame audio;
   audio.num_channels_ = 1;
@@ -2842,7 +2869,6 @@ TEST(ApmConfiguration, EnablePostProcessing) {
 
 TEST(ApmConfiguration, EnablePreProcessing) {
   // Verify that apm uses a capture post processing module if one is provided.
-  webrtc::Config webrtc_config;
   auto mock_pre_processor_ptr =
       new testing::NiceMock<test::MockCustomProcessing>();
   auto mock_pre_processor =
@@ -2850,13 +2876,35 @@ TEST(ApmConfiguration, EnablePreProcessing) {
   rtc::scoped_refptr<AudioProcessing> apm =
       AudioProcessingBuilder()
           .SetRenderPreProcessing(std::move(mock_pre_processor))
-          .Create(webrtc_config);
+          .Create();
 
   AudioFrame audio;
   audio.num_channels_ = 1;
   SetFrameSampleRate(&audio, AudioProcessing::NativeRate::kSampleRate16kHz);
 
   EXPECT_CALL(*mock_pre_processor_ptr, Process(testing::_)).Times(1);
+  apm->ProcessReverseStream(&audio);
+}
+
+TEST(ApmConfiguration, PreProcessingReceivesRuntimeSettings) {
+  auto mock_pre_processor_ptr =
+      new testing::NiceMock<test::MockCustomProcessing>();
+  auto mock_pre_processor =
+      std::unique_ptr<CustomProcessing>(mock_pre_processor_ptr);
+  rtc::scoped_refptr<AudioProcessing> apm =
+      AudioProcessingBuilder()
+          .SetRenderPreProcessing(std::move(mock_pre_processor))
+          .Create();
+  apm->SetRuntimeSetting(
+      AudioProcessing::RuntimeSetting::CreateCustomRenderSetting(0));
+
+  // RuntimeSettings forwarded during 'Process*Stream' calls.
+  // Therefore we have to make one such call.
+  AudioFrame audio;
+  audio.num_channels_ = 1;
+  SetFrameSampleRate(&audio, AudioProcessing::NativeRate::kSampleRate16kHz);
+
+  EXPECT_CALL(*mock_pre_processor_ptr, SetRuntimeSetting(testing::_)).Times(1);
   apm->ProcessReverseStream(&audio);
 }
 

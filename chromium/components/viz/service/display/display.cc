@@ -24,6 +24,7 @@
 #include "components/viz/service/display/display_scheduler.h"
 #include "components/viz/service/display/gl_renderer.h"
 #include "components/viz/service/display/output_surface.h"
+#include "components/viz/service/display/skia_output_surface.h"
 #include "components/viz/service/display/skia_renderer.h"
 #include "components/viz/service/display/software_renderer.h"
 #include "components/viz/service/display/surface_aggregator.h"
@@ -44,10 +45,12 @@ Display::Display(
     const FrameSinkId& frame_sink_id,
     std::unique_ptr<OutputSurface> output_surface,
     std::unique_ptr<DisplayScheduler> scheduler,
-    scoped_refptr<base::SingleThreadTaskRunner> current_task_runner)
+    scoped_refptr<base::SingleThreadTaskRunner> current_task_runner,
+    SkiaOutputSurface* skia_output_surface)
     : bitmap_manager_(bitmap_manager),
       settings_(settings),
       frame_sink_id_(frame_sink_id),
+      skia_output_surface_(skia_output_surface),
       output_surface_(std::move(output_surface)),
       scheduler_(std::move(scheduler)),
       current_task_runner_(std::move(current_task_runner)) {
@@ -58,16 +61,10 @@ Display::Display(
 }
 
 Display::~Display() {
-  for (auto& callbacks : previous_presented_callbacks_) {
-    for (auto& callback : callbacks)
+  for (auto& callback_list : pending_presented_callbacks_) {
+    for (auto& callback : callback_list)
       std::move(callback).Run(base::TimeTicks(), base::TimeDelta(), 0);
   }
-
-  for (auto& callback : active_presented_callbacks_)
-    std::move(callback).Run(base::TimeTicks(), base::TimeDelta(), 0);
-
-  for (auto& callback : presented_callbacks_)
-    std::move(callback).Run(base::TimeTicks(), base::TimeDelta(), 0);
 
   // Only do this if Initialize() happened.
   if (client_) {
@@ -95,6 +92,9 @@ void Display::Initialize(DisplayClient* client,
     surface_manager_->AddObserver(scheduler_.get());
 
   output_surface_->BindToClient(this);
+  if (output_surface_->software_device())
+    output_surface_->software_device()->BindToClient(this);
+
   InitializeRenderer();
 
   // This depends on assumptions that Display::Initialize will happen on the
@@ -205,7 +205,7 @@ void Display::SetOutputIsSecure(bool secure) {
 }
 
 void Display::InitializeRenderer() {
-  resource_provider_ = std::make_unique<cc::DisplayResourceProvider>(
+  resource_provider_ = std::make_unique<DisplayResourceProvider>(
       output_surface_->context_provider(), bitmap_manager_);
 
   if (output_surface_->context_provider()) {
@@ -214,15 +214,15 @@ void Display::InitializeRenderer() {
           &settings_, output_surface_.get(), resource_provider_.get(),
           current_task_runner_);
     } else {
+      DCHECK(output_surface_);
       renderer_ = std::make_unique<SkiaRenderer>(
-          &settings_, output_surface_.get(), resource_provider_.get());
+          &settings_, output_surface_.get(), resource_provider_.get(),
+          skia_output_surface_);
     }
-  } else if (output_surface_->vulkan_context_provider()) {
 #if BUILDFLAG(ENABLE_VULKAN)
+  } else if (output_surface_->vulkan_context_provider()) {
     renderer_ = std::make_unique<SkiaRenderer>(
         &settings_, output_surface_.get(), resource_provider_.get());
-#else
-    NOTREACHED();
 #endif
   } else {
     auto renderer = std::make_unique<SoftwareRenderer>(
@@ -307,7 +307,8 @@ bool Display::DrawAndSwap() {
   gfx::Size surface_size;
   bool have_damage = false;
   auto& last_render_pass = *frame.render_pass_list.back();
-  if (last_render_pass.output_rect.size() != current_surface_size_ &&
+  if (settings_.auto_resize_output_surface &&
+      last_render_pass.output_rect.size() != current_surface_size_ &&
       last_render_pass.damage_rect == last_render_pass.output_rect &&
       !current_surface_size_.IsEmpty()) {
     // Resize the output rect to the current surface size so that we won't
@@ -323,15 +324,6 @@ bool Display::DrawAndSwap() {
     TRACE_EVENT_INSTANT0("viz", "Size mismatch.", TRACE_EVENT_SCOPE_THREAD);
 
   bool should_draw = have_copy_requests || (have_damage && size_matches);
-
-  // If the surface is suspended then the resources to be used by the draw are
-  // likely destroyed.
-  if (output_surface_->SurfaceIsSuspendForRecycle()) {
-    TRACE_EVENT_INSTANT0("viz", "Surface is suspended for recycle.",
-                         TRACE_EVENT_SCOPE_THREAD);
-    should_draw = false;
-  }
-
   client_->DisplayWillDrawAndSwap(should_draw, frame.render_pass_list);
 
   if (should_draw) {
@@ -375,24 +367,28 @@ bool Display::DrawAndSwap() {
     if (scheduler_) {
       frame.metadata.latency_info.emplace_back(ui::SourceEventType::FRAME);
       frame.metadata.latency_info.back().AddLatencyNumberWithTimestamp(
-          ui::LATENCY_BEGIN_FRAME_DISPLAY_COMPOSITOR_COMPONENT, 0, 0,
+          ui::LATENCY_BEGIN_FRAME_DISPLAY_COMPOSITOR_COMPONENT, 0,
           scheduler_->current_frame_time(), 1);
     }
 
-    DLOG_IF(WARNING, !presented_callbacks_.empty())
-        << "DidReceiveSwapBuffersAck() is not called for the last SwapBuffers!";
+    std::vector<Surface::PresentedCallback> callbacks;
     for (const auto& id_entry : aggregator_->previous_contained_surfaces()) {
       Surface* surface = surface_manager_->GetSurfaceForId(id_entry.first);
       Surface::PresentedCallback callback;
-      if (surface && surface->TakePresentedCallback(&callback))
-        presented_callbacks_.push_back(std::move(callback));
+      if (surface && surface->TakePresentedCallback(&callback)) {
+        callbacks.emplace_back(std::move(callback));
+      }
     }
+    bool need_presentation_feedback = !callbacks.empty();
+    if (need_presentation_feedback)
+      pending_presented_callbacks_.emplace_back(std::move(callbacks));
 
     ui::LatencyInfo::TraceIntermediateFlowEvents(frame.metadata.latency_info,
                                                  "Display::DrawAndSwap");
 
     cc::benchmark_instrumentation::IssueDisplayRenderingStatsEvent();
-    renderer_->SwapBuffers(std::move(frame.metadata.latency_info));
+    renderer_->SwapBuffers(std::move(frame.metadata.latency_info),
+                           need_presentation_feedback);
     if (scheduler_)
       scheduler_->DidSwapBuffers();
   } else {
@@ -413,13 +409,11 @@ bool Display::DrawAndSwap() {
       base::TimeTicks now = base::TimeTicks::Now();
       while (!frame.metadata.latency_info.empty()) {
         auto& latency = frame.metadata.latency_info.back();
-        if (latency.FindLatency(ui::BROWSER_SNAPSHOT_FRAME_NUMBER_COMPONENT,
-                                nullptr)) {
+        if (latency.Snapshots().size()) {
           stored_latency_info_.push_back(std::move(latency));
         } else {
           latency.AddLatencyNumberWithTimestamp(
-              ui::INPUT_EVENT_LATENCY_TERMINATED_NO_SWAP_COMPONENT, 0, 0, now,
-              1);
+              ui::INPUT_EVENT_LATENCY_TERMINATED_NO_SWAP_COMPONENT, 0, now, 1);
         }
         frame.metadata.latency_info.pop_back();
       }
@@ -441,17 +435,7 @@ bool Display::DrawAndSwap() {
   return true;
 }
 
-void Display::DidReceiveSwapBuffersAck(uint64_t swap_id) {
-  // TODO(penghuang): Remove it when we can get accurate presentation time from
-  // GPU for every SwapBuffers. https://crbug.com/776877
-  if (!active_presented_callbacks_.empty() ||
-      !previous_presented_callbacks_.empty()) {
-    DLOG(WARNING) << "VSync for last SwapBuffers is not received!";
-    previous_presented_callbacks_.push_back(
-        std::move(active_presented_callbacks_));
-  }
-  active_presented_callbacks_ = std::move(presented_callbacks_);
-
+void Display::DidReceiveSwapBuffersAck() {
   if (scheduler_)
     scheduler_->DidReceiveSwapBuffersAck();
   if (renderer_)
@@ -471,25 +455,28 @@ void Display::DidReceiveCALayerParams(
 }
 
 void Display::DidReceivePresentationFeedback(
-    uint64_t swap_id,
     const gfx::PresentationFeedback& feedback) {
-  // TODO(penghuang): Remove it when we can get accurate presentation time from
-  // GPU for every SwapBuffers. https://crbug.com/776877
-  base::TimeTicks previous_timebase =
-      feedback.timestamp -
-      feedback.interval * previous_presented_callbacks_.size();
-  for (auto& callbacks : previous_presented_callbacks_) {
-    for (auto& callback : callbacks)
-      std::move(callback).Run(previous_timebase, feedback.interval, 0);
-    previous_timebase += feedback.interval;
-  }
-  previous_presented_callbacks_.clear();
-
-  for (auto& callback : active_presented_callbacks_) {
+  DCHECK(!pending_presented_callbacks_.empty());
+  auto& callbacks = pending_presented_callbacks_.front();
+  for (auto& callback : callbacks) {
     std::move(callback).Run(feedback.timestamp, feedback.interval,
                             feedback.flags);
   }
-  active_presented_callbacks_.clear();
+  pending_presented_callbacks_.pop_front();
+}
+
+void Display::DidFinishLatencyInfo(
+    const std::vector<ui::LatencyInfo>& latency_info) {
+  std::vector<ui::LatencyInfo> latency_info_with_snapshot_component;
+  for (const auto& latency : latency_info) {
+    if (latency.Snapshots().size())
+      latency_info_with_snapshot_component.push_back(latency);
+  }
+
+  if (!latency_info_with_snapshot_component.empty()) {
+    client_->DidSwapAfterSnapshotRequestReceived(
+        latency_info_with_snapshot_component);
+  }
 }
 
 void Display::SetNeedsRedrawRect(const gfx::Rect& damage_rect) {
@@ -559,6 +546,12 @@ LocalSurfaceId Display::GetSurfaceAtAggregation(
   if (it == aggregator_->previous_contained_frame_sinks().end())
     return LocalSurfaceId();
   return it->second;
+}
+
+void Display::SoftwareDeviceUpdatedCALayerParams(
+    const gfx::CALayerParams& ca_layer_params) {
+  if (client_)
+    client_->DisplayDidReceiveCALayerParams(ca_layer_params);
 }
 
 void Display::ForceImmediateDrawAndSwapIfPossible() {

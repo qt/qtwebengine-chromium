@@ -18,7 +18,6 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -248,9 +247,8 @@ class ObfuscatedFileUtilTest : public testing::Test {
   std::unique_ptr<ObfuscatedFileUtil> CreateObfuscatedFileUtil(
       storage::SpecialStoragePolicy* storage_policy) {
     return std::unique_ptr<ObfuscatedFileUtil>(
-        ObfuscatedFileUtil::CreateForTesting(
-            storage_policy, data_dir_path(), NULL,
-            base::ThreadTaskRunnerHandle::Get().get()));
+        ObfuscatedFileUtil::CreateForTesting(storage_policy, data_dir_path(),
+                                             NULL));
   }
 
   ObfuscatedFileUtil* ofu() {
@@ -505,14 +503,10 @@ class ObfuscatedFileUtilTest : public testing::Test {
     EXPECT_EQ(base::File::FILE_OK,
               AsyncFileTestHelper::ReadDirectory(
                   file_system_context(), root_url, &entries));
-    std::vector<filesystem::mojom::DirectoryEntry>::iterator entry_iter;
     EXPECT_EQ(files.size() + directories.size(), entries.size());
     EXPECT_TRUE(change_observer()->HasNoChange());
-    for (entry_iter = entries.begin(); entry_iter != entries.end();
-        ++entry_iter) {
-      const filesystem::mojom::DirectoryEntry& entry = *entry_iter;
-      std::set<base::FilePath::StringType>::iterator iter =
-          files.find(entry.name.value());
+    for (const filesystem::mojom::DirectoryEntry& entry : entries) {
+      auto iter = files.find(entry.name.value());
       if (iter != files.end()) {
         EXPECT_EQ(entry.type, filesystem::mojom::FsFileType::REGULAR_FILE);
         files.erase(iter);

@@ -15,11 +15,11 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/scheduler/base/task_queue_impl.h"
+#include "third_party/blink/renderer/platform/scheduler/base/test/task_queue_manager_for_test.h"
 #include "third_party/blink/renderer/platform/scheduler/common/throttling/budget_pool.h"
 #include "third_party/blink/renderer/platform/scheduler/common/throttling/cpu_time_budget_pool.h"
 #include "third_party/blink/renderer/platform/scheduler/common/throttling/wake_up_budget_pool.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.h"
-#include "third_party/blink/renderer/platform/scheduler/test/task_queue_manager_for_test.h"
 
 namespace blink {
 namespace scheduler {
@@ -34,7 +34,8 @@ class BudgetPoolTest : public testing::Test {
     mock_task_runner_ =
         base::MakeRefCounted<cc::OrderedSimpleTaskRunner>(&clock_, true);
     scheduler_.reset(new MainThreadSchedulerImpl(
-        TaskQueueManagerForTest::Create(nullptr, mock_task_runner_, &clock_),
+        base::sequence_manager::TaskQueueManagerForTest::Create(
+            nullptr, mock_task_runner_, &clock_),
         base::nullopt));
     task_queue_throttler_ = scheduler_->task_queue_throttler();
     start_time_ = clock_.NowTicks();
@@ -129,8 +130,9 @@ TEST_F(BudgetPoolTest, WakeUpBudgetPool) {
   WakeUpBudgetPool* pool =
       task_queue_throttler_->CreateWakeUpBudgetPool("test");
 
-  scoped_refptr<TaskQueue> queue = scheduler_->NewTimerTaskQueue(
-      MainThreadTaskQueue::QueueType::kFrameThrottleable);
+  scoped_refptr<base::sequence_manager::TaskQueue> queue =
+      scheduler_->NewTimerTaskQueue(
+          MainThreadTaskQueue::QueueType::kFrameThrottleable, nullptr);
 
   pool->SetWakeUpRate(0.1);
   pool->SetWakeUpDuration(base::TimeDelta::FromMilliseconds(10));

@@ -9,6 +9,7 @@
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_physical_text_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/layout_ng_block_flow.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_block_node.h"
+#include "third_party/blink/renderer/core/paint/ng/ng_paint_fragment.h"
 #include "third_party/blink/renderer/core/paint/paint_controller_paint_test.h"
 #include "third_party/blink/renderer/core/paint/paint_info.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_painter.h"
@@ -28,9 +29,7 @@ class NGTextFragmentPainterTest : public PaintControllerPaintTest,
         ScopedLayoutNGForTest(true) {}
 };
 
-INSTANTIATE_TEST_CASE_P(All,
-                        NGTextFragmentPainterTest,
-                        testing::Values(0, kRootLayerScrolling));
+INSTANTIATE_PAINT_TEST_CASE_P(NGTextFragmentPainterTest);
 
 TEST_P(NGTextFragmentPainterTest, TestTextStyle) {
   SetBodyInnerHTML(R"HTML(
@@ -44,7 +43,7 @@ TEST_P(NGTextFragmentPainterTest, TestTextStyle) {
 
   const LayoutNGBlockFlow& block_flow = ToLayoutNGBlockFlow(container);
 
-  RootPaintController().InvalidateAll();
+  InvalidateAll(RootPaintController());
   GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint();
   IntRect interest_rect(0, 0, 640, 480);
   Paint(&interest_rect);

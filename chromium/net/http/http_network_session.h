@@ -30,9 +30,9 @@
 #include "net/http/http_stream_factory.h"
 #include "net/quic/chromium/quic_stream_factory.h"
 #include "net/socket/next_proto.h"
-#include "net/spdy/chromium/spdy_session_pool.h"
-#include "net/spdy/core/spdy_protocol.h"
+#include "net/spdy/spdy_session_pool.h"
 #include "net/ssl/ssl_client_auth_cache.h"
+#include "net/third_party/spdy/core/spdy_protocol.h"
 
 namespace base {
 class Value;
@@ -109,7 +109,7 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
     size_t spdy_session_max_recv_window_size;
     // HTTP/2 connection settings.
     // Unknown settings will still be sent to the server.
-    SettingsMap http2_settings;
+    spdy::SettingsMap http2_settings;
     // Source of time for SPDY connections.
     SpdySessionPool::TimeFunc time_func;
     // Whether to enable HTTP/2 Alt-Svc entries.
@@ -164,8 +164,6 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
     int quic_max_time_before_crypto_handshake_seconds;
     // Maximum idle time before the crypto handshake has completed.
     int quic_max_idle_time_before_crypto_handshake_seconds;
-    // If true, QUIC will attempt to explicitly use default network for sockets.
-    bool quic_connect_using_default_network;
     // If true, active QUIC sessions may be migrated onto a new network when
     // the platform indicates that the default network is changing.
     bool quic_migrate_sessions_on_network_change;
@@ -208,6 +206,8 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
 
     // Enable support for Token Binding.
     bool enable_token_binding;
+    // Enable Channel ID. Channel ID is being deprecated.
+    bool enable_channel_id;
 
     // Enable HTTP/0.9 for HTTP/HTTPS on ports other than the default one for
     // each protocol.

@@ -26,15 +26,6 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/storage_partition.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
-#include "net/base/net_errors.h"
-#include "net/cookies/cookie_store.h"
-#include "net/http/http_network_session.h"
-#include "net/http/http_transaction_factory.h"
-#include "net/http/transport_security_state.h"
-#include "net/ssl/channel_id_service.h"
-#include "net/ssl/channel_id_store.h"
-#include "net/url_request/url_request_context.h"
-#include "net/url_request/url_request_context_getter.h"
 #include "ppapi/buildflags/buildflags.h"
 #include "services/network/public/cpp/features.h"
 #include "storage/browser/quota/special_storage_policy.h"
@@ -103,50 +94,6 @@ bool DoesOriginMatchMaskAndURLs(
     return embedder_matcher.Run(origin_type_mask, origin, policy);
 
   return false;
-}
-
-void ClearHttpAuthCacheOnIOThread(
-    scoped_refptr<net::URLRequestContextGetter> context_getter,
-    base::Time delete_begin) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-
-  net::HttpNetworkSession* http_session = context_getter->GetURLRequestContext()
-                                              ->http_transaction_factory()
-                                              ->GetSession();
-  DCHECK(http_session);
-  http_session->http_auth_cache()->ClearEntriesAddedWithin(base::Time::Now() -
-                                                           delete_begin);
-  http_session->CloseAllConnections();
-}
-
-void OnClearedChannelIDsOnIOThread(net::URLRequestContextGetter* rq_context,
-                                   base::OnceClosure callback) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-
-  // Need to close open SSL connections which may be using the channel ids we
-  // are deleting.
-  // TODO(mattm): http://crbug.com/166069 Make the server bound cert
-  // service/store have observers that can notify relevant things directly.
-  rq_context->GetURLRequestContext()
-      ->ssl_config_service()
-      ->NotifySSLConfigChange();
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, std::move(callback));
-}
-
-void ClearChannelIDsOnIOThread(
-    const base::Callback<bool(const std::string&)>& domain_predicate,
-    base::Time delete_begin,
-    base::Time delete_end,
-    scoped_refptr<net::URLRequestContextGetter> request_context,
-    base::OnceClosure callback) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  net::ChannelIDService* channel_id_service =
-      request_context->GetURLRequestContext()->channel_id_service();
-  channel_id_service->GetChannelIDStore()->DeleteForDomainsCreatedBetween(
-      domain_predicate, delete_begin, delete_end,
-      base::Bind(&OnClearedChannelIDsOnIOThread,
-                 base::RetainedRef(std::move(request_context)),
-                 base::Passed(std::move(callback))));
 }
 
 }  // namespace
@@ -353,16 +300,16 @@ void BrowsingDataRemoverImpl::RemoveImpl(
       !(remove_mask & DATA_TYPE_AVOID_CLOSING_CONNECTIONS) &&
       origin_type_mask_ & ORIGIN_TYPE_UNPROTECTED_WEB) {
     base::RecordAction(UserMetricsAction("ClearBrowsingData_ChannelIDs"));
-    // Since we are running on the UI thread don't call GetURLRequestContext().
-    scoped_refptr<net::URLRequestContextGetter> request_context =
-        BrowserContext::GetDefaultStoragePartition(browser_context_)
-            ->GetURLRequestContext();
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::BindOnce(&ClearChannelIDsOnIOThread,
-                       filter_builder.BuildChannelIDFilter(), delete_begin_,
-                       delete_end_, std::move(request_context),
-                       CreatePendingTaskCompletionClosure()));
+
+    network::mojom::ClearDataFilterPtr service_filter =
+        filter_builder.BuildNetworkServiceFilter();
+    DCHECK(service_filter->origins.empty())
+        << "Origin-based deletion is not suitable for channel IDs.";
+
+    BrowserContext::GetDefaultStoragePartition(browser_context_)
+        ->GetNetworkContext()
+        ->ClearChannelIds(delete_begin, delete_end, std::move(service_filter),
+                          CreatePendingTaskCompletionClosureForMojo());
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -405,6 +352,10 @@ void BrowsingDataRemoverImpl::RemoveImpl(
     storage_partition_remove_mask |=
         StoragePartition::REMOVE_DATA_MASK_FILE_SYSTEMS;
   }
+  if (remove_mask & DATA_TYPE_BACKGROUND_FETCH) {
+    storage_partition_remove_mask |=
+        StoragePartition::REMOVE_DATA_MASK_BACKGROUND_FETCH;
+  }
 
   // Content Decryption Modules used by Encrypted Media store licenses in a
   // private filesystem. These are different than content licenses used by
@@ -435,12 +386,14 @@ void BrowsingDataRemoverImpl::RemoveImpl(
     }
 
     // If cookies are supposed to be conditionally deleted from the storage
-    // partition, create a cookie matcher function.
-    StoragePartition::CookieMatcherFunction cookie_matcher;
+    // partition, create the deletion info object.
+    network::mojom::CookieDeletionFilterPtr deletion_filter;
     if (!filter_builder.IsEmptyBlacklist() &&
         (storage_partition_remove_mask &
          StoragePartition::REMOVE_DATA_MASK_COOKIES)) {
-      cookie_matcher = filter_builder.BuildCookieFilter();
+      deletion_filter = filter_builder.BuildCookieDeletionFilter();
+    } else {
+      deletion_filter = network::mojom::CookieDeletionFilter::New();
     }
 
     BrowsingDataRemoverDelegate::EmbedderOriginTypeMatcher embedder_matcher;
@@ -451,7 +404,7 @@ void BrowsingDataRemoverImpl::RemoveImpl(
         storage_partition_remove_mask, quota_storage_remove_mask,
         base::BindRepeating(&DoesOriginMatchMaskAndURLs, origin_type_mask_,
                             filter, std::move(embedder_matcher)),
-        std::move(cookie_matcher), delete_begin_, delete_end_,
+        std::move(deletion_filter), delete_begin_, delete_end_,
         CreatePendingTaskCompletionClosure());
   }
 
@@ -469,7 +422,7 @@ void BrowsingDataRemoverImpl::RemoveImpl(
       // The clearing of the HTTP cache happens in the network service process
       // when enabled.
       network_context->ClearHttpCache(
-          delete_begin, delete_end, filter_builder.BuildClearCacheUrlFilter(),
+          delete_begin, delete_end, filter_builder.BuildNetworkServiceFilter(),
           CreatePendingTaskCompletionClosureForMojo());
     }
 
@@ -493,18 +446,30 @@ void BrowsingDataRemoverImpl::RemoveImpl(
         StoragePartition::REMOVE_DATA_MASK_SHADER_CACHE;
   }
 
+#if BUILDFLAG(ENABLE_REPORTING)
+  //////////////////////////////////////////////////////////////////////////////
+  // Reporting cache.
+  if (remove_mask & DATA_TYPE_COOKIES) {
+    network::mojom::NetworkContext* network_context =
+        BrowserContext::GetDefaultStoragePartition(browser_context_)
+            ->GetNetworkContext();
+    network_context->ClearReportingCacheClients(
+        filter_builder.BuildNetworkServiceFilter(),
+        CreatePendingTaskCompletionClosureForMojo());
+    network_context->ClearNetworkErrorLogging(
+        filter_builder.BuildNetworkServiceFilter(),
+        CreatePendingTaskCompletionClosureForMojo());
+  }
+#endif  // BUILDFLAG(ENABLE_REPORTING)
+
   //////////////////////////////////////////////////////////////////////////////
   // Auth cache.
   if ((remove_mask & DATA_TYPE_COOKIES) &&
       !(remove_mask & DATA_TYPE_AVOID_CLOSING_CONNECTIONS)) {
-    scoped_refptr<net::URLRequestContextGetter> request_context =
-        BrowserContext::GetDefaultStoragePartition(browser_context_)
-            ->GetURLRequestContext();
-    BrowserThread::PostTaskAndReply(
-        BrowserThread::IO, FROM_HERE,
-        base::BindOnce(&ClearHttpAuthCacheOnIOThread,
-                       std::move(request_context), delete_begin_),
-        CreatePendingTaskCompletionClosure());
+    BrowserContext::GetDefaultStoragePartition(browser_context_)
+        ->GetNetworkContext()
+        ->ClearHttpAuthCache(delete_begin,
+                             CreatePendingTaskCompletionClosureForMojo());
   }
 
   //////////////////////////////////////////////////////////////////////////////

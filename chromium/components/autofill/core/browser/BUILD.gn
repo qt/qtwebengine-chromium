@@ -130,6 +130,7 @@ static_library("browser") {
     "phone_number_i18n.cc",
     "phone_number_i18n.h",
     "popup_item_ids.h",
+    "popup_types.h",
     "rationalization_util.cc",
     "rationalization_util.h",
     "region_combobox_model.cc",
@@ -154,8 +155,6 @@ static_library("browser") {
     "webdata/autocomplete_sync_bridge.h",
     "webdata/autofill_change.cc",
     "webdata/autofill_change.h",
-    "webdata/autofill_data_type_controller.cc",
-    "webdata/autofill_data_type_controller.h",
     "webdata/autofill_entry.cc",
     "webdata/autofill_entry.h",
     "webdata/autofill_profile_data_type_controller.cc",
@@ -308,13 +307,6 @@ static_library("test_support") {
     "test_sync_service.h",
   ]
 
-  if (!is_android) {
-    sources += [
-      "ui/mock_save_card_bubble_controller.cc",
-      "ui/mock_save_card_bubble_controller.h",
-    ]
-  }
-
   public_deps = [
     ":browser",
   ]
@@ -420,7 +412,6 @@ source_set("unit_tests") {
     "ui/card_unmask_prompt_controller_impl_unittest.cc",
     "validation_unittest.cc",
     "webdata/autocomplete_sync_bridge_unittest.cc",
-    "webdata/autofill_data_type_controller_unittest.cc",
     "webdata/autofill_profile_syncable_service_unittest.cc",
     "webdata/autofill_table_unittest.cc",
     "webdata/autofill_wallet_metadata_syncable_service_unittest.cc",

@@ -7,12 +7,13 @@
 #include <utility>
 
 #include "base/logging.h"
+#include "base/memory/platform_shared_memory_region.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "build/build_config.h"
 #include "mojo/edk/embedder/named_platform_channel_pair.h"
 #include "mojo/edk/embedder/named_platform_handle.h"
-#include "mojo/edk/embedder/platform_shared_buffer.h"
+#include "mojo/edk/embedder/platform_handle_utils.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/broker_messages.h"
 
@@ -20,17 +21,17 @@ namespace mojo {
 namespace edk {
 
 BrokerHost::BrokerHost(base::ProcessHandle client_process,
-                       ScopedPlatformHandle platform_handle,
+                       ScopedInternalPlatformHandle platform_handle,
                        const ProcessErrorCallback& process_error_callback)
     : process_error_callback_(process_error_callback)
 #if defined(OS_WIN)
       ,
-      client_process_(client_process)
+      client_process_(ScopedProcessHandle::CloneFrom(client_process))
 #endif
 {
   CHECK(platform_handle.is_valid());
 
-  base::MessageLoop::current()->AddDestructionObserver(this);
+  base::MessageLoopCurrent::Get()->AddDestructionObserver(this);
 
   channel_ = Channel::Create(
       this,
@@ -41,17 +42,17 @@ BrokerHost::BrokerHost(base::ProcessHandle client_process,
 
 BrokerHost::~BrokerHost() {
   // We're always destroyed on the creation thread, which is the IO thread.
-  base::MessageLoop::current()->RemoveDestructionObserver(this);
+  base::MessageLoopCurrent::Get()->RemoveDestructionObserver(this);
 
   if (channel_)
     channel_->ShutDown();
 }
 
 bool BrokerHost::PrepareHandlesForClient(
-    std::vector<ScopedPlatformHandle>* handles) {
+    std::vector<ScopedInternalPlatformHandle>* handles) {
 #if defined(OS_WIN)
   if (!Channel::Message::RewriteHandles(base::GetCurrentProcessHandle(),
-                                        client_process_, handles)) {
+                                        client_process_.get(), handles)) {
     // NOTE: We only log an error here. We do not signal a logical error or
     // prevent any message from being sent. The client should handle unexpected
     // invalid handles appropriately.
@@ -62,7 +63,7 @@ bool BrokerHost::PrepareHandlesForClient(
   return true;
 }
 
-bool BrokerHost::SendChannel(ScopedPlatformHandle handle) {
+bool BrokerHost::SendChannel(ScopedInternalPlatformHandle handle) {
   CHECK(handle.is_valid());
   CHECK(channel_);
 
@@ -75,7 +76,7 @@ bool BrokerHost::SendChannel(ScopedPlatformHandle handle) {
   Channel::MessagePtr message =
       CreateBrokerMessage(BrokerMessageType::INIT, 1, nullptr);
 #endif
-  std::vector<ScopedPlatformHandle> handles(1);
+  std::vector<ScopedInternalPlatformHandle> handles(1);
   handles[0] = std::move(handle);
 
   // This may legitimately fail on Windows if the client process is in another
@@ -104,24 +105,31 @@ void BrokerHost::SendNamedChannel(const base::StringPiece16& pipe_name) {
 #endif  // defined(OS_WIN)
 
 void BrokerHost::OnBufferRequest(uint32_t num_bytes) {
-  scoped_refptr<PlatformSharedBuffer> read_only_buffer;
-  scoped_refptr<PlatformSharedBuffer> buffer =
-      PlatformSharedBuffer::Create(num_bytes);
-  if (buffer)
-    read_only_buffer = buffer->CreateReadOnlyDuplicate();
-  if (!read_only_buffer)
-    buffer = nullptr;
+  base::subtle::PlatformSharedMemoryRegion region =
+      base::subtle::PlatformSharedMemoryRegion::CreateWritable(num_bytes);
+
+  std::vector<ScopedInternalPlatformHandle> handles(2);
+  if (region.IsValid()) {
+    ExtractInternalPlatformHandlesFromSharedMemoryRegionHandle(
+        region.PassPlatformHandle(), &handles[0], &handles[1]);
+#if !defined(OS_POSIX) || defined(OS_ANDROID) || defined(OS_FUCHSIA) || \
+    (defined(OS_MACOSX) && !defined(OS_IOS))
+    // Non-POSIX systems, as well as Android, Fuchsia, and non-iOS Mac, only use
+    // a single handle to represent a writable region.
+    DCHECK(!handles[1].is_valid());
+    handles.resize(1);
+#else
+    DCHECK(handles[1].is_valid());
+#endif
+  }
 
   BufferResponseData* response;
   Channel::MessagePtr message = CreateBrokerMessage(
-      BrokerMessageType::BUFFER_RESPONSE, buffer ? 2 : 0, 0, &response);
-  if (buffer) {
-    base::UnguessableToken guid = buffer->GetGUID();
+      BrokerMessageType::BUFFER_RESPONSE, handles.size(), 0, &response);
+  if (!handles.empty()) {
+    base::UnguessableToken guid = region.GetGUID();
     response->guid_high = guid.GetHighForSerialization();
     response->guid_low = guid.GetLowForSerialization();
-    std::vector<ScopedPlatformHandle> handles(2);
-    handles[0] = buffer->PassPlatformHandle();
-    handles[1] = read_only_buffer->PassPlatformHandle();
     PrepareHandlesForClient(&handles);
     message->SetHandles(std::move(handles));
   }
@@ -129,9 +137,10 @@ void BrokerHost::OnBufferRequest(uint32_t num_bytes) {
   channel_->Write(std::move(message));
 }
 
-void BrokerHost::OnChannelMessage(const void* payload,
-                                  size_t payload_size,
-                                  std::vector<ScopedPlatformHandle> handles) {
+void BrokerHost::OnChannelMessage(
+    const void* payload,
+    size_t payload_size,
+    std::vector<ScopedInternalPlatformHandle> handles) {
   if (payload_size < sizeof(BrokerMessageHeader))
     return;
 

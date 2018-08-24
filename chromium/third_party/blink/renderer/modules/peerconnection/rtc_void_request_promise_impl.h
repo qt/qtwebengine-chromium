@@ -21,9 +21,9 @@ class RTCVoidRequestPromiseImpl final : public RTCVoidRequest {
 
   // RTCVoidRequest
   void RequestSucceeded() override;
-  void RequestFailed(const WebRTCError&) override;
+  void RequestFailed(const webrtc::RTCError&) override;
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   RTCVoidRequestPromiseImpl(RTCPeerConnection*, ScriptPromiseResolver*);

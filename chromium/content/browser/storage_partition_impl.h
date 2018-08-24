@@ -35,7 +35,6 @@
 #include "content/common/storage_partition_service.mojom.h"
 #include "content/public/browser/storage_partition.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
-#include "net/cookies/cookie_store.h"
 #include "services/network/public/mojom/cookie_manager.mojom.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "storage/browser/quota/special_storage_policy.h"
@@ -47,6 +46,7 @@
 namespace content {
 
 class BackgroundFetchContext;
+class CookieStoreContext;
 class BlobRegistryWrapper;
 class BlobURLLoaderFactory;
 class PrefetchURLLoaderService;
@@ -64,12 +64,6 @@ class CONTENT_EXPORT StoragePartitionImpl
   // Quota managed data uses a different bitmask for types than
   // StoragePartition uses. This method generates that mask.
   static int GenerateQuotaClientMask(uint32_t remove_mask);
-
-  // This creates a CookiePredicate that matches all host (NOT domain) cookies
-  // that match the host of |url|. This is intended to be used with
-  // DeleteAllCreatedBetweenWithPredicateAsync.
-  static net::CookieStore::CookiePredicate
-  CreatePredicateForHostCookies(const GURL& url);
 
   // Allows overriding the URLLoaderFactory creation for
   // GetURLLoaderFactoryForBrowserProcess.
@@ -127,7 +121,7 @@ class CONTENT_EXPORT StoragePartitionImpl
   void ClearData(uint32_t remove_mask,
                  uint32_t quota_storage_remove_mask,
                  const OriginMatcherFunction& origin_matcher,
-                 const CookieMatcherFunction& cookie_matcher,
+                 network::mojom::CookieDeletionFilterPtr cookie_deletion_filter,
                  const base::Time begin,
                  const base::Time end,
                  base::OnceClosure callback) override;
@@ -149,6 +143,7 @@ class CONTENT_EXPORT StoragePartitionImpl
   BlobURLLoaderFactory* GetBlobURLLoaderFactory();
   BlobRegistryWrapper* GetBlobRegistry();
   PrefetchURLLoaderService* GetPrefetchURLLoaderService();
+  CookieStoreContext* GetCookieStoreContext();
 
   // mojom::StoragePartitionService interface.
   void OpenLocalStorage(const url::Origin& origin,
@@ -194,6 +189,7 @@ class CONTENT_EXPORT StoragePartitionImpl
 
   friend class BackgroundSyncManagerTest;
   friend class BackgroundSyncServiceImplTest;
+  friend class CookieStoreManagerTest;
   friend class PaymentAppContentUnitTestBase;
   friend class StoragePartitionImplMap;
   friend class URLLoaderFactoryForBrowserProcess;
@@ -222,7 +218,8 @@ class CONTENT_EXPORT StoragePartitionImpl
                            RemoveQuotaManagedIgnoreDevTools);
   FRIEND_TEST_ALL_PREFIXES(StoragePartitionImplTest, RemoveCookieForever);
   FRIEND_TEST_ALL_PREFIXES(StoragePartitionImplTest, RemoveCookieLastHour);
-  FRIEND_TEST_ALL_PREFIXES(StoragePartitionImplTest, RemoveCookieWithMatcher);
+  FRIEND_TEST_ALL_PREFIXES(StoragePartitionImplTest,
+                           RemoveCookieWithDeleteInfo);
   FRIEND_TEST_ALL_PREFIXES(StoragePartitionImplTest,
                            RemoveUnprotectedLocalStorageForever);
   FRIEND_TEST_ALL_PREFIXES(StoragePartitionImplTest,
@@ -246,14 +243,15 @@ class CONTENT_EXPORT StoragePartitionImpl
                        storage::SpecialStoragePolicy* special_storage_policy);
 
   // We will never have both remove_origin be populated and a cookie_matcher.
-  void ClearDataImpl(uint32_t remove_mask,
-                     uint32_t quota_storage_remove_mask,
-                     const GURL& remove_origin,
-                     const OriginMatcherFunction& origin_matcher,
-                     const CookieMatcherFunction& cookie_matcher,
-                     const base::Time begin,
-                     const base::Time end,
-                     base::OnceClosure callback);
+  void ClearDataImpl(
+      uint32_t remove_mask,
+      uint32_t quota_storage_remove_mask,
+      const GURL& remove_origin,
+      const OriginMatcherFunction& origin_matcher,
+      network::mojom::CookieDeletionFilterPtr cookie_deletion_filter,
+      const base::Time begin,
+      const base::Time end,
+      base::OnceClosure callback);
 
   void DeletionHelperDone(base::OnceClosure callback);
 
@@ -314,6 +312,7 @@ class CONTENT_EXPORT StoragePartitionImpl
   scoped_refptr<BlobURLLoaderFactory> blob_url_loader_factory_;
   scoped_refptr<BlobRegistryWrapper> blob_registry_;
   scoped_refptr<PrefetchURLLoaderService> prefetch_url_loader_service_;
+  scoped_refptr<CookieStoreContext> cookie_store_context_;
 
   // BindingSet for StoragePartitionService, using the process id as the
   // binding context type. The process id can subsequently be used during

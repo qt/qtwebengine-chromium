@@ -42,7 +42,7 @@ class MockWebDataService : public AutofillWebDataService {
   MOCK_METHOD1(AddFormFields, void(const std::vector<FormFieldData>&));
 
  protected:
-  virtual ~MockWebDataService() {}
+  ~MockWebDataService() override {}
 };
 
 class MockAutofillClient : public TestAutofillClient {
@@ -101,7 +101,7 @@ TEST_F(AutocompleteHistoryManagerTest, CreditCardNumberValue) {
   valid_cc.form_control_type = "text";
   form.fields.push_back(valid_cc);
 
-  EXPECT_CALL(*web_data_service_.get(), AddFormFields(_)).Times(0);
+  EXPECT_CALL(*web_data_service_, AddFormFields(_)).Times(0);
   autocomplete_manager_->OnWillSubmitForm(form);
 }
 
@@ -140,7 +140,7 @@ TEST_F(AutocompleteHistoryManagerTest, SSNValue) {
   ssn.form_control_type = "text";
   form.fields.push_back(ssn);
 
-  EXPECT_CALL(*web_data_service_.get(), AddFormFields(_)).Times(0);
+  EXPECT_CALL(*web_data_service_, AddFormFields(_)).Times(0);
   autocomplete_manager_->OnWillSubmitForm(form);
 }
 
@@ -182,7 +182,7 @@ TEST_F(AutocompleteHistoryManagerTest, FieldWithAutocompleteOff) {
   field.should_autocomplete = false;
   form.fields.push_back(field);
 
-  EXPECT_CALL(*web_data_service_.get(), AddFormFields(_)).Times(0);
+  EXPECT_CALL(*web_data_service_, AddFormFields(_)).Times(0);
   autocomplete_manager_->OnWillSubmitForm(form);
 }
 
@@ -193,7 +193,7 @@ class MockAutofillExternalDelegate : public AutofillExternalDelegate {
   MockAutofillExternalDelegate(AutofillManager* autofill_manager,
                                AutofillDriver* autofill_driver)
       : AutofillExternalDelegate(autofill_manager, autofill_driver) {}
-  virtual ~MockAutofillExternalDelegate() {}
+  ~MockAutofillExternalDelegate() override {}
 
   MOCK_METHOD3(OnSuggestionsReturned,
                void(int query_id,

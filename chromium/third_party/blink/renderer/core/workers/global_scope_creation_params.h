@@ -7,21 +7,23 @@
 
 #include <memory>
 #include "base/macros.h"
+#include "base/optional.h"
 #include "base/unguessable_token.h"
 #include "services/service_manager/public/mojom/interface_provider.mojom-blink.h"
 #include "third_party/blink/public/mojom/net/ip_address_space.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_cache_options.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
+#include "third_party/blink/renderer/core/script/script.h"
 #include "third_party/blink/renderer/core/workers/worker_clients.h"
-#include "third_party/blink/renderer/core/workers/worker_or_worklet_module_fetch_coordinator.h"
 #include "third_party/blink/renderer/core/workers/worker_settings.h"
+#include "third_party/blink/renderer/core/workers/worklet_module_responses_map.h"
+#include "third_party/blink/renderer/platform/graphics/begin_frame_provider.h"
 #include "third_party/blink/renderer/platform/network/content_security_policy_parsers.h"
 #include "third_party/blink/renderer/platform/network/content_security_policy_response_headers.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/referrer_policy.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 
 namespace blink {
 
@@ -35,6 +37,7 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
  public:
   GlobalScopeCreationParams(
       const KURL& script_url,
+      ScriptType script_type,
       const String& user_agent,
       const Vector<CSPHeaderAndType>* content_security_policy_parsed_headers,
       ReferrerPolicy referrer_policy,
@@ -46,12 +49,14 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
       const base::UnguessableToken& parent_devtools_token,
       std::unique_ptr<WorkerSettings>,
       V8CacheOptions,
-      WorkerOrWorkletModuleFetchCoordinator*,
-      service_manager::mojom::blink::InterfaceProviderPtrInfo = {});
+      WorkletModuleResponsesMap*,
+      service_manager::mojom::blink::InterfaceProviderPtrInfo = {},
+      BeginFrameProviderParams begin_frame_provider_params = {});
 
   ~GlobalScopeCreationParams() = default;
 
   KURL script_url;
+  ScriptType script_type;
   String user_agent;
 
   // |content_security_policy_parsed_headers| and
@@ -60,7 +65,7 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
   // when |content_security_policy_raw_headers| is set.
   std::unique_ptr<Vector<CSPHeaderAndType>>
       content_security_policy_parsed_headers;
-  WTF::Optional<ContentSecurityPolicyResponseHeaders>
+  base::Optional<ContentSecurityPolicyResponseHeaders>
       content_security_policy_raw_headers;
 
   ReferrerPolicy referrer_policy;
@@ -108,10 +113,11 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
 
   V8CacheOptions v8_cache_options;
 
-  CrossThreadPersistent<WorkerOrWorkletModuleFetchCoordinator>
-      module_fetch_coordinator;
+  CrossThreadPersistent<WorkletModuleResponsesMap> module_responses_map;
 
   service_manager::mojom::blink::InterfaceProviderPtrInfo interface_provider;
+
+  BeginFrameProviderParams begin_frame_provider_params;
 
   DISALLOW_COPY_AND_ASSIGN(GlobalScopeCreationParams);
 };

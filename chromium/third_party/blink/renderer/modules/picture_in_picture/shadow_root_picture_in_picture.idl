@@ -5,9 +5,9 @@
 // https://wicg.github.io/picture-in-picture/#documentorshadowroot-extension
 [
     ImplementedAs=ShadowRootPictureInPicture,
-    RuntimeEnabled=PictureInPictureAPI
+    OriginTrialEnabled=PictureInPictureAPI
 ]
 partial interface ShadowRoot {
     // TODO(crbug.com/656517): Define this attribute in DocumentOrShadowRoot.
-    readonly attribute HTMLVideoElement? pictureInPictureElement;
+    [Measure] readonly attribute HTMLVideoElement? pictureInPictureElement;
 };

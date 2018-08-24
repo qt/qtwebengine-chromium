@@ -201,6 +201,8 @@ EchoCanceller3Config ParseAec3Parameters(const std::string& filename) {
     ReadParam(section, "mf", &cfg.ep_strength.mf);
     ReadParam(section, "hf", &cfg.ep_strength.hf);
     ReadParam(section, "default_len", &cfg.ep_strength.default_len);
+    ReadParam(section, "reverb_based_on_render",
+              &cfg.ep_strength.reverb_based_on_render);
     ReadParam(section, "echo_can_saturate", &cfg.ep_strength.echo_can_saturate);
     ReadParam(section, "bounded_erl", &cfg.ep_strength.bounded_erl);
   }
@@ -238,6 +240,8 @@ EchoCanceller3Config ParseAec3Parameters(const std::string& filename) {
               &cfg.echo_audibility.audibility_threshold_mf);
     ReadParam(section, "audibility_threshold_hf",
               &cfg.echo_audibility.audibility_threshold_hf);
+    ReadParam(section, "use_stationary_properties",
+              &cfg.echo_audibility.use_stationary_properties);
   }
 
   if (rtc::GetValueFromJsonObject(root, "gain_updates", &section)) {
@@ -583,6 +587,12 @@ void AudioProcessingSimulator::CreateAudioProcessor() {
     apm_config.gain_controller2.enabled = *settings_.use_agc2;
     apm_config.gain_controller2.fixed_gain_db = settings_.agc2_fixed_gain_db;
   }
+  if (settings_.use_pre_amplifier) {
+    apm_config.pre_amplifier.enabled = *settings_.use_pre_amplifier;
+    apm_config.pre_amplifier.fixed_gain_factor =
+        settings_.pre_amplifier_gain_factor;
+  }
+
   if (settings_.use_aec3 && *settings_.use_aec3) {
     EchoCanceller3Config cfg;
     if (settings_.aec3_settings_filename) {

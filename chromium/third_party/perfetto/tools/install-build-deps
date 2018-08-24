@@ -44,13 +44,13 @@ from collections import namedtuple
 BUILD_DEPS_HOST = [
   # GN
   ('buildtools/mac/gn',
-   'https://storage.googleapis.com/chromium-gn/c2c934d4dda1f470a6511b1015dda9a9fb1ce50b',
-   'c2c934d4dda1f470a6511b1015dda9a9fb1ce50b',
+   'https://storage.googleapis.com/chromium-gn/9be792dd9010ce303a9c3a497a67bcc5ac8c7666',
+   '9be792dd9010ce303a9c3a497a67bcc5ac8c7666',
    'darwin'
   ),
   ('buildtools/linux64/gn',
-   'https://storage.googleapis.com/chromium-gn/b53fa13e950948c6f9a062189b76b34a9610281f',
-   'b53fa13e950948c6f9a062189b76b34a9610281f',
+   'https://storage.googleapis.com/chromium-gn/2f27ff0b6118e5886df976da5effa6003d19d1ce',
+   '2f27ff0b6118e5886df976da5effa6003d19d1ce',
    'linux2'
   ),
 
@@ -102,32 +102,46 @@ BUILD_DEPS_HOST = [
   # lib from sources. Keep the SHA1s in sync with Chrome's src/buildtools/DEPS.
   ('buildtools/libcxx',
    'https://chromium.googlesource.com/chromium/llvm-project/libcxx.git',
-   '3a07dd740be63878167a0ea19fe81869954badd7',
+   'ece1de8658d749e19c12cacd4458cc330eca94e3',
    'all'
   ),
   ('buildtools/libcxxabi',
    'https://chromium.googlesource.com/chromium/llvm-project/libcxxabi.git',
-   '4072e8fd76febee37f60aeda76d6d9f5e3791daa',
+   '05a73941f3fb177c4a891d4ff2a4ed5785e3b80c',
    'all'
   ),
   ('buildtools/libunwind',
    'https://chromium.googlesource.com/external/llvm.org/libunwind.git',
-   '41f982e5887185b904a456e20dfcd58e6be6cc19',
+   '0f3cbe4123f8afacd646bd4f5414aa6528ef8129',
    'all'
   ),
 
   # Keep the revision in sync with Chrome's CLANG_REVISION in
   # tools/clang/scripts/update.py.
   ('buildtools/clang.tgz',
-   'https://commondatastorage.googleapis.com/chromium-browser-clang/Linux_x64/clang-315613-1.tgz',
-   '09f63ace1ce25a3e5d36e760026f4ad4619e42de',
+   'https://commondatastorage.googleapis.com/chromium-browser-clang/Linux_x64/clang-331747-1.tgz',
+   '973073ca36ae9194019705ec7677852a30c4b54e',
    'linux2'
   ),
 
   # Benchmarking tool.
   ('buildtools/benchmark.zip',
-   'https://github.com/google/benchmark/archive/v1.2.0.zip',
-   '553b6bfa59c63f15c54cfd8c5122b0f7f84469af',
+   'https://github.com/google/benchmark/archive/v1.3.0.zip',
+   'f387e0df37d54bfd5be239e8d0d3ea2e2c3e34f4',
+   'all'
+  ),
+
+  # Libbacktrace, for stacktraces in Linux/Android debug builds.
+  ('buildtools/libbacktrace.zip',
+   'https://github.com/ianlancetaylor/libbacktrace/archive/177940370e4a6b2509e92a0aaa9749184e64af43.zip',
+   'b723fe9d671d1ab54df1297f6afbf2893a41c3ea',
+   'all'
+  ),
+
+  # Sqlite for the trace processing library.
+  ('buildtools/sqlite.zip',
+   'https://storage.googleapis.com/perfetto/sqlite-amalgamation-3230100.zip',
+   '98729f2c2d57d166e3d6d9862744c1d66388e286',
    'all'
   ),
 ]
@@ -152,16 +166,11 @@ BUILD_DEPS_ANDROID = [
 
 # Dependencies required to run Android tests.
 TEST_DEPS_ANDROID = [
-  # tools.zip contains the emulator binaries.
-  ('buildtools/android_sdk/tools.zip',
-   'https://dl.google.com/android/repository/tools_r25.2.5-macosx.zip',
-   'd2168d963ac5b616e3d3ddaf21511d084baf3659',
-   'darwin'
-  ),
-  ('buildtools/android_sdk/tools.zip',
-   'https://dl.google.com/android/repository/tools_r25.2.5-linux.zip',
-   '72df3aa1988c0a9003ccdfd7a13a7b8bd0f47fc1',
-   'linux2'
+  # Android emulator images.
+  ('buildtools/aosp-arm.zip',
+   'https://storage.googleapis.com/perfetto/aosp-02022018-arm.zip',
+   'a480d5e7d3ca888b0a58fe15ce76b1791537429a',
+   'all'
   ),
 
   # platform-tools.zip contains adb binaries.
@@ -176,16 +185,39 @@ TEST_DEPS_ANDROID = [
    'linux2'
   ),
 
-  # Android emulator images.
-  ('buildtools/android_sdk/system-images/android-24/default/armeabi-v7a.zip',
-   'https://dl.google.com/android/repository/sys-img/android/armeabi-v7a-24_r07.zip',
-   '3454546b4eed2d6c3dd06d47757d6da9f4176033',
-   'android-arm'
+  # Android emulator binaries.
+  ('buildtools/emulator',
+   'https://android.googlesource.com/platform/prebuilts/android-emulator.git',
+   '4b260028dc27bc92c39bee9129cb2ba839970956',
+   'all'
   ),
-  ('buildtools/android_sdk/system-images/android-24/default/arm64-v8a.zip',
-   'https://dl.google.com/android/repository/sys-img/android/arm64-v8a-24_r07.zip',
-   'e8ab2e49e4efe4b064232b33b5eeaded61437d7f',
-   'android-arm64'
+]
+
+UI_DEPS = [
+  ('buildtools/nodejs.tgz',
+   'https://storage.googleapis.com/perfetto/node-v8.11.1-darwin-x64.tar.gz',
+   '01effb57fa711aa258d7aab26c6615e1f8a64b1a',
+   'darwin'
+  ),
+  ('buildtools/nodejs.tgz',
+   'https://storage.googleapis.com/perfetto/node-v8.11.1-linux-x64.tar.xz',
+   '04c2e703b042ecfdc9deb32e4797a41c41482966',
+   'linux2'
+  ),
+  ('buildtools/emsdk/emscripten.tgz',
+   'https://storage.googleapis.com/perfetto/emscripten-1.37.40.tar.gz',
+   '588c28221321ebbdfc8e3a6f47ea6106f589669b',
+   'all'
+  ),
+  ('buildtools/emsdk/llvm.tgz',
+   'https://storage.googleapis.com/perfetto/emscripten-llvm-e1.37.40-darwin.tar.gz',
+   '7a894ef0a52821c62f6abaac552dc4ce5d424607',
+   'darwin'
+  ),
+  ('buildtools/emsdk/llvm.tgz',
+   'https://storage.googleapis.com/perfetto/emscripten-llvm-e1.37.40-linux.tar.gz',
+   'fdc26481fe70001ea00e83b99d0df906c9b2a45f',
+   'linux2'
   ),
 ]
 
@@ -235,7 +267,9 @@ def CheckoutGitRepo(path, git_url, revision):
     shutil.rmtree(path)
   MkdirRecursive(path)
   logging.info('Fetching %s @ %s into %s', git_url, revision, path)
-  subprocess.check_call(['git', 'clone', git_url, path], cwd=path)
+  subprocess.check_call(['git', 'init', path], cwd=path)
+  subprocess.check_call(
+    ['git', 'fetch', '--depth', '1', git_url, revision], cwd=path)
   subprocess.check_call(['git', 'checkout', revision, '--quiet'], cwd=path)
   assert(IsGitRepoCheckoutOutAtRevision(path, revision))
 
@@ -243,15 +277,15 @@ def CheckoutGitRepo(path, git_url, revision):
 def Main():
   parser = argparse.ArgumentParser()
   parser.add_argument('--no-android', action='store_true')
-  parser.add_argument('--emulator', action='append', help='arm|arm64')
+  parser.add_argument('--ui', action='store_true')
   args = parser.parse_args()
-  andriod_emulator_images = ['android-' + arch for arch in args.emulator or []]
   deps = BUILD_DEPS_HOST
   if not args.no_android:
     deps += BUILD_DEPS_ANDROID + TEST_DEPS_ANDROID
+  if args.ui:
+    deps += UI_DEPS
   for rel_path, url, expected_sha1, platform in deps:
-    if (platform != 'all' and platform != sys.platform and
-        platform not in andriod_emulator_images):
+    if (platform != 'all' and platform != sys.platform):
       continue
     local_path = os.path.join(ROOT_DIR, rel_path)
     if url.endswith('.git'):
@@ -287,7 +321,7 @@ def Main():
       # Decompress the archive.
       if local_path.endswith('.tgz'):
         MkdirRecursive(zip_target_dir)
-        subprocess.check_call(['tar', '-zxf', local_path], cwd=zip_target_dir)
+        subprocess.check_call(['tar', '-xf', local_path], cwd=zip_target_dir)
       elif local_path.endswith('.zip'):
         with zipfile.ZipFile(local_path, 'r') as zf:
           for info in zf.infolist():

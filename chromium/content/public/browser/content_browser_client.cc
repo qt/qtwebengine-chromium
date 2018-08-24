@@ -17,6 +17,7 @@
 #include "content/public/browser/navigation_ui_data.h"
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/page_navigator.h"
+#include "content/public/browser/url_loader_request_interceptor.h"
 #include "content/public/browser/vpn_service_proxy.h"
 #include "content/public/common/url_loader_throttle.h"
 #include "device/geolocation/public/cpp/location_provider.h"
@@ -166,9 +167,17 @@ bool ContentBrowserClient::ShouldSwapBrowsingInstancesForNavigation(
   return false;
 }
 
+bool ContentBrowserClient::ShouldIsolateErrorPage(bool in_main_frame) {
+  return false;
+}
+
 std::unique_ptr<media::AudioManager> ContentBrowserClient::CreateAudioManager(
     media::AudioLogFactory* audio_log_factory) {
   return nullptr;
+}
+
+bool ContentBrowserClient::OverridesAudioManager() {
+  return false;
 }
 
 std::unique_ptr<media::CdmFactory> ContentBrowserClient::CreateCdmFactory() {
@@ -591,12 +600,12 @@ ContentBrowserClient::CreateURLLoaderThrottles(
 }
 
 void ContentBrowserClient::RegisterNonNetworkNavigationURLLoaderFactories(
-    RenderFrameHost* frame_host,
+    int frame_tree_node_id,
     NonNetworkURLLoaderFactoryMap* factories) {}
 
 void ContentBrowserClient::RegisterNonNetworkSubresourceURLLoaderFactories(
-    RenderFrameHost* frame_host,
-    const GURL& frame_url,
+    int render_process_id,
+    int render_frame_id,
     NonNetworkURLLoaderFactoryMap* factories) {}
 
 bool ContentBrowserClient::WillCreateURLLoaderFactory(
@@ -617,6 +626,7 @@ network::mojom::NetworkContextPtr ContentBrowserClient::CreateNetworkContext(
   network::mojom::NetworkContextParamsPtr context_params =
       network::mojom::NetworkContextParams::New();
   context_params->user_agent = GetContentClient()->GetUserAgent();
+  context_params->accept_language = "en-us,en";
   context_params->enable_data_url_support = true;
   context_params->enable_file_url_support = true;
   GetNetworkService()->CreateNetworkContext(MakeRequest(&network_context),
@@ -695,11 +705,10 @@ ContentBrowserClient::CreateClientCertStore(ResourceContext* resource_context) {
 scoped_refptr<LoginDelegate> ContentBrowserClient::CreateLoginDelegate(
     net::AuthChallengeInfo* auth_info,
     content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
-    bool is_main_frame,
+    bool is_request_for_main_frame,
     const GURL& url,
     bool first_auth_attempt,
-    const base::Callback<void(const base::Optional<net::AuthCredentials>&)>&
-        auth_required_callback) {
+    LoginAuthRequiredCallback auth_required_callback) {
   return nullptr;
 }
 
@@ -718,6 +727,13 @@ std::unique_ptr<OverlayWindow>
 ContentBrowserClient::CreateWindowForPictureInPicture(
     PictureInPictureWindowController* controller) {
   return nullptr;
+}
+
+std::vector<std::unique_ptr<URLLoaderRequestInterceptor>>
+ContentBrowserClient::WillCreateURLLoaderRequestInterceptors(
+    NavigationUIData* navigation_ui_data,
+    int frame_tree_node_id) {
+  return std::vector<std::unique_ptr<URLLoaderRequestInterceptor>>();
 }
 
 }  // namespace content

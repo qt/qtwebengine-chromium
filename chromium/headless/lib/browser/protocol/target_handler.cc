@@ -74,23 +74,40 @@ Response TargetHandler::CloseTarget(const std::string& target_id,
 }
 
 Response TargetHandler::CreateBrowserContext(std::string* out_context_id) {
-  HeadlessBrowserContext* browser_context =
-      browser()->CreateBrowserContextBuilder().Build();
+  auto builder = browser()->CreateBrowserContextBuilder();
+  builder.SetIncognitoMode(true);
+  HeadlessBrowserContext* browser_context = builder.Build();
 
   *out_context_id = browser_context->Id();
   return Response::OK();
 }
 
-Response TargetHandler::DisposeBrowserContext(const std::string& context_id,
-                                              bool* out_success) {
+Response TargetHandler::DisposeBrowserContext(const std::string& context_id) {
   HeadlessBrowserContext* context =
       browser()->GetBrowserContextForId(context_id);
 
-  *out_success = false;
-  if (context && context != browser()->GetDefaultBrowserContext() &&
-      context->GetAllWebContents().empty()) {
-    *out_success = true;
-    context->Close();
+  if (!context)
+    return Response::InvalidParams("browserContextId");
+
+  std::vector<HeadlessWebContents*> web_contents = context->GetAllWebContents();
+  while (!web_contents.empty()) {
+    for (auto* wc : web_contents)
+      wc->Close();
+    // Since HeadlessWebContents::Close spawns a nested run loop to await
+    // closing, new web_contents could be opened. We need to re-query pages and
+    // close them too.
+    web_contents = context->GetAllWebContents();
+  }
+  context->Close();
+  return Response::OK();
+}
+
+Response TargetHandler::GetBrowserContexts(
+    std::unique_ptr<protocol::Array<protocol::String>>* browser_context_ids) {
+  *browser_context_ids = std::make_unique<protocol::Array<protocol::String>>();
+  for (auto* context : browser()->GetAllBrowserContexts()) {
+    if (context != browser()->GetDefaultBrowserContext())
+      (*browser_context_ids)->addItem(context->Id());
   }
   return Response::OK();
 }

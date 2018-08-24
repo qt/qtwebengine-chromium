@@ -47,6 +47,7 @@ ServiceWorkerRegisterJob::ServiceWorkerRegisterJob(
       force_bypass_cache_(false),
       skip_script_comparison_(false),
       promise_resolved_status_(SERVICE_WORKER_OK),
+      observer_(this),
       weak_factory_(this) {}
 
 ServiceWorkerRegisterJob::ServiceWorkerRegisterJob(
@@ -65,6 +66,7 @@ ServiceWorkerRegisterJob::ServiceWorkerRegisterJob(
       force_bypass_cache_(force_bypass_cache),
       skip_script_comparison_(skip_script_comparison),
       promise_resolved_status_(SERVICE_WORKER_OK),
+      observer_(this),
       weak_factory_(this) {
   internal_.registration = registration;
 }
@@ -241,7 +243,7 @@ void ServiceWorkerRegisterJob::ContinueWithRegistration(
 
   // "Invoke Set Registration algorithm with job’s scope url and
   // job’s update via cache mode."
-  existing_registration->set_update_via_cache(update_via_cache_);
+  existing_registration->SetUpdateViaCache(update_via_cache_);
   set_registration(existing_registration);
   // "Return the result of running the [[Update]] algorithm, or its equivalent,
   // passing registration as the argument."
@@ -356,7 +358,7 @@ void ServiceWorkerRegisterJob::UpdateAndContinue() {
   new_version()->set_force_bypass_cache_for_scripts(force_bypass_cache_);
   if (registration()->has_installed_version() && !skip_script_comparison_) {
     new_version()->set_pause_after_download(true);
-    new_version()->embedded_worker()->AddListener(this);
+    observer_.Add(new_version()->embedded_worker());
   } else {
     new_version()->set_pause_after_download(false);
   }
@@ -533,7 +535,7 @@ void ServiceWorkerRegisterJob::CompleteInternal(
 
   if (new_version()) {
     new_version()->set_pause_after_download(false);
-    new_version()->embedded_worker()->RemoveListener(this);
+    observer_.RemoveAll();
   }
 
   if (status != SERVICE_WORKER_OK) {
@@ -588,7 +590,8 @@ void ServiceWorkerRegisterJob::AddRegistrationToMatchingProviderHosts(
   DCHECK(registration);
   for (std::unique_ptr<ServiceWorkerContextCore::ProviderHostIterator> it =
            context_->GetClientProviderHostIterator(
-               registration->pattern().GetOrigin());
+               registration->pattern().GetOrigin(),
+               true /* include_reserved_clients */);
        !it->IsAtEnd(); it->Advance()) {
     ServiceWorkerProviderHost* host = it->GetProviderHost();
     if (!ServiceWorkerUtils::ScopeMatches(registration->pattern(),
@@ -618,6 +621,16 @@ void ServiceWorkerRegisterJob::OnScriptLoaded() {
   }
 
   new_version()->embedded_worker()->ResumeAfterDownload();
+}
+
+void ServiceWorkerRegisterJob::OnDestroyed() {
+  // The version's EmbeddedWorkerInstance is getting destructed, so
+  // remove the observer to avoid a use-after-free. We expect to continue when
+  // the StartWorker() callback is called with failure.
+  // TODO(crbug.com/855852): Remove the EmbeddedWorkerInstance::Listener
+  // interface and have this class listen to ServiceWorkerVersion directly.
+  if (observer_.IsObserving(new_version()->embedded_worker()))
+    observer_.Remove(new_version()->embedded_worker());
 }
 
 void ServiceWorkerRegisterJob::BumpLastUpdateCheckTimeIfNeeded() {

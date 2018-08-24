@@ -54,7 +54,9 @@ TestGpuService::TestGpuService(
                      nullptr /* watchdog_thread */,
                      std::move(io_runner),
                      gpu::GpuFeatureInfo(),
-                     gpu::GpuPreferences()) {}
+                     gpu::GpuPreferences(),
+                     base::nullopt,
+                     base::nullopt) {}
 
 }  // namespace
 

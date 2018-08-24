@@ -47,8 +47,7 @@ SSLErrorUI::SSLErrorUI(const GURL& request_url,
   controller_->metrics_helper()->RecordUserInteraction(
       MetricsHelper::TOTAL_VISITS);
   ssl_errors::RecordUMAStatistics(soft_override_enabled_, time_triggered_,
-                                  request_url, cert_error_,
-                                  *ssl_info_.cert.get());
+                                  request_url, cert_error_, *ssl_info_.cert);
 }
 
 SSLErrorUI::~SSLErrorUI() {
@@ -81,6 +80,11 @@ void SSLErrorUI::PopulateStringsForHTML(base::DictionaryValue* load_time_data) {
       l10n_util::GetStringFUTF16(
           IDS_SSL_V2_PRIMARY_PARAGRAPH,
           common_string_util::GetFormattedHostName(request_url_)));
+  load_time_data->SetString(
+      "recurrentErrorParagraph",
+      l10n_util::GetStringUTF16(IDS_SSL_V2_RECURRENT_ERROR_PARAGRAPH));
+  load_time_data->SetBoolean("show_recurrent_error_paragraph",
+                             controller_->HasSeenRecurrentError());
 
   if (soft_override_enabled_)
     PopulateOverridableStrings(load_time_data);

@@ -49,6 +49,7 @@ RendererSettings CreateRendererSettings() {
   renderer_settings.finish_rendering_on_resize = true;
 #elif defined(OS_MACOSX)
   renderer_settings.release_overlay_resources_after_gpu_query = true;
+  renderer_settings.auto_resize_output_surface = false;
 #endif
   renderer_settings.tint_gl_composited_content =
       command_line->HasSwitch(switches::kTintGlCompositedContent);
@@ -57,10 +58,9 @@ RendererSettings CreateRendererSettings() {
   renderer_settings.enable_draw_occlusion = features::IsDrawOcclusionEnabled();
   renderer_settings.allow_antialiasing =
       !command_line->HasSwitch(switches::kDisableCompositedAntialiasing);
-  renderer_settings.use_skia_renderer =
-      command_line->HasSwitch(switches::kUseSkiaRenderer);
+  renderer_settings.use_skia_renderer = features::IsUsingSkiaRenderer();
   renderer_settings.use_skia_deferred_display_list =
-      command_line->HasSwitch(switches::kUseSkiaDeferredDisplayList);
+      features::IsUsingSkiaDeferredDisplayList();
 #if defined(OS_MACOSX)
   renderer_settings.allow_overlays =
       ui::RemoteLayerAPISupported() &&

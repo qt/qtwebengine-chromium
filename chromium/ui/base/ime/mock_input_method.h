@@ -12,6 +12,7 @@
 #include "base/observer_list.h"
 #include "build/build_config.h"
 #include "ui/base/ime/input_method.h"
+#include "ui/base/ime/input_method_keyboard_controller_stub.h"
 #include "ui/base/ime/input_method_observer.h"
 #include "ui/base/ime/ui_base_ime_export.h"
 
@@ -53,9 +54,11 @@ class UI_BASE_IME_EXPORT MockInputMethod : public InputMethod {
   int GetTextInputFlags() const override;
   bool CanComposeInline() const override;
   bool IsCandidatePopupOpen() const override;
+  bool GetClientShouldDoLearning() override;
   void ShowImeIfNeeded() override;
   void AddObserver(InputMethodObserver* observer) override;
   void RemoveObserver(InputMethodObserver* observer) override;
+  InputMethodKeyboardController* GetInputMethodKeyboardController() override;
 
  private:
   // InputMethod:
@@ -67,6 +70,7 @@ class UI_BASE_IME_EXPORT MockInputMethod : public InputMethod {
   internal::InputMethodDelegate* delegate_;
 
   std::vector<std::unique_ptr<ui::KeyEvent>> key_events_for_testing_;
+  InputMethodKeyboardControllerStub keyboard_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(MockInputMethod);
 };

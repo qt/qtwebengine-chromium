@@ -334,7 +334,7 @@ void RenderAccessibilityImpl::HandleAXEvent(const blink::WebAXObject& obj,
     // When no accessibility events are in-flight post a task to send
     // the events to the browser. We use PostTask so that we can queue
     // up additional events.
-    render_frame_->GetTaskRunner(blink::TaskType::kUnspecedTimer)
+    render_frame_->GetTaskRunner(blink::TaskType::kInternalDefault)
         ->PostTask(FROM_HERE,
                    base::BindOnce(
                        &RenderAccessibilityImpl::SendPendingAccessibilityEvents,
@@ -566,6 +566,9 @@ void RenderAccessibilityImpl::OnPerformAction(
     case ax::mojom::Action::kBlur:
       root.Focus();
       break;
+    case ax::mojom::Action::kClearAccessibilityFocus:
+      target.ClearAccessibilityFocus();
+      break;
     case ax::mojom::Action::kDecrement:
       target.Decrement();
       break;
@@ -597,6 +600,9 @@ void RenderAccessibilityImpl::OnPerformAction(
       break;
     case ax::mojom::Action::kFocus:
       target.Focus();
+      break;
+    case ax::mojom::Action::kSetAccessibilityFocus:
+      target.SetAccessibilityFocus();
       break;
     case ax::mojom::Action::kSetScrollOffset:
       target.SetScrollOffset(

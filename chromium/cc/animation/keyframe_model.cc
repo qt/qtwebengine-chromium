@@ -54,6 +54,28 @@ std::unique_ptr<KeyframeModel> KeyframeModel::Create(
                                             group_id, target_property_id));
 }
 
+std::unique_ptr<KeyframeModel> KeyframeModel::CreateImplInstance(
+    RunState initial_run_state) const {
+  // Should never clone a model that is the controlling instance as it ends up
+  // creating multiple controlling instances.
+  DCHECK(!is_controlling_instance_);
+  std::unique_ptr<KeyframeModel> to_return(
+      new KeyframeModel(curve_->Clone(), id_, group_, target_property_id_));
+  to_return->run_state_ = initial_run_state;
+  to_return->iterations_ = iterations_;
+  to_return->iteration_start_ = iteration_start_;
+  to_return->start_time_ = start_time_;
+  to_return->pause_time_ = pause_time_;
+  to_return->total_paused_time_ = total_paused_time_;
+  to_return->time_offset_ = time_offset_;
+  to_return->direction_ = direction_;
+  to_return->playback_rate_ = playback_rate_;
+  to_return->fill_mode_ = fill_mode_;
+  DCHECK(!to_return->is_controlling_instance_);
+  to_return->is_controlling_instance_ = true;
+  return to_return;
+}
+
 KeyframeModel::KeyframeModel(std::unique_ptr<AnimationCurve> curve,
                              int keyframe_model_id,
                              int group_id,
@@ -70,7 +92,6 @@ KeyframeModel::KeyframeModel(std::unique_ptr<AnimationCurve> curve,
       fill_mode_(FillMode::BOTH),
       needs_synchronized_start_time_(false),
       received_finished_event_(false),
-      suspended_(false),
       is_controlling_instance_(false),
       is_impl_only_(false),
       affects_active_elements_(true),
@@ -83,9 +104,6 @@ KeyframeModel::~KeyframeModel() {
 
 void KeyframeModel::SetRunState(RunState run_state,
                                 base::TimeTicks monotonic_time) {
-  if (suspended_)
-    return;
-
   char name_buffer[256];
   base::snprintf(name_buffer, sizeof(name_buffer), "%s-%d-%d",
                  s_curveTypeNames[curve_->Type()], target_property_id_, group_);
@@ -122,16 +140,6 @@ void KeyframeModel::SetRunState(RunState run_state,
       TRACE_STR_COPY(name_buffer), "State", TRACE_STR_COPY(state_buffer));
 }
 
-void KeyframeModel::Suspend(base::TimeTicks monotonic_time) {
-  SetRunState(PAUSED, monotonic_time);
-  suspended_ = true;
-}
-
-void KeyframeModel::Resume(base::TimeTicks monotonic_time) {
-  suspended_ = false;
-  SetRunState(RUNNING, monotonic_time);
-}
-
 bool KeyframeModel::IsFinishedAt(base::TimeTicks monotonic_time) const {
   if (is_finished())
     return true;
@@ -150,21 +158,6 @@ bool KeyframeModel::IsFinishedAt(base::TimeTicks monotonic_time) const {
 bool KeyframeModel::InEffect(base::TimeTicks monotonic_time) const {
   return ConvertToActiveTime(monotonic_time) >= base::TimeDelta() ||
          (fill_mode_ == FillMode::BOTH || fill_mode_ == FillMode::BACKWARDS);
-}
-
-base::TimeTicks KeyframeModel::ConvertFromActiveTime(
-    base::TimeDelta active_time) const {
-  // When waiting on receiving a start time, then our global clock is 'stuck' at
-  // the initial state.
-  if ((run_state_ == STARTING && !has_set_start_time()) ||
-      needs_synchronized_start_time())
-    return base::TimeTicks();
-
-  // If we're paused, time is 'stuck' at the pause time.
-  if (run_state_ == PAUSED)
-    return pause_time_ - time_offset_;
-
-  return active_time - time_offset_ + start_time_ + total_paused_time_;
 }
 
 base::TimeDelta KeyframeModel::ConvertToActiveTime(
@@ -252,28 +245,6 @@ base::TimeDelta KeyframeModel::TrimTimeToCurrentIteration(
     iteration_time = curve_->Duration() - iteration_time;
 
   return iteration_time;
-}
-
-std::unique_ptr<KeyframeModel> KeyframeModel::CloneAndInitialize(
-    RunState initial_run_state) const {
-  // Should never clone a model that is the controlling instance as it ends up
-  // creating multiple controlling instances.
-  DCHECK(!is_controlling_instance_);
-  std::unique_ptr<KeyframeModel> to_return(
-      new KeyframeModel(curve_->Clone(), id_, group_, target_property_id_));
-  to_return->run_state_ = initial_run_state;
-  to_return->iterations_ = iterations_;
-  to_return->iteration_start_ = iteration_start_;
-  to_return->start_time_ = start_time_;
-  to_return->pause_time_ = pause_time_;
-  to_return->total_paused_time_ = total_paused_time_;
-  to_return->time_offset_ = time_offset_;
-  to_return->direction_ = direction_;
-  to_return->playback_rate_ = playback_rate_;
-  to_return->fill_mode_ = fill_mode_;
-  DCHECK(!to_return->is_controlling_instance_);
-  to_return->is_controlling_instance_ = true;
-  return to_return;
 }
 
 void KeyframeModel::PushPropertiesTo(KeyframeModel* other) const {

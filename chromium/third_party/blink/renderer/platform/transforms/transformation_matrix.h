@@ -35,6 +35,10 @@
 #include "third_party/blink/renderer/platform/wtf/alignment.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 
+namespace gfx {
+class Transform;
+}
+
 namespace blink {
 
 class AffineTransform;
@@ -43,6 +47,7 @@ class LayoutRect;
 class FloatRect;
 class FloatQuad;
 class FloatBox;
+class JSONArray;
 struct Rotation;
 #if defined(ARCH_CPU_X86_64)
 #define TRANSFORMATION_MATRIX_USE_X86_64_SSE2
@@ -466,6 +471,7 @@ class PLATFORM_EXPORT TransformationMatrix {
   void ToColumnMajorFloatArray(FloatMatrix4& result) const;
 
   static SkMatrix44 ToSkMatrix44(const TransformationMatrix&);
+  static gfx::Transform ToTransform(const TransformationMatrix&);
 
   // If |asMatrix|, return the matrix in row-major order. Otherwise, return
   // the transform's decomposition which shows the translation, scale, etc.
@@ -520,6 +526,8 @@ class PLATFORM_EXPORT TransformationMatrix {
 
 PLATFORM_EXPORT std::ostream& operator<<(std::ostream&,
                                          const TransformationMatrix&);
+PLATFORM_EXPORT std::unique_ptr<JSONArray> TransformAsJSONArray(
+    const TransformationMatrix&);
 
 }  // namespace blink
 

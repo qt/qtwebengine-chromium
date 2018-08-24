@@ -16,6 +16,7 @@ class Rect;
 
 namespace viz {
 
+class CompositorFrameMetadata;
 class CopyOutputRequest;
 class LocalSurfaceId;
 
@@ -35,9 +36,11 @@ class CapturableFrameSink {
     // |damage_rect| being the region within that has changed (never empty).
     // |expected_display_time| indicates when the content change was expected to
     // appear on the Display.
-    virtual void OnFrameDamaged(const gfx::Size& frame_size,
-                                const gfx::Rect& damage_rect,
-                                base::TimeTicks expected_display_time) = 0;
+    virtual void OnFrameDamaged(
+        const gfx::Size& frame_size,
+        const gfx::Rect& damage_rect,
+        base::TimeTicks expected_display_time,
+        const CompositorFrameMetadata& frame_metadata) = 0;
   };
 
   virtual ~CapturableFrameSink() = default;
@@ -59,6 +62,10 @@ class CapturableFrameSink {
   virtual void RequestCopyOfOutput(
       const LocalSurfaceId& local_surface_id,
       std::unique_ptr<CopyOutputRequest> request) = 0;
+
+  // Returns the CompositorFrameMetadata of the last activated CompositorFrame.
+  // Return null if no CompositorFrame has activated yet.
+  virtual const CompositorFrameMetadata* GetLastActivatedFrameMetadata() = 0;
 };
 
 }  // namespace viz

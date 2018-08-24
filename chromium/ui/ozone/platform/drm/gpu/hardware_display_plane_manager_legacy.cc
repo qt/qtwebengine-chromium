@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/task_scheduler/post_task.h"
+#include "ui/gfx/gpu_fence.h"
 #include "ui/gfx/presentation_feedback.h"
 #include "ui/ozone/platform/drm/gpu/crtc_controller.h"
 #include "ui/ozone/platform/drm/gpu/drm_device.h"
@@ -19,15 +20,13 @@ namespace ui {
 
 namespace {
 
-const int kInfiniteSyncWaitTimeout = -1;
-
 // We currently wait for the fences serially, but it's possible
 // that merging the fences and waiting on the merged fence fd
 // is more efficient. We should revisit once we have more info.
 void WaitForPlaneFences(const ui::OverlayPlaneList& planes) {
   for (const auto& plane : planes) {
-    if (plane.fence_fd >= 0)
-      sync_wait(plane.fence_fd, kInfiniteSyncWaitTimeout);
+    if (plane.gpu_fence)
+      plane.gpu_fence->Wait();
   }
 }
 
@@ -74,8 +73,8 @@ bool HardwareDisplayPlaneManagerLegacy::Commit(
       }
     }
     if (!drm_->PageFlip(flip.crtc_id, flip.framebuffer,
-                        base::Bind(&CrtcController::OnPageFlipEvent,
-                                   flip.crtc->AsWeakPtr()))) {
+                        base::BindOnce(&CrtcController::OnPageFlipEvent,
+                                       flip.crtc->AsWeakPtr()))) {
       // 1) Permission Denied is a legitimate error.
       // 2) Device or resource busy is possible if we're page flipping a
       // disconnected CRTC. Pretend we're fine since a hotplug event is supposed
@@ -129,6 +128,14 @@ bool HardwareDisplayPlaneManagerLegacy::DisableOverlayPlanes(
                         return plane->type() == HardwareDisplayPlane::kOverlay;
                       }) == plane_list->old_plane_list.end());
   return true;
+}
+
+bool HardwareDisplayPlaneManagerLegacy::SetColorCorrectionOnAllCrtcPlanes(
+    uint32_t crtc_id,
+    ScopedDrmColorCtmPtr ctm_blob_data) {
+  NOTREACHED()
+      << "HardwareDisplayPlaneManagerLegacy doesn't support per plane CTM";
+  return false;
 }
 
 bool HardwareDisplayPlaneManagerLegacy::ValidatePrimarySize(

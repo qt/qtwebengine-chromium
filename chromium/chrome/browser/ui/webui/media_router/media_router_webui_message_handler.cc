@@ -27,6 +27,7 @@
 #include "chrome/grit/generated_resources.h"
 #include "components/browser_sync/profile_sync_service.h"
 #include "components/prefs/pref_service.h"
+#include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/web_ui.h"
 #include "extensions/common/constants.h"
@@ -125,7 +126,7 @@ std::unique_ptr<base::DictionaryValue> SinksAndIdentityToValue(
       // Convert default domains to user domain
       if (domain == "default") {
         domain = user_domain;
-        if (domain == Profile::kNoHostedDomainFound) {
+        if (domain == AccountTrackerService::kNoHostedDomainFound) {
           // Default domain will be empty for non-dasher accounts.
           domain.clear();
         }
@@ -555,7 +556,7 @@ void MediaRouterWebUIMessageHandler::OnRequestInitialData(
   initial_data.SetBoolean("useTabMirroring", use_tab_mirroring);
 
   web_ui()->CallJavascriptFunctionUnsafe(kSetInitialData, initial_data);
-  media_router_ui_->UIInitialized();
+  media_router_ui_->OnUIInitialized();
 }
 
 void MediaRouterWebUIMessageHandler::OnCreateRoute(
@@ -698,7 +699,7 @@ void MediaRouterWebUIMessageHandler::OnCloseRoute(const base::ListValue* args) {
     DVLOG(1) << "Unable to extract args.";
     return;
   }
-  media_router_ui_->CloseRoute(route_id);
+  media_router_ui_->TerminateRoute(route_id);
   UMA_HISTOGRAM_BOOLEAN("MediaRouter.Ui.Action.StopRoute", !is_local);
 }
 

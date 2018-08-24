@@ -14,12 +14,19 @@
 #include "base/macros.h"
 #include "base/memory/memory_coordinator_client.h"
 #include "base/memory/weak_ptr.h"
+#include "base/sequenced_task_runner.h"
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
 #include "base/trace_event/memory_dump_provider.h"
 #include "base/trace_event/trace_event.h"
-#include "cc/resources/layer_tree_resource_provider.h"
+#include "cc/cc_export.h"
+#include "components/viz/common/resources/resource_format.h"
+#include "ui/gfx/geometry/size.h"
+#include "ui/gfx/gpu_memory_buffer.h"
 
+namespace gfx {
+class GpuMemoryBuffer;
+}
 namespace gpu {
 namespace raster {
 class RasterInterface;
@@ -59,7 +66,6 @@ class CC_EXPORT StagingBufferPool
 
   StagingBufferPool(scoped_refptr<base::SequencedTaskRunner> task_runner,
                     viz::RasterContextProvider* worker_context_provider,
-                    LayerTreeResourceProvider* resource_provider,
                     bool use_partial_raster,
                     int max_staging_buffer_usage_in_bytes);
   void Shutdown();
@@ -96,7 +102,6 @@ class CC_EXPORT StagingBufferPool
 
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
   viz::RasterContextProvider* const worker_context_provider_;
-  LayerTreeResourceProvider* const resource_provider_;
   const bool use_partial_raster_;
 
   mutable base::Lock lock_;

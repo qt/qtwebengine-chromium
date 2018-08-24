@@ -11,24 +11,25 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <list>
 #include <map>
 #include <memory>
+#include <utility>
 
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/containers/queue.h"
 #include "base/containers/span.h"
+#include "base/debug/alias.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/numerics/ranges.h"
 #include "base/numerics/safe_math.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
-#include "cc/paint/color_space_transfer_cache_entry.h"
-#include "cc/paint/paint_op_buffer.h"
-#include "cc/paint/transfer_cache_entry.h"
 #include "gpu/command_buffer/common/debug_marker_manager.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
@@ -66,7 +67,6 @@
 #include "gpu/command_buffer/service/renderbuffer_manager.h"
 #include "gpu/command_buffer/service/sampler_manager.h"
 #include "gpu/command_buffer/service/service_discardable_manager.h"
-#include "gpu/command_buffer/service/service_transfer_cache.h"
 #include "gpu/command_buffer/service/shader_manager.h"
 #include "gpu/command_buffer/service/shader_translator.h"
 #include "gpu/command_buffer/service/texture_manager.h"
@@ -74,13 +74,6 @@
 #include "gpu/command_buffer/service/vertex_array_manager.h"
 #include "gpu/command_buffer/service/vertex_attrib_manager.h"
 #include "third_party/angle/src/image_util/loadimage.h"
-#include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkColorSpaceXformCanvas.h"
-#include "third_party/skia/include/core/SkSurface.h"
-#include "third_party/skia/include/core/SkSurfaceProps.h"
-#include "third_party/skia/include/core/SkTypeface.h"
-#include "third_party/skia/include/gpu/GrBackendSurface.h"
-#include "third_party/skia/include/gpu/GrContext.h"
 #include "third_party/smhasher/src/City.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/color_space.h"
@@ -563,6 +556,14 @@ base::StringPiece GLES2Decoder::GetLogPrefix() {
   return GetLogger()->GetLogPrefix();
 }
 
+void GLES2Decoder::SetLogCommands(bool log_commands) {
+  log_commands_ = log_commands;
+}
+
+Outputter* GLES2Decoder::outputter() const {
+  return outputter_;
+}
+
 // This class implements GLES2Decoder so we don't have to expose all the GLES2
 // cmd stuff to outside this class.
 class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
@@ -644,6 +645,9 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
   void RestoreAllAttributes() const override;
 
   QueryManager* GetQueryManager() override { return query_manager_.get(); }
+  void SetQueryCallback(unsigned int query_client_id,
+                        base::OnceClosure callback) override;
+
   GpuFenceManager* GetGpuFenceManager() override {
     return gpu_fence_manager_.get();
   }
@@ -658,9 +662,6 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
   }
   ImageManager* GetImageManagerForTest() override {
     return group_->image_manager();
-  }
-  ServiceTransferCache* GetTransferCacheForTest() override {
-    return transfer_cache_.get();
   }
 
   bool HasPendingQueries() const override;
@@ -744,6 +745,9 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
       override {
     copy_texture_chromium_.reset(copy_texture_resource_manager);
   }
+
+  // ServiceFontManager::Client implementation.
+  scoped_refptr<gpu::Buffer> GetShmBuffer(uint32_t shm_id);
 
  private:
   friend class ScopedFramebufferBinder;
@@ -1004,17 +1008,19 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
       GLint border);
 
   // Wrapper for SwapBuffers.
-  void DoSwapBuffers();
+  void DoSwapBuffers(uint64_t swap_id, GLbitfield flags);
 
   // Wrapper for SwapBuffersWithBoundsCHROMIUM.
-  void DoSwapBuffersWithBoundsCHROMIUM(GLsizei count,
-                                       const volatile GLint* rects);
+  void DoSwapBuffersWithBoundsCHROMIUM(uint64_t swap_id,
+                                       GLsizei count,
+                                       const volatile GLint* rects,
+                                       GLbitfield flags);
 
   // Callback for async SwapBuffers.
-  void FinishAsyncSwapBuffers(gfx::SwapResult result);
+  void FinishAsyncSwapBuffers(uint64_t swap_id, gfx::SwapResult result);
   void FinishSwapBuffers(gfx::SwapResult result);
 
-  void DoCommitOverlayPlanes();
+  void DoCommitOverlayPlanes(uint64_t swap_id, GLbitfield flags);
 
   // Wrapper for CopyTexSubImage2D.
   void DoCopyTexSubImage2D(
@@ -1993,6 +1999,10 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
   // the type of corresponding attribute in vertex shader.
   bool AttribsTypeMatch();
 
+  // Verifies that front/back stencil settings match, per WebGL specification:
+  // https://www.khronos.org/registry/webgl/specs/latest/1.0/#6.11
+  bool ValidateStencilStateForDraw(const char* function_name);
+
   // Checks if the current program and vertex attributes are valid for drawing.
   bool IsDrawValid(
       const char* function_name, GLuint max_vertex_accessed, bool instanced,
@@ -2018,25 +2028,6 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
   bool DoBindOrCopyTexImageIfNeeded(Texture* texture,
                                     GLenum textarget,
                                     GLuint texture_unit);
-
-  void DoBeginRasterCHROMIUM(GLuint texture_id,
-                             GLuint sk_color,
-                             GLuint msaa_sample_count,
-                             GLboolean can_use_lcd_text,
-                             GLint color_type,
-                             GLuint color_space_transfer_cache_id);
-  void DoRasterCHROMIUM(GLsizeiptr size, const void* list);
-  void DoEndRasterCHROMIUM();
-
-  void DoCreateTransferCacheEntryINTERNAL(GLuint entry_type,
-                                          GLuint entry_id,
-                                          GLuint handle_shm_id,
-                                          GLuint handle_shm_offset,
-                                          GLuint data_shm_id,
-                                          GLuint data_shm_offset,
-                                          GLuint data_size);
-  void DoUnlockTransferCacheEntryINTERNAL(GLuint entry_type, GLuint entry_id);
-  void DoDeleteTransferCacheEntryINTERNAL(GLuint entry_type, GLuint entry_id);
 
   void DoUnpremultiplyAndDitherCopyCHROMIUM(GLuint source_id,
                                             GLuint dest_id,
@@ -2472,14 +2463,6 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
 
   std::unique_ptr<VertexArrayManager> vertex_array_manager_;
 
-  // ServiceTransferCache uses Ids based on transfer buffer shm_id+offset, which
-  // are guaranteed to be unique within the scope of the TransferBufferManager
-  // which generates them. Because of this, |transfer_cache_| must have a
-  // narrower scope than |transfer_buffer_manager_|.
-  // In the future, we could add necessary scoping Id(s) to allow a single
-  // ServiceTransferCache to be shared among multiple contexts / channels.
-  std::unique_ptr<ServiceTransferCache> transfer_cache_;
-
   // The format of the back buffer_
   GLenum back_buffer_color_format_;
   bool back_buffer_has_depth_;
@@ -2524,9 +2507,6 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
   bool supports_swap_buffers_with_bounds_;
   bool supports_commit_overlay_planes_;
   bool supports_async_swap_;
-  bool supports_oop_raster_;
-  uint32_t next_async_swap_id_ = 1;
-  uint32_t pending_swaps_ = 0;
   bool supports_dc_layers_ = false;
 
   // These flags are used to override the state of the shared feature_info_
@@ -2616,11 +2596,6 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
 
   std::unique_ptr<CALayerSharedState> ca_layer_shared_state_;
   std::unique_ptr<DCLayerSharedState> dc_layer_shared_state_;
-
-  // Raster helpers.
-  sk_sp<GrContext> gr_context_;
-  sk_sp<SkSurface> sk_surface_;
-  std::unique_ptr<SkCanvas> raster_canvas_;
 
   base::WeakPtrFactory<GLES2DecoderImpl> weak_ptr_factory_;
 
@@ -3263,7 +3238,6 @@ GLES2DecoderImpl::GLES2DecoderImpl(
       supports_swap_buffers_with_bounds_(false),
       supports_commit_overlay_planes_(false),
       supports_async_swap_(false),
-      supports_oop_raster_(false),
       derivatives_explicitly_enabled_(false),
       frag_depth_explicitly_enabled_(false),
       draw_buffers_explicitly_enabled_(false),
@@ -3317,7 +3291,7 @@ gpu::ContextResult GLES2DecoderImpl::Initialize(
     set_debug(true);
 
   if (group_->gpu_preferences().enable_gpu_command_logging)
-    set_log_commands(true);
+    SetLogCommands(true);
 
   compile_shader_always_succeeds_ =
       group_->gpu_preferences().compile_shader_always_succeeds;
@@ -3365,6 +3339,11 @@ gpu::ContextResult GLES2DecoderImpl::Initialize(
     return result;
   }
   CHECK_GL_ERROR();
+
+  if (features().chromium_gpu_fence &&
+      group_->gpu_preferences().use_gpu_fences_for_overlay_planes) {
+    surface_->SetUsePlaneGpuFences();
+  }
 
   should_use_native_gmb_for_backbuffer_ =
       attrib_helper.should_use_native_gmb_for_backbuffer;
@@ -3859,49 +3838,6 @@ gpu::ContextResult GLES2DecoderImpl::Initialize(
     api()->glHintFn(GL_TEXTURE_FILTERING_HINT_CHROMIUM, GL_NICEST);
   }
 
-  if (attrib_helper.enable_oop_rasterization) {
-    if (!features().chromium_raster_transport) {
-      LOG(ERROR) << "ContextResult::kFatalFailure: "
-                    "chromium_raster_transport not present";
-      return gpu::ContextResult::kFatalFailure;
-    }
-    // Assume that we can create a GrContext. This will be set to false if
-    // there's a failure.
-    supports_oop_raster_ = true;
-    sk_sp<const GrGLInterface> interface(
-        gl::init::CreateGrGLInterface(gl_version_info()));
-    if (!interface) {
-      DLOG(ERROR) << "OOP raster support disabled: GrGLInterface creation "
-                     "failed.";
-      supports_oop_raster_ = false;
-    }
-
-    if (supports_oop_raster_) {
-      gr_context_ = GrContext::MakeGL(std::move(interface));
-      if (gr_context_) {
-        // TODO(enne): this cache is for this decoder only and each decoder has
-        // its own cache.  This is pretty unfortunate.  This really needs to be
-        // rethought before shipping.  Most likely a different command buffer
-        // context for raster-in-gpu, with a shared gl context / gr context
-        // that different decoders can use.
-        static const int kMaxGaneshResourceCacheCount = 8196;
-        static const size_t kMaxGaneshResourceCacheBytes = 96 * 1024 * 1024;
-        gr_context_->setResourceCacheLimits(kMaxGaneshResourceCacheCount,
-                                            kMaxGaneshResourceCacheBytes);
-        transfer_cache_ = std::make_unique<ServiceTransferCache>();
-      } else {
-        bool was_lost = CheckResetStatus();
-        if (was_lost) {
-          DLOG(ERROR)
-              << "ContextResult::kTransientFailure: Could not create GrContext";
-          return gpu::ContextResult::kTransientFailure;
-        }
-        DLOG(ERROR) << "OOP raster support disabled: GrContext creation "
-                       "failed.";
-        supports_oop_raster_ = false;
-      }
-    }
-  }
   return gpu::ContextResult::kSuccess;
 }
 
@@ -4060,6 +3996,7 @@ Capabilities GLES2DecoderImpl::GetCapabilities() {
       feature_info_->feature_flags().ext_multisample_compatibility;
   caps.dc_layers = supports_dc_layers_;
   caps.use_dc_overlays_for_video = surface_->UseOverlaysForVideo();
+  caps.protected_video_swap_chain = surface_->SupportsProtectedVideo();
 
   caps.blend_equation_advanced =
       feature_info_->feature_flags().blend_equation_advanced;
@@ -4104,12 +4041,16 @@ Capabilities GLES2DecoderImpl::GetCapabilities() {
   caps.texture_npot = feature_info_->feature_flags().npot_ok;
   caps.texture_storage_image =
       feature_info_->feature_flags().chromium_texture_storage_image;
-  caps.supports_oop_raster = supports_oop_raster_;
+  caps.supports_oop_raster = false;
   caps.chromium_gpu_fence = feature_info_->feature_flags().chromium_gpu_fence;
+  caps.use_gpu_fences_for_overlay_planes =
+      group_->gpu_preferences().use_gpu_fences_for_overlay_planes;
   caps.unpremultiply_and_dither_copy =
       feature_info_->feature_flags().unpremultiply_and_dither_copy;
   caps.texture_target_exception_list =
       group_->gpu_preferences().texture_target_exception_list;
+  caps.separate_stencil_ref_mask_writemask =
+      feature_info_->feature_flags().separate_stencil_ref_mask_writemask;
 
   return caps;
 }
@@ -4147,7 +4088,7 @@ bool GLES2DecoderImpl::InitializeShaderTranslator() {
   resources.MaxCallStackDepth = 256;
   resources.MaxDualSourceDrawBuffers = group_->max_dual_source_draw_buffers();
 
-  if(!feature_info_->IsWebGL1OrES2Context()) {
+  if (!feature_info_->IsWebGL1OrES2Context()) {
     resources.MaxVertexOutputVectors =
         group_->max_vertex_output_components() / 4;
     resources.MaxFragmentInputVectors =
@@ -4596,6 +4537,7 @@ bool GLES2DecoderImpl::MakeCurrent() {
     RestoreFramebufferBindings();
 
   framebuffer_state_.clear_state_dirty = true;
+  state_.stencil_state_changed_since_validation = true;
 
   // Rebind textures if the service ids may have changed.
   RestoreAllExternalTextureBindingsIfNeeded();
@@ -5014,6 +4956,11 @@ void GLES2DecoderImpl::Destroy(bool have_context) {
 
   DCHECK(!have_context || context_->IsCurrent(nullptr));
 
+  // Prepare to destroy the surface while the context is still current, because
+  // some surface destructors make GL calls.
+  if (surface_)
+    surface_->PrepareToDestroy(have_context);
+
   ReleaseAllBackTextures(have_context);
   if (have_context) {
     if (apply_framebuffer_attachment_cmaa_intel_.get()) {
@@ -5104,8 +5051,6 @@ void GLES2DecoderImpl::Destroy(bool have_context) {
 
     if (group_ && group_->texture_manager())
       group_->texture_manager()->MarkContextLost();
-    if (gr_context_)
-      gr_context_->abandonContext();
     state_.MarkContextLost();
   }
   deschedule_until_finished_fences_.clear();
@@ -5142,7 +5087,6 @@ void GLES2DecoderImpl::Destroy(bool have_context) {
   copy_texture_chromium_.reset();
   srgb_converter_.reset();
   clear_framebuffer_blit_.reset();
-  transfer_cache_.reset();
 
   if (framebuffer_manager_.get()) {
     framebuffer_manager_->Destroy(have_context);
@@ -5204,14 +5148,11 @@ void GLES2DecoderImpl::Destroy(bool have_context) {
     group_ = nullptr;
   }
 
-  // Destroy the surface before the context, some surface destructors make GL
-  // calls.
-  surface_ = nullptr;
-
   if (context_.get()) {
     context_->ReleaseCurrent(nullptr);
     context_ = nullptr;
   }
+  surface_ = nullptr;
 }
 
 void GLES2DecoderImpl::SetSurface(const scoped_refptr<gl::GLSurface>& surface) {
@@ -6058,6 +5999,7 @@ uint32_t GLES2DecoderImpl::GetAndClearBackbufferClearBitsForTest() {
 
 void GLES2DecoderImpl::OnFboChanged() const {
   state_.fbo_binding_for_scissor_workaround_dirty = true;
+  state_.stencil_state_changed_since_validation = true;
 
   if (workarounds().flush_on_framebuffer_change)
     api()->glFlushFn();
@@ -10256,6 +10198,39 @@ bool GLES2DecoderImpl::ClearUnclearedTextures() {
   return true;
 }
 
+bool GLES2DecoderImpl::ValidateStencilStateForDraw(const char* function_name) {
+  if (!state_.stencil_state_changed_since_validation) {
+    return true;
+  }
+
+  GLenum stencil_format = GetBoundFramebufferStencilFormat(GL_DRAW_FRAMEBUFFER);
+  uint8_t stencil_bits = GLES2Util::StencilBitsPerPixel(stencil_format);
+
+  if (state_.enable_flags.stencil_test && stencil_bits > 0) {
+    DCHECK_LE(stencil_bits, 8U);
+
+    GLuint max_stencil_value = (1 << stencil_bits) - 1;
+    GLint max_stencil_ref = static_cast<GLint>(max_stencil_value);
+    bool different_refs =
+        base::ClampToRange(state_.stencil_front_ref, 0, max_stencil_ref) !=
+        base::ClampToRange(state_.stencil_back_ref, 0, max_stencil_ref);
+    bool different_writemasks =
+        (state_.stencil_front_writemask & max_stencil_value) !=
+        (state_.stencil_back_writemask & max_stencil_value);
+    bool different_value_masks =
+        (state_.stencil_front_mask & max_stencil_value) !=
+        (state_.stencil_back_mask & max_stencil_value);
+    if (different_refs || different_writemasks || different_value_masks) {
+      LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, function_name,
+                         "Front/back stencil settings do not match.");
+      return false;
+    }
+  }
+
+  state_.stencil_state_changed_since_validation = false;
+  return true;
+}
+
 bool GLES2DecoderImpl::IsDrawValid(
     const char* function_name, GLuint max_vertex_accessed, bool instanced,
     GLsizei primcount) {
@@ -10270,6 +10245,13 @@ bool GLES2DecoderImpl::IsDrawValid(
     // But GL says no ERROR.
     LOCAL_RENDER_WARNING("Drawing with no current shader program.");
     return false;
+  }
+
+  // Perform extra stencil validation on ANGLE/D3D, and for all WebGL contexts.
+  if (!feature_info_->feature_flags().separate_stencil_ref_mask_writemask) {
+    if (!ValidateStencilStateForDraw(function_name)) {
+      return false;
+    }
   }
 
   if (CheckDrawingFeedbackLoops()) {
@@ -10348,9 +10330,8 @@ bool GLES2DecoderImpl::SimulateAttrib0(
   }
 
   const Vec4& value = state_.attrib_values[0];
-  if (new_buffer ||
-      (attrib_0_used &&
-       (!attrib_0_buffer_matches_value_ || !value.Equal(attrib_0_value_)))){
+  if (new_buffer || (attrib_0_used && (!attrib_0_buffer_matches_value_ ||
+                                       !value.Equal(attrib_0_value_)))) {
     // TODO(zmo): This is not 100% correct because we might lose data when
     // casting to float type, but it is a corner case and once we migrate to
     // core profiles on desktop GL, it is no longer relevant.
@@ -12287,8 +12268,10 @@ error::Error GLES2DecoderImpl::HandlePixelStorei(
 }
 
 void GLES2DecoderImpl::DoSwapBuffersWithBoundsCHROMIUM(
+    uint64_t swap_id,
     GLsizei count,
-    const volatile GLint* rects) {
+    const volatile GLint* rects,
+    GLbitfield flags) {
   TRACE_EVENT0("gpu", "GLES2DecoderImpl::SwapBuffersWithBoundsCHROMIUM");
   if (!supports_swap_buffers_with_bounds_) {
     LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glSwapBuffersWithBoundsCHROMIUM",
@@ -12313,6 +12296,7 @@ void GLES2DecoderImpl::DoSwapBuffersWithBoundsCHROMIUM(
     bounds[i] = gfx::Rect(rects[i * 4 + 0], rects[i * 4 + 1], rects[i * 4 + 2],
                           rects[i * 4 + 3]);
   }
+  client_->OnSwapBuffers(swap_id, flags);
   FinishSwapBuffers(surface_->SwapBuffersWithBounds(bounds, base::DoNothing()));
 }
 
@@ -12343,15 +12327,13 @@ error::Error GLES2DecoderImpl::HandlePostSubBufferCHROMIUM(
   ClearScheduleDCLayerState();
 
   if (supports_async_swap_) {
-    DCHECK_LT(pending_swaps_, 2u);
-    uint32_t async_swap_id = next_async_swap_id_++;
-    ++pending_swaps_;
-    TRACE_EVENT_ASYNC_BEGIN0("gpu", "AsyncSwapBuffers", async_swap_id);
+    TRACE_EVENT_ASYNC_BEGIN0("gpu", "AsyncSwapBuffers", c.swap_id());
 
+    client_->OnSwapBuffers(c.swap_id(), c.flags);
     surface_->PostSubBufferAsync(
         c.x, c.y, c.width, c.height,
         base::Bind(&GLES2DecoderImpl::FinishAsyncSwapBuffers,
-                   weak_ptr_factory_.GetWeakPtr()),
+                   weak_ptr_factory_.GetWeakPtr(), c.swap_id()),
         base::DoNothing());
   } else {
     // TODO(sunnyps): Remove Alias calls after crbug.com/724999 is fixed.
@@ -12363,6 +12345,7 @@ error::Error GLES2DecoderImpl::HandlePostSubBufferCHROMIUM(
     base::debug::Alias(&context);
     bool is_current = context_->IsCurrent(surface_.get());
     base::debug::Alias(&is_current);
+    client_->OnSwapBuffers(c.swap_id(), c.flags);
     FinishSwapBuffers(surface_->PostSubBuffer(c.x, c.y, c.width, c.height,
                                               base::DoNothing()));
   }
@@ -12399,11 +12382,21 @@ error::Error GLES2DecoderImpl::HandleScheduleOverlayPlaneCHROMIUM(
                        "invalid transform enum");
     return error::kNoError;
   }
+  GLuint gpu_fence_id = static_cast<GLuint>(c.gpu_fence_id);
+  std::unique_ptr<gfx::GpuFence> gpu_fence;
+  if (gpu_fence_id > 0) {
+    gpu_fence = GetGpuFenceManager()->GetGpuFence(gpu_fence_id);
+    if (!gpu_fence) {
+      LOCAL_SET_GL_ERROR(GL_INVALID_ENUM, "glScheduleOverlayPlaneCHROMIUM",
+                         "unknown fence");
+      return error::kNoError;
+    }
+  }
   if (!surface_->ScheduleOverlayPlane(
           c.plane_z_order, transform, image,
           gfx::Rect(c.bounds_x, c.bounds_y, c.bounds_width, c.bounds_height),
-          gfx::RectF(c.uv_x, c.uv_y, c.uv_width, c.uv_height),
-          c.enable_blend)) {
+          gfx::RectF(c.uv_x, c.uv_y, c.uv_width, c.uv_height), c.enable_blend,
+          std::move(gpu_fence))) {
     LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
                        "glScheduleOverlayPlaneCHROMIUM",
                        "failed to schedule overlay");
@@ -12599,7 +12592,7 @@ error::Error GLES2DecoderImpl::HandleScheduleDCLayerCHROMIUM(
       dc_layer_shared_state_->z_order, dc_layer_shared_state_->transform,
       images, contents_rect, gfx::ToEnclosingRect(bounds_rect),
       c.background_color, c.edge_aa_mask, dc_layer_shared_state_->opacity,
-      filter);
+      filter, c.is_protected_video);
   if (!surface_->ScheduleDCLayer(params)) {
     LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glScheduleDCLayerCHROMIUM",
                        "failed to schedule DCLayer");
@@ -12726,58 +12719,6 @@ error::Error GLES2DecoderImpl::HandleGetAttribLocation(
   }
   return GetAttribLocationHelper(
     c.program, c.location_shm_id, c.location_shm_offset, name_str);
-}
-
-error::Error GLES2DecoderImpl::HandleGetBufferSubDataAsyncCHROMIUM(
-    uint32_t immediate_data_size,
-    const volatile void* cmd_data) {
-  if (!feature_info_->IsWebGL2OrES3Context()) {
-    return error::kUnknownCommand;
-  }
-  const volatile gles2::cmds::GetBufferSubDataAsyncCHROMIUM& c =
-      *static_cast<const volatile gles2::cmds::GetBufferSubDataAsyncCHROMIUM*>(
-          cmd_data);
-  GLenum target = static_cast<GLenum>(c.target);
-  GLintptr offset = static_cast<GLintptr>(c.offset);
-  GLsizeiptr size = static_cast<GLsizeiptr>(c.size);
-  uint32_t data_shm_id = static_cast<uint32_t>(c.data_shm_id);
-
-  int8_t* mem =
-      GetSharedMemoryAs<int8_t*>(data_shm_id, c.data_shm_offset, size);
-  if (!mem) {
-    return error::kOutOfBounds;
-  }
-
-  if (!validators_->buffer_target.IsValid(target)) {
-    return error::kInvalidArguments;
-  }
-
-  Buffer* buffer = buffer_manager()->GetBufferInfoForTarget(&state_, target);
-  if (!buffer) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glGetBufferSubDataAsyncCHROMIUM",
-                       "no buffer bound to target");
-    return error::kNoError;
-  }
-  if (!buffer->CheckRange(offset, size)) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glGetBufferSubDataAsyncCHROMIUM",
-                       "invalid range");
-    return error::kNoError;
-  }
-
-  LOCAL_COPY_REAL_GL_ERRORS_TO_WRAPPER("glGetBufferSubDataAsyncCHROMIUM");
-
-  void* ptr = api()->glMapBufferRangeFn(target, offset, size, GL_MAP_READ_BIT);
-  if (ptr == nullptr) {
-    return error::kInvalidArguments;
-  }
-  memcpy(mem, ptr, size);
-  api()->glUnmapBufferFn(target);
-
-  GLenum error = LOCAL_PEEK_GL_ERROR("glGetBufferSubDataAsyncCHROMIUM");
-  if (error != GL_NO_ERROR) {
-    return error::kInvalidArguments;
-  }
-  return error::kNoError;
 }
 
 error::Error GLES2DecoderImpl::GetUniformLocationHelper(
@@ -15832,7 +15773,7 @@ error::Error GLES2DecoderImpl::HandleShaderBinary(
 #endif
 }
 
-void GLES2DecoderImpl::DoSwapBuffers() {
+void GLES2DecoderImpl::DoSwapBuffers(uint64_t swap_id, GLbitfield flags) {
   bool is_offscreen = !!offscreen_target_frame_buffer_.get();
 
   int this_frame_number = frame_number_++;
@@ -15939,19 +15880,17 @@ void GLES2DecoderImpl::DoSwapBuffers() {
 
       // Ensure the side effects of the copy are visible to the parent
       // context. There is no need to do this for ANGLE because it uses a
-      // single D3D device for all contexts.
+      // single underlying device/context for all contexts.
       if (!gl_version_info().is_angle)
         api()->glFlushFn();
     }
   } else if (supports_async_swap_) {
-    DCHECK_LT(pending_swaps_, 2u);
-    uint32_t async_swap_id = next_async_swap_id_++;
-    ++pending_swaps_;
-    TRACE_EVENT_ASYNC_BEGIN0("gpu", "AsyncSwapBuffers", async_swap_id);
+    TRACE_EVENT_ASYNC_BEGIN0("gpu", "AsyncSwapBuffers", swap_id);
 
+    client_->OnSwapBuffers(swap_id, flags);
     surface_->SwapBuffersAsync(
         base::Bind(&GLES2DecoderImpl::FinishAsyncSwapBuffers,
-                   weak_ptr_factory_.GetWeakPtr()),
+                   weak_ptr_factory_.GetWeakPtr(), swap_id),
         base::DoNothing());
   } else {
     // TODO(sunnyps): Remove Alias calls after crbug.com/724999 is fixed.
@@ -15963,6 +15902,7 @@ void GLES2DecoderImpl::DoSwapBuffers() {
     base::debug::Alias(&context);
     bool is_current = context_->IsCurrent(surface_.get());
     base::debug::Alias(&is_current);
+    client_->OnSwapBuffers(swap_id, flags);
     FinishSwapBuffers(surface_->SwapBuffers(base::DoNothing()));
   }
 
@@ -15971,11 +15911,9 @@ void GLES2DecoderImpl::DoSwapBuffers() {
   ExitCommandProcessingEarly();
 }
 
-void GLES2DecoderImpl::FinishAsyncSwapBuffers(gfx::SwapResult result) {
-  DCHECK_NE(0u, pending_swaps_);
-  uint32_t async_swap_id = next_async_swap_id_ - pending_swaps_;
-  --pending_swaps_;
-  TRACE_EVENT_ASYNC_END0("gpu", "AsyncSwapBuffers", async_swap_id);
+void GLES2DecoderImpl::FinishAsyncSwapBuffers(uint64_t swap_id,
+                                              gfx::SwapResult result) {
+  TRACE_EVENT_ASYNC_END0("gpu", "AsyncSwapBuffers", swap_id);
 
   FinishSwapBuffers(result);
 }
@@ -15996,7 +15934,8 @@ void GLES2DecoderImpl::FinishSwapBuffers(gfx::SwapResult result) {
   }
 }
 
-void GLES2DecoderImpl::DoCommitOverlayPlanes() {
+void GLES2DecoderImpl::DoCommitOverlayPlanes(uint64_t swap_id,
+                                             GLbitfield flags) {
   TRACE_EVENT0("gpu", "GLES2DecoderImpl::DoCommitOverlayPlanes");
   if (!supports_commit_overlay_planes_) {
     LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glCommitOverlayPlanes",
@@ -16006,11 +15945,13 @@ void GLES2DecoderImpl::DoCommitOverlayPlanes() {
   ClearScheduleCALayerState();
   ClearScheduleDCLayerState();
   if (supports_async_swap_) {
+    client_->OnSwapBuffers(swap_id, flags);
     surface_->CommitOverlayPlanesAsync(
         base::Bind(&GLES2DecoderImpl::FinishSwapBuffers,
                    weak_ptr_factory_.GetWeakPtr()),
         base::DoNothing());
   } else {
+    client_->OnSwapBuffers(swap_id, flags);
     FinishSwapBuffers(surface_->CommitOverlayPlanes(base::DoNothing()));
   }
 }
@@ -16458,6 +16399,18 @@ void GLES2DecoderImpl::DeleteQueriesEXTHelper(
   for (GLsizei ii = 0; ii < n; ++ii) {
     GLuint client_id = client_ids[ii];
     query_manager_->RemoveQuery(client_id);
+  }
+}
+
+void GLES2DecoderImpl::SetQueryCallback(unsigned int query_client_id,
+                                        base::OnceClosure callback) {
+  QueryManager::Query* query = query_manager_->GetQuery(query_client_id);
+  if (query) {
+    query->AddCallback(std::move(callback));
+  } else {
+    VLOG(1) << "GLES2DecoderImpl::SetQueryCallback: No query with ID "
+            << query_client_id << ". Running the callback immediately.";
+    std::move(callback).Run();
   }
 }
 
@@ -19012,7 +18965,7 @@ class PathCommandValidatorContext {
     uint32_t transforms_component_count =
         GLES2Util::GetComponentCountForGLTransformType(transform_type);
     // Below multiplication will not overflow.
-    DCHECK(transforms_component_count <= 12);
+    DCHECK_LE(transforms_component_count, 12U);
     uint32_t one_transform_size = sizeof(GLfloat) * transforms_component_count;
     uint32_t transforms_size = 0;
     if (!SafeMultiplyUint32(one_transform_size, num_paths, &transforms_size)) {
@@ -20101,230 +20054,9 @@ error::Error GLES2DecoderImpl::HandleLockDiscardableTextureCHROMIUM(
   return error::kNoError;
 }
 
-class TransferCacheDeserializeHelperImpl
-    : public cc::TransferCacheDeserializeHelper {
- public:
-  explicit TransferCacheDeserializeHelperImpl(
-      ServiceTransferCache* transfer_cache)
-      : transfer_cache_(transfer_cache) {
-    DCHECK(transfer_cache_);
-  }
-  ~TransferCacheDeserializeHelperImpl() override = default;
 
- private:
-  cc::ServiceTransferCacheEntry* GetEntryInternal(
-      cc::TransferCacheEntryType entry_type,
-      uint32_t entry_id) override {
-    return transfer_cache_->GetEntry(entry_type, entry_id);
-  }
-  ServiceTransferCache* transfer_cache_;
-};
-
-void GLES2DecoderImpl::DoBeginRasterCHROMIUM(
-    GLuint texture_id,
-    GLuint sk_color,
-    GLuint msaa_sample_count,
-    GLboolean can_use_lcd_text,
-    GLint color_type,
-    GLuint color_space_transfer_cache_id) {
-  if (!gr_context_) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glBeginRasterCHROMIUM",
-                       "chromium_raster_transport not enabled via attribs");
-    return;
-  }
-  if (sk_surface_) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glBeginRasterCHROMIUM",
-                       "BeginRasterCHROMIUM without EndRasterCHROMIUM");
-    return;
-  }
-
-  DCHECK(!raster_canvas_);
-  gr_context_->resetContext();
-
-  // This function should look identical to
-  // ResourceProvider::ScopedSkSurfaceProvider.
-  GrGLTextureInfo texture_info;
-  auto* texture_ref = GetTexture(texture_id);
-  if (!texture_ref) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glBeginRasterCHROMIUM",
-                       "unknown texture id");
-    return;
-  }
-  auto* texture = texture_ref->texture();
-  int width;
-  int height;
-  int depth;
-  if (!texture->GetLevelSize(texture->target(), 0, &width, &height, &depth)) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glBeginRasterCHROMIUM",
-                       "missing texture size info");
-    return;
-  }
-  GLenum type;
-  GLenum internal_format;
-  if (!texture->GetLevelType(texture->target(), 0, &type, &internal_format)) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glBeginRasterCHROMIUM",
-                       "missing texture type info");
-    return;
-  }
-  texture_info.fID = texture_ref->service_id();
-  texture_info.fTarget = texture->target();
-
-  if (texture->target() != GL_TEXTURE_2D &&
-      texture->target() != GL_TEXTURE_RECTANGLE_ARB) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glBeginRasterCHROMIUM",
-                       "invalid texture target");
-    return;
-  }
-
-  // GetInternalFormat may return a base internal format but Skia requires a
-  // sized internal format. So this may be adjusted below.
-  texture_info.fFormat = GetInternalFormat(&gl_version_info(), internal_format);
-  switch (color_type) {
-    case kARGB_4444_SkColorType:
-      if (internal_format != GL_RGBA4 && internal_format != GL_RGBA) {
-        LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glBeginRasterCHROMIUM",
-                           "color type mismatch");
-        return;
-      }
-      if (texture_info.fFormat == GL_RGBA)
-        texture_info.fFormat = GL_RGBA4;
-      break;
-    case kRGBA_8888_SkColorType:
-      if (internal_format != GL_RGBA8_OES && internal_format != GL_RGBA) {
-        LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glBeginRasterCHROMIUM",
-                           "color type mismatch");
-        return;
-      }
-      if (texture_info.fFormat == GL_RGBA)
-        texture_info.fFormat = GL_RGBA8_OES;
-      break;
-    case kBGRA_8888_SkColorType:
-      if (internal_format != GL_BGRA_EXT && internal_format != GL_BGRA8_EXT) {
-        LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glBeginRasterCHROMIUM",
-                           "color type mismatch");
-        return;
-      }
-      if (texture_info.fFormat == GL_BGRA_EXT)
-        texture_info.fFormat = GL_BGRA8_EXT;
-      if (texture_info.fFormat == GL_RGBA)
-        texture_info.fFormat = GL_RGBA8_OES;
-      break;
-    default:
-      LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glBeginRasterCHROMIUM",
-                         "unsupported color type");
-      return;
-  }
-
-  GrBackendTexture gr_texture(width, height, GrMipMapped::kNo, texture_info);
-
-  uint32_t flags = 0;
-
-  // Use unknown pixel geometry to disable LCD text.
-  SkSurfaceProps surface_props(flags, kUnknown_SkPixelGeometry);
-  if (can_use_lcd_text) {
-    // LegacyFontHost will get LCD text and skia figures out what type to use.
-    surface_props =
-        SkSurfaceProps(flags, SkSurfaceProps::kLegacyFontHost_InitType);
-  }
-
-  SkColorType sk_color_type = static_cast<SkColorType>(color_type);
-  // If we can't match requested MSAA samples, don't use MSAA.
-  int final_msaa_count = std::max(static_cast<int>(msaa_sample_count), 0);
-  if (final_msaa_count >
-      gr_context_->maxSurfaceSampleCountForColorType(sk_color_type))
-    final_msaa_count = 0;
-  sk_surface_ = SkSurface::MakeFromBackendTextureAsRenderTarget(
-      gr_context_.get(), gr_texture, kTopLeft_GrSurfaceOrigin, final_msaa_count,
-      sk_color_type, nullptr, &surface_props);
-
-  if (!sk_surface_) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glBeginRasterCHROMIUM",
-                       "failed to create surface");
-    return;
-  }
-
-  TransferCacheDeserializeHelperImpl transfer_cache_deserializer(
-      transfer_cache_.get());
-  auto* color_space_entry =
-      transfer_cache_deserializer
-          .GetEntryAs<cc::ServiceColorSpaceTransferCacheEntry>(
-              color_space_transfer_cache_id);
-  if (!color_space_entry || !color_space_entry->color_space().IsValid()) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glBeginRasterCHROMIUM",
-                       "failed to find valid color space");
-    return;
-  }
-  raster_canvas_ = SkCreateColorSpaceXformCanvas(
-      sk_surface_->getCanvas(),
-      color_space_entry->color_space().ToSkColorSpace());
-
-  // All or nothing clearing, as no way to validate the client's input on what
-  // is the "used" part of the texture.
-  if (texture->IsLevelCleared(texture->target(), 0))
-    return;
-
-  // TODO(enne): this doesn't handle the case where the background color
-  // changes and so any extra pixels outside the raster area that get
-  // sampled may be incorrect.
-  raster_canvas_->drawColor(sk_color);
-  texture_manager()->SetLevelCleared(texture_ref, texture->target(), 0, true);
-}
-
-void GLES2DecoderImpl::DoRasterCHROMIUM(GLsizeiptr size, const void* list) {
-  if (!sk_surface_) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glRasterCHROMIUM",
-                       "RasterCHROMIUM without BeginRasterCHROMIUM");
-    return;
-  }
-  DCHECK(transfer_cache_);
-
-  alignas(
-      cc::PaintOpBuffer::PaintOpAlign) char data[sizeof(cc::LargestPaintOp)];
-  const char* buffer = static_cast<const char*>(list);
-
-  SkCanvas* canvas = raster_canvas_.get();
-  SkMatrix original_ctm;
-  cc::PlaybackParams playback_params(nullptr, original_ctm);
-  cc::PaintOp::DeserializeOptions options;
-  TransferCacheDeserializeHelperImpl impl(transfer_cache_.get());
-  options.transfer_cache = &impl;
-
-  int op_idx = 0;
-  while (size > 4) {
-    size_t skip = 0;
-    cc::PaintOp* deserialized_op = cc::PaintOp::Deserialize(
-        buffer, size, &data[0], sizeof(cc::LargestPaintOp), &skip, options);
-    if (!deserialized_op) {
-      std::string msg =
-          base::StringPrintf("RasterCHROMIUM: bad op: %i", op_idx);
-      LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glRasterCHROMIUM", msg.c_str());
-      return;
-    }
-
-    deserialized_op->Raster(canvas, playback_params);
-    deserialized_op->DestroyThis();
-
-    size -= skip;
-    buffer += skip;
-    op_idx++;
-  }
-}
-
-void GLES2DecoderImpl::DoEndRasterCHROMIUM() {
-  if (!sk_surface_) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glBeginRasterCHROMIUM",
-                       "EndRasterCHROMIUM without BeginRasterCHROMIUM");
-    return;
-  }
-
-  raster_canvas_ = nullptr;
-  sk_surface_->prepareForExternalIO();
-  sk_surface_.reset();
-
-  // It is important to reset state after each RasterCHROMIUM since skia can
-  // change the GL state which can invalidate the tracking done in this
-  // decoder.
-  RestoreState(nullptr);
+scoped_refptr<gpu::Buffer> GLES2DecoderImpl::GetShmBuffer(uint32_t shm_id) {
+  return GetSharedMemoryBuffer(shm_id);
 }
 
 void GLES2DecoderImpl::DoWindowRectanglesEXT(GLenum mode,
@@ -20346,109 +20078,6 @@ void GLES2DecoderImpl::DoWindowRectanglesEXT(GLenum mode,
   }
   state_.SetWindowRectangles(mode, n, box_copy.data());
   state_.UpdateWindowRectangles();
-}
-
-void GLES2DecoderImpl::DoCreateTransferCacheEntryINTERNAL(
-    GLuint raw_entry_type,
-    GLuint entry_id,
-    GLuint handle_shm_id,
-    GLuint handle_shm_offset,
-    GLuint data_shm_id,
-    GLuint data_shm_offset,
-    GLuint data_size) {
-  if (!supports_oop_raster_) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glCreateTransferCacheEntryINTERNAL",
-        "Attempt to use OOP transfer cache on a context without OOP raster.");
-    return;
-  }
-  DCHECK(gr_context_);
-  DCHECK(transfer_cache_);
-
-  // Validate the type we are about to create.
-  cc::TransferCacheEntryType entry_type;
-  if (!cc::ServiceTransferCacheEntry::SafeConvertToType(raw_entry_type,
-                                                        &entry_type)) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glCreateTransferCacheEntryINTERNAL",
-        "Attempt to use OOP transfer cache with an invalid cache entry type.");
-    return;
-  }
-
-  uint8_t* data_memory =
-      GetSharedMemoryAs<uint8_t*>(data_shm_id, data_shm_offset, data_size);
-  if (!data_memory) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCreateTransferCacheEntryINTERNAL",
-                       "Can not read transfer cache entry data.");
-    return;
-  }
-
-  scoped_refptr<gpu::Buffer> handle_buffer =
-      GetSharedMemoryBuffer(handle_shm_id);
-  if (!DiscardableHandleBase::ValidateParameters(handle_buffer.get(),
-                                                 handle_shm_offset)) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCreateTransferCacheEntryINTERNAL",
-                       "Invalid shm for discardable handle.");
-    return;
-  }
-  ServiceDiscardableHandle handle(std::move(handle_buffer), handle_shm_offset,
-                                  handle_shm_id);
-
-  if (!transfer_cache_->CreateLockedEntry(
-          entry_type, entry_id, handle, gr_context_.get(),
-          base::make_span(data_memory, data_size))) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCreateTransferCacheEntryINTERNAL",
-                       "Failure to deserialize transfer cache entry.");
-    return;
-  }
-}
-
-void GLES2DecoderImpl::DoUnlockTransferCacheEntryINTERNAL(GLuint raw_entry_type,
-                                                          GLuint entry_id) {
-  if (!supports_oop_raster_) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glUnlockTransferCacheEntryINTERNAL",
-        "Attempt to use OOP transfer cache on a context without OOP raster.");
-    return;
-  }
-  DCHECK(transfer_cache_);
-  cc::TransferCacheEntryType entry_type;
-  if (!cc::ServiceTransferCacheEntry::SafeConvertToType(raw_entry_type,
-                                                        &entry_type)) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glUnlockTransferCacheEntryINTERNAL",
-        "Attempt to use OOP transfer cache with an invalid cache entry type.");
-    return;
-  }
-
-  if (!transfer_cache_->UnlockEntry(entry_type, entry_id)) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glUnlockTransferCacheEntryINTERNAL",
-                       "Attempt to unlock an invalid ID");
-  }
-}
-
-void GLES2DecoderImpl::DoDeleteTransferCacheEntryINTERNAL(GLuint raw_entry_type,
-                                                          GLuint entry_id) {
-  if (!supports_oop_raster_) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glDeleteTransferCacheEntryINTERNAL",
-        "Attempt to use OOP transfer cache on a context without OOP raster.");
-    return;
-  }
-  DCHECK(transfer_cache_);
-  cc::TransferCacheEntryType entry_type;
-  if (!cc::ServiceTransferCacheEntry::SafeConvertToType(raw_entry_type,
-                                                        &entry_type)) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glDeleteTransferCacheEntryINTERNAL",
-        "Attempt to use OOP transfer cache with an invalid cache entry type.");
-    return;
-  }
-
-  if (!transfer_cache_->DeleteEntry(entry_type, entry_id)) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glDeleteTransferCacheEntryINTERNAL",
-                       "Attempt to delete an invalid ID");
-  }
 }
 
 void GLES2DecoderImpl::DoUnpremultiplyAndDitherCopyCHROMIUM(GLuint source_id,

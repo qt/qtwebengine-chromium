@@ -72,7 +72,7 @@ interface GpuService {
   GetVideoMemoryUsageStats() => (gpu.mojom.VideoMemoryUsageStats stats);
 
   RequestCompleteGpuInfo() => (gpu.mojom.GpuInfo gpu_info);
-  GetGpuSupportedRuntimeVersion();
+  GetGpuSupportedRuntimeVersion() => (gpu.mojom.GpuInfo gpu_info);
 
   // Requests that the GPU process query system availability of HDR output and
   // return it.
@@ -95,10 +95,16 @@ interface GpuService {
 
   DestroyAllChannels();
 
-  // Called by the browser when the application is backgrounded. The GPU can use
-  // this message to perform appropriate cleanup. Note that this is currently
-  // only invoked on low-end Android.
+  // Called by the browser shortly after the application is backgrounded. The
+  // GPU can use this message to perform appropriate cleanup. Sent with a
+  // slight delay to prevent thrashing if the app is rapidly backgrounded
+  // foregrounded.
+  OnBackgroundCleanup();
+
+  // Called by the browser immediately after the application is backgrounded.
   OnBackgrounded();
+  // Called by the browser immediately after the application is foregrounded.
+  OnForegrounded();
 
   Crash();
   Hang();

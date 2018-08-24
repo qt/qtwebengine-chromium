@@ -137,12 +137,14 @@ bool IsNodeIdIntAttribute(ax::mojom::IntAttribute attr) {
     case ax::mojom::IntAttribute::kPosInSet:
     case ax::mojom::IntAttribute::kColorValue:
     case ax::mojom::IntAttribute::kAriaCurrentState:
+    case ax::mojom::IntAttribute::kHasPopup:
     case ax::mojom::IntAttribute::kBackgroundColor:
     case ax::mojom::IntAttribute::kColor:
     case ax::mojom::IntAttribute::kInvalidState:
     case ax::mojom::IntAttribute::kCheckedState:
     case ax::mojom::IntAttribute::kRestriction:
     case ax::mojom::IntAttribute::kTextDirection:
+    case ax::mojom::IntAttribute::kTextPosition:
     case ax::mojom::IntAttribute::kTextStyle:
     case ax::mojom::IntAttribute::kAriaColumnCount:
     case ax::mojom::IntAttribute::kAriaCellColumnIndex:
@@ -159,14 +161,12 @@ bool IsNodeIdIntAttribute(ax::mojom::IntAttribute attr) {
 // to be mapped when renumbering the ids in a combined tree.
 bool IsNodeIdIntListAttribute(ax::mojom::IntListAttribute attr) {
   switch (attr) {
-    case ax::mojom::IntListAttribute::kCellIds:
     case ax::mojom::IntListAttribute::kControlsIds:
     case ax::mojom::IntListAttribute::kDescribedbyIds:
     case ax::mojom::IntListAttribute::kFlowtoIds:
     case ax::mojom::IntListAttribute::kIndirectChildIds:
     case ax::mojom::IntListAttribute::kLabelledbyIds:
     case ax::mojom::IntListAttribute::kRadioGroupIds:
-    case ax::mojom::IntListAttribute::kUniqueCellIds:
       return true;
 
     // Note: all of the attributes are included here explicitly,
@@ -538,6 +538,7 @@ void AXNodeData::AddAction(ax::mojom::Action action_enum) {
                                                     : ax::mojom::Action::kBlur;
       DCHECK(HasAction(excluded_action));
     } break;
+    case ax::mojom::Action::kClearAccessibilityFocus:
     case ax::mojom::Action::kCustomAction:
     case ax::mojom::Action::kDecrement:
     case ax::mojom::Action::kDoDefault:
@@ -548,6 +549,7 @@ void AXNodeData::AddAction(ax::mojom::Action action_enum) {
     case ax::mojom::Action::kReplaceSelectedText:
     case ax::mojom::Action::kScrollToMakeVisible:
     case ax::mojom::Action::kScrollToPoint:
+    case ax::mojom::Action::kSetAccessibilityFocus:
     case ax::mojom::Action::kSetScrollOffset:
     case ax::mojom::Action::kSetSelection:
     case ax::mojom::Action::kSetSequentialFocusNavigationStartingPoint:
@@ -775,6 +777,21 @@ std::string AXNodeData::ToString() const {
             break;
         }
         break;
+      case ax::mojom::IntAttribute::kTextPosition:
+        switch (static_cast<ax::mojom::TextPosition>(int_attribute.second)) {
+          case ax::mojom::TextPosition::kNone:
+            result += " text_position=none";
+            break;
+          case ax::mojom::TextPosition::kSubscript:
+            result += " text_position=subscript";
+            break;
+          case ax::mojom::TextPosition::kSuperscript:
+            result += " text_position=superscript";
+            break;
+          default:
+            break;
+        }
+        break;
       case ax::mojom::IntAttribute::kTextStyle: {
         int32_t text_style = int_attribute.second;
         if (text_style == static_cast<int32_t>(ax::mojom::TextStyle::kNone))
@@ -800,6 +817,31 @@ std::string AXNodeData::ToString() const {
         break;
       case ax::mojom::IntAttribute::kPosInSet:
         result += " posinset=" + value;
+        break;
+      case ax::mojom::IntAttribute::kHasPopup:
+        switch (static_cast<ax::mojom::HasPopup>(int_attribute.second)) {
+          case ax::mojom::HasPopup::kTrue:
+            result += " haspopup=true";
+            break;
+          case ax::mojom::HasPopup::kMenu:
+            result += " haspopup=menu";
+            break;
+          case ax::mojom::HasPopup::kListbox:
+            result += " haspopup=listbox";
+            break;
+          case ax::mojom::HasPopup::kTree:
+            result += " haspopup=tree";
+            break;
+          case ax::mojom::HasPopup::kGrid:
+            result += " haspopup=grid";
+            break;
+          case ax::mojom::HasPopup::kDialog:
+            result += " haspopup=dialog";
+            break;
+          case ax::mojom::HasPopup::kFalse:
+          default:
+            break;
+        }
         break;
       case ax::mojom::IntAttribute::kInvalidState:
         switch (static_cast<ax::mojom::InvalidState>(int_attribute.second)) {
@@ -1069,12 +1111,6 @@ std::string AXNodeData::ToString() const {
         break;
       case ax::mojom::IntListAttribute::kMarkerEnds:
         result += " marker_ends=" + IntVectorToString(values);
-        break;
-      case ax::mojom::IntListAttribute::kCellIds:
-        result += " cell_ids=" + IntVectorToString(values);
-        break;
-      case ax::mojom::IntListAttribute::kUniqueCellIds:
-        result += " unique_cell_ids=" + IntVectorToString(values);
         break;
       case ax::mojom::IntListAttribute::kCharacterOffsets:
         result += " character_offsets=" + IntVectorToString(values);

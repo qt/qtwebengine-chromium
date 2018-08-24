@@ -11,6 +11,8 @@
 
 namespace blink {
 
+// TODO(hayato): It's hard to see what's happening in these tests.
+// It would be better to refactor these tests.
 TEST(TreeScopeAdopterTest, SimpleMove) {
   Document* doc1 = Document::CreateForTest();
   Document* doc2 = Document::CreateForTest();
@@ -49,7 +51,7 @@ TEST(TreeScopeAdopterTest, AdoptV1ShadowRootToV0Document) {
   html1->AppendChild(div1);
   EXPECT_EQ(doc1->GetShadowCascadeOrder(),
             ShadowCascadeOrder::kShadowCascadeNone);
-  div1->CreateShadowRootInternal();
+  div1->CreateV0ShadowRootForTesting();
   EXPECT_EQ(doc1->GetShadowCascadeOrder(),
             ShadowCascadeOrder::kShadowCascadeV0);
   EXPECT_TRUE(doc1->MayContainV0Shadow());
@@ -94,7 +96,7 @@ TEST(TreeScopeAdopterTest, AdoptV0ShadowRootToV1Document) {
   doc2->AppendChild(html2);
   Element* div2 = doc1->CreateRawElement(HTMLNames::divTag);
   html2->AppendChild(div2);
-  div2->CreateShadowRootInternal();
+  div2->CreateV0ShadowRootForTesting();
 
   EXPECT_EQ(div1->ownerDocument(), doc1);
   EXPECT_EQ(div2->ownerDocument(), doc2);
@@ -109,6 +111,37 @@ TEST(TreeScopeAdopterTest, AdoptV0ShadowRootToV1Document) {
             ShadowCascadeOrder::kShadowCascadeV1);
   EXPECT_TRUE(doc1->MayContainV0Shadow());
   EXPECT_TRUE(doc2->MayContainV0Shadow());
+}
+
+TEST(TreeScopeAdopterTest, AdoptV0InV1ToNewDocument) {
+  Document* old_doc = Document::CreateForTest();
+  Element* html = old_doc->CreateRawElement(HTMLNames::htmlTag);
+  old_doc->AppendChild(html);
+  Element* host1 = old_doc->CreateRawElement(HTMLNames::divTag);
+  html->AppendChild(host1);
+  ShadowRoot& shadow_root_v1 =
+      host1->AttachShadowRootInternal(ShadowRootType::kOpen);
+  Element* host2 = old_doc->CreateRawElement(HTMLNames::divTag);
+  shadow_root_v1.AppendChild(host2);
+  host2->CreateV0ShadowRootForTesting();
+
+  // old_doc
+  // └── html
+  //     └── host1
+  //         └──/shadow-root-v1
+  //             └── host2
+  //                 └──/shadow-root-v0
+  EXPECT_TRUE(old_doc->MayContainV0Shadow());
+
+  Document* new_doc = Document::CreateForTest();
+  EXPECT_FALSE(new_doc->MayContainV0Shadow());
+
+  TreeScopeAdopter adopter(*host1, *new_doc);
+  ASSERT_TRUE(adopter.NeedsScopeChange());
+  adopter.Execute();
+
+  EXPECT_TRUE(old_doc->MayContainV0Shadow());
+  EXPECT_TRUE(new_doc->MayContainV0Shadow());
 }
 
 }  // namespace blink

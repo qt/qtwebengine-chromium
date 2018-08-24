@@ -58,13 +58,12 @@ def to_idl_type(typename):
 class MakeSettingsWriter(json5_generator.Writer):
     filters = {
         'cpp_bool': name_utilities.cpp_bool,
-        'upper_first': name_utilities.upper_first,
         'to_passing_type': to_passing_type,
         'to_idl_type': to_idl_type,
     }
 
-    def __init__(self, json5_file_path):
-        super(MakeSettingsWriter, self).__init__(json5_file_path)
+    def __init__(self, json5_file_path, output_dir):
+        super(MakeSettingsWriter, self).__init__(json5_file_path, output_dir)
 
         self.json5_file.name_dictionaries.sort(key=lambda entry: entry['name'])
 

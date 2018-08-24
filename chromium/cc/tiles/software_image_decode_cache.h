@@ -52,7 +52,6 @@ class CC_EXPORT SoftwareImageDecodeCache
       bool aggressively_free_resources) override {}
   void ClearCache() override;
   size_t GetMaximumMemoryLimitBytes() const override;
-  void NotifyImageUnused(const PaintImage::FrameKey& frame_key) override;
 
   // Decode the given image and store it in the cache. This is only called by an
   // image decode task from a worker thread.

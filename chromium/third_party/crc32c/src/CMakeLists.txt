@@ -27,7 +27,8 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 
   # Disable C++ exceptions.
   string(REGEX REPLACE "/EH[a-z]+" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHs-c-")
+  add_definitions(-D_HAS_EXCEPTIONS=0)
 
   # Disable RTTI.
   string(REGEX REPLACE "/GR" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
@@ -64,6 +65,17 @@ option(CRC32C_INSTALL "Install CRC32C's header and library" ON)
 
 include(TestBigEndian)
 test_big_endian(BYTE_ORDER_BIG_ENDIAN)
+
+include(CheckCXXCompilerFlag)
+# Used by glog.
+check_cxx_compiler_flag(-Wno-deprecated CRC32C_HAVE_NO_DEPRECATED)
+# Used by glog.
+check_cxx_compiler_flag(-Wno-sign-compare CRC32C_HAVE_NO_SIGN_COMPARE)
+# Used by glog.
+check_cxx_compiler_flag(-Wno-unused-parameter CRC32C_HAVE_NO_UNUSED_PARAMETER)
+# Used by googletest.
+check_cxx_compiler_flag(-Wno-missing-field-initializers
+                        CRC32C_HAVE_NO_MISSING_FIELD_INITIALIZERS)
 
 # Check for __builtin_prefetch support in the compiler.
 include(CheckCXXSourceCompiles)
@@ -174,20 +186,16 @@ if(CRC32C_USE_GLOG)
 
   # glog triggers deprecation warnings on OSX.
   # https://github.com/google/glog/issues/185
-  include(CheckCXXCompilerFlag)
-  check_cxx_compiler_flag(-Wno-deprecated CRC32C_HAVE_NO_DEPRECATED)
   if(CRC32C_HAVE_NO_DEPRECATED)
     set_property(TARGET glog APPEND PROPERTY COMPILE_OPTIONS -Wno-deprecated)
   endif(CRC32C_HAVE_NO_DEPRECATED)
 
   # glog triggers sign comparison warnings on gcc.
-  check_cxx_compiler_flag(-Wno-sign-compare CRC32C_HAVE_NO_SIGN_COMPARE)
   if(CRC32C_HAVE_NO_SIGN_COMPARE)
     set_property(TARGET glog APPEND PROPERTY COMPILE_OPTIONS -Wno-sign-compare)
   endif(CRC32C_HAVE_NO_SIGN_COMPARE)
 
   # glog triggers unused parameter warnings on clang.
-  check_cxx_compiler_flag(-Wno-unused-parameter CRC32C_HAVE_NO_UNUSED_PARAMETER)
   if(CRC32C_HAVE_NO_UNUSED_PARAMETER)
     set_property(TARGET glog
                  APPEND PROPERTY COMPILE_OPTIONS -Wno-unused-parameter)
@@ -287,6 +295,14 @@ if(CRC32C_BUILD_TESTS)
   # This project is tested using GoogleTest.
   add_subdirectory("${PROJECT_SOURCE_DIR}/third_party/googletest")
 
+  # GoogleTest triggers a missing field initializers warning.
+  if(CRC32C_HAVE_NO_MISSING_FIELD_INITIALIZERS)
+    set_property(TARGET gtest
+        APPEND PROPERTY COMPILE_OPTIONS -Wno-missing-field-initializers)
+    set_property(TARGET gmock
+        APPEND PROPERTY COMPILE_OPTIONS -Wno-missing-field-initializers)
+  endif(CRC32C_HAVE_NO_MISSING_FIELD_INITIALIZERS)
+
   add_executable(crc32c_tests "")
   target_sources(crc32c_tests
     PRIVATE
@@ -365,7 +381,7 @@ if(CRC32C_INSTALL)
   install(
     FILES
       "${PROJECT_SOURCE_DIR}/include/crc32c/crc32c.h"
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/crc32c"
   )
 
   include(CMakePackageConfigHelpers)

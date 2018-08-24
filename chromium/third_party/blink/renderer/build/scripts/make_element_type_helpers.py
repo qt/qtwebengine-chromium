@@ -42,8 +42,8 @@ class MakeElementTypeHelpersWriter(json5_generator.Writer):
         'symbol': _symbol,
     }
 
-    def __init__(self, json5_file_path):
-        super(MakeElementTypeHelpersWriter, self).__init__(json5_file_path)
+    def __init__(self, json5_file_path, output_dir):
+        super(MakeElementTypeHelpersWriter, self).__init__(json5_file_path, output_dir)
 
         self.namespace = self.json5_file.metadata['namespace'].strip('"')
         self.fallback_interface = self.json5_file.metadata['fallbackInterfaceName'].strip('"')
@@ -56,7 +56,8 @@ class MakeElementTypeHelpersWriter(json5_generator.Writer):
             (basename + '.cc'): self.generate_helper_implementation,
         }
 
-        base_element_header = 'core/%s/%s_element.h' % (self.namespace.lower(), self.namespace.lower())
+        base_element_header = 'third_party/blink/renderer/core/' \
+                              '{0}/{0}_element.h'.format(self.namespace.lower())
         self._template_context = {
             'base_element_header': base_element_header,
             'input_files': self._input_files,
@@ -90,14 +91,10 @@ class MakeElementTypeHelpersWriter(json5_generator.Writer):
     def _interface(self, tag):
         if tag['interfaceName']:
             return tag['interfaceName']
-        name = name_utilities.upper_first(tag['name'])
+        name = tag['tokenized_name'].to_upper_camel_case()
         # FIXME: We shouldn't hard-code HTML here.
         if name == 'HTML':
             name = 'Html'
-        dash = name.find('-')
-        while dash != -1:
-            name = name[:dash] + name[dash + 1].upper() + name[dash + 2:]
-            dash = name.find('-')
         return '%s%sElement' % (self.namespace, name)
 
 if __name__ == "__main__":

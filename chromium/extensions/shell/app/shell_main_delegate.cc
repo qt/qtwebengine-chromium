@@ -20,6 +20,7 @@
 #include "extensions/shell/browser/shell_content_browser_client.h"
 #include "extensions/shell/common/shell_content_client.h"
 #include "extensions/shell/renderer/shell_content_renderer_client.h"
+#include "services/service_manager/embedder/switches.h"
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
@@ -80,9 +81,9 @@ base::FilePath GetDataPath() {
   data_dir = base::nix::GetXDGDirectory(
       env.get(), base::nix::kXdgConfigHomeEnvVar, base::nix::kDotConfigDir);
 #elif defined(OS_WIN)
-  CHECK(PathService::Get(base::DIR_LOCAL_APP_DATA, &data_dir));
+  CHECK(base::PathService::Get(base::DIR_LOCAL_APP_DATA, &data_dir));
 #elif defined(OS_MACOSX)
-  CHECK(PathService::Get(base::DIR_APP_DATA, &data_dir));
+  CHECK(base::PathService::Get(base::DIR_APP_DATA, &data_dir));
 #else
   NOTIMPLEMENTED();
 #endif
@@ -124,7 +125,7 @@ base::FilePath GetResourcesPakFilePath() {
       CFSTR("extensions_shell_and_test.pak"));
 #else
   base::FilePath extensions_shell_and_test_pak_path;
-  PathService::Get(base::DIR_MODULE, &extensions_shell_and_test_pak_path);
+  base::PathService::Get(base::DIR_MODULE, &extensions_shell_and_test_pak_path);
   extensions_shell_and_test_pak_path =
       extensions_shell_and_test_pak_path.AppendASCII(
           "extensions_shell_and_test.pak");
@@ -170,7 +171,7 @@ void ShellMainDelegate::PreSandboxStartup() {
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   crash_reporter::SetCrashReporterClient(GetCrashReporterClient());
   // Reporting for sub-processes will be initialized in ZygoteForked.
-  if (process_type != switches::kZygoteProcess)
+  if (process_type != service_manager::switches::kZygoteProcess)
     breakpad::InitCrashReporter(process_type);
 #endif
 
@@ -195,7 +196,8 @@ void ShellMainDelegate::ProcessExiting(const std::string& process_type) {
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 void ShellMainDelegate::ZygoteStarting(
-    std::vector<std::unique_ptr<content::ZygoteForkDelegate>>* delegates) {
+    std::vector<std::unique_ptr<service_manager::ZygoteForkDelegate>>*
+        delegates) {
 #if BUILDFLAG(ENABLE_NACL)
   nacl::AddNaClZygoteForkDelegates(delegates);
 #endif  // BUILDFLAG(ENABLE_NACL)
@@ -240,7 +242,8 @@ bool ShellMainDelegate::ProcessNeedsResourceBundle(
     const std::string& process_type) {
   // The browser process has no process type flag, but needs resources.
   // On Linux the zygote process opens the resources for the renderers.
-  return process_type.empty() || process_type == switches::kZygoteProcess ||
+  return process_type.empty() ||
+         process_type == service_manager::switches::kZygoteProcess ||
          process_type == switches::kRendererProcess ||
 #if BUILDFLAG(ENABLE_NACL)
          process_type == switches::kNaClLoaderProcess ||

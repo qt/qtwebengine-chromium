@@ -33,8 +33,10 @@
 #include "content/renderer/renderer_main_platform_delegate.h"
 #include "media/media_buildflags.h"
 #include "ppapi/buildflags/buildflags.h"
+#include "services/service_manager/sandbox/switches.h"
 #include "third_party/blink/public/platform/scheduler/web_main_thread_scheduler.h"
 #include "third_party/skia/include/core/SkGraphics.h"
+#include "third_party/webrtc_overrides/init_webrtc.h"  // nogncheck
 #include "ui/base/ui_base_switches.h"
 
 #if defined(OS_ANDROID)
@@ -44,8 +46,8 @@
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
     !defined(OS_FUCHSIA)
 #include "content/common/font_config_ipc_linux.h"
-#include "content/public/common/common_sandbox_support_linux.h"
 #include "services/service_manager/sandbox/linux/sandbox_linux.h"
+#include "services/service_manager/zygote/common/common_sandbox_support_linux.h"
 #include "third_party/skia/include/ports/SkFontConfigInterface.h"
 #endif
 
@@ -61,10 +63,6 @@
 
 #if BUILDFLAG(ENABLE_PLUGINS)
 #include "content/renderer/pepper/pepper_plugin_registry.h"
-#endif
-
-#if BUILDFLAG(ENABLE_WEBRTC)
-#include "third_party/webrtc_overrides/init_webrtc.h"  // nogncheck
 #endif
 
 namespace content {
@@ -131,8 +129,8 @@ int RendererMain(const MainFunctionParams& parameters) {
   // This call could already have been made from zygote_main_linux.cc. However
   // we need to do it here if Zygote is disabled.
   if (process_command_line.HasSwitch(switches::kNoZygote)) {
-    SkFontConfigInterface::SetGlobal(new FontConfigIPC(GetSandboxFD()))
-        ->unref();
+    SkFontConfigInterface::SetGlobal(
+        sk_make_sp<FontConfigIPC>(service_manager::GetSandboxFD()));
   }
 #endif
 
@@ -185,7 +183,8 @@ int RendererMain(const MainFunctionParams& parameters) {
 
   base::PlatformThread::SetName("CrRendererMain");
 
-  bool no_sandbox = command_line.HasSwitch(switches::kNoSandbox);
+  bool no_sandbox =
+      command_line.HasSwitch(service_manager::switches::kNoSandbox);
 
 #if defined(OS_ANDROID)
   // If we have any pending LibraryLoader histograms, record them.
@@ -212,13 +211,11 @@ int RendererMain(const MainFunctionParams& parameters) {
   // Load pepper plugins before engaging the sandbox.
   PepperPluginRegistry::GetInstance();
 #endif
-#if BUILDFLAG(ENABLE_WEBRTC)
   // Initialize WebRTC before engaging the sandbox.
   // NOTE: On linux, this call could already have been made from
   // zygote_main_linux.cc.  However, calling multiple times from the same thread
   // is OK.
   InitializeWebRtcModule();
-#endif
 
   {
 #if defined(OS_WIN) || defined(OS_MACOSX)

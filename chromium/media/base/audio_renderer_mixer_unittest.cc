@@ -6,8 +6,11 @@
 
 #include <stddef.h>
 
+#include <algorithm>
+#include <limits>
 #include <memory>
 #include <tuple>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -33,7 +36,6 @@ const int kOddMixerInputs = 7;
 const int kMixerCycles = 3;
 
 // Parameters used for testing.
-const int kBitsPerChannel = 32;
 const ChannelLayout kChannelLayout = CHANNEL_LAYOUT_STEREO;
 const int kHighLatencyBufferSize = 8192;
 const int kLowLatencyBufferSize = 256;
@@ -61,14 +63,14 @@ class AudioRendererMixerTest
     const int* const sample_rates = std::get<0>(GetParam());
     size_t sample_rates_count = std::get<1>(GetParam());
     for (size_t i = 0; i < sample_rates_count; ++i)
-      input_parameters_.push_back(AudioParameters(
-          AudioParameters::AUDIO_PCM_LINEAR, kChannelLayout, sample_rates[i],
-          kBitsPerChannel, kHighLatencyBufferSize));
+      input_parameters_.push_back(
+          AudioParameters(AudioParameters::AUDIO_PCM_LINEAR, kChannelLayout,
+                          sample_rates[i], kHighLatencyBufferSize));
 
     // Create output parameters based on test parameters.
     output_parameters_ =
         AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY, kChannelLayout,
-                        std::get<2>(GetParam()), 16, kLowLatencyBufferSize);
+                        std::get<2>(GetParam()), kLowLatencyBufferSize);
 
     sink_ = new MockAudioRendererSink();
     EXPECT_CALL(*sink_.get(), Start());
@@ -92,18 +94,16 @@ class AudioRendererMixerTest
                                const AudioParameters& params,
                                AudioLatency::LatencyType latency,
                                const std::string& device_id,
-                               const url::Origin& security_origin,
                                OutputDeviceStatus* device_status) final {
     return mixer_.get();
   };
 
-  void ReturnMixer(AudioRendererMixer* mixer) {
+  void ReturnMixer(AudioRendererMixer* mixer) override {
     EXPECT_EQ(mixer_.get(), mixer);
   }
 
-  MOCK_METHOD4(
-      GetOutputDeviceInfo,
-      OutputDeviceInfo(int, int, const std::string&, const url::Origin&));
+  MOCK_METHOD3(GetOutputDeviceInfo,
+               OutputDeviceInfo(int, int, const std::string&));
 
   void InitializeInputs(int inputs_per_sample_rate) {
     mixer_inputs_.reserve(inputs_per_sample_rate * input_parameters_.size());
@@ -334,10 +334,10 @@ class AudioRendererMixerTest
   }
 
   scoped_refptr<AudioRendererMixerInput> CreateMixerInput() {
-    return new AudioRendererMixerInput(
-        this,
-        // Zero frame id, default device ID and security origin.
-        0, std::string(), url::Origin(), AudioLatency::LATENCY_PLAYBACK);
+    return new AudioRendererMixerInput(this,
+                                       // Zero frame id, default device ID.
+                                       0, std::string(),
+                                       AudioLatency::LATENCY_PLAYBACK);
   }
 
  protected:

@@ -6,6 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_SCRIPT_MODULATOR_H_
 
 #include "base/single_thread_task_runner.h"
+#include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_module.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/script/module_import_meta.h"
@@ -42,7 +43,7 @@ class CORE_EXPORT SingleModuleClient
  public:
   virtual ~SingleModuleClient() = default;
   virtual void Trace(blink::Visitor* visitor) {}
-  void TraceWrappers(const ScriptWrappableVisitor*) const override {}
+  void TraceWrappers(ScriptWrappableVisitor*) const override {}
   const char* NameInHeapSnapshot() const override {
     return "SingleModuleClient";
   }
@@ -58,7 +59,7 @@ class CORE_EXPORT ModuleTreeClient
  public:
   virtual ~ModuleTreeClient() = default;
   virtual void Trace(blink::Visitor* visitor) {}
-  void TraceWrappers(const ScriptWrappableVisitor*) const override {}
+  void TraceWrappers(ScriptWrappableVisitor*) const override {}
   const char* NameInHeapSnapshot() const override { return "ModuleTreeClient"; }
 
   virtual void NotifyModuleTreeLoadFinished(ModuleScript*) = 0;
@@ -85,8 +86,8 @@ class CORE_EXPORT Modulator : public GarbageCollectedFinalized<Modulator>,
   static void SetModulator(ScriptState*, Modulator*);
   static void ClearModulator(ScriptState*);
 
-  virtual void Trace(blink::Visitor* visitor) {}
-  void TraceWrappers(const ScriptWrappableVisitor*) const override {}
+  void Trace(blink::Visitor* visitor) override {}
+  void TraceWrappers(ScriptWrappableVisitor*) const override {}
   const char* NameInHeapSnapshot() const override { return "Modulator"; }
 
   virtual ScriptModuleResolver* GetScriptModuleResolver() = 0;
@@ -101,7 +102,9 @@ class CORE_EXPORT Modulator : public GarbageCollectedFinalized<Modulator>,
   virtual ScriptState* GetScriptState() = 0;
 
   // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-module-script-tree
-  virtual void FetchTree(const ModuleScriptFetchRequest&,
+  virtual void FetchTree(const KURL&,
+                         WebURLRequest::RequestContext destination,
+                         const ScriptFetchOptions&,
                          ModuleTreeClient*) = 0;
 
   // Asynchronously retrieve a module script from the module map, or fetch it
@@ -111,8 +114,10 @@ class CORE_EXPORT Modulator : public GarbageCollectedFinalized<Modulator>,
                            ModuleGraphLevel,
                            SingleModuleClient*) = 0;
 
-  virtual void FetchDescendantsForInlineScript(ModuleScript*,
-                                               ModuleTreeClient*) = 0;
+  virtual void FetchDescendantsForInlineScript(
+      ModuleScript*,
+      WebURLRequest::RequestContext destination,
+      ModuleTreeClient*) = 0;
 
   // Synchronously retrieves a single module script from existing module map
   // entry.

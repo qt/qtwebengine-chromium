@@ -66,7 +66,6 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
       bool started_from_context_menu,
       CSPDisposition should_check_main_world_csp,
       bool is_form_submission,
-      const base::Optional<std::string>& suggested_filename,
       std::unique_ptr<NavigationUIData> navigation_ui_data,
       const std::string& method = std::string(),
       net::HttpRequestHeaders request_headers = net::HttpRequestHeaders(),
@@ -144,6 +143,7 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
       const GURL& new_referrer_url,
       bool new_is_external_protocol) override;
   NavigationThrottle::ThrottleCheckResult CallWillFailRequestForTesting(
+      RenderFrameHost* render_frame_host,
       base::Optional<net::SSLInfo> ssl_info) override;
   NavigationThrottle::ThrottleCheckResult CallWillProcessResponseForTesting(
       RenderFrameHost* render_frame_host,
@@ -159,7 +159,6 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   const GlobalRequestID& GetGlobalRequestID() override;
   bool IsDownload() override;
   bool IsFormSubmission() override;
-  const base::Optional<std::string>& GetSuggestedFilename() override;
 
   // Resume and CancelDeferredNavigation must only be called by the
   // NavigationThrottle that is currently deferring the navigation.
@@ -271,11 +270,13 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
       RenderProcessHost* post_redirect_process,
       const ThrottleChecksFinishedCallback& callback);
 
-  // Called when the URLRequest will fail. |callback| will be called when all
-  // throttles check have completed. This will allow the caller to explicitly
-  // cancel the navigation (with a custom error code and/or custom error page
-  // HTML) or let the failure proceed as normal.
-  void WillFailRequest(base::Optional<net::SSLInfo> ssl_info,
+  // Called when the URLRequest will fail. |render_frame_host| corresponds to
+  // the RenderFrameHost in which the error page will load. |callback| will be
+  // called when all throttles check have completed. This will allow the caller
+  // to explicitly cancel the navigation (with a custom error code and/or
+  // custom error page HTML) or let the failure proceed as normal.
+  void WillFailRequest(RenderFrameHostImpl* render_frame_host,
+                       base::Optional<net::SSLInfo> ssl_info,
                        const ThrottleChecksFinishedCallback& callback);
 
   // Called when the URLRequest has delivered response headers and metadata.
@@ -381,7 +382,6 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
       bool started_from_context_menu,
       CSPDisposition should_check_main_world_csp,
       bool is_form_submission,
-      const base::Optional<std::string>& suggested_filename,
       std::unique_ptr<NavigationUIData> navigation_ui_data,
       const std::string& method,
       net::HttpRequestHeaders request_headers,
@@ -556,11 +556,6 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   // Used to inform a RenderProcessHost that we expect this navigation to commit
   // in it.
   int expected_render_process_host_id_;
-
-  // If this navigation was triggered by an anchor element with a download
-  // attribute, the |suggested_filename_| contains the attribute's (possibly
-  // empty) value.
-  base::Optional<std::string> suggested_filename_;
 
   // Whether the navigation is in the middle of a transfer. Set to false when
   // the DidStartProvisionalLoad is received from the new renderer.

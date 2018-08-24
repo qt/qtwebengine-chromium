@@ -22,6 +22,17 @@ namespace autofill {
 // A midline horizontal ellipsis (U+22EF).
 extern const base::char16 kMidlineEllipsis[];
 
+namespace internal {
+
+// Returns an obfuscated representation of a credit card number given its last
+// digits. To ensure that the obfuscation is placed at the left of the last four
+// digits, even for RTL languages, inserts a Left-To-Right Embedding mark at the
+// beginning and a Pop Directional Formatting mark at the end.
+// Exposed for testing.
+base::string16 GetObfuscatedStringForCardDigits(const base::string16& digits);
+
+}  // namespace internal
+
 // A form group that stores card information.
 class CreditCard : public AutofillDataModel {
  public:
@@ -218,7 +229,7 @@ class CreditCard : public AutofillDataModel {
 
   // Various display functions.
 
-  // Card preview summary, for example: "Visa - 1234", ", 01/2020".
+  // Card preview summary, for example: "Visa - ****1234", ", 01/2020".
   const std::pair<base::string16, base::string16> LabelPieces() const;
   // Like LabelPieces, but appends the two pieces together.
   const base::string16 Label() const;
@@ -227,11 +238,13 @@ class CreditCard : public AutofillDataModel {
   base::string16 LastFourDigits() const;
   // The user-visible issuer network of the card, e.g. 'Mastercard'.
   base::string16 NetworkForDisplay() const;
-  // A label for this card formatted as 'IssuerNetwork - 2345'.
+  // A label for this card formatted as '****2345'.
+  base::string16 ObfuscatedLastFourDigits() const;
+  // A label for this card formatted as 'IssuerNetwork - ****2345'.
   base::string16 NetworkAndLastFourDigits() const;
-  // A label for this card formatted as 'BankName' - 2345' if bank name
+  // A label for this card formatted as 'BankName' - ****2345' if bank name
   // experiment turned on and bank name available; otherwise, formated as
-  // 'IssuerNetwork - 2345'.
+  // 'IssuerNetwork - ****2345'.
   base::string16 NetworkOrBankNameAndLastFourDigits() const;
   // Localized expiration for this card formatted as 'Exp: 06/17'.
   base::string16 AbbreviatedExpirationDateForDisplay() const;

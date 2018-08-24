@@ -10,11 +10,8 @@ include_rules = [
   "+content/public/common",
   "+content/public/test",
   "+content/test",
-
   "+blink/public/resources/grit",
-
   "+cc",
-  "-cc/blink",
 
   "-components",
   # Content can depend on components that are:
@@ -35,7 +32,6 @@ include_rules = [
   "+dbus",
   "+gpu",
   "+media",
-  "+mojo/common",
   "+mojo/edk/embedder",
   "+mojo/edk/js",
   "+mojo/message_pump",
@@ -46,6 +42,8 @@ include_rules = [
   "+sandbox",
   "+services/proxy_resolver/public/mojom",
   "+services/service_manager/embedder",
+  "+services/service_manager/sandbox",
+  "+services/service_manager/zygote",
   "+skia",
 
   # In general, content/ should not rely on google_apis, since URLs

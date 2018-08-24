@@ -123,7 +123,7 @@ class MockMediaStreamDispatcherHost : public MediaStreamDispatcherHost,
                        base::Unretained(this)));
   }
 
-  void OnStreamStarted(const std::string& label) {
+  void OnStreamStarted(const std::string& label) override {
     MediaStreamDispatcherHost::OnStreamStarted(label);
   }
 
@@ -307,9 +307,10 @@ class MediaStreamDispatcherHostTest : public testing::Test {
 
   void TearDown() override { host_.reset(); }
 
-  std::pair<std::string, url::Origin> GetSaltAndOrigin(int /* process_id */,
-                                                       int /* frame_id */) {
-    return std::make_pair(browser_context_->GetMediaDeviceIDSalt(), origin_);
+  MediaDeviceSaltAndOrigin GetSaltAndOrigin(int /* process_id */,
+                                            int /* frame_id */) {
+    return MediaDeviceSaltAndOrigin(browser_context_->GetMediaDeviceIDSalt(),
+                                    "fake_group_id_salt", origin_);
   }
 
  protected:
@@ -350,12 +351,11 @@ class MediaStreamDispatcherHostTest : public testing::Test {
       int page_request_id,
       const StreamControls& controls,
       MediaStreamRequestResult expected_result) {
-      base::RunLoop run_loop;
-      EXPECT_CALL(*host_,
-                  OnStreamGenerationFailure(page_request_id, expected_result));
-      host_->OnGenerateStream(page_request_id, controls,
-                              run_loop.QuitClosure());
-      run_loop.Run();
+    base::RunLoop run_loop;
+    EXPECT_CALL(*host_,
+                OnStreamGenerationFailure(page_request_id, expected_result));
+    host_->OnGenerateStream(page_request_id, controls, run_loop.QuitClosure());
+    run_loop.Run();
   }
 
   void OpenVideoDeviceAndWaitForResult(int page_request_id,
@@ -696,8 +696,9 @@ TEST_F(MediaStreamDispatcherHostTest, StopDeviceInStream) {
 
   std::string stream_request_label = host_->label_;
   MediaStreamDevice video_device = host_->video_devices_.front();
-  ASSERT_EQ(1u, media_stream_manager_->GetDevicesOpenedByRequest(
-      stream_request_label).size());
+  ASSERT_EQ(
+      1u, media_stream_manager_->GetDevicesOpenedByRequest(stream_request_label)
+              .size());
 
   // Open the same device by Pepper.
   OpenVideoDeviceAndWaitForResult(kPageRequestId, video_device.id);
@@ -706,10 +707,12 @@ TEST_F(MediaStreamDispatcherHostTest, StopDeviceInStream) {
   // Stop the device in the MediaStream.
   host_->OnStopStreamDevice(video_device.id, video_device.session_id);
 
-  EXPECT_EQ(0u, media_stream_manager_->GetDevicesOpenedByRequest(
-      stream_request_label).size());
-  EXPECT_EQ(1u, media_stream_manager_->GetDevicesOpenedByRequest(
-      open_device_request_label).size());
+  EXPECT_EQ(
+      0u, media_stream_manager_->GetDevicesOpenedByRequest(stream_request_label)
+              .size());
+  EXPECT_EQ(1u, media_stream_manager_
+                    ->GetDevicesOpenedByRequest(open_device_request_label)
+                    .size());
 }
 
 TEST_F(MediaStreamDispatcherHostTest, StopDeviceInStreamAndRestart) {
@@ -721,12 +724,14 @@ TEST_F(MediaStreamDispatcherHostTest, StopDeviceInStreamAndRestart) {
   std::string request_label1 = host_->label_;
   MediaStreamDevice video_device = host_->video_devices_.front();
   // Expect that 1 audio and 1 video device has been opened.
-  EXPECT_EQ(2u, media_stream_manager_->GetDevicesOpenedByRequest(
-      request_label1).size());
+  EXPECT_EQ(
+      2u,
+      media_stream_manager_->GetDevicesOpenedByRequest(request_label1).size());
 
   host_->OnStopStreamDevice(video_device.id, video_device.session_id);
-  EXPECT_EQ(1u, media_stream_manager_->GetDevicesOpenedByRequest(
-      request_label1).size());
+  EXPECT_EQ(
+      1u,
+      media_stream_manager_->GetDevicesOpenedByRequest(request_label1).size());
 
   GenerateStreamAndWaitForResult(kPageRequestId, controls);
   std::string request_label2 = host_->label_;
@@ -856,14 +861,21 @@ TEST_F(MediaStreamDispatcherHostTest, Salt) {
   EXPECT_EQ(host_->video_devices_.size(), 1u);
   const std::string label1 = host_->label_;
   const std::string device_id1 = host_->video_devices_.front().id;
+  EXPECT_TRUE(host_->video_devices_.front().group_id.has_value());
+  const std::string group_id1 = *host_->video_devices_.front().group_id;
+  EXPECT_FALSE(group_id1.empty());
   const int session_id1 = host_->video_devices_.front().session_id;
 
   // Generate second stream.
   OpenVideoDeviceAndWaitForResult(kPageRequestId, device_id1);
   const std::string device_id2 = host_->opened_device_.id;
+  EXPECT_TRUE(host_->opened_device_.group_id.has_value());
+  const std::string group_id2 = *host_->opened_device_.group_id;
+  EXPECT_FALSE(group_id2.empty());
   const int session_id2 = host_->opened_device_.session_id;
   const std::string label2 = host_->label_;
   EXPECT_EQ(device_id1, device_id2);
+  EXPECT_EQ(group_id1, group_id2);
   EXPECT_NE(session_id1, session_id2);
   EXPECT_NE(label1, label2);
 
@@ -874,6 +886,7 @@ TEST_F(MediaStreamDispatcherHostTest, Salt) {
   // Last open device ID and session are from the second stream.
   EXPECT_EQ(session_id2, host_->opened_device_.session_id);
   EXPECT_EQ(device_id2, host_->opened_device_.id);
+  EXPECT_EQ(group_id2, host_->opened_device_.group_id);
 }
 
 };  // namespace content

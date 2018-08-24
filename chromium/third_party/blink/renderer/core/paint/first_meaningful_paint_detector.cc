@@ -34,11 +34,11 @@ FirstMeaningfulPaintDetector::FirstMeaningfulPaintDetector(
     Document& document)
     : paint_timing_(paint_timing),
       network0_quiet_timer_(
-          document.GetTaskRunner(TaskType::kUnspecedTimer),
+          document.GetTaskRunner(TaskType::kInternalDefault),
           this,
           &FirstMeaningfulPaintDetector::Network0QuietTimerFired),
       network2_quiet_timer_(
-          document.GetTaskRunner(TaskType::kUnspecedTimer),
+          document.GetTaskRunner(TaskType::kInternalDefault),
           this,
           &FirstMeaningfulPaintDetector::Network2QuietTimerFired) {}
 
@@ -119,7 +119,8 @@ int FirstMeaningfulPaintDetector::ActiveConnections() {
   return fetcher->BlockingRequestCount() + fetcher->NonblockingRequestCount();
 }
 
-// This function is called when the number of active connections is decreased.
+// This function is called when the number of active connections is decreased
+// and when the document is parsed.
 void FirstMeaningfulPaintDetector::CheckNetworkStable() {
   DCHECK(GetDocument());
   if (!GetDocument()->HasFinishedParsing())
@@ -254,7 +255,7 @@ void FirstMeaningfulPaintDetector::RegisterNotifySwapTime(PaintEvent event) {
 void FirstMeaningfulPaintDetector::ReportSwapTime(
     PaintEvent event,
     WebLayerTreeView::SwapResult result,
-    double timestamp) {
+    base::TimeTicks timestamp) {
   DCHECK(event == PaintEvent::kProvisionalFirstMeaningfulPaint);
   DCHECK_GT(outstanding_swap_promise_count_, 0U);
   --outstanding_swap_promise_count_;
@@ -272,9 +273,10 @@ void FirstMeaningfulPaintDetector::ReportSwapTime(
   // TODO(crbug.com/738235): Consider not reporting any timestamp when failing
   // for reasons other than kDidNotSwapSwapFails.
   paint_timing_->ReportSwapResultHistogram(result);
-  provisional_first_meaningful_paint_swap_ = TimeTicksFromSeconds(timestamp);
+  provisional_first_meaningful_paint_swap_ = timestamp;
 
-  probe::paintTiming(GetDocument(), "firstMeaningfulPaintCandidate", timestamp);
+  probe::paintTiming(GetDocument(), "firstMeaningfulPaintCandidate",
+                     TimeTicksInSeconds(timestamp));
 
   // Ignore the first meaningful paint candidate as this generally is the first
   // contentful paint itself.

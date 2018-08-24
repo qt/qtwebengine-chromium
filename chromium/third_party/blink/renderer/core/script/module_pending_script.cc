@@ -38,7 +38,7 @@ void ModulePendingScriptTreeClient::Trace(blink::Visitor* visitor) {
 }
 
 void ModulePendingScriptTreeClient::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+    ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(module_script_);
   visitor->TraceWrappers(pending_script_);
   ModuleTreeClient::TraceWrappers(visitor);
@@ -66,8 +66,7 @@ void ModulePendingScript::Trace(blink::Visitor* visitor) {
   PendingScript::Trace(visitor);
 }
 
-void ModulePendingScript::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+void ModulePendingScript::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(module_tree_client_);
   PendingScript::TraceWrappers(visitor);
 }
@@ -78,12 +77,6 @@ void ModulePendingScript::NotifyModuleTreeLoadFinished() {
 
   if (Client())
     Client()->PendingScriptFinished(this);
-}
-
-bool ModulePendingScript::CheckMIMETypeBeforeRunScript(Document*) const {
-  // We don't check MIME type here because we check the MIME type in
-  // ModuleScriptLoader::WasModuleLoadSuccessful().
-  return true;
 }
 
 Script* ModulePendingScript::GetSource(const KURL& document_url,

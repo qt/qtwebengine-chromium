@@ -12,35 +12,22 @@
 #include "base/macros.h"
 #include "base/threading/thread_checker.h"
 #include "services/metrics/public/cpp/metrics_export.h"
-#include "services/metrics/public/cpp/ukm_entry_builder.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "services/metrics/public/mojom/ukm_interface.mojom.h"
 #include "url/gurl.h"
 
-class DocumentWritePageLoadMetricsObserver;
-class FromGWSPageLoadMetricsLogger;
 class IOSChromePasswordManagerClient;
-class LocalNetworkRequestsPageLoadMetricsObserver;
 class MediaEngagementSession;
 class PluginInfoHostImpl;
-class ServiceWorkerPageLoadMetricsObserver;
-class SubresourceFilterMetricsObserver;
-class UkmPageLoadMetricsObserver;
-class UseCounterPageLoadMetricsObserver;
 
 namespace autofill {
 class AutofillMetrics;
 class FormStructure;
 }  // namespace autofill
 
-namespace assist_ranker {
-class BasePredictor;
-}
-
 namespace blink {
-class AutoplayUmaHelper;
 class Document;
-class UkmTimeAggregator;
+class NavigatorVR;
 }
 
 namespace cc {
@@ -53,10 +40,6 @@ class WebContentsImpl;
 class PluginServiceImpl;
 }  // namespace content
 
-namespace contextual_suggestions {
-class ContextualSuggestionsUkmEntry;
-}
-
 namespace download {
 class DownloadUkmHelper;
 }
@@ -67,10 +50,6 @@ class PasswordManagerMetricsRecorder;
 
 namespace payments {
 class JourneyLogger;
-}
-
-namespace previews {
-class PreviewsUKMObserver;
 }
 
 namespace metrics {
@@ -87,20 +66,14 @@ namespace translate {
 class TranslateRankerImpl;
 }
 
-namespace ui {
-class LatencyTracker;
-}  // namespace ui
-
 namespace ukm {
 
 class DelegatingUkmRecorder;
-class UkmEntryBuilder;
 class TestRecordingHelper;
 
 namespace internal {
 class SourceUrlRecorderWebContentsObserver;
 class SourceUrlRecorderWebStateObserver;
-class UkmEntryBuilderBase;
 }
 
 // This feature controls whether UkmService should be created.
@@ -122,68 +95,39 @@ class METRICS_EXPORT UkmRecorder {
   // session.
   static SourceId GetNewSourceID();
 
+  // Add an entry to the UkmEntry list.
+  virtual void AddEntry(mojom::UkmEntryPtr entry) = 0;
+
  private:
-  friend assist_ranker::BasePredictor;
   friend DelegatingUkmRecorder;
-  friend DocumentWritePageLoadMetricsObserver;
-  friend FromGWSPageLoadMetricsLogger;
   friend IOSChromePasswordManagerClient;
-  friend LocalNetworkRequestsPageLoadMetricsObserver;
   friend MediaEngagementSession;
   friend PluginInfoHostImpl;
-  friend ServiceWorkerPageLoadMetricsObserver;
-  friend SubresourceFilterMetricsObserver;
   friend TestRecordingHelper;
-  friend UkmPageLoadMetricsObserver;
-  friend UseCounterPageLoadMetricsObserver;
   friend autofill::AutofillMetrics;
   friend autofill::FormStructure;
-  friend blink::AutoplayUmaHelper;
   friend blink::Document;
-  friend blink::UkmTimeAggregator;
+  friend blink::NavigatorVR;
   friend cc::UkmManager;
   friend content::CrossSiteDocumentResourceHandler;
   friend content::PluginServiceImpl;
   friend content::WebContentsImpl;
-  friend contextual_suggestions::ContextualSuggestionsUkmEntry;
   friend download::DownloadUkmHelper;
   friend internal::SourceUrlRecorderWebContentsObserver;
   friend internal::SourceUrlRecorderWebStateObserver;
-  friend internal::UkmEntryBuilderBase;
   friend media::MediaMetricsProvider;
   friend media::VideoDecodePerfHistory;
   friend media::WatchTimeRecorder;
   friend metrics::UkmRecorderInterface;
   friend password_manager::PasswordManagerMetricsRecorder;
   friend payments::JourneyLogger;
-  friend previews::PreviewsUKMObserver;
   friend translate::TranslateRankerImpl;
-  friend ui::LatencyTracker;
-  FRIEND_TEST_ALL_PREFIXES(UkmServiceTest, AddEntryWithEmptyMetrics);
-  FRIEND_TEST_ALL_PREFIXES(UkmServiceTest, EntryBuilderAndSerialization);
-  FRIEND_TEST_ALL_PREFIXES(UkmServiceTest,
-                           LogsUploadedOnlyWhenHavingSourcesOrEntries);
-  FRIEND_TEST_ALL_PREFIXES(UkmServiceTest, MetricsProviderTest);
-  FRIEND_TEST_ALL_PREFIXES(UkmServiceTest, PersistAndPurge);
-  FRIEND_TEST_ALL_PREFIXES(UkmServiceTest, WhitelistEntryTest);
 
   // Associates the SourceId with a URL. Most UKM recording code should prefer
   // to use a shared SourceId that is already associated with a URL, rather
   // than using this API directly. New uses of this API must be auditted to
   // maintain privacy constraints.
   virtual void UpdateSourceURL(SourceId source_id, const GURL& url) = 0;
-
-  // Get a new UkmEntryBuilder object for the specified source ID and event,
-  // which can get metrics added to.
-  //
-  // This API is deprecated, and new code should prefer using the API from
-  // ukm_builders.h.
-  std::unique_ptr<UkmEntryBuilder> GetEntryBuilder(SourceId source_id,
-                                                   const char* event_name);
-
- private:
-  // Add an entry to the UkmEntry list.
-  virtual void AddEntry(mojom::UkmEntryPtr entry) = 0;
 
   DISALLOW_COPY_AND_ASSIGN(UkmRecorder);
 };

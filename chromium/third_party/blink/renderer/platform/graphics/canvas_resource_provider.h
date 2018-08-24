@@ -7,13 +7,14 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/optional.h"
 #include "cc/paint/skia_paint_canvas.h"
 #include "cc/raster/playback_image_provider.h"
 #include "third_party/blink/renderer/platform/geometry/int_size.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_color_params.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_resource.h"
 #include "third_party/blink/renderer/platform/graphics/web_graphics_context_3d_provider_wrapper.h"
 #include "third_party/blink/renderer/platform/wtf/noncopyable.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -37,7 +38,6 @@ class GLES2Interface;
 
 namespace blink {
 
-class CanvasResource;
 class StaticBitmapImage;
 class WebGraphicsContext3DProviderWrapper;
 
@@ -93,9 +93,10 @@ class PLATFORM_EXPORT CanvasResourceProvider
   virtual bool IsValid() const = 0;
   virtual bool IsAccelerated() const = 0;
   uint32_t ContentUniqueID() const;
-  void ClearRecycledResources();
-  void RecycleResource(scoped_refptr<CanvasResource>);
-  void SetResourceRecyclingEnabled(bool);
+
+  virtual void RecycleResource(scoped_refptr<CanvasResource>);
+  virtual void SetResourceRecyclingEnabled(bool) {}
+
   SkSurface* GetSkSurface() const;
   bool IsGpuContextLost() const;
   bool WritePixels(const SkImageInfo& orig_info,
@@ -116,7 +117,6 @@ class PLATFORM_EXPORT CanvasResourceProvider
   base::WeakPtr<WebGraphicsContext3DProviderWrapper> ContextProviderWrapper() {
     return context_provider_wrapper_;
   }
-  scoped_refptr<CanvasResource> NewOrRecycledResource();
   SkFilterQuality FilterQuality() const { return filter_quality_; }
   base::WeakPtr<CanvasResourceProvider> CreateWeakPtr() {
     return weak_ptr_factory_.GetWeakPtr();
@@ -153,22 +153,21 @@ class PLATFORM_EXPORT CanvasResourceProvider
   virtual scoped_refptr<CanvasResource> CreateResource();
   cc::ImageDecodeCache* ImageDecodeCache();
 
-  base::WeakPtrFactory<CanvasResourceProvider> weak_ptr_factory_;
   base::WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider_wrapper_;
   IntSize size_;
   CanvasColorParams color_params_;
-  Optional<CanvasImageProvider> canvas_image_provider_;
+  base::Optional<CanvasImageProvider> canvas_image_provider_;
   std::unique_ptr<cc::SkiaPaintCanvas> canvas_;
   mutable sk_sp<SkSurface> surface_;  // mutable for lazy init
   std::unique_ptr<SkCanvas> xform_canvas_;
-  WTF::Vector<scoped_refptr<CanvasResource>> recycled_resources_;
   SkFilterQuality filter_quality_;
-  bool resource_recycling_enabled_ = true;
 
   const cc::PaintImage::Id snapshot_paint_image_id_;
   cc::PaintImage::ContentId snapshot_paint_image_content_id_ =
       cc::PaintImage::kInvalidContentId;
   uint32_t snapshot_sk_image_id_ = 0u;
+
+  base::WeakPtrFactory<CanvasResourceProvider> weak_ptr_factory_;
 };
 
 }  // namespace blink

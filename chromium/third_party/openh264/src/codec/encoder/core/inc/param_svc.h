@@ -63,7 +63,7 @@ extern const uint8_t   g_kuiTemporalIdListTable[MAX_TEMPORAL_LEVEL][MAX_GOP_SIZE
 * \return   2 based scaling factor
 */
 static inline uint32_t GetLogFactor (float base, float upper) {
-#if defined(_M_X64)
+#if defined(_M_X64) && _MSC_VER == 1800
   _set_FMA3_enable(0);
 #endif
   const double dLog2factor      = log10 (1.0 * upper / base) / log10 (2.0);
@@ -257,7 +257,7 @@ typedef struct TagWelsSvcCodingParam: SEncParamExt {
           MIN_FRAME_RATE, MAX_FRAME_RATE);
       pDlp->fInputFrameRate =
         pDlp->fOutputFrameRate = WELS_CLIP3 (sSpatialLayers[iIdxSpatial].fFrameRate, MIN_FRAME_RATE,
-                                              MAX_FRAME_RATE);
+                                             MAX_FRAME_RATE);
 #ifdef ENABLE_FRAME_DUMP
       pDlp->sRecFileName[0] = '\0'; // file to be constructed
 #endif//ENABLE_FRAME_DUMP
@@ -317,7 +317,7 @@ typedef struct TagWelsSvcCodingParam: SEncParamExt {
 
     iTargetBitrate      = pCodingParam.iTargetBitrate;  // target bitrate
     iMaxBitrate         = pCodingParam.iMaxBitrate;
-    if (iMaxBitrate < iTargetBitrate) {
+    if ((iMaxBitrate != UNSPECIFIED_BIT_RATE) && (iMaxBitrate < iTargetBitrate)) {
       iMaxBitrate  = iTargetBitrate;
     }
     iMaxQp = pCodingParam.iMaxQp;
@@ -416,6 +416,21 @@ typedef struct TagWelsSvcCodingParam: SEncParamExt {
         pCodingParam.sSpatialLayers[iIdxSpatial].iSpatialBitrate;       // target bitrate for current spatial layer
       pSpatialLayer->iMaxSpatialBitrate =
         pCodingParam.sSpatialLayers[iIdxSpatial].iMaxSpatialBitrate;
+
+      if ((iSpatialLayerNum==1) && (iIdxSpatial==0)) {
+        if (pSpatialLayer->iVideoWidth == 0) {
+          pSpatialLayer->iVideoWidth = iPicWidth;
+        }
+        if (pSpatialLayer->iVideoHeight == 0) {
+          pSpatialLayer->iVideoHeight = iPicHeight;
+        }
+        if (pSpatialLayer->iSpatialBitrate == 0) {
+          pSpatialLayer->iSpatialBitrate = iTargetBitrate;
+        }
+        if (pSpatialLayer->iMaxSpatialBitrate == 0) {
+          pSpatialLayer->iMaxSpatialBitrate = iMaxBitrate;
+        }
+      }
 
       //multi slice
       pSpatialLayer->sSliceArgument = pCodingParam.sSpatialLayers[iIdxSpatial].sSliceArgument;

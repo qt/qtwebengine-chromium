@@ -113,6 +113,10 @@
       settable_from_internals: true,
     },
     {
+      // Flag set by the media::kAutoplayIgnoreWebAudio feature flag.
+      name: "AutoplayIgnoresWebAudio",
+    },
+    {
       name: "AutoplayMutedVideos",
       settable_from_internals: true,
     },
@@ -125,7 +129,14 @@
       status: "stable",
     },
     {
+      name: "BlinkGenPropertyTrees",
+    },
+    {
       name: "BlinkRuntimeCallStats",
+    },
+    {
+      name: "BloatedRendererDetection",
+      status: "experimental",
     },
     {
       name: "BlockCredentialedSubresources",
@@ -182,10 +193,6 @@
       status: "experimental",
     },
     {
-      name: "CanvasTransformations",
-      status: "experimental",
-    },
-    {
       name: "ClickRetargetting",
       status: "experimental",
     },
@@ -195,9 +202,6 @@
     },
     {
       name: "ClientPlaceholdersForServerLoFi",
-    },
-    {
-      name: "CodeCacheAfterExecute"
     },
     {
       name: "CompositedSelectionUpdate",
@@ -316,7 +320,11 @@
     },
     {
       name: "CSSPartPseudoElement",
-      status: "test",
+      status: "experimental",
+    },
+    {
+      name: "CSSPseudoIS",
+      status: "experimental",
     },
     {
       name: "CSSScrollSnapPoints",
@@ -348,6 +356,12 @@
     },
     {
       name: "CustomElementsBuiltin",
+      status: "stable",
+    },
+    // Introduced this flag as stable so web developers can test their sites
+    // without native Custom Elements v0 support.
+    {
+      name: "CustomElementsV0",
       status: "stable",
     },
     {
@@ -385,6 +399,10 @@
       name: "DisableRasterInvalidation",
     },
     {
+      name: "DisplayCutoutViewportFit",
+      settable_from_internals: true,
+    },
+    {
       name: "DisplayNoneIFrameCreatesNoLayoutObject",
       status: "stable",
     },
@@ -406,6 +424,11 @@
       status: "test",
     },
     {
+      name: "EventTiming",
+      origin_trial_feature_name: "EventTiming",
+      status: "experimental",
+    },
+    {
       name: "ExecCommandInJavaScript",
       status: "test",
     },
@@ -419,8 +442,16 @@
     },
     {
       name: "ExperimentalHardwareEchoCancellation",
-      origin_trial_feature_name: "ExperimentalHardwareEchoCancellation",
+      origin_trial_feature_name: "ExperimentalHardwareEchoCancellation2",
       status: "experimental",
+    },
+    // Enables a set of features intended to help improve web developer
+    // productivity, by restricting the use of potentially problematic web-
+    // platform behaviors, as well as adding new high-level APIs for common
+    // development patterns.
+    {
+      name: "ExperimentalProductivityFeatures",
+      status: "experimental"
     },
     {
       name: "ExperimentalV8Extras",
@@ -508,10 +539,14 @@
     {
       name: "FramebustingNeedsSameOriginOrUserGesture",
       settable_from_internals: true,
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "FramesTimingFunction",
+      status: "experimental",
+    },
+    {
+      name: "FullscreenOptions",
       status: "experimental",
     },
     {
@@ -525,11 +560,8 @@
       status: "experimental",
     },
     {
-      name: "GeometryInterfaces",
-      status: "stable",
-    },
-    {
-      name: "GetMatchedCSSRules",
+      name: "GamepadVibration",
+      status: "experimental",
     },
     {
       name: "HeapCompaction",
@@ -537,6 +569,9 @@
     },
     {
       name: "HeapIncrementalMarking",
+    },
+    {
+      name: "HeapIncrementalMarkingStress"
     },
     // https://crbug.com/766694 for testing disabling the feature.
     {
@@ -554,7 +589,7 @@
     },
     {
       name: "IdleTimeColdModeSpellChecking",
-      status: "test",
+      status: "experimental",
     },
     {
       name: "ImageDecodingAttribute",
@@ -571,14 +606,11 @@
     },
     {
       name: "IncrementalShadowDOM",
+      status: "experimental",
     },
     {
       name: "InertAttribute",
       status: "experimental",
-    },
-    {
-      name: "InputModeAttribute",
-      status: "stable",
     },
     {
       name: "InputMultipleFieldsUI",
@@ -590,15 +622,35 @@
       status: "experimental",
     },
     {
+      name: "IntersectionObserverGeometryMapper",
+    },
+    {
+      name: "IntersectionObserverV2",
+    },
+    {
+      // Tracks "jank" from layout objects changing their visual location
+      // between animation frames (see crbug.com/581518).
+      name: "JankTracking",
+      status: "experimental",
+    },
+    {
       name: "JSImageDecode",
       status: "stable",
     },
     {
       name: "KeyboardLock",
-      status: "test",
+      status: "stable",
+    },
+    {
+      name: "KeyboardMap",
+      status: "experimental",
     },
     {
       name: "LangAttributeAwareFormControlUI",
+    },
+    {
+      name: "LayeredAPI",
+      implied_by: ["ExperimentalProductivityFeatures"],
     },
     {
       name: "LayoutNG",
@@ -808,9 +860,6 @@
       status: "stable",
     },
     {
-      name: "NotificationsWithMojo",
-    },
-    {
       name: "NullableDocumentDomain",
       status: "experimental",
     },
@@ -869,7 +918,7 @@
     },
     {
       name: "PageLifecycle",
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "PagePopup",
@@ -932,7 +981,9 @@
     },
     {
       name: "PictureInPictureAPI",
-      status: "test",
+      origin_trial_feature_name: "PictureInPictureAPI",
+      origin_trial_os: ["chromeos", "linux", "macosx", "win"],
+      status: "experimental",
     },
     {
       name: "PreciseMemoryInfo",
@@ -961,6 +1012,10 @@
     },
     {
       name: "PrintBrowser",
+    },
+    {
+      name: "PriorityHints",
+      status: "experimental",
     },
     {
       name: "PushMessaging",
@@ -1025,8 +1080,6 @@
     },
     // Handles frame scrolling via the root PaintLayer instead of the FrameView.
     // The master bug for the root layer scrolling project is crbug.com/417782.
-    // This REF is enabled iff features::kRootLayerScrolling is on or
-    // experimental web platform features are enabled.
     {
       name: "RootLayerScrolling",
       status: "stable",
@@ -1038,13 +1091,13 @@
     },
     {
       name: "RTCRtpSenderParameters",
-      status: "experimental",
+      status: "stable",
     },
     // Enables the use of |RTCConfiguration::sdpSemantics| to override the
     // default SDP semantics at RTCPeerConnection construction.
     {
       name: "RTCUnifiedPlan",
-      status: "experimental",
+      status: "stable",
     },
     // Overrides the default SDP semantics to be Unified Plan at
     // RTCPeerConnection construction (unless otherwise specified).
@@ -1054,12 +1107,6 @@
     {
       name: "ScriptedSpeech",
       status: "stable",
-    },
-    // Scrolls to compensate for layout movements (bit.ly/scroll-anchoring).
-    {
-      name: "ScrollAnchoring",
-      settable_from_internals: true,
-      status: "experimental",
     },
     // Serialize and restore scroll anchors.
     {
@@ -1073,6 +1120,10 @@
     {
       name: "ScrollTopLeftInterop",
       status: "stable",
+    },
+    {
+      name: "SecMetadata",
+      status: "experimental"
     },
     {
       name: "SendBeaconThrowForBlobWithNonSimpleType",
@@ -1101,7 +1152,7 @@
     },
     {
       name: "ServiceWorkerUpdateViaCache",
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "SetRootScroller",
@@ -1137,7 +1188,7 @@
     {
       name: "SlimmingPaintV175",
       status: "stable",
-      implied_by: ["SlimmingPaintV2", "LayoutNG"],
+      implied_by: ["BlinkGenPropertyTrees", "SlimmingPaintV2", "LayoutNG"],
     },
     {
       name: "SlimmingPaintV2",
@@ -1185,10 +1236,6 @@
       name: "TimerThrottlingForHiddenFrames",
       status: "stable",
     },
-    {
-      name: "TopNavByUserActivationInSandbox",
-      status: "stable",
-    },
     // Many websites disable mouse support when touch APIs are available.  We'd
     // like to enable this always but can't until more websites fix this bug.
     // Chromium sets this conditionally (eg. based on the presence of a
@@ -1219,18 +1266,11 @@
       status: "stable",
     },
     {
-      name: "TurnOff2DAndOpacityCompositorAnimations",
-    },
-    {
       name: "UnclosedFormControlIsInvalid",
       status: "experimental",
     },
     {
       name: "UnifiedTouchAdjustment",
-      status: "experimental",
-    },
-    {
-      name: "UpdateHoverPostLayout",
       status: "stable",
     },
     {
@@ -1309,6 +1349,12 @@
       name: "WebNFC",
       status: "experimental",
     },
+    {
+      name: "WebRtcVaapiHWVP8Encoding",
+      origin_trial_feature_name: "WebRtcVaapiHWVP8Encoding",
+      origin_trial_os: ["chromeos"],
+      status: "experimental",
+    },
     // WebShare is enabled by default on Android.
     {
       name: "WebShare",
@@ -1317,6 +1363,11 @@
     {
       name: "WebUSB",
       status: "stable",
+    },
+    {
+      name: "WebUSBOnDedicatedAndSharedWorkers",
+      status: "test",
+      depends_on: ["WebUSB"],
     },
     {
       name: "WebVR",
@@ -1340,6 +1391,9 @@
       // This feature is a strict subset of GamepadExtensions.
       implied_by: ["GamepadExtensions"],
       status: "experimental",
+    },
+    {
+      name: "WebXRHitTest",
     },
     {
       name: "WorkerNosniffBlock",

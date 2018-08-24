@@ -543,8 +543,9 @@ static void dist_block(const VP9_COMP *cpi, MACROBLOCK *x, int plane,
   MACROBLOCKD *const xd = &x->e_mbd;
   const struct macroblock_plane *const p = &x->plane[plane];
   const struct macroblockd_plane *const pd = &xd->plane[plane];
+  const int eob = p->eobs[block];
 
-  if (x->block_tx_domain) {
+  if (x->block_tx_domain && eob) {
     const int ss_txfrm_size = tx_size << 1;
     int64_t this_sse;
     const int shift = tx_size == TX_32X32 ? 0 : 2;
@@ -584,14 +585,13 @@ static void dist_block(const VP9_COMP *cpi, MACROBLOCK *x, int plane,
     const uint8_t *src = &p->src.buf[src_idx];
     const uint8_t *dst = &pd->dst.buf[dst_idx];
     const tran_low_t *dqcoeff = BLOCK_OFFSET(pd->dqcoeff, block);
-    const uint16_t *eob = &p->eobs[block];
     unsigned int tmp;
 
     tmp = pixel_sse(cpi, xd, pd, src, src_stride, dst, dst_stride, blk_row,
                     blk_col, plane_bsize, tx_bsize);
     *out_sse = (int64_t)tmp * 16;
 
-    if (*eob) {
+    if (eob) {
 #if CONFIG_VP9_HIGHBITDEPTH
       DECLARE_ALIGNED(16, uint16_t, recon16[1024]);
       uint8_t *recon = (uint8_t *)recon16;
@@ -604,22 +604,22 @@ static void dist_block(const VP9_COMP *cpi, MACROBLOCK *x, int plane,
         vpx_highbd_convolve_copy(CONVERT_TO_SHORTPTR(dst), dst_stride, recon16,
                                  32, NULL, 0, 0, 0, 0, bs, bs, xd->bd);
         if (xd->lossless) {
-          vp9_highbd_iwht4x4_add(dqcoeff, recon16, 32, *eob, xd->bd);
+          vp9_highbd_iwht4x4_add(dqcoeff, recon16, 32, eob, xd->bd);
         } else {
           switch (tx_size) {
             case TX_4X4:
-              vp9_highbd_idct4x4_add(dqcoeff, recon16, 32, *eob, xd->bd);
+              vp9_highbd_idct4x4_add(dqcoeff, recon16, 32, eob, xd->bd);
               break;
             case TX_8X8:
-              vp9_highbd_idct8x8_add(dqcoeff, recon16, 32, *eob, xd->bd);
+              vp9_highbd_idct8x8_add(dqcoeff, recon16, 32, eob, xd->bd);
               break;
             case TX_16X16:
-              vp9_highbd_idct16x16_add(dqcoeff, recon16, 32, *eob, xd->bd);
+              vp9_highbd_idct16x16_add(dqcoeff, recon16, 32, eob, xd->bd);
               break;
-            case TX_32X32:
-              vp9_highbd_idct32x32_add(dqcoeff, recon16, 32, *eob, xd->bd);
+            default:
+              assert(tx_size == TX_32X32);
+              vp9_highbd_idct32x32_add(dqcoeff, recon16, 32, eob, xd->bd);
               break;
-            default: assert(0 && "Invalid transform size");
           }
         }
         recon = CONVERT_TO_BYTEPTR(recon16);
@@ -627,16 +627,16 @@ static void dist_block(const VP9_COMP *cpi, MACROBLOCK *x, int plane,
 #endif  // CONFIG_VP9_HIGHBITDEPTH
         vpx_convolve_copy(dst, dst_stride, recon, 32, NULL, 0, 0, 0, 0, bs, bs);
         switch (tx_size) {
-          case TX_32X32: vp9_idct32x32_add(dqcoeff, recon, 32, *eob); break;
-          case TX_16X16: vp9_idct16x16_add(dqcoeff, recon, 32, *eob); break;
-          case TX_8X8: vp9_idct8x8_add(dqcoeff, recon, 32, *eob); break;
-          case TX_4X4:
+          case TX_32X32: vp9_idct32x32_add(dqcoeff, recon, 32, eob); break;
+          case TX_16X16: vp9_idct16x16_add(dqcoeff, recon, 32, eob); break;
+          case TX_8X8: vp9_idct8x8_add(dqcoeff, recon, 32, eob); break;
+          default:
+            assert(tx_size == TX_4X4);
             // this is like vp9_short_idct4x4 but has a special case around
             // eob<=1, which is significant (not just an optimization) for
             // the lossless case.
-            x->inv_txfm_add(dqcoeff, recon, 32, *eob);
+            x->inv_txfm_add(dqcoeff, recon, 32, eob);
             break;
-          default: assert(0 && "Invalid transform size"); break;
         }
 #if CONFIG_VP9_HIGHBITDEPTH
       }
@@ -845,20 +845,20 @@ static void choose_tx_size_from_rd(VP9_COMP *cpi, MACROBLOCK *x, int *rate,
                               { INT64_MAX, INT64_MAX },
                               { INT64_MAX, INT64_MAX },
                               { INT64_MAX, INT64_MAX } };
-  int n, m;
+  int n;
   int s0, s1;
-  int64_t best_rd = INT64_MAX;
+  int64_t best_rd = ref_best_rd;
   TX_SIZE best_tx = max_tx_size;
   int start_tx, end_tx;
-
-  const vpx_prob *tx_probs = get_tx_probs2(max_tx_size, xd, &cm->fc->tx_probs);
+  const int tx_size_ctx = get_tx_size_context(xd);
   assert(skip_prob > 0);
   s0 = vp9_cost_bit(skip_prob, 0);
   s1 = vp9_cost_bit(skip_prob, 1);
 
   if (cm->tx_mode == TX_MODE_SELECT) {
     start_tx = max_tx_size;
-    end_tx = 0;
+    end_tx = VPXMAX(start_tx - cpi->sf.tx_size_search_depth, 0);
+    if (bs > BLOCK_32X32) end_tx = VPXMIN(end_tx + 1, start_tx);
   } else {
     TX_SIZE chosen_tx_size =
         VPXMIN(max_tx_size, tx_mode_to_biggest_tx_size[cm->tx_mode]);
@@ -867,15 +867,9 @@ static void choose_tx_size_from_rd(VP9_COMP *cpi, MACROBLOCK *x, int *rate,
   }
 
   for (n = start_tx; n >= end_tx; n--) {
-    int r_tx_size = 0;
-    for (m = 0; m <= n - (n == (int)max_tx_size); m++) {
-      if (m == n)
-        r_tx_size += vp9_cost_zero(tx_probs[m]);
-      else
-        r_tx_size += vp9_cost_one(tx_probs[m]);
-    }
-    txfm_rd_in_plane(cpi, x, &r[n][0], &d[n], &s[n], &sse[n], ref_best_rd, 0,
-                     bs, n, cpi->sf.use_fast_coef_costing);
+    const int r_tx_size = cpi->tx_size_cost[max_tx_size - 1][tx_size_ctx][n];
+    txfm_rd_in_plane(cpi, x, &r[n][0], &d[n], &s[n], &sse[n], best_rd, 0, bs, n,
+                     cpi->sf.use_fast_coef_costing);
     r[n][1] = r[n][0];
     if (r[n][0] < INT_MAX) {
       r[n][1] += r_tx_size;
@@ -1468,11 +1462,11 @@ static int set_and_cost_bmi_mvs(VP9_COMP *cpi, MACROBLOCK *x, MACROBLOCKD *xd,
       if (is_compound)
         this_mv[1].as_int = frame_mv[mode][mi->ref_frame[1]].as_int;
       break;
-    case ZEROMV:
+    default:
+      assert(mode == ZEROMV);
       this_mv[0].as_int = 0;
       if (is_compound) this_mv[1].as_int = 0;
       break;
-    default: break;
   }
 
   mi->bmi[i].as_mv[0].as_int = this_mv[0].as_int;
@@ -3618,9 +3612,13 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi, TileDataEnc *tile_data,
   }
 
   if (best_mode_index < 0 || best_rd >= best_rd_so_far) {
-    // If adaptive interp filter is enabled, then the current leaf node of 8x8
-    // data is needed for sub8x8. Hence preserve the context.
+// If adaptive interp filter is enabled, then the current leaf node of 8x8
+// data is needed for sub8x8. Hence preserve the context.
+#if CONFIG_CONSISTENT_RECODE
+    if (bsize == BLOCK_8X8) ctx->mic = *xd->mi[0];
+#else
     if (cpi->row_mt && bsize == BLOCK_8X8) ctx->mic = *xd->mi[0];
+#endif
     rd_cost->rate = INT_MAX;
     rd_cost->rdcost = INT64_MAX;
     return;

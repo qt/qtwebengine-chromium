@@ -48,6 +48,13 @@ be describing additional metrics about the same event.
     |DeveloperEngagementMetric|.
   </summary>
   <metric name="DeveloperEngagement"/>
+  <metric name="FormSignature">
+    <summary>
+      The signature of the form. This is the hash identifier used to denote this
+      form for query and voting purposes. See
+      components/autofill/core/common/signatures_util.cc for more details.
+    </summary>
+  </metric>
   <metric name="FormTypes">
     <summary>
       Type of form. Stored as bitvector. A set ith bit implies enum FormType's
@@ -165,6 +172,11 @@ be describing additional metrics about the same event.
       none of the field were autofilled. See |AutofillFormSubmittedState|.
     </summary>
   </metric>
+  <metric name="FormSignature">
+    <summary>
+      FormSignature is approximately 10 bit hash of form structure.
+    </summary>
+  </metric>
   <metric name="FormTypes">
     <summary>
       Type of form. Stored as bitvector. A set ith bit implies enum FormType's
@@ -190,6 +202,11 @@ be describing additional metrics about the same event.
     Recorded when we parse a form to log form metadata and autofill settings
     that apply to all subsequent events for this form.
   </summary>
+  <metric name="FormSignature">
+    <summary>
+      FormSignature is approximately 10 bit hash of form structure.
+    </summary>
+  </metric>
   <metric name="FormTypes">
     <summary>
       Type of form. Stored as bitvector. A set ith bit implies enum FormType's
@@ -228,6 +245,16 @@ be describing additional metrics about the same event.
     Recorded when user selects a suggestion and we fill the form with that
     suggestion.
   </summary>
+  <metric name="FieldSignature">
+    <summary>
+      The signature of the field
+    </summary>
+  </metric>
+  <metric name="FormSignature">
+    <summary>
+      The signature of the form.
+    </summary>
+  </metric>
   <metric name="MillisecondsSinceFormParsed">
     <summary>
       Time since form parse.
@@ -246,6 +273,16 @@ be describing additional metrics about the same event.
   <summary>
     Recorded when a suggestion is shown to user.
   </summary>
+  <metric name="FieldSignature">
+    <summary>
+      The signature of the field
+    </summary>
+  </metric>
+  <metric name="FormSignature">
+    <summary>
+      The signature of the form.
+    </summary>
+  </metric>
   <metric name="HeuristicType">
     <summary>
       Field's |ServerFieldType| based on heuristics. See
@@ -679,18 +716,31 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="CPUUsageMeasurement">
-  <owner>matthalp@google.com</owner>
-  <owner>oysteine@chromium.org</owner>
+  <owner>chrisha@chromium.org</owner>
+  <owner>siggi@chromium.org</owner>
   <summary>
     A CPU usage measurement that corresponds to a tick in a CPU usage
-    time-series The tick interval is set as a FieldTrial parameter, which can be
-    obtained by cross referencing the UKM entry with the FieldTrial it was
-    launched with. There is also some metadata stored to determine how faitful
+    time-series. There is also some metadata stored to determine how faithful
     the CPU usage measurement is (e.g. NumberOfCoresidentTabs).
   </summary>
   <metric name="CPUUsage">
     <summary>
-      CPU usage measurement.
+      CPU usage measurement. This is in units of clock-cycles. For example, 1.2
+      seconds of 100% CPU usage on a 2.5GHz CPU corresponds to a value of 1.2 x
+      1.0 x 2.5e9 = 3e6.
+    </summary>
+  </metric>
+  <metric name="EventType">
+    <summary>
+      The event associated with the measurement. This is an integer value
+      corresponding to the enum defined in
+      resource_coordinator::RenderProcessProbe.
+    </summary>
+  </metric>
+  <metric name="IsVisible">
+    <summary>
+      Indicates if any frame hosted in this tab is visible at the moment the
+      measurement is taken.
     </summary>
   </metric>
   <metric name="NumberOfCoresidentTabs">
@@ -699,9 +749,34 @@ be describing additional metrics about the same event.
       associated with when the CPU usage measurement is taken.
     </summary>
   </metric>
-  <metric name="Tick">
+  <metric name="ObservationWindowSizeMs">
     <summary>
-      Tick CPU Usage measurement was taken at.
+      The size of the observation window (time since last CPU measurement) in
+      milliseconds.
+    </summary>
+  </metric>
+  <metric name="ProcessUptimeMs">
+    <summary>
+      The uptime of the process being measured, in milliseconds.
+    </summary>
+  </metric>
+</event>
+
+<event name="DocumentCreated">
+  <owner>beccahughes@chromium.org</owner>
+  <summary>
+    Recorded when a Document object is created and records the source ID of the
+    navigation and whether the document was in the main frame. This can be used
+    to link subframe UKM events to the parent document.
+  </summary>
+  <metric name="IsMainFrame">
+    <summary>
+      Whether the document was in the main frame. This is can either be 0 or 1.
+    </summary>
+  </metric>
+  <metric name="NavigationSourceId">
+    <summary>
+      Contains the UKM source id of the navigation as an integer.
     </summary>
   </metric>
 </event>
@@ -726,6 +801,7 @@ be describing additional metrics about the same event.
 
 <event name="Download.Started">
   <owner>jming@chromium.org</owner>
+  <owner>xingliu@chromium.org</owner>
   <summary>
     Metrics taken when a download begins. It has one Download.Ended and none to
     multiple Download.Interrupted/Download.Resumed events associated with it.
@@ -750,6 +826,7 @@ be describing additional metrics about the same event.
 
 <event name="Download.Completed">
   <owner>jming@chromium.org</owner>
+  <owner>xingliu@chromium.org</owner>
   <summary>
     Metrics taken when a download completes. Its parent event is
     Download.Started.
@@ -781,6 +858,7 @@ be describing additional metrics about the same event.
 
 <event name="Download.Interrupted">
   <owner>jming@chromium.org</owner>
+  <owner>xingliu@chromium.org</owner>
   <summary>
     Metrics taken when a download is interrupted. Its parent event is
     Download.Started.
@@ -825,6 +903,7 @@ be describing additional metrics about the same event.
 
 <event name="Download.Resumed">
   <owner>jming@chromium.org</owner>
+  <owner>xingliu@chromium.org</owner>
   <summary>
     Metrics taken when a download is resumed. Its parent event is
     Download.Started.
@@ -1407,6 +1486,11 @@ be describing additional metrics about the same event.
       means this was a SRC playback.
     </summary>
   </metric>
+  <metric name="IsMuted">
+    <summary>
+      Boolean value indicating if this event is for a muted playback.
+    </summary>
+  </metric>
   <metric name="IsTopFrame">
     <summary>
       Flag indicating whether the report comes from the top frame or some inner
@@ -1482,31 +1566,32 @@ be describing additional metrics about the same event.
   <metric name="WatchTime.DisplayFullscreen">
     <summary>
       Watch time for fullscreen in milliseconds for this playback. See
-      Media.WatchTime UMA metrics.
+      Media.WatchTime UMA metrics. Only reported for foreground playbacks.
     </summary>
   </metric>
   <metric name="WatchTime.DisplayInline">
     <summary>
       Watch time for inline display in milliseconds for this playback. See
-      Media.WatchTime UMA metrics.
+      Media.WatchTime UMA metrics. Only reported for foreground playbacks.
     </summary>
   </metric>
   <metric name="WatchTime.DisplayPictureInPicture">
     <summary>
       Watch time for picture in picture display in milliseconds for this
-      playback. See Media.WatchTime UMA metrics.
+      playback. See Media.WatchTime UMA metrics. Only reported for foreground
+      playbacks.
     </summary>
   </metric>
   <metric name="WatchTime.NativeControlsOff">
     <summary>
       Watch time with no controls in milliseconds for this playback. See
-      Media.WatchTime UMA metrics.
+      Media.WatchTime UMA metrics. Only reported for foreground playbacks.
     </summary>
   </metric>
   <metric name="WatchTime.NativeControlsOn">
     <summary>
       Watch time with native controls in milliseconds for this playback. See
-      Media.WatchTime UMA metrics.
+      Media.WatchTime UMA metrics. Only reported for foreground playbacks.
     </summary>
   </metric>
 </event>
@@ -1702,6 +1787,16 @@ be describing additional metrics about the same event.
   <metric name="Net.UrlRequestContext">
     <summary>
       Measure of memory allocated by all network requests.
+    </summary>
+  </metric>
+  <metric name="NumberOfAdSubframes">
+    <summary>
+      The number of ad subframes that the associated renderer owns.
+    </summary>
+  </metric>
+  <metric name="NumberOfDetachedScriptStates">
+    <summary>
+      The number of detached ScriptState that the associated renderer owns.
     </summary>
   </metric>
   <metric name="NumberOfDocuments">
@@ -2164,6 +2259,23 @@ be describing additional metrics about the same event.
       correspond to the enum PasswordFormMetricsRecorder::BubbleTrigger.
     </summary>
   </metric>
+  <metric name="Saving.ShowedManualFallbackForSaving">
+    <summary>
+      Records if a manual fallback for saving option was shown to the user (on
+      Android this is recorded, even though the UI does not exist at the
+      moment). This is a bit mask. 1 means a prompt was shown, 2 means the
+      prompt was due to a generated password, 4 means the prompt was due to an
+      update.
+    </summary>
+  </metric>
+  <metric name="Submission.Indicator">
+    <summary>
+      Records the event that led the password manager to believe the submission
+      was successful. Metrics is recorded only when the password is saved.
+      Recorded values correspond to the enum
+      autofill::PasswordForm::SubmissionIndicatorEvent.
+    </summary>
+  </metric>
   <metric name="Submission.Observed">
     <summary>
       Records whether a submission of a password form has been observered. The
@@ -2321,6 +2433,9 @@ be describing additional metrics about the same event.
     </summary>
   </metric>
   <metric name="User.Action.TriggeredManualFallbackForUpdating">
+    <obsolete>
+      Deprecated. Use TriggeredManualFallbackForSaving instead.
+    </obsolete>
     <summary>
       Counts how many times the user triggered the manual fallback for password
       updating. This is only populated if events happened.
@@ -2573,6 +2688,26 @@ be describing additional metrics about the same event.
   </summary>
 </event>
 
+<event name="Popup.Closed">
+  <owner>csharrison@chromium.org</owner>
+  <owner>jkarlin@chromium.org</owner>
+  <summary>
+    A popup window was closed.
+  </summary>
+  <metric name="EngagementTime">
+    <summary>
+      The time (in ms, rounded down to the nearest power of 2) a popup
+      WebContents is visible / foregrounded, until it is closed. Keyed by the
+      popup opener's URL (not the URL of the popup).
+    </summary>
+  </metric>
+  <metric name="UserInitiatedClose">
+    <summary>
+      Boolean value to represent whether the popup was closed by user gesture.
+    </summary>
+  </metric>
+</event>
+
 <event name="ScreenBrightness">
   <owner>pdyson@chromium.org</owner>
   <summary>
@@ -2723,6 +2858,12 @@ be describing additional metrics about the same event.
       power.
     </summary>
   </metric>
+  <metric name="PreviousBrightness">
+    <summary>
+      The brightness of the screen prior to the time at which the current event
+      was logged.
+    </summary>
+  </metric>
   <metric name="Reason">
     <summary>
       The reason that the event is logged. Values are enumerated in
@@ -2737,6 +2878,11 @@ be describing additional metrics about the same event.
   <metric name="SequenceId">
     <summary>
       The ID of this event in the current session.
+    </summary>
+  </metric>
+  <metric name="TimeSinceLastEventSec">
+    <summary>
+      Time in seconds since last time an event was logged.
     </summary>
   </metric>
 </event>
@@ -2823,10 +2969,10 @@ be describing additional metrics about the same event.
   <metric name="ActivationDecision">
     <summary>
       Enum that records the policy decision to activate subresource filtering
-      for a page load. 0 = Unknown, 1 = Activated, 2 = Disabled, 3 = Unsupported
-      scheme, 4 = URL whitelisted, 5 = Activation conditions not met.
-      'Activated' indicates that subresource filtering was activated. All other
-      reasons indicate that subresource filtering was not activated.
+      for a page load. 0 = Unknown, 1 = Activated, 2 = Disabled, 3 = Deprecated
+      value, 4 = URL whitelisted, 5 = Activation conditions not met. 'Activated'
+      indicates that subresource filtering was activated. All other reasons
+      indicate that subresource filtering was not activated.
     </summary>
   </metric>
   <metric name="DryRun">
@@ -2958,7 +3104,6 @@ be describing additional metrics about the same event.
 
 <event name="TabManager.Background.ForegroundedOrClosed">
   <owner>chrisha@chromium.org</owner>
-  <owner>lpy@chromium.org</owner>
   <summary>
     Collects the duration in MS from when the tab is backgrounded to when it is
     brought to foreground or closed.
@@ -2992,7 +3137,7 @@ be describing additional metrics about the same event.
 
 <event
     name="TabManager.BackgroundTabOpening.ForegroundTab.ExpectedTaskQueueingDurationInfo">
-  <owner>zhenw@chromium.org</owner>
+  <owner>chrisha@chromium.org</owner>
   <summary>
     Collects the expected queueing duration of tasks and metadata for the
     foreground tab during a background tab opening session (the duration of time
@@ -3037,6 +3182,191 @@ be describing additional metrics about the same event.
   <metric name="SystemTabCount">
     <summary>
       Number of all tabs of the system, which includes all browser windows.
+    </summary>
+  </metric>
+</event>
+
+<event name="TabManager.LifecycleStateChange">
+  <owner>chrisha@chromium.org</owner>
+  <owner>fdoray@chromium.org</owner>
+  <summary>
+    Collects information about when and why a lifecycle state change was
+    attempted, and information about the outcome of the attempt.
+  </summary>
+  <metric name="FailureGlobalBlacklist">
+    <summary>
+      Boolean indicating that the tab was explicitly opted out of the
+      intervention via the global blacklist.
+    </summary>
+  </metric>
+  <metric name="FailureHeuristicAudio">
+    <summary>
+      Booling indicating that the intervention was disallowed because the origin
+      has historically been observed emitting audio while in the background.
+    </summary>
+  </metric>
+  <metric name="FailureHeuristicFavicon">
+    <summary>
+      Booling indicating that the intervention was disallowed because the origin
+      has historically been observed updating its favicon while in the
+      background.
+    </summary>
+  </metric>
+  <metric name="FailureHeuristicInsufficientObservation">
+    <summary>
+      Booling indicating that the site is still being observed locally in order
+      to determine which features are in use. In the meantime, it is protected
+      from this intervention.
+    </summary>
+  </metric>
+  <metric name="FailureHeuristicNotifications">
+    <summary>
+      Booling indicating that the intervention was disallowed because the origin
+      has historically been observed making use of notifications while in the
+      background.
+    </summary>
+  </metric>
+  <metric name="FailureHeuristicTitle">
+    <summary>
+      Booling indicating that the intervention was disallowed because the origin
+      has historically been observed updating its tab title while in the
+      background.
+    </summary>
+  </metric>
+  <metric name="FailureLifecyclesEnterprisePolicyOptOut">
+    <summary>
+      Booling indicating that the browser was explicitly opted out of the
+      intervention via enterprise policy.
+    </summary>
+  </metric>
+  <metric name="FailureLifecyclesFeaturePolicyOptOut">
+    <summary>
+      Booling indicating that the tab explicitly opted out of the intervention
+      via feature policy.
+    </summary>
+  </metric>
+  <metric name="FailureLiveStateCapturing">
+    <summary>
+      Booling indicating that the intervention was disallowed because the tab is
+      currently capturing user media (making use of webcam or microphone, for
+      example).
+    </summary>
+  </metric>
+  <metric name="FailureLiveStateExtensionDisallowed">
+    <summary>
+      Booling indicating that the intervention was disallowed by an extension.
+    </summary>
+  </metric>
+  <metric name="FailureLiveStateFormEntry">
+    <summary>
+      Booling indicating that the intervention was disallowed because the tab
+      currently contains text form entry.
+    </summary>
+  </metric>
+  <metric name="FailureLiveStateIsPDF">
+    <summary>
+      Booling indicating that the intervention was disallowed because the tab is
+      currently hosting a PDF.
+    </summary>
+  </metric>
+  <metric name="FailureLiveStateMirroring">
+    <summary>
+      Booling indicating that the intervention was disallowed because the tab is
+      currently being mirrored (casting its contents, for example).
+    </summary>
+  </metric>
+  <metric name="FailureLiveStatePlayingAudio">
+    <summary>
+      Booling indicating that the intervention was disallowed because the tab is
+      currently playing audio.
+    </summary>
+  </metric>
+  <metric name="FailureLiveStateUsingWebSockets">
+    <summary>
+      Booling indicating that the intervention was disallowed because the tab is
+      currently using WebSockets.
+    </summary>
+  </metric>
+  <metric name="FailureLiveStateUsingWebUSB">
+    <summary>
+      Booling indicating that the intervention was disallowed because the tab is
+      currently using WebUSB.
+    </summary>
+  </metric>
+  <metric name="FailureLiveStateVisible">
+    <summary>
+      Booling indicating that the intervention was disallowed because the tab is
+      currently visible.
+    </summary>
+  </metric>
+  <metric name="LifecycleStateChangeReason">
+    <summary>
+      The reason the lifecycle state change was attempted. This corresponds to
+      the LifecycleStateChangeReason enumeration in lifecycle_state.h.
+    </summary>
+  </metric>
+  <metric name="NewLifecycleState">
+    <summary>
+      The lifecycle state the tab will be in after the state change. Corresponds
+      to a value from the LifecycleState enum defined in lifecycle_state.h.
+    </summary>
+  </metric>
+  <metric name="OldLifecycleState">
+    <summary>
+      The lifecycle state the tab was in prior to the state change. Corresponds
+      to a value from the LifecycleState enum defined in lifecycle_state.h.
+    </summary>
+  </metric>
+  <metric name="Outcome">
+    <summary>
+      Whether or not the state change was successful. The various Failure and
+      Success booleans encode the actual reasons for this outcome. Note that
+      multiple success and failure reasons may be encoded for a single decision.
+      The presence of any failure bit indicates a negative outcome. If only
+      success bits are present the outcome is positive.
+    </summary>
+  </metric>
+  <metric name="SuccessGlobalWhitelist">
+    <summary>
+      Booling indicating that the tab was explicitly opted in to the
+      intervention via the global whitelist.
+    </summary>
+  </metric>
+  <metric name="SuccessHeuristic">
+    <summary>
+      Booling indicating that the tab was deemed safe for the intervention via
+      local observations and heuristics.
+    </summary>
+  </metric>
+  <metric name="SuccessLifecyclesFeaturePolicyOptIn">
+    <summary>
+      Booling indicating that the tab explicitly opted in to the intervention
+      via feature policy.
+    </summary>
+  </metric>
+  <metric name="TimeSinceNavigationMs">
+    <summary>
+      The time elapsed (in milliseconds) since the top-level navigation was
+      committed that loaded this tab's content.
+    </summary>
+  </metric>
+  <metric name="TimeSinceVisibilityStateChangeMs">
+    <summary>
+      The amount of time that has passed (in milliseconds) since the last
+      visibility state change.
+    </summary>
+  </metric>
+  <metric name="TransitionForced">
+    <summary>
+      This is set if the transition to the new lifecycle state was forced by the
+      browser because the content took too long to respond to the lifecycle
+      event.
+    </summary>
+  </metric>
+  <metric name="VisibilityState">
+    <summary>
+      The current visibility state. This is an integer value corresponding to
+      the enumeration in content/public/browser/visibility.h.
     </summary>
   </metric>
 </event>
@@ -3481,16 +3811,17 @@ be describing additional metrics about the same event.
   </summary>
   <metric name="ContentType">
     <summary>
-      Enumeration for the MIME type of the page. Values are enumerated in
-      metrics::TabMetricsEvent::ContentType.
+      Obsolete. Enumeration for the MIME type of the page. Values are enumerated
+      in metrics::TabMetricsEvent::ContentType.
     </summary>
   </metric>
   <metric name="DefaultProtocolHandler">
     <summary>
-      Schemes that a page from this page's origin is the default protocol
-      handler for, meaning the user has chosen to accept (or the handler was
-      preinstalled by Chrome). The metric is repeated, occurring for each such
-      protocol handler, and uses values from metrics::TabMetricsEvent::Scheme.
+      Obsolete. Schemes that a page from this page's origin is the default
+      protocol handler for, meaning the user has chosen to accept (or the
+      handler was preinstalled by Chrome). The metric is repeated, occurring for
+      each such protocol handler, and uses values from
+      metrics::TabMetricsEvent::Scheme.
     </summary>
   </metric>
   <metric name="HasBeforeUnloadHandler">
@@ -3506,8 +3837,8 @@ be describing additional metrics about the same event.
   </metric>
   <metric name="IsExtensionProtected">
     <summary>
-      True if an extension has marked this tab as non-discardable via the
-      chrome.tabs.update() extension API.
+      Obsolete. True if an extension has marked this tab as non-discardable via
+      the chrome.tabs.update() extension API.
     </summary>
   </metric>
   <metric name="IsPinned">
@@ -3582,6 +3913,17 @@ be describing additional metrics about the same event.
 
 <event name="XR.WebXR" singular="True">
   <owner>billorr@chromium.org</owner>
+  <metric name="DidGetGamepads">
+    <summary>
+      Boolean value that indicates that the Gamepad API was used on a WebXR
+      site.
+    </summary>
+  </metric>
+  <metric name="DidGetXRInputSources">
+    <summary>
+      Boolean value that indicates that the WebXR input API was used.
+    </summary>
+  </metric>
   <metric name="DidRequestAvailableDevices">
     <summary>
       Boolean value that indicates that the API to enumerate devices was called.
@@ -3595,6 +3937,11 @@ be describing additional metrics about the same event.
   <metric name="DidRequestPresentation">
     <summary>
       Boolean value that indicates that presentation was requested.
+    </summary>
+  </metric>
+  <metric name="DidUseNavigatorXR">
+    <summary>
+      Boolean value that indicates that the WebXR Device API was used.
     </summary>
   </metric>
   <metric name="ReturnedDevice">

@@ -8,6 +8,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
+#include "base/stl_util.h"
 #include "base/test/histogram_tester.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "net/base/test_completion_callback.h"
@@ -27,28 +28,29 @@
 #include "net/quic/chromium/quic_http_utils.h"
 #include "net/quic/chromium/quic_server_info.h"
 #include "net/quic/chromium/quic_test_packet_maker.h"
-#include "net/quic/core/crypto/aes_128_gcm_12_encrypter.h"
-#include "net/quic/core/crypto/crypto_protocol.h"
-#include "net/quic/core/crypto/quic_decrypter.h"
-#include "net/quic/core/crypto/quic_encrypter.h"
-#include "net/quic/core/quic_client_promised_info.h"
-#include "net/quic/core/quic_packet_writer.h"
-#include "net/quic/core/tls_client_handshaker.h"
-#include "net/quic/platform/api/quic_flags.h"
-#include "net/quic/platform/api/quic_test.h"
-#include "net/quic/test_tools/crypto_test_utils.h"
-#include "net/quic/test_tools/quic_client_promised_info_peer.h"
-#include "net/quic/test_tools/quic_connection_peer.h"
-#include "net/quic/test_tools/quic_stream_peer.h"
-#include "net/quic/test_tools/quic_test_utils.h"
-#include "net/quic/test_tools/simple_quic_framer.h"
 #include "net/socket/datagram_client_socket.h"
 #include "net/socket/socket_test_util.h"
-#include "net/spdy/chromium/spdy_test_util_common.h"
-#include "net/spdy/core/spdy_test_utils.h"
+#include "net/spdy/spdy_test_util_common.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/gtest_util.h"
 #include "net/test/test_data_directory.h"
+#include "net/test/test_with_scoped_task_environment.h"
+#include "net/third_party/quic/core/crypto/aes_128_gcm_12_encrypter.h"
+#include "net/third_party/quic/core/crypto/crypto_protocol.h"
+#include "net/third_party/quic/core/crypto/quic_decrypter.h"
+#include "net/third_party/quic/core/crypto/quic_encrypter.h"
+#include "net/third_party/quic/core/quic_client_promised_info.h"
+#include "net/third_party/quic/core/quic_packet_writer.h"
+#include "net/third_party/quic/core/tls_client_handshaker.h"
+#include "net/third_party/quic/platform/api/quic_flags.h"
+#include "net/third_party/quic/platform/api/quic_test.h"
+#include "net/third_party/quic/test_tools/crypto_test_utils.h"
+#include "net/third_party/quic/test_tools/quic_client_promised_info_peer.h"
+#include "net/third_party/quic/test_tools/quic_connection_peer.h"
+#include "net/third_party/quic/test_tools/quic_stream_peer.h"
+#include "net/third_party/quic/test_tools/quic_test_utils.h"
+#include "net/third_party/quic/test_tools/simple_quic_framer.h"
+#include "net/third_party/spdy/core/spdy_test_utils.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -84,7 +86,8 @@ class TestingQuicChromiumClientSession : public QuicChromiumClientSession {
 };
 
 class QuicChromiumClientSessionTest
-    : public ::testing::TestWithParam<std::tuple<QuicTransportVersion, bool>> {
+    : public ::testing::TestWithParam<std::tuple<QuicTransportVersion, bool>>,
+      public WithScopedTaskEnvironment {
  public:
   QuicChromiumClientSessionTest()
       : version_(std::get<0>(GetParam())),
@@ -93,7 +96,8 @@ class QuicChromiumClientSessionTest
                        TlsClientHandshaker::CreateSslCtx()),
         default_read_(new MockRead(SYNCHRONOUS, ERR_IO_PENDING, 0)),
         socket_data_(
-            new SequencedSocketData(default_read_.get(), 1, nullptr, 0)),
+            new SequencedSocketData(base::make_span(default_read_.get(), 1),
+                                    base::span<MockWrite>())),
         random_(0),
         helper_(&clock_, &random_),
         session_key_(kServerHostname,
@@ -223,7 +227,7 @@ class QuicChromiumClientSessionTest
 };
 
 INSTANTIATE_TEST_CASE_P(
-    VersionIncludeStreamDependencySequnece,
+    VersionIncludeStreamDependencySequence,
     QuicChromiumClientSessionTest,
     ::testing::Combine(::testing::ValuesIn(AllSupportedTransportVersions()),
                        ::testing::Bool()));
@@ -234,8 +238,7 @@ TEST_P(QuicChromiumClientSessionTest, IsFatalErrorNotSetForNonFatalError) {
       client_maker_.MakeInitialSettingsPacket(1, nullptr));
   MockWrite writes[] = {
       MockWrite(ASYNC, settings_packet->data(), settings_packet->length(), 1)};
-  socket_data_.reset(new SequencedSocketData(reads, arraysize(reads), writes,
-                                             arraysize(writes)));
+  socket_data_.reset(new SequencedSocketData(reads, writes));
   Initialize();
 
   SSLInfo ssl_info;
@@ -258,8 +261,7 @@ TEST_P(QuicChromiumClientSessionTest, IsFatalErrorSetForFatalError) {
       client_maker_.MakeInitialSettingsPacket(1, nullptr));
   MockWrite writes[] = {
       MockWrite(ASYNC, settings_packet->data(), settings_packet->length(), 1)};
-  socket_data_.reset(new SequencedSocketData(reads, arraysize(reads), writes,
-                                             arraysize(writes)));
+  socket_data_.reset(new SequencedSocketData(reads, writes));
   Initialize();
 
   SSLInfo ssl_info;
@@ -281,15 +283,15 @@ TEST_P(QuicChromiumClientSessionTest, CryptoConnect) {
       client_maker_.MakeInitialSettingsPacket(1, nullptr));
   MockWrite writes[] = {
       MockWrite(ASYNC, settings_packet->data(), settings_packet->length(), 1)};
-  socket_data_.reset(new SequencedSocketData(reads, arraysize(reads), writes,
-                                             arraysize(writes)));
+  socket_data_.reset(new SequencedSocketData(reads, writes));
   Initialize();
   CompleteCryptoHandshake();
 }
 
 TEST_P(QuicChromiumClientSessionTest, Handle) {
   MockQuicData quic_data;
-  quic_data.AddWrite(client_maker_.MakeInitialSettingsPacket(1, nullptr));
+  quic_data.AddWrite(SYNCHRONOUS,
+                     client_maker_.MakeInitialSettingsPacket(1, nullptr));
   quic_data.AddRead(ASYNC, ERR_IO_PENDING);
   quic_data.AddRead(ASYNC, OK);  // EOF
   quic_data.AddSocketDataToFactory(&socket_factory_);
@@ -374,7 +376,8 @@ TEST_P(QuicChromiumClientSessionTest, Handle) {
 
 TEST_P(QuicChromiumClientSessionTest, StreamRequest) {
   MockQuicData quic_data;
-  quic_data.AddWrite(client_maker_.MakeInitialSettingsPacket(1, nullptr));
+  quic_data.AddWrite(SYNCHRONOUS,
+                     client_maker_.MakeInitialSettingsPacket(1, nullptr));
   quic_data.AddRead(ASYNC, ERR_IO_PENDING);
   quic_data.AddRead(ASYNC, OK);  // EOF
   quic_data.AddSocketDataToFactory(&socket_factory_);
@@ -398,7 +401,8 @@ TEST_P(QuicChromiumClientSessionTest, StreamRequest) {
 
 TEST_P(QuicChromiumClientSessionTest, ConfirmationRequiredStreamRequest) {
   MockQuicData quic_data;
-  quic_data.AddWrite(client_maker_.MakeInitialSettingsPacket(1, nullptr));
+  quic_data.AddWrite(SYNCHRONOUS,
+                     client_maker_.MakeInitialSettingsPacket(1, nullptr));
   quic_data.AddRead(ASYNC, ERR_IO_PENDING);
   quic_data.AddRead(ASYNC, OK);  // EOF
   quic_data.AddSocketDataToFactory(&socket_factory_);
@@ -422,7 +426,8 @@ TEST_P(QuicChromiumClientSessionTest, ConfirmationRequiredStreamRequest) {
 
 TEST_P(QuicChromiumClientSessionTest, StreamRequestBeforeConfirmation) {
   MockQuicData quic_data;
-  quic_data.AddWrite(client_maker_.MakeInitialSettingsPacket(1, nullptr));
+  quic_data.AddWrite(SYNCHRONOUS,
+                     client_maker_.MakeInitialSettingsPacket(1, nullptr));
   quic_data.AddRead(ASYNC, ERR_IO_PENDING);
   quic_data.AddRead(ASYNC, OK);  // EOF
   quic_data.AddSocketDataToFactory(&socket_factory_);
@@ -451,9 +456,11 @@ TEST_P(QuicChromiumClientSessionTest, StreamRequestBeforeConfirmation) {
 
 TEST_P(QuicChromiumClientSessionTest, CancelStreamRequestBeforeRelease) {
   MockQuicData quic_data;
-  quic_data.AddWrite(client_maker_.MakeInitialSettingsPacket(1, nullptr));
-  quic_data.AddWrite(client_maker_.MakeRstPacket(
-      2, true, GetNthClientInitiatedStreamId(0), QUIC_STREAM_CANCELLED));
+  quic_data.AddWrite(SYNCHRONOUS,
+                     client_maker_.MakeInitialSettingsPacket(1, nullptr));
+  quic_data.AddWrite(SYNCHRONOUS, client_maker_.MakeRstPacket(
+                                      2, true, GetNthClientInitiatedStreamId(0),
+                                      QUIC_STREAM_CANCELLED));
   quic_data.AddRead(ASYNC, ERR_IO_PENDING);
   quic_data.AddRead(ASYNC, OK);  // EOF
   quic_data.AddSocketDataToFactory(&socket_factory_);
@@ -477,9 +484,11 @@ TEST_P(QuicChromiumClientSessionTest, CancelStreamRequestBeforeRelease) {
 
 TEST_P(QuicChromiumClientSessionTest, AsyncStreamRequest) {
   MockQuicData quic_data;
-  quic_data.AddWrite(client_maker_.MakeInitialSettingsPacket(1, nullptr));
-  quic_data.AddWrite(client_maker_.MakeRstPacket(
-      2, true, GetNthClientInitiatedStreamId(0), QUIC_RST_ACKNOWLEDGEMENT));
+  quic_data.AddWrite(SYNCHRONOUS,
+                     client_maker_.MakeInitialSettingsPacket(1, nullptr));
+  quic_data.AddWrite(SYNCHRONOUS, client_maker_.MakeRstPacket(
+                                      2, true, GetNthClientInitiatedStreamId(0),
+                                      QUIC_RST_ACKNOWLEDGEMENT));
   quic_data.AddRead(ASYNC, ERR_IO_PENDING);
   quic_data.AddRead(ASYNC, OK);  // EOF
   quic_data.AddSocketDataToFactory(&socket_factory_);
@@ -520,7 +529,8 @@ TEST_P(QuicChromiumClientSessionTest, AsyncStreamRequest) {
 
 TEST_P(QuicChromiumClientSessionTest, ClosedWithAsyncStreamRequest) {
   MockQuicData quic_data;
-  quic_data.AddWrite(client_maker_.MakeInitialSettingsPacket(1, nullptr));
+  quic_data.AddWrite(SYNCHRONOUS,
+                     client_maker_.MakeInitialSettingsPacket(1, nullptr));
   quic_data.AddRead(ASYNC, ERR_IO_PENDING);
   quic_data.AddRead(ASYNC, OK);  // EOF
   quic_data.AddSocketDataToFactory(&socket_factory_);
@@ -569,9 +579,11 @@ TEST_P(QuicChromiumClientSessionTest, ClosedWithAsyncStreamRequest) {
 
 TEST_P(QuicChromiumClientSessionTest, CancelPendingStreamRequest) {
   MockQuicData quic_data;
-  quic_data.AddWrite(client_maker_.MakeInitialSettingsPacket(1, nullptr));
-  quic_data.AddWrite(client_maker_.MakeRstPacket(
-      2, true, GetNthClientInitiatedStreamId(0), QUIC_RST_ACKNOWLEDGEMENT));
+  quic_data.AddWrite(SYNCHRONOUS,
+                     client_maker_.MakeInitialSettingsPacket(1, nullptr));
+  quic_data.AddWrite(SYNCHRONOUS, client_maker_.MakeRstPacket(
+                                      2, true, GetNthClientInitiatedStreamId(0),
+                                      QUIC_RST_ACKNOWLEDGEMENT));
   quic_data.AddRead(ASYNC, ERR_IO_PENDING);
   quic_data.AddRead(ASYNC, OK);  // EOF
   quic_data.AddSocketDataToFactory(&socket_factory_);
@@ -613,9 +625,11 @@ TEST_P(QuicChromiumClientSessionTest, CancelPendingStreamRequest) {
 
 TEST_P(QuicChromiumClientSessionTest, ConnectionCloseBeforeStreamRequest) {
   MockQuicData quic_data;
-  quic_data.AddWrite(client_maker_.MakeInitialSettingsPacket(1, nullptr));
-  quic_data.AddRead(server_maker_.MakeConnectionClosePacket(
-      1, false, QUIC_CRYPTO_VERSION_NOT_SUPPORTED, "Time to panic!"));
+  quic_data.AddWrite(SYNCHRONOUS,
+                     client_maker_.MakeInitialSettingsPacket(1, nullptr));
+  quic_data.AddRead(ASYNC, server_maker_.MakeConnectionClosePacket(
+                               1, false, QUIC_CRYPTO_VERSION_NOT_SUPPORTED,
+                               "Time to panic!"));
   quic_data.AddSocketDataToFactory(&socket_factory_);
 
   Initialize();
@@ -640,8 +654,9 @@ TEST_P(QuicChromiumClientSessionTest, ConnectionCloseBeforeStreamRequest) {
 TEST_P(QuicChromiumClientSessionTest, ConnectionCloseBeforeHandshakeConfirmed) {
   MockQuicData quic_data;
   quic_data.AddRead(ASYNC, ERR_IO_PENDING);
-  quic_data.AddRead(server_maker_.MakeConnectionClosePacket(
-      1, false, QUIC_CRYPTO_VERSION_NOT_SUPPORTED, "Time to panic!"));
+  quic_data.AddRead(ASYNC, server_maker_.MakeConnectionClosePacket(
+                               1, false, QUIC_CRYPTO_VERSION_NOT_SUPPORTED,
+                               "Time to panic!"));
   quic_data.AddSocketDataToFactory(&socket_factory_);
 
   Initialize();
@@ -668,10 +683,12 @@ TEST_P(QuicChromiumClientSessionTest, ConnectionCloseBeforeHandshakeConfirmed) {
 
 TEST_P(QuicChromiumClientSessionTest, ConnectionCloseWithPendingStreamRequest) {
   MockQuicData quic_data;
-  quic_data.AddWrite(client_maker_.MakeInitialSettingsPacket(1, nullptr));
+  quic_data.AddWrite(SYNCHRONOUS,
+                     client_maker_.MakeInitialSettingsPacket(1, nullptr));
   quic_data.AddRead(ASYNC, ERR_IO_PENDING);
-  quic_data.AddRead(server_maker_.MakeConnectionClosePacket(
-      1, false, QUIC_CRYPTO_VERSION_NOT_SUPPORTED, "Time to panic!"));
+  quic_data.AddRead(ASYNC, server_maker_.MakeConnectionClosePacket(
+                               1, false, QUIC_CRYPTO_VERSION_NOT_SUPPORTED,
+                               "Time to panic!"));
   quic_data.AddSocketDataToFactory(&socket_factory_);
 
   Initialize();
@@ -714,8 +731,7 @@ TEST_P(QuicChromiumClientSessionTest, MaxNumStreams) {
   MockWrite writes[] = {
       MockWrite(ASYNC, settings_packet->data(), settings_packet->length(), 1),
       MockWrite(ASYNC, client_rst->data(), client_rst->length(), 2)};
-  socket_data_.reset(new SequencedSocketData(reads, arraysize(reads), writes,
-                                             arraysize(writes)));
+  socket_data_.reset(new SequencedSocketData(reads, writes));
 
   Initialize();
   CompleteCryptoHandshake();
@@ -758,8 +774,7 @@ TEST_P(QuicChromiumClientSessionTest, PushStreamTimedOutNoResponse) {
   MockWrite writes[] = {
       MockWrite(ASYNC, settings_packet->data(), settings_packet->length(), 1),
       MockWrite(ASYNC, client_rst->data(), client_rst->length(), 2)};
-  socket_data_.reset(new SequencedSocketData(reads, arraysize(reads), writes,
-                                             arraysize(writes)));
+  socket_data_.reset(new SequencedSocketData(reads, writes));
   Initialize();
 
   ProofVerifyDetailsChromium details;
@@ -775,7 +790,7 @@ TEST_P(QuicChromiumClientSessionTest, PushStreamTimedOutNoResponse) {
           session_.get());
   EXPECT_TRUE(stream);
 
-  SpdyHeaderBlock promise_headers;
+  spdy::SpdyHeaderBlock promise_headers;
   promise_headers[":method"] = "GET";
   promise_headers[":authority"] = "www.example.org";
   promise_headers[":scheme"] = "https";
@@ -808,8 +823,7 @@ TEST_P(QuicChromiumClientSessionTest, PushStreamTimedOutWithResponse) {
   MockWrite writes[] = {
       MockWrite(ASYNC, settings_packet->data(), settings_packet->length(), 1),
       MockWrite(ASYNC, client_rst->data(), client_rst->length(), 2)};
-  socket_data_.reset(new SequencedSocketData(reads, arraysize(reads), writes,
-                                             arraysize(writes)));
+  socket_data_.reset(new SequencedSocketData(reads, writes));
   Initialize();
 
   ProofVerifyDetailsChromium details;
@@ -825,7 +839,7 @@ TEST_P(QuicChromiumClientSessionTest, PushStreamTimedOutWithResponse) {
           session_.get());
   EXPECT_TRUE(stream);
 
-  SpdyHeaderBlock promise_headers;
+  spdy::SpdyHeaderBlock promise_headers;
   promise_headers[":method"] = "GET";
   promise_headers[":authority"] = "www.example.org";
   promise_headers[":scheme"] = "https";
@@ -836,7 +850,7 @@ TEST_P(QuicChromiumClientSessionTest, PushStreamTimedOutWithResponse) {
   EXPECT_TRUE(session_->HandlePromised(
       stream->id(), GetNthServerInitiatedStreamId(0), promise_headers));
   session_->OnInitialHeadersComplete(GetNthServerInitiatedStreamId(0),
-                                     SpdyHeaderBlock());
+                                     spdy::SpdyHeaderBlock());
   // Read data on the pushed stream.
   QuicStreamFrame data(GetNthServerInitiatedStreamId(0), false, 0,
                        QuicStringPiece("SP"));
@@ -863,8 +877,7 @@ TEST_P(QuicChromiumClientSessionTest, CancelPushWhenPendingValidation) {
   MockWrite writes[] = {
       MockWrite(ASYNC, settings_packet->data(), settings_packet->length(), 1),
       MockWrite(ASYNC, client_rst->data(), client_rst->length(), 2)};
-  socket_data_.reset(new SequencedSocketData(reads, arraysize(reads), writes,
-                                             arraysize(writes)));
+  socket_data_.reset(new SequencedSocketData(reads, writes));
   Initialize();
 
   ProofVerifyDetailsChromium details;
@@ -880,7 +893,7 @@ TEST_P(QuicChromiumClientSessionTest, CancelPushWhenPendingValidation) {
           session_.get());
   EXPECT_TRUE(stream);
 
-  SpdyHeaderBlock promise_headers;
+  spdy::SpdyHeaderBlock promise_headers;
   promise_headers[":method"] = "GET";
   promise_headers[":authority"] = "www.example.org";
   promise_headers[":scheme"] = "https";
@@ -895,7 +908,7 @@ TEST_P(QuicChromiumClientSessionTest, CancelPushWhenPendingValidation) {
   EXPECT_TRUE(promised);
 
   // Initiate rendezvous.
-  SpdyHeaderBlock client_request = promise_headers.Clone();
+  spdy::SpdyHeaderBlock client_request = promise_headers.Clone();
   TestPushPromiseDelegate delegate(/*match=*/true);
   promised->HandleClientRequest(client_request, &delegate);
 
@@ -918,8 +931,7 @@ TEST_P(QuicChromiumClientSessionTest, CancelPushBeforeReceivingResponse) {
   MockWrite writes[] = {
       MockWrite(ASYNC, settings_packet->data(), settings_packet->length(), 1),
       MockWrite(ASYNC, client_rst->data(), client_rst->length(), 2)};
-  socket_data_.reset(new SequencedSocketData(reads, arraysize(reads), writes,
-                                             arraysize(writes)));
+  socket_data_.reset(new SequencedSocketData(reads, writes));
   Initialize();
 
   ProofVerifyDetailsChromium details;
@@ -935,7 +947,7 @@ TEST_P(QuicChromiumClientSessionTest, CancelPushBeforeReceivingResponse) {
           session_.get());
   EXPECT_TRUE(stream);
 
-  SpdyHeaderBlock promise_headers;
+  spdy::SpdyHeaderBlock promise_headers;
   promise_headers[":method"] = "GET";
   promise_headers[":authority"] = "www.example.org";
   promise_headers[":scheme"] = "https";
@@ -969,8 +981,7 @@ TEST_P(QuicChromiumClientSessionTest, CancelPushAfterReceivingResponse) {
   MockWrite writes[] = {
       MockWrite(ASYNC, settings_packet->data(), settings_packet->length(), 1),
       MockWrite(ASYNC, client_rst->data(), client_rst->length(), 2)};
-  socket_data_.reset(new SequencedSocketData(reads, arraysize(reads), writes,
-                                             arraysize(writes)));
+  socket_data_.reset(new SequencedSocketData(reads, writes));
   Initialize();
 
   ProofVerifyDetailsChromium details;
@@ -986,7 +997,7 @@ TEST_P(QuicChromiumClientSessionTest, CancelPushAfterReceivingResponse) {
           session_.get());
   EXPECT_TRUE(stream);
 
-  SpdyHeaderBlock promise_headers;
+  spdy::SpdyHeaderBlock promise_headers;
   promise_headers[":method"] = "GET";
   promise_headers[":authority"] = "www.example.org";
   promise_headers[":scheme"] = "https";
@@ -997,7 +1008,7 @@ TEST_P(QuicChromiumClientSessionTest, CancelPushAfterReceivingResponse) {
   EXPECT_TRUE(session_->HandlePromised(
       stream->id(), GetNthServerInitiatedStreamId(0), promise_headers));
   session_->OnInitialHeadersComplete(GetNthServerInitiatedStreamId(0),
-                                     SpdyHeaderBlock());
+                                     spdy::SpdyHeaderBlock());
   // Read data on the pushed stream.
   QuicStreamFrame data(GetNthServerInitiatedStreamId(0), false, 0,
                        QuicStringPiece("SP"));
@@ -1026,8 +1037,7 @@ TEST_P(QuicChromiumClientSessionTest, MaxNumStreamsViaRequest) {
   MockWrite writes[] = {
       MockWrite(ASYNC, settings_packet->data(), settings_packet->length(), 1),
       MockWrite(ASYNC, client_rst->data(), client_rst->length(), 2)};
-  socket_data_.reset(new SequencedSocketData(reads, arraysize(reads), writes,
-                                             arraysize(writes)));
+  socket_data_.reset(new SequencedSocketData(reads, writes));
 
   Initialize();
   CompleteCryptoHandshake();
@@ -1067,8 +1077,7 @@ TEST_P(QuicChromiumClientSessionTest, GoAwayReceived) {
       client_maker_.MakeInitialSettingsPacket(1, nullptr));
   MockWrite writes[] = {
       MockWrite(ASYNC, settings_packet->data(), settings_packet->length(), 1)};
-  socket_data_.reset(new SequencedSocketData(reads, arraysize(reads), writes,
-                                             arraysize(writes)));
+  socket_data_.reset(new SequencedSocketData(reads, writes));
   Initialize();
   CompleteCryptoHandshake();
 
@@ -1086,8 +1095,7 @@ TEST_P(QuicChromiumClientSessionTest, CanPool) {
       client_maker_.MakeInitialSettingsPacket(1, nullptr));
   MockWrite writes[] = {
       MockWrite(ASYNC, settings_packet->data(), settings_packet->length(), 1)};
-  socket_data_.reset(new SequencedSocketData(reads, arraysize(reads), writes,
-                                             arraysize(writes)));
+  socket_data_.reset(new SequencedSocketData(reads, writes));
   Initialize();
   // Load a cert that is valid for:
   //   www.example.org
@@ -1128,8 +1136,7 @@ TEST_P(QuicChromiumClientSessionTest, ConnectionPooledWithTlsChannelId) {
       client_maker_.MakeInitialSettingsPacket(1, nullptr));
   MockWrite writes[] = {
       MockWrite(ASYNC, settings_packet->data(), settings_packet->length(), 1)};
-  socket_data_.reset(new SequencedSocketData(reads, arraysize(reads), writes,
-                                             arraysize(writes)));
+  socket_data_.reset(new SequencedSocketData(reads, writes));
   Initialize();
   // Load a cert that is valid for:
   //   www.example.org
@@ -1162,8 +1169,7 @@ TEST_P(QuicChromiumClientSessionTest, ConnectionNotPooledWithDifferentPin) {
       client_maker_.MakeInitialSettingsPacket(1, nullptr));
   MockWrite writes[] = {
       MockWrite(ASYNC, settings_packet->data(), settings_packet->length(), 1)};
-  socket_data_.reset(new SequencedSocketData(reads, arraysize(reads), writes,
-                                             arraysize(writes)));
+  socket_data_.reset(new SequencedSocketData(reads, writes));
   Initialize();
 
   uint8_t primary_pin = 1;
@@ -1196,8 +1202,7 @@ TEST_P(QuicChromiumClientSessionTest, ConnectionPooledWithMatchingPin) {
       client_maker_.MakeInitialSettingsPacket(1, nullptr));
   MockWrite writes[] = {
       MockWrite(ASYNC, settings_packet->data(), settings_packet->length(), 1)};
-  socket_data_.reset(new SequencedSocketData(reads, arraysize(reads), writes,
-                                             arraysize(writes)));
+  socket_data_.reset(new SequencedSocketData(reads, writes));
   Initialize();
 
   uint8_t primary_pin = 1;
@@ -1229,8 +1234,7 @@ TEST_P(QuicChromiumClientSessionTest, MigrateToSocket) {
       client_maker_.MakeInitialSettingsPacket(1, nullptr));
   MockWrite old_writes[] = {
       MockWrite(ASYNC, settings_packet->data(), settings_packet->length(), 1)};
-  socket_data_.reset(new SequencedSocketData(
-      old_reads, arraysize(old_reads), old_writes, arraysize(old_writes)));
+  socket_data_.reset(new SequencedSocketData(old_reads, old_writes));
   Initialize();
   CompleteCryptoHandshake();
 
@@ -1249,8 +1253,7 @@ TEST_P(QuicChromiumClientSessionTest, MigrateToSocket) {
       MockWrite(SYNCHRONOUS, client_ping->data(), client_ping->length(), 2),
       MockWrite(SYNCHRONOUS, ack_and_data_out->data(),
                 ack_and_data_out->length(), 3)};
-  StaticSocketDataProvider socket_data(reads, arraysize(reads), writes,
-                                       arraysize(writes));
+  StaticSocketDataProvider socket_data(reads, writes);
   socket_factory_.AddSocketDataProvider(&socket_data);
   // Create connected socket.
   std::unique_ptr<DatagramClientSocket> new_socket =
@@ -1295,8 +1298,7 @@ TEST_P(QuicChromiumClientSessionTest, MigrateToSocketMaxReaders) {
       client_maker_.MakeInitialSettingsPacket(1, nullptr));
   MockWrite old_writes[] = {
       MockWrite(ASYNC, settings_packet->data(), settings_packet->length(), 1)};
-  socket_data_.reset(new SequencedSocketData(
-      old_reads, arraysize(old_reads), old_writes, arraysize(old_writes)));
+  socket_data_.reset(new SequencedSocketData(old_reads, old_writes));
   Initialize();
   CompleteCryptoHandshake();
 
@@ -1306,8 +1308,7 @@ TEST_P(QuicChromiumClientSessionTest, MigrateToSocketMaxReaders) {
         client_maker_.MakePingPacket(i + 2, /*include_version=*/true));
     MockWrite writes[] = {
         MockWrite(SYNCHRONOUS, ping_out->data(), ping_out->length(), i + 2)};
-    StaticSocketDataProvider socket_data(reads, arraysize(reads), writes,
-                                         arraysize(writes));
+    StaticSocketDataProvider socket_data(reads, writes);
     socket_factory_.AddSocketDataProvider(&socket_data);
 
     // Create connected socket.
@@ -1356,8 +1357,7 @@ TEST_P(QuicChromiumClientSessionTest, MigrateToSocketReadError) {
   MockRead old_reads[] = {
       MockRead(ASYNC, ERR_IO_PENDING, 1),  // causes reading to pause.
       MockRead(ASYNC, ERR_NETWORK_CHANGED, 2)};
-  socket_data_.reset(new SequencedSocketData(
-      old_reads, arraysize(old_reads), old_writes, arraysize(old_writes)));
+  socket_data_.reset(new SequencedSocketData(old_reads, old_writes));
   Initialize();
   CompleteCryptoHandshake();
   MockWrite writes[] = {
@@ -1368,8 +1368,7 @@ TEST_P(QuicChromiumClientSessionTest, MigrateToSocketReadError) {
       MockRead(ASYNC, server_ping->data(), server_ping->length(), 3),
       MockRead(ASYNC, ERR_IO_PENDING, 4),  // pause reading
       MockRead(ASYNC, ERR_NETWORK_CHANGED, 5)};
-  SequencedSocketData new_socket_data(new_reads, arraysize(new_reads), writes,
-                                      arraysize(writes));
+  SequencedSocketData new_socket_data(new_reads, writes);
   socket_factory_.AddSocketDataProvider(&new_socket_data);
 
   // Create connected socket.
@@ -1417,11 +1416,12 @@ TEST_P(QuicChromiumClientSessionTest, RetransmittableOnWireTimeout) {
   migrate_session_early_v2_ = true;
 
   MockQuicData quic_data;
-  quic_data.AddWrite(client_maker_.MakeInitialSettingsPacket(1, nullptr));
-  quic_data.AddWrite(client_maker_.MakePingPacket(2, true));
-  quic_data.AddRead(server_maker_.MakeAckPacket(1, 2, 1, 1, false));
+  quic_data.AddWrite(SYNCHRONOUS,
+                     client_maker_.MakeInitialSettingsPacket(1, nullptr));
+  quic_data.AddWrite(SYNCHRONOUS, client_maker_.MakePingPacket(2, true));
+  quic_data.AddRead(ASYNC, server_maker_.MakeAckPacket(1, 2, 1, 1, false));
 
-  quic_data.AddWrite(client_maker_.MakePingPacket(3, false));
+  quic_data.AddWrite(SYNCHRONOUS, client_maker_.MakePingPacket(3, false));
   quic_data.AddRead(ASYNC, ERR_IO_PENDING);
   quic_data.AddRead(ASYNC, OK);  // EOF
   quic_data.AddSocketDataToFactory(&socket_factory_);

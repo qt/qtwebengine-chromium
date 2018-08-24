@@ -24,8 +24,8 @@
 #include "components/printing/browser/print_composite_client.h"
 #include "components/printing/browser/print_manager_utils.h"
 #include "components/printing/common/print_messages.h"
-#include "components/printing/service/public/cpp/pdf_service_mojo_types.h"
-#include "components/printing/service/public/cpp/pdf_service_mojo_utils.h"
+#include "components/services/pdf_compositor/public/cpp/pdf_service_mojo_types.h"
+#include "components/services/pdf_compositor/public/cpp/pdf_service_mojo_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
@@ -268,28 +268,30 @@ void PrintPreviewMessageHandler::OnCompositePdfPageDone(
     int page_number,
     int request_id,
     mojom::PdfCompositor::Status status,
-    mojo::ScopedSharedBufferHandle handle) {
+    base::ReadOnlySharedMemoryRegion region) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (status != mojom::PdfCompositor::Status::SUCCESS) {
     DLOG(ERROR) << "Compositing pdf failed with error " << status;
     return;
   }
-  NotifyUIPreviewPageReady(page_number, request_id,
-                           GetDataFromMojoHandle(std::move(handle)));
+  NotifyUIPreviewPageReady(
+      page_number, request_id,
+      base::RefCountedSharedMemoryMapping::CreateFromWholeRegion(region));
 }
 
 void PrintPreviewMessageHandler::OnCompositePdfDocumentDone(
     int page_count,
     int request_id,
     mojom::PdfCompositor::Status status,
-    mojo::ScopedSharedBufferHandle handle) {
+    base::ReadOnlySharedMemoryRegion region) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (status != mojom::PdfCompositor::Status::SUCCESS) {
     DLOG(ERROR) << "Compositing pdf failed with error " << status;
     return;
   }
-  NotifyUIPreviewDocumentReady(page_count, request_id,
-                               GetDataFromMojoHandle(std::move(handle)));
+  NotifyUIPreviewDocumentReady(
+      page_count, request_id,
+      base::RefCountedSharedMemoryMapping::CreateFromWholeRegion(region));
 }
 
 bool PrintPreviewMessageHandler::OnMessageReceived(

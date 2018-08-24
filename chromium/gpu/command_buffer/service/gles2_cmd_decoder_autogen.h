@@ -2663,6 +2663,7 @@ error::Error GLES2DecoderImpl::HandleStencilFunc(
     state_.stencil_back_func = func;
     state_.stencil_back_ref = ref;
     state_.stencil_back_mask = mask;
+    state_.stencil_state_changed_since_validation = true;
     api()->glStencilFuncFn(func, ref, mask);
   }
   return error::kNoError;
@@ -2707,6 +2708,7 @@ error::Error GLES2DecoderImpl::HandleStencilFuncSeparate(
       state_.stencil_back_ref = ref;
       state_.stencil_back_mask = mask;
     }
+    state_.stencil_state_changed_since_validation = true;
     api()->glStencilFuncSeparateFn(face, func, ref, mask);
   }
   return error::kNoError;
@@ -2723,6 +2725,7 @@ error::Error GLES2DecoderImpl::HandleStencilMask(
     state_.stencil_front_writemask = mask;
     state_.stencil_back_writemask = mask;
     framebuffer_state_.clear_state_dirty = true;
+    state_.stencil_state_changed_since_validation = true;
   }
   return error::kNoError;
 }
@@ -2753,6 +2756,7 @@ error::Error GLES2DecoderImpl::HandleStencilMaskSeparate(
       state_.stencil_back_writemask = mask;
     }
     framebuffer_state_.clear_state_dirty = true;
+    state_.stencil_state_changed_since_validation = true;
   }
   return error::kNoError;
 }
@@ -4490,7 +4494,16 @@ error::Error GLES2DecoderImpl::HandleBindVertexArrayOES(
 error::Error GLES2DecoderImpl::HandleSwapBuffers(
     uint32_t immediate_data_size,
     const volatile void* cmd_data) {
-  DoSwapBuffers();
+  const volatile gles2::cmds::SwapBuffers& c =
+      *static_cast<const volatile gles2::cmds::SwapBuffers*>(cmd_data);
+  GLuint64 swap_id = c.swap_id();
+  GLbitfield flags = static_cast<GLbitfield>(c.flags);
+  if (!validators_->swap_buffers_flags.IsValid(flags)) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glSwapBuffers",
+                       "flags GL_INVALID_VALUE");
+    return error::kNoError;
+  }
+  DoSwapBuffers(swap_id, flags);
   return error::kNoError;
 }
 
@@ -4903,7 +4916,17 @@ error::Error GLES2DecoderImpl::HandleScheduleCALayerInUseQueryCHROMIUMImmediate(
 error::Error GLES2DecoderImpl::HandleCommitOverlayPlanesCHROMIUM(
     uint32_t immediate_data_size,
     const volatile void* cmd_data) {
-  DoCommitOverlayPlanes();
+  const volatile gles2::cmds::CommitOverlayPlanesCHROMIUM& c =
+      *static_cast<const volatile gles2::cmds::CommitOverlayPlanesCHROMIUM*>(
+          cmd_data);
+  GLuint64 swap_id = c.swap_id();
+  GLbitfield flags = static_cast<GLbitfield>(c.flags);
+  if (!validators_->swap_buffers_flags.IsValid(flags)) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCommitOverlayPlanesCHROMIUM",
+                       "flags GL_INVALID_VALUE");
+    return error::kNoError;
+  }
+  DoCommitOverlayPlanes(swap_id, flags);
   return error::kNoError;
 }
 
@@ -5109,6 +5132,7 @@ error::Error GLES2DecoderImpl::HandleSwapBuffersWithBoundsCHROMIUMImmediate(
       *static_cast<
           const volatile gles2::cmds::SwapBuffersWithBoundsCHROMIUMImmediate*>(
           cmd_data);
+  GLuint64 swap_id = c.swap_id();
   GLsizei count = static_cast<GLsizei>(c.count);
   uint32_t data_size = 0;
   if (count >= 0 && !GLES2Util::ComputeDataSize<GLint, 4>(count, &data_size)) {
@@ -5119,6 +5143,7 @@ error::Error GLES2DecoderImpl::HandleSwapBuffersWithBoundsCHROMIUMImmediate(
   }
   volatile const GLint* rects = GetImmediateDataAs<volatile const GLint*>(
       c, data_size, immediate_data_size);
+  GLbitfield flags = static_cast<GLbitfield>(c.flags);
   if (count < 0) {
     LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glSwapBuffersWithBoundsCHROMIUM",
                        "count < 0");
@@ -5127,7 +5152,12 @@ error::Error GLES2DecoderImpl::HandleSwapBuffersWithBoundsCHROMIUMImmediate(
   if (rects == NULL) {
     return error::kOutOfBounds;
   }
-  DoSwapBuffersWithBoundsCHROMIUM(count, rects);
+  if (!validators_->swap_buffers_flags.IsValid(flags)) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glSwapBuffersWithBoundsCHROMIUM",
+                       "flags GL_INVALID_VALUE");
+    return error::kNoError;
+  }
+  DoSwapBuffersWithBoundsCHROMIUM(swap_id, count, rects, flags);
   return error::kNoError;
 }
 
@@ -5153,109 +5183,6 @@ error::Error GLES2DecoderImpl::HandleSetEnableDCLayersCHROMIUM(
           cmd_data);
   GLboolean enabled = static_cast<GLboolean>(c.enabled);
   DoSetEnableDCLayersCHROMIUM(enabled);
-  return error::kNoError;
-}
-
-error::Error GLES2DecoderImpl::HandleBeginRasterCHROMIUM(
-    uint32_t immediate_data_size,
-    const volatile void* cmd_data) {
-  const volatile gles2::cmds::BeginRasterCHROMIUM& c =
-      *static_cast<const volatile gles2::cmds::BeginRasterCHROMIUM*>(cmd_data);
-  if (!features().chromium_raster_transport) {
-    return error::kUnknownCommand;
-  }
-
-  GLuint texture_id = static_cast<GLuint>(c.texture_id);
-  GLuint sk_color = static_cast<GLuint>(c.sk_color);
-  GLuint msaa_sample_count = static_cast<GLuint>(c.msaa_sample_count);
-  GLboolean can_use_lcd_text = static_cast<GLboolean>(c.can_use_lcd_text);
-  GLint color_type = static_cast<GLint>(c.color_type);
-  GLuint color_space_transfer_cache_id =
-      static_cast<GLuint>(c.color_space_transfer_cache_id);
-  DoBeginRasterCHROMIUM(texture_id, sk_color, msaa_sample_count,
-                        can_use_lcd_text, color_type,
-                        color_space_transfer_cache_id);
-  return error::kNoError;
-}
-
-error::Error GLES2DecoderImpl::HandleRasterCHROMIUM(
-    uint32_t immediate_data_size,
-    const volatile void* cmd_data) {
-  const volatile gles2::cmds::RasterCHROMIUM& c =
-      *static_cast<const volatile gles2::cmds::RasterCHROMIUM*>(cmd_data);
-  if (!features().chromium_raster_transport) {
-    return error::kUnknownCommand;
-  }
-
-  GLsizeiptr size = static_cast<GLsizeiptr>(c.size);
-  uint32_t data_size = size;
-  const void* list = GetSharedMemoryAs<const void*>(
-      c.list_shm_id, c.list_shm_offset, data_size);
-  if (size < 0) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glRasterCHROMIUM", "size < 0");
-    return error::kNoError;
-  }
-  if (list == NULL) {
-    return error::kOutOfBounds;
-  }
-  DoRasterCHROMIUM(size, list);
-  return error::kNoError;
-}
-
-error::Error GLES2DecoderImpl::HandleEndRasterCHROMIUM(
-    uint32_t immediate_data_size,
-    const volatile void* cmd_data) {
-  if (!features().chromium_raster_transport) {
-    return error::kUnknownCommand;
-  }
-
-  DoEndRasterCHROMIUM();
-  return error::kNoError;
-}
-
-error::Error GLES2DecoderImpl::HandleCreateTransferCacheEntryINTERNAL(
-    uint32_t immediate_data_size,
-    const volatile void* cmd_data) {
-  const volatile gles2::cmds::CreateTransferCacheEntryINTERNAL& c =
-      *static_cast<
-          const volatile gles2::cmds::CreateTransferCacheEntryINTERNAL*>(
-          cmd_data);
-  GLuint entry_type = static_cast<GLuint>(c.entry_type);
-  GLuint entry_id = static_cast<GLuint>(c.entry_id);
-  GLuint handle_shm_id = static_cast<GLuint>(c.handle_shm_id);
-  GLuint handle_shm_offset = static_cast<GLuint>(c.handle_shm_offset);
-  GLuint data_shm_id = static_cast<GLuint>(c.data_shm_id);
-  GLuint data_shm_offset = static_cast<GLuint>(c.data_shm_offset);
-  GLuint data_size = static_cast<GLuint>(c.data_size);
-  DoCreateTransferCacheEntryINTERNAL(entry_type, entry_id, handle_shm_id,
-                                     handle_shm_offset, data_shm_id,
-                                     data_shm_offset, data_size);
-  return error::kNoError;
-}
-
-error::Error GLES2DecoderImpl::HandleDeleteTransferCacheEntryINTERNAL(
-    uint32_t immediate_data_size,
-    const volatile void* cmd_data) {
-  const volatile gles2::cmds::DeleteTransferCacheEntryINTERNAL& c =
-      *static_cast<
-          const volatile gles2::cmds::DeleteTransferCacheEntryINTERNAL*>(
-          cmd_data);
-  GLuint entry_type = static_cast<GLuint>(c.entry_type);
-  GLuint entry_id = static_cast<GLuint>(c.entry_id);
-  DoDeleteTransferCacheEntryINTERNAL(entry_type, entry_id);
-  return error::kNoError;
-}
-
-error::Error GLES2DecoderImpl::HandleUnlockTransferCacheEntryINTERNAL(
-    uint32_t immediate_data_size,
-    const volatile void* cmd_data) {
-  const volatile gles2::cmds::UnlockTransferCacheEntryINTERNAL& c =
-      *static_cast<
-          const volatile gles2::cmds::UnlockTransferCacheEntryINTERNAL*>(
-          cmd_data);
-  GLuint entry_type = static_cast<GLuint>(c.entry_type);
-  GLuint entry_id = static_cast<GLuint>(c.entry_id);
-  DoUnlockTransferCacheEntryINTERNAL(entry_type, entry_id);
   return error::kNoError;
 }
 
@@ -5410,6 +5337,7 @@ bool GLES2DecoderImpl::SetCapabilityState(GLenum cap, bool enabled) {
       state_.enable_flags.stencil_test = enabled;
       if (state_.enable_flags.cached_stencil_test != enabled ||
           state_.ignore_cached_state) {
+        state_.stencil_state_changed_since_validation = true;
         framebuffer_state_.clear_state_dirty = true;
       }
       return false;

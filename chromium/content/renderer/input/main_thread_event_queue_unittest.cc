@@ -10,7 +10,6 @@
 
 #include "base/auto_reset.h"
 #include "base/macros.h"
-#include "base/metrics/field_trial.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/test/scoped_feature_list.h"
@@ -233,7 +232,6 @@ class MainThreadEventQueueTest : public testing::Test,
   }
 
  protected:
-  base::test::ScopedFeatureList feature_list_;
   scoped_refptr<base::TestSimpleTaskRunner> main_task_runner_;
   blink::scheduler::MockRendererScheduler renderer_scheduler_;
   scoped_refptr<MainThreadEventQueue> queue_;
@@ -259,7 +257,7 @@ TEST_F(MainThreadEventQueueTest, NonBlockingWheel) {
 
   EXPECT_CALL(renderer_scheduler_,
               DidHandleInputEventOnMainThread(testing::_, testing::_))
-      .Times(2);
+      .Times(0);
 
   for (WebMouseWheelEvent& event : kEvents)
     HandleEvent(event, INPUT_EVENT_ACK_STATE_SET_NON_BLOCKING);
@@ -345,7 +343,7 @@ TEST_F(MainThreadEventQueueTest, NonBlockingWheel) {
 TEST_F(MainThreadEventQueueTest, NonBlockingTouch) {
   EXPECT_CALL(renderer_scheduler_,
               DidHandleInputEventOnMainThread(testing::_, testing::_))
-      .Times(3);
+      .Times(0);
 
   SyntheticWebTouchEvent kEvents[4];
   kEvents[0].PressPoint(10, 10);
@@ -450,7 +448,7 @@ TEST_F(MainThreadEventQueueTest, BlockingTouch) {
 
   EXPECT_CALL(renderer_scheduler_,
               DidHandleInputEventOnMainThread(testing::_, testing::_))
-      .Times(5);
+      .Times(3);
   {
     // Ensure that coalescing takes place.
     HandleEvent(kEvents[0], INPUT_EVENT_ACK_STATE_SET_NON_BLOCKING);
@@ -504,7 +502,7 @@ TEST_F(MainThreadEventQueueTest, InterleavedEvents) {
 
   EXPECT_CALL(renderer_scheduler_,
               DidHandleInputEventOnMainThread(testing::_, testing::_))
-      .Times(2);
+      .Times(0);
 
   EXPECT_FALSE(main_task_runner_->HasPendingTask());
   EXPECT_EQ(0u, event_queue().size());
@@ -575,7 +573,7 @@ TEST_F(MainThreadEventQueueTest, RafAlignedMouseInput) {
 
   EXPECT_CALL(renderer_scheduler_,
               DidHandleInputEventOnMainThread(testing::_, testing::_))
-      .Times(11);
+      .Times(0);
 
   // Simulate enqueing a discrete event, followed by continuous events and
   // then a discrete event. The last discrete event should flush the
@@ -647,7 +645,7 @@ TEST_F(MainThreadEventQueueTest, RafAlignedTouchInput) {
 
   EXPECT_CALL(renderer_scheduler_,
               DidHandleInputEventOnMainThread(testing::_, testing::_))
-      .Times(10);
+      .Times(3);
 
   // Simulate enqueing a discrete event, followed by continuous events and
   // then a discrete event. The last discrete event should flush the
@@ -784,7 +782,7 @@ TEST_F(MainThreadEventQueueTest, RafAlignedTouchInputCoalescedMoves) {
 TEST_F(MainThreadEventQueueTest, RafAlignedTouchInputThrottlingMoves) {
   EXPECT_CALL(renderer_scheduler_,
               DidHandleInputEventOnMainThread(testing::_, testing::_))
-      .Times(2);
+      .Times(3);
 
   SyntheticWebTouchEvent kEvents[2];
   kEvents[0].PressPoint(10, 10);
@@ -839,7 +837,7 @@ TEST_F(MainThreadEventQueueTest, LowLatency) {
 
   EXPECT_CALL(renderer_scheduler_,
               DidHandleInputEventOnMainThread(testing::_, testing::_))
-      .Times(8);
+      .Times(0);
 
   for (SyntheticWebTouchEvent& event : kEvents)
     HandleEvent(event, INPUT_EVENT_ACK_STATE_SET_NON_BLOCKING);
@@ -1077,16 +1075,7 @@ class MainThreadEventQueueInitializationTest
     : public testing::Test,
       public MainThreadEventQueueClient {
  public:
-  MainThreadEventQueueInitializationTest()
-      : field_trial_list_(new base::FieldTrialList(nullptr)) {}
-
-  base::TimeDelta main_thread_responsiveness_threshold() {
-    return queue_->main_thread_responsiveness_threshold_;
-  }
-
-  bool enable_non_blocking_due_to_main_thread_responsiveness_flag() {
-    return queue_->enable_non_blocking_due_to_main_thread_responsiveness_flag_;
-  }
+  MainThreadEventQueueInitializationTest() {}
 
   void HandleInputEvent(const blink::WebCoalescedInputEvent& event,
                         const ui::LatencyInfo& latency,
@@ -1099,36 +1088,9 @@ class MainThreadEventQueueInitializationTest
 
  protected:
   scoped_refptr<MainThreadEventQueue> queue_;
-  base::test::ScopedFeatureList feature_list_;
   blink::scheduler::MockRendererScheduler renderer_scheduler_;
   scoped_refptr<base::TestSimpleTaskRunner> main_task_runner_;
-  std::unique_ptr<base::FieldTrialList> field_trial_list_;
 };
-
-TEST_F(MainThreadEventQueueInitializationTest,
-       MainThreadResponsivenessThresholdEnabled) {
-  feature_list_.InitFromCommandLine(
-      features::kMainThreadBusyScrollIntervention.name, "");
-
-  base::FieldTrialList::CreateFieldTrial(
-      "MainThreadResponsivenessScrollIntervention", "Enabled123");
-  queue_ = new MainThreadEventQueue(this, main_task_runner_,
-                                    &renderer_scheduler_, true);
-  EXPECT_TRUE(enable_non_blocking_due_to_main_thread_responsiveness_flag());
-  EXPECT_EQ(base::TimeDelta::FromMilliseconds(123),
-            main_thread_responsiveness_threshold());
-}
-
-TEST_F(MainThreadEventQueueInitializationTest,
-       MainThreadResponsivenessThresholdDisabled) {
-  base::FieldTrialList::CreateFieldTrial(
-      "MainThreadResponsivenessScrollIntervention", "Control");
-  queue_ = new MainThreadEventQueue(this, main_task_runner_,
-                                    &renderer_scheduler_, true);
-  EXPECT_FALSE(enable_non_blocking_due_to_main_thread_responsiveness_flag());
-  EXPECT_EQ(base::TimeDelta::FromMilliseconds(0),
-            main_thread_responsiveness_threshold());
-}
 
 TEST_F(MainThreadEventQueueTest, QueuingTwoClosures) {
   EXPECT_FALSE(main_task_runner_->HasPendingTask());
@@ -1365,7 +1327,7 @@ TEST_F(MainThreadEventQueueTest, UnbufferedDispatchMouseEvent) {
 
   EXPECT_CALL(renderer_scheduler_,
               DidHandleInputEventOnMainThread(testing::_, testing::_))
-      .Times(3);
+      .Times(0);
 
   HandleEvent(mouse_down, INPUT_EVENT_ACK_STATE_SET_NON_BLOCKING);
   queue_->RequestUnbufferedInputEvents();

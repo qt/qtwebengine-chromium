@@ -86,7 +86,7 @@ class DirectLayerTreeFrameSinkTest : public testing::Test {
     layer_tree_frame_sink_ = std::make_unique<TestDirectLayerTreeFrameSink>(
         kArbitraryFrameSinkId, &support_manager_, &frame_sink_manager_,
         display_.get(), nullptr /* display_client */, context_provider_,
-        nullptr, task_runner_, &gpu_memory_buffer_manager_, &bitmap_manager_,
+        nullptr, task_runner_, &gpu_memory_buffer_manager_,
         false /* use_viz_hit_test */);
     layer_tree_frame_sink_->BindToClient(&layer_tree_frame_sink_client_);
     display_->Resize(display_size_);
@@ -157,21 +157,6 @@ TEST_F(DirectLayerTreeFrameSinkTest, NoDamageDoesNotTriggerSwapBuffers) {
   EXPECT_EQ(1u, display_output_surface_->num_sent_frames());
 }
 
-TEST_F(DirectLayerTreeFrameSinkTest, SuspendedDoesNotTriggerSwapBuffers) {
-  SwapBuffersWithDamage(display_rect_);
-  EXPECT_EQ(1u, display_output_surface_->num_sent_frames());
-  display_output_surface_->set_suspended_for_recycle(true);
-  task_runner_->RunUntilIdle();
-  EXPECT_EQ(1u, display_output_surface_->num_sent_frames());
-  SwapBuffersWithDamage(display_rect_);
-  task_runner_->RunUntilIdle();
-  EXPECT_EQ(1u, display_output_surface_->num_sent_frames());
-  display_output_surface_->set_suspended_for_recycle(false);
-  SwapBuffersWithDamage(display_rect_);
-  task_runner_->RunUntilIdle();
-  EXPECT_EQ(2u, display_output_surface_->num_sent_frames());
-}
-
 // Test that hit_test_region_list are created correctly for the browser.
 TEST_F(DirectLayerTreeFrameSinkTest, HitTestRegionList) {
   RenderPassList pass_list;
@@ -200,7 +185,9 @@ TEST_F(DirectLayerTreeFrameSinkTest, HitTestRegionList) {
           display_.get(), display_->CurrentSurfaceId().frame_sink_id());
   EXPECT_TRUE(hit_test_region_list);
   EXPECT_EQ(display_rect_, hit_test_region_list->bounds);
-  EXPECT_EQ(mojom::kHitTestMouse | mojom::kHitTestTouch | mojom::kHitTestMine,
+  EXPECT_EQ(HitTestRegionFlags::kHitTestMouse |
+                HitTestRegionFlags::kHitTestTouch |
+                HitTestRegionFlags::kHitTestMine,
             hit_test_region_list->flags);
   EXPECT_FALSE(hit_test_region_list->regions.size());
 
@@ -276,18 +263,21 @@ TEST_F(DirectLayerTreeFrameSinkTest, HitTestRegionList) {
           display_.get(), display_->CurrentSurfaceId().frame_sink_id());
   EXPECT_TRUE(hit_test_region_list1);
   EXPECT_EQ(display_rect_, hit_test_region_list1->bounds);
-  EXPECT_EQ(mojom::kHitTestMouse | mojom::kHitTestTouch | mojom::kHitTestMine,
+  EXPECT_EQ(HitTestRegionFlags::kHitTestMouse |
+                HitTestRegionFlags::kHitTestTouch |
+                HitTestRegionFlags::kHitTestMine,
             hit_test_region_list1->flags);
   EXPECT_EQ(1u, hit_test_region_list1->regions.size());
   EXPECT_EQ(child_surface_id.frame_sink_id(),
-            hit_test_region_list1->regions[0]->frame_sink_id);
-  EXPECT_EQ(
-      mojom::kHitTestMouse | mojom::kHitTestTouch | mojom::kHitTestChildSurface,
-      hit_test_region_list1->regions[0]->flags);
-  EXPECT_EQ(gfx::Rect(20, 20), hit_test_region_list1->regions[0]->rect);
+            hit_test_region_list1->regions[0].frame_sink_id);
+  EXPECT_EQ(HitTestRegionFlags::kHitTestMouse |
+                HitTestRegionFlags::kHitTestTouch |
+                HitTestRegionFlags::kHitTestChildSurface,
+            hit_test_region_list1->regions[0].flags);
+  EXPECT_EQ(gfx::Rect(20, 20), hit_test_region_list1->regions[0].rect);
   gfx::Transform transform2_inverse;
   EXPECT_TRUE(transform2.GetInverse(&transform2_inverse));
-  EXPECT_EQ(transform2_inverse, hit_test_region_list1->regions[0]->transform);
+  EXPECT_EQ(transform2_inverse, hit_test_region_list1->regions[0].transform);
 }
 
 }  // namespace

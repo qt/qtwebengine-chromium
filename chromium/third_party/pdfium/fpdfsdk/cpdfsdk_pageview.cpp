@@ -21,6 +21,7 @@
 #include "third_party/base/ptr_util.h"
 
 #ifdef PDF_ENABLE_XFA
+#include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
 #include "fpdfsdk/fpdfxfa/cpdfxfa_page.h"
 #include "xfa/fxfa/cxfa_ffdocview.h"
 #include "xfa/fxfa/cxfa_ffpageview.h"
@@ -88,7 +89,8 @@ void CPDFSDK_PageView::PageView_OnDraw(CFX_RenderDevice* pDevice,
   if (!pPage)
     return;
 
-  if (pPage->GetContext()->GetFormType() == FormType::kXFAFull) {
+  auto* pContext = static_cast<CPDFXFA_Context*>(pPage->GetDocumentExtension());
+  if (pContext->GetFormType() == FormType::kXFAFull) {
     CFX_RectF rectClip(
         static_cast<float>(pClip.left), static_cast<float>(pClip.top),
         static_cast<float>(pClip.Width()), static_cast<float>(pClip.Height()));
@@ -176,7 +178,11 @@ bool CPDFSDK_PageView::DeleteAnnot(CPDFSDK_Annot* pAnnot) {
     return false;
 
   CPDFXFA_Page* pPage = pAnnot->GetPDFXFAPage();
-  if (!pPage || !pPage->GetContext()->ContainsXFAForm())
+  if (!pPage)
+    return false;
+
+  auto* pContext = static_cast<CPDFXFA_Context*>(pPage->GetDocumentExtension());
+  if (!pContext->ContainsXFAForm())
     return false;
 
   CPDFSDK_Annot::ObservedPtr pObserved(pAnnot);
@@ -203,9 +209,9 @@ bool CPDFSDK_PageView::DeleteAnnot(CPDFSDK_Annot* pAnnot) {
 CPDF_Document* CPDFSDK_PageView::GetPDFDocument() {
   if (m_page) {
 #ifdef PDF_ENABLE_XFA
-    return m_page->GetContext()->GetPDFDoc();
+    return m_page->GetDocumentExtension()->GetPDFDoc();
 #else   // PDF_ENABLE_XFA
-    return m_page->m_pDocument.Get();
+    return m_page->GetDocument();
 #endif  // PDF_ENABLE_XFA
   }
   return nullptr;
@@ -240,6 +246,16 @@ CPDFSDK_Annot* CPDFSDK_PageView::GetAnnotByXFAWidget(CXFA_FFWidget* hWidget) {
 }
 #endif  // PDF_ENABLE_XFA
 
+WideString CPDFSDK_PageView::GetFocusedFormText() {
+  if (CPDFSDK_Annot* pAnnot = GetFocusAnnot()) {
+    CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
+        m_pFormFillEnv->GetAnnotHandlerMgr();
+    return pAnnotHandlerMgr->Annot_GetText(pAnnot);
+  }
+
+  return WideString();
+}
+
 WideString CPDFSDK_PageView::GetSelectedText() {
   if (CPDFSDK_Annot* pAnnot = GetFocusAnnot()) {
     CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
@@ -256,6 +272,42 @@ void CPDFSDK_PageView::ReplaceSelection(const WideString& text) {
         m_pFormFillEnv->GetAnnotHandlerMgr();
     pAnnotHandlerMgr->Annot_ReplaceSelection(pAnnot, text);
   }
+}
+
+bool CPDFSDK_PageView::CanUndo() {
+  if (CPDFSDK_Annot* pAnnot = GetFocusAnnot()) {
+    CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
+        m_pFormFillEnv->GetAnnotHandlerMgr();
+    return pAnnotHandlerMgr->Annot_CanUndo(pAnnot);
+  }
+  return false;
+}
+
+bool CPDFSDK_PageView::CanRedo() {
+  if (CPDFSDK_Annot* pAnnot = GetFocusAnnot()) {
+    CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
+        m_pFormFillEnv->GetAnnotHandlerMgr();
+    return pAnnotHandlerMgr->Annot_CanRedo(pAnnot);
+  }
+  return false;
+}
+
+bool CPDFSDK_PageView::Undo() {
+  if (CPDFSDK_Annot* pAnnot = GetFocusAnnot()) {
+    CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
+        m_pFormFillEnv->GetAnnotHandlerMgr();
+    return pAnnotHandlerMgr->Annot_Undo(pAnnot);
+  }
+  return false;
+}
+
+bool CPDFSDK_PageView::Redo() {
+  if (CPDFSDK_Annot* pAnnot = GetFocusAnnot()) {
+    CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
+        m_pFormFillEnv->GetAnnotHandlerMgr();
+    return pAnnotHandlerMgr->Annot_Redo(pAnnot);
+  }
+  return false;
 }
 
 bool CPDFSDK_PageView::OnFocus(const CFX_PointF& point, uint32_t nFlag) {
@@ -483,7 +535,9 @@ int CPDFSDK_PageView::GetPageIndex() const {
     return -1;
 
 #ifdef PDF_ENABLE_XFA
-  switch (m_page->GetContext()->GetFormType()) {
+  auto* pContext =
+      static_cast<CPDFXFA_Context*>(m_page->GetDocumentExtension());
+  switch (pContext->GetFormType()) {
     case FormType::kXFAFull: {
       CXFA_FFPageView* pPageView = m_page->GetXFAPageView();
       return pPageView ? pPageView->GetPageIndex() : -1;
@@ -521,7 +575,7 @@ CPDFSDK_Annot* CPDFSDK_PageView::GetFocusAnnot() {
 }
 
 int CPDFSDK_PageView::GetPageIndexForStaticPDF() const {
-  CPDF_Dictionary* pDict = GetPDFPage()->m_pFormDict.Get();
+  const CPDF_Dictionary* pDict = GetPDFPage()->GetFormDict();
   CPDF_Document* pDoc = m_pFormFillEnv->GetPDFDocument();
   return (pDoc && pDict) ? pDoc->GetPageIndex(pDict->GetObjNum()) : -1;
 }

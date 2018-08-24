@@ -7,7 +7,6 @@ import("//build/buildflag_header.gni")
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
 import("//ipc/features.gni")
-import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 import("//ppapi/buildflags/buildflags.gni")
 import("//sandbox/features.gni")
@@ -65,8 +64,6 @@ source_set("common") {
     "browser_plugin/browser_plugin_constants.cc",
     "browser_plugin/browser_plugin_constants.h",
     "browser_plugin/browser_plugin_messages.h",
-    "cache_storage/cache_storage_types.cc",
-    "cache_storage/cache_storage_types.h",
     "child_process_host_impl.cc",
     "child_process_host_impl.h",
     "common_sandbox_support_linux.cc",
@@ -138,8 +135,8 @@ source_set("common") {
     "frame_owner_properties.h",
     "frame_replication_state.cc",
     "frame_replication_state.h",
-    "frame_resize_params.cc",
-    "frame_resize_params.h",
+    "frame_visual_properties.cc",
+    "frame_visual_properties.h",
     "gin_java_bridge_messages.h",
     "in_process_child_thread_params.cc",
     "in_process_child_thread_params.h",
@@ -205,7 +202,6 @@ source_set("common") {
     "mac/font_loader.h",
     "mac/font_loader.mm",
     "media/aec_dump_messages.h",
-    "media/audio_messages.h",
     "media/cdm_info.cc",
     "media/media_devices.cc",
     "media/media_devices.h",
@@ -231,9 +227,9 @@ source_set("common") {
     "net/url_request_user_data.h",
     "notifications/notification_struct_traits.cc",
     "notifications/notification_struct_traits.h",
-    "origin_trials/trial_policy_impl.cc",
-    "origin_trials/trial_policy_impl.h",
     "origin_util.cc",
+    "p2p_messages.h",
+    "p2p_socket_type.h",
     "page_message_enums.h",
     "page_messages.h",
     "page_state_serialization.cc",
@@ -250,13 +246,12 @@ source_set("common") {
     "plugin_list.h",
     "possibly_associated_interface_ptr.h",
     "possibly_associated_interface_ptr_info.h",
+    "possibly_associated_wrapper_shared_url_loader_factory.h",
     "presentation/presentation_struct_traits.cc",
     "presentation/presentation_struct_traits.h",
     "process_type.cc",
     "render_widget_surface_properties.cc",
     "render_widget_surface_properties.h",
-    "resize_params.cc",
-    "resize_params.h",
     "resource_messages.h",
     "resource_timing_info.cc",
     "resource_timing_info.h",
@@ -264,7 +259,6 @@ source_set("common") {
     "sandbox_init_mac.cc",
     "sandbox_init_win.cc",
     "savable_subframe.h",
-    "send_zygote_child_ping_linux.cc",
     "service_manager/service_manager_connection_impl.cc",
     "service_manager/service_manager_connection_impl.h",
     "service_worker/service_worker_loader_helpers.cc",
@@ -280,7 +274,6 @@ source_set("common") {
     "service_worker/service_worker_utils.h",
     "single_request_url_loader_factory.cc",
     "single_request_url_loader_factory.h",
-    "speech_recognition_messages.h",
     "swapped_out_messages.cc",
     "swapped_out_messages.h",
     "task_scheduler.cc",
@@ -299,9 +292,8 @@ source_set("common") {
     "user_agent.cc",
     "view_message_enums.h",
     "view_messages.h",
-    "wrapper_shared_url_loader_factory.cc",
-    "wrapper_shared_url_loader_factory.h",
-    "zygote_commands_linux.h",
+    "visual_properties.cc",
+    "visual_properties.h",
   ]
 
   configs += [
@@ -326,7 +318,6 @@ source_set("common") {
     "//base",
     "//base/third_party/dynamic_annotations",
     "//build/util:webkit_version",
-    "//cc/ipc",
     "//components/discardable_memory/common",
     "//components/services/filesystem/public/interfaces",
     "//components/tracing",
@@ -334,9 +325,9 @@ source_set("common") {
     "//components/viz/service",
     "//content:resources",
     "//content/app/resources",
+    "//content/common/service_worker:service_worker_types_proto",
     "//content/public/common:interfaces",
     "//content/public/common:service_names",
-    "//content/public/common:zygote_buildflags",
     "//device/base/synchronization",
     "//device/bluetooth",
     "//gpu",
@@ -372,6 +363,7 @@ source_set("common") {
     "//services/service_manager/public/cpp",
     "//services/service_manager/public/mojom",
     "//services/service_manager/runner/common",
+    "//services/service_manager/zygote:zygote_buildflags",
     "//services/ui/public/interfaces",
     "//services/video_capture/public/mojom",
     "//services/viz/public/interfaces",
@@ -380,6 +372,8 @@ source_set("common") {
     "//third_party/angle:angle_gpu_info_util",
     "//third_party/boringssl",
     "//third_party/icu",
+    "//third_party/webrtc/rtc_base:rtc_base",
+    "//third_party/webrtc_overrides",
     "//ui/base",
     "//ui/base/ime",
     "//ui/display",
@@ -435,17 +429,6 @@ source_set("common") {
     # some unit test binaries won't compile. This only worked in release mode
     # because logging is disabled there.
     deps += [ "//ppapi/proxy:ipc_sources" ]
-  }
-
-  if (enable_webrtc) {
-    sources += [
-      "p2p_messages.h",
-      "p2p_socket_type.h",
-    ]
-    deps += [
-      "//third_party/webrtc/rtc_base:rtc_base",
-      "//third_party/webrtc_overrides",
-    ]
   }
 
   if (use_ozone) {
@@ -510,6 +493,8 @@ source_set("common") {
       "sandbox_policy_fuchsia.cc",
       "sandbox_policy_fuchsia.h",
     ]
+
+    deps += [ "//third_party/fuchsia-sdk:launchpad" ]
   }
 }
 
@@ -535,6 +520,8 @@ mojom("mojo_bindings") {
   # both a direct and an indirect dependency on the same target
   skip_deps_check = true
 
+  disable_variants = true
+
   sources = [
     "appcache.mojom",
     "associated_interfaces.mojom",
@@ -542,7 +529,6 @@ mojom("mojo_bindings") {
     "child_control.mojom",
     "child_memory_coordinator.mojom",
     "field_trial_recorder.mojom",
-    "file_utilities.mojom",
     "frame.mojom",
     "frame_sink_provider.mojom",
     "histogram_fetcher.mojom",
@@ -583,6 +569,7 @@ mojom("mojo_bindings") {
     "shared_worker/shared_worker_factory.mojom",
     "shared_worker/shared_worker_host.mojom",
     "shared_worker/shared_worker_info.mojom",
+    "speech_recognizer.mojom",
     "storage_partition_service.mojom",
     "url_loader_factory_bundle.mojom",
     "widget.mojom",

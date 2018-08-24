@@ -46,7 +46,7 @@ class PasswordAutofillManager : public autofill::AutofillPopupDelegate {
                                    base::string16* body) override;
   bool RemoveSuggestion(const base::string16& value, int identifier) override;
   void ClearPreviewedForm() override;
-  bool IsCreditCardPopup() override;
+  autofill::PopupType GetPopupType() const override;
   autofill::AutofillDriver* GetAutofillDriver() override;
   void RegisterDeletionCallback(base::OnceClosure deletion_callback) override;
 
@@ -63,12 +63,6 @@ class PasswordAutofillManager : public autofill::AutofillPopupDelegate {
                                  const base::string16& typed_username,
                                  int options,
                                  const gfx::RectF& bounds);
-
-  // Handles a request from the renderer to show a popup with a warning
-  // indicating that the form is not secure, used when a password field
-  // is autofilled on a non-secure page load.
-  void OnShowNotSecureWarning(base::i18n::TextDirection text_direction,
-                              const gfx::RectF& bounds);
 
   // Handles a request from the renderer to show a popup with an option to check
   // user's saved passwords, used when a password field is not autofilled.

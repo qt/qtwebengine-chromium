@@ -10,21 +10,22 @@
 #include "content/browser/service_worker/service_worker_new_script_loader.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
 #include "content/browser/service_worker/service_worker_version.h"
-#include "content/browser/url_loader_factory_getter.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "services/network/public/cpp/resource_response.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 
 namespace content {
 
 ServiceWorkerScriptLoaderFactory::ServiceWorkerScriptLoaderFactory(
     base::WeakPtr<ServiceWorkerContextCore> context,
     base::WeakPtr<ServiceWorkerProviderHost> provider_host,
-    scoped_refptr<URLLoaderFactoryGetter> loader_factory_getter)
+    scoped_refptr<network::SharedURLLoaderFactory> loader_factory)
     : context_(context),
       provider_host_(provider_host),
-      loader_factory_getter_(loader_factory_getter) {
+      loader_factory_(std::move(loader_factory)) {
   DCHECK(provider_host_->IsProviderForServiceWorker());
+  DCHECK(loader_factory_);
 }
 
 ServiceWorkerScriptLoaderFactory::~ServiceWorkerScriptLoaderFactory() = default;
@@ -38,13 +39,12 @@ void ServiceWorkerScriptLoaderFactory::CreateLoaderAndStart(
     network::mojom::URLLoaderClientPtr client,
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
   DCHECK(ServiceWorkerUtils::IsServicificationEnabled());
-  DCHECK(loader_factory_getter_);
   if (!ShouldHandleScriptRequest(resource_request)) {
-    // If the request should not be handled, just fallback to the network.
-    // This needs a relaying as we use different associated message pipes.
+    // If the request should not be handled, just do a passthrough load. This
+    // needs a relaying as we use different associated message pipes.
     // TODO(kinuko): Record the reason like what we do with netlog in
     // ServiceWorkerContextRequestHandler.
-    loader_factory_getter_->GetNetworkFactory()->CreateLoaderAndStart(
+    loader_factory_->CreateLoaderAndStart(
         std::move(request), routing_id, request_id, options, resource_request,
         std::move(client), traffic_annotation);
     return;
@@ -70,11 +70,11 @@ void ServiceWorkerScriptLoaderFactory::CreateLoaderAndStart(
     return;
   }
 
-  // The common case: load the script from network and install it.
+  // The common case: load the script and install it.
   mojo::MakeStrongBinding(
       std::make_unique<ServiceWorkerNewScriptLoader>(
           routing_id, request_id, options, resource_request, std::move(client),
-          provider_host_->running_hosted_version(), loader_factory_getter_,
+          provider_host_->running_hosted_version(), loader_factory_,
           traffic_annotation),
       std::move(request));
 }

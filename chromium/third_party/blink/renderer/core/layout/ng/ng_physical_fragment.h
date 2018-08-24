@@ -9,17 +9,21 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/editing/forward.h"
 #include "third_party/blink/renderer/core/layout/ng/geometry/ng_physical_offset.h"
+#include "third_party/blink/renderer/core/layout/ng/geometry/ng_physical_offset_rect.h"
 #include "third_party/blink/renderer/core/layout/ng/geometry/ng_physical_size.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_break_token.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_style_variant.h"
-#include "third_party/blink/renderer/platform/geometry/layout_rect.h"
+#include "third_party/blink/renderer/platform/wtf/ref_counted.h"
+
+#include <unicode/ubidi.h>
 
 namespace blink {
 
 class ComputedStyle;
 class LayoutObject;
 class Node;
-struct NGPhysicalOffsetRect;
+class NGBreakToken;
+class NGInlineItem;
 struct NGPixelSnappedPhysicalBoxStrut;
 class PaintLayer;
 
@@ -130,17 +134,28 @@ class CORE_EXPORT NGPhysicalFragment
   // Returns the border-box size.
   NGPhysicalSize Size() const { return size_; }
 
+  // Returns the rect in the local coordinate of this fragment; i.e., offset is
+  // (0, 0).
+  NGPhysicalOffsetRect LocalRect() const { return {{}, size_}; }
+
   // Bitmask for border edges, see NGBorderEdges::Physical.
   unsigned BorderEdges() const { return border_edge_; }
   NGPixelSnappedPhysicalBoxStrut BorderWidths() const;
 
   // Returns the offset relative to the parent fragment's content-box.
   NGPhysicalOffset Offset() const {
-    DCHECK(is_placed_);
+    DCHECK(is_placed_) << "this=" << this << " for layout object "
+                       << layout_object_;
     return offset_;
   }
 
   NGBreakToken* BreakToken() const { return break_token_.get(); }
+  NGStyleVariant StyleVariant() const {
+    return static_cast<NGStyleVariant>(style_variant_);
+  }
+  bool UsesFirstLineStyle() const {
+    return StyleVariant() == NGStyleVariant::kFirstLine;
+  }
   const ComputedStyle& Style() const;
   Node* GetNode() const;
 
@@ -160,6 +175,9 @@ class CORE_EXPORT NGPhysicalFragment
   // VisualRect of itself including contents, in the local coordinate.
   NGPhysicalOffsetRect VisualRectWithContents() const;
 
+  // Scrollable overflow. including contents, in the local coordinate.
+  NGPhysicalOffsetRect ScrollableOverflow() const;
+
   // Unite visual rect to propagate to parent's ContentsVisualRect.
   void PropagateContentsVisualRect(NGPhysicalOffsetRect*) const;
 
@@ -172,8 +190,12 @@ class CORE_EXPORT NGPhysicalFragment
 
   bool IsPlaced() const { return is_placed_; }
 
-  virtual PositionWithAffinity PositionForPoint(
-      const NGPhysicalOffset&) const = 0;
+  // Returns the bidi level of a text or atomic inline fragment.
+  virtual UBiDiLevel BidiLevel() const;
+
+  // Returns the resolved direction of a text or atomic inline fragment. Not to
+  // be confused with the CSS 'direction' property.
+  virtual TextDirection ResolvedDirection() const;
 
   scoped_refptr<NGPhysicalFragment> CloneWithoutOffset() const;
 
@@ -207,6 +229,8 @@ class CORE_EXPORT NGPhysicalFragment
                      NGFragmentType type,
                      unsigned sub_type,
                      scoped_refptr<NGBreakToken> break_token = nullptr);
+
+  const Vector<NGInlineItem>& InlineItemsOfContainingBlock() const;
 
   LayoutObject* layout_object_;
   scoped_refptr<const ComputedStyle> style_;

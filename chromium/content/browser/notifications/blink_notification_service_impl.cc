@@ -5,6 +5,7 @@
 #include "content/browser/notifications/blink_notification_service_impl.h"
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/callback_helpers.h"
 #include "base/logging.h"
 #include "base/strings/string16.h"
@@ -141,8 +142,10 @@ void BlinkNotificationServiceImpl::CloseNonPersistentNotificationOnUIThread(
     const std::string& notification_id) {
   Service()->CloseNotification(browser_context_, notification_id);
 
+  // TODO(https://crbug.com/442141): Pass a callback here to focus the tab
+  // which created the notification, unless the event is canceled.
   NotificationEventDispatcherImpl::GetInstance()
-      ->DispatchNonPersistentCloseEvent(notification_id);
+      ->DispatchNonPersistentCloseEvent(notification_id, base::DoNothing());
 }
 
 blink::mojom::PermissionStatus
@@ -243,6 +246,24 @@ void BlinkNotificationServiceImpl::
           notification_resources));
 
   std::move(callback).Run(blink::mojom::PersistentNotificationError::NONE);
+}
+
+void BlinkNotificationServiceImpl::ClosePersistentNotification(
+    const std::string& notification_id) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  if (CheckPermissionStatus() != blink::mojom::PermissionStatus::GRANTED)
+    return;
+
+  // Using base::Unretained here is safe because Service() returns a singleton.
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::BindOnce(&PlatformNotificationService::ClosePersistentNotification,
+                     base::Unretained(Service()), browser_context_,
+                     notification_id));
+
+  notification_context_->DeleteNotificationData(
+      notification_id, origin_.GetURL(), base::DoNothing());
 }
 
 void BlinkNotificationServiceImpl::GetNotifications(

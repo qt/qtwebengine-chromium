@@ -7,12 +7,13 @@
 
 #include <stdint.h>
 
+#include "cc/input/touch_action.h"
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/surfaces/local_surface_id.h"
 #include "components/viz/common/surfaces/surface_id.h"
 #include "content/browser/renderer_host/frame_connector_delegate.h"
 #include "content/common/content_export.h"
-#include "content/common/frame_resize_params.h"
+#include "content/common/frame_visual_properties.h"
 
 namespace IPC {
 class Message;
@@ -84,15 +85,17 @@ class CONTENT_EXPORT CrossProcessFrameConnector
   gfx::PointF TransformPointToRootCoordSpace(
       const gfx::PointF& point,
       const viz::SurfaceId& surface_id) override;
-  bool TransformPointToLocalCoordSpace(const gfx::PointF& point,
-                                       const viz::SurfaceId& original_surface,
-                                       const viz::SurfaceId& local_surface_id,
-                                       gfx::PointF* transformed_point) override;
+  bool TransformPointToLocalCoordSpaceLegacy(
+      const gfx::PointF& point,
+      const viz::SurfaceId& original_surface,
+      const viz::SurfaceId& local_surface_id,
+      gfx::PointF* transformed_point) override;
   bool TransformPointToCoordSpaceForView(
       const gfx::PointF& point,
       RenderWidgetHostViewBase* target_view,
       const viz::SurfaceId& local_surface_id,
-      gfx::PointF* transformed_point) override;
+      gfx::PointF* transformed_point,
+      viz::EventSource source = viz::EventSource::ANY) override;
   void ForwardProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                      InputEventAckState ack_result) override;
   void BubbleScrollEvent(const blink::WebGestureEvent& event) override;
@@ -104,6 +107,7 @@ class CONTENT_EXPORT CrossProcessFrameConnector
                         const gfx::Size& max_size) override;
   void DisableAutoResize() override;
   bool IsInert() const override;
+  cc::TouchAction InheritedEffectiveTouchAction() const override;
   bool IsHidden() const override;
   bool IsThrottled() const override;
   bool IsSubtreeThrottled() const override;
@@ -111,8 +115,8 @@ class CONTENT_EXPORT CrossProcessFrameConnector
   void EmbedRendererWindowTreeClientInParent(
       ui::mojom::WindowTreeClientPtr window_tree_client) override;
 #endif
-  void ResizeDueToAutoResize(const gfx::Size& new_size,
-                             uint64_t sequence_number) override;
+  void DidUpdateVisualProperties(
+      const cc::RenderFrameMetadata& metadata) override;
 
   // Set the visibility of immediate child views, i.e. views whose parent view
   // is |view_|.
@@ -125,6 +129,26 @@ class CONTENT_EXPORT CrossProcessFrameConnector
     return GetRootRenderWidgetHostView();
   }
 
+  // This enum backs a histogram - please do not modify or remove the existing
+  // enum values below (adding new values is okay, but please remember to also
+  // update enums.xml in this case). See enums.xml for descriptions of enum
+  // values.
+  enum class CrashVisibility {
+    kCrashedWhileVisible = 0,
+    kShownAfterCrashing = 1,
+    kNeverVisibleAfterCrash = 2,
+    kMaxValue = kNeverVisibleAfterCrash
+  };
+  // Logs the Stability.ChildFrameCrash.Visibility metric after checking that a
+  // crash has indeed happened and checking that the crash has not already been
+  // logged in UMA.
+  void MaybeLogCrash(CrashVisibility visibility);
+
+  // Returns whether the child widget is actually visible to the user.  This is
+  // different from the IsHidden override, and takes into account viewport
+  // intersection as well as the visibility of the RenderFrameHostDelegate.
+  bool IsVisible();
+
  private:
   friend class MockCrossProcessFrameConnector;
 
@@ -133,12 +157,14 @@ class CONTENT_EXPORT CrossProcessFrameConnector
   void ResetScreenSpaceRect();
 
   // Handlers for messages received from the parent frame.
-  void OnUpdateResizeParams(const viz::SurfaceId& surface_id,
-                            const FrameResizeParams& frame_resize_params);
+  void OnSynchronizeVisualProperties(
+      const viz::SurfaceId& surface_id,
+      const FrameVisualProperties& visual_properties);
   void OnUpdateViewportIntersection(const gfx::Rect& viewport_intersection,
                                     const gfx::Rect& compositor_visible_rect);
   void OnVisibilityChanged(bool visible);
   void OnSetIsInert(bool);
+  void OnSetInheritedEffectiveTouchAction(cc::TouchAction);
   void OnUpdateRenderThrottlingStatus(bool is_throttled,
                                       bool subtree_throttled);
 
@@ -147,6 +173,8 @@ class CONTENT_EXPORT CrossProcessFrameConnector
   RenderFrameProxyHost* frame_proxy_in_parent_renderer_;
 
   bool is_inert_ = false;
+  cc::TouchAction inherited_effective_touch_action_ =
+      cc::TouchAction::kTouchActionAuto;
 
   bool is_throttled_ = false;
   bool subtree_throttled_ = false;
@@ -156,6 +184,14 @@ class CONTENT_EXPORT CrossProcessFrameConnector
   bool is_hidden_ = false;
 
   bool is_scroll_bubbling_;
+
+  // Used to make sure we only log UMA once per renderer crash.
+  bool is_crash_already_logged_ = false;
+
+  // Used to make sure that MaybeLogCrash only logs the UMA in case of an actual
+  // crash (in case it is called from the destructor of
+  // CrossProcessFrameConnector or when WebContentsImpl::WasShown is called).
+  bool has_crashed_ = false;
 
   // The last pre-transform frame size received from the parent renderer.
   // |last_received_local_frame_size_| may be in DIP if use zoom for DSF is
@@ -168,4 +204,3 @@ class CONTENT_EXPORT CrossProcessFrameConnector
 }  // namespace content
 
 #endif  // CONTENT_BROWSER_FRAME_HOST_CROSS_PROCESS_FRAME_CONNECTOR_H_
-

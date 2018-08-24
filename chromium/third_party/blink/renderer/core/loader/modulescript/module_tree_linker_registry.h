@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_LOADER_MODULESCRIPT_MODULE_TREE_LINKER_REGISTRY_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LOADER_MODULESCRIPT_MODULE_TREE_LINKER_REGISTRY_H_
 
+#include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
@@ -12,11 +13,12 @@
 
 namespace blink {
 
+class KURL;
 class Modulator;
-class ModuleScriptFetchRequest;
 class ModuleTreeClient;
 class ModuleTreeLinker;
 class ModuleScript;
+class ScriptFetchOptions;
 
 // ModuleTreeLinkerRegistry keeps active ModuleTreeLinkers alive.
 class CORE_EXPORT ModuleTreeLinkerRegistry
@@ -27,17 +29,22 @@ class CORE_EXPORT ModuleTreeLinkerRegistry
     return new ModuleTreeLinkerRegistry;
   }
   void Trace(blink::Visitor*);
-  void TraceWrappers(const ScriptWrappableVisitor*) const override;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override {
     return "ModuleTreeLinkerRegistry";
   }
 
-  ModuleTreeLinker* Fetch(const ModuleScriptFetchRequest&,
+  ModuleTreeLinker* Fetch(const KURL&,
+                          const KURL& base_url,
+                          WebURLRequest::RequestContext destination,
+                          const ScriptFetchOptions&,
                           Modulator*,
                           ModuleTreeClient*);
-  ModuleTreeLinker* FetchDescendantsForInlineScript(ModuleScript*,
-                                                    Modulator*,
-                                                    ModuleTreeClient*);
+  ModuleTreeLinker* FetchDescendantsForInlineScript(
+      ModuleScript*,
+      WebURLRequest::RequestContext destination,
+      Modulator*,
+      ModuleTreeClient*);
 
  private:
   ModuleTreeLinkerRegistry() = default;

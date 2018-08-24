@@ -7,7 +7,6 @@
 
 #include <string>
 
-#include "base/containers/circular_deque.h"
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
@@ -24,13 +23,13 @@ namespace download {
 // right away.
 class InProgressCacheImpl : public InProgressCache {
  public:
-  explicit InProgressCacheImpl(
+  InProgressCacheImpl(
       const base::FilePath& cache_file_path,
       const scoped_refptr<base::SequencedTaskRunner>& task_runner);
   ~InProgressCacheImpl() override;
 
   // InProgressCache implementation.
-  void Initialize(const base::RepeatingClosure& callback) override;
+  void Initialize(base::OnceClosure callback) override;
   void AddOrReplaceEntry(const DownloadEntry& entry) override;
   base::Optional<DownloadEntry> RetrieveEntry(const std::string& guid) override;
   void RemoveEntry(const std::string& guid) override;
@@ -44,12 +43,12 @@ class InProgressCacheImpl : public InProgressCache {
   };
 
   // Steps to execute after initialization is complete.
-  void OnInitialized(const std::vector<char>& entries);
+  void OnInitialized(base::OnceClosure callback,
+                     const std::vector<char>& entries);
 
   metadata_pb::DownloadEntries entries_;
   base::FilePath file_path_;
   InitializationStatus initialization_status_;
-  base::circular_deque<base::RepeatingClosure> pending_actions_;
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
   base::WeakPtrFactory<InProgressCacheImpl> weak_ptr_factory_;
 

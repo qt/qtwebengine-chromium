@@ -28,12 +28,12 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_LOADER_FETCH_RESOURCE_ERROR_H_
 
 #include <iosfwd>
+#include "base/optional.h"
 #include "services/network/public/cpp/cors/cors_error_status.h"
 #include "third_party/blink/public/platform/web_url_error.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
@@ -63,7 +63,7 @@ class PLATFORM_EXPORT ResourceError final {
   // |error_code| must not be 0.
   ResourceError(int error_code,
                 const KURL& failing_url,
-                WTF::Optional<network::CORSErrorStatus>);
+                base::Optional<network::CORSErrorStatus>);
   ResourceError(const WebURLError&);
 
   // Makes a deep copy. Useful for when you need to use a ResourceError on
@@ -81,8 +81,10 @@ class PLATFORM_EXPORT ResourceError final {
   bool IsCacheMiss() const;
   bool WasBlockedByResponse() const;
   bool ShouldCollapseInitiator() const { return should_collapse_initiator_; }
+  base::Optional<ResourceRequestBlockedReason> GetResourceRequestBlockedReason()
+      const;
 
-  WTF::Optional<network::CORSErrorStatus> CORSErrorStatus() const {
+  base::Optional<network::CORSErrorStatus> CORSErrorStatus() const {
     return cors_error_status_;
   }
 
@@ -97,13 +99,13 @@ class PLATFORM_EXPORT ResourceError final {
   void InitializeDescription();
 
   int error_code_;
-  int extended_error_code_;
+  int extended_error_code_ = 0;
   KURL failing_url_;
   String localized_description_;
   bool is_access_check_ = false;
   bool has_copy_in_cache_ = false;
   bool should_collapse_initiator_ = false;
-  WTF::Optional<network::CORSErrorStatus> cors_error_status_;
+  base::Optional<network::CORSErrorStatus> cors_error_status_;
 };
 
 inline bool operator==(const ResourceError& a, const ResourceError& b) {

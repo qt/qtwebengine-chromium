@@ -18,9 +18,9 @@
 #include "base/containers/queue.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/writable_shared_memory_region.h"
 #include "base/task_runner.h"
 #include "build/build_config.h"
-#include "mojo/edk/embedder/platform_shared_buffer.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/atomic_flag.h"
 #include "mojo/edk/system/node_channel.h"
@@ -28,6 +28,7 @@
 #include "mojo/edk/system/ports/name.h"
 #include "mojo/edk/system/ports/node.h"
 #include "mojo/edk/system/ports/node_delegate.h"
+#include "mojo/edk/system/scoped_process_handle.h"
 #include "mojo/edk/system/system_impl_export.h"
 
 namespace base {
@@ -116,7 +117,7 @@ class MOJO_SYSTEM_IMPL_EXPORT NodeController : public ports::NodeDelegate,
   int MergeLocalPorts(const ports::PortRef& port0, const ports::PortRef& port1);
 
   // Creates a new shared buffer for use in the current process.
-  scoped_refptr<PlatformSharedBuffer> CreateSharedBuffer(size_t num_bytes);
+  base::WritableSharedMemoryRegion CreateSharedBuffer(size_t num_bytes);
 
   // Request that the Node be shut down cleanly. This may take an arbitrarily
   // long time to complete, at which point |callback| will be called.
@@ -159,7 +160,7 @@ class MOJO_SYSTEM_IMPL_EXPORT NodeController : public ports::NodeDelegate,
   };
 
   void SendBrokerClientInvitationOnIOThread(
-      base::ProcessHandle target_process,
+      ScopedProcessHandle target_process,
       ConnectionParams connection_params,
       ports::NodeName token,
       const ProcessErrorCallback& process_error_callback);
@@ -198,12 +199,14 @@ class MOJO_SYSTEM_IMPL_EXPORT NodeController : public ports::NodeDelegate,
   void OnAddBrokerClient(const ports::NodeName& from_node,
                          const ports::NodeName& client_name,
                          base::ProcessHandle process_handle) override;
-  void OnBrokerClientAdded(const ports::NodeName& from_node,
-                           const ports::NodeName& client_name,
-                           ScopedPlatformHandle broker_channel) override;
-  void OnAcceptBrokerClient(const ports::NodeName& from_node,
-                            const ports::NodeName& broker_name,
-                            ScopedPlatformHandle broker_channel) override;
+  void OnBrokerClientAdded(
+      const ports::NodeName& from_node,
+      const ports::NodeName& client_name,
+      ScopedInternalPlatformHandle broker_channel) override;
+  void OnAcceptBrokerClient(
+      const ports::NodeName& from_node,
+      const ports::NodeName& broker_name,
+      ScopedInternalPlatformHandle broker_channel) override;
   void OnEventMessage(const ports::NodeName& from_node,
                       Channel::MessagePtr message) override;
   void OnRequestPortMerge(const ports::NodeName& from_node,
@@ -213,7 +216,7 @@ class MOJO_SYSTEM_IMPL_EXPORT NodeController : public ports::NodeDelegate,
                              const ports::NodeName& name) override;
   void OnIntroduce(const ports::NodeName& from_node,
                    const ports::NodeName& name,
-                   ScopedPlatformHandle channel_handle) override;
+                   ScopedInternalPlatformHandle channel_handle) override;
   void OnBroadcast(const ports::NodeName& from_node,
                    Channel::MessagePtr message) override;
 #if defined(OS_WIN) || (defined(OS_MACOSX) && !defined(OS_IOS))

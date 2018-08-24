@@ -41,6 +41,10 @@
 #include "base/android/scoped_java_ref.h"
 #endif
 
+namespace blink {
+struct Manifest;
+}
+
 namespace base {
 class TimeTicks;
 }
@@ -75,7 +79,6 @@ class RenderWidgetHostView;
 class WebContentsDelegate;
 struct CustomContextMenuContext;
 struct DropData;
-struct Manifest;
 struct MHTMLGenerationParams;
 struct PageImportanceSignals;
 struct RendererPreferences;
@@ -165,20 +168,58 @@ class WebContents : public PageNavigator,
     // WebContents construction should take this into account.
     bool renderer_initiated_creation;
 
-    // True if the WebContents should create its renderer process and main
-    // RenderFrame before the first navigation. This is useful to reduce
-    // the latency of the first navigation in cases where it might
-    // not happen right away.
+    // Used to specify how far WebContents::Create can initialize a renderer
+    // process.
+    //
+    // This is useful in two scenarios:
+    // - Conserving resources - e.g. tab discarding and session restore do not
+    //   want to use an actual renderer process before the WebContents are
+    //   loaded or reloaded.  This can be accomplished via kNoRendererProcess.
+    // - Avoiding the latency of the first navigation
+    //   - kInitializeAndWarmupRendererProcess is most aggressive in avoiding
+    //     the latency, but may be incompatible with scenarios that require
+    //     manipulating the freshly created WebContents prior to initializing
+    //     renderer-side objects (e.g. in scenarios like
+    //     WebContentsImpl::CreateNewWindow which needs to copy the
+    //     SessionStorageNamespace)
+    //   - kOkayToHaveRendererProcess is the default latency-conserving mode.
+    //     In this mode a spare, pre-spawned RenderProcessHost may be claimed
+    //     by the newly created WebContents, but no renderer-side objects will
+    //     be initialized from within WebContents::Create method.
+    //
     // Note that the pre-created renderer process may not be used if the first
     // navigation requires a dedicated or privileged process, such as a WebUI.
-    bool initialize_renderer;
+    // This can be avoided by ensuring that |site_instance| matches the first
+    // navigation's destination.
+    enum RendererInitializationState {
+      // Creation of WebContents should not spawn a new OS process and should
+      // not reuse a RenderProcessHost that might be associated with an existing
+      // OS process (as in the case of SpareRenderProcessHostManager).
+      kNoRendererProcess,
+
+      // Created WebContents may or may not be associated with an actual OS
+      // process.
+      kOkayToHaveRendererProcess,
+
+      // Ensures that the created WebContents are backed by an OS process which
+      // has an initialized RenderView.
+      //
+      // TODO(lukasza): https://crbug.com/848366: Remove
+      // kInitializeAndWarmupRendererProcess value - warming up the renderer by
+      // initializing the RenderView is redundant with the warm-up that can be
+      // achieved by either 1) warming up the spare renderer before creating
+      // WebContents and/or 2) speculative RenderFrameHost used internally
+      // during a navigation.
+      kInitializeAndWarmupRendererProcess,
+    } desired_renderer_state;
 
     // Sandboxing flags set on the new WebContents.
     blink::WebSandboxFlags starting_sandbox_flags;
   };
 
   // Creates a new WebContents.
-  CONTENT_EXPORT static WebContents* Create(const CreateParams& params);
+  CONTENT_EXPORT static std::unique_ptr<WebContents> Create(
+      const CreateParams& params);
 
   // Similar to Create() above but should be used when you need to prepopulate
   // the SessionStorageNamespaceMap of the WebContents. This can happen if
@@ -190,7 +231,7 @@ class WebContents : public PageNavigator,
   // understand when SessionStorageNamespace objects should be cloned, why
   // they should not be shared by multiple WebContents, and what bad things
   // can happen if you share the object.
-  CONTENT_EXPORT static WebContents* CreateWithSessionStorage(
+  CONTENT_EXPORT static std::unique_ptr<WebContents> CreateWithSessionStorage(
       const CreateParams& params,
       const SessionStorageNamespaceMap& session_storage_namespace_map);
 
@@ -418,6 +459,9 @@ class WebContents : public PageNavigator,
   // Device.
   virtual bool IsConnectedToBluetoothDevice() const = 0;
 
+  // Indicates whether a video is in Picture-in-Picture for |this|.
+  virtual bool HasPictureInPictureVideo() const = 0;
+
   // Indicates whether this tab should be considered crashed. The setter will
   // also notify the delegate when the flag is changed.
   virtual bool IsCrashed() const  = 0;
@@ -460,11 +504,8 @@ class WebContents : public PageNavigator,
   // returns false.
   virtual bool NeedToFireBeforeUnload() = 0;
 
-  // Runs the beforeunload handler for the main frame. See also ClosePage and
-  // SwapOut in RenderViewHost, which run the unload handler.
-  //
-  // TODO(creis): We should run the beforeunload handler for every frame that
-  // has one.
+  // Runs the beforeunload handler for the main frame and all its subframes.
+  // See also ClosePage in RenderViewHostImpl, which runs the unload handler.
   virtual void DispatchBeforeUnload() = 0;
 
   // Attaches this inner WebContents to its container frame
@@ -494,7 +535,7 @@ class WebContents : public PageNavigator,
 
   // Creates a new WebContents with the same state as this one. The returned
   // heap-allocated pointer is owned by the caller.
-  virtual WebContents* Clone() = 0;
+  virtual std::unique_ptr<WebContents> Clone() = 0;
 
   // Reloads the focused frame.
   virtual void ReloadFocusedFrame(bool bypass_cache) = 0;
@@ -770,7 +811,7 @@ class WebContents : public PageNavigator,
   // frame document's manifest. The url will be empty if the document specifies
   // no manifest, and the manifest will be empty if any other failures occurred.
   using GetManifestCallback =
-      base::OnceCallback<void(const GURL&, const Manifest&)>;
+      base::OnceCallback<void(const GURL&, const blink::Manifest&)>;
 
   // Requests the manifest URL and the Manifest of the main frame's document.
   virtual void GetManifest(GetManifestCallback callback) = 0;
@@ -862,6 +903,13 @@ class WebContents : public PageNavigator,
   // Returns true if the WebContents has completed its first meaningful paint.
   virtual bool CompletedFirstVisuallyNonEmptyPaint() const = 0;
 #endif  // OS_ANDROID
+
+  // TODO(https://crbug.com/826293): This is a simple mitigation to validate
+  // that an action that requires a user gesture actually has one in the
+  // trustworthy browser process, rather than relying on the untrustworthy
+  // renderer. This should be eventually merged into and accounted for in the
+  // user activation work.
+  virtual bool HasRecentInteractiveInputEvent() const = 0;
 
  private:
   // This interface should only be implemented inside content.

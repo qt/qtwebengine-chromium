@@ -268,12 +268,14 @@ void PacedSender::Process() {
   // TODO(srte): Stop sending packet in paused state when pause is no longer
   // used for congestion windows.
   if (paused_ || Congested()) {
-    // We can not send padding unless a normal packet has first been sent. If we
-    // do, timestamps get messed up.
-    if (elapsed_time_ms >= kCongestedPacketIntervalMs && packet_counter_ > 0) {
-      PacedPacketInfo pacing_info;
-      size_t bytes_sent = SendPadding(1, pacing_info);
-      alr_detector_->OnBytesSent(bytes_sent, elapsed_time_ms);
+    if (elapsed_time_ms >= kCongestedPacketIntervalMs) {
+      // We can not send padding unless a normal packet has first been sent. If
+      // we do, timestamps get messed up.
+      if (packet_counter_ > 0) {
+        PacedPacketInfo pacing_info;
+        size_t bytes_sent = SendPadding(1, pacing_info);
+        alr_detector_->OnBytesSent(bytes_sent, elapsed_time_ms);
+      }
       last_send_time_us_ = clock_->TimeInMicroseconds();
     }
     return;
@@ -351,7 +353,7 @@ void PacedSender::Process() {
 }
 
 void PacedSender::ProcessThreadAttached(ProcessThread* process_thread) {
-  RTC_LOG(LS_INFO) << "ProcessThreadAttached 0x" << std::hex << process_thread;
+  RTC_LOG(LS_INFO) << "ProcessThreadAttached 0x" << process_thread;
   rtc::CritScope cs(&process_thread_lock_);
   process_thread_ = process_thread;
 }

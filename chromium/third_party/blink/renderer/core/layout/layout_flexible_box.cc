@@ -31,17 +31,19 @@
 #include "third_party/blink/renderer/core/layout/layout_flexible_box.h"
 
 #include <limits>
+#include "base/auto_reset.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/layout/flexible_box_algorithm.h"
 #include "third_party/blink/renderer/core/layout/layout_state.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/min_max_size.h"
+#include "third_party/blink/renderer/core/layout/ng/layout_ng_mixin.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_constraint_space.h"
 #include "third_party/blink/renderer/core/layout/text_autosizer.h"
 #include "third_party/blink/renderer/core/paint/block_painter.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/length_functions.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 
 namespace blink {
@@ -370,7 +372,7 @@ void LayoutFlexibleBox::UpdateBlockLayout(bool relayout_children) {
     return;
 
   relaid_out_children_.clear();
-  WTF::AutoReset<bool> reset1(&in_layout_, true);
+  base::AutoReset<bool> reset1(&in_layout_, true);
   DCHECK_EQ(has_definite_height_, SizeDefiniteness::kUnknown);
 
   if (UpdateLogicalWidthAndColumnWidth())
@@ -825,6 +827,30 @@ void LayoutFlexibleBox::ClearCachedMainSizeForChild(const LayoutBox& child) {
   intrinsic_size_along_main_axis_.erase(&child);
 }
 
+bool LayoutFlexibleBox::ShouldForceLayoutForNGChild(
+    const LayoutBlockFlow& child) const {
+  // If the last layout was done with a different override size,
+  // or different definite-ness, we need to force-relayout so
+  // that percentage sizes are resolved correctly.
+  const NGConstraintSpace* old_space = child.CachedConstraintSpace();
+  if (!old_space)
+    return true;
+  if (old_space->IsFixedSizeInline() != child.HasOverrideLogicalWidth())
+    return true;
+  if (old_space->IsFixedSizeBlock() != child.HasOverrideLogicalHeight())
+    return true;
+  if (old_space->FixedSizeBlockIsDefinite() !=
+      UseOverrideLogicalHeightForPerentageResolution(child))
+    return true;
+  if (child.HasOverrideLogicalWidth() &&
+      old_space->AvailableSize().inline_size != child.OverrideLogicalWidth())
+    return true;
+  if (child.HasOverrideLogicalHeight() &&
+      old_space->AvailableSize().block_size != child.OverrideLogicalHeight())
+    return true;
+  return false;
+}
+
 DISABLE_CFI_PERF
 LayoutUnit LayoutFlexibleBox::ComputeInnerFlexBaseSizeForChild(
     LayoutBox& child,
@@ -1119,19 +1145,17 @@ MinMaxSize LayoutFlexibleBox::ComputeMinAndMaxSizesForChild(
   return sizes;
 }
 
-LayoutUnit LayoutFlexibleBox::CrossSizeForPercentageResolution(
-    const LayoutBox& child) {
+bool LayoutFlexibleBox::CrossSizeIsDefiniteForPercentageResolution(
+    const LayoutBox& child) const {
   if (FlexLayoutAlgorithm::AlignmentForChild(StyleRef(), child.StyleRef()) !=
       ItemPosition::kStretch)
-    return LayoutUnit(-1);
+    return false;
 
   // Here we implement https://drafts.csswg.org/css-flexbox/#algo-stretch
-  if (HasOrthogonalFlow(child) && child.HasOverrideLogicalContentWidth())
-    return child.OverrideLogicalContentWidth() - child.ScrollbarLogicalWidth();
-  if (!HasOrthogonalFlow(child) && child.HasOverrideLogicalContentHeight()) {
-    return child.OverrideLogicalContentHeight() -
-           child.ScrollbarLogicalHeight();
-  }
+  if (HasOrthogonalFlow(child) && child.HasOverrideLogicalWidth())
+    return true;
+  if (!HasOrthogonalFlow(child) && child.HasOverrideLogicalHeight())
+    return true;
 
   // We don't currently implement the optimization from
   // https://drafts.csswg.org/css-flexbox/#definite-sizes case 1. While that
@@ -1139,42 +1163,36 @@ LayoutUnit LayoutFlexibleBox::CrossSizeForPercentageResolution(
   // definite size, which itself is not cheap. We can consider implementing it
   // at a later time. (The correctness is ensured by redoing layout in
   // applyStretchAlignmentToChild)
-  return LayoutUnit(-1);
+  return false;
 }
 
-LayoutUnit LayoutFlexibleBox::MainSizeForPercentageResolution(
-    const LayoutBox& child) {
+bool LayoutFlexibleBox::MainSizeIsDefiniteForPercentageResolution(
+    const LayoutBox& child) const {
   // This function implements section 9.8. Definite and Indefinite Sizes, case
   // 2) of the flexbox spec.
   // We need to check for the flexbox to have a definite main size, and for the
   // flex item to have a definite flex basis.
   const Length& flex_basis = FlexBasisForChild(child);
   if (!MainAxisLengthIsDefinite(child, flex_basis))
-    return LayoutUnit(-1);
+    return false;
   if (!flex_basis.IsPercentOrCalc()) {
     // If flex basis had a percentage, our size is guaranteed to be definite or
     // the flex item's size could not be definite. Otherwise, we make up a
     // percentage to check whether we have a definite size.
     if (!MainAxisLengthIsDefinite(child, Length(0, kPercent)))
-      return LayoutUnit(-1);
+      return false;
   }
 
   if (HasOrthogonalFlow(child))
-    return child.HasOverrideLogicalContentHeight()
-               ? child.OverrideLogicalContentHeight() -
-                     child.ScrollbarLogicalHeight()
-               : LayoutUnit(-1);
-  return child.HasOverrideLogicalContentWidth()
-             ? child.OverrideLogicalContentWidth() -
-                   child.ScrollbarLogicalWidth()
-             : LayoutUnit(-1);
+    return child.HasOverrideLogicalHeight();
+  return child.HasOverrideLogicalWidth();
 }
 
-LayoutUnit LayoutFlexibleBox::ChildLogicalHeightForPercentageResolution(
-    const LayoutBox& child) {
+bool LayoutFlexibleBox::UseOverrideLogicalHeightForPerentageResolution(
+    const LayoutBox& child) const {
   if (!HasOrthogonalFlow(child))
-    return CrossSizeForPercentageResolution(child);
-  return MainSizeForPercentageResolution(child);
+    return CrossSizeIsDefiniteForPercentageResolution(child);
+  return MainSizeIsDefiniteForPercentageResolution(child);
 }
 
 LayoutUnit LayoutFlexibleBox::AdjustChildSizeForAspectRatioCrossAxisMinAndMax(
@@ -1283,10 +1301,15 @@ static LayoutUnit AlignmentOffset(LayoutUnit available_free_space,
 void LayoutFlexibleBox::SetOverrideMainAxisContentSizeForChild(
     LayoutBox& child,
     LayoutUnit child_preferred_size) {
-  if (HasOrthogonalFlow(child))
-    child.SetOverrideLogicalContentHeight(child_preferred_size);
-  else
-    child.SetOverrideLogicalContentWidth(child_preferred_size);
+  if (HasOrthogonalFlow(child)) {
+    // TODO(rego): Shouldn't we add the scrollbar height too?
+    child.SetOverrideLogicalHeight(child_preferred_size +
+                                   child.BorderAndPaddingLogicalHeight());
+  } else {
+    // TODO(rego): Shouldn't we add the scrollbar width too?
+    child.SetOverrideLogicalWidth(child_preferred_size +
+                                  child.BorderAndPaddingLogicalWidth());
+  }
 }
 
 LayoutUnit LayoutFlexibleBox::StaticMainAxisPositionForPositionedChild(
@@ -1457,7 +1480,6 @@ void LayoutFlexibleBox::LayoutLineItems(FlexLine* current_line,
                                            flex_item.flexed_content_size);
     // The flexed content size and the override size include the scrollbar
     // width, so we need to compare to the size including the scrollbar.
-    // TODO(cbiesinger): Should it include the scrollbar?
     if (flex_item.flexed_content_size !=
         MainAxisContentExtentForChildIncludingScrollbar(*child)) {
       child->SetChildNeedsLayout(kMarkOnlyThis);
@@ -1470,8 +1492,12 @@ void LayoutFlexibleBox::LayoutLineItems(FlexLine* current_line,
     // computeInnerFlexBaseSizeForChild.
     bool force_child_relayout =
         relayout_children && !relaid_out_children_.Contains(child);
-    if (child->IsLayoutBlock() &&
-        ToLayoutBlock(*child).HasPercentHeightDescendants()) {
+    // TODO(dgrogan): Broaden the NG part of this check once NG types other
+    // than Mixin derivatives are cached.
+    if ((child->IsLayoutNGMixin() &&
+         ShouldForceLayoutForNGChild(ToLayoutBlockFlow(*child))) ||
+        (child->IsLayoutBlock() &&
+         ToLayoutBlock(*child).HasPercentHeightDescendants())) {
       // Have to force another relayout even though the child is sized
       // correctly, because its descendants are not sized correctly yet. Our
       // previous layout of the child was done without an override height set.
@@ -1713,9 +1739,8 @@ void LayoutFlexibleBox::ApplyStretchAlignmentToChild(
       // So, redo it here.
       child_needs_relayout = true;
     }
-    if (child_needs_relayout || !child.HasOverrideLogicalContentHeight())
-      child.SetOverrideLogicalContentHeight(
-          desired_logical_height - child.BorderAndPaddingLogicalHeight());
+    if (child_needs_relayout || !child.HasOverrideLogicalHeight())
+      child.SetOverrideLogicalHeight(desired_logical_height);
     if (child_needs_relayout) {
       child.SetLogicalHeight(LayoutUnit());
       // We cache the child's intrinsic content logical height to avoid it being
@@ -1739,8 +1764,7 @@ void LayoutFlexibleBox::ApplyStretchAlignmentToChild(
     flex_item.cross_axis_size = child_width;
 
     if (child_width != child.LogicalWidth()) {
-      child.SetOverrideLogicalContentWidth(
-          child_width - child.BorderAndPaddingLogicalWidth());
+      child.SetOverrideLogicalWidth(child_width);
       child.ForceChildLayout();
     }
   }

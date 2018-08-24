@@ -61,7 +61,7 @@ message BackgroundFetchOptions {
 // in memory. This information should be everything needed to reconstruct
 // the state of an interrupted background fetch.
 //
-// Next Tag: 6
+// Next Tag: 7
 message BackgroundFetchMetadata {
   optional int64 creation_microseconds_since_unix_epoch = 1;
   optional string origin = 2;
@@ -69,8 +69,38 @@ message BackgroundFetchMetadata {
   optional BackgroundFetchRegistration registration = 3;
   optional BackgroundFetchOptions options = 4;
 
-  // Defaults to BackgroundFetchOptions.title.
-  // Can be updated by calling `BackgroundFetchUpdateEvent.updateUI`.
-  // https://wicg.github.io/background-fetch/#backgroundfetchupdateevent.
-  optional string ui_title = 5;
+  // Number of fetches initiated by the developer.
+  optional int32 num_fetches = 5;
+}
+
+// A background fetch request that is still in a pending state.
+//
+// Next Tag: 4
+message BackgroundFetchPendingRequest {
+  optional string unique_id = 1;
+  optional int32 request_index = 2;
+  optional string serialized_request = 3;
+}
+
+// A background fetch request in the active state. This means that
+// the DownloadManager started downloading the file.
+//
+// Next Tag: 5
+message BackgroundFetchActiveRequest {
+  optional string unique_id = 1;
+  optional int32 request_index = 2;
+  optional string serialized_request = 3;
+  optional string download_guid = 4;
+}
+
+// A background fetch request in the completed state. This means that
+// the DownloadManager returned the download.
+//
+// Next Tag: 6
+message BackgroundFetchCompletedRequest {
+  optional string unique_id = 1;
+  optional int32 request_index = 2;
+  optional string serialized_request = 3;
+  optional string download_guid = 4;
+  optional bool succeeded = 5;
 }

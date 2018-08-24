@@ -160,8 +160,9 @@ static void GetAudioDeviceInfo(bool is_input,
   }
 }
 
-static AudioDeviceID GetAudioDeviceIdByUId(bool is_input,
-                                           const std::string& device_id) {
+AudioDeviceID AudioManagerMac::GetAudioDeviceIdByUId(
+    bool is_input,
+    const std::string& device_id) {
   DCHECK(AudioManager::Get()->GetTaskRunner()->BelongsToCurrentThread());
   AudioObjectPropertyAddress property_address = {
     kAudioHardwarePropertyDevices,
@@ -233,7 +234,7 @@ static bool GetDefaultDevice(AudioDeviceID* device, bool input) {
   return true;
 }
 
-static bool GetDefaultOutputDevice(AudioDeviceID* device) {
+bool AudioManagerMac::GetDefaultOutputDevice(AudioDeviceID* device) {
   return GetDefaultDevice(device, false);
 }
 
@@ -503,15 +504,15 @@ AudioManagerMac::AudioManagerMac(std::unique_ptr<AudioThread> audio_thread,
     : AudioManagerBase(std::move(audio_thread), audio_log_factory),
       current_sample_rate_(0),
       current_output_device_(kAudioDeviceUnknown),
-      in_shutdown_(false) {
+      in_shutdown_(false),
+      weak_ptr_factory_(this) {
   SetMaxOutputStreamsAllowed(kMaxOutputStreams);
 
-  // Task must be posted last to avoid races from handing out "this" to the
-  // audio thread.  Always PostTask even if we're on the right thread since
-  // AudioManager creation is on the startup path and this may be slow.
+  // PostTask since AudioManager creation may be on the startup path and this
+  // may be slow.
   GetTaskRunner()->PostTask(
       FROM_HERE, base::Bind(&AudioManagerMac::InitializeOnAudioThread,
-                            base::Unretained(this)));
+                            weak_ptr_factory_.GetWeakPtr()));
 }
 
 AudioManagerMac::~AudioManagerMac() = default;
@@ -525,20 +526,7 @@ void AudioManagerMac::ShutdownOnAudioThread() {
   // Even if tasks to close the streams are enqueued, they would not run
   // leading to CHECKs getting hit in the destructor about open streams. Close
   // them explicitly here. crbug.com/608049.
-  for (auto iter = basic_input_streams_.begin();
-       iter != basic_input_streams_.end();) {
-    // Note: Closing the stream will invalidate the iterator.
-    // Increment the iterator before closing the stream.
-    AudioInputStream* stream = *iter++;
-    stream->Close();
-  }
-  for (auto iter = low_latency_input_streams_.begin();
-       iter != low_latency_input_streams_.end();) {
-    // Note: Closing the stream will invalidate the iterator.
-    // Increment the iterator before closing the stream.
-    AudioInputStream* stream = *iter++;
-    stream->Close();
-  }
+  CloseAllInputStreams();
   CHECK(basic_input_streams_.empty());
   CHECK(low_latency_input_streams_.empty());
 
@@ -614,7 +602,7 @@ AudioParameters AudioManagerMac::GetInputStreamParameters(
   if (device == kAudioObjectUnknown) {
     DLOG(ERROR) << "Invalid device " << device_id;
     return AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                           CHANNEL_LAYOUT_STEREO, kFallbackSampleRate, 16,
+                           CHANNEL_LAYOUT_STEREO, kFallbackSampleRate,
                            ChooseBufferSize(true, kFallbackSampleRate));
   }
 
@@ -638,7 +626,7 @@ AudioParameters AudioManagerMac::GetInputStreamParameters(
 
   // TODO(grunell): query the native channel layout for the specific device.
   AudioParameters params(AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout,
-                         sample_rate, 16, buffer_size);
+                         sample_rate, buffer_size);
 
   if (DeviceSupportsAmbientNoiseReduction(device)) {
     params.set_effects(AudioParameters::NOISE_SUPPRESSION);
@@ -808,11 +796,10 @@ AudioInputStream* AudioManagerMac::MakeLowLatencyInputStream(
     return nullptr;
   }
 
-  using VoiceProcessingMode = AUAudioInputStream::VoiceProcessingMode;
   VoiceProcessingMode voice_processing_mode =
       (params.effects() & AudioParameters::ECHO_CANCELLER)
-          ? VoiceProcessingMode::ENABLED
-          : VoiceProcessingMode::DISABLED;
+          ? VoiceProcessingMode::kEnabled
+          : VoiceProcessingMode::kDisabled;
 
   auto* stream = new AUAudioInputStream(this, params, audio_device_id,
                                         log_callback, voice_processing_mode);
@@ -827,9 +814,11 @@ AudioParameters AudioManagerMac::GetPreferredOutputStreamParameters(
   const AudioDeviceID device = GetAudioDeviceIdByUId(false, output_device_id);
   if (device == kAudioObjectUnknown) {
     DLOG(ERROR) << "Invalid output device " << output_device_id;
-    return input_params.IsValid() ? input_params : AudioParameters(
-        AudioParameters::AUDIO_PCM_LOW_LATENCY, CHANNEL_LAYOUT_STEREO,
-        kFallbackSampleRate, 16, ChooseBufferSize(false, kFallbackSampleRate));
+    return input_params.IsValid()
+               ? input_params
+               : AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                                 CHANNEL_LAYOUT_STEREO, kFallbackSampleRate,
+                                 ChooseBufferSize(false, kFallbackSampleRate));
   }
 
   const bool has_valid_input_params = input_params.IsValid();
@@ -868,7 +857,7 @@ AudioParameters AudioManagerMac::GetPreferredOutputStreamParameters(
   }
 
   AudioParameters params(AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout,
-                         hardware_sample_rate, 16, buffer_size);
+                         hardware_sample_rate, buffer_size);
   params.set_channels_for_discrete(output_channels);
   return params;
 }

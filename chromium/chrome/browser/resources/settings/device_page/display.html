@@ -1,7 +1,9 @@
 <link rel="import" href="chrome://resources/html/polymer.html">
 
+<link rel="import" href="chrome://resources/cr_elements/cr_checkbox/cr_checkbox.html">
 <link rel="import" href="chrome://resources/cr_elements/cr_link_row/cr_link_row.html">
 <link rel="import" href="chrome://resources/cr_elements/cr_toggle/cr_toggle.html">
+<link rel="import" href="chrome://resources/cr_elements/paper_tabs_style_css.html">
 <link rel="import" href="chrome://resources/html/assert.html">
 <link rel="import" href="chrome://resources/html/cr/ui/focus_without_ink.html">
 <link rel="import" href="chrome://resources/html/i18n_behavior.html">
@@ -22,7 +24,7 @@
 
 <dom-module id="settings-display">
   <template>
-    <style include="settings-shared md-select iron-flex iron-flex-alignment">
+    <style include="settings-shared md-select iron-flex iron-flex-alignment paper-tabs-style">
       .indented {
         -webkit-margin-start: var(--cr-section-indent-padding);
         align-self: stretch;
@@ -53,10 +55,6 @@
         -webkit-padding-start: 0
       }
 
-      paper-tab {
-        text-transform: uppercase;
-      }
-
       #controlsDiv > .settings-box:first-of-type {
         border-top: none;
       }
@@ -82,11 +80,11 @@
     <template is="dom-if" if="[[showMirror_(unifiedDesktopMode_, displays)]]"
         restamp>
       <div class="secondary self-start">
-        <paper-checkbox checked="[[isMirrored_(displays)]]"
+        <cr-checkbox checked="[[isMirrored_(displays)]]"
             on-click="onMirroredTap_"
             aria-label="[[getDisplayMirrorText_(displays)]]">
           <div class="text-area">[[getDisplayMirrorText_(displays)]]</div>
-        </paper-checkbox>
+        </cr-checkbox>
       </div>
     </template>
 
@@ -152,7 +150,7 @@
           </div>
           <settings-slider disabled="[[!enableSetResolution_(selectedDisplay)]]"
               tick-values="[[modeValues_]]" pref="{{selectedModePref_}}"
-              on-change="onSelectedModeChange_">
+              on-change="onSelectedModeSliderChange_">
           </settings-slider>
         </div>
       </template>
@@ -163,11 +161,16 @@
           <div class="start text-area layout vertical">
             <div>$i18n{displayZoomTitle}</div>
             <div class="secondary self-start">$i18n{displayZoomSublabel}</div>
+            <div class="secondary self-start"
+                hidden$="[[!logicalResolutionText_]]">
+              [[logicalResolutionText_]]
+            </div>
           </div>
           <display-size-slider id="displaySizeSlider"
               ticks="[[zoomValues_]]" pref="{{selectedZoomPref_}}"
               min-label="$i18n{displaySizeSliderMinLabel}"
-              max-label="$i18n{displaySizeSliderMaxLabel}">
+              max-label="$i18n{displaySizeSliderMaxLabel}"
+              on-immediate-value-changed="onDisplaySizeSliderDrag_">
           </display-size-slider>
         </div>
 

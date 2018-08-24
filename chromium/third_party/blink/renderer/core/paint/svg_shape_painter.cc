@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/paint/svg_shape_painter.h"
 
+#include "base/optional.h"
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_resource_marker.h"
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_shape.h"
 #include "third_party/blink/renderer/core/layout/svg/svg_layout_support.h"
@@ -18,7 +19,6 @@
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_record.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_record_builder.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 
 namespace blink {
 
@@ -190,10 +190,9 @@ void SVGShapePainter::StrokeShape(GraphicsContext& context,
       break;
     default:
       DCHECK(layout_svg_shape_.HasPath());
-      Path* use_path = &layout_svg_shape_.GetPath();
+      const Path* use_path = &layout_svg_shape_.GetPath();
       if (layout_svg_shape_.HasNonScalingStroke())
-        use_path = layout_svg_shape_.NonScalingStrokePath(
-            use_path, layout_svg_shape_.NonScalingStrokeTransform());
+        use_path = &layout_svg_shape_.NonScalingStrokePath();
       context.DrawPath(use_path->GetSkPath(), flags);
   }
 }

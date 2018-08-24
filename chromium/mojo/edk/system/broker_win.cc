@@ -8,12 +8,13 @@
 #include <utility>
 
 #include "base/debug/alias.h"
+#include "base/memory/platform_shared_memory_region.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_piece.h"
 #include "mojo/edk/embedder/named_platform_handle.h"
 #include "mojo/edk/embedder/named_platform_handle_utils.h"
 #include "mojo/edk/embedder/platform_handle.h"
-#include "mojo/edk/embedder/platform_shared_buffer.h"
+#include "mojo/edk/embedder/platform_handle_utils.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/broker.h"
 #include "mojo/edk/system/broker_messages.h"
@@ -29,13 +30,13 @@ const size_t kMaxBrokerMessageSize = 256;
 
 bool TakeHandlesFromBrokerMessage(Channel::Message* message,
                                   size_t num_handles,
-                                  ScopedPlatformHandle* out_handles) {
+                                  ScopedInternalPlatformHandle* out_handles) {
   if (message->num_handles() != num_handles) {
     DLOG(ERROR) << "Received unexpected number of handles in broker message";
     return false;
   }
 
-  std::vector<ScopedPlatformHandle> handles = message->TakeHandles();
+  std::vector<ScopedInternalPlatformHandle> handles = message->TakeHandles();
   DCHECK_EQ(handles.size(), num_handles);
   DCHECK(out_handles);
 
@@ -44,7 +45,7 @@ bool TakeHandlesFromBrokerMessage(Channel::Message* message,
   return true;
 }
 
-Channel::MessagePtr WaitForBrokerMessage(PlatformHandle platform_handle,
+Channel::MessagePtr WaitForBrokerMessage(InternalPlatformHandle platform_handle,
                                          BrokerMessageType expected_type) {
   char buffer[kMaxBrokerMessageSize];
   DWORD bytes_read = 0;
@@ -85,7 +86,8 @@ Channel::MessagePtr WaitForBrokerMessage(PlatformHandle platform_handle,
 
 }  // namespace
 
-Broker::Broker(ScopedPlatformHandle handle) : sync_channel_(std::move(handle)) {
+Broker::Broker(ScopedInternalPlatformHandle handle)
+    : sync_channel_(std::move(handle)) {
   CHECK(sync_channel_.is_valid());
   Channel::MessagePtr message =
       WaitForBrokerMessage(sync_channel_.get(), BrokerMessageType::INIT);
@@ -115,11 +117,12 @@ Broker::Broker(ScopedPlatformHandle handle) : sync_channel_(std::move(handle)) {
 
 Broker::~Broker() {}
 
-ScopedPlatformHandle Broker::GetInviterPlatformHandle() {
+ScopedInternalPlatformHandle Broker::GetInviterInternalPlatformHandle() {
   return std::move(inviter_channel_);
 }
 
-scoped_refptr<PlatformSharedBuffer> Broker::GetSharedBuffer(size_t num_bytes) {
+base::WritableSharedMemoryRegion Broker::GetWritableSharedMemoryRegion(
+    size_t num_bytes) {
   base::AutoLock lock(lock_);
   BufferRequestData* buffer_request;
   Channel::MessagePtr out_message = CreateBrokerMessage(
@@ -132,24 +135,27 @@ scoped_refptr<PlatformSharedBuffer> Broker::GetSharedBuffer(size_t num_bytes) {
   if (!result ||
       static_cast<size_t>(bytes_written) != out_message->data_num_bytes()) {
     PLOG(ERROR) << "Error sending sync broker message";
-    return nullptr;
+    return base::WritableSharedMemoryRegion();
   }
 
-  ScopedPlatformHandle handles[2];
+  ScopedInternalPlatformHandle handle;
   Channel::MessagePtr response = WaitForBrokerMessage(
       sync_channel_.get(), BrokerMessageType::BUFFER_RESPONSE);
-  if (response &&
-      TakeHandlesFromBrokerMessage(response.get(), 2, &handles[0])) {
+  if (response && TakeHandlesFromBrokerMessage(response.get(), 1, &handle)) {
     BufferResponseData* data;
     if (!GetBrokerMessageData(response.get(), &data))
-      return nullptr;
-    base::UnguessableToken guid =
-        base::UnguessableToken::Deserialize(data->guid_high, data->guid_low);
-    return PlatformSharedBuffer::CreateFromPlatformHandlePair(
-        num_bytes, guid, std::move(handles[0]), std::move(handles[1]));
+      return base::WritableSharedMemoryRegion();
+    return base::WritableSharedMemoryRegion::Deserialize(
+        base::subtle::PlatformSharedMemoryRegion::Take(
+            CreateSharedMemoryRegionHandleFromInternalPlatformHandles(
+                std::move(handle), ScopedInternalPlatformHandle()),
+            base::subtle::PlatformSharedMemoryRegion::Mode::kWritable,
+            num_bytes,
+            base::UnguessableToken::Deserialize(data->guid_high,
+                                                data->guid_low)));
   }
 
-  return nullptr;
+  return base::WritableSharedMemoryRegion();
 }
 
 }  // namespace edk

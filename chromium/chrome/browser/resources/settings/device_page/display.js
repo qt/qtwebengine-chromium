@@ -177,6 +177,9 @@ Polymer({
 
     /** @private */
     nightLightScheduleSubLabel_: String,
+
+    /** @private */
+    logicalResolutionText_: String,
   },
 
   observers: [
@@ -315,7 +318,7 @@ Polymer({
    * @private
    */
   getSelectedDisplayZoom_: function(selectedDisplay) {
-    const selectedZoom = selectedDisplay.displayZoomFactor * 100;
+    const selectedZoom = selectedDisplay.displayZoomFactor;
     let closestMatch = this.zoomValues_[0].value;
     let minimumDiff = Math.abs(closestMatch - selectedZoom);
 
@@ -341,9 +344,9 @@ Polymer({
     let zoomValues = [];
     for (let i = 0; i < selectedDisplay.availableDisplayZoomFactors.length;
          i++) {
-      const value =
-          Math.round(selectedDisplay.availableDisplayZoomFactors[i] * 100);
-      const label = this.i18n('displayZoomValue', value.toString());
+      const value = selectedDisplay.availableDisplayZoomFactors[i];
+      const label =
+          this.i18n('displayZoomValue', Math.round(value * 100).toString());
       zoomValues.push({value: value, label: label});
     }
     return zoomValues;
@@ -386,6 +389,9 @@ Polymer({
     this.currentSelectedModeIndex_ =
         this.getSelectedModeIndex_(selectedDisplay);
     this.set('selectedModePref_.value', this.currentSelectedModeIndex_);
+
+    this.updateLogicalResolutionText_(
+        /** @type {number} */ (this.selectedZoomPref_.value));
   },
 
   /**
@@ -542,6 +548,27 @@ Polymer({
   },
 
   /**
+   * Returns true if the given mode is the best mode for the |selectedDisplay|.
+   * @param {!chrome.system.display.DisplayUnitInfo} selectedDisplay
+   * @param {!chrome.system.display.DisplayMode} mode
+   * @return {boolean}
+   * @private
+   */
+  isBestMode_: function(selectedDisplay, mode) {
+    if (!selectedDisplay.isInternal)
+      return mode.isNative;
+
+    // Things work differently for full HD devices(1080p). The best mode is the
+    // one with 1.25 device scale factor and 0.8 ui scale.
+    if (mode.heightInNativePixels == 1080) {
+      return Math.abs(mode.uiScale - 0.8) < 0.001 &&
+          Math.abs(mode.deviceScaleFactor - 1.25) < 0.001;
+    }
+
+    return mode.uiScale == 1.0;
+  },
+
+  /**
    * @return {string}
    * @private
    */
@@ -557,15 +584,53 @@ Polymer({
     const mode = this.selectedDisplay.modes[
         /** @type {number} */ (this.selectedModePref_.value)];
     assert(mode);
-    const best =
-        this.selectedDisplay.isInternal ? mode.uiScale == 1.0 : mode.isNative;
     const widthStr = mode.width.toString();
     const heightStr = mode.height.toString();
-    if (best)
+    if (this.isBestMode_(this.selectedDisplay, mode))
       return this.i18n('displayResolutionTextBest', widthStr, heightStr);
     else if (mode.isNative)
       return this.i18n('displayResolutionTextNative', widthStr, heightStr);
     return this.i18n('displayResolutionText', widthStr, heightStr);
+  },
+
+  /**
+   * Updates the logical resolution text to be used for the display size section
+   * @param {number} zoomFactor Current zoom factor applied on the selected
+   *    display.
+   * @private
+   */
+  updateLogicalResolutionText_: function(zoomFactor) {
+    if (!this.showDisplayZoomSetting_ || !this.selectedDisplay.isInternal) {
+      this.logicalResolutionText_ = '';
+      return;
+    }
+    const mode = this.selectedDisplay.modes[
+        /** @type {number} */ (this.selectedModePref_.value)];
+    const deviceScaleFactor = mode.deviceScaleFactor;
+    const inverseZoomFactor = 1.0 / zoomFactor;
+    let logicalResolutionStrId = 'displayZoomLogicalResolutionText';
+    if (Math.abs(deviceScaleFactor - inverseZoomFactor) < 0.001)
+      logicalResolutionStrId = 'displayZoomNativeLogicalResolutionNativeText';
+    else if (Math.abs(inverseZoomFactor - 1.0) < 0.001)
+      logicalResolutionStrId = 'displayZoomLogicalResolutionDefaultText';
+    const widthStr =
+        Math.round(mode.widthInNativePixels / (deviceScaleFactor * zoomFactor))
+            .toString();
+    const heightStr =
+        Math.round(mode.heightInNativePixels / (deviceScaleFactor * zoomFactor))
+            .toString();
+    this.logicalResolutionText_ =
+        this.i18n(logicalResolutionStrId, widthStr, heightStr);
+  },
+
+  /**
+   * Handles the event where the display size slider is being dragged, i.e. the
+   * mouse or tap has not been released.
+   * @param {!Event} e
+   * @private
+   */
+  onDisplaySizeSliderDrag_: function(e) {
+    this.updateLogicalResolutionText_(/** @type {number} */ (e.detail.value));
   },
 
   /**
@@ -626,16 +691,11 @@ Polymer({
   },
 
   /**
-   * Triggered when the 'change' event for the selected mode slider is
-   * triggered. This only occurs when the value is committed (i.e. not while
-   * the slider is being dragged).
-   * @param {number} newModeIndex The new index value for which thie function is
-   *     called.
+   * Updates the selected mode based on the latest pref value.
    * @private
    */
-  onSelectedModeChange_: function(newModeIndex) {
+  onSelectedModeSliderChange_: function() {
     if (this.currentSelectedModeIndex_ == -1 ||
-        this.currentSelectedModeIndex_ == newModeIndex ||
         this.currentSelectedModeIndex_ == this.selectedModePref_.value) {
       // Don't change the selected display mode until we have received an update
       // from Chrome and the mode differs from the current mode.
@@ -651,6 +711,24 @@ Polymer({
   },
 
   /**
+   * Handles a change in the |selectedModePref| value triggered via the observer
+   * @param {number} newModeIndex The new index value for which thie function is
+   *     called.
+   * @private
+   */
+  onSelectedModeChange_: function(newModeIndex) {
+    // We want to ignore all value changes to the pref due to the slider being
+    // dragged. Since this can only happen when the slider is present which is
+    // when display zoom is disabled, we can use this check.
+    // See http://crbug/845712 for more info.
+    if (!this.showDisplayZoomSetting_)
+      return;
+    if (this.currentSelectedModeIndex_ == newModeIndex)
+      return;
+    this.onSelectedModeSliderChange_();
+  },
+
+  /**
    * Triggerend when the display size slider changes its value. This only
    * occurs when the value is committed (i.e. not while the slider is being
    * dragged).
@@ -662,7 +740,7 @@ Polymer({
 
     /** @type {!chrome.system.display.DisplayProperties} */ const properties = {
       displayZoomFactor:
-          /** @type {number} */ (this.selectedZoomPref_.value) / 100.0
+          /** @type {number} */ (this.selectedZoomPref_.value)
     };
 
     settings.display.systemDisplayApi.setDisplayProperties(

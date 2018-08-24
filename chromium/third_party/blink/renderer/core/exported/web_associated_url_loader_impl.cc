@@ -36,7 +36,9 @@
 
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
+#include "base/optional.h"
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/public/platform/resource_request_blocked_reason.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_cors.h"
 #include "third_party/blink/public/platform/web_http_header_visitor.h"
@@ -51,6 +53,7 @@
 #include "third_party/blink/renderer/core/loader/threadable_loading_context.h"
 #include "third_party/blink/renderer/platform/exported/wrapped_resource_request.h"
 #include "third_party/blink/renderer/platform/exported/wrapped_resource_response.h"
+#include "third_party/blink/renderer/platform/loader/cors/cors.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_utils.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_error.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
@@ -58,7 +61,6 @@
 #include "third_party/blink/renderer/platform/timer.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
@@ -82,7 +84,7 @@ class HTTPRequestHeaderValidator : public WebHTTPHeaderVisitor {
 void HTTPRequestHeaderValidator::VisitHeader(const WebString& name,
                                              const WebString& value) {
   is_safe_ = is_safe_ && IsValidHTTPToken(name) &&
-             !FetchUtils::IsForbiddenHeaderName(name) &&
+             !CORS::IsForbiddenHeaderName(name) &&
              IsValidHTTPHeaderValue(value);
 }
 
@@ -112,8 +114,7 @@ class WebAssociatedURLLoaderImpl::ClientAdapter final
   void DidDownloadData(int /*dataLength*/) override;
   void DidReceiveData(const char*, unsigned /*dataLength*/) override;
   void DidReceiveCachedMetadata(const char*, int /*dataLength*/) override;
-  void DidFinishLoading(unsigned long /*identifier*/,
-                        double /*finishTime*/) override;
+  void DidFinishLoading(unsigned long /*identifier*/) override;
   void DidFail(const ResourceError&) override;
   void DidFailRedirectCheck() override;
 
@@ -154,7 +155,7 @@ class WebAssociatedURLLoaderImpl::ClientAdapter final
   WebAssociatedURLLoaderOptions options_;
   network::mojom::FetchRequestMode fetch_request_mode_;
   network::mojom::FetchCredentialsMode credentials_mode_;
-  Optional<WebURLError> error_;
+  base::Optional<WebURLError> error_;
 
   TaskRunnerTimer<ClientAdapter> error_timer_;
   bool enable_error_notifications_;
@@ -287,14 +288,13 @@ void WebAssociatedURLLoaderImpl::ClientAdapter::DidReceiveCachedMetadata(
 }
 
 void WebAssociatedURLLoaderImpl::ClientAdapter::DidFinishLoading(
-    unsigned long identifier,
-    double finish_time) {
+    unsigned long identifier) {
   if (!client_)
     return;
 
   loader_->ClientAdapterDone();
 
-  ReleaseClient()->DidFinishLoading(finish_time);
+  ReleaseClient()->DidFinishLoading();
   // |this| may be dead here.
 }
 
@@ -353,7 +353,7 @@ class WebAssociatedURLLoaderImpl::Observer final
       parent_->DocumentDestroyed();
   }
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     ContextLifecycleObserver::Trace(visitor);
   }
 

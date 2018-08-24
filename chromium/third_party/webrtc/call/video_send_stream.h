@@ -17,21 +17,19 @@
 #include <vector>
 
 #include "api/call/transport.h"
-#include "api/rtpparameters.h"
 #include "api/rtp_headers.h"
-#include "api/videosinkinterface.h"
-#include "api/videosourceinterface.h"
+#include "api/rtpparameters.h"
+#include "api/video/video_sink_interface.h"
+#include "api/video/video_source_interface.h"
+#include "api/video_codecs/video_encoder_config.h"
 #include "api/video_codecs/video_encoder_factory.h"
 #include "call/rtp_config.h"
-#include "call/video_config.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "common_video/include/frame_callback.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "rtc_base/platform_file.h"
 
 namespace webrtc {
-
-class VideoEncoder;
 
 class VideoSendStream {
  public:
@@ -113,17 +111,7 @@ class VideoSendStream {
 
     struct EncoderSettings {
       EncoderSettings() = default;
-      explicit EncoderSettings(VideoEncoder* encoder) : encoder(encoder) {}
       std::string ToString() const;
-
-      // TODO(sophiechang): Delete this field when no one is using internal
-      // sources anymore.
-      bool internal_source = false;
-
-      // Allow 100% encoder utilization. Used for HW encoders where CPU isn't
-      // expected to be the limiting factor, but a chip could be running at
-      // 30fps (for example) exactly.
-      bool full_overuse_time = false;
 
       // Enables the new method to estimate the cpu load from encoding, used for
       // cpu adaptation.
@@ -131,11 +119,6 @@ class VideoSendStream {
 
       // Ownership stays with WebrtcVideoEngine (delegated from PeerConnection).
       VideoEncoderFactory* encoder_factory = nullptr;
-
-      // TODO(nisse): Delete, let VideoStreamEncoder create the encoder.
-      // Uninitialized VideoEncoder instance to be used for encoding. Will be
-      // initialized from inside the VideoSendStream.
-      VideoEncoder* encoder = nullptr;
     } encoder_settings;
 
     static const size_t kDefaultMaxPacketSize = 1500 - 40;  // TCP over IPv4.
@@ -280,23 +263,6 @@ class VideoSendStream {
   // Stops stream activity.
   // When a stream is stopped, it can't receive, process or deliver packets.
   virtual void Stop() = 0;
-
-  // Based on the spec in
-  // https://w3c.github.io/webrtc-pc/#idl-def-rtcdegradationpreference.
-  // These options are enforced on a best-effort basis. For instance, all of
-  // these options may suffer some frame drops in order to avoid queuing.
-  // TODO(sprang): Look into possibility of more strictly enforcing the
-  // maintain-framerate option.
-  enum class DegradationPreference {
-    // Don't take any actions based on over-utilization signals.
-    kDegradationDisabled,
-    // On over-use, request lower frame rate, possibly causing frame drops.
-    kMaintainResolution,
-    // On over-use, request lower resolution, possibly causing down-scaling.
-    kMaintainFramerate,
-    // Try to strike a "pleasing" balance between frame rate or resolution.
-    kBalanced,
-  };
 
   virtual void SetSource(
       rtc::VideoSourceInterface<webrtc::VideoFrame>* source,

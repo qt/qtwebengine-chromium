@@ -452,9 +452,12 @@ TEST_F(BluetoothBlueZTest, BecomeNotPresent) {
               address.compare(
                   bluez::FakeBluetoothDeviceClient::kPairedDeviceAddress) == 0);
 
+  // DiscoveringChanged() should be triggered regardless of the current value
+  // of Discovering property.
+  EXPECT_EQ(1, observer.discovering_changed_count());
+
   // Other callbacks shouldn't be called since the values are false.
   EXPECT_EQ(0, observer.powered_changed_count());
-  EXPECT_EQ(0, observer.discovering_changed_count());
   EXPECT_FALSE(adapter_->IsPowered());
   EXPECT_FALSE(adapter_->IsDiscovering());
 }
@@ -494,9 +497,12 @@ TEST_F(BluetoothBlueZTest, SecondAdapter) {
               address.compare(
                   bluez::FakeBluetoothDeviceClient::kPairedDeviceAddress) == 0);
 
+  // DiscoveringChanged() should be triggered regardless of the current value
+  // of Discovering property.
+  EXPECT_EQ(1, observer.discovering_changed_count());
+
   // Other callbacks shouldn't be called since the values are false.
   EXPECT_EQ(0, observer.powered_changed_count());
-  EXPECT_EQ(0, observer.discovering_changed_count());
   EXPECT_FALSE(adapter_->IsPowered());
   EXPECT_FALSE(adapter_->IsDiscovering());
 
@@ -2439,6 +2445,35 @@ TEST_F(BluetoothBlueZTest, DevicePairedChanged) {
   EXPECT_EQ(2, observer.device_paired_changed_count());
   EXPECT_TRUE(observer.device_new_paired_status());
   EXPECT_EQ(devices[idx], observer.last_device());
+}
+
+TEST_F(BluetoothBlueZTest, DeviceMTUChanged) {
+  // Simulate a change of MTU of a device.
+  GetAdapter();
+
+  fake_bluetooth_device_client_->CreateDevice(
+      dbus::ObjectPath(bluez::FakeBluetoothAdapterClient::kAdapterPath),
+      dbus::ObjectPath(bluez::FakeBluetoothDeviceClient::kLowEnergyPath));
+  BluetoothDevice* device =
+      adapter_->GetDevice(bluez::FakeBluetoothDeviceClient::kLowEnergyAddress);
+  ASSERT_TRUE(device);
+
+  // Install an observer; expect DeviceMTUChanged method to be called with the
+  // updated MTU values.
+  TestBluetoothAdapterObserver observer(adapter_);
+
+  bluez::FakeBluetoothDeviceClient::Properties* properties =
+      fake_bluetooth_device_client_->GetProperties(
+          dbus::ObjectPath(bluez::FakeBluetoothDeviceClient::kLowEnergyPath));
+  ASSERT_EQ(0, observer.device_mtu_changed_count());
+
+  properties->mtu.ReplaceValue(258);
+  EXPECT_EQ(1, observer.device_mtu_changed_count());
+  EXPECT_EQ(258, observer.last_mtu_value());
+
+  properties->mtu.ReplaceValue(128);
+  EXPECT_EQ(2, observer.device_mtu_changed_count());
+  EXPECT_EQ(128, observer.last_mtu_value());
 }
 #endif
 

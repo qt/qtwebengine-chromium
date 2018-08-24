@@ -21,6 +21,10 @@ const char kAutoplayPolicy[] = "autoplay-policy";
 
 const char kDisableAudioOutput[] = "disable-audio-output";
 
+// Causes the AudioManager to fail creating audio streams. Used when testing
+// various failure cases.
+const char kFailAudioStreamCreation[] = "fail-audio-stream-creation";
+
 // Set number of threads to use for video decoding.
 const char kVideoThreads[] = "video-threads";
 
@@ -149,6 +153,20 @@ const char kMSEVideoBufferSizeLimit[] = "mse-video-buffer-size-limit";
 // kExternalClearKeyForTesting.
 const char kClearKeyCdmPathForTesting[] = "clear-key-cdm-path-for-testing";
 
+// Overrides the default enabled library CDM interface version(s) with the one
+// specified with this switch, which will be the only version enabled. For
+// example, on a build where CDM 8, CDM 9 and CDM 10 are all supported
+// (implemented), but only CDM 8 and CDM 9 are enabled by default:
+//  --override-enabled-cdm-interface-version=8 : Only CDM 8 is enabled
+//  --override-enabled-cdm-interface-version=9 : Only CDM 9 is enabled
+//  --override-enabled-cdm-interface-version=10 : Only CDM 10 is enabled
+//  --override-enabled-cdm-interface-version=11 : No CDM interface is enabled
+// This can be used for local testing and debugging. It can also be used to
+// enable an experimental CDM interface (which is always disabled by default)
+// for testing while it's still in development.
+const char kOverrideEnabledCdmInterfaceVersion[] =
+    "override-enabled-cdm-interface-version";
+
 #if !defined(OS_ANDROID)
 // Turns on the internal media session backend. This should be used by embedders
 // that want to control the media playback with the media session interfaces.
@@ -191,7 +209,7 @@ const base::Feature kPictureInPicture{"PictureInPicture",
                                       base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kPreloadMetadataSuspend{"PreloadMetadataSuspend",
-                                            base::FEATURE_DISABLED_BY_DEFAULT};
+                                            base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Let videos be resumed via remote controls (for example, the notification)
 // when in background.
@@ -239,13 +257,14 @@ const base::Feature kMemoryPressureBasedSourceBufferGC{
 const base::Feature kMojoVideoDecoder{"MojoVideoDecoder",
                                       base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Enable The D3D11 Video decoder. Must also enable MojoVideoDecoder for
+// this to have any effect.
+const base::Feature kD3D11VideoDecoder{"D3D11VideoDecoder",
+                                       base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Manage and report MSE buffered ranges by PTS intervals, not DTS intervals.
 const base::Feature kMseBufferByPts{"MseBufferByPts",
                                     base::FEATURE_DISABLED_BY_DEFAULT};
-
-// Support FLAC codec within ISOBMFF streams used with Media Source Extensions.
-const base::Feature kMseFlacInIsobmff{"MseFlacInIsobmff",
-                                      base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enable new cpu load estimator. Intended for evaluation in local
 // testing and origin-trial.
@@ -279,6 +298,10 @@ const base::Feature kUnifiedAutoplay{"UnifiedAutoplay",
 const base::Feature kUseSurfaceLayerForVideo{"UseSurfaceLayerForVideo",
                                              base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Enable VA-API hardware encode acceleration for VP8.
+const base::Feature kVaapiVP8Encoder{"VaapiVP8Encoder",
+                                     base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Inform video blitter of video color space.
 const base::Feature kVideoBlitColorAccuracy{"video-blit-color-accuracy",
                                             base::FEATURE_ENABLED_BY_DEFAULT};
@@ -289,17 +312,16 @@ const base::Feature kVideoBlitColorAccuracy{"video-blit-color-accuracy",
 const base::Feature kExternalClearKeyForTesting{
     "ExternalClearKeyForTesting", base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Enables support of experimental CDM interface version(s). This is usually
-// used to enable new CDM interface support for testing while it's still in
-// development. This switch may not be used anywhere if there's no experimental
-// CDM interface being developed.
-const base::Feature kSupportExperimentalCdmInterface{
-    "SupportExperimentalCdmInterface", base::FEATURE_DISABLED_BY_DEFAULT};
-
 // Enables low-delay video rendering in media pipeline on "live" stream.
 const base::Feature kLowDelayVideoRenderingOnLiveStream{
     "low-delay-video-rendering-on-live-stream",
     base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Whether the autoplay policy should ignore Web Audio. When ignored, the
+// autoplay policy will be hardcoded to be the legacy one on based on the
+// platform
+const base::Feature kAutoplayIgnoreWebAudio{"AutoplayIgnoreWebAudio",
+                                            base::FEATURE_ENABLED_BY_DEFAULT};
 
 #if defined(OS_ANDROID)
 // Lock the screen orientation when a video goes fullscreen.
@@ -320,6 +342,9 @@ const base::Feature kMediaDrmPersistentLicense{
 const base::Feature kCafMediaRouterImpl{"CafMediaRouterImpl",
                                         base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Enables the Android Image Reader path for Video decoding(for AVDA and MCVD)
+const base::Feature kAImageReaderVideoOutput{"AImageReaderVideoOutput",
+                                             base::FEATURE_DISABLED_BY_DEFAULT};
 #endif
 
 #if defined(OS_WIN)

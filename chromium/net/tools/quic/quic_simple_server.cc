@@ -12,14 +12,14 @@
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/log/net_log_source.h"
-#include "net/quic/core/crypto/crypto_handshake.h"
-#include "net/quic/core/crypto/quic_random.h"
-#include "net/quic/core/quic_crypto_stream.h"
-#include "net/quic/core/quic_data_reader.h"
-#include "net/quic/core/quic_packets.h"
-#include "net/quic/core/tls_server_handshaker.h"
 #include "net/socket/udp_server_socket.h"
-#include "net/tools/quic/quic_simple_dispatcher.h"
+#include "net/third_party/quic/core/crypto/crypto_handshake.h"
+#include "net/third_party/quic/core/crypto/quic_random.h"
+#include "net/third_party/quic/core/quic_crypto_stream.h"
+#include "net/third_party/quic/core/quic_data_reader.h"
+#include "net/third_party/quic/core/quic_packets.h"
+#include "net/third_party/quic/core/tls_server_handshaker.h"
+#include "net/third_party/quic/tools/quic_simple_dispatcher.h"
 #include "net/tools/quic/quic_simple_per_connection_packet_writer.h"
 #include "net/tools/quic/quic_simple_server_packet_writer.h"
 #include "net/tools/quic/quic_simple_server_session_helper.h"
@@ -42,7 +42,7 @@ QuicSimpleServer::QuicSimpleServer(
     const QuicConfig& config,
     const QuicCryptoServerConfig::ConfigOptions& crypto_config_options,
     const ParsedQuicVersionVector& supported_versions,
-    QuicHttpResponseCache* response_cache)
+    QuicSimpleServerBackend* quic_simple_server_backend)
     : version_manager_(supported_versions),
       helper_(
           new QuicChromiumConnectionHelper(&clock_, QuicRandom::GetInstance())),
@@ -58,7 +58,7 @@ QuicSimpleServer::QuicSimpleServer(
       read_pending_(false),
       synchronous_read_count_(0),
       read_buffer_(new IOBufferWithSize(kReadBufferSize)),
-      response_cache_(response_cache),
+      quic_simple_server_backend_(quic_simple_server_backend),
       weak_factory_(this) {
   Initialize();
 }
@@ -133,7 +133,8 @@ int QuicSimpleServer::Listen(const IPEndPoint& address) {
       std::unique_ptr<QuicConnectionHelperInterface>(helper_),
       std::unique_ptr<QuicCryptoServerStream::Helper>(
           new QuicSimpleServerSessionHelper(QuicRandom::GetInstance())),
-      std::unique_ptr<QuicAlarmFactory>(alarm_factory_), response_cache_));
+      std::unique_ptr<QuicAlarmFactory>(alarm_factory_),
+      quic_simple_server_backend_));
   QuicSimpleServerPacketWriter* writer =
       new QuicSimpleServerPacketWriter(socket_.get(), dispatcher_.get());
   dispatcher_->InitializeWithWriter(writer);

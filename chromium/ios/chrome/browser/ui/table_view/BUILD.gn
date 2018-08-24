@@ -5,23 +5,22 @@
 source_set("table_view") {
   configs += [ "//build/config/compiler:enable_arc" ]
   sources = [
+    "chrome_table_view_consumer.h",
     "chrome_table_view_controller.h",
     "chrome_table_view_controller.mm",
-    "table_container_bottom_toolbar.h",
-    "table_container_bottom_toolbar.mm",
-    "table_container_constants.h",
-    "table_container_constants.mm",
-    "table_container_view_controller.h",
-    "table_container_view_controller.mm",
     "table_view_model.h",
     "table_view_model.mm",
+    "table_view_navigation_controller.h",
+    "table_view_navigation_controller.mm",
+    "table_view_navigation_controller_constants.h",
+    "table_view_navigation_controller_constants.mm",
   ]
   deps = [
     ":styler",
     "//base",
-    "//ios/chrome/app/strings",
     "//ios/chrome/browser/ui/list_model",
-    "//ui/base",
+    "//ios/chrome/browser/ui/material_components",
+    "//ios/third_party/material_components_ios",
   ]
   public_deps = [
     "//ios/chrome/browser/ui/table_view/cells",
@@ -57,7 +56,6 @@ source_set("unit_tests") {
   testonly = true
   sources = [
     "chrome_table_view_controller_unittest.mm",
-    "table_container_bottom_toolbar_unittest.mm",
     "table_view_model_unittest.mm",
   ]
   deps = [

@@ -38,6 +38,10 @@
 #include "third_party/blink/renderer/core/page/page_widget_delegate.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 
+namespace cc {
+class Layer;
+}
+
 namespace blink {
 
 class CompositorAnimationHost;
@@ -46,7 +50,6 @@ class Page;
 class PagePopupChromeClient;
 class PagePopupClient;
 class WebLayerTreeView;
-class WebLayer;
 class WebViewImpl;
 class LocalDOMWindow;
 
@@ -65,9 +68,9 @@ class CORE_EXPORT WebPagePopupImpl final : public WebPagePopup,
     return other && popup_client_ == other->popup_client_;
   }
   LocalDOMWindow* Window();
-  void LayoutAndPaintAsync(WebLayoutAndPaintAsyncCallback*) override;
+  void LayoutAndPaintAsync(base::OnceClosure callback) override;
   void CompositeAndReadbackAsync(
-      WebCompositeAndReadbackAsyncCallback*) override;
+      base::OnceCallback<void(const SkBitmap&)> callback) override;
   WebPoint PositionRelativeToOwner() override;
   void PostMessageToPopup(const String& message) override;
   void Cancel();
@@ -80,9 +83,10 @@ class CORE_EXPORT WebPagePopupImpl final : public WebPagePopup,
  private:
   // WebWidget functions
   void SetSuppressFrameRequestsWorkaroundFor704763Only(bool) final;
-  void BeginFrame(double last_frame_time_monotonic) override;
+  void BeginFrame(base::TimeTicks last_frame_time) override;
   void UpdateLifecycle(LifecycleUpdate requested_update) override;
   void UpdateAllLifecyclePhasesAndCompositeForTesting() override;
+  void CompositeWithRasterForTesting() override;
   void WillCloseLayerTreeView() override;
   void Paint(WebCanvas*, const WebRect&) override;
   void Resize(const WebSize&) override;
@@ -120,13 +124,13 @@ class CORE_EXPORT WebPagePopupImpl final : public WebPagePopup,
   Persistent<Page> page_;
   Persistent<PagePopupChromeClient> chrome_client_;
   PagePopupClient* popup_client_;
-  bool closing_;
+  bool closing_ = false;
 
-  WebLayerTreeView* layer_tree_view_;
-  WebLayer* root_layer_;
-  GraphicsLayer* root_graphics_layer_;
+  WebLayerTreeView* layer_tree_view_ = nullptr;
+  scoped_refptr<cc::Layer> root_layer_;
+  GraphicsLayer* root_graphics_layer_ = nullptr;
   std::unique_ptr<CompositorAnimationHost> animation_host_;
-  bool is_accelerated_compositing_active_;
+  bool is_accelerated_compositing_active_ = false;
 
   friend class WebPagePopup;
   friend class PagePopupChromeClient;

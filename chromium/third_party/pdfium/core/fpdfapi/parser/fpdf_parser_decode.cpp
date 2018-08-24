@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "constants/stream_dict_common.h"
 #include "core/fpdfapi/cpdf_modulemgr.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
@@ -344,7 +345,7 @@ bool PDF_DataDecode(const uint8_t* src_buf,
     return false;
 
   CPDF_Object* pParams =
-      pDict ? pDict->GetDirectObjectFor("DecodeParms") : nullptr;
+      pDict ? pDict->GetDirectObjectFor(pdfium::stream::kDecodeParms) : nullptr;
 
   std::vector<std::pair<ByteString, CPDF_Object*>> DecoderArray;
   if (CPDF_Array* pDecoders = pDecoder->AsArray()) {
@@ -425,6 +426,7 @@ bool PDF_DataDecode(const uint8_t* src_buf,
 }
 
 WideString PDF_DecodeText(const uint8_t* src_data, uint32_t src_len) {
+  int dest_pos = 0;
   WideString result;
   if (src_len >= 2 && ((src_data[0] == 0xfe && src_data[1] == 0xff) ||
                        (src_data[0] == 0xff && src_data[1] == 0xfe))) {
@@ -432,17 +434,15 @@ WideString PDF_DecodeText(const uint8_t* src_data, uint32_t src_len) {
     if (!max_chars)
       return result;
 
+    pdfium::span<wchar_t> dest_buf = result.GetBuffer(max_chars);
     bool bBE = src_data[0] == 0xfe || (src_data[0] == 0xff && !src_data[2]);
-    wchar_t* dest_buf = result.GetBuffer(max_chars);
     const uint8_t* uni_str = src_data + 2;
-    int dest_pos = 0;
     for (uint32_t i = 0; i < max_chars * 2; i += 2) {
       uint16_t unicode = GetUnicodeFromBytes(uni_str + i, bBE);
       if (unicode != 0x1b) {
         dest_buf[dest_pos++] = unicode;
         continue;
       }
-
       i += 2;
       while (i < max_chars * 2) {
         uint16_t unicode2 = GetUnicodeFromBytes(uni_str + i, bBE);
@@ -451,13 +451,13 @@ WideString PDF_DecodeText(const uint8_t* src_data, uint32_t src_len) {
           break;
       }
     }
-    result.ReleaseBuffer(dest_pos);
   } else {
-    wchar_t* dest_buf = result.GetBuffer(src_len);
+    pdfium::span<wchar_t> dest_buf = result.GetBuffer(src_len);
     for (uint32_t i = 0; i < src_len; ++i)
       dest_buf[i] = PDFDocEncoding[src_data[i]];
-    result.ReleaseBuffer(src_len);
+    dest_pos = src_len;
   }
+  result.ReleaseBuffer(dest_pos);
   return result;
 }
 
@@ -470,20 +470,22 @@ ByteString PDF_EncodeText(const wchar_t* pString, int len) {
   if (len == -1)
     len = wcslen(pString);
 
-  ByteString result;
-  char* dest_buf1 = result.GetBuffer(len);
   int i;
-  for (i = 0; i < len; ++i) {
-    int code;
-    for (code = 0; code < 256; ++code) {
-      if (PDFDocEncoding[code] == pString[i])
+  ByteString result;
+  {
+    pdfium::span<char> dest_buf = result.GetBuffer(len);
+    for (i = 0; i < len; ++i) {
+      int code;
+      for (code = 0; code < 256; ++code) {
+        if (PDFDocEncoding[code] == pString[i])
+          break;
+      }
+
+      if (code == 256)
         break;
+
+      dest_buf[i] = code;
     }
-
-    if (code == 256)
-      break;
-
-    dest_buf1[i] = code;
   }
   result.ReleaseBuffer(i);
   if (i == len)
@@ -494,15 +496,18 @@ ByteString PDF_EncodeText(const wchar_t* pString, int len) {
     return result;
   }
 
-  int encLen = len * 2 + 2;
-
-  uint8_t* dest_buf2 = reinterpret_cast<uint8_t*>(result.GetBuffer(encLen));
-  dest_buf2[0] = 0xfe;
-  dest_buf2[1] = 0xff;
-  dest_buf2 += 2;
-  for (int j = 0; j < len; ++j) {
-    *dest_buf2++ = pString[j] >> 8;
-    *dest_buf2++ = static_cast<uint8_t>(pString[j]);
+  size_t dest_index = 0;
+  size_t encLen = len * 2 + 2;
+  {
+    pdfium::span<char> cspan = result.GetBuffer(encLen);
+    auto dest_buf = pdfium::make_span(reinterpret_cast<uint8_t*>(cspan.data()),
+                                      cspan.size());
+    dest_buf[dest_index++] = 0xfe;
+    dest_buf[dest_index++] = 0xff;
+    for (int j = 0; j < len; ++j) {
+      dest_buf[dest_index++] = pString[j] >> 8;
+      dest_buf[dest_index++] = static_cast<uint8_t>(pString[j]);
+    }
   }
   result.ReleaseBuffer(encLen);
   return result;
@@ -552,15 +557,6 @@ bool FlateEncode(const uint8_t* src_buf,
   CCodec_ModuleMgr* pEncoders = CPDF_ModuleMgr::Get()->GetCodecModule();
   return pEncoders->GetFlateModule()->Encode(src_buf, src_size, dest_buf,
                                              dest_size);
-}
-
-bool PngEncode(const uint8_t* src_buf,
-               uint32_t src_size,
-               uint8_t** dest_buf,
-               uint32_t* dest_size) {
-  CCodec_ModuleMgr* pEncoders = CPDF_ModuleMgr::Get()->GetCodecModule();
-  return pEncoders->GetFlateModule()->PngEncode(src_buf, src_size, dest_buf,
-                                                dest_size);
 }
 
 uint32_t FlateDecode(const uint8_t* src_buf,

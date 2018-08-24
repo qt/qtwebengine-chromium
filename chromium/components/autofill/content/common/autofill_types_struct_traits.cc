@@ -285,13 +285,10 @@ EnumTraits<autofill::mojom::PasswordFormSubmissionIndicatorEvent,
       return autofill::mojom::PasswordFormSubmissionIndicatorEvent::
           PROVISIONALLY_SAVED_FORM_ON_START_PROVISIONAL_LOAD;
     case autofill::PasswordForm::SubmissionIndicatorEvent::
-        FILLED_FORM_ON_START_PROVISIONAL_LOAD:
-      return autofill::mojom::PasswordFormSubmissionIndicatorEvent::
-          FILLED_FORM_ON_START_PROVISIONAL_LOAD;
+        DEPRECATED_FILLED_FORM_ON_START_PROVISIONAL_LOAD:
     case autofill::PasswordForm::SubmissionIndicatorEvent::
-        FILLED_INPUT_ELEMENTS_ON_START_PROVISIONAL_LOAD:
-      return autofill::mojom::PasswordFormSubmissionIndicatorEvent::
-          FILLED_INPUT_ELEMENTS_ON_START_PROVISIONAL_LOAD;
+        DEPRECATED_FILLED_INPUT_ELEMENTS_ON_START_PROVISIONAL_LOAD:
+      break;
     case autofill::PasswordForm::SubmissionIndicatorEvent::
         SUBMISSION_INDICATOR_EVENT_COUNT:
       return autofill::mojom::PasswordFormSubmissionIndicatorEvent::
@@ -340,16 +337,6 @@ bool EnumTraits<autofill::mojom::PasswordFormSubmissionIndicatorEvent,
         PROVISIONALLY_SAVED_FORM_ON_START_PROVISIONAL_LOAD:
       *output = autofill::PasswordForm::SubmissionIndicatorEvent::
           PROVISIONALLY_SAVED_FORM_ON_START_PROVISIONAL_LOAD;
-      return true;
-    case autofill::mojom::PasswordFormSubmissionIndicatorEvent::
-        FILLED_FORM_ON_START_PROVISIONAL_LOAD:
-      *output = autofill::PasswordForm::SubmissionIndicatorEvent::
-          FILLED_FORM_ON_START_PROVISIONAL_LOAD;
-      return true;
-    case autofill::mojom::PasswordFormSubmissionIndicatorEvent::
-        FILLED_INPUT_ELEMENTS_ON_START_PROVISIONAL_LOAD:
-      *output = autofill::PasswordForm::SubmissionIndicatorEvent::
-          FILLED_INPUT_ELEMENTS_ON_START_PROVISIONAL_LOAD;
       return true;
     case autofill::mojom::PasswordFormSubmissionIndicatorEvent::
         SUBMISSION_INDICATOR_EVENT_COUNT:
@@ -570,8 +557,11 @@ bool StructTraits<
   if (!data.ReadCssClasses(&out->css_classes))
     return false;
 
-  out->properties_mask = data.properties_mask();
+  if (!data.ReadSection(&out->section))
+    return false;
 
+  out->properties_mask = data.properties_mask();
+  out->unique_renderer_id = data.unique_renderer_id();
   out->max_length = data.max_length();
   out->is_autofilled = data.is_autofilled();
 
@@ -585,6 +575,12 @@ bool StructTraits<
     return false;
 
   if (!data.ReadTextDirection(&out->text_direction))
+    return false;
+
+  out->is_enabled = data.is_enabled();
+  out->is_readonly = data.is_readonly();
+  out->is_default = data.is_default();
+  if (!data.ReadValue(&out->typed_value))
     return false;
 
   if (!data.ReadOptionValues(&out->option_values))
@@ -613,6 +609,7 @@ bool StructTraits<autofill::mojom::FormDataDataView, autofill::FormData>::Read(
 
   out->is_form_tag = data.is_form_tag();
   out->is_formless_checkout = data.is_formless_checkout();
+  out->unique_renderer_id = data.unique_renderer_id();
 
   if (!data.ReadFields(&out->fields))
     return false;
@@ -636,6 +633,8 @@ bool StructTraits<autofill::mojom::FormFieldDataPredictionsDataView,
   if (!data.ReadOverallType(&out->overall_type))
     return false;
   if (!data.ReadParseableName(&out->parseable_name))
+    return false;
+  if (!data.ReadSection(&out->section))
     return false;
 
   return true;
@@ -772,8 +771,9 @@ bool StructTraits<
       data.was_parsed_using_autofill_predictions();
   out->is_public_suffix_match = data.is_public_suffix_match();
   out->is_affiliation_based_match = data.is_affiliation_based_match();
-  out->does_look_like_signup_form = data.does_look_like_signup_form();
   out->only_for_fallback_saving = data.only_for_fallback_saving();
+  out->is_gaia_with_skip_save_password_form =
+      data.is_gaia_with_skip_save_password_form();
 
   return true;
 }

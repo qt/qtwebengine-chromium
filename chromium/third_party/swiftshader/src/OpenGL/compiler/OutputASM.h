@@ -316,7 +316,24 @@ namespace glsl
 
 		static int dim(TIntermNode *v);
 		static int dim2(TIntermNode *m);
-		static unsigned int loopCount(TIntermLoop *node);
+
+		struct LoopInfo
+		{
+			LoopInfo(TIntermLoop *node);
+
+			bool isDeterministic()
+			{
+				return (iterations != ~0u);
+			}
+
+			unsigned int iterations = ~0u;
+
+			TIntermSymbol *index = nullptr;
+			TOperator comparator = EOpNull;
+			int initial = 0;
+			int limit = 0;
+			int increment = 0;
+		};
 
 		Shader *const shaderObject;
 		sw::Shader *shader;
@@ -357,21 +374,26 @@ namespace glsl
 
 		TQualifier outputQualifier;
 
+		std::set<int> deterministicVariables;
+
 		TParseContext &mContext;
 	};
 
 	class LoopUnrollable : public TIntermTraverser
 	{
 	public:
-		bool traverse(TIntermNode *node);
+		bool traverse(TIntermLoop *loop, int loopIndexId);
 
 	private:
-		bool visitBranch(Visit visit, TIntermBranch *node);
-		bool visitLoop(Visit visit, TIntermLoop *loop);
-		bool visitAggregate(Visit visit, TIntermAggregate *node);
+		void visitSymbol(TIntermSymbol *node) override;
+		bool visitBinary(Visit visit, TIntermBinary *node) override;
+		bool visitUnary(Visit visit, TIntermUnary *node) override;
+		bool visitBranch(Visit visit, TIntermBranch *node) override;
+		bool visitAggregate(Visit visit, TIntermAggregate *node) override;
 
-		int loopDepth;
 		bool loopUnrollable;
+
+		int loopIndexId;
 	};
 }
 

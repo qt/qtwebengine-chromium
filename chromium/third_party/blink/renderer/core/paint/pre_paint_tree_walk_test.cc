@@ -16,7 +16,6 @@
 #include "third_party/blink/renderer/platform/graphics/paint/transform_paint_property_node.h"
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
-#include "third_party/blink/renderer/platform/text/text_stream.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
 
 namespace blink {
@@ -24,25 +23,21 @@ namespace blink {
 class PrePaintTreeWalkTest : public PaintControllerPaintTest {
  public:
   const TransformPaintPropertyNode* FramePreTranslation() {
-    LocalFrameView* frame_view = GetDocument().View();
-    if (RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-      return frame_view->GetLayoutView()
-          ->FirstFragment()
-          .PaintProperties()
-          ->PaintOffsetTranslation();
-    }
-    return frame_view->PreTranslation();
+    return GetDocument()
+        .View()
+        ->GetLayoutView()
+        ->FirstFragment()
+        .PaintProperties()
+        ->PaintOffsetTranslation();
   }
 
   const TransformPaintPropertyNode* FrameScrollTranslation() {
-    LocalFrameView* frame_view = GetDocument().View();
-    if (RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-      return frame_view->GetLayoutView()
-          ->FirstFragment()
-          .PaintProperties()
-          ->ScrollTranslation();
-    }
-    return frame_view->ScrollTranslation();
+    return GetDocument()
+        .View()
+        ->GetLayoutView()
+        ->FirstFragment()
+        .PaintProperties()
+        ->ScrollTranslation();
   }
 
  protected:
@@ -57,9 +52,7 @@ class PrePaintTreeWalkTest : public PaintControllerPaintTest {
   }
 };
 
-INSTANTIATE_TEST_CASE_P(All,
-                        PrePaintTreeWalkTest,
-                        testing::ValuesIn(kAllSlimmingPaintTestConfigurations));
+INSTANTIATE_PAINT_TEST_CASE_P(PrePaintTreeWalkTest);
 
 TEST_P(PrePaintTreeWalkTest, PropertyTreesRebuiltWithBorderInvalidation) {
   SetBodyInnerHTML(R"HTML(

@@ -8,6 +8,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/exception_code.h"
+#include "third_party/blink/renderer/modules/peerconnection/rtc_error_util.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_session_description.h"
 
@@ -34,7 +35,7 @@ RTCSessionDescriptionRequestPromiseImpl::
 void RTCSessionDescriptionRequestPromiseImpl::RequestSucceeded(
     const WebRTCSessionDescription& web_session_description) {
   if (requester_ && requester_->ShouldFireDefaultCallbacks()) {
-    auto description = RTCSessionDescription::Create(web_session_description);
+    auto* description = RTCSessionDescription::Create(web_session_description);
     requester_->NoteSdpCreated(*description);
     resolver_->Resolve(description);
   } else {
@@ -47,11 +48,9 @@ void RTCSessionDescriptionRequestPromiseImpl::RequestSucceeded(
 }
 
 void RTCSessionDescriptionRequestPromiseImpl::RequestFailed(
-    const String& error) {
+    const webrtc::RTCError& error) {
   if (requester_ && requester_->ShouldFireDefaultCallbacks()) {
-    // TODO(guidou): The error code should come from the content layer. See
-    // crbug.com/589455
-    resolver_->Reject(DOMException::Create(kOperationError, error));
+    resolver_->Reject(CreateDOMExceptionFromRTCError(error));
   } else {
     // This is needed to have the resolver release its internal resources
     // while leaving the associated promise pending as specified.

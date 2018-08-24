@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_WEB_PACKAGE_WEB_PACKAGE_PREFETCH_HANDLER_H_
 #define CONTENT_BROWSER_WEB_PACKAGE_WEB_PACKAGE_PREFETCH_HANDLER_H_
 
+#include "base/callback_forward.h"
 #include "base/macros.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
@@ -29,20 +30,19 @@ class WebPackagePrefetchHandler final : public network::mojom::URLLoaderClient {
   using URLLoaderThrottlesGetter = base::RepeatingCallback<
       std::vector<std::unique_ptr<content::URLLoaderThrottle>>()>;
 
-  static bool IsResponseForWebPackage(
-      const network::ResourceResponseHead& response);
-
   // This takes |network_loader| and |network_client| to set up the
   // WebPackageLoader (so that the loader can load data from the network).
   // |forwarding_client| is a pointer to the downstream client (typically who
   // creates this handler).
   WebPackagePrefetchHandler(
-      int frame_tree_node_id,
+      base::RepeatingCallback<int(void)> frame_tree_node_id_getter,
+      bool report_raw_headers,
       const network::ResourceResponseHead& response,
       network::mojom::URLLoaderPtr network_loader,
       network::mojom::URLLoaderClientRequest network_client_request,
       scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory,
       url::Origin request_initiator,
+      const GURL& outer_request_url,
       URLLoaderThrottlesGetter loader_throttles_getter,
       ResourceContext* resource_context,
       scoped_refptr<net::URLRequestContextGetter> request_context_getter,

@@ -142,32 +142,21 @@ void PopulateURLLoadTiming(const net::LoadTimingInfo& load_timing,
                            WebURLLoadTiming* url_timing) {
   DCHECK(!load_timing.request_start.is_null());
 
-  const TimeTicks kNullTicks;
   url_timing->Initialize();
-  url_timing->SetRequestTime(
-      (load_timing.request_start - kNullTicks).InSecondsF());
-  url_timing->SetProxyStart(
-      (load_timing.proxy_resolve_start - kNullTicks).InSecondsF());
-  url_timing->SetProxyEnd(
-      (load_timing.proxy_resolve_end - kNullTicks).InSecondsF());
-  url_timing->SetDNSStart(
-      (load_timing.connect_timing.dns_start - kNullTicks).InSecondsF());
-  url_timing->SetDNSEnd(
-      (load_timing.connect_timing.dns_end - kNullTicks).InSecondsF());
-  url_timing->SetConnectStart(
-      (load_timing.connect_timing.connect_start - kNullTicks).InSecondsF());
-  url_timing->SetConnectEnd(
-      (load_timing.connect_timing.connect_end - kNullTicks).InSecondsF());
-  url_timing->SetSSLStart(
-      (load_timing.connect_timing.ssl_start - kNullTicks).InSecondsF());
-  url_timing->SetSSLEnd(
-      (load_timing.connect_timing.ssl_end - kNullTicks).InSecondsF());
-  url_timing->SetSendStart((load_timing.send_start - kNullTicks).InSecondsF());
-  url_timing->SetSendEnd((load_timing.send_end - kNullTicks).InSecondsF());
-  url_timing->SetReceiveHeadersEnd(
-      (load_timing.receive_headers_end - kNullTicks).InSecondsF());
-  url_timing->SetPushStart((load_timing.push_start - kNullTicks).InSecondsF());
-  url_timing->SetPushEnd((load_timing.push_end - kNullTicks).InSecondsF());
+  url_timing->SetRequestTime(load_timing.request_start);
+  url_timing->SetProxyStart(load_timing.proxy_resolve_start);
+  url_timing->SetProxyEnd(load_timing.proxy_resolve_end);
+  url_timing->SetDNSStart(load_timing.connect_timing.dns_start);
+  url_timing->SetDNSEnd(load_timing.connect_timing.dns_end);
+  url_timing->SetConnectStart(load_timing.connect_timing.connect_start);
+  url_timing->SetConnectEnd(load_timing.connect_timing.connect_end);
+  url_timing->SetSSLStart(load_timing.connect_timing.ssl_start);
+  url_timing->SetSSLEnd(load_timing.connect_timing.ssl_end);
+  url_timing->SetSendStart(load_timing.send_start);
+  url_timing->SetSendEnd(load_timing.send_end);
+  url_timing->SetReceiveHeadersEnd(load_timing.receive_headers_end);
+  url_timing->SetPushStart(load_timing.push_start);
+  url_timing->SetPushEnd(load_timing.push_end);
 }
 
 net::RequestPriority ConvertWebKitPriorityToNetPriority(
@@ -363,12 +352,6 @@ void SetSecurityStyleAndDetails(const GURL& url,
 
 }  // namespace
 
-StreamOverrideParameters::StreamOverrideParameters() {}
-StreamOverrideParameters::~StreamOverrideParameters() {
-  if (on_delete)
-    std::move(on_delete).Run(stream_url);
-}
-
 WebURLLoaderFactoryImpl::WebURLLoaderFactoryImpl(
     base::WeakPtr<ResourceDispatcher> resource_dispatcher,
     scoped_refptr<network::SharedURLLoaderFactory> loader_factory)
@@ -469,7 +452,6 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context> {
   ResourceDispatcher* resource_dispatcher_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   std::unique_ptr<FtpDirectoryListingResponseDelegate> ftp_listing_delegate_;
-  std::unique_ptr<StreamOverrideParameters> stream_override_;
   std::unique_ptr<SharedMemoryDataConsumerHandle::Writer> body_stream_writer_;
   std::unique_ptr<KeepAliveHandleWithChildProcessReference> keep_alive_handle_;
   enum DeferState {NOT_DEFERRING, SHOULD_DEFER, DEFERRED_DATA};
@@ -630,10 +612,11 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
     return;
   }
 
+  std::unique_ptr<NavigationResponseOverrideParameters> response_override;
   if (request.GetExtraData()) {
     RequestExtraData* extra_data =
         static_cast<RequestExtraData*>(request.GetExtraData());
-    stream_override_ = extra_data->TakeStreamOverrideOwnership();
+    response_override = extra_data->TakeNavigationResponseOverrideOwnership();
   }
 
 
@@ -641,7 +624,7 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
   // the WebURLLoader are the ones created by CommitNavigation. Several browser
   // tests load HTML directly through a data url which will be handled by the
   // block above.
-  DCHECK(!IsBrowserSideNavigationEnabled() || stream_override_ ||
+  DCHECK(response_override ||
          request.GetFrameType() ==
              network::mojom::RequestContextFrameType::kNone);
 
@@ -686,6 +669,11 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
                                                  network::kDefaultAcceptHeader);
   }
 
+  if (resource_request->resource_type == RESOURCE_TYPE_PREFETCH ||
+      resource_request->resource_type == RESOURCE_TYPE_FAVICON) {
+    resource_request->do_not_prompt_for_login = true;
+  }
+
   resource_request->load_flags = GetLoadFlagsForWebURLRequest(request);
 
   // |plugin_child_id| only needs to be non-zero if the request originates
@@ -725,22 +713,13 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
   resource_request->previews_state =
       static_cast<int>(request.GetPreviewsState());
 
-  // PlzNavigate: The network request has already been made by the browser.
-  // The renderer should request a stream which contains the body of the
-  // response. If the Network Service or NavigationMojoResponse is enabled, the
-  // URLLoaderClientEndpoints is used instead to get the body.
-  network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints;
-  if (stream_override_) {
-    CHECK(IsBrowserSideNavigationEnabled());
+  // The network request has already been made by the browser. The renderer
+  // should bind the URLLoaderClientEndpoints stored in |response_override| to
+  // an implementation of a URLLoaderClient to get the response body.
+  if (response_override) {
     DCHECK(!sync_load_response);
     DCHECK_NE(network::mojom::RequestContextFrameType::kNone,
               request.GetFrameType());
-    if (stream_override_->url_loader_client_endpoints) {
-      url_loader_client_endpoints =
-          std::move(stream_override_->url_loader_client_endpoints);
-    } else {
-      resource_request->resource_body_stream_url = stream_override_->stream_url;
-    }
   }
 
   RequestExtraData empty_extra_data;
@@ -750,6 +729,16 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
   else
     extra_data = &empty_extra_data;
   extra_data->CopyToResourceRequest(resource_request.get());
+
+  std::unique_ptr<RequestPeer> peer;
+  if (extra_data->download_to_network_cache_only()) {
+    peer = std::make_unique<SinkPeer>(this);
+  } else {
+    const bool discard_body =
+        (resource_request->resource_type == RESOURCE_TYPE_PREFETCH);
+    peer =
+        std::make_unique<WebURLLoaderImpl::RequestPeerImpl>(this, discard_body);
+  }
 
   if (sync_load_response) {
     DCHECK(defers_loading_ == NOT_DEFERRING);
@@ -763,18 +752,9 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
         std::move(resource_request), request.RequestorID(),
         GetTrafficAnnotationTag(request), sync_load_response,
         url_loader_factory_, extra_data->TakeURLLoaderThrottles(),
-        request.TimeoutInterval(), std::move(download_to_blob_registry));
+        request.TimeoutInterval(), std::move(download_to_blob_registry),
+        std::move(peer));
     return;
-  }
-
-  std::unique_ptr<RequestPeer> peer;
-  if (extra_data->download_to_network_cache_only()) {
-    peer = std::make_unique<SinkPeer>(this);
-  } else {
-    const bool discard_body =
-        (resource_request->resource_type == RESOURCE_TYPE_PREFETCH);
-    peer =
-        std::make_unique<WebURLLoaderImpl::RequestPeerImpl>(this, discard_body);
   }
 
   TRACE_EVENT_WITH_FLOW0("loading", "WebURLLoaderImpl::Context::Start", this,
@@ -784,8 +764,8 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
       std::move(resource_request), request.RequestorID(), task_runner_,
       GetTrafficAnnotationTag(request), false /* is_sync */,
       request.PassResponsePipeToClient(), std::move(peer), url_loader_factory_,
-      extra_data->TakeURLLoaderThrottles(),
-      std::move(url_loader_client_endpoints), &continue_navigation_function);
+      extra_data->TakeURLLoaderThrottles(), std::move(response_override),
+      &continue_navigation_function);
   extra_data->set_continue_navigation_function(
       std::move(continue_navigation_function));
 
@@ -823,32 +803,13 @@ bool WebURLLoaderImpl::Context::OnReceivedRedirect(
 }
 
 void WebURLLoaderImpl::Context::OnReceivedResponse(
-    const network::ResourceResponseInfo& initial_info) {
+    const network::ResourceResponseInfo& info) {
   if (!client_)
     return;
 
   TRACE_EVENT_WITH_FLOW0(
       "loading", "WebURLLoaderImpl::Context::OnReceivedResponse",
       this, TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT);
-
-  network::ResourceResponseInfo info = initial_info;
-
-  // PlzNavigate: during navigations, the ResourceResponse has already been
-  // received on the browser side, and has been passed down to the renderer.
-  if (stream_override_) {
-    CHECK(IsBrowserSideNavigationEnabled());
-    info = stream_override_->response;
-
-    // Replay the redirects that happened during navigation.
-    DCHECK_EQ(stream_override_->redirect_responses.size(),
-              stream_override_->redirect_infos.size());
-    for (size_t i = 0; i < stream_override_->redirect_responses.size(); ++i) {
-      bool result = OnReceivedRedirect(stream_override_->redirect_infos[i],
-                                       stream_override_->redirect_responses[i]);
-      if (!result)
-        return;
-    }
-  }
 
   WebURLResponse response;
   PopulateURLResponse(url_, info, &response, report_raw_headers_);
@@ -1001,10 +962,9 @@ void WebURLLoaderImpl::Context::OnCompletedRequest(
                             WebURLError::IsWebSecurityViolation::kFalse, url_),
           total_transfer_size, encoded_body_size, status.decoded_body_length);
     } else {
-      client_->DidFinishLoading(
-          (status.completion_time - TimeTicks()).InSecondsF(),
-          total_transfer_size, encoded_body_size, status.decoded_body_length,
-          status.blocked_cross_site_document);
+      client_->DidFinishLoading(status.completion_time, total_transfer_size,
+                                encoded_body_size, status.decoded_body_length,
+                                status.blocked_cross_site_document);
     }
   }
 }
@@ -1266,11 +1226,8 @@ void WebURLLoaderImpl::PopulateURLResponse(
   if (!info.load_timing.receive_headers_end.is_null()) {
     WebURLLoadTiming timing;
     PopulateURLLoadTiming(info.load_timing, &timing);
-    const TimeTicks kNullTicks;
-    timing.SetWorkerStart(
-        (info.service_worker_start_time - kNullTicks).InSecondsF());
-    timing.SetWorkerReady(
-        (info.service_worker_ready_time - kNullTicks).InSecondsF());
+    timing.SetWorkerStart(info.service_worker_start_time);
+    timing.SetWorkerReady(info.service_worker_ready_time);
     response->SetLoadTiming(timing);
   }
 
@@ -1334,6 +1291,7 @@ void WebURLLoaderImpl::PopulateURLResponse(
 
 void WebURLLoaderImpl::LoadSynchronously(
     const WebURLRequest& request,
+    WebURLLoaderClient* client,
     WebURLResponse& response,
     base::Optional<WebURLError>& error,
     WebData& data,
@@ -1343,6 +1301,9 @@ void WebURLLoaderImpl::LoadSynchronously(
     blink::WebBlobInfo& downloaded_blob) {
   TRACE_EVENT0("loading", "WebURLLoaderImpl::loadSynchronously");
   SyncLoadResponse sync_load_response;
+
+  DCHECK(!context_->client());
+  context_->set_client(client);
   context_->Start(request, &sync_load_response);
 
   const GURL& final_url = sync_load_response.url;

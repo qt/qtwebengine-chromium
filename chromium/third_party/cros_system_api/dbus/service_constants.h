@@ -97,29 +97,9 @@ const char kTTSReadySignal[] = "TTSReady";
 const char kTTSFailedSignal[] = "TTSFailed";
 }  // namespace chromium
 
+// Services in the chromeos namespace are owned by Chrome. Different services
+// may be instantiated in different Chrome processes.
 namespace chromeos {
-const char kLibCrosServiceName[] = "org.chromium.LibCrosService";
-const char kLibCrosServicePath[] = "/org/chromium/LibCrosService";
-const char kLibCrosServiceInterface[] = "org.chromium.LibCrosServiceInterface";
-// Methods
-// TODO(teravest): Remove this once CheckLiveness is removed from
-// LibCrosService.
-const char kCheckLiveness[] = "CheckLiveness";
-const char kGetKioskAppRequiredPlatforVersion[] =
-    "GetKioskAppRequiredPlatformVersion";
-const char kLockScreen[] = "LockScreen";
-// TODO(lannm): Remove Display methods once removed from LibCrosService.
-const char kSetDisplayPower[] = "SetDisplayPower";
-const char kSetDisplaySoftwareDimming[] = "SetDisplaySoftwareDimming";
-const char kTakeDisplayOwnership[] = "TakeDisplayOwnership";
-const char kReleaseDisplayOwnership[] = "ReleaseDisplayOwnership";
-// Values
-enum DisplayPowerState {
-  DISPLAY_POWER_ALL_ON = 0,
-  DISPLAY_POWER_ALL_OFF = 1,
-  DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON = 2,
-  DISPLAY_POWER_INTERNAL_ON_EXTERNAL_OFF = 3,
-};
 
 const char kNetworkProxyServiceName[] = "org.chromium.NetworkProxyService";
 const char kNetworkProxyServicePath[] = "/org/chromium/NetworkProxyService";
@@ -148,18 +128,22 @@ const char kKioskAppServiceName[] = "org.chromium.KioskAppService";
 const char kKioskAppServicePath[] = "/org/chromium/KioskAppService";
 const char kKioskAppServiceInterface[] =
     "org.chromium.KioskAppServiceInterface";
-// Methods
 const char kKioskAppServiceGetRequiredPlatformVersionMethod[] =
     "GetRequiredPlatformVersion";
 
 const char kDisplayServiceName[] = "org.chromium.DisplayService";
 const char kDisplayServicePath[] = "/org/chromium/DisplayService";
 const char kDisplayServiceInterface[] = "org.chromium.DisplayServiceInterface";
-// Methods
 const char kDisplayServiceSetPowerMethod[] = "SetPower";
 const char kDisplayServiceSetSoftwareDimmingMethod[] = "SetSoftwareDimming";
 const char kDisplayServiceTakeOwnershipMethod[] = "TakeOwnership";
 const char kDisplayServiceReleaseOwnershipMethod[] = "ReleaseOwnership";
+enum DisplayPowerState {
+  DISPLAY_POWER_ALL_ON = 0,
+  DISPLAY_POWER_ALL_OFF = 1,
+  DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON = 2,
+  DISPLAY_POWER_INTERNAL_ON_EXTERNAL_OFF = 3,
+};
 
 const char kScreenLockServiceName[] = "org.chromium.ScreenLockService";
 const char kScreenLockServicePath[] = "/org/chromium/ScreenLockService";
@@ -173,7 +157,6 @@ constexpr char kVirtualFileRequestServicePath[] =
     "/org/chromium/VirtualFileRequestService";
 constexpr char kVirtualFileRequestServiceInterface[] =
     "org.chromium.VirtualFileRequestService";
-// Methods
 constexpr char kVirtualFileRequestServiceHandleReadRequestMethod[] =
     "HandleReadRequest";
 constexpr char kVirtualFileRequestServiceHandleIdReleasedMethod[] =
@@ -183,9 +166,14 @@ const char kChromeFeaturesServiceName[] = "org.chromium.ChromeFeaturesService";
 const char kChromeFeaturesServicePath[] = "/org/chromium/ChromeFeaturesService";
 const char kChromeFeaturesServiceInterface[] =
     "org.chromium.ChromeFeaturesServiceInterface";
-// Methods
 const char kChromeFeaturesServiceIsCrostiniEnabledMethod[] =
     "IsCrostiniEnabled";
+
+const char kUrlHandlerServiceName[] = "org.chromium.UrlHandlerService";
+const char kUrlHandlerServicePath[] = "/org/chromium/UrlHandlerService";
+const char kUrlHandlerServiceInterface[] =
+    "org.chromium.UrlHandlerServiceInterface";
+const char kUrlHandlerServiceOpenUrlMethod[] = "OpenUrl";
 
 }  // namespace chromeos
 
@@ -423,9 +411,9 @@ const char kRSSIProperty[] = "RSSI";
 const char kTxPowerProperty[] = "TxPower";
 const char kManufacturerDataProperty[] = "ManufacturerData";
 const char kServiceDataProperty[] = "ServiceData";
-const char kGattServicesProperty[] = "GattServices";         // DEPRECATED
 const char kServicesResolvedProperty[] = "ServicesResolved";
 const char kAdvertisingDataFlagsProperty[] = "AdvertisingFlags";
+const char kMTUProperty[] = "MTU";
 
 // Bluetooth Device errors.
 const char kErrorNotReady[] = "org.bluez.Error.NotReady";
@@ -561,8 +549,7 @@ const char kErrorInvalidValueLength[] = "org.bluez.Error.InvalidValueLength";
 const char kErrorNotAuthorized[] = "org.bluez.Error.NotAuthorized";
 const char kErrorNotPaired[] = "org.bluez.Error.NotPaired";
 const char kErrorNotSupported[] = "org.bluez.Error.NotSupported";
-const char kErrorReadNotPermitted[] = "org.bluez.Error.ReadNotPermitted";
-const char kErrorWriteNotPermitted[] = "org.bluez.Error.WriteNotPermitted";
+const char kErrorNotPermitted[] = "org.bluez.Error.NotPermitted";
 }  // namespace bluetooth_gatt_service
 
 namespace bluetooth_input {
@@ -650,6 +637,12 @@ namespace bluetooth_object_manager {
 const char kBluetoothObjectManagerServiceName[] = "org.chromium.Bluetooth";
 const char kBluetoothObjectManagerServicePath[] = "/";
 }  // namespace bluetooth_object_manager
+
+namespace newblue_object_manager {
+// NewBlue daemon Object Manager service identifiers.
+const char kNewblueObjectManagerServiceName[] = "org.chromium.Newblue";
+const char kNewblueObjectManagerServicePath[] = "/";
+}  // namespace newblue_object_manager
 
 namespace bluetooth_profile_manager {
 // Bluetooth Profile Manager service identifiers.
@@ -1107,7 +1100,17 @@ constexpr char kVirtualFileProviderInterface[] =
 constexpr char kOpenFileMethod[] = "OpenFile";
 }  // namespace virtual_file_provider
 
+namespace crosdns {
+constexpr char kCrosDnsServiceName[] = "org.chromium.CrosDns";
+constexpr char kCrosDnsServicePath[] = "/org/chromium/CrosDns";
+constexpr char kCrosDnsInterfaceName[] = "org.chromium.CrosDns";
+// Methods
+constexpr char kSetHostnameIpMappingMethod[] = "SetHostnameIpMapping";
+constexpr char kRemoveHostnameIpMappingMethod[] = "RemoveHostnameIpMapping";
+}
+
 namespace arc {
+
 namespace obb_mounter {
 // D-Bus service constants.
 constexpr char kArcObbMounterInterface[] =
@@ -1119,6 +1122,22 @@ constexpr char kArcObbMounterServiceName[] = "org.chromium.ArcObbMounter";
 constexpr char kMountObbMethod[] = "MountObb";
 constexpr char kUnmountObbMethod[] = "UnmountObb";
 }  // namespace obb_mounter
+
+namespace appfuse {
+// D-Bus service constants.
+constexpr char kArcAppfuseProviderInterface[] =
+    "org.chromium.ArcAppfuseProvider";
+constexpr char kArcAppfuseProviderServicePath[] =
+    "/org/chromium/ArcAppfuseProvider";
+constexpr char kArcAppfuseProviderServiceName[] =
+    "org.chromium.ArcAppfuseProvider";
+
+// Method names.
+constexpr char kMountMethod[] = "Mount";
+constexpr char kUnmountMethod[] = "Unmount";
+constexpr char kOpenFileMethod[] = "OpenFile";
+}  // namespace appfuse
+
 }  // namespace arc
 
 #endif  // SYSTEM_API_DBUS_SERVICE_CONSTANTS_H_

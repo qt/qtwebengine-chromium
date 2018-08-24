@@ -46,7 +46,8 @@ class MEDIA_MOJO_EXPORT MojoVideoDecoderService final
       mojom::MediaLogAssociatedPtrInfo media_log,
       mojom::VideoFrameHandleReleaserRequest video_frame_handle_releaser,
       mojo::ScopedDataPipeConsumerHandle decoder_buffer_pipe,
-      mojom::CommandBufferIdPtr command_buffer_id) final;
+      mojom::CommandBufferIdPtr command_buffer_id,
+      const gfx::ColorSpace& target_color_space) final;
   void Initialize(const VideoDecoderConfig& config,
                   bool low_delay,
                   int32_t cdm_id,
@@ -74,6 +75,9 @@ class MEDIA_MOJO_EXPORT MojoVideoDecoderService final
   void OnDecoderRequestedOverlayInfo(
       bool restart_for_transitions,
       const ProvideOverlayInfoCB& provide_overlay_info_cb);
+
+  // Whether this instance is active (Decode() was called at least once).
+  bool is_active_instance_ = false;
 
   // Decoder factory.
   MojoMediaClient* mojo_media_client_;

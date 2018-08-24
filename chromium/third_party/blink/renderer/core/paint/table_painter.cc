@@ -38,8 +38,9 @@ void TablePainter::PaintObject(const PaintInfo& paint_info,
          child = child->NextSibling()) {
       if (child->IsBox() && !ToLayoutBox(child)->HasSelfPaintingLayer() &&
           (child->IsTableSection() || child->IsTableCaption())) {
-        LayoutPoint child_point = layout_table_.FlipForWritingModeForChild(
-            ToLayoutBox(child), paint_offset);
+        LayoutPoint child_point =
+            layout_table_.FlipForWritingModeForChildForPaint(ToLayoutBox(child),
+                                                             paint_offset);
         child->Paint(paint_info_for_descendants, child_point);
       }
     }
@@ -87,7 +88,7 @@ void TablePainter::PaintMask(const PaintInfo& paint_info,
 
 void TablePainter::PaintCollapsedBorders(const PaintInfo& paint_info,
                                          const LayoutPoint& paint_offset) {
-  Optional<DrawingRecorder> recorder;
+  base::Optional<DrawingRecorder> recorder;
   if (UNLIKELY(layout_table_.ShouldPaintAllCollapsedBorders())) {
     if (DrawingRecorder::UseCachedDrawingIfPossible(
             paint_info.context, layout_table_,
@@ -101,7 +102,7 @@ void TablePainter::PaintCollapsedBorders(const PaintInfo& paint_info,
   for (LayoutTableSection* section = layout_table_.BottomSection(); section;
        section = layout_table_.SectionAbove(section)) {
     LayoutPoint child_point =
-        layout_table_.FlipForWritingModeForChild(section, paint_offset);
+        layout_table_.FlipForWritingModeForChildForPaint(section, paint_offset);
     TableSectionPainter(*section).PaintCollapsedBorders(paint_info,
                                                         child_point);
   }

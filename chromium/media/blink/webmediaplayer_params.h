@@ -34,10 +34,6 @@ class WebSurfaceLayerBridge;
 class WebSurfaceLayerBridgeObserver;
 }  // namespace blink
 
-namespace viz {
-class SurfaceId;
-}
-
 namespace media {
 
 class SwitchableAudioRendererSink;
@@ -49,15 +45,6 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerParams {
  public:
   typedef base::Callback<void(const base::Closure&)> DeferLoadCB;
   typedef base::Callback<Context3D()> Context3DCB;
-
-  // Callback to obtain the SurfaceInfo and natural size for the relevant video
-  // to trigger Picture-in-Picture mode.
-  using PipSurfaceInfoCB =
-      base::RepeatingCallback<void(const viz::SurfaceId& surface_id,
-                                   const gfx::Size& natural_size)>;
-
-  // Callback to exit Picture-in-Picture.
-  using ExitPipCB = base::RepeatingCallback<void()>;
 
   // Callback to obtain the media ContextProvider.
   // Requires being called on the media thread.
@@ -96,9 +83,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerParams {
       base::Callback<std::unique_ptr<blink::WebSurfaceLayerBridge>(
           blink::WebSurfaceLayerBridgeObserver*)> bridge_callback,
       scoped_refptr<viz::ContextProvider> context_provider,
-      bool use_surface_layer_for_video,
-      const PipSurfaceInfoCB& surface_info_cb,
-      const ExitPipCB& exit_pip_cb);
+      bool use_surface_layer_for_video);
 
   ~WebMediaPlayerParams();
 
@@ -181,12 +166,6 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerParams {
     return use_surface_layer_for_video_;
   }
 
-  const PipSurfaceInfoCB pip_surface_info_cb() const {
-    return pip_surface_info_cb_;
-  }
-
-  const ExitPipCB exit_pip_cb() const { return exit_pip_cb_; }
-
  private:
   DeferLoadCB defer_load_cb_;
   scoped_refptr<SwitchableAudioRendererSink> audio_renderer_sink_;
@@ -212,8 +191,6 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerParams {
       create_bridge_callback_;
   scoped_refptr<viz::ContextProvider> context_provider_;
   bool use_surface_layer_for_video_;
-  PipSurfaceInfoCB pip_surface_info_cb_;
-  ExitPipCB exit_pip_cb_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(WebMediaPlayerParams);
 };

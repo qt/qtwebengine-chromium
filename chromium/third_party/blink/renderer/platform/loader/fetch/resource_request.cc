@@ -68,6 +68,7 @@ ResourceRequest::ResourceRequest(const KURL& url)
       request_context_(WebURLRequest::kRequestContextUnspecified),
       frame_type_(network::mojom::RequestContextFrameType::kNone),
       fetch_request_mode_(network::mojom::FetchRequestMode::kNoCORS),
+      fetch_importance_mode_(mojom::FetchImportanceMode::kImportanceAuto),
       fetch_credentials_mode_(network::mojom::FetchCredentialsMode::kInclude),
       fetch_redirect_mode_(network::mojom::FetchRedirectMode::kFollow),
       referrer_policy_(kReferrerPolicyDefault),
@@ -111,6 +112,7 @@ ResourceRequest::ResourceRequest(CrossThreadResourceRequestData* data)
   SetRequestContext(data->request_context_);
   SetFrameType(data->frame_type_);
   SetFetchRequestMode(data->fetch_request_mode_);
+  SetFetchImportanceMode(data->fetch_importance_mode_);
   SetFetchCredentialsMode(data->fetch_credentials_mode_);
   SetFetchRedirectMode(data->fetch_redirect_mode_);
   SetFetchIntegrity(data->fetch_integrity_.IsolatedCopy());
@@ -124,6 +126,7 @@ ResourceRequest::ResourceRequest(CrossThreadResourceRequestData* data)
   redirect_status_ = data->redirect_status_;
   suggested_filename_ = data->suggested_filename_;
   is_ad_resource_ = data->is_ad_resource_;
+  SetInitiatorCSP(data->navigation_csp_);
 }
 
 ResourceRequest::ResourceRequest(const ResourceRequest&) = default;
@@ -167,6 +170,7 @@ std::unique_ptr<ResourceRequest> ResourceRequest::CreateRedirectRequest(
   request->SetCORSPreflightPolicy(CORSPreflightPolicy());
   if (IsAdResource())
     request->SetIsAdResource();
+  request->SetInitiatorCSP(GetInitiatorCSP());
 
   return request;
 }
@@ -204,6 +208,7 @@ std::unique_ptr<CrossThreadResourceRequestData> ResourceRequest::CopyData()
   data->request_context_ = request_context_;
   data->frame_type_ = frame_type_;
   data->fetch_request_mode_ = fetch_request_mode_;
+  data->fetch_importance_mode_ = fetch_importance_mode_;
   data->fetch_credentials_mode_ = fetch_credentials_mode_;
   data->fetch_redirect_mode_ = fetch_redirect_mode_;
   data->fetch_integrity_ = fetch_integrity_.IsolatedCopy();
@@ -217,6 +222,8 @@ std::unique_ptr<CrossThreadResourceRequestData> ResourceRequest::CopyData()
   data->redirect_status_ = redirect_status_;
   data->suggested_filename_ = suggested_filename_;
   data->is_ad_resource_ = is_ad_resource_;
+  data->navigation_csp_ = initiator_csp_;
+
   return data;
 }
 
@@ -410,7 +417,7 @@ void ResourceRequest::SetExternalRequestStateFromRequestorAddressSpace(
   is_external_request_ = requestor_space > target_space;
 }
 
-void ResourceRequest::SetNavigationStartTime(double navigation_start) {
+void ResourceRequest::SetNavigationStartTime(TimeTicks navigation_start) {
   navigation_start_ = navigation_start;
 }
 

@@ -18,6 +18,7 @@ using blink::WebTouchEvent;
 using blink::WebTouchPoint;
 using blink::WebMouseEvent;
 using blink::WebMouseWheelEvent;
+using blink::WebGestureEvent;
 
 namespace content {
 namespace {
@@ -48,7 +49,7 @@ void SyntheticGestureTargetBase::DispatchInputEventToPlatform(
                "type", WebInputEvent::GetName(event.GetType()));
 
   ui::LatencyInfo latency_info;
-  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
+  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0);
 
   if (WebInputEvent::IsTouchEventType(event.GetType())) {
     const WebTouchEvent& web_touch =
@@ -85,6 +86,19 @@ void SyntheticGestureTargetBase::DispatchInputEventToPlatform(
       return;
     }
     DispatchWebMouseEventToPlatform(web_mouse, latency_info);
+  } else if (WebInputEvent::IsPinchGestureEventType(event.GetType())) {
+    const WebGestureEvent& web_pinch =
+        static_cast<const WebGestureEvent&>(event);
+    // Touchscreen pinches should be injected as touch events.
+    DCHECK_EQ(blink::kWebGestureDeviceTouchpad, web_pinch.SourceDevice());
+    if (event.GetType() == WebInputEvent::kGesturePinchBegin &&
+        !PointIsWithinContents(web_pinch.PositionInWidget().x,
+                               web_pinch.PositionInWidget().y)) {
+      LOG(WARNING)
+          << "Pinch coordinates are not within content bounds on PinchBegin.";
+      return;
+    }
+    DispatchWebGestureEventToPlatform(web_pinch, latency_info);
   } else {
     NOTREACHED();
   }
@@ -105,6 +119,12 @@ void SyntheticGestureTargetBase::DispatchWebMouseWheelEventToPlatform(
   host_->ForwardWheelEventWithLatencyInfo(web_wheel, latency_info);
 }
 
+void SyntheticGestureTargetBase::DispatchWebGestureEventToPlatform(
+    const blink::WebGestureEvent& web_gesture,
+    const ui::LatencyInfo& latency_info) {
+  host_->ForwardGestureEventWithLatencyInfo(web_gesture, latency_info);
+}
+
 void SyntheticGestureTargetBase::DispatchWebMouseEventToPlatform(
       const blink::WebMouseEvent& web_mouse,
       const ui::LatencyInfo& latency_info) {
@@ -123,6 +143,12 @@ base::TimeDelta SyntheticGestureTargetBase::PointerAssumedStoppedTime()
 
 float SyntheticGestureTargetBase::GetTouchSlopInDips() const {
   return kTouchSlopInDips;
+}
+
+float SyntheticGestureTargetBase::GetSpanSlopInDips() const {
+  // * 2 because span is the distance between two touch points in a pinch-zoom
+  // gesture so we're accounting for movement in two points.
+  return 2.f * GetTouchSlopInDips();
 }
 
 float SyntheticGestureTargetBase::GetMinScalingSpanInDips() const {

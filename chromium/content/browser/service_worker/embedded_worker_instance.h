@@ -31,6 +31,7 @@
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_installed_scripts_manager.mojom.h"
+#include "third_party/blink/public/platform/modules/cache_storage/cache_storage.mojom.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -73,7 +74,8 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
 
   using ProviderInfoGetter =
       base::OnceCallback<mojom::ServiceWorkerProviderInfoForStartWorkerPtr(
-          int /* process_id */)>;
+          int /* process_id */,
+          scoped_refptr<network::SharedURLLoaderFactory>)>;
 
   class Listener {
    public:
@@ -113,6 +115,9 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
                                         const base::string16& message,
                                         int line_number,
                                         const GURL& source_url) {}
+    // The instance is being deleted, so it's not safe to call any methods that
+    // may result in a virtual method call.
+    virtual void OnDestroyed() {}
   };
 
   ~EmbeddedWorkerInstance() override;
@@ -160,8 +165,8 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   int thread_id() const { return thread_id_; }
   int worker_devtools_agent_route_id() const;
 
-  void AddListener(Listener* listener);
-  void RemoveListener(Listener* listener);
+  void AddObserver(Listener* listener);
+  void RemoveObserver(Listener* listener);
 
   void SetDevToolsAttached(bool attached);
   bool devtools_attached() const { return devtools_attached_; }
@@ -236,12 +241,18 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
       std::unique_ptr<DevToolsProxy> devtools_proxy,
       bool wait_for_debugger);
 
-  // Sends StartWorker message via Mojo.
-  ServiceWorkerStatusCode SendStartWorker(
-      mojom::EmbeddedWorkerStartParamsPtr params);
-
-  // Called back from StartTask after a start worker message is sent.
-  void OnStartWorkerMessageSent(bool is_script_streaming);
+  // Sends the StartWorker message to the renderer.
+  //
+  // |cache_storage| is an optional optimization so the service worker can
+  // use the Cache Storage API immediately upon startup.
+  //
+  // S13nServiceWorker:
+  // |factory| is used for loading non-installed scripts. It can internally be a
+  // bundle of factories instead of just the direct network factory to support
+  // non-NetworkService schemes like chrome-extension:// URLs.
+  void SendStartWorker(mojom::EmbeddedWorkerStartParamsPtr params,
+                       scoped_refptr<network::SharedURLLoaderFactory> factory,
+                       blink::mojom::CacheStoragePtrInfo cache_storage);
 
   // Implements mojom::EmbeddedWorkerInstanceHost.
   // These functions all run on the IO thread.
@@ -297,8 +308,10 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   std::unique_ptr<EmbeddedWorkerInstance::WorkerProcessHandle> process_handle_;
   int thread_id_;
 
-  // |client_| is used to send messages to the renderer process.
-  mojom::EmbeddedWorkerInstanceClientAssociatedPtr client_;
+  // |client_| is used to send messages to the renderer process. The browser
+  // process should not disconnect the pipe because associated interfaces may be
+  // using it. The renderer process will disconnect the pipe when appropriate.
+  mojom::EmbeddedWorkerInstanceClientPtr client_;
 
   // Binding for EmbeddedWorkerInstanceHost, runs on IO thread.
   mojo::AssociatedBinding<EmbeddedWorkerInstanceHost> instance_host_binding_;

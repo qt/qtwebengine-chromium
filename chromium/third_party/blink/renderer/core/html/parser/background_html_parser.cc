@@ -50,43 +50,23 @@ namespace blink {
 // potentially time if the speculation fails). So we limit our outstanding
 // tokens arbitrarily to 10,000. Our maximal memory spent speculating will be
 // approximately:
-// (defaultOutstandingTokenLimit + defaultPendingTokenLimit) *
-// sizeof(CompactToken)
+// (kOutstandingTokenLimit + kPendingTokenLimit) * sizeof(CompactToken)
 //
 // We use a separate low and high water mark to avoid
 // constantly topping off the main thread's token buffer. At time of writing,
 // this is (10000 + 1000) * 28 bytes = ~308kb of memory. These numbers have not
 // been tuned.
-static const size_t kDefaultOutstandingTokenLimit = 10000;
+static const size_t kOutstandingTokenLimit = 10000;
 
 // We limit our chucks to 1000 tokens, to make sure the main thread is never
 // waiting on the parser thread for tokens. This was tuned in
 // https://bugs.webkit.org/show_bug.cgi?id=110408.
-static const size_t kDefaultPendingTokenLimit = 1000;
+static const size_t kPendingTokenLimit = 1000;
+
+static_assert(kOutstandingTokenLimit > kPendingTokenLimit,
+              "Outstanding token limit is applied after pending token limit.");
 
 using namespace HTMLNames;
-
-#if DCHECK_IS_ON()
-
-static void CheckThatTokensAreSafeToSendToAnotherThread(
-    const CompactHTMLTokenStream* tokens) {
-  for (size_t i = 0; i < tokens->size(); ++i)
-    DCHECK(tokens->at(i).IsSafeToSendToAnotherThread());
-}
-
-static void CheckThatPreloadsAreSafeToSendToAnotherThread(
-    const PreloadRequestStream& preloads) {
-  for (size_t i = 0; i < preloads.size(); ++i)
-    DCHECK(preloads[i]->IsSafeToSendToAnotherThread());
-}
-
-static void CheckThatXSSInfosAreSafeToSendToAnotherThread(
-    const XSSInfoStream& infos) {
-  for (size_t i = 0; i < infos.size(); ++i)
-    DCHECK(infos[i]->IsSafeToSendToAnotherThread());
-}
-
-#endif
 
 base::WeakPtr<BackgroundHTMLParser> BackgroundHTMLParser::Create(
     std::unique_ptr<Configuration> config,
@@ -106,34 +86,23 @@ void BackgroundHTMLParser::Init(
       TokenPreloadScanner::ScannerType::kMainDocument));
 }
 
-BackgroundHTMLParser::Configuration::Configuration()
-    : outstanding_token_limit(kDefaultOutstandingTokenLimit),
-      pending_token_limit(kDefaultPendingTokenLimit),
-      should_coalesce_chunks(false) {}
+BackgroundHTMLParser::Configuration::Configuration() {}
 
 BackgroundHTMLParser::BackgroundHTMLParser(
     std::unique_ptr<Configuration> config,
     scoped_refptr<base::SingleThreadTaskRunner> loading_task_runner)
-    : weak_factory_(this),
-      token_(std::make_unique<HTMLToken>()),
+    : token_(std::make_unique<HTMLToken>()),
       tokenizer_(HTMLTokenizer::Create(config->options)),
       tree_builder_simulator_(config->options),
       options_(config->options),
-      outstanding_token_limit_(config->outstanding_token_limit),
       parser_(config->parser),
-      pending_tokens_(std::make_unique<CompactHTMLTokenStream>()),
-      pending_token_limit_(config->pending_token_limit),
       xss_auditor_(std::move(config->xss_auditor)),
       decoder_(std::move(config->decoder)),
       loading_task_runner_(std::move(loading_task_runner)),
-      tokenized_chunk_queue_(std::move(config->tokenized_chunk_queue)),
       pending_csp_meta_token_index_(
           HTMLDocumentParser::TokenizedChunk::kNoPendingToken),
       starting_script_(false),
-      should_coalesce_chunks_(config->should_coalesce_chunks) {
-  DCHECK_GT(outstanding_token_limit_, 0u);
-  DCHECK_GT(pending_token_limit_, 0u);
-  DCHECK_GE(outstanding_token_limit_, pending_token_limit_);
+      weak_factory_(this) {
 }
 
 BackgroundHTMLParser::~BackgroundHTMLParser() = default;
@@ -168,9 +137,8 @@ void BackgroundHTMLParser::UpdateDocument(const String& decoded_data) {
     last_seen_encoding_data_ = encoding_data;
 
     xss_auditor_->SetEncoding(encoding_data.Encoding());
-    RunOnMainThread(
-        &HTMLDocumentParser::DidReceiveEncodingDataFromBackgroundParser,
-        parser_, encoding_data);
+    if (parser_)
+      parser_->DidReceiveEncodingDataFromBackgroundParser(encoding_data);
   }
 
   if (decoded_data.IsEmpty())
@@ -187,7 +155,6 @@ void BackgroundHTMLParser::ResumeFrom(std::unique_ptr<Checkpoint> checkpoint) {
   input_.RewindTo(checkpoint->input_checkpoint, checkpoint->unparsed_input);
   preload_scanner_->RewindTo(checkpoint->preload_scanner_checkpoint);
   starting_script_ = false;
-  tokenized_chunk_queue_->Clear();
   PumpTokenizer();
 }
 
@@ -228,17 +195,15 @@ void BackgroundHTMLParser::PumpTokenizer() {
       HTMLTreeBuilderSimulator::kOtherToken;
 
   // No need to start speculating until the main thread has almost caught up.
-  if (input_.TotalCheckpointTokenCount() > outstanding_token_limit_)
+  if (input_.TotalCheckpointTokenCount() > kOutstandingTokenLimit)
     return;
 
-  bool should_notify_main_thread = false;
   while (true) {
     if (xss_auditor_->IsEnabled())
       source_tracker_.Start(input_.Current(), tokenizer_.get(), *token_);
 
     if (!tokenizer_->NextToken(input_.Current(), *token_)) {
       // We've reached the end of our current input.
-      should_notify_main_thread |= QueueChunkForMainThread();
       break;
     }
 
@@ -269,13 +234,13 @@ void BackgroundHTMLParser::PumpTokenizer() {
       // starting a script so the main parser can decide if it should yield
       // before processing the chunk.
       if (simulated_token == HTMLTreeBuilderSimulator::kScriptStart) {
-        should_notify_main_thread |= QueueChunkForMainThread();
+        EnqueueTokenizedChunk();
         starting_script_ = true;
       }
 
-      pending_tokens_->push_back(token);
+      pending_tokens_.push_back(token);
       if (is_csp_meta_tag) {
-        pending_csp_meta_token_index_ = pending_tokens_->size() - 1;
+        pending_csp_meta_token_index_ = pending_tokens_.size() - 1;
       }
     }
 
@@ -284,41 +249,24 @@ void BackgroundHTMLParser::PumpTokenizer() {
     if (simulated_token == HTMLTreeBuilderSimulator::kScriptEnd ||
         simulated_token == HTMLTreeBuilderSimulator::kStyleEnd ||
         simulated_token == HTMLTreeBuilderSimulator::kLink ||
-        pending_tokens_->size() >= pending_token_limit_) {
-      should_notify_main_thread |= QueueChunkForMainThread();
+        pending_tokens_.size() >= kPendingTokenLimit) {
+      EnqueueTokenizedChunk();
+
       // If we're far ahead of the main thread, yield for a bit to avoid
       // consuming too much memory.
-      if (input_.TotalCheckpointTokenCount() > outstanding_token_limit_)
+      if (input_.TotalCheckpointTokenCount() > kOutstandingTokenLimit)
         break;
     }
+  }
 
-    if (!should_coalesce_chunks_ && should_notify_main_thread) {
-      RunOnMainThread(&HTMLDocumentParser::NotifyPendingTokenizedChunks,
-                      parser_);
-      should_notify_main_thread = false;
-    }
-  }
-  // Wait to notify the main thread about the chunks until we're at the limit.
-  // This lets the background parser generate lots of valuable preloads before
-  // anything expensive (extensions, scripts) take up time on the main thread. A
-  // busy main thread can cause preload delays.
-  if (should_notify_main_thread) {
-    RunOnMainThread(&HTMLDocumentParser::NotifyPendingTokenizedChunks, parser_);
-  }
+  EnqueueTokenizedChunk();
 }
 
-bool BackgroundHTMLParser::QueueChunkForMainThread() {
-  if (pending_tokens_->IsEmpty())
-    return false;
+void BackgroundHTMLParser::EnqueueTokenizedChunk() {
+  if (pending_tokens_.IsEmpty())
+    return;
 
-#if DCHECK_IS_ON()
-  CheckThatTokensAreSafeToSendToAnotherThread(pending_tokens_.get());
-  CheckThatPreloadsAreSafeToSendToAnotherThread(pending_preloads_);
-  CheckThatXSSInfosAreSafeToSendToAnotherThread(pending_xss_infos_);
-#endif
-
-  std::unique_ptr<HTMLDocumentParser::TokenizedChunk> chunk =
-      std::make_unique<HTMLDocumentParser::TokenizedChunk>();
+  auto chunk = std::make_unique<HTMLDocumentParser::TokenizedChunk>();
   TRACE_EVENT_WITH_FLOW0("blink,loading",
                          "BackgroundHTMLParser::sendTokensToMainThread",
                          chunk.get(), TRACE_EVENT_FLAG_FLOW_OUT);
@@ -329,36 +277,17 @@ bool BackgroundHTMLParser::QueueChunkForMainThread() {
   chunk->xss_infos.swap(pending_xss_infos_);
   chunk->tokenizer_state = tokenizer_->GetState();
   chunk->tree_builder_state = tree_builder_simulator_.GetState();
-  chunk->input_checkpoint = input_.CreateCheckpoint(pending_tokens_->size());
+  chunk->input_checkpoint = input_.CreateCheckpoint(pending_tokens_.size());
   chunk->preload_scanner_checkpoint = preload_scanner_->CreateCheckpoint();
-  chunk->tokens = std::move(pending_tokens_);
+  chunk->tokens.swap(pending_tokens_);
   chunk->starting_script = starting_script_;
   chunk->pending_csp_meta_token_index = pending_csp_meta_token_index_;
   starting_script_ = false;
   pending_csp_meta_token_index_ =
       HTMLDocumentParser::TokenizedChunk::kNoPendingToken;
 
-  bool is_empty = tokenized_chunk_queue_->Enqueue(std::move(chunk));
-
-  pending_tokens_ = std::make_unique<CompactHTMLTokenStream>();
-  return is_empty;
-}
-
-// If the background parser is already running on the main thread, then it is
-// not necessary to post a task to the main thread to run asynchronously. The
-// main parser deals with chunking up its own work.
-// TODO(csharrison): This is a pretty big hack because we don't actually need a
-// CrossThreadClosure in these cases. This is just experimental.
-template <typename FunctionType, typename... Ps>
-void BackgroundHTMLParser::RunOnMainThread(FunctionType function,
-                                           Ps&&... parameters) {
-  if (IsMainThread()) {
-    WTF::Bind(std::move(function), std::forward<Ps>(parameters)...).Run();
-  } else {
-    PostCrossThreadTask(
-        *loading_task_runner_, FROM_HERE,
-        CrossThreadBind(std::move(function), std::forward<Ps>(parameters)...));
-  }
+  if (parser_)
+    parser_->EnqueueTokenizedChunk(std::move(chunk));
 }
 
 }  // namespace blink

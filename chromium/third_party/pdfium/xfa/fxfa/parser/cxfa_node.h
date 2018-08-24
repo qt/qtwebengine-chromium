@@ -157,14 +157,7 @@ class CXFA_Node : public CXFA_Object {
     return m_ePacket == XFA_PacketType::Form && IsContainerNode();
   }
 
-  void ReleaseXMLNodeIfUnowned();
-  void SetXMLMappingNode(MaybeOwned<CFX_XMLNode> node) {
-    xml_node_ = std::move(node);
-  }
-  void SetXMLMappingNode(std::unique_ptr<CFX_XMLNode> node) {
-    xml_node_.Reset(std::move(node));
-  }
-  void SetXMLMappingNode(CFX_XMLNode* node) { xml_node_.Reset(node); }
+  void SetXMLMappingNode(CFX_XMLNode* node) { xml_node_ = node; }
   CFX_XMLNode* GetXMLMappingNode() const { return xml_node_.Get(); }
   CFX_XMLNode* CreateXMLMappingNode();
   bool IsNeedSavingXMLNode();
@@ -300,11 +293,11 @@ class CXFA_Node : public CXFA_Object {
 
   CXFA_FFWidget* GetNextWidget(CXFA_FFWidget* pWidget);
   void StartWidgetLayout(CXFA_FFDoc* doc,
-                         float& fCalcWidth,
-                         float& fCalcHeight);
+                         float* pCalcWidth,
+                         float* pCalcHeight);
   bool FindSplitPos(CXFA_FFDocView* docView,
                     int32_t iBlockIndex,
-                    float& fCalcHeight);
+                    float* pCalcHeight);
 
   bool LoadCaption(CXFA_FFDoc* doc);
   CXFA_TextLayout* GetCaptionTextLayout();
@@ -312,8 +305,8 @@ class CXFA_Node : public CXFA_Object {
 
   bool LoadImageImage(CXFA_FFDoc* doc);
   bool LoadImageEditImage(CXFA_FFDoc* doc);
-  void GetImageDpi(int32_t& iImageXDpi, int32_t& iImageYDpi);
-  void GetImageEditDpi(int32_t& iImageXDpi, int32_t& iImageYDpi);
+  CFX_Size GetImageDpi() const;
+  CFX_Size GetImageEditDpi() const;
 
   RetainPtr<CFX_DIBitmap> GetImageImage();
   RetainPtr<CFX_DIBitmap> GetImageEditImage();
@@ -444,28 +437,25 @@ class CXFA_Node : public CXFA_Object {
   CXFA_Node* GetNextSameNameSiblingInternal(
       const WideStringView& wsNodeName) const;
   CXFA_Node* GetNextSameClassSiblingInternal(XFA_Element eType) const;
-  void CalcCaptionSize(CXFA_FFDoc* doc, CFX_SizeF& szCap);
-  bool CalculateFieldAutoSize(CXFA_FFDoc* doc, CFX_SizeF& size);
-  bool CalculateWidgetAutoSize(CFX_SizeF& size);
-  bool CalculateTextEditAutoSize(CXFA_FFDoc* doc, CFX_SizeF& size);
-  bool CalculateCheckButtonAutoSize(CXFA_FFDoc* doc, CFX_SizeF& size);
-  bool CalculatePushButtonAutoSize(CXFA_FFDoc* doc, CFX_SizeF& size);
+  void CalcCaptionSize(CXFA_FFDoc* doc, CFX_SizeF* pszCap);
+  bool CalculateFieldAutoSize(CXFA_FFDoc* doc, CFX_SizeF* pSize);
+  bool CalculateWidgetAutoSize(CFX_SizeF* pSize);
+  bool CalculateTextEditAutoSize(CXFA_FFDoc* doc, CFX_SizeF* pSize);
+  bool CalculateCheckButtonAutoSize(CXFA_FFDoc* doc, CFX_SizeF* pSize);
+  bool CalculatePushButtonAutoSize(CXFA_FFDoc* doc, CFX_SizeF* pSize);
   CFX_SizeF CalculateImageSize(float img_width,
                                float img_height,
-                               float dpi_x,
-                               float dpi_y);
-  bool CalculateImageEditAutoSize(CXFA_FFDoc* doc, CFX_SizeF& size);
-  bool CalculateImageAutoSize(CXFA_FFDoc* doc, CFX_SizeF& size);
+                               const CFX_Size& dpi);
+  bool CalculateImageEditAutoSize(CXFA_FFDoc* doc, CFX_SizeF* pSize);
+  bool CalculateImageAutoSize(CXFA_FFDoc* doc, CFX_SizeF* pSize);
   float CalculateWidgetAutoHeight(float fHeightCalc);
   float CalculateWidgetAutoWidth(float fWidthCalc);
   float GetWidthWithoutMargin(float fWidthCalc);
   float GetHeightWithoutMargin(float fHeightCalc);
-  void CalculateTextContentSize(CXFA_FFDoc* doc, CFX_SizeF& size);
-  void CalculateAccWidthAndHeight(CXFA_FFDoc* doc,
-                                  float& fWidth,
-                                  float& fCalcHeight);
+  void CalculateTextContentSize(CXFA_FFDoc* doc, CFX_SizeF* pSize);
+  CFX_SizeF CalculateAccWidthAndHeight(CXFA_FFDoc* doc, float fWidth);
   void InitLayoutData();
-  void StartTextLayout(CXFA_FFDoc* doc, float& fCalcWidth, float& fCalcHeight);
+  void StartTextLayout(CXFA_FFDoc* doc, float* pCalcWidth, float* pCalcHeight);
 
   void InsertListTextItem(CXFA_Node* pItems,
                           const WideString& wsText,
@@ -513,7 +503,7 @@ class CXFA_Node : public CXFA_Object {
   CXFA_Node* first_child_;
   CXFA_Node* last_child_;
 
-  MaybeOwned<CFX_XMLNode> xml_node_;
+  UnownedPtr<CFX_XMLNode> xml_node_;
   const XFA_PacketType m_ePacket;
   uint8_t m_ExecuteRecursionDepth = 0;
   uint16_t m_uNodeFlags;

@@ -16,52 +16,41 @@
 #include "components/viz/common/quads/yuv_video_draw_quad.h"
 #include "media/base/video_frame.h"
 
-namespace cc {
-class VideoFrameExternalResources;
-}  // namespace cc
-
 namespace blink {
 
 VideoFrameResourceProvider::VideoFrameResourceProvider(
-    WebContextProviderCallback context_provider_callback,
-    viz::SharedBitmapManager* shared_bitmap_manager,
-    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
     const cc::LayerTreeSettings& settings)
-    : context_provider_callback_(std::move(context_provider_callback)),
-      shared_bitmap_manager_(shared_bitmap_manager),
-      gpu_memory_buffer_manager_(gpu_memory_buffer_manager),
-      settings_(settings),
-      weak_ptr_factory_(this) {}
+    : settings_(settings) {}
 
-VideoFrameResourceProvider::~VideoFrameResourceProvider() {
-  if (context_provider_) {
-    resource_updater_ = nullptr;
-    resource_provider_ = nullptr;
-  }
-}
-
-void VideoFrameResourceProvider::ObtainContextProvider() {
-  context_provider_callback_.Run(base::BindOnce(
-      &VideoFrameResourceProvider::Initialize, weak_ptr_factory_.GetWeakPtr()));
-}
+VideoFrameResourceProvider::~VideoFrameResourceProvider() = default;
 
 void VideoFrameResourceProvider::Initialize(
-    viz::ContextProvider* media_context_provider) {
-  // TODO(lethalantidote): Need to handle null contexts.
-  // https://crbug/768565
-  CHECK(media_context_provider);
+    viz::ContextProvider* media_context_provider,
+    viz::SharedBitmapReporter* shared_bitmap_reporter) {
   context_provider_ = media_context_provider;
-
   resource_provider_ = std::make_unique<cc::LayerTreeResourceProvider>(
-      media_context_provider, shared_bitmap_manager_,
-      gpu_memory_buffer_manager_, true, settings_.resource_settings);
+      media_context_provider, true);
 
-  // TODO(kylechar): VideoResourceUpdater needs something it can notify about
-  // SharedBitmaps that isn't a LayerTreeFrameSink. https://crbug.com/730660#c88
+  int max_texture_size;
+  if (context_provider_) {
+    max_texture_size =
+        context_provider_->ContextCapabilities().max_texture_size;
+  } else {
+    // Pick an arbitrary limit here similar to what hardware might.
+    max_texture_size = 16 * 1024;
+  }
+
   resource_updater_ = std::make_unique<cc::VideoResourceUpdater>(
-      context_provider_, nullptr, resource_provider_.get(),
+      media_context_provider, shared_bitmap_reporter, resource_provider_.get(),
       settings_.use_stream_video_draw_quad,
-      settings_.resource_settings.use_gpu_memory_buffer_resources);
+      settings_.resource_settings.use_gpu_memory_buffer_resources,
+      settings_.resource_settings.use_r16_texture, max_texture_size);
+}
+
+void VideoFrameResourceProvider::OnContextLost() {
+  resource_updater_ = nullptr;
+  resource_provider_ = nullptr;
+  context_provider_ = nullptr;
 }
 
 void VideoFrameResourceProvider::AppendQuads(
@@ -69,6 +58,9 @@ void VideoFrameResourceProvider::AppendQuads(
     scoped_refptr<media::VideoFrame> frame,
     media::VideoRotation rotation) {
   TRACE_EVENT0("media", "VideoFrameResourceProvider::AppendQuads");
+  DCHECK(resource_updater_);
+  DCHECK(resource_provider_);
+
   gfx::Transform transform = gfx::Transform();
   gfx::Size rotated_size = frame->coded_size();
 
@@ -115,9 +107,10 @@ void VideoFrameResourceProvider::ReleaseFrameResources() {
 }
 
 void VideoFrameResourceProvider::PrepareSendToParent(
-    const cc::LayerTreeResourceProvider::ResourceIdArray& resource_ids,
+    const std::vector<viz::ResourceId>& resource_ids,
     std::vector<viz::TransferableResource>* transferable_resources) {
-  resource_provider_->PrepareSendToParent(resource_ids, transferable_resources);
+  resource_provider_->PrepareSendToParent(resource_ids, transferable_resources,
+                                          context_provider_);
 }
 
 void VideoFrameResourceProvider::ReceiveReturnsFromParent(

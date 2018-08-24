@@ -35,13 +35,13 @@
 #include <memory>
 #include <utility>
 
+#include "base/optional.h"
 #include "third_party/blink/public/platform/web_media_constraints.h"
 #include "third_party/blink/public/platform/web_media_stream_source.h"
 #include "third_party/blink/public/platform/web_media_stream_track.h"
 #include "third_party/blink/renderer/platform/audio/audio_destination_consumer.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/threading_primitives.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -72,6 +72,8 @@ class PLATFORM_EXPORT MediaStreamSource final
     kReadyStateEnded = 2
   };
 
+  enum class EchoCancellationMode { kDisabled, kSoftware, kHardware };
+
   static MediaStreamSource* Create(const String& id,
                                    StreamType,
                                    const String& name,
@@ -84,6 +86,9 @@ class PLATFORM_EXPORT MediaStreamSource final
   const String& GetName() const { return name_; }
   bool Remote() const { return remote_; }
 
+  void SetGroupId(const String& group_id);
+  const String& GroupId() { return group_id_; }
+
   void SetReadyState(ReadyState);
   ReadyState GetReadyState() const { return ready_state_; }
 
@@ -94,7 +99,7 @@ class PLATFORM_EXPORT MediaStreamSource final
     extra_data_ = std::move(extra_data);
   }
 
-  void SetAudioProcessingProperties(bool echo_cancellation,
+  void SetAudioProcessingProperties(EchoCancellationMode echo_cancellation_mode,
                                     bool auto_gain_control,
                                     bool noise_supression);
 
@@ -138,6 +143,7 @@ class PLATFORM_EXPORT MediaStreamSource final
   String id_;
   StreamType type_;
   String name_;
+  String group_id_;
   bool remote_;
   ReadyState ready_state_;
   bool requires_consumer_;
@@ -147,9 +153,9 @@ class PLATFORM_EXPORT MediaStreamSource final
   std::unique_ptr<ExtraData> extra_data_;
   WebMediaConstraints constraints_;
   WebMediaStreamSource::Capabilities capabilities_;
-  Optional<bool> echo_cancellation_;
-  Optional<bool> auto_gain_control_;
-  Optional<bool> noise_supression_;
+  base::Optional<EchoCancellationMode> echo_cancellation_mode_;
+  base::Optional<bool> auto_gain_control_;
+  base::Optional<bool> noise_supression_;
 };
 
 typedef HeapVector<Member<MediaStreamSource>> MediaStreamSourceVector;

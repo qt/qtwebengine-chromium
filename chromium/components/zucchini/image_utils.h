@@ -8,8 +8,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <string>
+
+#include "base/format_macros.h"
+#include "base/macros.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/optional.h"
+#include "base/strings/stringprintf.h"
 #include "components/zucchini/buffer_view.h"
 #include "components/zucchini/typed_value.h"
 
@@ -137,19 +142,53 @@ struct EquivalenceCandidate {
   double similarity;
 };
 
-// Enumerations for supported executables.
+template <size_t N>
+inline constexpr uint32_t ExeTypeToUint32(const char (&exe_type)[N]) {
+  static_assert(N == 5, "Expected ExeType of length 4 + 1 null byte.");
+  return (exe_type[3] << 24) | (exe_type[2] << 16) | (exe_type[1] << 8) |
+         exe_type[0];
+}
+
+// Enumerations for supported executables. Values in this enum must be distinct.
+// Once present, values should never be altered or removed to ensure backwards
+// compatibility and patch type collision avoidance.
 enum ExecutableType : uint32_t {
   kExeTypeUnknown = UINT32_MAX,
-  kExeTypeNoOp = 0,
-  kExeTypeWin32X86 = 1,
-  kExeTypeWin32X64 = 2,
-  kExeTypeElfX86 = 3,
-  kExeTypeElfX64 = 4,
-  kExeTypeElfArm32 = 5,
-  kExeTypeElfAArch64 = 6,
-  kExeTypeDex = 7,
-  kNumExeType
+  kExeTypeNoOp = ExeTypeToUint32("NoOp"),
+  kExeTypeWin32X86 = ExeTypeToUint32("Px86"),
+  kExeTypeWin32X64 = ExeTypeToUint32("Px64"),
+  kExeTypeElfX86 = ExeTypeToUint32("Ex86"),
+  kExeTypeElfX64 = ExeTypeToUint32("Ex64"),
+  kExeTypeElfArm32 = ExeTypeToUint32("EA32"),
+  kExeTypeElfAArch64 = ExeTypeToUint32("EA64"),
+  kExeTypeDex = ExeTypeToUint32("DEX "),
+  kExeTypeZtf = ExeTypeToUint32("ZTF "),
 };
+
+constexpr ExecutableType CastToExecutableType(uint32_t possible_exe_type) {
+  switch (static_cast<ExecutableType>(possible_exe_type)) {
+    case kExeTypeNoOp:        // Falls through.
+    case kExeTypeWin32X86:    // Falls through.
+    case kExeTypeWin32X64:    // Falls through.
+    case kExeTypeElfX86:      // Falls through.
+    case kExeTypeElfX64:      // Falls through.
+    case kExeTypeElfArm32:    // Falls through.
+    case kExeTypeElfAArch64:  // Falls through.
+    case kExeTypeDex:         // Falls through.
+    case kExeTypeZtf:         // Falls through.
+    case kExeTypeUnknown:
+      return static_cast<ExecutableType>(possible_exe_type);
+    default:
+      return kExeTypeUnknown;
+  }
+}
+
+inline std::string CastExecutableTypeToString(ExecutableType exe_type) {
+  uint32_t v = static_cast<uint32_t>(exe_type);
+  char result[] = {v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF,
+                   (v >> 24) & 0xFF, 0};
+  return result;
+}
 
 // A region in an image with associated executable type |exe_type|. If
 // |exe_type == kExeTypeNoOp|, then the Element represents a region of raw data.
@@ -177,6 +216,15 @@ struct Element : public BufferRegion {
 struct ElementMatch {
   bool IsValid() const { return old_element.exe_type == new_element.exe_type; }
   ExecutableType exe_type() const { return old_element.exe_type; }
+
+  // Represents match as "#+#=#+#", where "#" denotes the integers:
+  //   [offset in "old", size in "old", offset in "new", size in "new"].
+  // Note that element type is omitted.
+  std::string ToString() const {
+    return base::StringPrintf("%" PRIuS "+%" PRIuS "=%" PRIuS "+%" PRIuS "",
+                              old_element.offset, old_element.size,
+                              new_element.offset, new_element.size);
+  }
 
   Element old_element;
   Element new_element;

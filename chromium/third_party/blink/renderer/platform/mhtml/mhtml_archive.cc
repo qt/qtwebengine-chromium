@@ -40,7 +40,6 @@
 #include "third_party/blink/renderer/platform/text/quoted_printable.h"
 #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
-#include "third_party/blink/renderer/platform/wtf/cryptographically_random_number.h"
 #include "third_party/blink/renderer/platform/wtf/date_math.h"
 #include "third_party/blink/renderer/platform/wtf/text/base64.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
@@ -222,14 +221,7 @@ void MHTMLArchive::GenerateMHTMLHeader(const String& boundary,
   DCHECK(!boundary.IsEmpty());
   DCHECK(!mime_type.IsEmpty());
 
-  // TODO(lukasza): Passing individual date/time components seems fragile.
-  base::Time::Exploded date_components;
-  date.UTCExplode(&date_components);
-  String date_string = MakeRFC2822DateString(
-      date_components.day_of_week, date_components.day_of_month,
-      // |month| is 1-based in Exploded, but 0-based in MakeRFC2822DateString.
-      date_components.month - 1, date_components.year, date_components.hour,
-      date_components.minute, date_components.second, 0);
+  String date_string = MakeRFC2822DateString(date, 0);
 
   StringBuilder string_builder;
   string_builder.Append("From: <Saved by Blink>\r\n");

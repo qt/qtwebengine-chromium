@@ -45,9 +45,9 @@
 #include "third_party/blink/renderer/core/editing/editor.h"
 #include "third_party/blink/renderer/core/events/event_util.h"
 #include "third_party/blink/renderer/core/events/pointer_event.h"
-#include "third_party/blink/renderer/core/frame/PerformanceMonitor.h"
 #include "third_party/blink/renderer/core/frame/frame_console.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+#include "third_party/blink/renderer/core/frame/performance_monitor.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
@@ -161,8 +161,7 @@ void EventTargetData::Trace(blink::Visitor* visitor) {
   visitor->Trace(event_listener_map);
 }
 
-void EventTargetData::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+void EventTargetData::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(event_listener_map);
 }
 
@@ -670,6 +669,7 @@ DispatchEventResult EventTarget::FireEventListeners(Event* event) {
   // Only invoke the callback if event listeners were fired for this phase.
   if (fired_event_listeners) {
     event->DoneDispatchingEventAtCurrentTarget();
+    event->SetExecutedListenerOrDefaultAction();
 
     // Only count uma metrics if we really fired an event listener.
     Editor::CountEvent(GetExecutionContext(), event);

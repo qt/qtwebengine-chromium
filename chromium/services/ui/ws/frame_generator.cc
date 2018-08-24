@@ -110,16 +110,17 @@ void FrameGenerator::OnBeginFrame(const viz::BeginFrameArgs& begin_frame_args) {
 
   // TODO(fsamuel): We should add a trace for generating a top level frame.
   viz::CompositorFrame frame(GenerateCompositorFrame());
-  if (!local_surface_id_.is_valid() ||
+  if (!id_allocator_.GetCurrentLocalSurfaceId().is_valid() ||
       frame.size_in_pixels() != last_submitted_frame_size_ ||
       frame.device_scale_factor() != last_device_scale_factor_) {
     last_device_scale_factor_ = frame.device_scale_factor();
     last_submitted_frame_size_ = frame.size_in_pixels();
-    local_surface_id_ = id_allocator_.GenerateId();
+    id_allocator_.GenerateId();
   }
 
   compositor_frame_sink_->SubmitCompositorFrame(
-      local_surface_id_, std::move(frame), GenerateHitTestRegionList(), 0);
+      id_allocator_.GetCurrentLocalSurfaceId(), std::move(frame),
+      GenerateHitTestRegionList(), 0);
 
   SetNeedsBeginFrame(false);
 }
@@ -170,19 +171,18 @@ viz::CompositorFrame FrameGenerator::GenerateCompositorFrame() {
   return frame;
 }
 
-viz::mojom::HitTestRegionListPtr FrameGenerator::GenerateHitTestRegionList()
-    const {
-  auto hit_test_region_list = viz::mojom::HitTestRegionList::New();
-  hit_test_region_list->flags = viz::mojom::kHitTestMine;
-  hit_test_region_list->bounds.set_size(pixel_size_);
+viz::HitTestRegionList FrameGenerator::GenerateHitTestRegionList() const {
+  viz::HitTestRegionList hit_test_region_list;
+  hit_test_region_list.flags = viz::HitTestRegionFlags::kHitTestMine;
+  hit_test_region_list.bounds.set_size(pixel_size_);
 
-  auto hit_test_region = viz::mojom::HitTestRegion::New();
-  hit_test_region->frame_sink_id =
+  viz::HitTestRegion hit_test_region;
+  hit_test_region.frame_sink_id =
       window_manager_surface_info_.id().frame_sink_id();
-  hit_test_region->flags = viz::mojom::kHitTestChildSurface;
-  hit_test_region->rect = gfx::Rect(pixel_size_);
+  hit_test_region.flags = viz::HitTestRegionFlags::kHitTestChildSurface;
+  hit_test_region.rect = gfx::Rect(pixel_size_);
 
-  hit_test_region_list->regions.push_back(std::move(hit_test_region));
+  hit_test_region_list.regions.push_back(std::move(hit_test_region));
 
   return hit_test_region_list;
 }

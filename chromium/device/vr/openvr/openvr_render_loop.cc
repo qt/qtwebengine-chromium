@@ -85,7 +85,7 @@ void OpenVRRenderLoop::SubmitFrameWithTextureHandle(
   MojoPlatformHandle platform_handle;
   platform_handle.struct_size = sizeof(platform_handle);
   MojoResult result = MojoUnwrapPlatformHandle(texture_handle.release().value(),
-                                               &platform_handle);
+                                               nullptr, &platform_handle);
   if (result != MOJO_RESULT_OK)
     return;
 
@@ -195,6 +195,8 @@ void OpenVRRenderLoop::RequestPresent(
 void OpenVRRenderLoop::ExitPresent() {
   is_presenting_ = false;
   report_webxr_input_ = false;
+  binding_.Close();
+  submit_client_ = nullptr;
   vr_compositor_->SuspendRendering(true);
 }
 

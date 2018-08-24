@@ -10,31 +10,79 @@
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
+#include "content/common/speech_recognizer.mojom.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/speech_recognition_event_listener.h"
+#include "mojo/public/cpp/bindings/binding.h"
 #include "net/url_request/url_request_context_getter.h"
-
-struct SpeechRecognitionHostMsg_StartRequest_Params;
 
 namespace content {
 
+class SpeechRecognitionSession;
 class SpeechRecognitionManager;
-struct SpeechRecognitionSessionContext;
 
-// SpeechRecognitionDispatcherHost is a delegate for Speech API messages used by
-// RenderMessageFilter. Basically it acts as a proxy, relaying the events coming
-// from the SpeechRecognitionManager to IPC messages (and vice versa).
-// It's the complement of SpeechRecognitionDispatcher (owned by RenderFrame).
+// SpeechRecognitionDispatcherHost is an implementation of the SpeechRecognizer
+// interface that allows a RenderFrame to start a speech recognition session
+// in the browser process, by communicating with SpeechRecognitionManager.
 class CONTENT_EXPORT SpeechRecognitionDispatcherHost
-    : public BrowserMessageFilter,
-      public SpeechRecognitionEventListener {
+    : public mojom::SpeechRecognizer {
  public:
   SpeechRecognitionDispatcherHost(
       int render_process_id,
-      net::URLRequestContextGetter* context_getter);
-
+      int render_frame_id,
+      scoped_refptr<net::URLRequestContextGetter> context_getter);
+  ~SpeechRecognitionDispatcherHost() override;
+  static void Create(int render_process_id,
+                     int render_frame_id,
+                     scoped_refptr<net::URLRequestContextGetter> context_getter,
+                     mojom::SpeechRecognizerRequest request);
   base::WeakPtr<SpeechRecognitionDispatcherHost> AsWeakPtr();
+
+  // mojom::SpeechRecognizer implementation
+  void Start(mojom::StartSpeechRecognitionRequestParamsPtr params) override;
+
+ private:
+  static void StartRequestOnUI(
+      base::WeakPtr<SpeechRecognitionDispatcherHost>
+          speech_recognition_dispatcher_host,
+      int render_process_id,
+      int render_frame_id,
+      mojom::StartSpeechRecognitionRequestParamsPtr params);
+  void StartSessionOnIO(mojom::StartSpeechRecognitionRequestParamsPtr params,
+                        int embedder_render_process_id,
+                        int embedder_render_frame_id,
+                        bool filter_profanities);
+
+  const int render_process_id_;
+  const int render_frame_id_;
+  scoped_refptr<net::URLRequestContextGetter> context_getter_;
+
+  // Used for posting asynchronous tasks (on the IO thread) without worrying
+  // about this class being destroyed in the meanwhile (due to browser shutdown)
+  // since tasks pending on a destroyed WeakPtr are automatically discarded.
+  base::WeakPtrFactory<SpeechRecognitionDispatcherHost> weak_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(SpeechRecognitionDispatcherHost);
+};
+
+// SpeechRecognitionSession implements the mojom::SpeechRecognitionSession
+// interface for a particular session. It also acts as a proxy for events sent
+// from SpeechRecognitionManager, and forwards the events to the renderer using
+// a SpeechRecognitionSessionClientPtr (that is passed from the render process).
+class SpeechRecognitionSession : public mojom::SpeechRecognitionSession,
+                                 public SpeechRecognitionEventListener {
+ public:
+  explicit SpeechRecognitionSession(
+      mojom::SpeechRecognitionSessionClientPtrInfo client_ptr_info);
+  ~SpeechRecognitionSession() override;
+  base::WeakPtr<SpeechRecognitionSession> AsWeakPtr();
+
+  void SetSessionId(int session_id) { session_id_ = session_id; }
+
+  // mojom::SpeechRecognitionSession implementation.
+  void Abort() override;
+  void StopCapture() override;
 
   // SpeechRecognitionEventListener methods.
   void OnRecognitionStart(int session_id) override;
@@ -52,38 +100,11 @@ class CONTENT_EXPORT SpeechRecognitionDispatcherHost
                            float volume,
                            float noise_volume) override;
 
-  // BrowserMessageFilter implementation.
-  void OnDestruct() const override;
-  bool OnMessageReceived(const IPC::Message& message) override;
-  void OverrideThreadForMessage(const IPC::Message& message,
-                                BrowserThread::ID* thread) override;
-
-  void OnChannelClosing() override;
-
  private:
-  friend class base::DeleteHelper<SpeechRecognitionDispatcherHost>;
-  friend class BrowserThread;
+  int session_id_;
+  mojom::SpeechRecognitionSessionClientPtr client_;
 
-  ~SpeechRecognitionDispatcherHost() override;
-
-  void OnStartRequest(
-      const SpeechRecognitionHostMsg_StartRequest_Params& params);
-  void StartSession(const SpeechRecognitionHostMsg_StartRequest_Params& params,
-                    const SpeechRecognitionSessionContext& context,
-                    bool filter_profanities);
-  void OnAbortRequest(int render_frame_id, int request_id);
-  void OnStopCaptureRequest(int render_frame_id, int request_id);
-  void OnAbortAllRequests(int render_frame_id);
-
-  int render_process_id_;
-  scoped_refptr<net::URLRequestContextGetter> context_getter_;
-
-  // Used for posting asynchronous tasks (on the IO thread) without worrying
-  // about this class being destroyed in the meanwhile (due to browser shutdown)
-  // since tasks pending on a destroyed WeakPtr are automatically discarded.
-  base::WeakPtrFactory<SpeechRecognitionDispatcherHost> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(SpeechRecognitionDispatcherHost);
+  base::WeakPtrFactory<SpeechRecognitionSession> weak_factory_;
 };
 
 }  // namespace content

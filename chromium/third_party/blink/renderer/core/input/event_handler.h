@@ -28,6 +28,7 @@
 
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/optional.h"
 #include "third_party/blink/public/platform/web_input_event.h"
 #include "third_party/blink/public/platform/web_input_event_result.h"
 #include "third_party/blink/public/platform/web_menu_source_type.h"
@@ -51,6 +52,7 @@
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
 #include "third_party/blink/renderer/platform/wtf/hash_traits.h"
+#include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
 
@@ -101,7 +103,8 @@ class CORE_EXPORT EventHandler final
       const LayoutPoint&,
       HitTestRequest::HitTestRequestType hit_type = HitTestRequest::kReadOnly |
                                                     HitTestRequest::kActive,
-      const LayoutRectOutsets& padding = LayoutRectOutsets());
+      const LayoutRectOutsets& padding = LayoutRectOutsets(),
+      const LayoutObject* stop_node = nullptr);
 
   bool MousePressed() const { return mouse_event_manager_->MousePressed(); }
   bool IsMousePositionUnknown() const {
@@ -131,7 +134,7 @@ class CORE_EXPORT EventHandler final
 
   void ResizeScrollableAreaDestroyed();
 
-  IntPoint LastKnownMousePosition() const;
+  IntPoint LastKnownMousePositionInRootFrame() const;
 
   IntPoint DragDataTransferLocationForTesting();
 
@@ -263,6 +266,10 @@ class CORE_EXPORT EventHandler final
   // canceled.
   void ClearDragState();
 
+  EventHandlerRegistry& GetEventHandlerRegistry() const {
+    return *event_handler_registry_;
+  }
+
  private:
   enum NoCursorChangeType { kNoCursorChange };
 
@@ -351,6 +358,9 @@ class CORE_EXPORT EventHandler final
   void DefaultEscapeEventHandler(KeyboardEvent*);
   void DefaultArrowEventHandler(WebFocusType, KeyboardEvent*);
 
+  // |last_scrollbar_under_mouse_| is set when the mouse moves off of a
+  // scrollbar, and used to notify it of MouseUp events to release mouse
+  // capture.
   void UpdateLastScrollbarUnderMouse(Scrollbar*, bool);
 
   WebInputEventResult HandleGestureShowPress();
@@ -386,6 +396,8 @@ class CORE_EXPORT EventHandler final
 
   scoped_refptr<UserGestureToken> last_mouse_down_user_gesture_token_;
 
+  // Local frames in the same local root share the same EventHandlerRegistry.
+  Member<EventHandlerRegistry> event_handler_registry_;
   Member<ScrollManager> scroll_manager_;
   Member<MouseEventManager> mouse_event_manager_;
   Member<MouseWheelEventManager> mouse_wheel_event_manager_;
@@ -398,7 +410,13 @@ class CORE_EXPORT EventHandler final
   bool long_tap_should_invoke_context_menu_;
 
   TaskRunnerTimer<EventHandler> active_interval_timer_;
-  double last_show_press_timestamp_;
+
+  // last_show_press_timestamp_ prevents the active state rewrited by following
+  // events too soon (less than 0.15s).
+  // It is ok we only record last_show_press_timestamp_ in root frame since
+  // root frame will have subframe as active element if subframe has active
+  // element.
+  base::Optional<WTF::TimeTicks> last_show_press_timestamp_;
   Member<Element> last_deferred_tap_element_;
 
   // Set on GestureTapDown if unique_touch_event_id_ matches cached adjusted

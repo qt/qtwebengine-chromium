@@ -5,7 +5,6 @@
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
 
 #include "gpu/command_buffer/client/gles2_interface.h"
-#include "skia/ext/texture_handle.h"
 #include "third_party/blink/renderer/platform/graphics/accelerated_static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/image_observer.h"
@@ -92,13 +91,21 @@ scoped_refptr<StaticBitmapImage> StaticBitmapImage::ConvertToColorSpace(
   if (SkColorSpace::Equals(src_color_space.get(), dst_color_space.get()))
     return this;
 
+  // crbug.com/844145: Remove this when GPU-backed SkImage supports color
+  // covnersion for kRespect TransferFnBehavior (skia:6553).
+  if (skia_image->isTextureBacked() &&
+      transfer_function_behavior == SkTransferFunctionBehavior::kRespect) {
+    skia_image = skia_image->makeNonTextureImage();
+  }
   sk_sp<SkImage> converted_skia_image =
       skia_image->makeColorSpace(dst_color_space, transfer_function_behavior);
   DCHECK(converted_skia_image.get());
   DCHECK(skia_image.get() != converted_skia_image.get());
 
   return StaticBitmapImage::Create(converted_skia_image,
-                                   ContextProviderWrapper());
+                                   converted_skia_image->isTextureBacked()
+                                       ? ContextProviderWrapper()
+                                       : nullptr);
 }
 
 bool StaticBitmapImage::ConvertToArrayBufferContents(

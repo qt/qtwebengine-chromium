@@ -76,6 +76,7 @@ PrintingContext::Result PrintingContext::UsePdfSettings() {
   pdf_settings->SetBoolean(kSettingPrintWithExtension, false);
   pdf_settings->SetInteger(kSettingScaleFactor, 100);
   pdf_settings->SetBoolean(kSettingRasterizePdf, false);
+  pdf_settings->SetInteger(kSettingPagesPerSheet, 1);
   return UpdatePrintSettings(*pdf_settings);
 }
 
@@ -130,9 +131,7 @@ PrintingContext::Result PrintingContext::UpdatePrintSettings(
   }
 
   bool show_system_dialog = false;
-#if BUILDFLAG(ENABLE_BASIC_PRINTING)
   job_settings.GetBoolean(kSettingShowSystemDialog, &show_system_dialog);
-#endif
 
   int page_count = 0;
   job_settings.GetInteger(kSettingPreviewPageCount, &page_count);

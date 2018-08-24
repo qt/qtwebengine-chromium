@@ -7,11 +7,13 @@
 #include <algorithm>
 
 #include "ash/frame/custom_frame_view_ash.h"
+#include "ash/public/cpp/config.h"
 #include "ash/public/cpp/shelf_types.h"
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/public/cpp/window_properties.h"
 #include "ash/public/cpp/window_state_type.h"
 #include "ash/public/interfaces/window_pin_type.mojom.h"
+#include "ash/shell.h"
 #include "ash/wm/drag_window_resizer.h"
 #include "ash/wm/window_resizer.h"
 #include "ash/wm/window_state.h"
@@ -82,9 +84,6 @@ class ShellSurfaceWidget : public views::Widget {
     if (GetFocusManager()->ProcessAccelerator(ui::Accelerator(*event)))
       event->SetHandled();
   }
-  gfx::Size GetMinimumSize() const override {
-    return shell_surface_->GetMinimumSize();
-  }
 
  private:
   ShellSurfaceBase* const shell_surface_;
@@ -97,9 +96,11 @@ class CustomFrameView : public ash::CustomFrameViewAsh {
   using ShapeRects = std::vector<gfx::Rect>;
 
   CustomFrameView(views::Widget* widget,
+                  ShellSurfaceBase* shell_surface,
                   bool enabled,
                   bool client_controlled_move_resize)
       : CustomFrameViewAsh(widget),
+        shell_surface_(shell_surface),
         client_controlled_move_resize_(client_controlled_move_resize) {
     SetEnabled(enabled);
     SetVisible(enabled);
@@ -110,10 +111,6 @@ class CustomFrameView : public ash::CustomFrameViewAsh {
   ~CustomFrameView() override {}
 
   // Overridden from ash::CustomFrameViewAsh:
-  base::string16 GetFrameTitle() const override {
-    return static_cast<ShellSurfaceBase*>(GetWidget()->widget_delegate())
-        ->frame_title();
-  }
   void SetShouldPaintHeader(bool paint) override {
     if (visible()) {
       CustomFrameViewAsh::SetShouldPaintHeader(paint);
@@ -196,11 +193,17 @@ class CustomFrameView : public ash::CustomFrameViewAsh {
       return ash::CustomFrameViewAsh::SizeConstraintsChanged();
   }
   gfx::Size GetMinimumSize() const override {
-    return static_cast<const ShellSurfaceWidget*>(GetWidget())
-        ->GetMinimumSize();
+    gfx::Size minimum_size = shell_surface_->GetMinimumSize();
+    if (visible()) {
+      return ash::CustomFrameViewAsh::GetWindowBoundsForClientBounds(
+                 gfx::Rect(minimum_size))
+          .size();
+    }
+    return minimum_size;
   }
 
  private:
+  ShellSurfaceBase* const shell_surface_;
   // TODO(oshima): Remove this once the transition to new drag/resize
   // is complete. https://crbug.com/801666.
   const bool client_controlled_move_resize_;
@@ -900,11 +903,22 @@ bool ShellSurfaceBase::CanMaximize() const {
 }
 
 bool ShellSurfaceBase::CanMinimize() const {
-  return can_minimize_;
+  // Non-transient shell surfaces can be minimized.
+  return !parent_ && can_minimize_;
 }
 
 base::string16 ShellSurfaceBase::GetWindowTitle() const {
-  return title_;
+  if (extra_title_.empty())
+    return title_;
+
+  // TODO(estade): revisit how the extra title is shown in the window frame and
+  // other surfaces like overview mode.
+  return title_ + base::ASCIIToUTF16(" (") + extra_title_ +
+         base::ASCIIToUTF16(")");
+}
+
+bool ShellSurfaceBase::ShouldShowWindowTitle() const {
+  return !extra_title_.empty();
 }
 
 gfx::ImageSkia ShellSurfaceBase::GetWindowIcon() {
@@ -940,7 +954,7 @@ views::NonClientFrameView* ShellSurfaceBase::CreateNonClientFrameView(
     window_state->SetDelegate(std::make_unique<CustomWindowStateDelegate>());
   }
   CustomFrameView* frame_view = new CustomFrameView(
-      widget, frame_enabled(), client_controlled_move_resize_);
+      widget, this, frame_enabled(), client_controlled_move_resize_);
   if (has_frame_colors_)
     frame_view->SetFrameColors(active_frame_color_, inactive_frame_color_);
   return frame_view;
@@ -1197,10 +1211,13 @@ void ShellSurfaceBase::CreateShellSurfaceWidget(
   window->SetProperty(aura::client::kAccessibilityFocusFallsbackToWidgetKey,
                       false);
   window->AddChild(host_window());
-  // The window of widget_ is a container window. It doesn't handle pointer
-  // events.
+  // Use DESCENDANTS_ONLY event targeting policy for mus/mash.
+  // TODO(https://crbug.com/839521): Revisit after event dispatching code is
+  //     changed for mus/mash.
   window->SetEventTargetingPolicy(
-      ui::mojom::EventTargetingPolicy::DESCENDANTS_ONLY);
+      ash::Shell::GetAshConfig() == ash::Config::CLASSIC
+          ? ui::mojom::EventTargetingPolicy::TARGET_AND_DESCENDANTS
+          : ui::mojom::EventTargetingPolicy::DESCENDANTS_ONLY);
   window->SetEventTargeter(base::WrapUnique(
       new CustomWindowTargeter(widget_, client_controlled_move_resize_)));
   SetApplicationId(window, application_id_);

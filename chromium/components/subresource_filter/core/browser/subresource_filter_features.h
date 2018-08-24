@@ -16,6 +16,7 @@
 #include "components/subresource_filter/core/common/activation_level.h"
 #include "components/subresource_filter/core/common/activation_list.h"
 #include "components/subresource_filter/core/common/activation_scope.h"
+#include "components/subresource_filter/core/common/activation_state.h"
 
 namespace base {
 namespace trace_event {
@@ -83,14 +84,6 @@ struct Configuration {
     // A number in the range [0, 1], indicating the fraction of page loads that
     // should have extended performance measurements enabled.
     double performance_measurement_rate = 0.0;
-
-    // Whether notifications indicating that a subresource was disallowed should
-    // be suppressed in the UI.
-    bool should_suppress_notifications = false;
-
-    // Whether to whitelist a site when a page loaded from that site is
-    // reloaded.
-    bool should_whitelist_site_on_reload = false;
   };
 
   // General settings that apply outside of the scope of a navigation.
@@ -117,6 +110,13 @@ struct Configuration {
   bool operator!=(const Configuration& rhs) const;
 
   std::unique_ptr<base::trace_event::TracedValue> ToTracedValue() const;
+
+  // Returns the ActivationState that page loads that match this configuration
+  // should activate with. |effective_activation_level| can be different from
+  // this config's activation level due to things like warning mode or client
+  // whitelisting.
+  ActivationState GetActivationState(
+      ActivationLevel effective_activation_level) const;
 
   // Factory methods for preset configurations.
   //

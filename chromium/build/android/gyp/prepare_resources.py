@@ -91,6 +91,7 @@ def _ZipResources(resource_dirs, zip_path, ignore_pattern):
   # ignore_pattern is a string of ':' delimited list of globs used to ignore
   # files that should not be part of the final resource zip.
   files_to_zip = dict()
+  files_to_zip_without_generated = dict()
   globs = _GenerateGlobs(ignore_pattern)
   for d in resource_dirs:
     for root, _, files in os.walk(d):
@@ -102,7 +103,13 @@ def _ZipResources(resource_dirs, zip_path, ignore_pattern):
         path = os.path.join(root, f)
         if build_utils.MatchesGlob(archive_path, globs):
           continue
+        # We want the original resource dirs in the .info file rather than the
+        # generated overridden path.
+        if not path.startswith('/tmp'):
+          files_to_zip_without_generated[archive_path] = path
         files_to_zip[archive_path] = path
+  resource_utils.CreateResourceInfoFile(files_to_zip_without_generated,
+                                        zip_path)
   build_utils.DoZip(files_to_zip.iteritems(), zip_path)
 
 
@@ -124,7 +131,11 @@ def _GenerateRTxt(options, dep_subdirs, gen_dir):
                      '--no-crunch',
                      '--auto-add-overlay',
                      '--no-version-vectors',
-                     '-I', options.android_sdk_jar,
+                    ]
+  for j in options.android_sdk_jars:
+    package_command += ['-I', j]
+
+  package_command += [
                      '--output-text-symbols', gen_dir,
                      '-J', gen_dir,  # Required for R.txt generation.
                      '--ignore-assets', build_utils.AAPT_IGNORE_PATTERN]
@@ -248,8 +259,8 @@ def main(args):
   possible_input_paths = [
     options.aapt_path,
     options.android_manifest,
-    options.android_sdk_jar,
   ]
+  possible_input_paths += options.android_sdk_jars
   input_paths = [x for x in possible_input_paths if x]
   input_paths.extend(options.dependencies_res_zips)
   input_paths.extend(options.extra_r_text_files)

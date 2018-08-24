@@ -257,7 +257,7 @@ bool SetRtpSsrc(void* data, size_t len, uint32_t value) {
 // Assumes version 2, no padding, no extensions, no csrcs.
 bool SetRtpHeader(void* data, size_t len, const RtpHeader& header) {
   if (!IsValidRtpPayloadType(header.payload_type) ||
-      header.seq_num < 0 || header.seq_num > UINT16_MAX) {
+      header.seq_num < 0 || header.seq_num > static_cast<int>(UINT16_MAX)) {
     return false;
   }
   return (SetUint8(data, kRtpFlagsOffset, kRtpVersion << 6) &&
@@ -273,6 +273,16 @@ bool IsRtpPacket(const void* data, size_t len) {
     return false;
 
   return (static_cast<const uint8_t*>(data)[0] >> 6) == kRtpVersion;
+}
+
+// Check the RTP payload type. If 63 < payload type < 96, it's RTCP.
+// For additional details, see http://tools.ietf.org/html/rfc5761.
+bool IsRtcpPacket(const char* data, size_t len) {
+  if (len < 2) {
+    return false;
+  }
+  char pt = data[1] & 0x7F;
+  return (63 < pt) && (pt < 96);
 }
 
 bool IsValidRtpPayloadType(int payload_type) {

@@ -5,11 +5,13 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_REMOTE_FRAME_CLIENT_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_REMOTE_FRAME_CLIENT_H_
 
+#include "third_party/blink/public/mojom/blob/blob_url_store.mojom-blink.h"
 #include "third_party/blink/public/platform/web_canvas.h"
 #include "third_party/blink/public/platform/web_focus_type.h"
 #include "third_party/blink/renderer/core/frame/frame_client.h"
 #include "third_party/blink/renderer/core/frame/frame_types.h"
 #include "third_party/blink/renderer/core/loader/frame_loader_types.h"
+#include "third_party/blink/renderer/platform/graphics/touch_action.h"
 
 namespace blink {
 
@@ -24,9 +26,10 @@ class RemoteFrameClient : public FrameClient {
   ~RemoteFrameClient() override = default;
 
   virtual void Navigate(const ResourceRequest&,
-                        bool should_replace_current_entry) = 0;
+                        bool should_replace_current_entry,
+                        mojom::blink::BlobURLTokenPtr) = 0;
   virtual void Reload(FrameLoadType, ClientRedirectPolicy) = 0;
-  virtual unsigned BackForwardLength() = 0;
+  unsigned BackForwardLength() override = 0;
 
   // Notifies the remote frame to check whether it is done loading, after one
   // of its children finishes loading.
@@ -53,6 +56,8 @@ class RemoteFrameClient : public FrameClient {
   virtual void VisibilityChanged(bool visible) = 0;
 
   virtual void SetIsInert(bool) = 0;
+
+  virtual void SetInheritedEffectiveTouchAction(TouchAction) = 0;
 
   virtual void UpdateRenderThrottlingStatus(bool isThrottled,
                                             bool subtreeThrottled) = 0;

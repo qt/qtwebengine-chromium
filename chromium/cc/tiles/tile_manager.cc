@@ -359,6 +359,7 @@ TileManager::TileManager(
       did_oom_on_last_assign_(false),
       image_controller_(origin_task_runner,
                         std::move(image_worker_task_runner)),
+      decoded_image_tracker_(&image_controller_),
       checker_image_tracker_(&image_controller_,
                              this,
                              tile_manager_settings_.enable_checker_imaging,
@@ -1267,10 +1268,8 @@ void TileManager::OnRasterTaskCompleted(
   }
 
   TileDrawInfo& draw_info = tile->draw_info();
-  bool needs_swizzle =
-      raster_buffer_provider_->IsResourceSwizzleRequired(!tile->is_opaque());
-  bool is_premultiplied =
-      raster_buffer_provider_->IsResourcePremultiplied(!tile->is_opaque());
+  bool needs_swizzle = raster_buffer_provider_->IsResourceSwizzleRequired();
+  bool is_premultiplied = raster_buffer_provider_->IsResourcePremultiplied();
   draw_info.SetResource(std::move(resource),
                         raster_task_was_scheduled_with_checker_images,
                         needs_swizzle, is_premultiplied);
@@ -1283,13 +1282,6 @@ void TileManager::OnRasterTaskCompleted(
     draw_info.set_resource_ready_for_draw();
     client_->NotifyTileStateChanged(tile);
   }
-}
-
-void TileManager::SetDecodedImageTracker(
-    DecodedImageTracker* decoded_image_tracker) {
-  // TODO(vmpstr): If the tile manager needs to request out-of-raster decodes,
-  // it should retain and use |decoded_image_tracker| here.
-  decoded_image_tracker->set_image_controller(&image_controller_);
 }
 
 std::unique_ptr<Tile> TileManager::CreateTile(const Tile::CreateInfo& info,
@@ -1519,7 +1511,7 @@ void TileManager::NeedsInvalidationForCheckerImagedTiles() {
 
 viz::ResourceFormat TileManager::DetermineResourceFormat(
     const Tile* tile) const {
-  return raster_buffer_provider_->GetResourceFormat(!tile->is_opaque());
+  return raster_buffer_provider_->GetResourceFormat();
 }
 
 std::unique_ptr<base::trace_event::ConvertableToTraceFormat>
@@ -1558,6 +1550,11 @@ void TileManager::CheckPendingGpuWorkAndIssueSignals() {
     const ResourcePool::InUsePoolResource& resource =
         tile->draw_info().GetResource();
 
+    // Update requirements first so that if the tile has become required
+    // it will force a redraw.
+    if (pending_tile_requirements_dirty_)
+      tile->tiling()->UpdateRequiredStatesOnTile(tile);
+
     if (global_state_.tree_priority != SMOOTHNESS_TAKES_PRIORITY ||
         raster_buffer_provider_->IsResourceReadyToDraw(resource)) {
       tile->draw_info().set_resource_ready_for_draw();
@@ -1569,8 +1566,6 @@ void TileManager::CheckPendingGpuWorkAndIssueSignals() {
     // TODO(ericrk): If a tile in our list no longer has valid tile priorities,
     // it may still report that it is required, and unnecessarily delay
     // activation. crbug.com/687265
-    if (pending_tile_requirements_dirty_)
-      tile->tiling()->UpdateRequiredStatesOnTile(tile);
     if (tile->required_for_activation())
       required_for_activation.push_back(&resource);
     if (tile->required_for_draw())

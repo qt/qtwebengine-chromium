@@ -5,10 +5,10 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_LOADER_CORS_CORS_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_LOADER_CORS_CORS_H_
 
+#include "base/optional.h"
 #include "services/network/public/mojom/cors.mojom-shared.h"
 #include "services/network/public/mojom/fetch_api.mojom-shared.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
@@ -23,21 +23,28 @@ namespace CORS {
 // Thin wrapper functions below are for calling ::network::cors functions from
 // Blink core. Once Out-of-renderer CORS is enabled, following functions will
 // be removed.
-PLATFORM_EXPORT WTF::Optional<network::mojom::CORSError> CheckAccess(
+PLATFORM_EXPORT base::Optional<network::mojom::CORSError> CheckAccess(
     const KURL&,
     const int response_status_code,
     const HTTPHeaderMap&,
     network::mojom::FetchCredentialsMode,
     const SecurityOrigin&);
 
-PLATFORM_EXPORT WTF::Optional<network::mojom::CORSError> CheckRedirectLocation(
+PLATFORM_EXPORT base::Optional<network::mojom::CORSError> CheckPreflightAccess(
+    const KURL&,
+    const int response_status_code,
+    const HTTPHeaderMap&,
+    network::mojom::FetchCredentialsMode,
+    const SecurityOrigin&);
+
+PLATFORM_EXPORT base::Optional<network::mojom::CORSError> CheckRedirectLocation(
     const KURL&);
 
-PLATFORM_EXPORT WTF::Optional<network::mojom::CORSError> CheckPreflight(
+PLATFORM_EXPORT base::Optional<network::mojom::CORSError> CheckPreflight(
     const int preflight_response_status_code);
 
-PLATFORM_EXPORT WTF::Optional<network::mojom::CORSError> CheckExternalPreflight(
-    const HTTPHeaderMap&);
+PLATFORM_EXPORT base::Optional<network::mojom::CORSError>
+CheckExternalPreflight(const HTTPHeaderMap&);
 
 PLATFORM_EXPORT bool IsCORSEnabledRequestMode(network::mojom::FetchRequestMode);
 
@@ -63,6 +70,12 @@ PLATFORM_EXPORT bool IsCORSSafelistedMethod(const String& method);
 PLATFORM_EXPORT bool IsCORSSafelistedContentType(const String&);
 PLATFORM_EXPORT bool IsCORSSafelistedHeader(const String& name,
                                             const String& value);
+PLATFORM_EXPORT bool IsForbiddenHeaderName(const String& name);
+PLATFORM_EXPORT bool ContainsOnlyCORSSafelistedHeaders(const HTTPHeaderMap&);
+PLATFORM_EXPORT bool ContainsOnlyCORSSafelistedOrForbiddenHeaders(
+    const HTTPHeaderMap&);
+
+PLATFORM_EXPORT bool IsOkStatus(int status);
 
 }  // namespace CORS
 

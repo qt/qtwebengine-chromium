@@ -8,7 +8,6 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/guid.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/stl_util.h"
 #include "base/strings/string16.h"
@@ -96,7 +95,7 @@ class WebDatabaseMigrationTest : public testing::Test {
   // Returns true if the file exists and is read successfully, false otherwise.
   bool GetWebDatabaseData(const base::FilePath& file, std::string* contents) {
     base::FilePath source_path;
-    PathService::Get(base::DIR_SOURCE_ROOT, &source_path);
+    base::PathService::Get(base::DIR_SOURCE_ROOT, &source_path);
     source_path = source_path.AppendASCII("components");
     source_path = source_path.AppendASCII("test");
     source_path = source_path.AppendASCII("data");

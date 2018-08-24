@@ -29,10 +29,10 @@
 
 import sys
 
+from blinkbuild.name_style_converter import NameStyleConverter
 import json5_generator
 import name_utilities
 from name_utilities import class_member_name
-from name_utilities import lower_first
 import template_expander
 
 
@@ -40,8 +40,8 @@ class RuntimeFeatureWriter(json5_generator.Writer):
     class_name = 'RuntimeEnabledFeatures'
     file_basename = 'runtime_enabled_features'
 
-    def __init__(self, json5_file_path):
-        super(RuntimeFeatureWriter, self).__init__(json5_file_path)
+    def __init__(self, json5_file_path, output_dir):
+        super(RuntimeFeatureWriter, self).__init__(json5_file_path, output_dir)
         self._outputs = {(self.file_basename + '.h'): self.generate_header,
                          (self.file_basename + '.cc'): self.generate_implementation,
                         }
@@ -49,7 +49,6 @@ class RuntimeFeatureWriter(json5_generator.Writer):
         self._features = self.json5_file.name_dictionaries
         # Make sure the resulting dictionaries have all the keys we expect.
         for feature in self._features:
-            feature['first_lowered_name'] = lower_first(feature['name'])
             feature['class_member_name'] = class_member_name(feature['name'])
             # Most features just check their isFooEnabled bool
             # but some depend on or are implied by other bools.
@@ -90,8 +89,8 @@ class RuntimeFeatureTestHelpersWriter(json5_generator.Writer):
     class_name = 'ScopedRuntimeEnabledFeatureForTest'
     file_basename = 'runtime_enabled_features_test_helpers'
 
-    def __init__(self, json5_file_path):
-        super(RuntimeFeatureTestHelpersWriter, self).__init__(json5_file_path)
+    def __init__(self, json5_file_path, output_dir):
+        super(RuntimeFeatureTestHelpersWriter, self).__init__(json5_file_path, output_dir)
         self._outputs = {('testing/' + self.file_basename + '.h'): self.generate_header}
 
         self._features = self.json5_file.name_dictionaries

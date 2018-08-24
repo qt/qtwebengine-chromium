@@ -28,6 +28,9 @@
 
 #include <memory>
 #include <set>
+
+#include "base/optional.h"
+#include "base/single_thread_task_runner.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_graphics_context_3d_provider.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
@@ -51,12 +54,11 @@
 #include "third_party/blink/renderer/platform/graphics/gpu/webgl_image_conversion.h"
 #include "third_party/blink/renderer/platform/timer.h"
 #include "third_party/blink/renderer/platform/wtf/checked_numeric.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/khronos/GLES2/gl2.h"
 
-namespace blink {
-class WebLayer;
+namespace cc {
+class Layer;
 }
 
 namespace gpu {
@@ -81,7 +83,6 @@ class OESVertexArrayObject;
 class WebGLActiveInfo;
 class WebGLBuffer;
 class WebGLCompressedTextureASTC;
-class WebGLCompressedTextureATC;
 class WebGLCompressedTextureETC;
 class WebGLCompressedTextureETC1;
 class WebGLCompressedTexturePVRTC;
@@ -276,10 +277,11 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
   WebGLActiveInfo* getActiveAttrib(WebGLProgram*, GLuint index);
   WebGLActiveInfo* getActiveUniform(WebGLProgram*, GLuint index);
   bool getAttachedShaders(WebGLProgram*, HeapVector<Member<WebGLShader>>&);
-  Optional<HeapVector<Member<WebGLShader>>> getAttachedShaders(WebGLProgram*);
+  base::Optional<HeapVector<Member<WebGLShader>>> getAttachedShaders(
+      WebGLProgram*);
   GLint getAttribLocation(WebGLProgram*, const String& name);
   ScriptValue getBufferParameter(ScriptState*, GLenum target, GLenum pname);
-  void getContextAttributes(Optional<WebGLContextAttributes>&);
+  void getContextAttributes(base::Optional<WebGLContextAttributes>&);
   GLenum getError();
   ScriptValue getExtension(ScriptState*, const String& name);
   virtual ScriptValue getFramebufferAttachmentParameter(ScriptState*,
@@ -297,7 +299,7 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
   WebGLShaderPrecisionFormat* getShaderPrecisionFormat(GLenum shader_type,
                                                        GLenum precision_type);
   String getShaderSource(WebGLShader*);
-  Optional<Vector<String>> getSupportedExtensions();
+  base::Optional<Vector<String>> getSupportedExtensions();
   virtual ScriptValue getTexParameter(ScriptState*,
                                       GLenum target,
                                       GLenum pname);
@@ -566,9 +568,9 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
 
   unsigned MaxVertexAttribs() const { return max_vertex_attribs_; }
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
-  virtual void TraceWrappers(const ScriptWrappableVisitor*) const;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
   // Returns approximate gpu memory allocated per pixel.
   int ExternallyAllocatedBufferCountPerPixel() override;
@@ -599,7 +601,7 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
 
   void getHTMLOrOffscreenCanvas(HTMLCanvasElementOrOffscreenCanvas&) const;
 
-  ScriptPromise commit(ScriptState*, ExceptionState&);
+  void commit();
 
   // For use by WebVR which doesn't use the normal compositing path.
   // This clears the backbuffer if preserveDrawingBuffer is false.
@@ -623,7 +625,6 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
   friend class OESVertexArrayObject;
   friend class WebGLDebugShaders;
   friend class WebGLCompressedTextureASTC;
-  friend class WebGLCompressedTextureATC;
   friend class WebGLCompressedTextureETC;
   friend class WebGLCompressedTextureETC1;
   friend class WebGLCompressedTexturePVRTC;
@@ -652,9 +653,12 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
   bool IsAccelerated() const override { return true; }
   void SetIsHidden(bool) override;
   bool PaintRenderingResultsToCanvas(SourceDrawingBuffer) override;
-  WebLayer* PlatformLayer() const override;
+  cc::Layer* CcLayer() const override;
   void Stop() override;
+  void DidDraw(const SkIRect&) override;
+  void DidDraw() override;
   void FinalizeFrame() override;
+  void PushFrame() override;
 
   // DrawingBuffer::Client implementation.
   bool DrawingBufferClientIsBoundForDraw() override;
@@ -842,7 +846,7 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
     virtual WebGLExtension* GetExtensionObjectIfAlreadyEnabled() = 0;
 
     virtual void Trace(blink::Visitor* visitor) {}
-    void TraceWrappers(const ScriptWrappableVisitor*) const override {}
+    void TraceWrappers(ScriptWrappableVisitor*) const override {}
     const char* NameInHeapSnapshot() const override {
       return "ExtensionTracker";
     }
@@ -888,12 +892,12 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
       return extension_;
     }
 
-    virtual void Trace(blink::Visitor* visitor) {
+    void Trace(blink::Visitor* visitor) override {
       visitor->Trace(extension_);
       ExtensionTracker::Trace(visitor);
     }
 
-    virtual void TraceWrappers(const ScriptWrappableVisitor* visitor) const {
+    void TraceWrappers(ScriptWrappableVisitor* visitor) const override {
       visitor->TraceWrappers(extension_);
       ExtensionTracker::TraceWrappers(visitor);
     }
@@ -1339,10 +1343,6 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
 
   // Helper function for validating compressed texture formats.
   bool ValidateCompressedTexFormat(const char* function_name, GLenum format);
-
-  // Helper function to validate if front/back stencilMask and stencilFunc
-  // settings are the same.
-  bool ValidateStencilSettings(const char* function_name);
 
   // Helper function to validate stencil or depth func.
   bool ValidateStencilOrDepthFunc(const char* function_name, GLenum);

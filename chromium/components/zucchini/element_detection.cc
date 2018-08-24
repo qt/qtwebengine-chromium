@@ -7,17 +7,28 @@
 #include <utility>
 
 #include "base/logging.h"
+#include "components/zucchini/buildflags.h"
 #include "components/zucchini/disassembler.h"
-#include "components/zucchini/disassembler_dex.h"
 #include "components/zucchini/disassembler_no_op.h"
+
+#if BUILDFLAG(ENABLE_DEX)
+#include "components/zucchini/disassembler_dex.h"
+#endif  // BUILDFLAG(ENABLE_DEX)
+
+#if BUILDFLAG(ENABLE_WIN)
 #include "components/zucchini/disassembler_win32.h"
+#endif  // BUILDFLAG(ENABLE_WIN)
+
+#if BUILDFLAG(ENABLE_ZTF)
+#include "components/zucchini/disassembler_ztf.h"
+#endif  // BUILDFLAG(ENABLE_ZTF)
 
 namespace zucchini {
 
 namespace {
 
 // Impose a minimal program size to eliminate pathological cases.
-constexpr size_t kMinProgramSize = 16;
+enum : size_t { kMinProgramSize = 16 };
 
 }  // namespace
 
@@ -25,6 +36,7 @@ constexpr size_t kMinProgramSize = 16;
 
 std::unique_ptr<Disassembler> MakeDisassemblerWithoutFallback(
     ConstBufferView image) {
+#if BUILDFLAG(ENABLE_WIN)
   if (DisassemblerWin32X86::QuickDetect(image)) {
     auto disasm = Disassembler::Make<DisassemblerWin32X86>(image);
     if (disasm && disasm->size() >= kMinProgramSize)
@@ -36,12 +48,24 @@ std::unique_ptr<Disassembler> MakeDisassemblerWithoutFallback(
     if (disasm && disasm->size() >= kMinProgramSize)
       return disasm;
   }
+#endif  // BUILDFLAG(ENABLE_WIN)
 
+#if BUILDFLAG(ENABLE_DEX)
   if (DisassemblerDex::QuickDetect(image)) {
     auto disasm = Disassembler::Make<DisassemblerDex>(image);
     if (disasm && disasm->size() >= kMinProgramSize)
       return disasm;
   }
+#endif  // BUILDFLAG(ENABLE_DEX)
+
+#if BUILDFLAG(ENABLE_ZTF)
+  if (DisassemblerZtf::QuickDetect(image)) {
+    // This disallows very short examples like "ZTxtxtZ\n" in ensemble patching.
+    auto disasm = Disassembler::Make<DisassemblerZtf>(image);
+    if (disasm && disasm->size() >= kMinProgramSize)
+      return disasm;
+  }
+#endif  // BUILDFLAG(ENABLE_ZTF)
 
   return nullptr;
 }
@@ -49,15 +73,24 @@ std::unique_ptr<Disassembler> MakeDisassemblerWithoutFallback(
 std::unique_ptr<Disassembler> MakeDisassemblerOfType(ConstBufferView image,
                                                      ExecutableType exe_type) {
   switch (exe_type) {
+#if BUILDFLAG(ENABLE_WIN)
     case kExeTypeWin32X86:
       return Disassembler::Make<DisassemblerWin32X86>(image);
     case kExeTypeWin32X64:
       return Disassembler::Make<DisassemblerWin32X64>(image);
+#endif  // BUILDFLAG(ENABLE_WIN)
+#if BUILDFLAG(ENABLE_DEX)
     case kExeTypeDex:
       return Disassembler::Make<DisassemblerDex>(image);
+#endif  // BUILDFLAG(ENABLE_DEX)
+#if BUILDFLAG(ENABLE_ZTF)
+    case kExeTypeZtf:
+      return Disassembler::Make<DisassemblerZtf>(image);
+#endif  // BUILDFLAG(ENABLE_ZTF)
     case kExeTypeNoOp:
       return Disassembler::Make<DisassemblerNoOp>(image);
     default:
+      // If an architecture is disabled then null is handled gracefully.
       return nullptr;
   }
 }

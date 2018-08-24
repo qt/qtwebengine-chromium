@@ -37,6 +37,14 @@
         "StreamDraw": "GL_STREAM_DRAW",
         "StreamRead": "GL_STREAM_READ"
     },
+    "ClientVertexArrayType":
+    {
+        "Vertex": "GL_VERTEX_ARRAY",
+        "Normal": "GL_NORMAL_ARRAY",
+        "Color": "GL_COLOR_ARRAY",
+        "PointSize": "GL_POINT_SIZE_ARRAY_OES",
+        "TextureCoord": "GL_TEXTURE_COORD_ARRAY"
+    },
     "CullFaceMode":
     {
         "Back": "GL_BACK",
@@ -79,6 +87,16 @@
         "Modelview" : "GL_MODELVIEW",
         "Projection" : "GL_PROJECTION",
         "Texture" : "GL_TEXTURE"
+    },
+    "QueryType":
+    {
+        "AnySamples": "GL_ANY_SAMPLES_PASSED",
+        "AnySamplesConservative": "GL_ANY_SAMPLES_PASSED_CONSERVATIVE",
+        "CommandsCompleted": "GL_COMMANDS_COMPLETED_CHROMIUM",
+        "PrimitivesGenerated": "GL_PRIMITIVES_GENERATED_EXT",
+        "TimeElapsed": "GL_TIME_ELAPSED_EXT",
+        "Timestamp": "GL_TIMESTAMP_EXT",
+        "TransformFeedbackPrimitivesWritten": "GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN"
     },
     "ShaderType":
     [
@@ -158,5 +176,28 @@
         "Color" : "GL_COLOR_ARRAY",
         "PointSize" : "GL_POINT_SIZE_ARRAY_OES",
         "TextureCoord" : "GL_TEXTURE_COORD_ARRAY"
+    },
+    "MaterialParameter":
+    {
+        "Ambient" : "GL_AMBIENT",
+        "Diffuse" : "GL_DIFFUSE",
+        "AmbientAndDiffuse" : "GL_AMBIENT_AND_DIFFUSE",
+        "Specular" : "GL_SPECULAR",
+        "Emission" : "GL_EMISSION",
+        "Shininess" : "GL_SHININESS"
+    },
+    "LightParameter":
+    {
+        "Ambient" : "GL_AMBIENT",
+        "Diffuse" : "GL_DIFFUSE",
+        "AmbientAndDiffuse" : "GL_AMBIENT_AND_DIFFUSE",
+        "Specular" : "GL_SPECULAR",
+        "Position" : "GL_POSITION",
+        "SpotDirection" : "GL_SPOT_DIRECTION",
+        "SpotExponent" : "GL_SPOT_EXPONENT",
+        "SpotCutoff" : "GL_SPOT_CUTOFF",
+        "ConstantAttenuation" : "GL_CONSTANT_ATTENUATION",
+        "LinearAttenuation" : "GL_LINEAR_ATTENUATION",
+        "QuadraticAttenuation" : "GL_QUADRATIC_ATTENUATION"
     }
 }

@@ -31,6 +31,7 @@ void CreateTestFieldDataPredictions(const std::string& signature,
   field_predict->server_type = "TestServerType";
   field_predict->overall_type = "TestOverallType";
   field_predict->parseable_name = "TestParseableName";
+  field_predict->section = "TestSection";
 }
 
 void CreateTestPasswordFormFillData(PasswordFormFillData* fill_data) {
@@ -104,7 +105,6 @@ void CreateTestPasswordForm(PasswordForm* form) {
   form->was_parsed_using_autofill_predictions = false;
   form->is_public_suffix_match = true;
   form->is_affiliation_based_match = true;
-  form->does_look_like_signup_form = true;
   form->submission_event =
       PasswordForm::SubmissionIndicatorEvent::SAME_DOCUMENT_NAVIGATION;
 }
@@ -163,23 +163,6 @@ void CheckEqualPasswordFormFillData(const PasswordFormFillData& expected,
       EXPECT_EQ(iter1->first, iter2->first);
       EXPECT_EQ(iter1->second.password, iter2->second.password);
       EXPECT_EQ(iter1->second.realm, iter2->second.realm);
-    }
-    ASSERT_EQ(iter1, end1);
-    ASSERT_EQ(iter2, end2);
-  }
-
-  {
-    EXPECT_EQ(expected.other_possible_usernames.size(),
-              actual.other_possible_usernames.size());
-    auto iter1 = expected.other_possible_usernames.begin();
-    auto end1 = expected.other_possible_usernames.end();
-    auto iter2 = actual.other_possible_usernames.begin();
-    auto end2 = actual.other_possible_usernames.end();
-    for (; iter1 != end1 && iter2 != end2; ++iter1, ++iter2) {
-      EXPECT_EQ(iter1->first.username, iter2->first.username);
-      EXPECT_EQ(iter1->first.password, iter2->first.password);
-      EXPECT_EQ(iter1->first.realm, iter2->first.realm);
-      EXPECT_EQ(iter1->second, iter2->second);
     }
     ASSERT_EQ(iter1, end1);
     ASSERT_EQ(iter2, end2);

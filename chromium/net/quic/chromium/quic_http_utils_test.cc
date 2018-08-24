@@ -8,8 +8,8 @@
 
 #include <limits>
 
-#include "net/quic/platform/api/quic_endian.h"
-#include "net/spdy/core/spdy_alt_svc_wire_format.h"
+#include "net/third_party/quic/platform/api/quic_endian.h"
+#include "net/third_party/spdy/core/spdy_alt_svc_wire_format.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
@@ -50,7 +50,7 @@ TEST(QuicHttpUtilsTest, FilterSupportedAltSvcVersions) {
 
   QuicTransportVersionVector supported_alt_svc_versions = {QUIC_VERSION_38,
                                                            QUIC_VERSION_41};
-  SpdyAltSvcWireFormat::AlternativeService altsvc;
+  spdy::SpdyAltSvcWireFormat::AlternativeService altsvc;
 
   altsvc.protocol_id = "quic";
   altsvc.version = alt_svc_versions_google;

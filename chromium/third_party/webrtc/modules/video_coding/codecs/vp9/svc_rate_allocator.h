@@ -19,18 +19,26 @@
 
 namespace webrtc {
 
+extern const float kSpatialLayeringRateScalingFactor;
+extern const float kTemporalLayeringRateScalingFactor;
+
 class SvcRateAllocator : public VideoBitrateAllocator {
  public:
   explicit SvcRateAllocator(const VideoCodec& codec);
 
-  BitrateAllocation GetAllocation(uint32_t total_bitrate_bps,
-                                  uint32_t framerate_fps) override;
+  VideoBitrateAllocation GetAllocation(uint32_t total_bitrate_bps,
+                                       uint32_t framerate_fps) override;
   uint32_t GetPreferredBitrateBps(uint32_t framerate_fps) override;
 
  private:
+  VideoBitrateAllocation GetAllocationNormalVideo(
+      uint32_t total_bitrate_bps) const;
+  VideoBitrateAllocation GetAllocationScreenSharing(
+      uint32_t total_bitrate_bps) const;
   std::vector<size_t> SplitBitrate(size_t num_layers,
                                    size_t total_bitrate,
-                                   float rate_scaling_factor);
+                                   float rate_scaling_factor) const;
+  bool AdjustAndVerify(std::vector<size_t>* spatial_layer_bitrate_bps) const;
 
   const VideoCodec codec_;
 };

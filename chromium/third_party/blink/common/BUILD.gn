@@ -19,16 +19,22 @@ jumbo_source_set("common") {
     "client_hints/client_hints.cc",
     "common_export.h",
     "device_memory/approximated_device_memory.cc",
+    "experiments/memory_ablation_experiment.cc",
     "feature_policy/feature_policy.cc",
+    "features.cc",
     "frame/frame_policy.cc",
+    "manifest/manifest.cc",
+    "manifest/manifest_share_target_util.cc",
     "message_port/cloneable_message.cc",
     "message_port/cloneable_message_struct_traits.cc",
     "message_port/cloneable_message_struct_traits.h",
     "message_port/message_port_channel.cc",
+    "message_port/string_message_codec.cc",
     "message_port/transferable_message.cc",
     "message_port/transferable_message_struct_traits.cc",
     "message_port/transferable_message_struct_traits.h",
     "mime_util/mime_util.cc",
+    "oom_intervention/oom_intervention_types.h",
     "origin_manifest/origin_manifest.cc",
     "origin_trials/trial_token.cc",
     "origin_trials/trial_token_validator.cc",
@@ -56,6 +62,12 @@ test("blink_common_unittests") {
     ":common_unittests_sources",
     "//third_party/blink/public/common",
   ]
+  if (is_android) {
+    deps += [
+      "//base:base_java",
+      "//media/base/android:media_java",
+    ]
+  }
 }
 
 jumbo_source_set("common_unittests_sources") {
@@ -64,12 +76,20 @@ jumbo_source_set("common_unittests_sources") {
   sources = [
     "device_memory/approximated_device_memory_unittest.cc",
     "feature_policy/feature_policy_unittest.cc",
+    "manifest/manifest_share_target_util_unittest.cc",
     "mime_util/mime_util_unittest.cc",
     "origin_manifest/origin_manifest_unittest.cc",
     "origin_trials/trial_token_unittest.cc",
     "origin_trials/trial_token_validator_unittest.cc",
     "test/run_all_unittests.cc",
   ]
+
+  if (!is_android) {
+    # TODO(crbug.com/845384): Enable these tests also on Android. Currently
+    # they are excluded as they require V8 environment but V8 snapshot is
+    # not available in the current minimum test setting.
+    sources += [ "message_port/string_message_codec_unittest.cc" ]
+  }
 
   deps = [
     "//base",
@@ -78,5 +98,7 @@ jumbo_source_set("common_unittests_sources") {
     "//testing/gtest",
     "//third_party/blink/public/common:headers",
     "//third_party/boringssl",
+    "//v8",
+    "//v8:v8_libplatform",
   ]
 }

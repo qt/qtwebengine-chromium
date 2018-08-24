@@ -74,10 +74,6 @@ static const InputHandlerProxyTestType test_types[] = {
     ROOT_SCROLL_NORMAL_HANDLER, ROOT_SCROLL_SYNCHRONOUS_HANDLER,
     CHILD_SCROLL_NORMAL_HANDLER, CHILD_SCROLL_SYNCHRONOUS_HANDLER};
 
-double InSecondsF(const base::TimeTicks& time) {
-  return (time - base::TimeTicks()).InSecondsF();
-}
-
 MATCHER_P(WheelEventsMatch, expected, "") {
   return WheelEventsMatch(arg, expected);
 }
@@ -88,8 +84,7 @@ WebGestureEvent CreateFling(base::TimeTicks timestamp,
                             WebFloatPoint point,
                             WebFloatPoint global_point,
                             int modifiers) {
-  WebGestureEvent fling(WebInputEvent::kGestureFlingStart, modifiers,
-                        (timestamp - base::TimeTicks()).InSecondsF(),
+  WebGestureEvent fling(WebInputEvent::kGestureFlingStart, modifiers, timestamp,
                         source_device);
   // Touchpad fling is handled on broswer.
   DCHECK(source_device != blink::kWebGestureDeviceTouchpad);
@@ -456,7 +451,7 @@ class InputHandlerProxyTest
   }
 
   void CancelFling(base::TimeTicks timestamp) {
-    gesture_.SetTimeStampSeconds(InSecondsF(timestamp));
+    gesture_.SetTimeStamp(timestamp);
     gesture_.SetType(WebInputEvent::kGestureFlingCancel);
     EXPECT_EQ(expected_disposition_,
               input_handler_->HandleInputEvent(gesture_));
@@ -2128,6 +2123,71 @@ TEST_P(InputHandlerProxyEventQueueTest, CoalescedLatencyInfo) {
   // Coalesced events should have latency set to coalesced.
   EXPECT_EQ(true, latency_info_recorder_[2].coalesced());
   EXPECT_EQ(true, latency_info_recorder_[3].coalesced());
+  testing::Mock::VerifyAndClearExpectations(&mock_input_handler_);
+}
+
+TEST_P(InputHandlerProxyEventQueueTest, CoalescedEventSwitchToMainThread) {
+  cc::InputHandlerScrollResult scroll_result_did_scroll_;
+  cc::InputHandlerScrollResult scroll_result_did_not_scroll_;
+  scroll_result_did_scroll_.did_scroll = true;
+  scroll_result_did_not_scroll_.did_scroll = false;
+
+  // scroll begin on main thread
+  EXPECT_CALL(mock_input_handler_, ScrollBegin(testing::_, testing::_))
+      .WillOnce(testing::Return(kMainThreadScrollState));
+  EXPECT_CALL(mock_input_handler_, SetNeedsAnimateInput()).Times(2);
+  EXPECT_CALL(mock_input_handler_, ScrollingShouldSwitchtoMainThread())
+      .WillOnce(testing::Return(false));
+  EXPECT_CALL(
+      mock_input_handler_,
+      ScrollBy(testing::Property(&cc::ScrollState::delta_y, testing::Gt(0))))
+      .WillOnce(testing::Return(scroll_result_did_not_scroll_));
+
+  HandleGestureEvent(WebInputEvent::kGestureScrollBegin);
+  HandleGestureEvent(WebInputEvent::kGestureScrollUpdate, -20);
+  HandleGestureEvent(WebInputEvent::kGestureScrollUpdate, -10);
+  input_handler_proxy_->DeliverInputForBeginFrame();
+  EXPECT_EQ(3ul, event_disposition_recorder_.size());
+  EXPECT_EQ(InputHandlerProxy::DID_NOT_HANDLE,
+            event_disposition_recorder_.back());
+  // GSU should not be coalesced
+  EXPECT_EQ(false, latency_info_recorder_[1].coalesced());
+  EXPECT_EQ(false, latency_info_recorder_[2].coalesced());
+
+  // pinch start, handle scroll and pinch on compositor.
+  EXPECT_CALL(mock_input_handler_, PinchGestureBegin());
+  EXPECT_CALL(mock_input_handler_, PinchGestureUpdate(testing::_, testing::_));
+  EXPECT_CALL(mock_input_handler_, PinchGestureEnd(testing::_, testing::_));
+
+  HandleGestureEvent(WebInputEvent::kGesturePinchBegin);
+  HandleGestureEvent(WebInputEvent::kGesturePinchUpdate, 10.0f, 1, 10);
+  HandleGestureEvent(WebInputEvent::kGestureScrollUpdate, -10);
+  HandleGestureEvent(WebInputEvent::kGestureScrollUpdate, -30);
+  EXPECT_EQ(2ul, event_queue().size());
+  input_handler_proxy_->DeliverInputForBeginFrame();
+
+  EXPECT_EQ(7ul, event_disposition_recorder_.size());
+  EXPECT_EQ(false, latency_info_recorder_[4].coalesced());
+  // Coalesced events should have latency set to coalesced.
+  EXPECT_EQ(true, latency_info_recorder_[5].coalesced());
+  EXPECT_EQ(true, latency_info_recorder_[6].coalesced());
+  EXPECT_EQ(InputHandlerProxy::DID_HANDLE, event_disposition_recorder_.back());
+
+  // Pinch end, handle scroll on main thread.
+  HandleGestureEvent(WebInputEvent::kGesturePinchEnd);
+  HandleGestureEvent(WebInputEvent::kGestureScrollUpdate, -40);
+  HandleGestureEvent(WebInputEvent::kGestureScrollUpdate, -30);
+  input_handler_proxy_->DeliverInputForBeginFrame();
+
+  EXPECT_EQ(0ul, event_queue().size());
+  // Should run callbacks for every original events.
+  EXPECT_EQ(10ul, event_disposition_recorder_.size());
+  EXPECT_EQ(10ul, latency_info_recorder_.size());
+  // Latency should not be set to coalesced when send to main thread
+  EXPECT_EQ(false, latency_info_recorder_[8].coalesced());
+  EXPECT_EQ(false, latency_info_recorder_[9].coalesced());
+  EXPECT_EQ(InputHandlerProxy::DID_NOT_HANDLE,
+            event_disposition_recorder_.back());
   testing::Mock::VerifyAndClearExpectations(&mock_input_handler_);
 }
 

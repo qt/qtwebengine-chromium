@@ -51,26 +51,43 @@ void FillRegionOutsideVisibleRect(uint8_t* data,
 
 }  // namespace
 
-gfx::Size GetNaturalSize(const gfx::Size& visible_size,
-                         int aspect_ratio_numerator,
-                         int aspect_ratio_denominator) {
-  if (aspect_ratio_denominator <= 0 || aspect_ratio_numerator <= 0) {
-    return gfx::Size();
-  }
+double GetPixelAspectRatio(const gfx::Rect& visible_rect,
+                           const gfx::Size& natural_size) {
+  double visible_width = visible_rect.width();
+  double visible_height = visible_rect.height();
+  double natural_width = natural_size.width();
+  double natural_height = natural_size.height();
+  return (visible_height * natural_width) / (visible_width * natural_height);
+}
 
-  double aspect_ratio = aspect_ratio_numerator /
-      static_cast<double>(aspect_ratio_denominator);
+gfx::Size GetNaturalSize(const gfx::Rect& visible_rect,
+                         double pixel_aspect_ratio) {
+  // TODO(sandersd): Also handle conversion back to integers overflowing.
+  if (!std::isfinite(pixel_aspect_ratio) || pixel_aspect_ratio <= 0.0)
+    return gfx::Size();
 
   // The HTML spec requires that we always grow a dimension to match aspect
   // ratio, rather than modify just the width:
   // github.com/whatwg/html/commit/2e94aa64fcf9adbd2f70d8c2aecd192c8678e298
-  if (aspect_ratio_numerator > aspect_ratio_denominator) {
-    return gfx::Size(round(visible_size.width() * aspect_ratio),
-                     visible_size.height());
+  if (pixel_aspect_ratio >= 1.0) {
+    return gfx::Size(std::round(visible_rect.width() * pixel_aspect_ratio),
+                     visible_rect.height());
   }
 
-  return gfx::Size(visible_size.width(),
-                   round(visible_size.height() / aspect_ratio));
+  return gfx::Size(visible_rect.width(),
+                   std::round(visible_rect.height() / pixel_aspect_ratio));
+}
+
+gfx::Size GetNaturalSize(const gfx::Size& visible_size,
+                         int aspect_ratio_numerator,
+                         int aspect_ratio_denominator) {
+  if (aspect_ratio_denominator <= 0 || aspect_ratio_numerator <= 0)
+    return gfx::Size();
+
+  double pixel_aspect_ratio =
+      aspect_ratio_numerator / static_cast<double>(aspect_ratio_denominator);
+
+  return GetNaturalSize(gfx::Rect(visible_size), pixel_aspect_ratio);
 }
 
 void FillYUV(VideoFrame* frame, uint8_t y, uint8_t u, uint8_t v) {

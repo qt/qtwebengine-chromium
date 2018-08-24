@@ -11,6 +11,7 @@
 #include "base/run_loop.h"
 #include "base/test/scoped_task_environment.h"
 #include "build/build_config.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/test/aura_test_base.h"
@@ -168,7 +169,7 @@ class TestKeyboardLayoutDelegate : public KeyboardLayoutDelegate {
   ~TestKeyboardLayoutDelegate() override {}
 
   // Overridden from keyboard::KeyboardLayoutDelegate
-  void MoveKeyboardToDisplay(int64_t /* display_id */) override {}
+  void MoveKeyboardToDisplay(const display::Display& display) override {}
   void MoveKeyboardToTouchableDisplay() override {}
 
  private:
@@ -463,7 +464,11 @@ TEST_F(KeyboardControllerTest, TransientBlurShortDelay) {
   AddTimeToTransientBlurCounter(0.5);
   // Apply programmatic focus to the text field.
   SetProgrammaticFocus(&input_client);
-  EXPECT_TRUE(keyboard_container->IsVisible());
+
+  // TODO(blakeo): this is not technically wrong, but the DummyTextInputClient
+  // should allow for overriding the text input flags, to simulate testing
+  // a web-based text field.
+  EXPECT_FALSE(keyboard_container->IsVisible());
   EXPECT_FALSE(WillHideKeyboard());
 }
 
@@ -591,6 +596,11 @@ TEST_F(KeyboardControllerTest, AlwaysVisibleWhenLocked) {
 
   SetFocus(&no_input_client_0);
   // Keyboard should not try to hide itself as it is locked.
+  EXPECT_TRUE(keyboard_container->IsVisible());
+  EXPECT_FALSE(WillHideKeyboard());
+
+  // MaybeHideKeyboard is no-op when the keyboard is locked.
+  controller()->MaybeHideKeyboard();
   EXPECT_TRUE(keyboard_container->IsVisible());
   EXPECT_FALSE(WillHideKeyboard());
 
@@ -857,6 +867,33 @@ TEST_F(KeyboardControllerTest, TextInputMode) {
 
   SetFocus(&input_client);
   EXPECT_TRUE(keyboard_container->IsVisible());
+}
+
+// Checks that floating keyboard does not cause focused window to move upwards.
+// Refer to crbug.com/838731.
+TEST_F(KeyboardControllerAnimationTest, FloatingKeyboardEnsureCaretInWorkArea) {
+  // Mock TextInputClient to intercept calls to EnsureCaretNotInRect.
+  struct MockTextInputClient : public ui::DummyTextInputClient {
+    MockTextInputClient() : DummyTextInputClient(ui::TEXT_INPUT_TYPE_TEXT) {}
+    MOCK_METHOD1(EnsureCaretNotInRect, void(const gfx::Rect&));
+  };
+
+  // Floating keyboard should call EnsureCaretNotInRect with the empty rect.
+  MockTextInputClient mock_input_client;
+  EXPECT_CALL(mock_input_client, EnsureCaretNotInRect(gfx::Rect())).Times(1);
+
+  ScopedAccessibilityKeyboardEnabler scoped_keyboard_enabler;
+  controller()->SetContainerType(keyboard::ContainerType::FLOATING,
+                                 base::nullopt, base::DoNothing());
+  ASSERT_EQ(keyboard::ContainerType::FLOATING,
+            controller()->GetActiveContainerType());
+
+  // Ensure keyboard ui is populated
+  ui::Layer* layer = keyboard_container()->layer();
+  SetFocus(&mock_input_client);
+  RunAnimationForLayer(layer);
+
+  EXPECT_TRUE(keyboard_container()->IsVisible());
 }
 
 }  // namespace keyboard

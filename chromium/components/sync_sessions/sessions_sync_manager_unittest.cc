@@ -214,10 +214,6 @@ class SessionsSyncManagerTest : public testing::Test {
     return local_device_->GetLocalDeviceInfo();
   }
 
-  TabNodePool* GetTabPool() {
-    return &manager()->session_tracker_.local_tab_pool_;
-  }
-
   SessionsSyncManager* manager() { return manager_.get(); }
   SessionSyncTestHelper* helper() { return &helper_; }
   LocalDeviceInfoProviderMock* local_device() { return local_device_.get(); }
@@ -569,7 +565,7 @@ TEST_F(SessionsSyncManagerTest, ConflictingSyncIdsWithPlaceholder) {
   InitWithSyncDataTakeOutput(ConvertToRemote(in), &out);
 
   ASSERT_TRUE(ChangeTypeMatches(
-      out, {SyncChange::ACTION_ADD, SyncChange::ACTION_UPDATE}));
+      out, {SyncChange::ACTION_UPDATE, SyncChange::ACTION_UPDATE}));
   VerifyLocalTabChange(out[0], 1, kBar1);
   VerifyLocalHeaderChange(out[1], 1, 1);
 }
@@ -602,8 +598,8 @@ TEST_F(SessionsSyncManagerTest, ConflictingSyncIdsBothReal) {
   VerifyLocalTabChange(out[2], 1, kBar1);
   VerifyLocalHeaderChange(out[3], 1, 2);
 
-  // The sync ids should have been fixed.
-  EXPECT_NE(dupe_sync_id,
+  // The sync ids should have been fixed for exactly one of the two tabs.
+  EXPECT_EQ(dupe_sync_id,
             out[1].sync_data().GetSpecifics().session().tab_node_id());
   EXPECT_NE(dupe_sync_id,
             out[2].sync_data().GetSpecifics().session().tab_node_id());
@@ -1016,11 +1012,13 @@ TEST_F(SessionsSyncManagerTest, ProcessRemoteDeleteOfLocalSession) {
   VerifyLocalHeaderChange(out[3], 1, 1);
 
   // Verify TabLinks.
-  EXPECT_EQ(1U, GetTabPool()->Capacity());
-  EXPECT_TRUE(GetTabPool()->Empty());
   int tab_node_id = out[2].sync_data().GetSpecifics().session().tab_node_id();
   int tab_id = out[2].sync_data().GetSpecifics().session().tab().tab_id();
-  EXPECT_EQ(tab_id, GetTabPool()->GetTabIdFromTabNodeId(tab_node_id).id());
+  EXPECT_EQ(tab_id, manager()
+                        ->session_tracker_
+                        .LookupTabIdFromTabNodeId(
+                            manager()->current_machine_tag(), tab_node_id)
+                        .id());
 }
 
 // Test that receiving a session delete from sync removes the session
@@ -2053,10 +2051,9 @@ TEST_F(SessionsSyncManagerTest, PlaceholderConflictAcrossWindows) {
 
   // The two tabs have the same sync id, which is not allowed. They will have
   // their ids stripped and re-generated. But the placeholder cannot survive
-  // this and will not show up in results. Because we have potentially new sync
-  // ids, the essentially re-created tab will be an ADD.
+  // this and will not show up in results.
   ASSERT_TRUE(ChangeTypeMatches(
-      out, {SyncChange::ACTION_ADD, SyncChange::ACTION_UPDATE}));
+      out, {SyncChange::ACTION_UPDATE, SyncChange::ACTION_UPDATE}));
   VerifyLocalHeaderChange(out[1], 1, 1);
   VerifyLocalTabChange(out[0], 1, kFoo1);
   EXPECT_EQ(tab1->GetSessionId().id(),

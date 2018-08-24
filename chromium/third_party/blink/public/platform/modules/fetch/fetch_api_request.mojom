@@ -7,7 +7,7 @@ module blink.mojom;
 import "services/network/public/mojom/fetch_api.mojom";
 import "services/network/public/mojom/request_context_frame_type.mojom";
 import "third_party/blink/public/platform/referrer.mojom";
-import "third_party/blink/public/mojom/blob/blob.mojom";
+import "third_party/blink/public/mojom/blob/serialized_blob.mojom";
 import "url/mojom/url.mojom";
 
 // Type of the context associated with a request.
@@ -86,6 +86,15 @@ enum FetchCacheMode {
   kUnspecifiedForceCacheMiss,
 };
 
+// Corresponds to Fetch request's "importance mode"
+// Currently discussed at: https://github.com/WICG/priority-hints
+// TODO(domfarolino): add a spec link to this once specified.
+enum FetchImportanceMode {
+  kImportanceLow,
+  kImportanceAuto,
+  kImportanceHigh
+};
+
 struct FetchAPIRequest {
   network.mojom.FetchRequestMode mode;
   bool is_main_resource_load;
@@ -94,9 +103,7 @@ struct FetchAPIRequest {
   url.mojom.Url url;
   string method;
   map<string, string> headers;
-  string? blob_uuid;
-  uint64 blob_size;
-  Blob? blob;
+  SerializedBlob? blob;
   Referrer referrer;
   network.mojom.FetchCredentialsMode credentials_mode;
   FetchCacheMode cache_mode;

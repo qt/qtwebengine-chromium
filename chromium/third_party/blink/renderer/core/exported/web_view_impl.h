@@ -35,13 +35,12 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "build/build_config.h"
-#include "third_party/blink/public/platform/web_display_mode.h"
+#include "third_party/blink/public/common/manifest/web_display_mode.h"
 #include "third_party/blink/public/platform/web_float_size.h"
 #include "third_party/blink/public/platform/web_gesture_curve_target.h"
 #include "third_party/blink/public/platform/web_gesture_event.h"
 #include "third_party/blink/public/platform/web_input_event.h"
 #include "third_party/blink/public/platform/web_input_event_result.h"
-#include "third_party/blink/public/platform/web_layer.h"
 #include "third_party/blink/public/platform/web_point.h"
 #include "third_party/blink/public/platform/web_rect.h"
 #include "third_party/blink/public/platform/web_size.h"
@@ -68,6 +67,10 @@
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
+
+namespace cc {
+class Layer;
+}
 
 namespace blink {
 
@@ -113,17 +116,18 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   void DidExitFullscreen() override;
 
   void SetSuppressFrameRequestsWorkaroundFor704763Only(bool) override;
-  void BeginFrame(double last_frame_time_monotonic) override;
+  void BeginFrame(base::TimeTicks last_frame_time) override;
 
   void UpdateLifecycle(LifecycleUpdate requested_update) override;
   void UpdateAllLifecyclePhasesAndCompositeForTesting() override;
+  void CompositeWithRasterForTesting() override;
   void Paint(WebCanvas*, const WebRect&) override;
 #if defined(OS_ANDROID)
   void PaintIgnoringCompositing(WebCanvas*, const WebRect&) override;
 #endif
-  void LayoutAndPaintAsync(WebLayoutAndPaintAsyncCallback*) override;
+  void LayoutAndPaintAsync(base::OnceClosure callback) override;
   void CompositeAndReadbackAsync(
-      WebCompositeAndReadbackAsyncCallback*) override;
+      base::OnceCallback<void(const SkBitmap&)> callback) override;
   void ThemeChanged() override;
   WebInputEventResult HandleInputEvent(const WebCoalescedInputEvent&) override;
   WebInputEventResult DispatchBufferedTouchEvents() override;
@@ -138,7 +142,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
                                          bool has_scrolled_by_touch) override;
   void MouseCaptureLost() override;
   void SetFocus(bool enable) override;
-  WebColor BackgroundColor() const override;
+  SkColor BackgroundColor() const override;
   WebPagePopupImpl* GetPagePopup() const override;
   bool SelectionBounds(WebRect& anchor, WebRect& focus) const override;
   bool IsAcceleratedCompositingActive() const override;
@@ -149,7 +153,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   void ShowContextMenu(WebMenuSourceType) override;
 
   // WebView methods:
-  virtual bool IsWebView() const { return true; }
+  bool IsWebView() const override { return true; }
   void SetPrerendererClient(WebPrerendererClient*) override;
   WebSettings* GetSettings() override;
   WebString PageEncoding() const override;
@@ -225,7 +229,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   void PerformCustomContextMenuAction(unsigned action) override;
   void DidCloseContextMenu() override;
   void HidePopups() override;
-  void SetPageOverlayColor(WebColor) override;
+  void SetPageOverlayColor(SkColor) override;
   WebPageImportanceSignals* PageImportanceSignals() override;
   void SetShowPaintRects(bool) override;
   void SetShowDebugBorders(bool);
@@ -246,10 +250,10 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   HitTestResult CoreHitTestResultAt(const WebPoint&);
   void InvalidateRect(const IntRect&);
 
-  void SetBaseBackgroundColor(WebColor);
-  void SetBaseBackgroundColorOverride(WebColor);
+  void SetBaseBackgroundColor(SkColor);
+  void SetBaseBackgroundColorOverride(SkColor);
   void ClearBaseBackgroundColorOverride();
-  void SetBackgroundColorOverride(WebColor);
+  void SetBackgroundColorOverride(SkColor);
   void ClearBackgroundColorOverride();
   void SetZoomFactorOverride(float);
   void SetCompositorDeviceScaleFactorOverride(float);
@@ -260,9 +264,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   bool BackgroundColorOverrideEnabled() const {
     return background_color_override_enabled_;
   }
-  WebColor BackgroundColorOverride() const {
-    return background_color_override_;
-  }
+  SkColor BackgroundColorOverride() const { return background_color_override_; }
 
   Frame* FocusedCoreFrame() const;
 
@@ -303,8 +305,6 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   // significant change in this function is the code to convert from a
   // Keyboard event to the Right Mouse button down event.
   WebInputEventResult SendContextMenuEvent();
-
-  void ShowContextMenuAtPoint(float x, float y, ContextMenuProvider*);
 
   void ShowContextMenuForElement(WebElement);
 
@@ -371,7 +371,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   void EnableTapHighlights(HeapVector<Member<Node>>&);
   void AnimateDoubleTapZoom(const IntPoint&);
 
-  void ResolveTapDisambiguation(double timestamp_seconds,
+  void ResolveTapDisambiguation(base::TimeTicks timestamp,
                                 WebPoint tap_viewport_offset,
                                 bool is_long_press) override;
 
@@ -389,7 +389,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
     return fake_page_scale_animation_use_anchor_;
   }
 
-  void EnterFullscreen(LocalFrame&);
+  void EnterFullscreen(LocalFrame&, const FullscreenOptions&);
   void ExitFullscreen(LocalFrame&);
   void FullscreenElementChanged(Element* old_element, Element* new_element);
 
@@ -429,7 +429,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   // changed.
   void DidUpdateBrowserControls();
 
-  void SetOverscrollBehavior(const WebOverscrollBehavior&);
+  void SetOverscrollBehavior(const cc::OverscrollBehavior&);
 
   void ForceNextWebGLContextCreationToFail() override;
   void ForceNextDrawingBufferCreationToFail() override;
@@ -466,11 +466,10 @@ class CORE_EXPORT WebViewImpl final : public WebView,
       bool zoom_into_legible_scale);
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(ParameterizedWebFrameTest,
-                           DivScrollIntoEditableTest);
-  FRIEND_TEST_ALL_PREFIXES(ParameterizedWebFrameTest,
+  FRIEND_TEST_ALL_PREFIXES(WebFrameTest, DivScrollIntoEditableTest);
+  FRIEND_TEST_ALL_PREFIXES(WebFrameTest,
                            DivScrollIntoEditablePreservePageScaleTest);
-  FRIEND_TEST_ALL_PREFIXES(ParameterizedWebFrameTest,
+  FRIEND_TEST_ALL_PREFIXES(WebFrameTest,
                            DivScrollIntoEditableTestZoomToLegibleScaleDisabled);
 
   void SetPageScaleFactorAndLocation(float, const FloatPoint&);
@@ -548,7 +547,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   float DeviceScaleFactor() const;
 
   void SetRootGraphicsLayer(GraphicsLayer*);
-  void SetRootLayer(WebLayer*);
+  void SetRootLayer(scoped_refptr<cc::Layer>);
   void AttachCompositorAnimationTimeline(CompositorAnimationTimeline*);
   void DetachCompositorAnimationTimeline(CompositorAnimationTimeline*);
 
@@ -656,7 +655,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   WebLayerTreeView* layer_tree_view_;
   std::unique_ptr<CompositorAnimationHost> animation_host_;
 
-  WebLayer* root_layer_;
+  scoped_refptr<cc::Layer> root_layer_;
   GraphicsLayer* root_graphics_layer_;
   GraphicsLayer* visual_viewport_container_layer_;
   bool matches_heuristics_for_gpu_rasterization_;
@@ -667,11 +666,11 @@ class CORE_EXPORT WebViewImpl final : public WebView,
 
   WebPoint last_tap_disambiguation_best_candidate_position_;
 
-  WebColor base_background_color_;
+  SkColor base_background_color_;
   bool base_background_color_override_enabled_;
-  WebColor base_background_color_override_;
+  SkColor base_background_color_override_;
   bool background_color_override_enabled_;
-  WebColor background_color_override_;
+  SkColor background_color_override_;
   float zoom_factor_override_;
 
   bool should_dispatch_first_visually_non_empty_layout_;

@@ -63,8 +63,8 @@ class SingleThreadTaskRunner;
 class TaskRunner;
 }
 
-namespace cc_blink {
-class WebLayerImpl;
+namespace cc {
+class VideoLayer;
 }
 
 namespace gpu {
@@ -76,6 +76,7 @@ class GLES2Interface;
 namespace media {
 class CdmContextRef;
 class ChunkDemuxer;
+class EncryptionScheme;
 class VideoDecodeStatsReporter;
 class MediaLog;
 class UrlIndex;
@@ -119,8 +120,8 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
 
   // WebSurfaceLayerBridgeObserver implementation.
   void OnWebLayerUpdated() override;
-  void RegisterContentsLayer(blink::WebLayer* web_layer) override;
-  void UnregisterContentsLayer(blink::WebLayer* web_layer) override;
+  void RegisterContentsLayer(cc::Layer* layer) override;
+  void UnregisterContentsLayer(cc::Layer* layer) override;
   void OnSurfaceIdUpdated(viz::SurfaceId surface_id) override;
 
   void Load(LoadType load_type,
@@ -133,10 +134,13 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   void Seek(double seconds) override;
   void SetRate(double rate) override;
   void SetVolume(double volume) override;
-  void EnterPictureInPicture() override;
-  void ExitPictureInPicture() override;
+  void EnterPictureInPicture(
+      blink::WebMediaPlayer::PipWindowOpenedCallback callback) override;
+  void ExitPictureInPicture(
+      blink::WebMediaPlayer::PipWindowClosedCallback callback) override;
+  void RegisterPictureInPictureWindowResizeCallback(
+      blink::WebMediaPlayer::PipWindowResizedCallback callback) override;
   void SetSinkId(const blink::WebString& sink_id,
-                 const blink::WebSecurityOrigin& security_origin,
                  blink::WebSetSinkIdCallbacks* web_callback) override;
   void SetPoster(const blink::WebURL& poster) override;
   void SetPreload(blink::WebMediaPlayer::Preload preload) override;
@@ -238,13 +242,19 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   void OnSeekBackward(double seconds) override;
   void OnVolumeMultiplierUpdate(double multiplier) override;
   void OnBecamePersistentVideo(bool value) override;
+  void OnPictureInPictureModeEnded() override;
 
   void RequestRemotePlaybackDisabled(bool disabled) override;
 #if defined(OS_ANDROID)  // WMPI_CAST
+  // TODO(https://crbug.com/839651): Rename Flinging[Started/Stopped] to
+  // RemotePlayback[Started/Stopped] once the other RemotePlayback methods have
+  // been removed
   bool IsRemote() const override;
   void RequestRemotePlayback() override;
   void RequestRemotePlaybackControl() override;
   void RequestRemotePlaybackStop() override;
+  void FlingingStarted() override;
+  void FlingingStopped() override;
 
   void SetMediaPlayerManager(
       RendererMediaPlayerManagerInterface* media_player_manager);
@@ -332,6 +342,11 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   void OnVideoAverageKeyframeDistanceUpdate() override;
   void OnAudioDecoderChange(const std::string& name) override;
   void OnVideoDecoderChange(const std::string& name) override;
+
+  // When we lose the context_provider, we destroy the CompositorFrameSink to
+  // prevent frames from being submitted. The current surface_ids become
+  // invalid.
+  void OnFrameSinkDestroyed();
 
   // Actually seek. Avoids causing |should_notify_time_changed_| to be set when
   // |time_updated| is false.
@@ -561,6 +576,11 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   // of |chunk_demuxer_|, while the EME one is only recorded if |is_encrypted_|.
   void RecordTimingUMA(const std::string& key, base::TimeDelta elapsed);
 
+  // Records the encryption scheme used by the stream |stream_name|. This is
+  // only recorded when metadata is available.
+  void RecordEncryptionScheme(const std::string& stream_name,
+                              const EncryptionScheme& encryption_scheme);
+
   blink::WebLocalFrame* const frame_;
 
   // The playback state last reported to |delegate_|, to avoid setting duplicate
@@ -707,7 +727,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
 
   // The compositor layer for displaying the video content when using composited
   // playback.
-  std::unique_ptr<cc_blink::WebLayerImpl> video_weblayer_;
+  scoped_refptr<cc::VideoLayer> video_layer_;
 
   std::unique_ptr<blink::WebContentDecryptionModuleResult> set_cdm_result_;
 
@@ -902,12 +922,6 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   // Keeps track of the SurfaceId for Picture-in-Picture. This is used to
   // route the video to be shown in the Picture-in-Picture window.
   viz::SurfaceId pip_surface_id_;
-
-  // Callback to pass updated information about the current surface info.
-  WebMediaPlayerParams::PipSurfaceInfoCB pip_surface_info_cb_;
-
-  // Callback to signal Picture-in-Picture mode has ended.
-  WebMediaPlayerParams::ExitPipCB exit_pip_cb_;
 
   DISALLOW_COPY_AND_ASSIGN(WebMediaPlayerImpl);
 };

@@ -10,6 +10,7 @@
 #include "services/resource_coordinator/coordination_unit/frame_coordination_unit_impl.h"
 #include "services/resource_coordinator/coordination_unit/page_coordination_unit_impl.h"
 #include "services/resource_coordinator/coordination_unit/process_coordination_unit_impl.h"
+#include "services/resource_coordinator/coordination_unit/system_coordination_unit_impl.h"
 #include "services/resource_coordinator/public/cpp/coordination_unit_id.h"
 #include "services/resource_coordinator/public/cpp/coordination_unit_types.h"
 
@@ -21,12 +22,14 @@ namespace resource_coordinator {
 
 MockSinglePageInSingleProcessCoordinationUnitGraph::
     MockSinglePageInSingleProcessCoordinationUnitGraph()
-    : frame(TestCoordinationUnitWrapper<FrameCoordinationUnitImpl>::Create()),
+    : system(TestCoordinationUnitWrapper<SystemCoordinationUnitImpl>::Create()),
+      frame(TestCoordinationUnitWrapper<FrameCoordinationUnitImpl>::Create()),
       process(
           TestCoordinationUnitWrapper<ProcessCoordinationUnitImpl>::Create()),
       page(TestCoordinationUnitWrapper<PageCoordinationUnitImpl>::Create()) {
   page->AddFrame(frame->id());
   process->AddFrame(frame->id());
+  process->SetPID(1);
 }
 
 MockSinglePageInSingleProcessCoordinationUnitGraph::
@@ -54,6 +57,7 @@ MockSinglePageWithMultipleProcessesCoordinationUnitGraph::
   frame->AddChildFrame(child_frame->id());
   page->AddFrame(child_frame->id());
   other_process->AddFrame(child_frame->id());
+  other_process->SetPID(2);
 }
 
 MockSinglePageWithMultipleProcessesCoordinationUnitGraph::
@@ -68,6 +72,7 @@ MockMultiplePagesWithMultipleProcessesCoordinationUnitGraph::
   other_frame->AddChildFrame(child_frame->id());
   other_page->AddFrame(child_frame->id());
   other_process->AddFrame(child_frame->id());
+  other_process->SetPID(2);
 }
 
 MockMultiplePagesWithMultipleProcessesCoordinationUnitGraph::

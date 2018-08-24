@@ -46,7 +46,7 @@ InteractiveDetector::InteractiveDetector(
     : Supplement<Document>(document),
       network_activity_checker_(network_activity_checker),
       time_to_interactive_timer_(
-          document.GetTaskRunner(TaskType::kUnspecedTimer),
+          document.GetTaskRunner(TaskType::kInternalDefault),
           this,
           &InteractiveDetector::TimeToInteractiveTimerFired) {}
 
@@ -147,10 +147,8 @@ void InteractiveDetector::HandleForFirstInputDelay(const WebInputEvent& event) {
   // We can't report a pointerDown until the pointerUp, in case it turns into a
   // scroll.
   if (event.GetType() == WebInputEvent::kPointerDown) {
-    pending_pointerdown_delay_ = TimeDelta::FromSecondsD(
-        CurrentTimeTicksInSeconds() - event.TimeStampSeconds());
-    pending_pointerdown_timestamp_ =
-        TimeTicksFromSeconds(event.TimeStampSeconds());
+    pending_pointerdown_delay_ = CurrentTimeTicks() - event.TimeStamp();
+    pending_pointerdown_timestamp_ = event.TimeStamp();
     return;
   }
 
@@ -176,9 +174,8 @@ void InteractiveDetector::HandleForFirstInputDelay(const WebInputEvent& event) {
     delay = pending_pointerdown_delay_;
     event_timestamp = pending_pointerdown_timestamp_;
   } else {
-    delay = TimeDelta::FromSecondsD(CurrentTimeTicksInSeconds() -
-                                    event.TimeStampSeconds());
-    event_timestamp = TimeTicksFromSeconds(event.TimeStampSeconds());
+    delay = CurrentTimeTicks() - event.TimeStamp();
+    event_timestamp = event.TimeStamp();
   }
 
   pending_pointerdown_delay_ = base::TimeDelta();
@@ -214,7 +211,7 @@ void InteractiveDetector::EndNetworkQuietPeriod(TimeTicks current_time) {
 // CurrentTimeTicksInSeconds.
 void InteractiveDetector::UpdateNetworkQuietState(
     double request_count,
-    WTF::Optional<TimeTicks> opt_current_time) {
+    base::Optional<TimeTicks> opt_current_time) {
   if (request_count <= kNetworkQuietMaximumConnections &&
       active_network_quiet_window_start_.is_null()) {
     // Not using `value_or(CurrentTimeTicksInSeconds())` here because
@@ -232,7 +229,7 @@ void InteractiveDetector::UpdateNetworkQuietState(
 }
 
 void InteractiveDetector::OnResourceLoadBegin(
-    WTF::Optional<TimeTicks> load_begin_time) {
+    base::Optional<TimeTicks> load_begin_time) {
   if (!GetSupplementable())
     return;
   if (!interactive_time_.is_null())
@@ -245,7 +242,7 @@ void InteractiveDetector::OnResourceLoadBegin(
 // The optional load_finish_time, if provided, saves us a call to
 // CurrentTimeTicksInSeconds.
 void InteractiveDetector::OnResourceLoadEnd(
-    WTF::Optional<TimeTicks> load_finish_time) {
+    base::Optional<TimeTicks> load_finish_time) {
   if (!GetSupplementable())
     return;
   if (!interactive_time_.is_null())

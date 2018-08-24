@@ -19,6 +19,7 @@
 class CFGAS_PDFFontMgr;
 class CFX_ChecksumContext;
 class CFX_DIBitmap;
+class CFX_XMLDocument;
 class CPDF_Document;
 class CPDF_Object;
 class CXFA_FFApp;
@@ -59,7 +60,7 @@ class CXFA_FFDoc {
     return m_pDocEnvironment.Get();
   }
   FormType GetFormType() const { return m_FormType; }
-
+  CFX_XMLDocument* GetXMLDocument() const { return m_pXMLDoc.get(); }
 
   CXFA_FFDocView* CreateDocView();
 
@@ -80,12 +81,12 @@ class CXFA_FFDoc {
                    const RetainPtr<IFX_SeekableStream>& pFile);
 
  private:
-  bool ParseDoc(CPDF_Object* pElementXFA);
+  bool ParseDoc(const CPDF_Object* pElementXFA);
 
   UnownedPtr<IXFA_DocEnvironment> const m_pDocEnvironment;
   UnownedPtr<CXFA_FFApp> const m_pApp;
   UnownedPtr<CPDF_Document> m_pPDFDoc;
-  std::unique_ptr<CFX_XMLNode> m_pXMLRoot;
+  std::unique_ptr<CFX_XMLDocument> m_pXMLDoc;
   std::unique_ptr<CXFA_FFNotify> m_pNotify;
   std::unique_ptr<CXFA_Document> m_pDocument;
   std::unique_ptr<CXFA_FFDocView> m_DocView;

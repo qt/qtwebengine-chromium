@@ -25,7 +25,6 @@
 #include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/client/raster_interface.h"
-#include "skia/ext/texture_handle.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 #include "third_party/skia/include/core/SkSurface.h"
@@ -189,14 +188,16 @@ bool DrawAndScaleImage(const DrawImage& draw_image, SkPixmap* target_pixmap) {
 // Returns the GL texture ID backing the given SkImage.
 GrGLuint GlIdFromSkImage(SkImage* image) {
   DCHECK(image->isTextureBacked());
-  GrBackendObject handle =
-      image->getTextureHandle(true /* flushPendingGrContextIO */);
-  if (!handle)
+  GrBackendTexture backend_texture =
+      image->getBackendTexture(true /* flushPendingGrContextIO */);
+  if (!backend_texture.isValid())
     return 0;
-  const GrGLTextureInfo* info = skia::GrBackendObjectToGrGLTextureInfo(handle);
-  if (!info)
+
+  GrGLTextureInfo info;
+  if (!backend_texture.getGLTextureInfo(&info))
     return 0;
-  return info->fID;
+
+  return info.fID;
 }
 
 // Takes ownership of the backing texture of an SkImage. This allows us to
@@ -209,7 +210,7 @@ sk_sp<SkImage> TakeOwnershipOfSkImageBacking(GrContext* context,
   }
 
   GrSurfaceOrigin origin;
-  image->getTextureHandle(false /* flushPendingGrContextIO */, &origin);
+  image->getBackendTexture(false /* flushPendingGrContextIO */, &origin);
   SkColorType color_type = image->colorType();
   if (color_type == kUnknown_SkColorType) {
     return nullptr;
@@ -649,12 +650,6 @@ ImageDecodeCache::TaskResult GpuImageDecodeCache::GetTaskForImageAndRefInternal(
   if (SkipImage(draw_image))
     return TaskResult(false);
 
-  // For non-lazy images a decode isn't necessary.
-  // TODO(khushalsagar): We can still have only the upload task to upload ahead
-  // of raster.
-  if (!draw_image.paint_image().IsLazyGenerated())
-    return TaskResult(false);
-
   base::AutoLock lock(lock_);
   const PaintImage::FrameKey frame_key = draw_image.frame_key();
   ImageData* image_data = GetImageDataForDrawImage(draw_image);
@@ -861,34 +856,38 @@ void GpuImageDecodeCache::SetShouldAggressivelyFreeResources(
 
 void GpuImageDecodeCache::ClearCache() {
   base::AutoLock lock(lock_);
-  for (auto& entry : persistent_cache_) {
-    if (entry.second->decode.ref_count != 0 ||
-        entry.second->upload.ref_count != 0) {
-      // Orphan the entry so it will be deleted once no longer in use.
-      entry.second->is_orphaned = true;
-    } else if (entry.second->HasUploadedData()) {
-      DeleteImage(entry.second.get());
-    }
+  for (auto it = persistent_cache_.begin(); it != persistent_cache_.end();)
+    it = RemoveFromPersistentCache(it);
+  DCHECK(persistent_cache_.empty());
+  paint_image_entries_.clear();
+}
+
+GpuImageDecodeCache::PersistentCache::iterator
+GpuImageDecodeCache::RemoveFromPersistentCache(PersistentCache::iterator it) {
+  lock_.AssertAcquired();
+
+  if (it->second->decode.ref_count != 0 || it->second->upload.ref_count != 0) {
+    // Orphan the image and erase it from the |persisent_cache_|. This ensures
+    // that the image will be deleted once all refs are removed.
+    it->second->is_orphaned = true;
+  } else {
+    // Current entry has no refs. Ensure it is not locked.
+    DCHECK(!it->second->decode.is_locked());
+    DCHECK(!it->second->upload.is_locked());
+
+    // Unlocked images must not be budgeted.
+    DCHECK(!it->second->is_budgeted);
+
+    // Free the uploaded image if it exists.
+    if (it->second->HasUploadedData())
+      DeleteImage(it->second.get());
   }
-  persistent_cache_.Clear();
+
+  return persistent_cache_.Erase(it);
 }
 
 size_t GpuImageDecodeCache::GetMaximumMemoryLimitBytes() const {
   return max_working_set_bytes_;
-}
-
-void GpuImageDecodeCache::NotifyImageUnused(
-    const PaintImage::FrameKey& frame_key) {
-  auto it = persistent_cache_.Peek(frame_key);
-  if (it != persistent_cache_.end()) {
-    if (it->second->decode.ref_count != 0 ||
-        it->second->upload.ref_count != 0) {
-      it->second->is_orphaned = true;
-    } else if (it->second->HasUploadedData()) {
-      DeleteImage(it->second.get());
-    }
-    persistent_cache_.Erase(it);
-  }
 }
 
 bool GpuImageDecodeCache::OnMemoryDump(
@@ -1346,16 +1345,8 @@ void GpuImageDecodeCache::DecodeImageIfNecessary(const DrawImage& draw_image,
                     image_info.minRowBytes());
 
     // Set |pixmap| to the desired colorspace to decode into.
-    if (!SupportsColorSpaceConversion()) {
-      pixmap.setColorSpace(nullptr);
-    } else if (image_data->mode == DecodedDataMode::kCpu) {
-      pixmap.setColorSpace(draw_image.target_color_space().ToSkColorSpace());
-    } else {
-      // For kGpu or kTransferCache images color conversion is handled during
-      // upload, so keep the original colorspace here.
-      pixmap.setColorSpace(sk_ref_sp(draw_image.paint_image().color_space()));
-    }
-
+    pixmap.setColorSpace(
+        ColorSpaceForImageDecode(draw_image, image_data->mode));
     if (!DrawAndScaleImage(draw_image, &pixmap)) {
       DLOG(ERROR) << "DrawAndScaleImage failed.";
       backing_memory->Unlock();
@@ -1499,6 +1490,7 @@ GpuImageDecodeCache::CreateImageData(const DrawImage& draw_image) {
                "GpuImageDecodeCache::CreateImageData");
   lock_.AssertAcquired();
 
+  WillAddCacheEntry(draw_image);
   int mip_level = CalculateUploadScaleMipLevel(draw_image);
   SkImageInfo image_info = CreateImageInfoForDrawImage(draw_image, mip_level);
 
@@ -1514,17 +1506,70 @@ GpuImageDecodeCache::CreateImageData(const DrawImage& draw_image) {
   }
 
   size_t data_size = image_info.computeMinByteSize();
+
+  // We need to cache the result of color conversion on the cpu if the image
+  // will be color converted during the decode.
+  auto decode_color_space = ColorSpaceForImageDecode(draw_image, mode);
+  const bool cache_color_conversion_on_cpu =
+      decode_color_space &&
+      !SkColorSpace::Equals(decode_color_space.get(),
+                            draw_image.paint_image().color_space());
+
   // |is_bitmap_backed| specifies whether the image has pixel data which can
   // directly be used for the upload. This will be the case for non-lazy images
   // used at the original scale. In these cases, we don't internally cache any
   // cpu component for the image.
-  // However, if the image will be scaled, we consider it a lazy image and cache
-  // the scaled result in discardable memory.
-  const bool is_bitmap_backed =
-      !draw_image.paint_image().IsLazyGenerated() && mip_level == 0;
+  // However, if the image will be scaled or color converts on the cpu, we
+  // consider it a lazy image and cache the scaled result in discardable memory.
+  const bool is_bitmap_backed = !draw_image.paint_image().IsLazyGenerated() &&
+                                mip_level == 0 &&
+                                !cache_color_conversion_on_cpu;
   return base::WrapRefCounted(new ImageData(
       mode, data_size, draw_image.target_color_space(),
       CalculateDesiredFilterQuality(draw_image), mip_level, is_bitmap_backed));
+}
+
+void GpuImageDecodeCache::WillAddCacheEntry(const DrawImage& draw_image) {
+  lock_.AssertAcquired();
+
+  // Remove any old entries for this image. We keep at-most 2 ContentIds for a
+  // PaintImage (pending and active tree).
+  auto& cached_content_ids =
+      paint_image_entries_[draw_image.paint_image().stable_id()].content_ids;
+  const PaintImage::ContentId new_content_id =
+      draw_image.frame_key().content_id();
+
+  if (cached_content_ids[0] == new_content_id ||
+      cached_content_ids[1] == new_content_id) {
+    return;
+  }
+
+  if (cached_content_ids[0] == PaintImage::kInvalidContentId) {
+    cached_content_ids[0] = new_content_id;
+    return;
+  }
+
+  if (cached_content_ids[1] == PaintImage::kInvalidContentId) {
+    cached_content_ids[1] = new_content_id;
+    return;
+  }
+
+  const PaintImage::ContentId content_id_to_remove =
+      std::min(cached_content_ids[0], cached_content_ids[1]);
+  const PaintImage::ContentId content_id_to_keep =
+      std::max(cached_content_ids[0], cached_content_ids[1]);
+  DCHECK_NE(content_id_to_remove, content_id_to_keep);
+
+  for (auto it = persistent_cache_.begin(); it != persistent_cache_.end();) {
+    if (it->first.content_id() != content_id_to_remove) {
+      ++it;
+    } else {
+      it = RemoveFromPersistentCache(it);
+    }
+  }
+
+  cached_content_ids[0] = content_id_to_keep;
+  cached_content_ids[1] = new_content_id;
 }
 
 void GpuImageDecodeCache::DeleteImage(ImageData* image_data) {
@@ -1737,6 +1782,12 @@ bool GpuImageDecodeCache::IsInInUseCacheForTesting(
   return found != in_use_cache_.end();
 }
 
+bool GpuImageDecodeCache::IsInPersistentCacheForTesting(
+    const DrawImage& image) const {
+  auto found = persistent_cache_.Peek(image.frame_key());
+  return found != persistent_cache_.end();
+}
+
 sk_sp<SkImage> GpuImageDecodeCache::GetSWImageDecodeForTesting(
     const DrawImage& image) {
   base::AutoLock lock(lock_);
@@ -1767,6 +1818,20 @@ bool GpuImageDecodeCache::SupportsColorSpaceConversion() const {
     default:
       return false;
   }
+}
+
+sk_sp<SkColorSpace> GpuImageDecodeCache::ColorSpaceForImageDecode(
+    const DrawImage& image,
+    DecodedDataMode mode) const {
+  if (!SupportsColorSpaceConversion())
+    return nullptr;
+
+  if (mode == DecodedDataMode::kCpu)
+    return image.target_color_space().ToSkColorSpace();
+
+  // For kGpu or kTransferCache images color conversion is handled during
+  // upload, so keep the original colorspace here.
+  return sk_ref_sp(image.paint_image().color_space());
 }
 
 void GpuImageDecodeCache::CheckContextLockAcquiredIfNecessary() {

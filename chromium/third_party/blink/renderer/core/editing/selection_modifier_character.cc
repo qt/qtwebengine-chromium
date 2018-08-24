@@ -67,24 +67,26 @@ struct TraversalLeft {
     return box.CaretLeftmostOffset();
   }
 
-  static InlineBox* FindBackwardBidiRun(const InlineBox& box,
-                                        unsigned bidi_level) {
+  static const InlineBox* FindBackwardBidiRun(const InlineBox& box,
+                                              unsigned bidi_level) {
     return InlineBoxTraversal::FindRightBidiRun(box, bidi_level);
   }
 
-  static InlineBox* FindBackwardBoundaryOfEntireBidiRun(const InlineBox& box,
-                                                        unsigned bidi_level) {
+  static const InlineBox& FindBackwardBoundaryOfEntireBidiRun(
+      const InlineBox& box,
+      unsigned bidi_level) {
     return InlineBoxTraversal::FindRightBoundaryOfEntireBidiRun(box,
                                                                 bidi_level);
   }
 
-  static InlineBox* FindForwardBidiRun(const InlineBox& box,
-                                       unsigned bidi_level) {
+  static const InlineBox* FindForwardBidiRun(const InlineBox& box,
+                                             unsigned bidi_level) {
     return InlineBoxTraversal::FindLeftBidiRun(box, bidi_level);
   }
 
-  static InlineBox* FindForwardBoundaryOfEntireBidiRun(const InlineBox& box,
-                                                       unsigned bidi_level) {
+  static const InlineBox& FindForwardBoundaryOfEntireBidiRun(
+      const InlineBox& box,
+      unsigned bidi_level) {
     return InlineBoxTraversal::FindLeftBoundaryOfEntireBidiRun(box, bidi_level);
   }
 
@@ -96,11 +98,21 @@ struct TraversalLeft {
     return NextGraphemeBoundaryOf(node, offset);
   }
 
-  static InlineBox* ForwardLeafChildOf(const InlineBox& box) {
+  static const InlineBox* ForwardLeafChildOf(const InlineBox& box) {
     return box.PrevLeafChild();
   }
 
-  static InlineBox* ForwardLeafChildIgnoringLineBreakOf(const InlineBox& box) {
+  static const InlineBox* ForwardNonPseudoLeafChildOf(const InlineBox& box) {
+    for (const InlineBox* runner = ForwardLeafChildOf(box); runner;
+         runner = ForwardLeafChildOf(*runner)) {
+      if (runner->GetLineLayoutItem().GetNode())
+        return runner;
+    }
+    return nullptr;
+  }
+
+  static const InlineBox* ForwardLeafChildIgnoringLineBreakOf(
+      const InlineBox& box) {
     return box.PrevLeafChildIgnoringLineBreak();
   }
 
@@ -124,12 +136,11 @@ struct TraversalLeft {
         visible_position, anchor);
   }
 
-  static Node* LogicalStartBoxOf(TextDirection direction,
-                                 const InlineBox& box,
-                                 InlineBox*& result_box) {
+  static const InlineBox* LogicalStartBoxOf(TextDirection direction,
+                                            const InlineBox& box) {
     if (direction == TextDirection::kLtr)
-      return box.Root().GetLogicalStartBoxWithNode(result_box);
-    return box.Root().GetLogicalEndBoxWithNode(result_box);
+      return box.Root().GetLogicalStartNonPseudoBox();
+    return box.Root().GetLogicalEndNonPseudoBox();
   }
 
   static bool IsOvershot(int offset, const InlineBox& box) {
@@ -144,7 +155,7 @@ template <typename Strategy>
 struct TraversalRight {
   STATIC_ONLY(TraversalRight);
 
-  static InlineBox* BackwardLeafChildOf(const InlineBox& box) {
+  static const InlineBox* BackwardLeafChildOf(const InlineBox& box) {
     return box.PrevLeafChild();
   }
 
@@ -162,23 +173,25 @@ struct TraversalRight {
     return box.CaretRightmostOffset();
   }
 
-  static InlineBox* FindBackwardBidiRun(const InlineBox& box,
-                                        unsigned bidi_level) {
+  static const InlineBox* FindBackwardBidiRun(const InlineBox& box,
+                                              unsigned bidi_level) {
     return InlineBoxTraversal::FindLeftBidiRun(box, bidi_level);
   }
 
-  static InlineBox* FindBackwardBoundaryOfEntireBidiRun(const InlineBox& box,
-                                                        unsigned bidi_level) {
+  static const InlineBox& FindBackwardBoundaryOfEntireBidiRun(
+      const InlineBox& box,
+      unsigned bidi_level) {
     return InlineBoxTraversal::FindLeftBoundaryOfEntireBidiRun(box, bidi_level);
   }
 
-  static InlineBox* FindForwardBidiRun(const InlineBox& box,
-                                       unsigned bidi_level) {
+  static const InlineBox* FindForwardBidiRun(const InlineBox& box,
+                                             unsigned bidi_level) {
     return InlineBoxTraversal::FindRightBidiRun(box, bidi_level);
   }
 
-  static InlineBox* FindForwardBoundaryOfEntireBidiRun(const InlineBox& box,
-                                                       unsigned bidi_level) {
+  static const InlineBox& FindForwardBoundaryOfEntireBidiRun(
+      const InlineBox& box,
+      unsigned bidi_level) {
     return InlineBoxTraversal::FindRightBoundaryOfEntireBidiRun(box,
                                                                 bidi_level);
   }
@@ -191,11 +204,21 @@ struct TraversalRight {
     return PreviousGraphemeBoundaryOf(node, offset);
   }
 
-  static InlineBox* ForwardLeafChildOf(const InlineBox& box) {
+  static const InlineBox* ForwardLeafChildOf(const InlineBox& box) {
     return box.NextLeafChild();
   }
 
-  static InlineBox* ForwardLeafChildIgnoringLineBreakOf(const InlineBox& box) {
+  static const InlineBox* ForwardNonPseudoLeafChildOf(const InlineBox& box) {
+    for (const InlineBox* runner = ForwardLeafChildOf(box); runner;
+         runner = ForwardLeafChildOf(*runner)) {
+      if (runner->GetLineLayoutItem().GetNode())
+        return runner;
+    }
+    return nullptr;
+  }
+
+  static const InlineBox* ForwardLeafChildIgnoringLineBreakOf(
+      const InlineBox& box) {
     return box.NextLeafChildIgnoringLineBreak();
   }
 
@@ -219,12 +242,11 @@ struct TraversalRight {
         visible_position, anchor);
   }
 
-  static Node* LogicalStartBoxOf(TextDirection direction,
-                                 const InlineBox& box,
-                                 InlineBox*& result_box) {
+  static const InlineBox* LogicalStartBoxOf(TextDirection direction,
+                                            const InlineBox& box) {
     if (direction == TextDirection::kLtr)
-      return box.Root().GetLogicalEndBoxWithNode(result_box);
-    return box.Root().GetLogicalStartBoxWithNode(result_box);
+      return box.Root().GetLogicalEndNonPseudoBox();
+    return box.Root().GetLogicalStartNonPseudoBox();
   }
 
   static bool IsOvershot(int offset, const InlineBox& box) {
@@ -234,9 +256,87 @@ struct TraversalRight {
   }
 };
 
-// TODO(yosin): We should rename local variables and comments in
-// |TraverseInternalAlgorithm()| to generic name based on |Traversal| instead of
-// assuming right-to-left traversal.
+template <typename Traversal>
+bool IsAfterAtomicInlineOrLineBreak(const InlineBox& box, int offset) {
+  if (offset != Traversal::CaretEndOffsetOf(box))
+    return false;
+  if (box.IsInlineTextBox() && ToInlineTextBox(box).IsLineBreak())
+    return true;
+  return box.GetLineLayoutItem().IsAtomicInlineLevel();
+}
+
+template <typename Traversal>
+const InlineBox* LeadingBoxOfEntireSecondaryRun(const InlineBox* box) {
+  const InlineBox* runner = box;
+  while (true) {
+    const InlineBox& backward_box =
+        Traversal::FindBackwardBoundaryOfEntireBidiRun(*runner,
+                                                       runner->BidiLevel());
+    if (backward_box.BidiLevel() == runner->BidiLevel())
+      return &backward_box;
+    DCHECK_GT(backward_box.BidiLevel(), runner->BidiLevel());
+    runner = &backward_box;
+
+    const InlineBox& forward_box =
+        Traversal::FindForwardBoundaryOfEntireBidiRun(*runner,
+                                                      runner->BidiLevel());
+    if (forward_box.BidiLevel() == runner->BidiLevel())
+      return &forward_box;
+    DCHECK_GT(forward_box.BidiLevel(), runner->BidiLevel());
+    runner = &forward_box;
+  }
+}
+
+// TODO(xiaochengh): Stop passing return value by non-const reference parameters
+template <typename Traversal>
+bool FindForwardBoxInPossiblyBidiContext(const InlineBox*& box,
+                                         int& offset,
+                                         TextDirection primary_direction) {
+  const unsigned char level = box->BidiLevel();
+  if (box->Direction() == primary_direction) {
+    const InlineBox* const forward_box = Traversal::ForwardLeafChildOf(*box);
+    if (!forward_box) {
+      if (const InlineBox* logical_start =
+              Traversal::LogicalStartBoxOf(primary_direction, *box)) {
+        box = logical_start;
+        offset = Traversal::CaretMinOffsetOf(primary_direction, *box);
+      }
+      return true;
+    }
+    if (forward_box->BidiLevel() >= level)
+      return true;
+
+    const unsigned char forward_level = forward_box->BidiLevel();
+    const InlineBox* const backward_box =
+        Traversal::FindBackwardBidiRun(*box, forward_level);
+    if (backward_box && backward_box->BidiLevel() == forward_level)
+      return true;
+
+    box = forward_box;
+    offset = Traversal::CaretEndOffsetOf(*box);
+    return box->Direction() == primary_direction;
+  }
+
+  const InlineBox* const forward_non_pseudo_box =
+      Traversal::ForwardNonPseudoLeafChildOf(*box);
+  if (forward_non_pseudo_box) {
+    box = forward_non_pseudo_box;
+    offset = Traversal::CaretEndOffsetOf(*box);
+    if (box->BidiLevel() > level) {
+      const InlineBox* const forward_bidi_run =
+          Traversal::FindForwardBidiRun(*forward_non_pseudo_box, level);
+      if (!forward_bidi_run || forward_bidi_run->BidiLevel() < level)
+        return false;
+    }
+    return true;
+  }
+  // Trailing edge of a secondary run. Set to the leading edge of
+  // the entire run.
+  box = LeadingBoxOfEntireSecondaryRun<Traversal>(box);
+  offset = Traversal::CaretMinOffsetOf(primary_direction, *box);
+  return true;
+}
+
 template <typename Strategy, typename Traversal>
 static PositionTemplate<Strategy> TraverseInternalAlgorithm(
     const VisiblePositionTemplate<Strategy>& visible_position) {
@@ -262,21 +362,21 @@ static PositionTemplate<Strategy> TraverseInternalAlgorithm(
       return Traversal::ForwardVisuallyDistinctCandidateOf(primary_direction,
                                                            deep_position);
     }
-    LineLayoutItem line_layout_item = box->GetLineLayoutItem();
 
     while (true) {
-      if ((line_layout_item.IsAtomicInlineLevel() || line_layout_item.IsBR()) &&
-          offset == Traversal::CaretEndOffsetOf(*box)) {
+      if (IsAfterAtomicInlineOrLineBreak<Traversal>(*box, offset)) {
         return Traversal::ForwardVisuallyDistinctCandidateOf(box->Direction(),
                                                              deep_position);
       }
+
+      const LineLayoutItem line_layout_item = box->GetLineLayoutItem();
+
       if (!line_layout_item.GetNode()) {
         box = Traversal::ForwardLeafChildOf(*box);
         if (!box) {
           return Traversal::ForwardVisuallyDistinctCandidateOf(
               primary_direction, deep_position);
         }
-        line_layout_item = box->GetLineLayoutItem();
         offset = Traversal::CaretEndOffsetOf(*box);
         continue;
       }
@@ -291,99 +391,42 @@ static PositionTemplate<Strategy> TraverseInternalAlgorithm(
         break;
 
       if (Traversal::IsOvershot(offset, *box)) {
-        // Overshot to the left.
-        InlineBox* const prev_box =
+        // Overshot forwardly.
+        const InlineBox* const forward_box =
             Traversal::ForwardLeafChildIgnoringLineBreakOf(*box);
-        if (!prev_box) {
-          const PositionTemplate<Strategy>& position_on_left =
+        if (!forward_box) {
+          const PositionTemplate<Strategy>& forward_position =
               Traversal::ForwardVisuallyDistinctCandidateOf(
                   primary_direction, visible_position.DeepEquivalent());
-          if (position_on_left.IsNull())
+          if (forward_position.IsNull())
             return PositionTemplate<Strategy>();
 
-          const InlineBox* box_on_left =
+          const InlineBox* forward_position_box =
               ComputeInlineBoxPosition(PositionWithAffinityTemplate<Strategy>(
-                                           position_on_left, affinity))
+                                           forward_position, affinity))
                   .inline_box;
-          if (box_on_left && box_on_left->Root() == box->Root())
+          if (forward_position_box &&
+              forward_position_box->Root() == box->Root())
             return PositionTemplate<Strategy>();
-          return position_on_left;
+          return forward_position;
         }
 
         // Reposition at the other logical position corresponding to our
         // edge's visual position and go for another round.
-        box = prev_box;
-        line_layout_item = box->GetLineLayoutItem();
-        offset = Traversal::CaretEndOffsetOf(*prev_box);
+        box = forward_box;
+        offset = Traversal::CaretEndOffsetOf(*forward_box);
         continue;
       }
 
       DCHECK_EQ(offset, Traversal::CaretStartOffsetOf(*box));
-
-      unsigned char level = box->BidiLevel();
-      InlineBox* prev_box = Traversal::ForwardLeafChildOf(*box);
-
-      if (box->Direction() == primary_direction) {
-        if (!prev_box) {
-          InlineBox* logical_start = nullptr;
-          if (Traversal::LogicalStartBoxOf(primary_direction, *box,
-                                           logical_start)) {
-            box = logical_start;
-            line_layout_item = box->GetLineLayoutItem();
-            offset = Traversal::CaretMinOffsetOf(primary_direction, *box);
-          }
-          break;
-        }
-        if (prev_box->BidiLevel() >= level)
-          break;
-
-        level = prev_box->BidiLevel();
-
-        InlineBox* const next_box = Traversal::FindBackwardBidiRun(*box, level);
-        if (next_box && next_box->BidiLevel() == level)
-          break;
-
-        box = prev_box;
-        line_layout_item = box->GetLineLayoutItem();
-        offset = Traversal::CaretEndOffsetOf(*box);
-        if (box->Direction() == primary_direction)
-          break;
-        continue;
-      }
-
-      while (prev_box && !prev_box->GetLineLayoutItem().GetNode())
-        prev_box = Traversal::ForwardLeafChildOf(*prev_box);
-
-      if (prev_box) {
-        box = prev_box;
-        line_layout_item = box->GetLineLayoutItem();
-        offset = Traversal::CaretEndOffsetOf(*box);
-        if (box->BidiLevel() > level) {
-          prev_box = Traversal::FindForwardBidiRun(*prev_box, level);
-          if (!prev_box || prev_box->BidiLevel() < level)
-            continue;
-        }
+      const bool should_break = FindForwardBoxInPossiblyBidiContext<Traversal>(
+          box, offset, primary_direction);
+      if (should_break)
         break;
-      }
-      // Trailing edge of a secondary run. Set to the leading edge of
-      // the entire run.
-      while (true) {
-        box = Traversal::FindBackwardBoundaryOfEntireBidiRun(*box, level);
-        if (box->BidiLevel() == level)
-          break;
-        level = box->BidiLevel();
-        box = Traversal::FindForwardBoundaryOfEntireBidiRun(*box, level);
-        if (box->BidiLevel() == level)
-          break;
-        level = box->BidiLevel();
-      }
-      line_layout_item = box->GetLineLayoutItem();
-      offset = Traversal::CaretMinOffsetOf(primary_direction, *box);
-      break;
     }
 
     p = PositionTemplate<Strategy>::EditingPositionOf(
-        line_layout_item.GetNode(), offset);
+        box->GetLineLayoutItem().GetNode(), offset);
 
     if ((IsVisuallyEquivalentCandidate(p) &&
          MostForwardCaretPosition(p) != downstream_start) ||

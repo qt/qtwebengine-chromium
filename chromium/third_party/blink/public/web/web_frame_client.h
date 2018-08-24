@@ -32,6 +32,7 @@
 #define THIRD_PARTY_BLINK_PUBLIC_WEB_WEB_FRAME_CLIENT_H_
 
 #include <memory>
+#include <vector>
 
 #include "base/unguessable_token.h"
 #include "third_party/blink/public/common/feature_policy/feature_policy.h"
@@ -40,7 +41,6 @@
 #include "third_party/blink/public/platform/blame_context.h"
 #include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_provider.h"
 #include "third_party/blink/public/platform/web_application_cache_host.h"
-#include "third_party/blink/public/platform/web_color.h"
 #include "third_party/blink/public/platform/web_common.h"
 #include "third_party/blink/public/platform/web_content_security_policy.h"
 #include "third_party/blink/public/platform/web_content_security_policy_struct.h"
@@ -50,7 +50,7 @@
 #include "third_party/blink/public/platform/web_file_system_type.h"
 #include "third_party/blink/public/platform/web_insecure_request_policy.h"
 #include "third_party/blink/public/platform/web_loading_behavior_flag.h"
-#include "third_party/blink/public/platform/web_security_origin.h"
+#include "third_party/blink/public/platform/web_scroll_types.h"
 #include "third_party/blink/public/platform/web_set_sink_id_callbacks.h"
 #include "third_party/blink/public/platform/web_source_location.h"
 #include "third_party/blink/public/platform/web_sudden_termination_disabler_type.h"
@@ -105,10 +105,10 @@ class WebMediaPlayerSource;
 class WebMediaSession;
 class WebServiceWorkerProvider;
 class WebPlugin;
-class WebPresentationClient;
 class WebPushClient;
 class WebRTCPeerConnectionHandler;
 class WebRelatedAppsFetcher;
+class WebSocketHandshakeThrottle;
 class WebSpeechRecognizer;
 class WebString;
 class WebURL;
@@ -116,6 +116,7 @@ class WebURLResponse;
 class WebUserMediaClient;
 struct WebConsoleMessage;
 struct WebContextMenuData;
+struct WebFullscreenOptions;
 struct WebPluginParams;
 struct WebPopupMenuInfo;
 struct WebRect;
@@ -206,11 +207,6 @@ class BLINK_EXPORT WebFrameClient {
   }
 
   // General notifications -----------------------------------------------
-
-  // Indicates if creating a plugin without an associated renderer is supported.
-  virtual bool CanCreatePluginWithoutRenderer(const WebString& mime_type) {
-    return false;
-  }
 
   // Indicates that another page has accessed the DOM of the initial empty
   // document of a main frame. After this, it is no longer safe to show a
@@ -303,6 +299,10 @@ class BLINK_EXPORT WebFrameClient {
   // eTLD+1 as the current document.
   virtual void SetHasReceivedUserGestureBeforeNavigation(bool value) {}
 
+  // Called when a frame is capturing mouse input, such as when a scrollbar
+  // is being dragged.
+  virtual void SetMouseCapture(bool capture) {}
+
   // Console messages ----------------------------------------------------
 
   // Whether or not we should report a detailed message for the given source.
@@ -319,7 +319,10 @@ class BLINK_EXPORT WebFrameClient {
   // Load commands -------------------------------------------------------
 
   // The client should handle the request as a download.
-  virtual void DownloadURL(const WebURLRequest&) {}
+  // If the request is for a blob: URL, a BlobURLTokenPtr should be provided
+  // as |blob_url_token| to ensure the correct blob gets downloaded.
+  virtual void DownloadURL(const WebURLRequest&,
+                           mojo::ScopedMessagePipeHandle blob_url_token) {}
 
   // The client should load an error page in the current frame.
   virtual void LoadErrorPage(int reason) {}
@@ -474,9 +477,9 @@ class BLINK_EXPORT WebFrameClient {
   // The navigation resulted in no change to the documents within the page.
   // For example, the navigation may have just resulted in scrolling to a
   // named anchor or a PopState event may have been dispatched.
-  virtual void DidNavigateWithinPage(const WebHistoryItem&,
-                                     WebHistoryCommitType,
-                                     bool content_initiated) {}
+  virtual void DidFinishSameDocumentNavigation(const WebHistoryItem&,
+                                               WebHistoryCommitType,
+                                               bool content_initiated) {}
 
   // Called upon update to scroll position, document state, and other
   // non-navigational events related to the data held by WebHistoryItem.
@@ -529,11 +532,6 @@ class BLINK_EXPORT WebFrameClient {
 
   // Used to access the embedder for the Push API.
   virtual WebPushClient* PushClient() { return nullptr; }
-
-  // Presentation API ----------------------------------------------------
-
-  // Used to access the embedder for the Presentation API.
-  virtual WebPresentationClient* PresentationClient() { return nullptr; }
 
   // InstalledApp API ----------------------------------------------------
 
@@ -703,6 +701,12 @@ class BLINK_EXPORT WebFrameClient {
       const WebRect&,
       const WebScrollIntoViewParams&) {}
 
+  // When the bubbling of a logical scroll reaches a local root, bubbling
+  // will be continued in the parent process.
+  virtual void BubbleLogicalScrollInParentFrame(
+      WebScrollDirection direction,
+      WebScrollGranularity granularity) {}
+
   // Find-in-page notifications ------------------------------------------
 
   // Notifies how many matches have been found in this frame so far, for a
@@ -774,7 +778,7 @@ class BLINK_EXPORT WebFrameClient {
   // After calling enterFullscreen or exitFullscreen,
   // WebWidget::didEnterFullscreen or WebWidget::didExitFullscreen
   // respectively will be called once the fullscreen mode has changed.
-  virtual void EnterFullscreen() {}
+  virtual void EnterFullscreen(const blink::WebFullscreenOptions& options) {}
   virtual void ExitFullscreen() {}
 
   // Sudden termination --------------------------------------------------
@@ -804,7 +808,6 @@ class BLINK_EXPORT WebFrameClient {
   // pointer.
   virtual void CheckIfAudioSinkExistsAndIsAuthorized(
       const WebString& sink_id,
-      const WebSecurityOrigin&,
       WebSetSinkIdCallbacks* callbacks) {
     if (callbacks) {
       callbacks->OnError(WebSetSinkIdError::kNotSupported);
@@ -842,8 +845,14 @@ class BLINK_EXPORT WebFrameClient {
   // This method is used to expose the AX Tree stored in content/renderer to the
   // DOM as part of AOM Phase 4.
   virtual WebComputedAXTree* GetOrCreateWebComputedAXTree() { return nullptr; }
+
+  // WebSocket -----------------------------------------------------------
+  virtual std::unique_ptr<WebSocketHandshakeThrottle>
+  CreateWebSocketHandshakeThrottle() {
+    return nullptr;
+  }
 };
 
 }  // namespace blink
 
-#endif
+#endif  // THIRD_PARTY_BLINK_PUBLIC_WEB_WEB_FRAME_CLIENT_H_

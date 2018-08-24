@@ -9,6 +9,14 @@
 
 namespace blink {
 
+namespace {
+
+ALWAYS_INLINE bool IsHashTableDeleteValue(const void* value) {
+  return value == reinterpret_cast<void*>(-1);
+}
+
+}  // namespace
+
 std::unique_ptr<MarkingVisitor> MarkingVisitor::Create(ThreadState* state,
                                                        MarkingMode mode) {
   return std::make_unique<MarkingVisitor>(state, mode);
@@ -79,7 +87,8 @@ bool IsUninitializedMemory(void* object_pointer, size_t object_size) {
 }  // namespace
 
 void MarkingVisitor::ConservativelyMarkHeader(HeapObjectHeader* header) {
-  const GCInfo* gc_info = ThreadHeap::GcInfo(header->GcInfoIndex());
+  const GCInfo* gc_info =
+      GCInfoTable::Get().GCInfoFromIndex(header->GcInfoIndex());
   if (gc_info->HasVTable() && !VTableInitialized(header->Payload())) {
     // We hit this branch when a GC strikes before GarbageCollected<>'s
     // constructor runs.
@@ -129,6 +138,40 @@ bool MarkingVisitor::RegisterWeakTable(const void* closure,
                                        EphemeronCallback iteration_callback) {
   Heap().RegisterWeakTable(const_cast<void*>(closure), iteration_callback);
   return true;
+}
+
+void MarkingVisitor::WriteBarrierSlow(void* value) {
+  if (!value || IsHashTableDeleteValue(value))
+    return;
+
+  ThreadState* const thread_state = ThreadState::Current();
+  if (!thread_state->IsIncrementalMarking())
+    return;
+
+  thread_state->Heap().WriteBarrier(value);
+}
+
+void MarkingVisitor::TraceMarkedBackingStoreSlow(void* value) {
+  if (!value)
+    return;
+
+  ThreadState* const thread_state = ThreadState::Current();
+  if (!thread_state->IsIncrementalMarking())
+    return;
+
+  // |value| is pointing to the start of a backing store.
+  HeapObjectHeader* header = HeapObjectHeader::FromPayload(value);
+  CHECK(header->IsMarked());
+  DCHECK(thread_state->CurrentVisitor());
+  // This check ensures that the visitor will not eagerly recurse into children
+  // but rather push all blink::GarbageCollected objects and only eagerly trace
+  // non-managed objects.
+  DCHECK(!thread_state->Heap().GetStackFrameDepth().IsEnabled());
+  // No weak handling for write barriers. Modifying weakly reachable objects
+  // strongifies them for the current cycle.
+  GCInfoTable::Get()
+      .GCInfoFromIndex(header->GcInfoIndex())
+      ->trace_(thread_state->CurrentVisitor(), value);
 }
 
 }  // namespace blink

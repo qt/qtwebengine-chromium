@@ -150,9 +150,8 @@ Layer::~Layer() {
   for (auto& observer : observer_list_)
     observer.LayerDestroyed(this);
 
-  // Destroying the animator may cause observers to use the layer (and
-  // indirectly the WebLayer). Destroy the animator first so that the WebLayer
-  // is still around.
+  // Destroying the animator may cause observers to use the layer. Destroy the
+  // animator first so that the layer is still around.
   SetAnimator(nullptr);
   if (compositor_)
     compositor_->SetRootLayer(nullptr);
@@ -714,6 +713,14 @@ bool Layer::StretchContentToFillBounds() const {
   return surface_layer_->stretch_content_to_fill_bounds();
 }
 
+void Layer::SetSurfaceSize(gfx::Size surface_size_in_dip) {
+  DCHECK(surface_layer_);
+  if (frame_size_in_dip_ == surface_size_in_dip)
+    return;
+  frame_size_in_dip_ = surface_size_in_dip;
+  RecomputeDrawsContentAndUVRect();
+}
+
 void Layer::SetTransferableResource(
     const viz::TransferableResource& resource,
     std::unique_ptr<viz::SingleReleaseCallback> release_callback,
@@ -767,7 +774,7 @@ void Layer::SetShowPrimarySurface(const viz::SurfaceId& surface_id,
 
   if (!surface_layer_) {
     scoped_refptr<cc::SurfaceLayer> new_layer = cc::SurfaceLayer::Create();
-    new_layer->SetHitTestable(true);
+    new_layer->SetSurfaceHitTestable(true);
     SwitchToLayer(new_layer);
     surface_layer_ = new_layer;
   }
@@ -1037,29 +1044,14 @@ bool Layer::PrepareTransferableResource(
   return true;
 }
 
-class LayerDebugInfo : public base::trace_event::ConvertableToTraceFormat {
- public:
-  explicit LayerDebugInfo(const std::string& name) : name_(name) {}
-  ~LayerDebugInfo() override {}
-  void AppendAsTraceFormat(std::string* out) const override {
-    base::DictionaryValue dictionary;
-    dictionary.SetString("layer_name", name_);
-    std::string tmp;
-    base::JSONWriter::Write(dictionary, &tmp);
-    out->append(tmp);
-  }
-
- private:
-  std::string name_;
-};
-
-std::unique_ptr<base::trace_event::ConvertableToTraceFormat>
-Layer::TakeDebugInfo(cc::Layer* layer) {
-  return base::WrapUnique(new LayerDebugInfo(name_));
+std::unique_ptr<base::trace_event::TracedValue> Layer::TakeDebugInfo(
+    cc::Layer* layer) {
+  auto value = std::make_unique<base::trace_event::TracedValue>();
+  value->SetString("layer_name", name_);
+  return value;
 }
 
-void Layer::didUpdateMainThreadScrollingReasons() {}
-void Layer::didChangeScrollbarsHiddenIfOverlay(bool) {}
+void Layer::DidChangeScrollbarsHiddenIfOverlay(bool) {}
 
 void Layer::CollectAnimators(
     std::vector<scoped_refptr<LayerAnimator>>* animators) {
@@ -1215,7 +1207,6 @@ float Layer::GetGrayscaleForAnimation() const {
 }
 
 SkColor Layer::GetColorForAnimation() const {
-  // WebColor is equivalent to SkColor, per WebColor.h.
   // The NULL check is here since this is invoked regardless of whether we have
   // been configured as LAYER_SOLID_COLOR.
   return solid_color_layer_.get() ?

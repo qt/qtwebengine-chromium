@@ -42,6 +42,7 @@
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_hash.h"
+#include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
 
@@ -133,7 +134,7 @@ class PLATFORM_EXPORT ResourceFetcher
 
   enum LoaderFinishType { kDidFinishLoading, kDidFinishFirstPartInMultipart };
   void HandleLoaderFinish(Resource*,
-                          double finish_time,
+                          TimeTicks finish_time,
                           LoaderFinishType,
                           uint32_t inflight_keepalive_bytes,
                           bool blocked_cross_site_document);
@@ -176,6 +177,9 @@ class PLATFORM_EXPORT ResourceFetcher
   // counting.
   void PrepareForLeakDetection();
 
+  using ResourceFetcherSet = PersistentHeapHashSet<WeakMember<ResourceFetcher>>;
+  static const ResourceFetcherSet& MainThreadFetchers();
+
  private:
   friend class ResourceCacheValidationSuppressor;
   enum class StopFetchingTarget {
@@ -206,10 +210,11 @@ class PLATFORM_EXPORT ResourceFetcher
   Resource* RequestResourceInternal(FetchParameters&,
                                     const ResourceFactory&,
                                     const SubstituteData&);
-  ResourceRequestBlockedReason PrepareRequest(FetchParameters&,
-                                              const ResourceFactory&,
-                                              const SubstituteData&,
-                                              unsigned long identifier);
+  base::Optional<ResourceRequestBlockedReason> PrepareRequest(
+      FetchParameters&,
+      const ResourceFactory&,
+      const SubstituteData&,
+      unsigned long identifier);
 
   Resource* ResourceForStaticData(const FetchParameters&,
                                   const ResourceFactory&,

@@ -7,7 +7,6 @@
 #include "third_party/blink/renderer/core/layout/layout_inline.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
-#include "third_party/blink/renderer/platform/fonts/character_range.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result_buffer.h"
 
 namespace blink {
@@ -44,7 +43,8 @@ NGInlineItem::NGInlineItem(NGInlineItemType type,
                            unsigned start,
                            unsigned end,
                            const ComputedStyle* style,
-                           LayoutObject* layout_object)
+                           LayoutObject* layout_object,
+                           bool end_may_collapse)
     : start_offset_(start),
       end_offset_(end),
       script_(USCRIPT_INVALID_CODE),
@@ -56,9 +56,31 @@ NGInlineItem::NGInlineItem(NGInlineItemType type,
       is_empty_item_(false),
       should_create_box_fragment_(false),
       style_variant_(static_cast<unsigned>(NGStyleVariant::kStandard)),
-      end_collapse_type_(kNotCollapsible) {
+      end_collapse_type_(kNotCollapsible),
+      end_may_collapse_(end_may_collapse) {
   DCHECK_GE(end, start);
   ComputeBoxProperties();
+}
+
+NGInlineItem::NGInlineItem(const NGInlineItem& other,
+                           unsigned start,
+                           unsigned end,
+                           scoped_refptr<const ShapeResult> shape_result)
+    : start_offset_(start),
+      end_offset_(end),
+      script_(other.script_),
+      shape_result_(shape_result),
+      style_(other.style_),
+      layout_object_(other.layout_object_),
+      type_(other.type_),
+      bidi_level_(other.bidi_level_),
+      shape_options_(other.shape_options_),
+      is_empty_item_(other.is_empty_item_),
+      should_create_box_fragment_(other.should_create_box_fragment_),
+      style_variant_(other.style_variant_),
+      end_collapse_type_(other.end_collapse_type_),
+      end_may_collapse_(other.end_may_collapse_) {
+  DCHECK_GE(end, start);
 }
 
 NGInlineItem::~NGInlineItem() = default;
@@ -82,7 +104,7 @@ void NGInlineItem::ComputeBoxProperties() {
       should_create_box_fragment_ =
           ToLayoutBoxModelObject(layout_object_)->HasSelfPaintingLayer() ||
           style_->HasOutline() || style_->CanContainAbsolutePositionObjects() ||
-          style_->CanContainFixedPositionObjects();
+          style_->CanContainFixedPositionObjects(false);
     }
     return;
   }
@@ -99,6 +121,13 @@ const char* NGInlineItem::NGInlineItemTypeToString(int val) const {
   return kNGInlineItemTypeStrings[val];
 }
 
+void NGInlineItem::SetBidiLevel(UBiDiLevel level) {
+  // Invalidate ShapeResult because it depends on the resolved direction.
+  if (DirectionFromLevel(level) != DirectionFromLevel(bidi_level_))
+    shape_result_ = nullptr;
+  bidi_level_ = level;
+}
+
 // Set bidi level to a list of NGInlineItem from |index| to the item that ends
 // with |end_offset|.
 // If |end_offset| is mid of an item, the item is split to ensure each item has
@@ -113,14 +142,14 @@ unsigned NGInlineItem::SetBidiLevel(Vector<NGInlineItem>& items,
                                     unsigned end_offset,
                                     UBiDiLevel level) {
   for (; items[index].end_offset_ < end_offset; index++)
-    items[index].bidi_level_ = level;
-  items[index].bidi_level_ = level;
+    items[index].SetBidiLevel(level);
+  items[index].SetBidiLevel(level);
 
   if (items[index].end_offset_ == end_offset) {
     // Let close items have the same bidi-level as the previous item.
     while (index + 1 < items.size() &&
            items[index + 1].Type() == NGInlineItem::kCloseTag) {
-      items[++index].bidi_level_ = level;
+      items[++index].SetBidiLevel(level);
     }
   } else {
     Split(items, index, end_offset);
@@ -152,6 +181,7 @@ void NGInlineItem::Split(Vector<NGInlineItem>& items,
                          unsigned offset) {
   DCHECK_GT(offset, items[index].start_offset_);
   DCHECK_LT(offset, items[index].end_offset_);
+  items[index].shape_result_ = nullptr;
   items.insert(index + 1, items[index]);
   items[index].end_offset_ = offset;
   items[index + 1].start_offset_ = offset;
@@ -161,11 +191,15 @@ void NGInlineItem::SetOffset(unsigned start, unsigned end) {
   DCHECK_GE(end, start);
   start_offset_ = start;
   end_offset_ = end;
+  // Any modification to the offset will invalidate the shape result.
+  shape_result_ = nullptr;
 }
 
 void NGInlineItem::SetEndOffset(unsigned end_offset) {
   DCHECK_GE(end_offset, start_offset_);
   end_offset_ = end_offset;
+  // Any modification to the offset will invalidate the shape result.
+  shape_result_ = nullptr;
 }
 
 bool NGInlineItem::HasStartEdge() const {
@@ -179,16 +213,6 @@ bool NGInlineItem::HasEndEdge() const {
   // TODO(kojii): Should use break token when NG has its own tree building.
   return !GetLayoutObject()->IsLayoutInline() ||
          !ToLayoutInline(GetLayoutObject())->Continuation();
-}
-
-NGInlineItemRange::NGInlineItemRange(Vector<NGInlineItem>* items,
-                                     unsigned start_index,
-                                     unsigned end_index)
-    : start_item_(&(*items)[start_index]),
-      size_(end_index - start_index),
-      start_index_(start_index) {
-  CHECK_LE(start_index, end_index);
-  CHECK_LE(end_index, items->size());
 }
 
 }  // namespace blink

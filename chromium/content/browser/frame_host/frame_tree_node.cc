@@ -42,46 +42,6 @@ base::LazyInstance<FrameTreeNodeIdMap>::DestructorAtExit
 const double kLoadingProgressMinimum = 0.1;
 const double kLoadingProgressDone = 1.0;
 
-void RecordUniqueNameSize(FrameTreeNode* node) {
-  const auto& unique_name = node->current_replication_state().unique_name;
-
-  // Don't record numbers for the root node, which always has an empty unique
-  // name.
-  if (!node->parent()) {
-    DCHECK(unique_name.empty());
-    return;
-  }
-
-  // The original requested name is derived from the browsing context name and
-  // is essentially unbounded in size...
-  UMA_HISTOGRAM_COUNTS_1M(
-      "SessionRestore.FrameUniqueNameOriginalRequestedNameSize",
-      node->current_replication_state().name.size());
-  // If the name is a frame path, attempt to normalize the statistics based on
-  // the number of frames in the frame path.
-  if (base::StartsWith(unique_name, "<!--framePath //",
-                       base::CompareCase::SENSITIVE)) {
-    size_t depth = 1;
-    while (node->parent()) {
-      ++depth;
-      node = node->parent();
-    }
-    // The max possible size of a unique name is 80 characters, so the expected
-    // size per component shouldn't be much more than that.
-    UMA_HISTOGRAM_COUNTS_100(
-        "SessionRestore.FrameUniqueNameWithFramePathSizePerComponent",
-        round(unique_name.size() / static_cast<float>(depth)));
-    // Blink allows a maximum of ~1024 subframes in a document, so this should
-    // be less than (80 character name + 1 character delimiter) * 1024.
-    UMA_HISTOGRAM_COUNTS_100000(
-        "SessionRestore.FrameUniqueNameWithFramePathSize", unique_name.size());
-  } else {
-    UMA_HISTOGRAM_COUNTS_100(
-        "SessionRestore.FrameUniqueNameFromRequestedNameSize",
-        unique_name.size());
-  }
-}
-
 }  // namespace
 
 // This observer watches the opener of its owner FrameTreeNode and clears the
@@ -169,8 +129,6 @@ FrameTreeNode::FrameTreeNode(FrameTree* frame_tree,
       g_frame_tree_node_id_map.Get().insert(
           std::make_pair(frame_tree_node_id_, this));
   CHECK(result.second);
-
-  RecordUniqueNameSize(this);
 
   // Note: this should always be done last in the constructor.
   blame_context_.Initialize();
@@ -262,9 +220,6 @@ void FrameTreeNode::RemoveChild(FrameTreeNode* child) {
 }
 
 void FrameTreeNode::ResetForNewProcess() {
-  current_frame_host()->SetLastCommittedUrl(GURL());
-  blame_context_.TakeSnapshot();
-
   // Remove child nodes from the tree, then delete them. This destruction
   // operation will notify observers.
   std::vector<std::unique_ptr<FrameTreeNode>>().swap(children_);
@@ -360,8 +315,6 @@ void FrameTreeNode::SetFrameName(const std::string& name,
 
   // Note the unique name should only be able to change before the first real
   // load is committed, but that's not strongly enforced here.
-  if (unique_name != replication_state_.unique_name)
-    RecordUniqueNameSize(this);
   render_manager_.OnDidUpdateName(name, unique_name);
   replication_state_.name = name;
   replication_state_.unique_name = unique_name;
@@ -603,8 +556,7 @@ bool FrameTreeNode::StopLoading() {
         expected_pending_nav_entry_id =
             navigation_request_->navigation_handle()->pending_nav_entry_id();
       }
-      navigator_->DiscardPendingEntryIfNeeded(expected_pending_nav_entry_id,
-                                              false /* is_download */);
+      navigator_->DiscardPendingEntryIfNeeded(expected_pending_nav_entry_id);
     }
     ResetNavigationRequest(false, true);
   }

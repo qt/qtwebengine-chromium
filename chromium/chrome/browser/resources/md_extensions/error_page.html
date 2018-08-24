@@ -6,6 +6,7 @@
 <link rel="import" href="chrome://resources/cr_elements/paper_button_style_css.html">
 <link rel="import" href="chrome://resources/html/cr.html">
 <link rel="import" href="chrome://resources/html/cr/ui/focus_outline_manager.html">
+<link rel="import" href="chrome://resources/html/cr/ui/focus_without_ink.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/iron-collapse/iron-collapse.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/iron-icons/iron-icons.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-button/paper-button.html">
@@ -100,7 +101,7 @@
       .error-message {
         -webkit-margin-start: 10px;
         flex-grow: 1;
-        word-break: break-all;
+        word-break: break-word;
       }
 
       .devtools-controls {
@@ -129,11 +130,6 @@
       .stack-trace-container li.selected,
       .stack-trace-container li:hover {
         background: var(--google-blue-100);
-      }
-
-      .devtool-button {
-        margin-bottom: 20px;
-        max-width: 300px;
       }
 
       extensions-code-section {
@@ -176,7 +172,7 @@
       <div id="main">
         <div id="heading">
           <paper-icon-button-light class="icon-arrow-back no-overlap">
-            <button id="close-button" aria-label="$i18n{back}"
+            <button id="closeButton" aria-label="$i18n{back}"
                 on-click="onCloseButtonTap_">
             </button>
           </paper-icon-button-light>
@@ -191,9 +187,10 @@
               <div class="item-container">
                 <div class$="error-item
                     [[computeErrorClass_(item, selectedEntry_)]]">
-                  <div actionable class=" start" on-click="onErrorItemAction_"
+                  <div actionable class="start" on-click="onErrorItemAction_"
                       on-keydown="onErrorItemAction_" tabindex="0"
-                      role="button">
+                      role="button" aria-expanded$="[[isAriaExpanded_(
+                          index, selectedEntry_)]]">
                     <iron-icon icon$="[[computeErrorIcon_(item)]]"
                         title$="[[computeErrorTypeLabel_(item)]]">
                     </iron-icon>
@@ -246,12 +243,6 @@
                           could-not-display-code="$i18n{noErrorsToShow}">
                       </extensions-code-section>
                     </template>
-                    <paper-button class="devtool-button action-button"
-                        hidden$="[[!computeIsRuntimeError_(item)]]"
-                        disabled="[[!item.canInspect]]"
-                        on-click="onDevToolButtonTap_">
-                      $i18n{openInDevtool}
-                    </paper-button>
                   </div>
                 </iron-collapse>
               </div>

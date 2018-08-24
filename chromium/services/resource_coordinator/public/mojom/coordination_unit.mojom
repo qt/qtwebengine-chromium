@@ -4,21 +4,45 @@
 
 module resource_coordinator.mojom;
 
+import "mojo/public/mojom/base/process_id.mojom";
 import "mojo/public/mojom/base/time.mojom";
+import "services/resource_coordinator/public/mojom/lifecycle.mojom";
 import "services/resource_coordinator/public/mojom/signals.mojom";
 
 // Any new type here needs to be mirrored between coordination_unit_types.h and
 // coordination_unit.mojom, and have mappings between the two defined in
-// coordination_unit_struct_traits.h/.cc (see comment in coordination_unit_id.h).
+// coordination_unit_mojom_traits.h/.cc (see comment in coordination_unit_id.h).
 enum CoordinationUnitType {
   kFrame,
   kPage,
   kProcess,
+  kSystem,
 };
 
 struct CoordinationUnitID {
   CoordinationUnitType type;
   int64 id;
+};
+
+struct ProcessResourceMeasurement {
+  // Identifies the process associated with this measurement.
+  mojo_base.mojom.ProcessId pid;
+
+  // The cumulative CPU usage accrued to this process from its start.
+  mojo_base.mojom.TimeDelta cpu_usage;
+
+  // The private memory footprint of the process.
+  uint32 private_footprint_kb = 0;
+};
+
+struct ProcessResourceMeasurementBatch {
+  // These times bracket the capture of the entire dump, e.g. each distinct
+  // measurement is captured somewhere between |batch_started_time| and
+  // |batch_ended_time|.
+  mojo_base.mojom.TimeTicks batch_started_time;
+  mojo_base.mojom.TimeTicks batch_ended_time;
+
+  array<ProcessResourceMeasurement> measurements;
 };
 
 // A FrameCoordinationUnit has at most one ProcessCoordinationUnit as its
@@ -38,6 +62,7 @@ interface FrameCoordinationUnit {
   // Property signals.
   SetAudibility(bool audible);
   SetNetworkAlmostIdle(bool idle);
+  SetLifecycleState(LifecycleState state);
 
   // Event signals.
   OnAlertFired();
@@ -83,4 +108,24 @@ interface ProcessCoordinationUnit {
   SetLaunchTime(mojo_base.mojom.Time launch_time);
   SetMainThreadTaskLoadIsLow(bool main_thread_task_load_is_low);
   SetPID(int64 pid);
+};
+
+// There is exactly one SystemCoordinationUnit at all times.
+interface SystemCoordinationUnit {
+  // Gets the ID of this coordination unit.
+  GetID() => (CoordinationUnitID id);
+
+  // Add a new binding to an existing SystemCoordinationUnit.
+  AddBinding(SystemCoordinationUnit& request);
+
+  // Event signals.
+
+  // Fired when all ProcessCUs have been adorned with consistent CPU usage
+  // metrics. This allows for subsequent heuristics to propagate these
+  // measurements to PageCUs via a heuristic.
+  OnProcessCPUUsageReady();
+
+  // Distributes a measurement batch onto the CU graph. This may generate
+  // events.
+  DistributeMeasurementBatch(ProcessResourceMeasurementBatch measurement_batch);
 };

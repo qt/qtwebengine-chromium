@@ -89,7 +89,6 @@ bool IsImageOrVideoElement(const Element* element) {
     return true;
   return false;
 }
-
 }  // namespace
 
 static EDisplay EquivalentBlockDisplay(EDisplay display) {
@@ -237,9 +236,10 @@ static void AdjustStyleForHTMLElement(ComputedStyle& style,
   if (IsHTMLFrameElement(element) || IsHTMLFrameSetElement(element)) {
     // Frames and framesets never honor position:relative or position:absolute.
     // This is necessary to fix a crash where a site tries to position these
-    // objects. They also never honor display.
+    // objects. They also never honor display nor floating.
     style.SetPosition(EPosition::kStatic);
     style.SetDisplay(EDisplay::kBlock);
+    style.SetFloating(EFloat::kNone);
     return;
   }
 
@@ -457,15 +457,18 @@ static void AdjustEffectiveTouchAction(ComputedStyle& style,
     element_touch_action = style.GetTouchAction();
   }
 
-  bool is_child_document =
-      element && element == element->GetDocument().documentElement() &&
-      element->GetDocument().LocalOwner();
+  if (!element) {
+    style.SetEffectiveTouchAction(element_touch_action & inherited_action);
+    return;
+  }
 
-  if (is_child_document) {
-    const ComputedStyle* frame_style =
-        element->GetDocument().LocalOwner()->GetComputedStyle();
-    if (frame_style)
-      inherited_action = frame_style->GetEffectiveTouchAction();
+  bool is_child_document = element == element->GetDocument().documentElement();
+
+  // Apply touch action inherited from parent frame.
+  if (is_child_document && element->GetDocument().GetFrame()) {
+    inherited_action &=
+        TouchAction::kTouchActionPan |
+        element->GetDocument().GetFrame()->InheritedEffectiveTouchAction();
   }
 
   // The effective touch action is the intersection of the touch-action values
@@ -478,37 +481,26 @@ static void AdjustEffectiveTouchAction(ComputedStyle& style,
   inherited_action =
       AdjustTouchActionForElement(inherited_action, style, element);
 
-  // Apply the adjusted parent effective touch actions.
-  style.SetEffectiveTouchAction(element_touch_action & inherited_action);
+  TouchAction enforced_by_policy = TouchAction::kTouchActionNone;
+  if (element &&
+      IsSupportedInFeaturePolicy(
+          mojom::FeaturePolicyFeature::kVerticalScroll) &&
+      element->GetDocument().GetFrame() &&
+      !element->GetDocument().GetFrame()->IsFeatureEnabled(
+          mojom::FeaturePolicyFeature::kVerticalScroll)) {
+    enforced_by_policy = TouchAction::kTouchActionPanY;
+  }
 
-  // Touch action is inherited across frames.
-  if (element && element->IsFrameOwnerElement() &&
-      ToHTMLFrameOwnerElement(element)->contentDocument()) {
-    Element* content_document_element =
-        ToHTMLFrameOwnerElement(element)->contentDocument()->documentElement();
-    if (content_document_element) {
-      // Actively trigger recalc for child document if the document does not
-      // have computed style created, or its effective touch action is out of
-      // date.
-      bool child_document_needs_recalc = true;
-      if (const ComputedStyle* content_document_style =
-              content_document_element->GetComputedStyle()) {
-        TouchAction document_touch_action =
-            content_document_style->GetEffectiveTouchAction();
-        TouchAction expected_document_touch_action =
-            AdjustTouchActionForElement(style.GetEffectiveTouchAction(),
-                                        *content_document_style,
-                                        content_document_element) &
-            content_document_style->GetTouchAction();
-        child_document_needs_recalc =
-            document_touch_action != expected_document_touch_action;
-      }
-      if (child_document_needs_recalc) {
-        content_document_element->SetNeedsStyleRecalc(
-            kSubtreeStyleChange,
-            StyleChangeReasonForTracing::Create(
-                StyleChangeReason::kInheritedStyleChangeFromParentFrame));
-      }
+  // Apply the adjusted parent effective touch actions.
+  style.SetEffectiveTouchAction((element_touch_action & inherited_action) |
+                                enforced_by_policy);
+
+  // Propagate touch action to child frames.
+  if (element->IsFrameOwnerElement()) {
+    Frame* content_frame = ToHTMLFrameOwnerElement(element)->ContentFrame();
+    if (content_frame) {
+      content_frame->SetInheritedEffectiveTouchAction(
+          style.GetEffectiveTouchAction());
     }
   }
 }
@@ -517,11 +509,13 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
                                         Element* element) {
   DCHECK(state.LayoutParentStyle());
   DCHECK(state.ParentStyle());
-  ComputedStyle& style = state.MutableStyleRef();
+  ComputedStyle& style = state.StyleRef();
   const ComputedStyle& parent_style = *state.ParentStyle();
   const ComputedStyle& layout_parent_style = *state.LayoutParentStyle();
 
-  if (style.Display() != EDisplay::kNone && element &&
+  if (element &&
+      (style.Display() != EDisplay::kNone ||
+       element->LayoutObjectIsNeeded(style)) &&
       element->IsHTMLElement()) {
     AdjustStyleForHTMLElement(style, ToHTMLElement(*element));
   }
@@ -664,6 +658,24 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
     // -webkit-appearance is none then we should clear the background image.
     if (!StyleResolver::HasAuthorBackground(state)) {
       style.MutableBackgroundInternal().ClearImage();
+    }
+  }
+
+  if (element && style.TextOverflow() == ETextOverflow::kEllipsis) {
+    const AtomicString& pseudo_id = element->ShadowPseudoId();
+    if (pseudo_id == "-webkit-input-placeholder" ||
+        pseudo_id == "-internal-input-suggested") {
+      TextControlElement* text_control =
+          ToTextControl(element->OwnerShadowHost());
+      DCHECK(text_control);
+      // TODO(futhark@chromium.org): We force clipping text overflow for focused
+      // input elements since we don't want to render ellipsis during editing.
+      // We should do this as a general solution which also includes
+      // contenteditable elements being edited. The computed style should not
+      // change, but LayoutBlockFlow::ShouldTruncateOverflowingText() should
+      // instead return false when text is being edited inside that block.
+      // https://crbug.com/814954
+      style.SetTextOverflow(text_control->ValueForTextOverflow());
     }
   }
 

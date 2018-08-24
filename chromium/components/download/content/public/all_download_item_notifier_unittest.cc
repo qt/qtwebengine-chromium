@@ -20,7 +20,7 @@ namespace {
 class MockNotifierObserver : public AllDownloadItemNotifier::Observer {
  public:
   MockNotifierObserver() {}
-  virtual ~MockNotifierObserver() {}
+  ~MockNotifierObserver() override {}
 
   MOCK_METHOD2(OnDownloadCreated,
                void(content::DownloadManager* manager, DownloadItem* item));
@@ -40,9 +40,9 @@ class AllDownloadItemNotifierTest : public testing::Test {
   AllDownloadItemNotifierTest()
       : download_manager_(new content::MockDownloadManager) {}
 
-  virtual ~AllDownloadItemNotifierTest() {}
+  ~AllDownloadItemNotifierTest() override {}
 
-  content::MockDownloadManager& manager() { return *download_manager_.get(); }
+  content::MockDownloadManager& manager() { return *download_manager_; }
 
   download::MockDownloadItem& item() { return item_; }
 
@@ -57,7 +57,7 @@ class AllDownloadItemNotifierTest : public testing::Test {
   MockNotifierObserver& observer() { return observer_; }
 
   void SetNotifier() {
-    EXPECT_CALL(*download_manager_.get(), AddObserver(_));
+    EXPECT_CALL(*download_manager_, AddObserver(_));
     notifier_.reset(
         new AllDownloadItemNotifier(download_manager_.get(), &observer_));
   }

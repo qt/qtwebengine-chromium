@@ -748,13 +748,14 @@ cr.define('print_preview', function() {
      * Attempts to resolve a provisional destination.
      * @param {!print_preview.Destination} destination Provisional destination
      *     that should be resolved.
+     * @return {!Promise<?print_preview.Destination>}
      */
     resolveProvisionalDestination(destination) {
       assert(
           destination.provisionalType ==
               print_preview.DestinationProvisionalType.NEEDS_USB_PERMISSION,
           'Provisional type cannot be resolved.');
-      this.nativeLayer_.grantExtensionPrinterAccess(destination.id)
+      return this.nativeLayer_.grantExtensionPrinterAccess(destination.id)
           .then(
               destinationInfo => {
                 /**
@@ -769,6 +770,7 @@ cr.define('print_preview', function() {
                 this.insertIntoStore_(parsedDestination);
                 this.dispatchProvisionalDestinationResolvedEvent_(
                     destination.id, parsedDestination);
+                return parsedDestination;
               },
               () => {
                 /**
@@ -779,6 +781,7 @@ cr.define('print_preview', function() {
                 this.removeProvisionalDestination_(destination.id);
                 this.dispatchProvisionalDestinationResolvedEvent_(
                     destination.id, null);
+                return null;
               });
     }
 
@@ -1005,11 +1008,11 @@ cr.define('print_preview', function() {
      */
     updateDestination_(destination) {
       assert(destination.constructor !== Array, 'Single printer expected');
-      destination.capabilities_ =
-          localizeCapabilities(assert(destination.capabilities_));
+      destination.capabilities =
+          localizeCapabilities(assert(destination.capabilities));
       if (print_preview.originToType(destination.origin) !==
           print_preview.PrinterType.LOCAL_PRINTER) {
-        destination.capabilities_ = sortMediaSizes(destination.capabilities_);
+        destination.capabilities = sortMediaSizes(destination.capabilities);
       }
       const existingDestination =
           this.destinationMap_[this.getKey_(destination)];
@@ -1053,7 +1056,7 @@ cr.define('print_preview', function() {
       const key = this.getKey_(destination);
       const existingDestination = this.destinationMap_[key];
       if (existingDestination == null) {
-        destination.isRecent |=
+        destination.isRecent = destination.isRecent ||
             this.recentDestinations_.some(function(recent) {
               return (
                   destination.id == recent.id &&

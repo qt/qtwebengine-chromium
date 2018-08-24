@@ -2,14 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(joedow): Remove RuntimeEnabled flag after the next branch point.
 [
     Exposed=Window,
     RuntimeEnabled=KeyboardLock,
     SecureContext
 ] interface Keyboard {
+    // Keyboard Lock specification: https://w3c.github.io/keyboard-lock/
     [CallWith=ScriptState,
      MeasureAs=KeyboardApiLock
     ] Promise<void> lock(optional sequence<DOMString> keyCodes = []);
 
-    [MeasureAs=KeyboardApiUnlock] void unlock();
+    [CallWith=ScriptState,
+     MeasureAs=KeyboardApiUnlock
+    ] void unlock();
+
+    // Keyboard Map specification: https://wicg.github.io/keyboard-map/
+    [CallWith=ScriptState,
+     RuntimeEnabled=KeyboardMap,
+     MeasureAs=KeyboardApiGetLayoutMap
+    ] Promise<KeyboardLayoutMap> getLayoutMap();
 };

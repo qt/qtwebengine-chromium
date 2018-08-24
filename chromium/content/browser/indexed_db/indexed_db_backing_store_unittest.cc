@@ -591,6 +591,9 @@ TEST_F(IndexedDBBackingStoreTestWithBlobs, PutGetConsistencyWithBlobs) {
             // Finish up transaction 3, verifying blob deletes.
             EXPECT_TRUE(state->transaction3->CommitPhaseTwo().ok());
             EXPECT_TRUE(test->CheckBlobRemovals());
+
+            // Clean up Transactions, etc on the IDB thread.
+            *state = TestState();
           },
           base::Unretained(this), base::Unretained(&state)));
   RunAllTasksUntilIdle();
@@ -716,6 +719,9 @@ TEST_F(IndexedDBBackingStoreTest, DeleteRange) {
                         backing_store->removals()[0]);
               EXPECT_EQ(backing_store->writes()[2].key(),
                         backing_store->removals()[1]);
+
+              // Clean up Transactions, etc on the IDB thread.
+              *state = TestState();
             },
             base::Unretained(backing_store()), base::Unretained(&state)));
     RunAllTasksUntilIdle();
@@ -837,6 +843,9 @@ TEST_F(IndexedDBBackingStoreTest, DeleteRangeEmptyRange) {
 
               // Verify blob removals.
               EXPECT_EQ(0UL, backing_store->removals().size());
+
+              // Clean up Transactions, etc on the IDB thread.
+              *state = TestState();
             },
             base::Unretained(backing_store()), base::Unretained(&state)));
     RunAllTasksUntilIdle();
@@ -919,6 +928,9 @@ TEST_F(IndexedDBBackingStoreTestWithBlobs, BlobJournalInterleavedTransactions) {
 
             EXPECT_TRUE(state->transaction2->CommitPhaseTwo().ok());
             EXPECT_EQ(0U, test->backing_store()->removals().size());
+
+            // Clean up Transactions, etc on the IDB thread.
+            *state = TestState();
           },
           base::Unretained(this), base::Unretained(&state)));
   RunAllTasksUntilIdle();
@@ -1022,7 +1034,7 @@ TEST_F(IndexedDBBackingStoreTestWithBlobs, LiveBlobJournal) {
   idb_context_->TaskRunner()->PostTask(
       FROM_HERE,
       base::BindOnce(
-          [](IndexedDBBackingStoreTestWithBlobs* test) {
+          [](IndexedDBBackingStoreTestWithBlobs* test, TestState* state) {
             EXPECT_TRUE(test->backing_store()->IsBlobCleanupPending());
 #if DCHECK_IS_ON()
             EXPECT_EQ(3,
@@ -1040,8 +1052,11 @@ TEST_F(IndexedDBBackingStoreTestWithBlobs, LiveBlobJournal) {
                       test->backing_store()->NumBlobFilesDeletedForTesting());
 #endif
             EXPECT_FALSE(test->backing_store()->IsBlobCleanupPending());
+
+            // Clean up Transactions, etc on the IDB thread.
+            *state = TestState();
           },
-          base::Unretained(this)));
+          base::Unretained(this), base::Unretained(&state)));
   RunAllTasksUntilIdle();
 }
 
@@ -1557,6 +1572,121 @@ TEST_F(IndexedDBBackingStoreTest, SchemaUpgradeWithoutBlobsSurvives) {
           base::Unretained(backing_store()), key1_, value1_,
           base::Unretained(&state)));
   RunAllTasksUntilIdle();
+}
+
+// Our v2->v3 schema migration code forgot to bump the on-disk version number.
+// This test covers migrating a v3 database mislabeled as v2 to a properly
+// labeled v3 database. When the mislabeled database has blob entries, we must
+// treat it as corrupt and delete it.
+// https://crbug.com/756447, https://crbug.com/829125, https://crbug.com/829141
+TEST_F(IndexedDBBackingStoreTestWithBlobs, SchemaUpgradeWithBlobsCorrupt) {
+  struct TestState {
+    int64_t database_id;
+    const int64_t object_store_id = 99;
+    std::unique_ptr<IndexedDBBackingStore::Transaction> transaction1;
+    scoped_refptr<TestCallback> callback1;
+    std::unique_ptr<IndexedDBBackingStore::Transaction> transaction3;
+    scoped_refptr<TestCallback> callback3;
+  } state;
+
+  // The database metadata needs to be written so the blob entry keys can
+  // be detected.
+  idb_context_->TaskRunner()->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](IndexedDBBackingStore* backing_store, TestState* state) {
+            const base::string16 database_name(ASCIIToUTF16("db1"));
+            const int64_t version = 9;
+
+            const base::string16 object_store_name(
+                ASCIIToUTF16("object_store1"));
+            const bool auto_increment = true;
+            const IndexedDBKeyPath object_store_key_path(
+                ASCIIToUTF16("object_store_key"));
+
+            IndexedDBMetadataCoding metadata_coding;
+
+            {
+              IndexedDBDatabaseMetadata database;
+              leveldb::Status s = metadata_coding.CreateDatabase(
+                  backing_store->db(), backing_store->origin_identifier(),
+                  database_name, version, &database);
+              EXPECT_TRUE(s.ok());
+              EXPECT_GT(database.id, 0);
+              state->database_id = database.id;
+
+              IndexedDBBackingStore::Transaction transaction(backing_store);
+              transaction.Begin();
+
+              IndexedDBObjectStoreMetadata object_store;
+              s = metadata_coding.CreateObjectStore(
+                  transaction.transaction(), database.id,
+                  state->object_store_id, object_store_name,
+                  object_store_key_path, auto_increment, &object_store);
+              EXPECT_TRUE(s.ok());
+
+              scoped_refptr<TestCallback> callback(
+                  base::MakeRefCounted<TestCallback>());
+              EXPECT_TRUE(transaction.CommitPhaseOne(callback).ok());
+              EXPECT_TRUE(callback->called);
+              EXPECT_TRUE(callback->succeeded);
+              EXPECT_TRUE(transaction.CommitPhaseTwo().ok());
+            }
+          },
+          base::Unretained(backing_store()), base::Unretained(&state)));
+  RunAllTasksUntilIdle();
+
+  idb_context_->TaskRunner()->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](IndexedDBBackingStoreTestWithBlobs* test, TestState* state) {
+            // Initiate transaction1 - writing blobs.
+            state->transaction1 =
+                std::make_unique<IndexedDBBackingStore::Transaction>(
+                    test->backing_store());
+            state->transaction1->Begin();
+            std::vector<std::unique_ptr<storage::BlobDataHandle>> handles;
+            IndexedDBBackingStore::RecordIdentifier record;
+            EXPECT_TRUE(test->backing_store()
+                            ->PutRecord(state->transaction1.get(),
+                                        state->database_id,
+                                        state->object_store_id, test->key3_,
+                                        &test->value3_, &handles, &record)
+                            .ok());
+            state->callback1 = base::MakeRefCounted<TestCallback>();
+            EXPECT_TRUE(
+                state->transaction1->CommitPhaseOne(state->callback1).ok());
+          },
+          base::Unretained(this), base::Unretained(&state)));
+  RunAllTasksUntilIdle();
+
+  idb_context_->TaskRunner()->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](IndexedDBBackingStoreTestWithBlobs* test, TestState* state) {
+            // Finish up transaction1, verifying blob writes.
+            EXPECT_TRUE(state->callback1->called);
+            EXPECT_TRUE(state->callback1->succeeded);
+            EXPECT_TRUE(test->CheckBlobWrites());
+            EXPECT_TRUE(state->transaction1->CommitPhaseTwo().ok());
+
+            // Set the schema to 2, which was before blob support.
+            scoped_refptr<LevelDBTransaction> transaction =
+                IndexedDBClassFactory::Get()->CreateLevelDBTransaction(
+                    test->backing_store()->db());
+            const std::string schema_version_key = SchemaVersionKey::Encode();
+            indexed_db::PutInt(transaction.get(), schema_version_key, 2);
+            ASSERT_TRUE(transaction->Commit().ok());
+          },
+          base::Unretained(this), base::Unretained(&state)));
+  RunAllTasksUntilIdle();
+
+  DestroyFactoryAndBackingStore();
+  CreateFactoryAndBackingStore();
+
+  // The factory returns a null backing store pointer when there is a corrupt
+  // database.
+  EXPECT_EQ(nullptr, backing_store());
 }
 
 }  // namespace indexed_db_backing_store_unittest

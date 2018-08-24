@@ -30,7 +30,7 @@
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
@@ -53,7 +53,7 @@ void ScriptedAnimationController::Trace(blink::Visitor* visitor) {
 }
 
 void ScriptedAnimationController::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+    ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(callback_collection_);
 }
 
@@ -131,19 +131,19 @@ void ScriptedAnimationController::DispatchEvents(
   }
 }
 
-void ScriptedAnimationController::ExecuteCallbacks(double monotonic_time_now) {
+void ScriptedAnimationController::ExecuteCallbacks(
+    base::TimeTicks monotonic_time_now) {
   // dispatchEvents() runs script which can cause the document to be destroyed.
   if (!document_)
     return;
 
-  TimeTicks time = TimeTicksFromSeconds(monotonic_time_now);
   double high_res_now_ms =
       1000.0 *
       document_->Loader()->GetTiming().MonotonicTimeToZeroBasedDocumentTime(
-          time);
+          monotonic_time_now);
   double legacy_high_res_now_ms =
-      1000.0 *
-      document_->Loader()->GetTiming().MonotonicTimeToPseudoWallTime(time);
+      1000.0 * document_->Loader()->GetTiming().MonotonicTimeToPseudoWallTime(
+                   monotonic_time_now);
   callback_collection_.ExecuteCallbacks(high_res_now_ms,
                                         legacy_high_res_now_ms);
 }
@@ -166,7 +166,7 @@ bool ScriptedAnimationController::HasScheduledItems() const {
 }
 
 void ScriptedAnimationController::ServiceScriptedAnimations(
-    double monotonic_time_now) {
+    base::TimeTicks monotonic_time_now) {
   current_frame_had_raf_ = HasCallback();
   if (!HasScheduledItems())
     return;

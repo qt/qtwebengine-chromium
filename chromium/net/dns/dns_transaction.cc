@@ -290,7 +290,7 @@ class DnsUDPAttempt : public DnsAttempt {
     next_state_ = STATE_SEND_QUERY_COMPLETE;
     return socket()->Write(
         query_->io_buffer(), query_->io_buffer()->size(),
-        base::Bind(&DnsUDPAttempt::OnIOComplete, base::Unretained(this)),
+        base::BindOnce(&DnsUDPAttempt::OnIOComplete, base::Unretained(this)),
         kTrafficAnnotation);
   }
 
@@ -312,7 +312,7 @@ class DnsUDPAttempt : public DnsAttempt {
     response_ = std::make_unique<DnsResponse>();
     return socket()->Read(
         response_->io_buffer(), response_->io_buffer_size(),
-        base::Bind(&DnsUDPAttempt::OnIOComplete, base::Unretained(this)));
+        base::BindOnce(&DnsUDPAttempt::OnIOComplete, base::Unretained(this)));
   }
 
   int DoReadResponseComplete(int rv) {
@@ -334,7 +334,6 @@ class DnsUDPAttempt : public DnsAttempt {
     }
     if (response_->flags() & dns_protocol::kFlagTC)
       return ERR_DNS_SERVER_REQUIRES_TCP;
-    // TODO(szym): Extract TTL for NXDOMAIN results. http://crbug.com/115051
     if (response_->rcode() == dns_protocol::kRcodeNXDOMAIN)
       return ERR_NAME_NOT_RESOLVED;
     if (response_->rcode() != dns_protocol::kRcodeNOERROR)
@@ -600,7 +599,7 @@ class DnsTCPAttempt : public DnsAttempt {
     start_time_ = base::TimeTicks::Now();
     next_state_ = STATE_CONNECT_COMPLETE;
     int rv = socket_->Connect(
-        base::Bind(&DnsTCPAttempt::OnIOComplete, base::Unretained(this)));
+        base::BindOnce(&DnsTCPAttempt::OnIOComplete, base::Unretained(this)));
     if (rv == ERR_IO_PENDING) {
       set_result(rv);
       return rv;
@@ -702,7 +701,7 @@ class DnsTCPAttempt : public DnsAttempt {
       next_state_ = STATE_SEND_LENGTH;
       return socket_->Write(
           buffer_.get(), buffer_->BytesRemaining(),
-          base::Bind(&DnsTCPAttempt::OnIOComplete, base::Unretained(this)),
+          base::BindOnce(&DnsTCPAttempt::OnIOComplete, base::Unretained(this)),
           kTrafficAnnotation);
     }
     buffer_ =
@@ -721,7 +720,7 @@ class DnsTCPAttempt : public DnsAttempt {
       next_state_ = STATE_SEND_QUERY;
       return socket_->Write(
           buffer_.get(), buffer_->BytesRemaining(),
-          base::Bind(&DnsTCPAttempt::OnIOComplete, base::Unretained(this)),
+          base::BindOnce(&DnsTCPAttempt::OnIOComplete, base::Unretained(this)),
           kTrafficAnnotation);
     }
     buffer_ =
@@ -803,7 +802,7 @@ class DnsTCPAttempt : public DnsAttempt {
   int ReadIntoBuffer() {
     return socket_->Read(
         buffer_.get(), buffer_->BytesRemaining(),
-        base::Bind(&DnsTCPAttempt::OnIOComplete, base::Unretained(this)));
+        base::BindOnce(&DnsTCPAttempt::OnIOComplete, base::Unretained(this)));
   }
 
   State next_state_;
@@ -991,7 +990,7 @@ class DnsTransactionImpl : public DnsTransaction,
     net_log_.EndEventWithNetErrorCode(NetLogEventType::DNS_TRANSACTION,
                                       result.rv);
 
-    base::ResetAndReturn(&callback_).Run(this, result.rv, response);
+    std::move(callback_).Run(this, result.rv, response);
   }
 
   bool IsHostInDnsOverHttpsServerList(const std::string& host) const {
@@ -1256,7 +1255,7 @@ class DnsTransactionImpl : public DnsTransaction,
           if (!qnames_.empty())
             qnames_.pop_front();
           if (qnames_.empty()) {
-            return AttemptResult(ERR_NAME_NOT_RESOLVED, NULL);
+            return result;
           } else {
             result = StartQuery();
           }

@@ -11,7 +11,6 @@
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
 #include "components/viz/common/surfaces/surface_info.h"
@@ -201,7 +200,6 @@ class WindowTreeClientWmTestSurfaceSync
 
   // WindowTreeClientWmTest:
   void SetUp() override {
-    feature_list_.InitAndEnableFeature(features::kMash);
     if (GetParam()) {
       base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
           switches::kForceDeviceScaleFactor, "2");
@@ -210,8 +208,6 @@ class WindowTreeClientWmTestSurfaceSync
   }
 
  private:
-  base::test::ScopedFeatureList feature_list_;
-
   DISALLOW_COPY_AND_ASSIGN(WindowTreeClientWmTestSurfaceSync);
 };
 
@@ -249,6 +245,7 @@ class WindowTreeClientClientTestHighDPI : public WindowTreeClientClientTest {
     WindowTreeClientClientTest::SetUp();
   }
   void OnPointerEventObserved(const ui::PointerEvent& event,
+                              int64_t display_id,
                               Window* target) override {
     last_event_observed_.reset(new ui::PointerEvent(event));
   }
@@ -1496,15 +1493,19 @@ class WindowTreeClientPointerObserverTest : public WindowTreeClientClientTest {
   const ui::PointerEvent* last_event_observed() const {
     return last_event_observed_.get();
   }
+  int64_t last_display_id() const { return last_display_id_; }
 
   // WindowTreeClientClientTest:
   void OnPointerEventObserved(const ui::PointerEvent& event,
+                              int64_t display_id,
                               Window* target) override {
     last_event_observed_.reset(new ui::PointerEvent(event));
+    last_display_id_ = display_id;
   }
 
  private:
   std::unique_ptr<ui::PointerEvent> last_event_observed_;
+  int64_t last_display_id_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(WindowTreeClientPointerObserverTest);
 };
@@ -1522,18 +1523,20 @@ TEST_F(WindowTreeClientPointerObserverTest, OnPointerEventObserved) {
   window_tree_client_impl()->StartPointerWatcher(false /* want_moves */);
 
   // Simulate the server sending an observed event.
+  const int64_t kDisplayId = 111;
   std::unique_ptr<ui::PointerEvent> pointer_event_down(new ui::PointerEvent(
       ui::ET_POINTER_DOWN, gfx::Point(), gfx::Point(), ui::EF_CONTROL_DOWN, 0,
       ui::PointerDetails(ui::EventPointerType::POINTER_TYPE_TOUCH, 1),
       base::TimeTicks()));
   window_tree_client()->OnPointerEventObserved(std::move(pointer_event_down),
-                                               0u, 0);
+                                               0u, kDisplayId);
 
   // Delegate sensed the event.
   const ui::PointerEvent* last_event = last_event_observed();
   ASSERT_TRUE(last_event);
   EXPECT_EQ(ui::ET_POINTER_DOWN, last_event->type());
   EXPECT_EQ(ui::EF_CONTROL_DOWN, last_event->flags());
+  EXPECT_EQ(kDisplayId, last_display_id());
   DeleteLastEventObserved();
 
   // Stop the pointer watcher.
@@ -1545,7 +1548,7 @@ TEST_F(WindowTreeClientPointerObserverTest, OnPointerEventObserved) {
       ui::PointerDetails(ui::EventPointerType::POINTER_TYPE_TOUCH, 1),
       base::TimeTicks()));
   window_tree_client()->OnPointerEventObserved(std::move(pointer_event_up), 0u,
-                                               0);
+                                               kDisplayId);
 
   // No event was sensed.
   EXPECT_FALSE(last_event_observed());
@@ -1860,11 +1863,11 @@ TEST_F(WindowTreeClientClientTest, NewWindowGetsProperties) {
   const uint8_t explicitly_set_test_property1_value = 29;
   window.SetProperty(kTestPropertyKey1, explicitly_set_test_property1_value);
   window.Init(ui::LAYER_NOT_DRAWN);
-  base::Optional<std::unordered_map<std::string, std::vector<uint8_t>>>
+  base::Optional<base::flat_map<std::string, std::vector<uint8_t>>>
       transport_properties = window_tree()->GetLastNewWindowProperties();
   ASSERT_TRUE(transport_properties.has_value());
   std::map<std::string, std::vector<uint8_t>> properties =
-      mojo::UnorderedMapToMap(*transport_properties);
+      mojo::FlatMapToMap(*transport_properties);
   ASSERT_EQ(1u, properties.count(kTestPropertyServerKey1));
   // PropertyConverter uses int64_t values, even for smaller types like uint8_t.
   ASSERT_EQ(8u, properties[kTestPropertyServerKey1].size());
@@ -2131,11 +2134,11 @@ TEST_F(WindowTreeClientClientTest, NewTopLevelWindowGetsProperties) {
       WindowTreeChangeType::NEW_TOP_LEVEL, &change_id));
 
   // Verify the properties were sent to the server.
-  base::Optional<std::unordered_map<std::string, std::vector<uint8_t>>>
+  base::Optional<base::flat_map<std::string, std::vector<uint8_t>>>
       transport_properties = window_tree()->GetLastNewWindowProperties();
   ASSERT_TRUE(transport_properties.has_value());
   std::map<std::string, std::vector<uint8_t>> properties2 =
-      mojo::UnorderedMapToMap(*transport_properties);
+      mojo::FlatMapToMap(*transport_properties);
   ASSERT_EQ(1u, properties2.count(kTestPropertyServerKey1));
   // PropertyConverter uses int64_t values, even for smaller types like uint8_t.
   ASSERT_EQ(8u, properties2[kTestPropertyServerKey1].size());

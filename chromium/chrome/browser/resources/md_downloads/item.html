@@ -3,6 +3,7 @@
 <link rel="import" href="chrome://resources/cr_elements/cr_icons_css.html">
 <link rel="import" href="chrome://resources/cr_elements/hidden_style_css.html">
 <link rel="import" href="chrome://resources/cr_elements/icons.html">
+<link rel="import" href="chrome://resources/cr_elements/shared_vars_css.html">
 <link rel="import" href="chrome://resources/html/action_link.html">
 <link rel="import" href="chrome://resources/html/action_link_css.html">
 <link rel="import" href="chrome://resources/html/cr.html">
@@ -45,7 +46,7 @@
 
       #content {
         background: white;
-        border-radius: 2px;
+        border-radius: var(--cr-card-border-radius);
         display: flex;
         flex: none;
         margin: 6px auto;
@@ -220,15 +221,6 @@
         width: 32px;
       }
 
-      /* TODO(hcarmona): Move this to its parent after updating
-         paper-icon-button-light to have:
-         :host ::slotted(button) {
-           font-size: inherit;
-         } */
-      #remove-wrapper > paper-icon-button-light > button {
-        font-size: 16px;
-      }
-
       #incognito {
         bottom: 20px;
         content: -webkit-image-set(
@@ -315,12 +307,12 @@
       </div>
 
       <div id="remove-wrapper" class="icon-wrapper ">
-        <paper-icon-button-light
+        <paper-icon-button-light class="icon-clear"
             style$="[[computeRemoveStyle_(isDangerous_, showCancel_)]]">
           <button id="remove"
               title="$i18n{controlRemoveFromList}"
               aria-label="$i18n{controlRemoveFromList}"
-              on-click="onRemoveTap_">&#x2715;</button>
+              on-click="onRemoveTap_"></button>
         </paper-icon-button-light>
       </div>
 

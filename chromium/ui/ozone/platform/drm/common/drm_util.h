@@ -30,6 +30,18 @@ class Point;
 
 namespace ui {
 
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+enum class EdidColorSpaceChecksOutcome {
+  kSuccess = 0,
+  kErrorBadCoordinates = 1,
+  kErrorPrimariesAreaTooSmall = 2,
+  kErrorBluePrimaryIsBroken = 3,
+  kErrorCannotExtractToXYZD50 = 4,
+  kErrorBadGamma = 5,
+  kMaxValue = kErrorBadGamma
+};
+
 // Representation of the information required to initialize and configure a
 // native display. |index| is the position of the connection and will be
 // used to generate a unique identifier for the display.
@@ -93,6 +105,12 @@ gfx::BufferFormat GetBufferFormatFromFourCCFormat(int format);
 int GetFourCCFormatForOpaqueFramebuffer(gfx::BufferFormat format);
 
 gfx::Size GetMaximumCursorSize(int fd);
+
+ScopedDrmPropertyPtr FindDrmProperty(int fd,
+                                     drmModeObjectProperties* properties,
+                                     const char* name);
+
+bool HasColorCorrectionMatrix(int fd, drmModeCrtc* crtc);
 
 DisplayMode_Params GetDisplayModeParams(const display::DisplayMode& mode);
 

@@ -10,11 +10,12 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "jni/AndroidProxyConfigServiceTestUtil_jni.h"
 #include "net/proxy_resolution/proxy_config_with_annotation.h"
 #include "net/proxy_resolution/proxy_info.h"
+#include "net/test/test_with_scoped_task_environment.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -58,15 +59,14 @@ class JavaLooperPreparer {
 
 typedef std::map<std::string, std::string> StringMap;
 
-class ProxyConfigServiceAndroidTestBase : public testing::Test {
+class ProxyConfigServiceAndroidTestBase : public TestWithScopedTaskEnvironment {
  protected:
   // Note that the current thread's message loop is initialized by the test
   // suite (see net/test/net_test_suite.cc).
   ProxyConfigServiceAndroidTestBase(const StringMap& initial_configuration)
       : configuration_(initial_configuration),
-        message_loop_(base::MessageLoop::current()),
-        service_(message_loop_->task_runner(),
-                 message_loop_->task_runner(),
+        service_(base::ThreadTaskRunnerHandle::Get(),
+                 base::ThreadTaskRunnerHandle::Get(),
                  base::Bind(&ProxyConfigServiceAndroidTestBase::GetProperty,
                             base::Unretained(this))) {}
 
@@ -112,7 +112,6 @@ class ProxyConfigServiceAndroidTestBase : public testing::Test {
 
   StringMap configuration_;
   TestObserver observer_;
-  base::MessageLoop* const message_loop_;
   // |java_looper_preparer_| appears before |service_| so that Java's Looper is
   // prepared before constructing |service_| as it creates a ProxyChangeListener
   // which requires a Looper.

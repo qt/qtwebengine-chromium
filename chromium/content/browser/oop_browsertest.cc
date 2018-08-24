@@ -35,7 +35,7 @@ class OOPBrowserTest : public ContentBrowserTest {
     command_line->AppendSwitch(switches::kEnablePixelOutputInTests);
     command_line->AppendSwitch(switches::kEnableOOPRasterization);
 
-    const bool use_gpu_in_tests = !features::IsMusEnabled();
+    const bool use_gpu_in_tests = !features::IsMashEnabled();
     if (use_gpu_in_tests)
       command_line->AppendSwitch(switches::kUseGpuInTests);
   }
@@ -60,7 +60,7 @@ IN_PROC_BROWSER_TEST_F(OOPBrowserTest, Basic) {
   NavigateToURLBlockUntilNavigationsComplete(shell(), url, 1);
   shell()->web_contents()->GetMainFrame()->InsertVisualStateCallback(base::Bind(
       &OOPBrowserTest::VerifyVisualStateUpdated, base::Unretained(this),
-      base::MessageLoop::QuitWhenIdleClosure()));
+      base::RunLoop::QuitCurrentWhenIdleClosureDeprecated()));
   content::RunMessageLoop();
 
   auto* rwh = shell()->web_contents()->GetRenderViewHost()->GetWidget();

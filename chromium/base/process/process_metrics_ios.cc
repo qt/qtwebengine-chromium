@@ -25,9 +25,9 @@ std::unique_ptr<ProcessMetrics> ProcessMetrics::CreateProcessMetrics(
   return WrapUnique(new ProcessMetrics(process));
 }
 
-double ProcessMetrics::GetPlatformIndependentCPUUsage() {
+TimeDelta ProcessMetrics::GetCumulativeCPUUsage() {
   NOTIMPLEMENTED();
-  return 0;
+  return TimeDelta();
 }
 
 size_t GetMaxFds() {
@@ -47,7 +47,7 @@ size_t GetMaxFds() {
   return static_cast<size_t>(max_fds);
 }
 
-void SetFdLimit(unsigned int max_descriptors) {
+void IncreaseFdLimitTo(unsigned int max_descriptors) {
   // Unimplemented.
 }
 

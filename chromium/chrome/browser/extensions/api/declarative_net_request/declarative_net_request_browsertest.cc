@@ -6,12 +6,16 @@
 
 #include <algorithm>
 #include <memory>
+#include <set>
+#include <vector>
 
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/json/json_string_value_serializer.h"
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/path_service.h"
+#include "base/rand_util.h"
 #include "base/test/histogram_tester.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
@@ -31,7 +35,7 @@
 #include "components/proxy_config/proxy_config_pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_entry.h"
-#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
@@ -44,13 +48,12 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extension_util.h"
-#include "extensions/browser/notification_types.h"
-#include "extensions/browser/runtime_data.h"
 #include "extensions/common/api/declarative_net_request/constants.h"
 #include "extensions/common/api/declarative_net_request/test_utils.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_id.h"
 #include "extensions/common/url_pattern.h"
+#include "extensions/test/extension_test_message_listener.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "net/test/test_data_directory.h"
@@ -90,8 +93,8 @@ class URLRequestMonitor : public RulesetManager::TestObserver {
 
  private:
   // RulesetManager::TestObserver implementation.
-  void OnShouldBlockRequest(const WebRequestInfo& request,
-                            bool is_incognito_context) override {
+  void OnEvaluateRequest(const WebRequestInfo& request,
+                         bool is_incognito_context) override {
     if (request.url == url_)
       GetAndResetRequestSeen(true);
   }
@@ -115,12 +118,12 @@ class DeclarativeNetRequestBrowserTest
  public:
   DeclarativeNetRequestBrowserTest() {}
 
-  // ExtensionBrowserTest override.
+  // ExtensionBrowserTest overrides:
   void SetUpOnMainThread() override {
     ExtensionBrowserTest::SetUpOnMainThread();
 
     base::FilePath test_root_path;
-    PathService::Get(chrome::DIR_TEST_DATA, &test_root_path);
+    base::PathService::Get(chrome::DIR_TEST_DATA, &test_root_path);
     test_root_path = test_root_path.AppendASCII("extensions")
                          .AppendASCII("declarative_net_request");
     embedded_test_server()->ServeFilesFromDirectory(test_root_path);
@@ -131,6 +134,19 @@ class DeclarativeNetRequestBrowserTest
     host_resolver()->AddRule("*", "127.0.0.1");
 
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+  }
+  void CreatedBrowserMainParts(
+      content::BrowserMainParts* browser_main_parts) override {
+    // At this point, the notification service is initialized but the profile
+    // and extensions have not. Initialize |background_page_ready_listener_| to
+    // listen for messages from extensions.
+    CHECK(content::NotificationService::current());
+
+    background_page_ready_listener_ =
+        std::make_unique<ExtensionTestMessageListener>("ready",
+                                                       false /*will_reply*/);
+
+    ExtensionBrowserTest::CreatedBrowserMainParts(browser_main_parts);
   }
 
  protected:
@@ -184,6 +200,7 @@ class DeclarativeNetRequestBrowserTest
                             kJSONRulesFilename, rules, hosts,
                             has_background_script_);
 
+    background_page_ready_listener_->Reset();
     const Extension* extension = nullptr;
     switch (GetParam()) {
       case ExtensionLoadType::PACKED:
@@ -200,6 +217,10 @@ class DeclarativeNetRequestBrowserTest
 
     // Ensure the ruleset is also loaded on the IO thread.
     content::RunAllTasksUntilIdle();
+
+    // Wait for the background page to load if needed.
+    if (has_background_script_)
+      WaitForBackgroundScriptToLoad(extension->id());
 
     // Ensure no load errors were reported.
     EXPECT_TRUE(LoadErrorReporter::GetInstance()->GetErrors()->empty());
@@ -220,9 +241,81 @@ class DeclarativeNetRequestBrowserTest
                            {URLPattern::kAllUrlsPattern});
   }
 
+  void WaitForBackgroundScriptToLoad(const ExtensionId& extension_id) {
+    ASSERT_TRUE(background_page_ready_listener_->WaitUntilSatisfied());
+    ASSERT_EQ(extension_id,
+              background_page_ready_listener_->extension_id_for_message());
+    background_page_ready_listener_->Reset();
+  }
+
+  void AddWhitelistedPages(const ExtensionId& extension_id,
+                           const std::vector<std::string>& patterns) {
+    UpdateWhitelistedPages(extension_id, patterns, "addWhitelistedPages");
+  }
+
+  void RemoveWhitelistedPages(const ExtensionId& extension_id,
+                              const std::vector<std::string>& patterns) {
+    UpdateWhitelistedPages(extension_id, patterns, "removeWhitelistedPages");
+  }
+
+  // Verifies that the result of getWhitelistedPages call is the same as
+  // |expected_patterns|.
+  void VerifyGetWhitelistedPages(
+      const ExtensionId& extension_id,
+      const std::set<std::string>& expected_patterns) {
+    static constexpr char kScript[] = R"(
+      chrome.declarativeNetRequest.getWhitelistedPages(function(patterns) {
+        window.domAutomationController.send(chrome.runtime.lastError
+                                                ? 'error'
+                                                : JSON.stringify(patterns));
+      });
+    )";
+
+    const std::string result =
+        ExecuteScriptInBackgroundPage(extension_id, kScript);
+    ASSERT_NE("error", result);
+
+    // Parse |result| as a list and deserialize it to a set of strings.
+    std::unique_ptr<base::Value> value =
+        JSONStringValueDeserializer(result).Deserialize(
+            nullptr /*error_code*/, nullptr /*error_message*/);
+    ASSERT_TRUE(value);
+    ASSERT_TRUE(value->is_list());
+    std::set<std::string> patterns;
+    for (const auto& pattern_value : value->GetList()) {
+      ASSERT_TRUE(pattern_value.is_string());
+      patterns.insert(pattern_value.GetString());
+    }
+
+    EXPECT_EQ(expected_patterns, patterns);
+  }
+
  private:
+  void UpdateWhitelistedPages(const ExtensionId& extension_id,
+                              const std::vector<std::string>& patterns,
+                              const std::string& function_name) {
+    static constexpr char kScript[] = R"(
+      chrome.declarativeNetRequest.%s(%s, function() {
+        window.domAutomationController.send(chrome.runtime.lastError
+                                                ? 'error'
+                                                : 'success');
+      });
+    )";
+
+    // Serialize |patterns| to JSON.
+    std::unique_ptr<base::ListValue> list = ToListValue(patterns);
+    std::string json_string;
+    ASSERT_TRUE(JSONStringValueSerializer(&json_string).Serialize(*list));
+
+    EXPECT_EQ("success", ExecuteScriptInBackgroundPage(
+                             extension_id,
+                             base::StringPrintf(kScript, function_name.c_str(),
+                                                json_string.c_str())));
+  }
+
   base::ScopedTempDir temp_dir_;
   bool has_background_script_ = false;
+  std::unique_ptr<ExtensionTestMessageListener> background_page_ready_listener_;
 
   DISALLOW_COPY_AND_ASSIGN(DeclarativeNetRequestBrowserTest);
 };
@@ -273,6 +366,7 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
   for (const auto& rule_data : rules_data) {
     TestRule rule = CreateGenericRule();
     rule.condition->url_filter = rule_data.url_filter;
+    rule.condition->resource_types = std::vector<std::string>({"main_frame"});
     rule.id = rule_data.id;
     rules.push_back(rule);
   }
@@ -301,6 +395,7 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
   TestRule rule = CreateGenericRule();
   rule.condition->url_filter =
       std::string("pages_with_script/page2.html?q=bye^");
+  rule.condition->resource_types = std::vector<std::string>({"main_frame"});
   ASSERT_NO_FATAL_FAILURE(LoadExtensionWithRules({rule}));
 
   // '^' (Separator character) matches anything except a letter, a digit or
@@ -538,18 +633,21 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest, Whitelist) {
   TestRule rule = CreateGenericRule();
   int id = kMinValidID;
 
-  // Block all requests ending with numbers 1 to |kNumRequests|.
+  // Block all main-frame requests ending with numbers 1 to |kNumRequests|.
   std::vector<TestRule> rules;
   for (int i = 1; i <= kNumRequests; ++i) {
     rule.id = id++;
     rule.condition->url_filter = base::StringPrintf("num=%d|", i);
+    rule.condition->resource_types = std::vector<std::string>({"main_frame"});
     rules.push_back(rule);
   }
 
-  // Whitelist all requests ending with even numbers from 1 to |kNumRequests|.
+  // Whitelist all main-frame requests ending with even numbers from 1 to
+  // |kNumRequests|.
   for (int i = 2; i <= kNumRequests; i += 2) {
     rule.id = id++;
     rule.condition->url_filter = base::StringPrintf("num=%d|", i);
+    rule.condition->resource_types = std::vector<std::string>({"main_frame"});
     rule.action->type = std::string("whitelist");
     rules.push_back(rule);
   }
@@ -577,9 +675,10 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest, Whitelist) {
 // enabled.
 IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
                        Enable_Disable_Reload_Uninstall) {
-  // Block all requests to example.com
+  // Block all main frame requests to example.com
   TestRule rule = CreateGenericRule();
   rule.condition->url_filter = std::string("example.com");
+  rule.condition->resource_types = std::vector<std::string>({"main_frame"});
   ASSERT_NO_FATAL_FAILURE(LoadExtensionWithRules({rule}));
   const ExtensionId extension_id = last_loaded_extension_id();
 
@@ -650,6 +749,7 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
   for (const auto& rule_data : rules_data) {
     TestRule rule = CreateGenericRule();
     rule.condition->url_filter = rule_data.url_filter;
+    rule.condition->resource_types = std::vector<std::string>({"main_frame"});
     rule.id = rule_data.id;
     if (rule_data.add_to_first_extension)
       rules_1.push_back(rule);
@@ -705,6 +805,7 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
   rule.priority = kMinValidPriority;
   rule.action->type = std::string("redirect");
   rule.condition->url_filter = std::string("example.com");
+  rule.condition->resource_types = std::vector<std::string>({"main_frame"});
 
   base::Time last_extension_install_time = base::Time::Min();
 
@@ -762,6 +863,7 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest, BlockAndRedirect) {
     rule.condition->url_filter = rule_data.url_filter;
     rule.id = rule_data.id;
     rule.priority = kMinValidPriority;
+    rule.condition->resource_types = std::vector<std::string>({"main_frame"});
     rule.action->type = rule_data.action_type;
     rule.action->redirect_url = rule_data.redirect_url;
     rules.push_back(rule);
@@ -844,13 +946,14 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest, RedirectPriority) {
       rule.action->type = std::string("redirect");
       rule.action->redirect_url = redirect_url_for_priority(j);
       rule.condition->url_filter = pattern;
+      rule.condition->resource_types = std::vector<std::string>({"main_frame"});
       rules.push_back(rule);
     }
   }
 
   // Shuffle the rules to ensure that the order in which rules are added has no
   // effect on the test.
-  std::random_shuffle(rules.begin(), rules.end());
+  base::RandomShuffle(rules.begin(), rules.end());
   ASSERT_NO_FATAL_FAILURE(LoadExtensionWithRules(rules));
 
   for (size_t i = 0; i <= kNumPatternTypes + 1; ++i) {
@@ -877,9 +980,10 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest, RedirectPriority) {
 // from an incognito context.
 IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
                        BlockRequests_Incognito) {
-  // Block all requests to example.com
+  // Block all main-frame requests to example.com.
   TestRule rule = CreateGenericRule();
   rule.condition->url_filter = std::string("example.com");
+  rule.condition->resource_types = std::vector<std::string>({"main_frame"});
   ASSERT_NO_FATAL_FAILURE(LoadExtensionWithRules({rule}));
 
   ExtensionId extension_id = last_loaded_extension_id();
@@ -1106,7 +1210,7 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
       rules_2, "extension_2", {URLPattern::kAllUrlsPattern}));
   const std::string extension_id_2 = last_loaded_extension_id();
 
-  auto get_manifest_url = [](const std::string& extension_id) {
+  auto get_manifest_url = [](const ExtensionId& extension_id) {
     return GURL(base::StringPrintf("%s://%s/manifest.json",
                                    extensions::kExtensionScheme,
                                    extension_id.c_str()));
@@ -1137,37 +1241,13 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest_Packed,
   ASSERT_TRUE(dnr_extension);
   EXPECT_EQ("Test extension", dnr_extension->name());
 
-  // Ensure the background page is ready before dispatching the script to it.
-  if (!ExtensionSystem::Get(profile())->runtime_data()->IsBackgroundPageReady(
-          dnr_extension)) {
-    content::WindowedNotificationObserver(
-        NOTIFICATION_EXTENSION_BACKGROUND_PAGE_READY,
-        content::Source<Extension>(dnr_extension))
-        .Wait();
-  }
+  constexpr char kGoogleDotCom[] = "https://www.google.com/";
 
-  // Whitelist "https://www.google.com/".
-  const char* script1 = R"(
-    chrome.declarativeNetRequest.addWhitelistedPages(
-        ['https://www.google.com/'], function() {
-          window.domAutomationController.send('success');
-        });
-  )";
-  EXPECT_EQ("success",
-            ExecuteScriptInBackgroundPage(last_loaded_extension_id(), script1));
+  // Whitelist |kGoogleDotCom|.
+  AddWhitelistedPages(dnr_extension->id(), {kGoogleDotCom});
 
   // Ensure that the page was whitelisted.
-  const char* script2 = R"(
-    chrome.declarativeNetRequest.getWhitelistedPages(function(patterns) {
-      if (patterns.length === 1 && patterns[0] === 'https://www.google.com/')
-        window.domAutomationController.send('success');
-      else
-        window.domAutomationController.send('error');
-    });
-  )";
-
-  EXPECT_EQ("success",
-            ExecuteScriptInBackgroundPage(last_loaded_extension_id(), script2));
+  VerifyGetWhitelistedPages(dnr_extension->id(), {kGoogleDotCom});
 }
 
 // Tests that the pages whitelisted using the page whitelisting API are
@@ -1191,46 +1271,16 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest_Packed,
   ASSERT_TRUE(dnr_extension);
 
   // Ensure the background page is ready before dispatching the script to it.
-  if (!ExtensionSystem::Get(profile())->runtime_data()->IsBackgroundPageReady(
-          dnr_extension)) {
-    content::WindowedNotificationObserver(
-        NOTIFICATION_EXTENSION_BACKGROUND_PAGE_READY,
-        content::Source<Extension>(dnr_extension))
-        .Wait();
-  }
+  WaitForBackgroundScriptToLoad(dnr_extension->id());
 
-  const char* script1 = R"(
-    chrome.declarativeNetRequest.getWhitelistedPages(function(patterns) {
-        if (patterns.length === 1 && patterns[0] === "https://www.google.com/")
-          window.domAutomationController.send("success");
-        else
-          window.domAutomationController.send("error");
-    });
-  )";
-  ASSERT_EQ("success",
-            ExecuteScriptInBackgroundPage(dnr_extension->id(), script1));
+  constexpr char kGoogleDotCom[] = "https://www.google.com/";
 
-  // Remove "https://www.google.com/" from the whitelist.
-  const char* script2 = R"(
-    chrome.declarativeNetRequest.removeWhitelistedPages(
-      ["https://www.google.com/"], function() {
-        window.domAutomationController.send("success");
-    });
-  )";
-  ASSERT_EQ("success",
-            ExecuteScriptInBackgroundPage(dnr_extension->id(), script2));
+  VerifyGetWhitelistedPages(dnr_extension->id(), {kGoogleDotCom});
 
-  // Ensure that the page was removed from the whitelist.
-  const char* script3 = R"(
-    chrome.declarativeNetRequest.getWhitelistedPages(function(patterns) {
-        if (patterns.length === 0)
-          window.domAutomationController.send("success");
-        else
-          window.domAutomationController.send("error");
-    });
-  )";
-  EXPECT_EQ("success",
-            ExecuteScriptInBackgroundPage(dnr_extension->id(), script3));
+  // Remove |kGoogleDotCom| from the whitelist.
+  RemoveWhitelistedPages(dnr_extension->id(), {kGoogleDotCom});
+
+  VerifyGetWhitelistedPages(dnr_extension->id(), {});
 }
 
 // Test fixture to verify that host permissions for the request url and the
@@ -1357,7 +1407,8 @@ class DeclarativeNetRequestResourceTypeBrowserTest
   DeclarativeNetRequestResourceTypeBrowserTest() {}
 
  protected:
-  // TODO(crbug.com/696822): Add tests for "object", "ping", "other", "font".
+  // TODO(crbug.com/696822): Add tests for "object", "ping", "other", "font",
+  // "csp_report".
   enum ResourceTypeMask {
     kNone = 0,
     kSubframe = 1 << 0,
@@ -1453,17 +1504,11 @@ class DeclarativeNetRequestResourceTypeBrowserTest
         {"block_websocket.com", 7, {"websocket"}, {}},
         {"block_image_and_stylesheet.com", 8, {"image", "stylesheet"}, {}},
         {"block_subframe_and_xhr.com", 11, {"sub_frame", "xmlhttprequest"}, {}},
-        // With renderer side navigation, the main frame origin serves as the
-        // initiator for main frame page loads. Hence to ensure that the main
-        // frame page load is not blocked, also exclude the "other" resource
-        // type, which is used for main frame requests currently.
-        // TODO(crbug.com/696822): Change "other" to "main_frame" once it is
-        // implemented.
-        {"block_all.com", 9, {}, {"other"}},
+        {"block_all.com", 9, {}, {}},
         {"block_all_but_xhr_and_script.com",
          10,
          {},
-         {"xmlhttprequest", "script", "other"}},
+         {"xmlhttprequest", "script"}},
     };
 
     std::vector<TestRule> rules;

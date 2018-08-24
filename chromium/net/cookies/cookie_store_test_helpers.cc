@@ -17,6 +17,7 @@ using net::registry_controlled_domains::GetDomainAndRegistry;
 using net::registry_controlled_domains::GetRegistryLength;
 using net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES;
 using net::registry_controlled_domains::INCLUDE_UNKNOWN_REGISTRIES;
+using TimeRange = net::CookieDeletionInfo::TimeRange;
 
 namespace {
 
@@ -175,17 +176,14 @@ void DelayedCookieMonster::DeleteCanonicalCookieAsync(
   ADD_FAILURE();
 }
 
-void DelayedCookieMonster::DeleteAllCreatedBetweenAsync(
-    const base::Time& delete_begin,
-    const base::Time& delete_end,
+void DelayedCookieMonster::DeleteAllCreatedInTimeRangeAsync(
+    const TimeRange& creation_range,
     DeleteCallback callback) {
   ADD_FAILURE();
 }
 
-void DelayedCookieMonster::DeleteAllCreatedBetweenWithPredicateAsync(
-    const base::Time& delete_begin,
-    const base::Time& delete_end,
-    const base::Callback<bool(const CanonicalCookie&)>& predicate,
+void DelayedCookieMonster::DeleteAllMatchingInfoAsync(
+    net::CookieDeletionInfo delete_info,
     DeleteCallback callback) {
   ADD_FAILURE();
 }

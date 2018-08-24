@@ -83,6 +83,8 @@ class AURA_EXPORT PropertyConverter {
       const WindowProperty<T>* property,
       const char* transport_name,
       const base::RepeatingCallback<bool(int64_t)>& validator) {
+    DCHECK(!IsTransportNameRegistered(transport_name))
+        << "Property already registered: " << transport_name;
     PrimitiveProperty primitive_property;
     primitive_property.property_name = property->name;
     primitive_property.transport_name = transport_name;
@@ -105,6 +107,10 @@ class AURA_EXPORT PropertyConverter {
                               const char* transport_name);
   void RegisterString16Property(const WindowProperty<base::string16*>* property,
                                 const char* transport_name);
+
+  // Get a flat map of the window's registered properties, to use for transport.
+  base::flat_map<std::string, std::vector<uint8_t>> GetTransportProperties(
+      Window* window);
 
  private:
   // Contains data needed to store and convert primitive-type properties.

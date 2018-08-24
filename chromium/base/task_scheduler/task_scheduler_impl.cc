@@ -7,6 +7,8 @@
 #include <string>
 #include <utility>
 
+#include "base/compiler_specific.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/strings/string_util.h"
 #include "base/task_scheduler/delayed_task_manager.h"
@@ -14,8 +16,10 @@
 #include "base/task_scheduler/scheduler_worker_pool_params.h"
 #include "base/task_scheduler/sequence.h"
 #include "base/task_scheduler/sequence_sort_key.h"
+#include "base/task_scheduler/service_thread.h"
 #include "base/task_scheduler/task.h"
 #include "base/task_scheduler/task_tracker.h"
+#include "base/time/time.h"
 
 namespace base {
 namespace internal {
@@ -27,9 +31,9 @@ TaskSchedulerImpl::TaskSchedulerImpl(StringPiece histogram_label)
 TaskSchedulerImpl::TaskSchedulerImpl(
     StringPiece histogram_label,
     std::unique_ptr<TaskTrackerImpl> task_tracker)
-    : service_thread_("TaskSchedulerServiceThread"),
-      task_tracker_(std::move(task_tracker)),
-      single_thread_task_runner_manager_(task_tracker_.get(),
+    : task_tracker_(std::move(task_tracker)),
+      service_thread_(std::make_unique<ServiceThread>(task_tracker_.get())),
+      single_thread_task_runner_manager_(task_tracker_->GetTrackedRef(),
                                          &delayed_task_manager_) {
   DCHECK(!histogram_label.empty());
 
@@ -46,8 +50,8 @@ TaskSchedulerImpl::TaskSchedulerImpl(
             {histogram_label, kEnvironmentParams[environment_type].name_suffix},
             "."),
         kEnvironmentParams[environment_type].name_suffix,
-        kEnvironmentParams[environment_type].priority_hint, task_tracker_.get(),
-        &delayed_task_manager_);
+        kEnvironmentParams[environment_type].priority_hint,
+        task_tracker_->GetTrackedRef(), &delayed_task_manager_);
   }
 }
 
@@ -57,7 +61,9 @@ TaskSchedulerImpl::~TaskSchedulerImpl() {
 #endif
 }
 
-void TaskSchedulerImpl::Start(const TaskScheduler::InitParams& init_params) {
+void TaskSchedulerImpl::Start(
+    const TaskScheduler::InitParams& init_params,
+    SchedulerWorkerObserver* scheduler_worker_observer) {
   // This is set in Start() and not in the constructor because variation params
   // are usually not ready when TaskSchedulerImpl is instantiated in a process.
   if (base::GetFieldTrialParamValue("BrowserScheduler",
@@ -68,7 +74,7 @@ void TaskSchedulerImpl::Start(const TaskScheduler::InitParams& init_params) {
   // Start the service thread. On platforms that support it (POSIX except NaCL
   // SFI), the service thread runs a MessageLoopForIO which is used to support
   // FileDescriptorWatcher in the scope in which tasks run.
-  Thread::Options service_thread_options;
+  ServiceThread::Options service_thread_options;
   service_thread_options.message_loop_type =
 #if defined(OS_POSIX) && !defined(OS_NACL_SFI)
       MessageLoop::TYPE_IO;
@@ -76,25 +82,25 @@ void TaskSchedulerImpl::Start(const TaskScheduler::InitParams& init_params) {
       MessageLoop::TYPE_DEFAULT;
 #endif
   service_thread_options.timer_slack = TIMER_SLACK_MAXIMUM;
-  CHECK(service_thread_.StartWithOptions(service_thread_options));
+  CHECK(service_thread_->StartWithOptions(service_thread_options));
 
 #if defined(OS_POSIX) && !defined(OS_NACL_SFI)
   // Needs to happen after starting the service thread to get its
   // message_loop().
   task_tracker_->set_watch_file_descriptor_message_loop(
-      static_cast<MessageLoopForIO*>(service_thread_.message_loop()));
+      static_cast<MessageLoopForIO*>(service_thread_->message_loop()));
 
 #if DCHECK_IS_ON()
-  task_tracker_->set_service_thread_handle(service_thread_.GetThreadHandle());
+  task_tracker_->set_service_thread_handle(service_thread_->GetThreadHandle());
 #endif  // DCHECK_IS_ON()
 #endif  // defined(OS_POSIX) && !defined(OS_NACL_SFI)
 
   // Needs to happen after starting the service thread to get its task_runner().
   scoped_refptr<TaskRunner> service_thread_task_runner =
-      service_thread_.task_runner();
+      service_thread_->task_runner();
   delayed_task_manager_.Start(service_thread_task_runner);
 
-  single_thread_task_runner_manager_.Start();
+  single_thread_task_runner_manager_.Start(scheduler_worker_observer);
 
   const SchedulerWorkerPoolImpl::WorkerEnvironment worker_environment =
 #if defined(OS_WIN)
@@ -106,18 +112,20 @@ void TaskSchedulerImpl::Start(const TaskScheduler::InitParams& init_params) {
       SchedulerWorkerPoolImpl::WorkerEnvironment::NONE;
 #endif
 
-  worker_pools_[BACKGROUND]->Start(init_params.background_worker_pool_params,
-                                   service_thread_task_runner,
-                                   worker_environment);
+  worker_pools_[BACKGROUND]->Start(
+      init_params.background_worker_pool_params, service_thread_task_runner,
+      scheduler_worker_observer, worker_environment);
   worker_pools_[BACKGROUND_BLOCKING]->Start(
       init_params.background_blocking_worker_pool_params,
-      service_thread_task_runner, worker_environment);
-  worker_pools_[FOREGROUND]->Start(init_params.foreground_worker_pool_params,
-                                   service_thread_task_runner,
-                                   worker_environment);
+      service_thread_task_runner, scheduler_worker_observer,
+      worker_environment);
+  worker_pools_[FOREGROUND]->Start(
+      init_params.foreground_worker_pool_params, service_thread_task_runner,
+      scheduler_worker_observer, worker_environment);
   worker_pools_[FOREGROUND_BLOCKING]->Start(
       init_params.foreground_blocking_worker_pool_params,
-      service_thread_task_runner, worker_environment);
+      service_thread_task_runner, scheduler_worker_observer,
+      worker_environment);
 }
 
 void TaskSchedulerImpl::PostDelayedTaskWithTraits(const Location& from_here,
@@ -201,7 +209,7 @@ void TaskSchedulerImpl::JoinForTesting() {
   // tasks scheduled by the DelayedTaskManager might be posted between joining
   // those workers and stopping the service thread which will cause a CHECK. See
   // https://crbug.com/771701.
-  service_thread_.Stop();
+  service_thread_->Stop();
   single_thread_task_runner_manager_.JoinForTesting();
   for (const auto& worker_pool : worker_pools_)
     worker_pool->JoinForTesting();

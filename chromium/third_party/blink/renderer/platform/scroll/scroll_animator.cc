@@ -31,10 +31,11 @@
 #include "third_party/blink/renderer/platform/scroll/scroll_animator.h"
 
 #include <memory>
+
 #include "base/memory/scoped_refptr.h"
 #include "cc/animation/scroll_offset_animation_curve.h"
+#include "cc/layers/layer.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_compositor_support.h"
 #include "third_party/blink/renderer/platform/animation/compositor_keyframe_model.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
@@ -46,8 +47,8 @@ namespace blink {
 
 namespace {
 
-WebLayer* ToWebLayer(GraphicsLayer* layer) {
-  return layer ? layer->PlatformLayer() : nullptr;
+cc::Layer* ToCcLayer(GraphicsLayer* layer) {
+  return layer ? layer->CcLayer() : nullptr;
 }
 
 }  // namespace
@@ -161,7 +162,8 @@ bool ScrollAnimator::WillAnimateToOffset(const ScrollOffset& target_offset) {
     DCHECK(run_state_ == RunState::kRunningOnMainThread ||
            run_state_ == RunState::kRunningOnCompositor ||
            run_state_ == RunState::kRunningOnCompositorButNeedsUpdate ||
-           run_state_ == RunState::kRunningOnCompositorButNeedsTakeover);
+           run_state_ == RunState::kRunningOnCompositorButNeedsTakeover ||
+           run_state_ == RunState::kRunningOnCompositorButNeedsAdjustment);
 
     // Running on the main thread, simply update the target offset instead
     // of sending to the compositor.
@@ -369,16 +371,16 @@ void ScrollAnimator::AddMainThreadScrollingReason() {
   // is a special case because its subframes cannot be scrolled
   // when the reason is set. When the subframes are ready to scroll
   // the reason has benn reset.
-  if (WebLayer* scroll_layer =
-          ToWebLayer(GetScrollableArea()->LayerForScrolling())) {
+  if (cc::Layer* scroll_layer =
+          ToCcLayer(GetScrollableArea()->LayerForScrolling())) {
     scroll_layer->AddMainThreadScrollingReasons(
         MainThreadScrollingReason::kHandlingScrollFromMainThread);
   }
 }
 
 void ScrollAnimator::RemoveMainThreadScrollingReason() {
-  if (WebLayer* scroll_layer =
-          ToWebLayer(GetScrollableArea()->LayerForScrolling())) {
+  if (cc::Layer* scroll_layer =
+          ToCcLayer(GetScrollableArea()->LayerForScrolling())) {
     scroll_layer->ClearMainThreadScrollingReasons(
         MainThreadScrollingReason::kHandlingScrollFromMainThread);
   }

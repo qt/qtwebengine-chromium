@@ -11,73 +11,8 @@
 #include "base/macros.h"
 #include "base/test/test_mock_time_task_runner.h"
 #include "base/timer/timer.h"
-#include "mojo/public/cpp/bindings/binding.h"
-#include "services/device/public/mojom/constants.mojom.h"
-#include "services/device/public/mojom/geolocation.mojom.h"
-#include "services/device/public/mojom/public_ip_address_geolocation_provider.mojom.h"
-#include "services/service_manager/public/cpp/connector.h"
-#include "services/service_manager/public/mojom/connector.mojom.h"
+#include "components/language/content/browser/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-namespace {
-
-// Mock impl of mojom::Geolocation that allows tests to control the returned
-// location.
-class MockGeoLocation : public device::mojom::Geolocation {
- public:
-  MockGeoLocation() : binding_(this) {}
-  // device::mojom::Geolocation implementation:
-  void SetHighAccuracy(bool high_accuracy) override {}
-  void QueryNextPosition(QueryNextPositionCallback callback) override {
-    ++query_next_position_called_times_;
-    std::move(callback).Run(position_.Clone());
-  }
-
-  void BindGeoLocation(device::mojom::GeolocationRequest request) {
-    binding_.Bind(std::move(request));
-  }
-
-  void MoveToLocation(float latitude, float longitude) {
-    position_.latitude = latitude;
-    position_.longitude = longitude;
-  }
-
-  int query_next_position_called_times() const {
-    return query_next_position_called_times_;
-  }
-
- private:
-  int query_next_position_called_times_ = 0;
-  device::mojom::Geoposition position_;
-  mojo::Binding<device::mojom::Geolocation> binding_;
-};
-
-// Mock impl of mojom::PublicIpAddressGeolocationProvider that binds Geolocation
-// to testing impl.
-class MockIpGeoLocationProvider
-    : public device::mojom::PublicIpAddressGeolocationProvider {
- public:
-  explicit MockIpGeoLocationProvider(MockGeoLocation* mock_geo_location)
-      : mock_geo_location_(mock_geo_location), binding_(this) {}
-
-  void Bind(mojo::ScopedMessagePipeHandle handle) {
-    binding_.Bind(device::mojom::PublicIpAddressGeolocationProviderRequest(
-        std::move(handle)));
-  }
-
-  void CreateGeolocation(
-      const net::MutablePartialNetworkTrafficAnnotationTag& /* unused */,
-      device::mojom::GeolocationRequest request) override {
-    mock_geo_location_->BindGeoLocation(std::move(request));
-  }
-
- private:
-  MockGeoLocation* mock_geo_location_;
-
-  mojo::Binding<device::mojom::PublicIpAddressGeolocationProvider> binding_;
-};
-
-}  // namespace
 
 namespace language {
 

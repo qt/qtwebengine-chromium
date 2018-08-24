@@ -25,6 +25,7 @@
 #include "google_apis/gaia/gaia_auth_consumer.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "net/url_request/url_request_test_util.h"
+#include "services/identity/public/cpp/identity_test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -33,6 +34,7 @@ using syncer::DataTypeManagerMock;
 using syncer::FakeSyncEngine;
 using testing::_;
 using testing::AnyNumber;
+using testing::ByMove;
 using testing::DoAll;
 using testing::Mock;
 using testing::Return;
@@ -47,7 +49,7 @@ const char kEmail[] = "test_user@gmail.com";
 class SyncServiceObserverMock : public syncer::SyncServiceObserver {
  public:
   SyncServiceObserverMock();
-  virtual ~SyncServiceObserverMock();
+  ~SyncServiceObserverMock() override;
 
   MOCK_METHOD1(OnStateChanged, void(syncer::SyncService*));
 };
@@ -106,34 +108,27 @@ class ProfileSyncServiceStartupTest : public testing::Test {
   }
 
  protected:
-  void SimulateTestUserSignin() {
-    std::string account_id =
-        profile_sync_service_bundle_.account_tracker()->SeedAccountInfo(kGaiaId,
-                                                                        kEmail);
-    pref_service()->SetString(prefs::kGoogleServicesAccountId, account_id);
-#if !defined(OS_CHROMEOS)
-    const char kDummyPassword[] = "foobar";
-    profile_sync_service_bundle_.signin_manager()->SignIn(kGaiaId, kEmail,
-                                                          kDummyPassword);
-#else
-    profile_sync_service_bundle_.signin_manager()->SignIn(account_id);
-#endif
-    profile_sync_service_bundle_.auth_service()->UpdateCredentials(
-        account_id, "oauth2_login_token");
+  virtual void SimulateTestUserSignin() {
+    identity::MakePrimaryAccountAvailable(
+        profile_sync_service_bundle_.signin_manager(),
+        profile_sync_service_bundle_.auth_service(),
+        profile_sync_service_bundle_.identity_manager(), kEmail);
   }
 
   DataTypeManagerMock* SetUpDataTypeManager() {
-    DataTypeManagerMock* data_type_manager = new DataTypeManagerMock();
+    auto data_type_manager = std::make_unique<DataTypeManagerMock>();
+    DataTypeManagerMock* data_type_manager_raw = data_type_manager.get();
     EXPECT_CALL(*component_factory_, CreateDataTypeManager(_, _, _, _, _, _))
-        .WillOnce(Return(data_type_manager));
-    return data_type_manager;
+        .WillOnce(Return(ByMove(std::move(data_type_manager))));
+    return data_type_manager_raw;
   }
 
   FakeSyncEngine* SetUpSyncEngine() {
-    FakeSyncEngine* sync_backend_host = new FakeSyncEngine();
+    auto sync_engine = std::make_unique<FakeSyncEngine>();
+    FakeSyncEngine* sync_engine_raw = sync_engine.get();
     EXPECT_CALL(*component_factory_, CreateSyncEngine(_, _, _, _))
-        .WillOnce(Return(sync_backend_host));
-    return sync_backend_host;
+        .WillOnce(Return(ByMove(std::move(sync_engine))));
+    return sync_engine_raw;
   }
 
   PrefService* pref_service() {
@@ -153,18 +148,25 @@ class ProfileSyncServiceStartupCrosTest : public ProfileSyncServiceStartupTest {
   ProfileSyncServiceStartupCrosTest() {
     CreateSyncService(ProfileSyncService::AUTO_START);
     // Set the primary account *without* providing an OAuth token.
-    std::string account_id =
-        profile_sync_service_bundle_.account_tracker()->SeedAccountInfo(kGaiaId,
-                                                                        kEmail);
-#if !defined(OS_CHROMEOS)
-    const char kDummyPassword[] = "foobar";
-    profile_sync_service_bundle_.signin_manager()->SignIn(kGaiaId, kEmail,
-                                                          kDummyPassword);
-#else
-    profile_sync_service_bundle_.signin_manager()->SignIn(account_id);
-#endif
+    // TODO(https://crbug.com/814787): Change this flow to go through a
+    // mainstream Identity Service API once that API exists. Note that this
+    // might require supplying a valid refresh token here as opposed to an
+    // empty string.
+    profile_sync_service_bundle_.identity_manager()
+        ->SetPrimaryAccountSynchronously(kGaiaId, kEmail,
+                                         /*refresh_token=*/std::string());
     EXPECT_TRUE(
         profile_sync_service_bundle_.signin_manager()->IsAuthenticated());
+  }
+
+  void SimulateTestUserSignin() override {
+    // We already populated the primary account above, all that's left to do
+    // is provide a refresh token.
+    profile_sync_service_bundle_.auth_service()->UpdateCredentials(
+        profile_sync_service_bundle_.identity_manager()
+            ->GetPrimaryAccountInfo()
+            .account_id,
+        "oauth2_login_token");
   }
 };
 

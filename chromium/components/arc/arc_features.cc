@@ -8,13 +8,26 @@ namespace arc {
 
 // Controls whether ARC is available for CHILD accounts.
 const base::Feature kAvailableForChildAccountFeature{
-    "ArcAvailableForChildAccount", base::FEATURE_DISABLED_BY_DEFAULT};
+    "ArcAvailableForChildAccount", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Controls ACTION_BOOT_COMPLETED broadcast for third party applications on ARC.
 // When disabled, third party apps will not receive this broadcast.
 const base::Feature kBootCompletedBroadcastFeature {
     "ArcBootCompletedBroadcast", base::FEATURE_ENABLED_BY_DEFAULT
 };
+
+// Controls whether we should delete all ARC data before transitioning a user
+// from regular to child account.
+const base::Feature kCleanArcDataOnRegularToChildTransitionFeature{
+    "ArcCleanDataOnRegularToChildTransition", base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Controls whether ARC handles child->regular account transition.
+const base::Feature kEnableChildToRegularTransitionFeature{
+    "ArcEnableChildToRegularTransition", base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Controls whether ARC handles regular->child account transition.
+const base::Feature kEnableRegularToChildTransitionFeature{
+    "ArcEnableRegularToChildTransition", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Controls experimental native bridge feature for ARC.
 const base::Feature kNativeBridgeExperimentFeature {

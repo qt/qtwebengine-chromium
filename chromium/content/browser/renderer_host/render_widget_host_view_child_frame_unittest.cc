@@ -15,6 +15,7 @@
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
+#include "components/viz/common/features.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
@@ -27,7 +28,7 @@
 #include "content/browser/renderer_host/frame_connector_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
-#include "content/common/frame_resize_params.h"
+#include "content/common/frame_visual_properties.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/common/content_features.h"
@@ -199,9 +200,12 @@ TEST_F(RenderWidgetHostViewChildFrameTest, VisibilityTest) {
 // Verify that SubmitCompositorFrame behavior is correct when a delegated
 // frame is received from a renderer process.
 TEST_F(RenderWidgetHostViewChildFrameTest, SwapCompositorFrame) {
-  // TODO: fix for mash.
-  if (base::FeatureList::IsEnabled(features::kMash))
+  // TODO(jonross): Delete this test once Viz launches as it will be obsolete.
+  // https://crbug.com/844469
+  if (base::FeatureList::IsEnabled(features::kVizDisplayCompositor) ||
+      base::FeatureList::IsEnabled(features::kMash)) {
     return;
+  }
 
   gfx::Size view_size(100, 100);
   gfx::Rect view_rect(view_size);
@@ -213,7 +217,7 @@ TEST_F(RenderWidgetHostViewChildFrameTest, SwapCompositorFrame) {
 
   view_->SubmitCompositorFrame(
       local_surface_id,
-      CreateDelegatedFrame(scale_factor, view_size, view_rect), nullptr);
+      CreateDelegatedFrame(scale_factor, view_size, view_rect), base::nullopt);
 
   viz::SurfaceId id = GetSurfaceId();
   if (id.is_valid()) {
@@ -351,23 +355,25 @@ TEST_F(RenderWidgetHostViewChildFrameTest, WasResizedOncePerChange) {
 
   process->sink().ClearMessages();
 
-  FrameResizeParams resize_params;
-  resize_params.screen_space_rect = screen_space_rect;
-  resize_params.local_frame_size = compositor_viewport_pixel_size;
-  resize_params.auto_resize_sequence_number = 1u;
-  test_frame_connector_->UpdateResizeParams(surface_id, resize_params);
+  FrameVisualProperties visual_properties;
+  visual_properties.screen_space_rect = screen_space_rect;
+  visual_properties.local_frame_size = compositor_viewport_pixel_size;
+  visual_properties.capture_sequence_number = 123u;
+  test_frame_connector_->SynchronizeVisualProperties(surface_id,
+                                                     visual_properties);
 
   ASSERT_EQ(1u, process->sink().message_count());
 
-  const IPC::Message* resize_msg =
-      process->sink().GetUniqueMessageMatching(ViewMsg_Resize::ID);
+  const IPC::Message* resize_msg = process->sink().GetUniqueMessageMatching(
+      ViewMsg_SynchronizeVisualProperties::ID);
   ASSERT_NE(nullptr, resize_msg);
-  ViewMsg_Resize::Param params;
-  ViewMsg_Resize::Read(resize_msg, &params);
+  ViewMsg_SynchronizeVisualProperties::Param params;
+  ViewMsg_SynchronizeVisualProperties::Read(resize_msg, &params);
   EXPECT_EQ(compositor_viewport_pixel_size,
             std::get<0>(params).compositor_viewport_pixel_size);
   EXPECT_EQ(screen_space_rect.size(), std::get<0>(params).new_size);
   EXPECT_EQ(local_surface_id, std::get<0>(params).local_surface_id);
+  EXPECT_EQ(123u, std::get<0>(params).capture_sequence_number);
 }
 
 }  // namespace content

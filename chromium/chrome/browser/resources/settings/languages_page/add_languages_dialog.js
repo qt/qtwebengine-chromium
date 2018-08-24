@@ -11,6 +11,7 @@ Polymer({
 
   behaviors: [
     CrScrollableBehavior,
+    settings.FindShortcutBehavior,
   ],
 
   properties: {
@@ -47,6 +48,16 @@ Polymer({
   /** @override */
   attached: function() {
     this.$.dialog.showModal();
+  },
+
+  // Override settings.FindShortcutBehavior methods.
+  canHandleFindShortcut: function() {
+    return true;
+  },
+
+  handleFindShortcut: function() {
+    this.$.search.getSearchInput().scrollIntoViewIfNeeded();
+    this.$.search.getSearchInput().focus();
   },
 
   /**
@@ -106,7 +117,7 @@ Polymer({
   /**
    * Handler for checking or unchecking a language item.
    * @param {!{model: !{item: !chrome.languageSettingsPrivate.Language},
-   *           target: !PaperCheckboxElement}} e
+   *           target: !Element}} e
    * @private
    */
   onLanguageCheckboxChange_: function(e) {

@@ -110,6 +110,27 @@ std::unique_ptr<base::ListValue> DxDiagNodeToList(const gpu::DxDiagNode& node) {
   }
   return list;
 }
+
+std::string D3dFeaturelevelToString(uint32_t d3d_feature_level) {
+  if (d3d_feature_level == 0) {
+    return "Not supported";
+  } else {
+    return base::StringPrintf("D3D %d.%d", (d3d_feature_level >> 12) & 0xF,
+                              (d3d_feature_level >> 8) & 0xF);
+  }
+}
+
+std::string VulkanVersionToString(uint32_t vulkan_version) {
+  if (vulkan_version == 0) {
+    return "Not supported";
+  } else {
+    // Vulkan version number VK_MAKE_VERSION(major, minor, patch)
+    // (((major) << 22) | ((minor) << 12) | (patch))
+    return base::StringPrintf(
+        "Vulkan API %d.%d.%d", (vulkan_version >> 22) & 0x3FF,
+        (vulkan_version >> 12) & 0x3FF, vulkan_version & 0xFFF);
+  }
+}
 #endif
 
 std::string GPUDeviceToString(const gpu::GPUInfo::GPUDevice& gpu) {
@@ -123,8 +144,9 @@ std::string GPUDeviceToString(const gpu::GPUInfo::GPUDevice& gpu) {
       vendor.c_str(), device.c_str(), gpu.active ? " *ACTIVE*" : "");
 }
 
-std::unique_ptr<base::DictionaryValue> GpuInfoAsDictionaryValue() {
-  gpu::GPUInfo gpu_info = GpuDataManagerImpl::GetInstance()->GetGPUInfo();
+std::unique_ptr<base::ListValue> BasicGpuInfoAsListValue(
+    const gpu::GPUInfo& gpu_info,
+    const gpu::GpuFeatureInfo& gpu_feature_info) {
   auto basic_info = std::make_unique<base::ListValue>();
   basic_info->Append(NewDescriptionValuePair(
       "Initialization time",
@@ -177,20 +199,13 @@ std::unique_ptr<base::DictionaryValue> GpuInfoAsDictionaryValue() {
   }
 
   basic_info->Append(NewDescriptionValuePair(
-      "DX12", std::make_unique<base::Value>(gpu_info.supports_dx12)));
+      "Driver D3D12 feature level",
+      D3dFeaturelevelToString(gpu_info.d3d12_feature_level)));
 
-  basic_info->Append(NewDescriptionValuePair(
-      "Vulkan", std::make_unique<base::Value>(gpu_info.supports_vulkan)));
-
+  basic_info->Append(
+      NewDescriptionValuePair("Driver Vulkan API version",
+                              VulkanVersionToString(gpu_info.vulkan_version)));
 #endif
-
-  std::string disabled_extensions;
-  GpuDataManagerImpl::GetInstance()->GetDisabledExtensions(
-      &disabled_extensions);
-
-  std::string disabled_webgl_extensions;
-  GpuDataManagerImpl::GetInstance()->GetDisabledWebGLExtensions(
-      &disabled_webgl_extensions);
 
   basic_info->Append(
       NewDescriptionValuePair("Driver vendor", gpu_info.driver_vendor));
@@ -216,10 +231,10 @@ std::unique_ptr<base::DictionaryValue> GpuInfoAsDictionaryValue() {
                                              gpu_info.gl_version));
   basic_info->Append(NewDescriptionValuePair("GL_EXTENSIONS",
                                              gpu_info.gl_extensions));
-  basic_info->Append(NewDescriptionValuePair("Disabled Extensions",
-                                             disabled_extensions));
-  basic_info->Append(NewDescriptionValuePair("Disabled WebGL Extensions",
-                                             disabled_webgl_extensions));
+  basic_info->Append(NewDescriptionValuePair(
+      "Disabled Extensions", gpu_feature_info.disabled_extensions));
+  basic_info->Append(NewDescriptionValuePair(
+      "Disabled WebGL Extensions", gpu_feature_info.disabled_webgl_extensions));
   basic_info->Append(NewDescriptionValuePair("Window system binding vendor",
                                              gpu_info.gl_ws_vendor));
   basic_info->Append(NewDescriptionValuePair("Window system binding version",
@@ -256,7 +271,24 @@ std::unique_ptr<base::DictionaryValue> GpuInfoAsDictionaryValue() {
       "GPU process crash count",
       std::make_unique<base::Value>(GpuProcessHost::GetGpuCrashCount())));
 
+#if defined(USE_X11)
+  basic_info->Append(NewDescriptionValuePair(
+      "System visual ID", base::NumberToString(gpu_info.system_visual)));
+  basic_info->Append(NewDescriptionValuePair(
+      "RGBA visual ID", base::NumberToString(gpu_info.rgba_visual)));
+#endif
+
+  return basic_info;
+}
+
+std::unique_ptr<base::DictionaryValue> GpuInfoAsDictionaryValue() {
   auto info = std::make_unique<base::DictionaryValue>();
+
+  const gpu::GPUInfo gpu_info = GpuDataManagerImpl::GetInstance()->GetGPUInfo();
+  const gpu::GpuFeatureInfo gpu_feature_info =
+      GpuDataManagerImpl::GetInstance()->GetGpuFeatureInfo();
+  auto basic_info = BasicGpuInfoAsListValue(gpu_info, gpu_feature_info);
+  info->Set("basicInfo", std::move(basic_info));
 
 #if defined(OS_WIN)
   auto dx_info = std::make_unique<base::Value>();
@@ -265,14 +297,6 @@ std::unique_ptr<base::DictionaryValue> GpuInfoAsDictionaryValue() {
   info->Set("diagnostics", std::move(dx_info));
 #endif
 
-#if defined(USE_X11)
-  basic_info->Append(NewDescriptionValuePair(
-      "System visual ID", base::NumberToString(gpu_info.system_visual)));
-  basic_info->Append(NewDescriptionValuePair(
-      "RGBA visual ID", base::NumberToString(gpu_info.rgba_visual)));
-#endif
-
-  info->Set("basic_info", std::move(basic_info));
   return info;
 }
 
@@ -284,6 +308,8 @@ const char* BufferUsageToString(gfx::BufferUsage usage) {
       return "SCANOUT";
     case gfx::BufferUsage::SCANOUT_CAMERA_READ_WRITE:
       return "SCANOUT_CAMERA_READ_WRITE";
+    case gfx::BufferUsage::CAMERA_AND_CPU_READ_WRITE:
+      return "CAMERA_AND_CPU_READ_WRITE";
     case gfx::BufferUsage::SCANOUT_CPU_READ_WRITE:
       return "SCANOUT_CPU_READ_WRITE";
     case gfx::BufferUsage::SCANOUT_VDA_WRITE:
@@ -603,18 +629,41 @@ std::unique_ptr<base::ListValue> GpuMessageHandler::OnRequestLogMessages(
 
 void GpuMessageHandler::OnGpuInfoUpdate() {
   // Get GPU Info.
-  std::unique_ptr<base::DictionaryValue> gpu_info_val(
-      GpuInfoAsDictionaryValue());
+  const gpu::GPUInfo gpu_info = GpuDataManagerImpl::GetInstance()->GetGPUInfo();
+  auto gpu_info_val = GpuInfoAsDictionaryValue();
 
   // Add in blacklisting features
   auto feature_status = std::make_unique<base::DictionaryValue>();
   feature_status->Set("featureStatus", GetFeatureStatus());
   feature_status->Set("problems", GetProblems());
   auto workarounds = std::make_unique<base::ListValue>();
-  for (const std::string& workaround : GetDriverBugWorkarounds())
+  for (const auto& workaround : GetDriverBugWorkarounds())
     workarounds->AppendString(workaround);
   feature_status->Set("workarounds", std::move(workarounds));
   gpu_info_val->Set("featureStatus", std::move(feature_status));
+  if (!GpuDataManagerImpl::GetInstance()->IsGpuProcessUsingHardwareGpu()) {
+    auto feature_status_for_hardware_gpu =
+        std::make_unique<base::DictionaryValue>();
+    feature_status_for_hardware_gpu->Set("featureStatus",
+                                         GetFeatureStatusForHardwareGpu());
+    feature_status_for_hardware_gpu->Set("problems",
+                                         GetProblemsForHardwareGpu());
+    auto workarounds_for_hardware_gpu = std::make_unique<base::ListValue>();
+    for (const auto& workaround : GetDriverBugWorkaroundsForHardwareGpu())
+      workarounds_for_hardware_gpu->AppendString(workaround);
+    feature_status_for_hardware_gpu->Set(
+        "workarounds", std::move(workarounds_for_hardware_gpu));
+    gpu_info_val->Set("featureStatusForHardwareGpu",
+                      std::move(feature_status_for_hardware_gpu));
+    const gpu::GPUInfo gpu_info_for_hardware_gpu =
+        GpuDataManagerImpl::GetInstance()->GetGPUInfoForHardwareGpu();
+    const gpu::GpuFeatureInfo gpu_feature_info_for_hardware_gpu =
+        GpuDataManagerImpl::GetInstance()->GetGpuFeatureInfoForHardwareGpu();
+    auto gpu_info_for_hardware_gpu_val = BasicGpuInfoAsListValue(
+        gpu_info_for_hardware_gpu, gpu_feature_info_for_hardware_gpu);
+    gpu_info_val->Set("basicInfoForHardwareGpu",
+                      std::move(gpu_info_for_hardware_gpu_val));
+  }
   gpu_info_val->Set("compositorInfo", CompositorInfo());
   gpu_info_val->Set("gpuMemoryBufferInfo", GpuMemoryBufferInfo());
   gpu_info_val->Set("displayInfo", getDisplayInfo());

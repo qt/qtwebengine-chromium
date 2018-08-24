@@ -25,7 +25,6 @@
 
 namespace content {
 
-class ResourceContext;
 class ServiceWorkerContextCore;
 class ServiceWorkerContextWrapper;
 
@@ -58,32 +57,22 @@ FORWARD_DECLARE_TEST(BackgroundSyncManagerTest,
 // InterfacePtrs on the same render process are bound to the same
 // content::ServiceWorkerDispatcherHost. This can be overridden only for
 // testing.
+//
+// TODO(leonhsl): This class no longer needs to be a BrowserMessageFilter
+// because we are already in a pure Mojo world.
 class CONTENT_EXPORT ServiceWorkerDispatcherHost
     : public BrowserMessageFilter,
       public BrowserAssociatedInterface<mojom::ServiceWorkerDispatcherHost>,
       public mojom::ServiceWorkerDispatcherHost {
  public:
-  ServiceWorkerDispatcherHost(
-      int render_process_id,
-      ResourceContext* resource_context);
+  explicit ServiceWorkerDispatcherHost(int render_process_id);
 
   void Init(ServiceWorkerContextWrapper* context_wrapper);
 
   // BrowserMessageFilter implementation
-  void OnFilterAdded(IPC::Channel* channel) override;
   void OnFilterRemoved() override;
   void OnDestruct() const override;
   bool OnMessageReceived(const IPC::Message& message) override;
-
-  // IPC::Sender implementation
-
-  // Send() queues the message until the underlying sender is ready.  This
-  // class assumes that Send() can only fail after that when the renderer
-  // process has terminated, at which point the whole instance will eventually
-  // be destroyed.
-  bool Send(IPC::Message* message) override;
-
-  ResourceContext* resource_context() { return resource_context_; }
 
   base::WeakPtr<ServiceWorkerDispatcherHost> AsWeakPtr();
 
@@ -117,14 +106,10 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost
   ServiceWorkerContextCore* GetContext();
 
   const int render_process_id_;
-  ResourceContext* resource_context_;
   // Only accessed on the IO thread.
   Phase phase_ = Phase::kInitial;
   // Only accessed on the IO thread.
   scoped_refptr<ServiceWorkerContextWrapper> context_wrapper_;
-
-  bool channel_ready_;  // True after BrowserMessageFilter::sender_ != NULL.
-  std::vector<std::unique_ptr<IPC::Message>> pending_messages_;
 
   base::WeakPtrFactory<ServiceWorkerDispatcherHost> weak_ptr_factory_;
 

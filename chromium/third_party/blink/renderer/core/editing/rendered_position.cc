@@ -32,8 +32,6 @@
 
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
-#include "third_party/blink/renderer/core/editing/inline_box_position.h"
-#include "third_party/blink/renderer/core/editing/inline_box_traversal.h"
 #include "third_party/blink/renderer/core/editing/local_caret_rect.h"
 #include "third_party/blink/renderer/core/editing/selection_template.h"
 #include "third_party/blink/renderer/core/editing/text_affinity.h"
@@ -41,212 +39,12 @@
 #include "third_party/blink/renderer/core/editing/visible_selection.h"
 #include "third_party/blink/renderer/core/editing/visible_units.h"
 #include "third_party/blink/renderer/core/html/forms/text_control_element.h"
-#include "third_party/blink/renderer/core/layout/api/line_layout_api_shim.h"
 #include "third_party/blink/renderer/core/paint/compositing/composited_selection.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 
+#include <unicode/ubidi.h>
+
 namespace blink {
-
-template <typename Strategy>
-static inline LayoutObject* LayoutObjectFromPosition(
-    const PositionTemplate<Strategy>& position) {
-  DCHECK(position.IsNotNull());
-  Node* layout_object_node = nullptr;
-  switch (position.AnchorType()) {
-    case PositionAnchorType::kOffsetInAnchor:
-      layout_object_node = position.ComputeNodeAfterPosition();
-      if (!layout_object_node || !layout_object_node->GetLayoutObject())
-        layout_object_node = position.AnchorNode()->lastChild();
-      break;
-
-    case PositionAnchorType::kBeforeAnchor:
-    case PositionAnchorType::kAfterAnchor:
-      break;
-
-    case PositionAnchorType::kBeforeChildren:
-      layout_object_node = Strategy::FirstChild(*position.AnchorNode());
-      break;
-    case PositionAnchorType::kAfterChildren:
-      layout_object_node = Strategy::LastChild(*position.AnchorNode());
-      break;
-  }
-  if (!layout_object_node || !layout_object_node->GetLayoutObject())
-    layout_object_node = position.AnchorNode();
-  return layout_object_node->GetLayoutObject();
-}
-
-RenderedPosition::RenderedPosition(const VisiblePosition& position)
-    : RenderedPosition(position.DeepEquivalent(), position.Affinity()) {}
-
-RenderedPosition::RenderedPosition(const VisiblePositionInFlatTree& position)
-    : RenderedPosition(position.DeepEquivalent(), position.Affinity()) {}
-
-// TODO(editing-dev): Stop duplicating code in the two constructors
-
-RenderedPosition::RenderedPosition(const Position& position,
-                                   TextAffinity affinity)
-    : layout_object_(nullptr), inline_box_(nullptr), offset_(0) {
-  if (position.IsNull())
-    return;
-  InlineBoxPosition box_position =
-      ComputeInlineBoxPosition(PositionWithAffinity(position, affinity));
-  inline_box_ = box_position.inline_box;
-  offset_ = box_position.offset_in_box;
-  if (inline_box_)
-    layout_object_ =
-        LineLayoutAPIShim::LayoutObjectFrom(inline_box_->GetLineLayoutItem());
-  else
-    layout_object_ = LayoutObjectFromPosition(position);
-}
-
-RenderedPosition::RenderedPosition(const PositionInFlatTree& position,
-                                   TextAffinity affinity)
-    : layout_object_(nullptr), inline_box_(nullptr), offset_(0) {
-  if (position.IsNull())
-    return;
-  InlineBoxPosition box_position = ComputeInlineBoxPosition(
-      PositionInFlatTreeWithAffinity(position, affinity));
-  inline_box_ = box_position.inline_box;
-  offset_ = box_position.offset_in_box;
-  if (inline_box_)
-    layout_object_ =
-        LineLayoutAPIShim::LayoutObjectFrom(inline_box_->GetLineLayoutItem());
-  else
-    layout_object_ = LayoutObjectFromPosition(position);
-}
-
-const InlineBox* RenderedPosition::PrevLeafChild() const {
-  if (!prev_leaf_child_.has_value())
-    prev_leaf_child_ = inline_box_->PrevLeafChildIgnoringLineBreak();
-  return prev_leaf_child_.value();
-}
-
-const InlineBox* RenderedPosition::NextLeafChild() const {
-  if (!next_leaf_child_.has_value())
-    next_leaf_child_ = inline_box_->NextLeafChildIgnoringLineBreak();
-  return next_leaf_child_.value();
-}
-
-bool RenderedPosition::IsEquivalent(const RenderedPosition& other) const {
-  return (layout_object_ == other.layout_object_ &&
-          inline_box_ == other.inline_box_ && offset_ == other.offset_) ||
-         (AtLeftmostOffsetInBox() && other.AtRightmostOffsetInBox() &&
-          PrevLeafChild() == other.inline_box_) ||
-         (AtRightmostOffsetInBox() && other.AtLeftmostOffsetInBox() &&
-          NextLeafChild() == other.inline_box_);
-}
-
-unsigned char RenderedPosition::BidiLevelOnLeft() const {
-  const InlineBox* box =
-      AtLeftmostOffsetInBox() ? PrevLeafChild() : inline_box_;
-  return box ? box->BidiLevel() : 0;
-}
-
-unsigned char RenderedPosition::BidiLevelOnRight() const {
-  const InlineBox* box =
-      AtRightmostOffsetInBox() ? NextLeafChild() : inline_box_;
-  return box ? box->BidiLevel() : 0;
-}
-
-RenderedPosition RenderedPosition::LeftBoundaryOfBidiRun(
-    unsigned char bidi_level_of_run) {
-  if (!inline_box_ || bidi_level_of_run > inline_box_->BidiLevel())
-    return RenderedPosition();
-
-  const InlineBox* const box =
-      InlineBoxTraversal::FindLeftBoundaryOfEntireBidiRunIgnoringLineBreak(
-          *inline_box_, bidi_level_of_run);
-  return RenderedPosition(
-      LineLayoutAPIShim::LayoutObjectFrom(box->GetLineLayoutItem()), box,
-      box->CaretLeftmostOffset());
-}
-
-RenderedPosition RenderedPosition::RightBoundaryOfBidiRun(
-    unsigned char bidi_level_of_run) {
-  if (!inline_box_ || bidi_level_of_run > inline_box_->BidiLevel())
-    return RenderedPosition();
-
-  const InlineBox* const box =
-      InlineBoxTraversal::FindRightBoundaryOfEntireBidiRunIgnoringLineBreak(
-          *inline_box_, bidi_level_of_run);
-  return RenderedPosition(
-      LineLayoutAPIShim::LayoutObjectFrom(box->GetLineLayoutItem()), box,
-      box->CaretRightmostOffset());
-}
-
-bool RenderedPosition::AtLeftBoundaryOfBidiRun(
-    ShouldMatchBidiLevel should_match_bidi_level,
-    unsigned char bidi_level_of_run) const {
-  if (!inline_box_)
-    return false;
-
-  if (AtLeftmostOffsetInBox()) {
-    if (should_match_bidi_level == kIgnoreBidiLevel)
-      return !PrevLeafChild() ||
-             PrevLeafChild()->BidiLevel() < inline_box_->BidiLevel();
-    return inline_box_->BidiLevel() >= bidi_level_of_run &&
-           (!PrevLeafChild() ||
-            PrevLeafChild()->BidiLevel() < bidi_level_of_run);
-  }
-
-  if (AtRightmostOffsetInBox()) {
-    if (should_match_bidi_level == kIgnoreBidiLevel)
-      return NextLeafChild() &&
-             inline_box_->BidiLevel() < NextLeafChild()->BidiLevel();
-    return NextLeafChild() && inline_box_->BidiLevel() < bidi_level_of_run &&
-           NextLeafChild()->BidiLevel() >= bidi_level_of_run;
-  }
-
-  return false;
-}
-
-bool RenderedPosition::AtRightBoundaryOfBidiRun(
-    ShouldMatchBidiLevel should_match_bidi_level,
-    unsigned char bidi_level_of_run) const {
-  if (!inline_box_)
-    return false;
-
-  if (AtRightmostOffsetInBox()) {
-    if (should_match_bidi_level == kIgnoreBidiLevel)
-      return !NextLeafChild() ||
-             NextLeafChild()->BidiLevel() < inline_box_->BidiLevel();
-    return inline_box_->BidiLevel() >= bidi_level_of_run &&
-           (!NextLeafChild() ||
-            NextLeafChild()->BidiLevel() < bidi_level_of_run);
-  }
-
-  if (AtLeftmostOffsetInBox()) {
-    if (should_match_bidi_level == kIgnoreBidiLevel)
-      return PrevLeafChild() &&
-             inline_box_->BidiLevel() < PrevLeafChild()->BidiLevel();
-    return PrevLeafChild() && inline_box_->BidiLevel() < bidi_level_of_run &&
-           PrevLeafChild()->BidiLevel() >= bidi_level_of_run;
-  }
-
-  return false;
-}
-
-Position RenderedPosition::PositionAtLeftBoundaryOfBiDiRun() const {
-  DCHECK(AtLeftBoundaryOfBidiRun());
-
-  if (AtLeftmostOffsetInBox())
-    return Position::EditingPositionOf(layout_object_->GetNode(), offset_);
-
-  return Position::EditingPositionOf(
-      NextLeafChild()->GetLineLayoutItem().GetNode(),
-      NextLeafChild()->CaretLeftmostOffset());
-}
-
-Position RenderedPosition::PositionAtRightBoundaryOfBiDiRun() const {
-  DCHECK(AtRightBoundaryOfBidiRun());
-
-  if (AtRightmostOffsetInBox())
-    return Position::EditingPositionOf(layout_object_->GetNode(), offset_);
-
-  return Position::EditingPositionOf(
-      PrevLeafChild()->GetLineLayoutItem().GetNode(),
-      PrevLeafChild()->CaretRightmostOffset());
-}
 
 // Note: If the layout object has a scrolling contents layer, the selection
 // will be relative to that.
@@ -405,18 +203,7 @@ static CompositedSelectionBound EndPositionInGraphicsLayerBacking(
                                edge_bottom_in_layer);
 }
 
-bool LayoutObjectContainsPosition(LayoutObject* target,
-                                  const Position& position) {
-  for (LayoutObject* layout_object = LayoutObjectFromPosition(position);
-       layout_object && layout_object->GetNode();
-       layout_object = layout_object->Parent()) {
-    if (layout_object == target)
-      return true;
-  }
-  return false;
-}
-
-CompositedSelection RenderedPosition::ComputeCompositedSelection(
+CompositedSelection ComputeCompositedSelection(
     const FrameSelection& frame_selection) {
   if (!frame_selection.IsHandleVisible() || frame_selection.IsHidden())
     return {};

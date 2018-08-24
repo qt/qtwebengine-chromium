@@ -27,7 +27,28 @@ component("cpp") {
     "simple_url_loader.cc",
     "simple_url_loader.h",
     "simple_url_loader_stream_consumer.h",
+    "weak_wrapper_shared_url_loader_factory.cc",
+    "weak_wrapper_shared_url_loader_factory.h",
+    "wrapper_shared_url_loader_factory.cc",
+    "wrapper_shared_url_loader_factory.h",
   ]
+
+  if (!is_ios) {
+    sources += [
+      "server/http_connection.cc",
+      "server/http_connection.h",
+      "server/http_server.cc",
+      "server/http_server.h",
+      "server/http_server_request_info.cc",
+      "server/http_server_request_info.h",
+      "server/http_server_response_info.cc",
+      "server/http_server_response_info.h",
+      "server/web_socket.cc",
+      "server/web_socket.h",
+      "server/web_socket_encoder.cc",
+      "server/web_socket_encoder.h",
+    ]
+  }
 
   public_deps = [
     ":cpp_base",
@@ -40,7 +61,6 @@ component("cpp") {
     "//base",
     "//components/prefs",
     "//ipc",
-    "//mojo/common",
     "//services/proxy_resolver/public/mojom",
   ]
 
@@ -59,8 +79,8 @@ component("cpp_base") {
     "http_raw_request_response_info.h",
     "mutable_network_traffic_annotation_tag_mojom_traits.h",
     "mutable_partial_network_traffic_annotation_tag_mojom_traits.h",
-    "network_param_ipc_traits.cc",
-    "network_param_ipc_traits.h",
+    "network_ipc_param_traits.cc",
+    "network_ipc_param_traits.h",
     "proxy_config_mojom_traits.cc",
     "proxy_config_mojom_traits.h",
     "proxy_config_with_annotation_mojom_traits.cc",
@@ -87,6 +107,7 @@ component("cpp_base") {
   deps = [
     "//base",
     "//ipc",
+    "//mojo/public/mojom/base",
     "//net",
     "//services/network/public/mojom:mojom_shared",
   ]
@@ -109,12 +130,18 @@ source_set("tests") {
     "cors/cors_unittest.cc",
     "cors/preflight_cache_unittest.cc",
     "cors/preflight_result_unittest.cc",
+    "digitally_signed_mojom_traits_unittest.cc",
     "mutable_network_traffic_annotation_tag_mojom_traits_unittest.cc",
     "mutable_partial_network_traffic_annotation_tag_mojom_traits_unittest.cc",
     "network_mojom_traits_unittest.cc",
     "proxy_config_mojom_traits_unittest.cc",
+    "signed_tree_head_mojom_traits_unittest.cc",
     "simple_url_loader_unittest.cc",
   ]
+
+  if (!is_ios) {
+    sources += [ "server/http_server_unittest.cc" ]
+  }
   deps = [
     ":cpp",
     ":test_interfaces",

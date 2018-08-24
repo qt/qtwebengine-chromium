@@ -6,8 +6,8 @@
 {% from 'core/css/properties/templates/style_builder_functions.tmpl' import style_builder_functions %}
 {{source_files_for_generated_file(template_file, input_files)}}
 
-#ifndef GEN_BLINK_CORE_CSS_PROPERTIES_{{property.namespace_group.upper()}}_{{property_filename|upper}}_H_
-#define GEN_BLINK_CORE_CSS_PROPERTIES_{{property.namespace_group.upper()}}_{{property_filename|upper}}_H_
+#ifndef THIRD_PARTY_BLINK_RENDERER_CORE_CSS_PROPERTIES_{{property.namespace_group.upper()}}_{{property_filename|upper}}_H_
+#define THIRD_PARTY_BLINK_RENDERER_CORE_CSS_PROPERTIES_{{property.namespace_group.upper()}}_{{property_filename|upper}}_H_
 
 {% for include in includes %}
 #include "{{include}}"
@@ -31,15 +31,22 @@ class {{property_classname}} final : public {{property.namespace_group}} {
  public:
   constexpr {{property_classname}}() : {{property.namespace_group}}() {}
   {% endif %}
+  {% if property.is_internal %}
+  bool IsEnabled() const override { return false; }
+  {% elif property.runtime_flag %}
+  bool IsEnabled() const override {
+    return RuntimeEnabledFeatures::{{property.runtime_flag}}Enabled();
+  }
+  {% endif %}
   const char* GetPropertyName() const override { return "{{property.name}}\0"; }
   const WTF::AtomicString& GetPropertyNameAtomicString() const override {
     static const WTF::AtomicString& name = WTF::AtomicString("{{property.name}}\0");
     return name;
   }
-  {% if property.alias_for == None %}
   const WTF::String GetJSPropertyName() const override {
     return WTF::String("{{property_classname[0].lower() + property_classname[1:]}}\0");
   }
+  {% if property.alias_for == None %}
   CSSPropertyID PropertyID() const override { return {{property.property_id}}; }
   {%if property.layout_dependent %}
   bool IsLayoutDependentProperty() const override { return true; }
@@ -69,13 +76,6 @@ class {{property_classname}} final : public {{property.namespace_group}} {
   {% endif %}
   {% if not property.is_property %}
   bool IsProperty() const override { return false; }
-  {% endif %}
-  {% if property.is_internal %}
-  bool IsEnabled() const override { return false; }
-  {% elif property.runtime_flag %}
-  bool IsEnabled() const override {
-    return RuntimeEnabledFeatures::{{property.runtime_flag}}Enabled();
-  }
   {% endif %}
   {% if not property.affected_by_all %}
   bool IsAffectedByAll() const override { return false; }
@@ -130,4 +130,4 @@ class {{property_classname}} final : public {{property.namespace_group}} {
 }  // namespace CSS{{property.namespace_group}}
 }  // namespace blink
 
-#endif  // GEN_BLINK_CORE_CSS_PROPERTIES_{{property.namespace_group.upper()}}_{{property_filename|upper}}_H_
+#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_CSS_PROPERTIES_{{property.namespace_group.upper()}}_{{property_filename|upper}}_H_

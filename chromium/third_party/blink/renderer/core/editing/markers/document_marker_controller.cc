@@ -267,8 +267,8 @@ void DocumentMarkerController::AddMarkerInternal(
 
     // Ignore text emitted by TextIterator for non-text nodes (e.g. implicit
     // newlines)
-    const Node* const node = marked_text.CurrentContainer();
-    if (!node->IsTextNode())
+    const Node& node = marked_text.CurrentContainer();
+    if (!node.IsTextNode())
       continue;
 
     DocumentMarker* const new_marker = create_marker_from_offsets(
@@ -277,13 +277,13 @@ void DocumentMarkerController::AddMarkerInternal(
   }
 }
 
-void DocumentMarkerController::AddMarkerToNode(const Node* node,
+void DocumentMarkerController::AddMarkerToNode(const Node& node,
                                                DocumentMarker* new_marker) {
   possibly_existing_marker_types_.Add(new_marker->GetType());
   SetContext(document_);
 
   Member<MarkerLists>& markers =
-      markers_.insert(node, nullptr).stored_value->value;
+      markers_.insert(&node, nullptr).stored_value->value;
   if (!markers) {
     markers = new MarkerLists;
     markers->Grow(DocumentMarker::kMarkerTypeIndexesCount);
@@ -296,7 +296,7 @@ void DocumentMarkerController::AddMarkerToNode(const Node* node,
   DocumentMarkerList* const list = ListForType(markers, new_marker_type);
   list->Add(new_marker);
 
-  InvalidatePaintForNode(*node);
+  InvalidatePaintForNode(node);
 }
 
 // Moves markers from src_node to dst_node. Markers are moved if their start
@@ -342,7 +342,7 @@ void DocumentMarkerController::MoveMarkers(const Node* src_node,
 }
 
 void DocumentMarkerController::RemoveMarkersInternal(
-    const Node* node,
+    const Node& node,
     unsigned start_offset,
     int length,
     DocumentMarker::MarkerTypes marker_types) {
@@ -353,7 +353,7 @@ void DocumentMarkerController::RemoveMarkersInternal(
     return;
   DCHECK(!(markers_.IsEmpty()));
 
-  MarkerLists* markers = markers_.at(node);
+  MarkerLists* const markers = markers_.at(&node);
   if (!markers)
     return;
 
@@ -380,7 +380,7 @@ void DocumentMarkerController::RemoveMarkersInternal(
   }
 
   if (empty_lists_count == DocumentMarker::kMarkerTypeIndexesCount) {
-    markers_.erase(node);
+    markers_.erase(&node);
     if (markers_.IsEmpty()) {
       possibly_existing_marker_types_ = 0;
       SetContext(nullptr);
@@ -390,7 +390,7 @@ void DocumentMarkerController::RemoveMarkersInternal(
   if (!doc_dirty)
     return;
 
-  InvalidatePaintForNode(*node);
+  InvalidatePaintForNode(node);
 }
 
 DocumentMarker* DocumentMarkerController::FirstMarkerIntersectingOffsetRange(

@@ -53,25 +53,17 @@ class CORE_EXPORT CompositorAnimations {
   struct FailureCode {
     const bool can_composite;
     const bool web_developer_actionable;
-    // This variable is used only to set the
-    // Animation::is_non_composited_compositable_.
-    const bool will_composite;
     const String reason;
 
-    static FailureCode None() {
-      return FailureCode(true, false, true, String());
-    }
+    static FailureCode None() { return FailureCode(true, false, String()); }
     static FailureCode Actionable(const String& reason) {
-      return FailureCode(false, true, false, reason);
+      return FailureCode(false, true, reason);
     }
     static FailureCode NonActionable(const String& reason) {
-      return FailureCode(false, false, false, reason);
-    }
-    static FailureCode AcceleratableAnimNotAccelerated(const String& reason) {
-      return FailureCode(true, false, false, reason);
+      return FailureCode(false, false, reason);
     }
 
-    bool Ok() const { return will_composite; }
+    bool Ok() const { return can_composite; }
 
     bool operator==(const FailureCode& other) const {
       return can_composite == other.can_composite &&
@@ -82,11 +74,9 @@ class CORE_EXPORT CompositorAnimations {
    private:
     FailureCode(bool can_composite,
                 bool web_developer_actionable,
-                bool will_composite,
                 const String& reason)
         : can_composite(can_composite),
           web_developer_actionable(web_developer_actionable),
-          will_composite(will_composite),
           reason(reason) {}
   };
 
@@ -101,7 +91,7 @@ class CORE_EXPORT CompositorAnimations {
                                                        const EffectModel&);
   static void StartAnimationOnCompositor(const Element&,
                                          int group,
-                                         WTF::Optional<double> start_time,
+                                         base::Optional<double> start_time,
                                          double time_offset,
                                          const Timing&,
                                          const Animation*,
@@ -110,7 +100,7 @@ class CORE_EXPORT CompositorAnimations {
                                          Vector<int>& started_animation_ids,
                                          double animation_playback_rate);
   static void CancelAnimationOnCompositor(const Element&,
-                                          const Animation&,
+                                          CompositorAnimation*,
                                           int id);
   static void PauseAnimationForTestingOnCompositor(const Element&,
                                                    const Animation&,
@@ -137,7 +127,7 @@ class CORE_EXPORT CompositorAnimations {
   static void GetAnimationOnCompositor(
       const Timing&,
       int group,
-      WTF::Optional<double> start_time,
+      base::Optional<double> start_time,
       double time_offset,
       const KeyframeEffectModelBase&,
       Vector<std::unique_ptr<CompositorKeyframeModel>>& animations,
@@ -161,13 +151,6 @@ class CORE_EXPORT CompositorAnimations {
                            canStartElementOnCompositorEffect);
   FRIEND_TEST_ALL_PREFIXES(AnimationCompositorAnimationsTest,
                            cannotStartElementOnCompositorEffectSVG);
-  FRIEND_TEST_ALL_PREFIXES(
-      AnimationCompositorAnimationsTest,
-      cannotStartElementOnCompositorEffectWithRuntimeFeature);
-  FRIEND_TEST_ALL_PREFIXES(AnimationCompositorAnimationsTest,
-                           canStartOpacityWithWillChangeWithRuntimeFeature);
-  FRIEND_TEST_ALL_PREFIXES(AnimationCompositorAnimationsTest,
-                           canStartOpacityWith3DTransformWithRuntimeFeature);
   FRIEND_TEST_ALL_PREFIXES(AnimationCompositorAnimationsTest,
                            cancelIncompatibleCompositorAnimations);
 };

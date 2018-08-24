@@ -23,6 +23,9 @@ const int kLimitTriesForStableTiming = 5;
 // CheckForTimestampGap().
 const int kStableTimeGapThrsholdMsec = 1;
 
+// Maximum number of timestamp gap warnings sent to MediaLog.
+const int kMaxTimestampGapWarnings = 10;
+
 AudioTimestampValidator::AudioTimestampValidator(
     const AudioDecoderConfig& decoder_config,
     MediaLog* media_log)
@@ -101,7 +104,7 @@ void AudioTimestampValidator::CheckForTimestampGap(
 
       // Let developers know if their files timestamps are way off from
       if (num_unstable_audio_tries_ > limit_unstable_audio_tries_) {
-        MEDIA_LOG(ERROR, media_log_)
+        MEDIA_LOG(WARNING, media_log_)
             << "Failed to reconcile encoded audio times with decoded output.";
       }
     }
@@ -111,7 +114,8 @@ void AudioTimestampValidator::CheckForTimestampGap(
   }
 
   if (std::abs(ts_delta.InMilliseconds()) > drift_warning_threshold_msec_) {
-    MEDIA_LOG(ERROR, media_log_)
+    LIMITED_MEDIA_LOG(WARNING, media_log_, num_timestamp_gap_warnings_,
+                      kMaxTimestampGapWarnings)
         << " Large timestamp gap detected; may cause AV sync to drift."
         << " time:" << buffer.timestamp().InMicroseconds() << "us"
         << " expected:" << expected_ts.InMicroseconds() << "us"

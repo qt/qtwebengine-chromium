@@ -29,12 +29,20 @@ class MODULES_EXPORT MediaControlPanelElement final
   void SetKeepDisplayedForAccessibility(bool);
 
   // Node override;
-  void RemovedFrom(ContainerNode*);
+  void RemovedFrom(ContainerNode*) override;
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
+
+ protected:
+  friend class MediaControlPanelElementTest;
+
+  bool EventListenerIsAttachedForTest() const;
 
  private:
   class TransitionEventListener;
+
+  void EnsureTransitionEventListener();
+  void DetachTransitionEventListener();
 
   void DefaultEventHandler(Event*) override;
   bool KeepEventInNode(Event*) override;

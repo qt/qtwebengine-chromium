@@ -29,14 +29,17 @@
 #include <math.h>
 #include <algorithm>
 #include <limits>
+
 #include "SkPoint.h"
 #include "third_party/blink/renderer/platform/geometry/double_point.h"
 #include "third_party/blink/renderer/platform/geometry/layout_point.h"
 #include "third_party/blink/renderer/platform/geometry/layout_size.h"
-#include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
+#include "third_party/blink/renderer/platform/wtf/text/text_stream.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/skia/include/core/SkPoint.h"
+#include "ui/gfx/geometry/point_f.h"
+#include "ui/gfx/geometry/scroll_offset.h"
 
 namespace blink {
 
@@ -78,11 +81,6 @@ void FloatPoint::MoveBy(const LayoutPoint& point) {
   y_ += point.Y();
 }
 
-SkPoint FloatPoint::Data() const {
-  SkPoint p = {WebCoreFloatToSkScalar(x_), WebCoreFloatToSkScalar(y_)};
-  return p;
-}
-
 FloatPoint FloatPoint::NarrowPrecision(double x, double y) {
   return FloatPoint(clampTo<float>(x), clampTo<float>(y));
 }
@@ -110,8 +108,12 @@ bool FindIntersection(const FloatPoint& p1,
   return true;
 }
 
-FloatPoint::operator SkPoint() const {
-  return SkPoint::Make(x_, y_);
+FloatPoint::operator gfx::PointF() const {
+  return gfx::PointF(x_, y_);
+}
+
+FloatPoint::operator gfx::ScrollOffset() const {
+  return gfx::ScrollOffset(x_, y_);
 }
 
 std::ostream& operator<<(std::ostream& ostream, const FloatPoint& point) {
@@ -120,6 +122,13 @@ std::ostream& operator<<(std::ostream& ostream, const FloatPoint& point) {
 
 String FloatPoint::ToString() const {
   return String::Format("%lg,%lg", X(), Y());
+}
+
+WTF::TextStream& operator<<(WTF::TextStream& ts, const FloatPoint& p) {
+  ts << "(" << WTF::TextStream::FormatNumberRespectingIntegers(p.X());
+  ts << "," << WTF::TextStream::FormatNumberRespectingIntegers(p.Y());
+  ts << ")";
+  return ts;
 }
 
 }  // namespace blink

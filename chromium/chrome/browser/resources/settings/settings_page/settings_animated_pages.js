@@ -38,6 +38,10 @@ Polymer({
     focusConfig: Object,
   },
 
+  listeners: {
+    'neon-animation-finish': 'onNeonAnimationFinish_',
+  },
+
   /**
    * The last "previous" route reported by the router.
    * @private {?settings.Route}
@@ -49,6 +53,18 @@ Polymer({
     // Observe the light DOM so we know when it's ready.
     this.lightDomObserver_ =
         Polymer.dom(this).observeNodes(this.lightDomChanged_.bind(this));
+  },
+
+  /** @private */
+  onNeonAnimationFinish_: function() {
+    if (settings.lastRouteChangeWasPopstate())
+      return;
+
+    // Set initial focus when navigating to a subpage for a11y.
+    let subPage = /** @type {SettingsSubpageElement} */ (
+        this.querySelector('settings-subpage.iron-selected'));
+    if (subPage)
+      subPage.initialFocus();
   },
 
   /**

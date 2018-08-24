@@ -47,22 +47,6 @@
 #endif  // PDF_ENABLE_XFA
 
 // static
-void IJS_Runtime::Initialize(unsigned int slot, void* isolate) {
-  FXJS_Initialize(slot, reinterpret_cast<v8::Isolate*>(isolate));
-}
-
-// static
-void IJS_Runtime::Destroy() {
-  FXJS_Release();
-}
-
-// static
-std::unique_ptr<IJS_Runtime> IJS_Runtime::Create(
-    CPDFSDK_FormFillEnvironment* pFormFillEnv) {
-  return pdfium::MakeUnique<CJS_Runtime>(pFormFillEnv);
-}
-
-// static
 CJS_Runtime* CJS_Runtime::RuntimeFromIsolateCurrentContext(
     v8::Isolate* pIsolate) {
   return static_cast<CJS_Runtime*>(
@@ -80,7 +64,7 @@ CJS_Runtime::CJS_Runtime(CPDFSDK_FormFillEnvironment* pFormFillEnv)
     unsigned int embedderDataSlot = 0;
     v8::Isolate* pExternalIsolate = nullptr;
     if (pPlatform->version == 2) {
-      pExternalIsolate = reinterpret_cast<v8::Isolate*>(pPlatform->m_isolate);
+      pExternalIsolate = static_cast<v8::Isolate*>(pPlatform->m_isolate);
       embedderDataSlot = pPlatform->m_v8EmbedderSlot;
     }
     FXJS_Initialize(embedderDataSlot, pExternalIsolate);
@@ -159,6 +143,10 @@ void CJS_Runtime::DefineJSObjects() {
   CJS_Annot::DefineJSObjects(this);
 }
 
+CJS_Runtime* CJS_Runtime::AsCJSRuntime() {
+  return this;
+}
+
 IJS_EventContext* CJS_Runtime::NewEventContext() {
   m_EventContextArray.push_back(pdfium::MakeUnique<CJS_EventContext>(this));
   return m_EventContextArray.back().get();
@@ -202,14 +190,9 @@ CPDFSDK_FormFillEnvironment* CJS_Runtime::GetFormFillEnv() const {
   return m_pFormFillEnv.Get();
 }
 
-int CJS_Runtime::ExecuteScript(const WideString& script, WideString* info) {
-  FXJSErr error = {};
-  int nRet = Execute(script, &error);
-  if (nRet < 0) {
-    *info = WideString::Format(L"[ Line: %05d { %ls } ] : %s", error.linnum - 1,
-                               error.srcline, error.message);
-  }
-  return nRet;
+Optional<IJS_Runtime::JS_Error> CJS_Runtime::ExecuteScript(
+    const WideString& script) {
+  return Execute(script);
 }
 
 bool CJS_Runtime::AddEventToSet(const FieldEvent& event) {

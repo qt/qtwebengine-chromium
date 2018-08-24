@@ -492,7 +492,7 @@ class PLATFORM_EXPORT ObjectStartBitmap {
 class PLATFORM_EXPORT NormalPage final : public BasePage {
  public:
   NormalPage(PageMemory*, BaseArena*);
-  ~NormalPage();
+  ~NormalPage() override;
 
   Address Payload() { return GetAddress() + PageHeaderSize(); }
   size_t PayloadSize() {
@@ -613,7 +613,7 @@ class LargeObjectPage final : public BasePage {
   // negative page cache.
   bool Contains(Address) override;
 #endif
-  virtual size_t size() {
+  size_t size() override {
     return PageHeaderSize() + sizeof(HeapObjectHeader) + payload_size_;
   }
   static size_t PageHeaderSize() {
@@ -644,54 +644,6 @@ class LargeObjectPage final : public BasePage {
 #ifdef ANNOTATE_CONTIGUOUS_CONTAINER
   bool is_vector_backing_page_;
 #endif
-};
-
-// |HeapDoesNotContainCache| provides a fast way to determine whether an
-// aribtrary pointer-sized word can be interpreted as a pointer to an area that
-// is managed by the garbage collected Blink heap. This is a cache of 'pages'
-// that have previously been determined to be wholly outside of the heap. The
-// size of these pages must be smaller than the allocation alignment of the heap
-// pages. We determine off-heap-ness by rounding down the pointer to the nearest
-// page and looking up the page in the cache. If there is a miss in the cache we
-// can determine the status of the pointer precisely using the heap
-// |RegionTree|.
-//
-// This is a negative cache, so it must be flushed when memory is added to the
-// heap.
-class HeapDoesNotContainCache {
-  USING_FAST_MALLOC(HeapDoesNotContainCache);
-
- public:
-  HeapDoesNotContainCache() : has_entries_(false) {
-    // Start by flushing the cache in a non-empty state to initialize all the
-    // cache entries.
-    for (size_t i = 0; i < kNumberOfEntries; ++i)
-      entries_[i] = nullptr;
-  }
-
-  void Flush();
-  bool IsEmpty() { return !has_entries_; }
-
-  // Perform a lookup in the cache.
-  //
-  // If lookup returns false, the argument address was not found in the cache
-  // and it is unknown if the address is in the Blink heap.
-  //
-  // If lookup returns true, the argument address was found in the cache which
-  // means the address is not in the heap.
-  PLATFORM_EXPORT bool Lookup(Address);
-
-  // Add an entry to the cache.
-  PLATFORM_EXPORT void AddEntry(Address);
-
- private:
-  static constexpr size_t kNumberOfEntriesLog2 = 12;
-  static constexpr size_t kNumberOfEntries = 1 << kNumberOfEntriesLog2;
-
-  static size_t GetHash(Address);
-
-  Address entries_[kNumberOfEntries];
-  bool has_entries_;
 };
 
 class FreeList {
@@ -996,34 +948,39 @@ inline uint32_t GetRandomMagic() {
 #pragma warning(disable : 4319)
 #endif
 
-  static const uintptr_t random1 = ~(RotateLeft16(reinterpret_cast<uintptr_t>(
+  // Get an ASLR'd address from one of our own DLLs/.sos, and then another from
+  // a system DLL/.so:
+
+  const uint32_t random1 = ~(RotateLeft16(reinterpret_cast<uintptr_t>(
       base::trace_event::MemoryAllocatorDump::kNameSize)));
 
 #if defined(OS_WIN)
-  static const uintptr_t random2 =
-      ~(RotateLeft16(reinterpret_cast<uintptr_t>(::ReadFile)));
-#elif defined(OS_POSIX)
-  static const uintptr_t random2 =
-      ~(RotateLeft16(reinterpret_cast<uintptr_t>(::read)));
+  uintptr_t random2 = reinterpret_cast<uintptr_t>(::ReadFile);
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
+  uintptr_t random2 = reinterpret_cast<uintptr_t>(::read);
 #else
-#error OS not supported
+#error platform not supported
 #endif
 
 #if defined(ARCH_CPU_64_BITS)
   static_assert(sizeof(uintptr_t) == sizeof(uint64_t),
                 "uintptr_t is not uint64_t");
-  static const uint32_t random = static_cast<uint32_t>(
-      (random1 & 0x0FFFFULL) | ((random2 >> 32) & 0x0FFFF0000ULL));
+  // Shift in some high-order bits.
+  random2 = random2 >> 16;
 #elif defined(ARCH_CPU_32_BITS)
   // Although we don't use heap metadata canaries on 32-bit due to memory
   // pressure, keep this code around just in case we do, someday.
   static_assert(sizeof(uintptr_t) == sizeof(uint32_t),
                 "uintptr_t is not uint32_t");
-  static const uint32_t random =
-      (random1 & 0x0FFFFUL) | (random2 & 0xFFFF0000UL);
 #else
 #error architecture not supported
 #endif
+
+  random2 = ~(RotateLeft16(random2));
+
+  // Combine the 2 values:
+  const uint32_t random = (random1 & 0x0000FFFFUL) |
+                          (static_cast<uint32_t>(random2) & 0xFFFF0000UL);
 
 #if defined(COMPILER_MSVC)
 #pragma warning(pop)

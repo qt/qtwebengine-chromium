@@ -26,6 +26,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
@@ -451,12 +452,17 @@ bool WebRequestAPI::MaybeProxyURLLoaderFactory(
   }
 
   auto proxy = base::MakeRefCounted<WebRequestProxyingURLLoaderFactory>(
-      frame->GetProcess()->GetBrowserContext(), info_map_);
+      frame->GetProcess()->GetBrowserContext(),
+      frame->GetProcess()->GetBrowserContext()->GetResourceContext(),
+      info_map_);
   proxies_.emplace(proxy.get(), proxy);
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::BindOnce(&WebRequestProxyingURLLoaderFactory::StartProxying, proxy,
-                     frame->GetProcess()->GetID(), frame->GetRoutingID(),
+                     // Match the behavior of the WebRequestInfo constructor
+                     // which takes a net::URLRequest*.
+                     is_navigation ? -1 : frame->GetProcess()->GetID(),
+                     is_navigation ? MSG_ROUTING_NONE : frame->GetRoutingID(),
                      std::move(navigation_ui_data), std::move(proxied_request),
                      std::move(target_factory_info),
                      base::BindOnce(&WebRequestAPI::RemoveProxyThreadSafe,
@@ -671,16 +677,14 @@ int ExtensionWebRequestEventRouter::OnBeforeRequest(
   // OnBeforeRequest call.
   // |extension_info_map| is null for system level requests.
   if (extension_info_map) {
-    // Give priority to blocking rules over redirect rules.
-    if (extension_info_map->GetRulesetManager()->ShouldBlockRequest(
-            *request, is_incognito_context)) {
-      return net::ERR_BLOCKED_BY_CLIENT;
-    }
+    using Action = declarative_net_request::RulesetManager::Action;
 
-    if (extension_info_map->GetRulesetManager()->ShouldRedirectRequest(
-            *request, is_incognito_context, new_url)) {
+    Action action = extension_info_map->GetRulesetManager()->EvaluateRequest(
+        *request, is_incognito_context, new_url);
+    if (action == Action::BLOCK)
+      return net::ERR_BLOCKED_BY_CLIENT;
+    if (action == Action::REDIRECT)
       return net::OK;
-    }
   }
 
   // Whether to initialized |blocked_requests_|.
@@ -1460,7 +1464,7 @@ void ExtensionWebRequestEventRouter::GetMatchingListenersImpl(
     }
 
     if (!request->is_web_view) {
-      PermissionsData::AccessType access =
+      PermissionsData::PageAccess access =
           WebRequestPermissions::CanExtensionAccessURL(
               extension_info_map, listener->id.extension_id, request->url,
               request->frame_data ? request->frame_data->tab_id : -1,
@@ -1468,8 +1472,8 @@ void ExtensionWebRequestEventRouter::GetMatchingListenersImpl(
               WebRequestPermissions::REQUIRE_HOST_PERMISSION_FOR_URL,
               request->initiator);
 
-      if (access != PermissionsData::ACCESS_ALLOWED) {
-        if (access == PermissionsData::ACCESS_WITHHELD &&
+      if (access != PermissionsData::PageAccess::kAllowed) {
+        if (access == PermissionsData::PageAccess::kWithheld &&
             web_request_event_router_delegate_) {
           web_request_event_router_delegate_->NotifyWebRequestWithheld(
               request->render_process_id, request->frame_id,
@@ -1937,8 +1941,6 @@ bool ExtensionWebRequestEventRouter::ProcessDeclarativeRules(
         has_declarative_rules);
   }
 
-  base::Time start = base::Time::Now();
-
   bool deltas_created = false;
   for (const auto& it : relevant_registries) {
     WebRequestRulesRegistry* rules_registry = it.first;
@@ -1954,10 +1956,6 @@ bool ExtensionWebRequestEventRouter::ProcessDeclarativeRules(
       deltas_created = true;
     }
   }
-
-  base::TimeDelta elapsed_time = start - base::Time::Now();
-  UMA_HISTOGRAM_TIMES("Extensions.DeclarativeWebRequestNetworkDelay",
-                      elapsed_time);
 
   return deltas_created;
 }

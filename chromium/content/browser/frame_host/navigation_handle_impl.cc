@@ -13,7 +13,7 @@
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/devtools/render_frame_devtools_agent_host.h"
 #include "content/browser/frame_host/ancestor_throttle.h"
-#include "content/browser/frame_host/data_url_navigation_throttle.h"
+#include "content/browser/frame_host/blocked_scheme_navigation_throttle.h"
 #include "content/browser/frame_host/debug_urls.h"
 #include "content/browser/frame_host/form_submission_throttle.h"
 #include "content/browser/frame_host/frame_tree_node.h"
@@ -22,6 +22,7 @@
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/browser/frame_host/navigator_delegate.h"
+#include "content/browser/frame_host/webui_navigation_throttle.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_navigation_handle.h"
@@ -117,7 +118,6 @@ std::unique_ptr<NavigationHandleImpl> NavigationHandleImpl::Create(
     bool started_from_context_menu,
     CSPDisposition should_check_main_world_csp,
     bool is_form_submission,
-    const base::Optional<std::string>& suggested_filename,
     std::unique_ptr<NavigationUIData> navigation_ui_data,
     const std::string& method,
     net::HttpRequestHeaders request_headers,
@@ -132,10 +132,10 @@ std::unique_ptr<NavigationHandleImpl> NavigationHandleImpl::Create(
       url, redirect_chain, frame_tree_node, is_renderer_initiated,
       is_same_document, navigation_start, pending_nav_entry_id,
       started_from_context_menu, should_check_main_world_csp,
-      is_form_submission, suggested_filename, std::move(navigation_ui_data),
-      method, std::move(request_headers), resource_request_body,
-      sanitized_referrer, has_user_gesture, transition, is_external_protocol,
-      request_context_type, mixed_content_context_type));
+      is_form_submission, std::move(navigation_ui_data), method,
+      std::move(request_headers), resource_request_body, sanitized_referrer,
+      has_user_gesture, transition, is_external_protocol, request_context_type,
+      mixed_content_context_type));
 }
 
 NavigationHandleImpl::NavigationHandleImpl(
@@ -149,7 +149,6 @@ NavigationHandleImpl::NavigationHandleImpl(
     bool started_from_context_menu,
     CSPDisposition should_check_main_world_csp,
     bool is_form_submission,
-    const base::Optional<std::string>& suggested_filename,
     std::unique_ptr<NavigationUIData> navigation_ui_data,
     const std::string& method,
     net::HttpRequestHeaders request_headers,
@@ -191,7 +190,6 @@ NavigationHandleImpl::NavigationHandleImpl(
       navigation_type_(NAVIGATION_TYPE_UNKNOWN),
       should_check_main_world_csp_(should_check_main_world_csp),
       expected_render_process_host_id_(ChildProcessHost::kInvalidUniqueID),
-      suggested_filename_(suggested_filename),
       is_transferring_(false),
       is_form_submission_(is_form_submission),
       should_replace_current_entry_(false),
@@ -382,12 +380,14 @@ net::Error NavigationHandleImpl::GetNetErrorCode() {
 }
 
 RenderFrameHostImpl* NavigationHandleImpl::GetRenderFrameHost() {
-  // TODO(mkwst): Change this to check against 'READY_TO_COMMIT' once
-  // ReadyToCommitNavigation is available whether or not PlzNavigate is
-  // enabled. https://crbug.com/621856
-  CHECK_GE(state_, WILL_PROCESS_RESPONSE)
-      << "This accessor should only be called after a response has been "
-         "delivered for processing.";
+  // Only allow the RenderFrameHost to be retrieved once it has been set for
+  // this navigation.  This will happens either at WillProcessResponse time for
+  // regular navigations or at WillFailRequest time for error pages.
+  CHECK_GE(state_, WILL_FAIL_REQUEST)
+      << "This accessor should only be called after a RenderFrameHost has been "
+         "picked for this navigation.";
+  static_assert(WILL_FAIL_REQUEST < WILL_PROCESS_RESPONSE,
+                "WillFailRequest state should come before WillProcessResponse");
   return render_frame_host_;
 }
 
@@ -495,9 +495,11 @@ NavigationHandleImpl::CallWillRedirectRequestForTesting(
 
 NavigationThrottle::ThrottleCheckResult
 NavigationHandleImpl::CallWillFailRequestForTesting(
+    RenderFrameHost* render_frame_host,
     base::Optional<net::SSLInfo> ssl_info) {
   NavigationThrottle::ThrottleCheckResult result = NavigationThrottle::DEFER;
-  WillFailRequest(ssl_info, base::Bind(&UpdateThrottleCheckResult, &result));
+  WillFailRequest(static_cast<RenderFrameHostImpl*>(render_frame_host),
+                  ssl_info, base::Bind(&UpdateThrottleCheckResult, &result));
 
   // Reset the callback to ensure it will not be called later.
   complete_callback_.Reset();
@@ -506,7 +508,7 @@ NavigationHandleImpl::CallWillFailRequestForTesting(
 
 NavigationThrottle::ThrottleCheckResult
 NavigationHandleImpl::CallWillProcessResponseForTesting(
-    content::RenderFrameHost* render_frame_host,
+    RenderFrameHost* render_frame_host,
     const std::string& raw_response_headers) {
   scoped_refptr<net::HttpResponseHeaders> headers =
       new net::HttpResponseHeaders(raw_response_headers);
@@ -599,11 +601,6 @@ bool NavigationHandleImpl::IsDownload() {
 
 bool NavigationHandleImpl::IsFormSubmission() {
   return is_form_submission_;
-}
-
-const base::Optional<std::string>&
-NavigationHandleImpl::GetSuggestedFilename() {
-  return suggested_filename_;
 }
 
 void NavigationHandleImpl::InitServiceWorkerHandle(
@@ -732,6 +729,7 @@ void NavigationHandleImpl::WillRedirectRequest(
 }
 
 void NavigationHandleImpl::WillFailRequest(
+    RenderFrameHostImpl* render_frame_host,
     base::Optional<net::SSLInfo> ssl_info,
     const ThrottleChecksFinishedCallback& callback) {
   TRACE_EVENT_ASYNC_STEP_INTO0("navigation", "NavigationHandle", this,
@@ -739,6 +737,7 @@ void NavigationHandleImpl::WillFailRequest(
   if (ssl_info.has_value())
     ssl_info_ = ssl_info.value();
 
+  render_frame_host_ = render_frame_host;
   complete_callback_ = callback;
   state_ = WILL_FAIL_REQUEST;
 
@@ -793,16 +792,8 @@ void NavigationHandleImpl::WillProcessResponse(
   // If the navigation is done processing the response, then it's ready to
   // commit. Inform observers that the navigation is now ready to commit, unless
   // it is not set to commit (204/205s/downloads).
-  if (result.action() == NavigationThrottle::PROCEED && render_frame_host_) {
-    CHECK(!suggested_filename_.has_value() ||
-          !(url_.SchemeIsBlob() || url_.SchemeIsFileSystem() ||
-            url_.SchemeIs(url::kAboutScheme) ||
-            url_.SchemeIs(url::kDataScheme)))
-        << "Blob, filesystem, data, and about URLs with a suggested filename "
-           "should always result in a download, so we should never process a "
-           "navigation response here.";
+  if (result.action() == NavigationThrottle::PROCEED && render_frame_host_)
     ReadyToCommitNavigation(render_frame_host_, false);
-  }
 
   TRACE_EVENT_ASYNC_STEP_INTO1("navigation", "NavigationHandle", this,
                                "ProcessResponse", "result", result.action());
@@ -815,7 +806,18 @@ void NavigationHandleImpl::ReadyToCommitNavigation(
   TRACE_EVENT_ASYNC_STEP_INTO0("navigation", "NavigationHandle", this,
                                "ReadyToCommitNavigation");
 
-  DCHECK(!render_frame_host_ || render_frame_host_ == render_frame_host);
+  // If the NavigationHandle already has a RenderFrameHost set at
+  // WillProcessResponse time, we should not be changing it.  One exception is
+  // errors originating from WillProcessResponse throttles, which might commit
+  // in a different RenderFrameHost.  For example, a throttle might return
+  // CANCEL with an error code from WillProcessResponse, which will cancel the
+  // navigation and get here to commit the error page, with |render_frame_host|
+  // recomputed for the error page.
+  DCHECK(!render_frame_host_ || is_error ||
+         render_frame_host_ == render_frame_host)
+      << "Unsupported RenderFrameHost change from " << render_frame_host_
+      << " to " << render_frame_host << " with is_error=" << is_error;
+
   render_frame_host_ = render_frame_host;
   state_ = READY_TO_COMMIT;
   ready_to_commit_time_ = base::TimeTicks::Now();
@@ -833,6 +835,17 @@ void NavigationHandleImpl::ReadyToCommitNavigation(
     base::TimeDelta delta = ready_to_commit_time_ - navigation_start_;
     LOG_NAVIGATION_TIMING_HISTOGRAM("TimeToReadyToCommit", transition_, delta,
                                     base::TimeDelta::FromSeconds(10));
+
+    if (IsInMainFrame()) {
+      LOG_NAVIGATION_TIMING_HISTOGRAM("TimeToReadyToCommit.MainFrame",
+                                      transition_, delta,
+                                      base::TimeDelta::FromSeconds(10));
+    } else {
+      LOG_NAVIGATION_TIMING_HISTOGRAM("TimeToReadyToCommit.Subframe",
+                                      transition_, delta,
+                                      base::TimeDelta::FromSeconds(10));
+    }
+
     if (is_same_process_) {
       LOG_NAVIGATION_TIMING_HISTOGRAM("TimeToReadyToCommit.SameProcess",
                                       transition_, delta,
@@ -1277,9 +1290,14 @@ void NavigationHandleImpl::RegisterNavigationThrottles() {
 
   throttles_ = GetDelegate()->CreateThrottlesForNavigation(this);
 
-  // Check for renderer-inititated main frame navigations to data URLs. This is
-  // done first as it may block the main frame navigation altogether.
-  AddThrottle(DataUrlNavigationThrottle::CreateThrottleForNavigation(this));
+  // Enforce rules for WebUI navigations.
+  AddThrottle(WebUINavigationThrottle::CreateThrottleForNavigation(this));
+
+  // Check for renderer-inititated main frame navigations to blocked URL schemes
+  // (data, filesystem). This is done early as it may block the main frame
+  // navigation altogether.
+  AddThrottle(
+      BlockedSchemeNavigationThrottle::CreateThrottleForNavigation(this));
 
   AddThrottle(AncestorThrottle::MaybeCreateThrottleFor(this));
   AddThrottle(FormSubmissionThrottle::MaybeCreateThrottleFor(this));

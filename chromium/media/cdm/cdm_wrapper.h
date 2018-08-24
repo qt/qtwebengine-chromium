@@ -21,13 +21,9 @@ namespace media {
 
 namespace {
 
-bool IsExperimentalCdmInterfaceSupported() {
-  return base::FeatureList::IsEnabled(media::kSupportExperimentalCdmInterface);
-}
-
 bool IsEncryptionSchemeSupportedByLegacyCdms(
     const cdm::EncryptionScheme& scheme) {
-  // CDM_8 and CDM_9 don't check the encryption scheme, so do it here.
+  // CDM_9 don't check the encryption scheme, so do it here.
   return scheme == cdm::EncryptionScheme::kUnencrypted ||
          scheme == cdm::EncryptionScheme::kCenc;
 }
@@ -174,27 +170,32 @@ class CdmWrapper {
 // Template class that does the CdmWrapper -> CdmInterface conversion. Default
 // implementations are provided. Any methods that need special treatment should
 // be specialized.
-template <class CdmInterface>
+template <int CdmInterfaceVersion>
 class CdmWrapperImpl : public CdmWrapper {
  public:
+  using CdmInterface =
+      typename CdmInterfaceTraits<CdmInterfaceVersion>::CdmInterface;
+  static_assert(CdmInterfaceVersion == CdmInterface::kVersion,
+                "CDM interface version mismatch.");
+
   static CdmWrapper* Create(CreateCdmFunc create_cdm_func,
                             const char* key_system,
                             uint32_t key_system_size,
                             GetCdmHostFunc get_cdm_host_func,
                             void* user_data) {
     void* cdm_instance =
-        create_cdm_func(CdmInterface::kVersion, key_system, key_system_size,
+        create_cdm_func(CdmInterfaceVersion, key_system, key_system_size,
                         get_cdm_host_func, user_data);
     if (!cdm_instance)
       return nullptr;
 
-    return new CdmWrapperImpl<CdmInterface>(
+    return new CdmWrapperImpl<CdmInterfaceVersion>(
         static_cast<CdmInterface*>(cdm_instance));
   }
 
   ~CdmWrapperImpl() override { cdm_->Destroy(); }
 
-  int GetInterfaceVersion() override { return CdmInterface::kVersion; }
+  int GetInterfaceVersion() override { return CdmInterfaceVersion; }
 
   bool Initialize(bool allow_distinctive_identifier,
                   bool allow_persistent_state,
@@ -304,7 +305,7 @@ class CdmWrapperImpl : public CdmWrapper {
 
   void OnStorageId(uint32_t version,
                    const uint8_t* storage_id,
-                   uint32_t storage_id_size) {
+                   uint32_t storage_id_size) override {
     cdm_->OnStorageId(version, storage_id, storage_id_size);
   }
 
@@ -320,17 +321,15 @@ class CdmWrapperImpl : public CdmWrapper {
 // TODO(crbug.com/799219): Remove when CDM_9 no longer supported.
 
 template <>
-bool CdmWrapperImpl<cdm::ContentDecryptionModule_9>::Initialize(
-    bool allow_distinctive_identifier,
-    bool allow_persistent_state,
-    bool /* use_hw_secure_codecs*/) {
+bool CdmWrapperImpl<9>::Initialize(bool allow_distinctive_identifier,
+                                   bool allow_persistent_state,
+                                   bool /* use_hw_secure_codecs*/) {
   cdm_->Initialize(allow_distinctive_identifier, allow_persistent_state);
   return false;
 }
 
 template <>
-cdm::Status
-CdmWrapperImpl<cdm::ContentDecryptionModule_9>::InitializeAudioDecoder(
+cdm::Status CdmWrapperImpl<9>::InitializeAudioDecoder(
     const cdm::AudioDecoderConfig_2& audio_decoder_config) {
   if (!IsEncryptionSchemeSupportedByLegacyCdms(
           audio_decoder_config.encryption_scheme))
@@ -341,8 +340,7 @@ CdmWrapperImpl<cdm::ContentDecryptionModule_9>::InitializeAudioDecoder(
 }
 
 template <>
-cdm::Status
-CdmWrapperImpl<cdm::ContentDecryptionModule_9>::InitializeVideoDecoder(
+cdm::Status CdmWrapperImpl<9>::InitializeVideoDecoder(
     const cdm::VideoDecoderConfig_2& video_decoder_config) {
   if (!IsEncryptionSchemeSupportedByLegacyCdms(
           video_decoder_config.encryption_scheme))
@@ -353,7 +351,7 @@ CdmWrapperImpl<cdm::ContentDecryptionModule_9>::InitializeVideoDecoder(
 }
 
 template <>
-cdm::Status CdmWrapperImpl<cdm::ContentDecryptionModule_9>::Decrypt(
+cdm::Status CdmWrapperImpl<9>::Decrypt(
     const cdm::InputBuffer_2& encrypted_buffer,
     cdm::DecryptedBlock* decrypted_buffer) {
   if (!IsEncryptionSchemeSupportedByLegacyCdms(
@@ -364,8 +362,7 @@ cdm::Status CdmWrapperImpl<cdm::ContentDecryptionModule_9>::Decrypt(
 }
 
 template <>
-cdm::Status
-CdmWrapperImpl<cdm::ContentDecryptionModule_9>::DecryptAndDecodeFrame(
+cdm::Status CdmWrapperImpl<9>::DecryptAndDecodeFrame(
     const cdm::InputBuffer_2& encrypted_buffer,
     cdm::VideoFrame* video_frame) {
   if (!IsEncryptionSchemeSupportedByLegacyCdms(
@@ -377,8 +374,7 @@ CdmWrapperImpl<cdm::ContentDecryptionModule_9>::DecryptAndDecodeFrame(
 }
 
 template <>
-cdm::Status
-CdmWrapperImpl<cdm::ContentDecryptionModule_9>::DecryptAndDecodeSamples(
+cdm::Status CdmWrapperImpl<9>::DecryptAndDecodeSamples(
     const cdm::InputBuffer_2& encrypted_buffer,
     cdm::AudioFrames* audio_frames) {
   if (!IsEncryptionSchemeSupportedByLegacyCdms(
@@ -389,151 +385,45 @@ CdmWrapperImpl<cdm::ContentDecryptionModule_9>::DecryptAndDecodeSamples(
                                        audio_frames);
 }
 
-// Specialization for cdm::ContentDecryptionModule_8 methods.
-// TODO(crbug.com/737296): Remove when CDM_8 no longer supported.
-
-template <>
-bool CdmWrapperImpl<cdm::ContentDecryptionModule_8>::Initialize(
-    bool allow_distinctive_identifier,
-    bool allow_persistent_state,
-    bool /* use_hw_secure_codecs*/) {
-  cdm_->Initialize(allow_distinctive_identifier, allow_persistent_state);
-  return false;
-}
-
-template <>
-bool CdmWrapperImpl<cdm::ContentDecryptionModule_8>::GetStatusForPolicy(
-    uint32_t /* promise_id */,
-    cdm::HdcpVersion /* min_hdcp_version */) {
-  return false;
-}
-
-template <>
-void CdmWrapperImpl<cdm::ContentDecryptionModule_8>::OnStorageId(
-    uint32_t version,
-    const uint8_t* storage_id,
-    uint32_t storage_id_size) {}
-
-template <>
-cdm::Status
-CdmWrapperImpl<cdm::ContentDecryptionModule_8>::InitializeAudioDecoder(
-    const cdm::AudioDecoderConfig_2& audio_decoder_config) {
-  if (!IsEncryptionSchemeSupportedByLegacyCdms(
-          audio_decoder_config.encryption_scheme))
-    return cdm::kInitializationError;
-
-  return cdm_->InitializeAudioDecoder(
-      ToAudioDecoderConfig_1(audio_decoder_config));
-}
-
-template <>
-cdm::Status
-CdmWrapperImpl<cdm::ContentDecryptionModule_8>::InitializeVideoDecoder(
-    const cdm::VideoDecoderConfig_2& video_decoder_config) {
-  if (!IsEncryptionSchemeSupportedByLegacyCdms(
-          video_decoder_config.encryption_scheme))
-    return cdm::kInitializationError;
-
-  return cdm_->InitializeVideoDecoder(
-      ToVideoDecoderConfig_1(video_decoder_config));
-}
-
-template <>
-cdm::Status CdmWrapperImpl<cdm::ContentDecryptionModule_8>::Decrypt(
-    const cdm::InputBuffer_2& encrypted_buffer,
-    cdm::DecryptedBlock* decrypted_buffer) {
-  if (!IsEncryptionSchemeSupportedByLegacyCdms(
-          encrypted_buffer.encryption_scheme))
-    return cdm::kDecryptError;
-
-  return cdm_->Decrypt(ToInputBuffer_1(encrypted_buffer), decrypted_buffer);
-}
-
-template <>
-cdm::Status
-CdmWrapperImpl<cdm::ContentDecryptionModule_8>::DecryptAndDecodeFrame(
-    const cdm::InputBuffer_2& encrypted_buffer,
-    cdm::VideoFrame* video_frame) {
-  if (!IsEncryptionSchemeSupportedByLegacyCdms(
-          encrypted_buffer.encryption_scheme))
-    return cdm::kDecryptError;
-
-  return cdm_->DecryptAndDecodeFrame(ToInputBuffer_1(encrypted_buffer),
-                                     video_frame);
-}
-
-template <>
-cdm::Status
-CdmWrapperImpl<cdm::ContentDecryptionModule_8>::DecryptAndDecodeSamples(
-    const cdm::InputBuffer_2& encrypted_buffer,
-    cdm::AudioFrames* audio_frames) {
-  if (!IsEncryptionSchemeSupportedByLegacyCdms(
-          encrypted_buffer.encryption_scheme))
-    return cdm::kDecryptError;
-
-  return cdm_->DecryptAndDecodeSamples(ToInputBuffer_1(encrypted_buffer),
-                                       audio_frames);
-}
-
+// static
 CdmWrapper* CdmWrapper::Create(CreateCdmFunc create_cdm_func,
                                const char* key_system,
                                uint32_t key_system_size,
                                GetCdmHostFunc get_cdm_host_func,
                                void* user_data) {
-  // cdm::ContentDecryptionModule::kVersion is always the latest stable version.
-  static_assert(cdm::ContentDecryptionModule::kVersion ==
-                    cdm::ContentDecryptionModule_9::kVersion,
-                "update the code below");
-
-  // Ensure IsSupportedCdmInterfaceVersion() matches this implementation.
-  // Always update this DCHECK when updating this function.
-  // If this check fails, update this function and DCHECK or update
-  // IsSupportedCdmInterfaceVersion().
-  // TODO(xhwang): Static assert these at compile time.
-  const int kMinVersion = cdm::ContentDecryptionModule_8::kVersion;
-  const int kMaxVersion = cdm::ContentDecryptionModule_10::kVersion;
-  DCHECK(!IsSupportedCdmInterfaceVersion(kMinVersion - 1));
-  for (int version = kMinVersion; version <= kMaxVersion; ++version)
-    DCHECK(IsSupportedCdmInterfaceVersion(version));
-  DCHECK(!IsSupportedCdmInterfaceVersion(kMaxVersion + 1));
+  static_assert(CheckSupportedCdmInterfaceVersions(9, 11),
+                "Mismatch between CdmWrapper::Create() and "
+                "IsSupportedCdmInterfaceVersion()");
 
   // Try to create the CDM using the latest CDM interface version.
   // This is only attempted if requested.
   CdmWrapper* cdm_wrapper = nullptr;
 
   // TODO(xhwang): Check whether we can use static loops to simplify this code.
-  if (IsExperimentalCdmInterfaceSupported()) {
-    cdm_wrapper = CdmWrapperImpl<cdm::ContentDecryptionModule_10>::Create(
-        create_cdm_func, key_system, key_system_size, get_cdm_host_func,
-        user_data);
+
+  // Try to use the latest supported and enabled CDM interface first. If it's
+  // not supported by the CDM, try to create the CDM using older supported
+  // versions.
+  if (IsSupportedAndEnabledCdmInterfaceVersion(11)) {
+    cdm_wrapper =
+        CdmWrapperImpl<11>::Create(create_cdm_func, key_system, key_system_size,
+                                   get_cdm_host_func, user_data);
   }
 
-  // If |cdm_wrapper| is NULL, try to create the CDM using older supported
-  // versions of the CDM interface here.
-  if (!cdm_wrapper) {
-    cdm_wrapper = CdmWrapperImpl<cdm::ContentDecryptionModule_9>::Create(
-        create_cdm_func, key_system, key_system_size, get_cdm_host_func,
-        user_data);
+  if (!cdm_wrapper && IsSupportedAndEnabledCdmInterfaceVersion(10)) {
+    cdm_wrapper =
+        CdmWrapperImpl<10>::Create(create_cdm_func, key_system, key_system_size,
+                                   get_cdm_host_func, user_data);
   }
 
-  // If |cdm_wrapper| is NULL, try to create the CDM using older supported
-  // versions of the CDM interface here.
-  if (!cdm_wrapper) {
-    cdm_wrapper = CdmWrapperImpl<cdm::ContentDecryptionModule_8>::Create(
-        create_cdm_func, key_system, key_system_size, get_cdm_host_func,
-        user_data);
+  if (!cdm_wrapper && IsSupportedAndEnabledCdmInterfaceVersion(9)) {
+    cdm_wrapper =
+        CdmWrapperImpl<9>::Create(create_cdm_func, key_system, key_system_size,
+                                  get_cdm_host_func, user_data);
   }
 
   return cdm_wrapper;
 }
-
-// When updating the CdmAdapter, ensure you've updated the CdmWrapper to contain
-// stub implementations for new or modified methods that the older CDM interface
-// does not have.
-// Also update supported_cdm_versions.h.
-static_assert(cdm::ContentDecryptionModule::kVersion ==
-                  cdm::ContentDecryptionModule_9::kVersion,
-              "ensure cdm wrapper templates have old version support");
 
 }  // namespace media
 

@@ -6,13 +6,13 @@
 
 #include "base/command_line.h"
 #include "base/feature_list.h"
-#include "base/metrics/field_trial.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/suggestion.h"
+#include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/prefs/pref_service.h"
@@ -28,8 +28,6 @@ namespace autofill {
 
 const base::Feature kAutofillAlwaysFillAddresses{
     "AlwaysFillAddresses", base::FEATURE_ENABLED_BY_DEFAULT};
-const base::Feature kAutofillAutoDismissableUpstreamBubble{
-    "AutofillAutoDismissableUpstreamBubble", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillCreateDataForTest{
     "AutofillCreateDataForTest", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillCreditCardAssist{
@@ -55,14 +53,16 @@ const base::Feature kAutofillPreferServerNamePredictions{
 const base::Feature kAutofillRationalizeFieldTypePredictions{
     "AutofillRationalizeFieldTypePredictions",
     base::FEATURE_ENABLED_BY_DEFAULT};
+const base::Feature kAutofillSuggestInvalidProfileData{
+    "AutofillSuggestInvalidProfileData", base::FEATURE_ENABLED_BY_DEFAULT};
 const base::Feature kAutofillSuppressDisusedAddresses{
     "AutofillSuppressDisusedAddresses", base::FEATURE_ENABLED_BY_DEFAULT};
 const base::Feature kAutofillSuppressDisusedCreditCards{
     "AutofillSuppressDisusedCreditCards", base::FEATURE_ENABLED_BY_DEFAULT};
+const base::Feature kAutofillUpstream{"AutofillUpstream",
+                                      base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillUpstreamAllowAllEmailDomains{
     "AutofillUpstreamAllowAllEmailDomains", base::FEATURE_DISABLED_BY_DEFAULT};
-const base::Feature kAutofillUpstreamRequestCvcIfMissing{
-    "AutofillUpstreamRequestCvcIfMissing", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillUpstreamSendDetectedValues{
     "AutofillUpstreamSendDetectedValues", base::FEATURE_ENABLED_BY_DEFAULT};
 const base::Feature kAutofillUpstreamSendPanFirstSix{
@@ -70,6 +70,8 @@ const base::Feature kAutofillUpstreamSendPanFirstSix{
 const base::Feature kAutofillUpstreamUpdatePromptExplanation{
     "AutofillUpstreamUpdatePromptExplanation",
     base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kAutofillVoteUsingInvalidProfileData{
+    "AutofillVoteUsingInvalidProfileData", base::FEATURE_ENABLED_BY_DEFAULT};
 
 const char kCreditCardSigninPromoImpressionLimitParamKey[] = "impression_limit";
 const char kAutofillCreditCardPopupBackgroundColorKey[] = "background_color";
@@ -85,10 +87,8 @@ const char kAutofillCreditCardLastUsedDateShowExpirationDateKey[] =
     "show_expiration_date";
 
 #if defined(OS_MACOSX)
-const base::Feature kCreditCardAutofillTouchBar{
-    "CreditCardAutofillTouchBar", base::FEATURE_ENABLED_BY_DEFAULT};
 const base::Feature kMacViewsAutofillPopup{"MacViewsAutofillPopup",
-                                           base::FEATURE_DISABLED_BY_DEFAULT};
+                                           base::FEATURE_ENABLED_BY_DEFAULT};
 #endif  // defined(OS_MACOSX)
 
 namespace {
@@ -127,10 +127,6 @@ bool IsAutofillCreditCardAssistEnabled() {
 
 bool IsAutofillCreditCardPopupLayoutExperimentEnabled() {
   return base::FeatureList::IsEnabled(kAutofillCreditCardPopupLayout);
-}
-
-bool IsAutofillAutoDismissableUpstreamBubbleExperimentEnabled() {
-  return base::FeatureList::IsEnabled(kAutofillAutoDismissableUpstreamBubble);
 }
 
 bool IsAutofillCreditCardLastUsedDateDisplayExperimentEnabled() {
@@ -230,26 +226,27 @@ bool OfferStoreUnmaskedCards() {
 bool IsCreditCardUploadEnabled(const PrefService* pref_service,
                                const syncer::SyncService* sync_service,
                                const std::string& user_email) {
-  // Query the field trial first to ensure UMA always reports the correct group.
-  std::string group_name =
-      base::FieldTrialList::FindFullName("OfferUploadCreditCards");
-
   // Check Autofill sync setting.
   if (!(sync_service && sync_service->CanSyncStart() &&
         sync_service->GetPreferredDataTypes().Has(syncer::AUTOFILL_PROFILE))) {
     return false;
   }
 
-  // Check if the upload to Google state is active. This also returns false for
-  // users that have a secondary passphrase. Users who have enabled a passphrase
-  // have chosen to not make their sync information accessible to Google. Since
-  // upload makes credit card data available to other Google systems, disable it
-  // for passphrase users.
-  if (syncer::GetUploadToGoogleState(sync_service,
+  // Check if the upload to Google state is active.
+  if (!base::FeatureList::IsEnabled(
+          features::kAutofillEnablePaymentsInteractionsOnAuthError) &&
+      syncer::GetUploadToGoogleState(sync_service,
                                      syncer::ModelType::AUTOFILL_WALLET_DATA) !=
-      syncer::UploadState::ACTIVE) {
+          syncer::UploadState::ACTIVE) {
     return false;
   }
+
+  // Also don't offer upload for users that have a secondary sync passphrase.
+  // Users who have enabled a passphrase have chosen to not make their sync
+  // information accessible to Google. Since upload makes credit card data
+  // available to other Google systems, disable it for passphrase users.
+  if (sync_service->IsUsingSecondaryPassphrase())
+    return false;
 
   // Check Payments integration user setting.
   if (!pref_service->GetBoolean(prefs::kAutofillWalletImportEnabled))
@@ -268,26 +265,7 @@ bool IsCreditCardUploadEnabled(const PrefService* pref_service,
     return false;
   }
 
-  // With the user settings and logged in state verified, now we can consult the
-  // command-line flags and experiment settings.
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableOfferUploadCreditCards)) {
-    return true;
-  }
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableOfferUploadCreditCards)) {
-    return false;
-  }
-
-  return !group_name.empty() && group_name != "Disabled";
-}
-
-bool IsAutofillUpstreamRequestCvcIfMissingExperimentEnabled() {
-#if defined(OS_ANDROID)
-  return false;
-#else
-  return base::FeatureList::IsEnabled(kAutofillUpstreamRequestCvcIfMissing);
-#endif
+  return base::FeatureList::IsEnabled(kAutofillUpstream);
 }
 
 bool IsAutofillUpstreamSendDetectedValuesExperimentEnabled() {
@@ -303,13 +281,9 @@ bool IsAutofillUpstreamUpdatePromptExplanationExperimentEnabled() {
 }
 
 #if defined(OS_MACOSX)
-bool IsCreditCardAutofillTouchBarExperimentEnabled() {
-  return base::FeatureList::IsEnabled(kCreditCardAutofillTouchBar);
-}
-
 bool IsMacViewsAutofillPopupExperimentEnabled() {
 #if BUILDFLAG(MAC_VIEWS_BROWSER)
-  if (!features::IsViewsBrowserCocoa())
+  if (!::features::IsViewsBrowserCocoa())
     return true;
 #endif
 

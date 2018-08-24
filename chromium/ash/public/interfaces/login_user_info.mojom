@@ -6,8 +6,8 @@ module ash.mojom;
 
 import "ash/public/interfaces/user_info.mojom";
 import "chromeos/components/proximity_auth/public/interfaces/auth_type.mojom";
-import "mojo/common/values.mojom";
 import "mojo/public/mojom/base/string16.mojom";
+import "mojo/public/mojom/base/values.mojom";
 
 // Supported multi-profile user behavior values.
 // Keep in sync with the enum in md_user_pod_row.js and user_pod_row.js
@@ -36,6 +36,18 @@ enum EasyUnlockIconId {
   UNLOCKED,
   // Scanning for phone.
   SPINNER,
+};
+
+// Fingerprint unlock state in the views lock screen.
+enum FingerprintUnlockState {
+  // Fingerprint unlock is not available.
+  UNAVAILABLE,
+  // Fingerprint unlock is available.
+  AVAILABLE,
+  // The unlock attempt is successful, the fingerprint is matched.
+  AUTH_SUCCESS,
+  // The unlock attempt is unsuccessful, the fingerprint is not recognized.
+  AUTH_FAILED,
 };
 
 // Information about the custom icon in the user pod.
@@ -67,13 +79,40 @@ struct EasyUnlockIconOptions {
   bool is_trial_run;
 };
 
+// Infomation of each input method. This is used to populate keyboard layouts
+// for public account user.
+struct InputMethodItem {
+  // An id that identifies an input method engine (e.g., "t:latn-post",
+  // "pinyin", "hangul").
+  string ime_id;
+
+  // Title of the imput method.
+  string title;
+
+  // Whether this input method is been selected.
+  bool selected;
+};
+
+// Information of each available locale. This is used to populate language
+// locales for public account user.
+struct LocaleItem {
+  // Language code of the locale.
+  string language_code;
+
+  // Title of the locale.
+  string title;
+
+  // Optional, group name of the locale.
+  string? group_name;
+};
+
 // Infomation about a public account user.
 struct PublicAccountInfo {
   // Optional, the domain name displayed in the login screen UI.
   string? enterprise_domain;
 
   // A list of available user locales.
-  mojo.common.mojom.ListValue available_locales;
+  array<LocaleItem> available_locales;
 
   // Default locale for this user.
   string default_locale;
@@ -82,6 +121,9 @@ struct PublicAccountInfo {
   // locales. This will be the case in multilingual environments where users
   // are likely to want to choose among locales.
   bool show_advanced_view;
+
+  // A list of available keyboard layouts.
+  array<InputMethodItem> keyboard_layouts;
 };
 
 // Info about a user in login/lock screen.

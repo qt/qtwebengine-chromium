@@ -20,13 +20,8 @@ namespace media {
 class MEDIA_EXPORT AudioInputIPCDelegate {
  public:
   // Called when an AudioInputController has been created.
-  // The shared memory |handle| points to a memory section that's used to
-  // transfer data between the AudioInputDevice and AudioInputController
-  // objects.  The implementation of OnStreamCreated takes ownership.
-  // The |socket_handle| is used by the AudioInputController to signal
-  // notifications that more data is available and can optionally provide
-  // parameter changes back.  The AudioInputDevice must read from this socket
-  // and process the shared memory whenever data is read from the socket.
+  // See media/mojo/interfaces/audio_data_pipe.mojom for documentation of
+  // |handle| and |socket_handle|.
   virtual void OnStreamCreated(base::SharedMemoryHandle handle,
                                base::SyncSocket::Handle socket_handle,
                                bool initially_muted) = 0;
@@ -61,7 +56,6 @@ class MEDIA_EXPORT AudioInputIPC {
   // memory buffer.  Once the stream has been created, the implementation will
   // notify |delegate| by calling OnStreamCreated().
   virtual void CreateStream(AudioInputIPCDelegate* delegate,
-                            int session_id,
                             const AudioParameters& params,
                             bool automatic_gain_control,
                             uint32_t total_segments) = 0;
@@ -71,6 +65,11 @@ class MEDIA_EXPORT AudioInputIPC {
 
   // Sets the volume of the audio stream.
   virtual void SetVolume(double volume) = 0;
+
+  // Sets the output device from which to cancel echo, if supported. The
+  // |output_device_id| can be gotten from a device enumeration. Must not be
+  // called before the stream has been successfully created.
+  virtual void SetOutputDeviceForAec(const std::string& output_device_id) = 0;
 
   // Closes the audio stream, which should shut down the corresponding
   // AudioInputController in the peer process.

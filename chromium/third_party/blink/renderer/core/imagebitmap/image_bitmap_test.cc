@@ -33,6 +33,7 @@
 #include "SkPixelRef.h"  // FIXME: qualify this skia header file.
 
 #include "build/build_config.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
@@ -41,9 +42,13 @@
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/loader/resource/image_resource_content.h"
+#include "third_party/blink/renderer/platform/graphics/accelerated_static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/graphics/color_correction_test_utils.h"
+#include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
+#include "third_party/blink/renderer/platform/graphics/test/fake_gles2_interface.h"
+#include "third_party/blink/renderer/platform/graphics/test/fake_web_graphics_context_3d_provider.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/image-decoders/image_decoder.h"
 #include "third_party/blink/renderer/platform/loader/fetch/memory_cache.h"
@@ -61,7 +66,7 @@ class ExceptionState;
 
 class ImageBitmapTest : public testing::Test {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     sk_sp<SkSurface> surface = SkSurface::MakeRasterN32Premul(10, 10);
     surface->getCanvas()->clear(0xFFFFFFFF);
     image_ = surface->makeImageSnapshot();
@@ -72,8 +77,16 @@ class ImageBitmapTest : public testing::Test {
 
     // Save the global memory cache to restore it upon teardown.
     global_memory_cache_ = ReplaceMemoryCacheForTesting(MemoryCache::Create());
+
+    auto factory = [](FakeGLES2Interface* gl, bool* gpu_compositing_disabled)
+        -> std::unique_ptr<WebGraphicsContext3DProvider> {
+      *gpu_compositing_disabled = false;
+      return std::make_unique<FakeWebGraphicsContext3DProvider>(gl, nullptr);
+    };
+    SharedGpuContext::SetContextProviderFactoryForTesting(
+        WTF::BindRepeating(factory, WTF::Unretained(&gl_)));
   }
-  virtual void TearDown() {
+  void TearDown() override {
     // Garbage collection is required prior to switching out the
     // test's memory cache; image resources are released, evicting
     // them from the cache.
@@ -82,8 +95,11 @@ class ImageBitmapTest : public testing::Test {
         BlinkGC::kEagerSweeping, BlinkGC::kForcedGC);
 
     ReplaceMemoryCacheForTesting(global_memory_cache_.Release());
+    SharedGpuContext::ResetForTesting();
   }
 
+ protected:
+  FakeGLES2Interface gl_;
   sk_sp<SkImage> image_, image2_;
   Persistent<MemoryCache> global_memory_cache_;
 };
@@ -102,7 +118,7 @@ TEST_F(ImageBitmapTest, ImageResourceConsistency) {
           StaticBitmapImage::Create(image).get());
   image_element->SetImageForTest(original_image_resource);
 
-  Optional<IntRect> crop_rect =
+  base::Optional<IntRect> crop_rect =
       IntRect(0, 0, image_->width(), image_->height());
   ImageBitmap* image_bitmap_no_crop =
       ImageBitmap::Create(image_element, crop_rect,
@@ -174,7 +190,7 @@ TEST_F(ImageBitmapTest, ImageBitmapSourceChanged) {
   image->SetImageForTest(original_image_resource);
 
   const ImageBitmapOptions default_options;
-  Optional<IntRect> crop_rect =
+  base::Optional<IntRect> crop_rect =
       IntRect(0, 0, image_->width(), image_->height());
   ImageBitmap* image_bitmap = ImageBitmap::Create(
       image, crop_rect, &(image->GetDocument()), default_options);
@@ -228,6 +244,76 @@ TEST_F(ImageBitmapTest, ImageBitmapSourceChanged) {
   }
 }
 
+static void TestImageBitmapTextureBacked(
+    scoped_refptr<StaticBitmapImage> bitmap,
+    IntRect& rect,
+    ImageBitmapOptions options,
+    bool is_texture_backed) {
+  ImageBitmap* image_bitmap = ImageBitmap::Create(bitmap, rect, options);
+  EXPECT_TRUE(image_bitmap);
+  EXPECT_EQ(image_bitmap->BitmapImage()->IsTextureBacked(), is_texture_backed);
+}
+
+TEST_F(ImageBitmapTest, AvoidGPUReadback) {
+  base::WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider_wrapper =
+      SharedGpuContext::ContextProviderWrapper();
+  GrContext* gr = context_provider_wrapper->ContextProvider()->GetGrContext();
+  SkImageInfo imageInfo = SkImageInfo::MakeN32Premul(100, 100);
+
+  sk_sp<SkSurface> surface =
+      SkSurface::MakeRenderTarget(gr, SkBudgeted::kNo, imageInfo);
+  sk_sp<SkImage> image = surface->makeImageSnapshot();
+
+  scoped_refptr<AcceleratedStaticBitmapImage> bitmap =
+      AcceleratedStaticBitmapImage::CreateFromSkImage(image,
+                                                      context_provider_wrapper);
+  EXPECT_TRUE(bitmap->TextureHolderForTesting()->IsSkiaTextureHolder());
+
+  ImageBitmap* image_bitmap = ImageBitmap::Create(bitmap);
+  EXPECT_TRUE(image_bitmap);
+  EXPECT_TRUE(image_bitmap->BitmapImage()->IsTextureBacked());
+
+  IntRect image_bitmap_rect(25, 25, 50, 50);
+  ImageBitmapOptions image_bitmap_options;
+  TestImageBitmapTextureBacked(bitmap, image_bitmap_rect, image_bitmap_options,
+                               true);
+
+  std::list<String> image_orientations = {"none", "flipY"};
+  std::list<String> premultiply_alphas = {"none", "premultiply", "default"};
+  std::list<String> color_space_conversions = {"none",       "default", "srgb",
+                                               "linear-rgb", "rec2020", "p3"};
+  std::list<int> resize_widths = {25, 50, 75};
+  std::list<int> resize_heights = {25, 50, 75};
+  std::list<String> resize_qualities = {"pixelated", "low", "medium", "high"};
+
+  for (auto image_orientation : image_orientations) {
+    for (auto premultiply_alpha : premultiply_alphas) {
+      for (auto color_space_conversion : color_space_conversions) {
+        for (auto resize_width : resize_widths) {
+          for (auto resize_height : resize_heights) {
+            for (auto resize_quality : resize_qualities) {
+              ImageBitmapOptions image_bitmap_options;
+              image_bitmap_options.setImageOrientation(image_orientation);
+              image_bitmap_options.setPremultiplyAlpha(premultiply_alpha);
+              image_bitmap_options.setColorSpaceConversion(
+                  color_space_conversion);
+              image_bitmap_options.setResizeWidth(resize_width);
+              image_bitmap_options.setResizeHeight(resize_height);
+              image_bitmap_options.setResizeQuality(resize_quality);
+              // Setting premuliply_alpha to none will cause a read back.
+              // Otherwise, we expect to avoid GPU readback when creaing an
+              // ImageBitmap from a texture-backed source.
+              TestImageBitmapTextureBacked(bitmap, image_bitmap_rect,
+                                           image_bitmap_options,
+                                           premultiply_alpha != "none");
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 enum class ColorSpaceConversion : uint8_t {
   NONE = 0,
   DEFAULT_COLOR_CORRECTED = 1,
@@ -275,7 +361,8 @@ TEST_F(ImageBitmapTest, ImageBitmapColorSpaceConversionHTMLImageElement) {
           StaticBitmapImage::Create(image).get());
   image_element->SetImageForTest(original_image_resource);
 
-  Optional<IntRect> crop_rect = IntRect(0, 0, image->width(), image->height());
+  base::Optional<IntRect> crop_rect =
+      IntRect(0, 0, image->width(), image->height());
 
   // Create and test the ImageBitmap objects.
   // We don't check "none" color space conversion as it requires the encoded
@@ -386,7 +473,8 @@ TEST_F(ImageBitmapTest, ImageBitmapColorSpaceConversionImageBitmap) {
           StaticBitmapImage::Create(image).get());
   image_element->SetImageForTest(source_image_resource);
 
-  Optional<IntRect> crop_rect = IntRect(0, 0, image->width(), image->height());
+  base::Optional<IntRect> crop_rect =
+      IntRect(0, 0, image->width(), image->height());
   ImageBitmapOptions options =
       PrepareBitmapOptions(ColorSpaceConversion::SRGB);
   ImageBitmap* source_image_bitmap = ImageBitmap::Create(
@@ -489,7 +577,8 @@ TEST_F(ImageBitmapTest, ImageBitmapColorSpaceConversionStaticBitmapImage) {
   image->readPixels(raster_image_info.makeWH(1, 1), src_pixel.get(),
                     image->width() * raster_image_info.bytesPerPixel(), 5, 5);
 
-  Optional<IntRect> crop_rect = IntRect(0, 0, image->width(), image->height());
+  base::Optional<IntRect> crop_rect =
+      IntRect(0, 0, image->width(), image->height());
 
   sk_sp<SkColorSpace> color_space = nullptr;
   SkColorType color_type = SkColorType::kN32_SkColorType;
@@ -586,7 +675,7 @@ TEST_F(ImageBitmapTest, ImageBitmapColorSpaceConversionImageData) {
   std::unique_ptr<uint8_t[]> src_pixel(new uint8_t[4]());
   memcpy(src_pixel.get(), image_data->data()->Data(), 4);
 
-  Optional<IntRect> crop_rect = IntRect(0, 0, 1, 1);
+  base::Optional<IntRect> crop_rect = IntRect(0, 0, 1, 1);
   sk_sp<SkColorSpace> color_space = nullptr;
   SkColorType color_type = SkColorType::kN32_SkColorType;
   SkColorSpaceXform::ColorFormat color_format32 =

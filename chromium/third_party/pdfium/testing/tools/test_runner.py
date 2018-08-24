@@ -37,7 +37,12 @@ def TestOneFileParallel(this, test_case):
 
 class TestRunner:
   def __init__(self, dirname):
+    # Currently the only used directories are corpus, javascript, and pixel,
+    # which all correspond directly to the type for the test being run. In the
+    # future if there are tests that don't have this clean correspondence, then
+    # an argument for the type will need to be added.
     self.test_dir = dirname
+    self.test_type = dirname
     self.enforce_expected_images = False
     self.oneshot_renderer = False
 
@@ -80,20 +85,26 @@ class TestRunner:
     if actual_images:
       if self.image_differ.HasDifferences(input_filename, source_dir,
                                           self.working_dir):
-        if (self.options.regenerate_expected
-            and not self.test_suppressor.IsResultSuppressed(input_filename)
-            and not self.test_suppressor.IsImageDiffSuppressed(input_filename)):
-          platform_only = (self.options.regenerate_expected == 'platform')
-          self.image_differ.Regenerate(input_filename, source_dir,
-                                       self.working_dir, platform_only)
+        self.RegenerateIfNeeded_(input_filename, source_dir)
         return False, results
     else:
       if (self.enforce_expected_images
           and not self.test_suppressor.IsImageDiffSuppressed(input_filename)):
+        self.RegenerateIfNeeded_(input_filename, source_dir)
         print 'FAILURE: %s; Missing expected images' % input_filename
         return False, results
 
     return True, results
+
+  def RegenerateIfNeeded_(self, input_filename, source_dir):
+    if (not self.options.regenerate_expected
+        or self.test_suppressor.IsResultSuppressed(input_filename)
+        or self.test_suppressor.IsImageDiffSuppressed(input_filename)):
+      return
+
+    platform_only = (self.options.regenerate_expected == 'platform')
+    self.image_differ.Regenerate(input_filename, source_dir,
+                                 self.working_dir, platform_only)
 
   def Generate(self, source_dir, input_filename, input_root, pdf_path):
     original_path = os.path.join(source_dir, input_filename)
@@ -266,7 +277,7 @@ class TestRunner:
     # Collect Gold results if an output directory was named.
     self.gold_results = None
     if self.options.gold_output_dir:
-      self.gold_results = gold.GoldResults('pdfium',
+      self.gold_results = gold.GoldResults(self.test_type,
                                            self.options.gold_output_dir,
                                            self.options.gold_properties,
                                            self.options.gold_key,

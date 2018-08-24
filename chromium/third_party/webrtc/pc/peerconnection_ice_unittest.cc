@@ -21,6 +21,8 @@
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/peerconnectionproxy.h"
+#include "api/video_codecs/builtin_video_decoder_factory.h"
+#include "api/video_codecs/builtin_video_encoder_factory.h"
 #include "pc/test/fakeaudiocapturemodule.h"
 #include "rtc_base/fakenetwork.h"
 #include "rtc_base/gunit.h"
@@ -89,8 +91,10 @@ class PeerConnectionIceBaseTest : public ::testing::Test {
 #endif
     pc_factory_ = CreatePeerConnectionFactory(
         rtc::Thread::Current(), rtc::Thread::Current(), rtc::Thread::Current(),
-        FakeAudioCaptureModule::Create(), CreateBuiltinAudioEncoderFactory(),
-        CreateBuiltinAudioDecoderFactory(), nullptr, nullptr);
+        rtc::scoped_refptr<AudioDeviceModule>(FakeAudioCaptureModule::Create()),
+        CreateBuiltinAudioEncoderFactory(), CreateBuiltinAudioDecoderFactory(),
+        CreateBuiltinVideoEncoderFactory(), CreateBuiltinVideoDecoderFactory(),
+        nullptr /* audio_mixer */, nullptr /* audio_processing */);
   }
 
   WrapperPtr CreatePeerConnection() {
@@ -351,6 +355,21 @@ TEST_P(PeerConnectionIceTest, SetRemoteDescriptionFailsIfNoIceCredentials) {
   EXPECT_FALSE(callee->SetRemoteDescription(std::move(offer)));
 }
 
+// Test that doing an offer/answer exchange with no transport (i.e., no data
+// channel or media) results in the ICE connection state staying at New.
+TEST_P(PeerConnectionIceTest,
+       OfferAnswerWithNoTransportsDoesNotChangeIceConnectionState) {
+  auto caller = CreatePeerConnection();
+  auto callee = CreatePeerConnection();
+
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+
+  EXPECT_EQ(PeerConnectionInterface::kIceConnectionNew,
+            caller->pc()->ice_connection_state());
+  EXPECT_EQ(PeerConnectionInterface::kIceConnectionNew,
+            callee->pc()->ice_connection_state());
+}
+
 // The following group tests that ICE candidates are not generated before
 // SetLocalDescription is called on a PeerConnection.
 
@@ -398,6 +417,24 @@ TEST_P(PeerConnectionIceTest, CannotAddCandidateWhenRemoteDescriptionNotSet) {
   EXPECT_FALSE(caller->pc()->AddIceCandidate(&jsep_candidate));
 }
 
+TEST_P(PeerConnectionIceTest, CannotAddCandidateWhenPeerConnectionClosed) {
+  const SocketAddress kCalleeAddress("1.1.1.1", 1111);
+
+  auto caller = CreatePeerConnectionWithAudioVideo();
+  auto callee = CreatePeerConnectionWithAudioVideo();
+
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+
+  cricket::Candidate candidate = CreateLocalUdpCandidate(kCalleeAddress);
+  auto* audio_content = cricket::GetFirstAudioContent(
+      caller->pc()->local_description()->description());
+  JsepIceCandidate jsep_candidate(audio_content->name, 0, candidate);
+
+  caller->pc()->Close();
+
+  EXPECT_FALSE(caller->pc()->AddIceCandidate(&jsep_candidate));
+}
+
 TEST_P(PeerConnectionIceTest, DuplicateIceCandidateIgnoredWhenAdded) {
   const SocketAddress kCalleeAddress("1.1.1.1", 1111);
 
@@ -412,6 +449,27 @@ TEST_P(PeerConnectionIceTest, DuplicateIceCandidateIgnoredWhenAdded) {
   caller->AddIceCandidate(&candidate);
   EXPECT_TRUE(caller->AddIceCandidate(&candidate));
   EXPECT_EQ(1u, caller->GetIceCandidatesFromRemoteDescription().size());
+}
+
+TEST_P(PeerConnectionIceTest,
+       CannotRemoveIceCandidatesWhenPeerConnectionClosed) {
+  const SocketAddress kCalleeAddress("1.1.1.1", 1111);
+
+  auto caller = CreatePeerConnectionWithAudioVideo();
+  auto callee = CreatePeerConnectionWithAudioVideo();
+
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+
+  cricket::Candidate candidate = CreateLocalUdpCandidate(kCalleeAddress);
+  auto* audio_content = cricket::GetFirstAudioContent(
+      caller->pc()->local_description()->description());
+  JsepIceCandidate ice_candidate(audio_content->name, 0, candidate);
+
+  ASSERT_TRUE(caller->pc()->AddIceCandidate(&ice_candidate));
+
+  caller->pc()->Close();
+
+  EXPECT_FALSE(caller->pc()->RemoveIceCandidates({candidate}));
 }
 
 TEST_P(PeerConnectionIceTest,
@@ -894,7 +952,9 @@ class PeerConnectionIceConfigTest : public testing::Test {
     pc_factory_ = CreatePeerConnectionFactory(
         rtc::Thread::Current(), rtc::Thread::Current(), rtc::Thread::Current(),
         FakeAudioCaptureModule::Create(), CreateBuiltinAudioEncoderFactory(),
-        CreateBuiltinAudioDecoderFactory(), nullptr, nullptr);
+        CreateBuiltinAudioDecoderFactory(), CreateBuiltinVideoEncoderFactory(),
+        CreateBuiltinVideoDecoderFactory(), nullptr /* audio_mixer */,
+        nullptr /* audio_processing */);
   }
   void CreatePeerConnection(const RTCConfiguration& config) {
     std::unique_ptr<cricket::FakePortAllocator> port_allocator(

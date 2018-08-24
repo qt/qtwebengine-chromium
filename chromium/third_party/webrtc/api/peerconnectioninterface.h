@@ -90,6 +90,8 @@
 #include "api/setremotedescriptionobserverinterface.h"
 #include "api/stats/rtcstatscollectorcallback.h"
 #include "api/statstypes.h"
+#include "api/transport/bitrate_settings.h"
+#include "api/transport/network_control.h"
 #include "api/turncustomizer.h"
 #include "api/umametrics.h"
 #include "logging/rtc_event_log/rtc_event_log_factory_interface.h"
@@ -108,6 +110,7 @@
 #include "rtc_base/rtccertificate.h"
 #include "rtc_base/rtccertificategenerator.h"
 #include "rtc_base/socketaddress.h"
+#include "rtc_base/sslcertificate.h"
 #include "rtc_base/sslstreamadapter.h"
 
 namespace rtc {
@@ -154,9 +157,7 @@ class StatsObserver : public rtc::RefCountInterface {
   virtual ~StatsObserver() {}
 };
 
-// For now, kDefault is interpreted as kPlanB.
-// TODO(bugs.webrtc.org/8530): Switch default to kUnifiedPlan.
-enum class SdpSemantics { kDefault, kPlanB, kUnifiedPlan };
+enum class SdpSemantics { kPlanB, kUnifiedPlan };
 
 class PeerConnectionInterface : public rtc::RefCountInterface {
  public:
@@ -559,15 +560,12 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     // will also cause PeerConnection to ignore all but the first a=ssrc lines
     // that form a Plan B stream.
     //
-    // For users who only send at most one audio and one video track, this
-    // choice does not matter and should be left as kDefault.
-    //
     // For users who wish to send multiple audio/video streams and need to stay
-    // interoperable with legacy WebRTC implementations, specify kPlanB.
+    // interoperable with legacy WebRTC implementations or use legacy APIs,
+    // specify kPlanB.
     //
-    // For users who wish to send multiple audio/video streams and/or wish to
-    // use the new RtpTransceiver API, specify kUnifiedPlan.
-    SdpSemantics sdp_semantics = SdpSemantics::kDefault;
+    // For all other users, specify kUnifiedPlan.
+    SdpSemantics sdp_semantics = SdpSemantics::kPlanB;
 
     //
     // Don't forget to update operator== if adding something.
@@ -924,13 +922,6 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
   virtual void SetRemoteDescription(
       std::unique_ptr<SessionDescriptionInterface> desc,
       rtc::scoped_refptr<SetRemoteDescriptionObserverInterface> observer) {}
-  // Deprecated; Replaced by SetConfiguration.
-  // TODO(deadbeef): Remove once Chrome is moved over to SetConfiguration.
-  virtual bool UpdateIce(const IceServers& configuration,
-                         const MediaConstraintsInterface* constraints) {
-    return false;
-  }
-  virtual bool UpdateIce(const IceServers& configuration) { return false; }
 
   // TODO(deadbeef): Make this pure virtual once all Chrome subclasses of
   // PeerConnectionInterface implement it.
@@ -1006,7 +997,24 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
   //
   // Setting |current_bitrate_bps| will reset the current bitrate estimate
   // to the provided value.
-  virtual RTCError SetBitrate(const BitrateParameters& bitrate) = 0;
+  virtual RTCError SetBitrate(const BitrateSettings& bitrate) {
+    BitrateParameters bitrate_parameters;
+    bitrate_parameters.min_bitrate_bps = bitrate.min_bitrate_bps;
+    bitrate_parameters.current_bitrate_bps = bitrate.start_bitrate_bps;
+    bitrate_parameters.max_bitrate_bps = bitrate.max_bitrate_bps;
+    return SetBitrate(bitrate_parameters);
+  }
+
+  // TODO(nisse): Deprecated - use version above. These two default
+  // implementations require subclasses to implement one or the other
+  // of the methods.
+  virtual RTCError SetBitrate(const BitrateParameters& bitrate_parameters) {
+    BitrateSettings bitrate;
+    bitrate.min_bitrate_bps = bitrate_parameters.min_bitrate_bps;
+    bitrate.start_bitrate_bps = bitrate_parameters.current_bitrate_bps;
+    bitrate.max_bitrate_bps = bitrate_parameters.max_bitrate_bps;
+    return SetBitrate(bitrate);
+  }
 
   // Sets current strategy. If not set default WebRTC allocator will be used.
   // May be changed during an active session. The strategy
@@ -1092,9 +1100,7 @@ class PeerConnectionObserver {
   // Triggered when media is received on a new stream from remote peer.
   virtual void OnAddStream(rtc::scoped_refptr<MediaStreamInterface> stream) {}
 
-  // Triggered when a remote peer close a stream.
-  // Deprecated: This callback will no longer be fired with Unified Plan
-  // semantics.
+  // Triggered when a remote peer closes a stream.
   virtual void OnRemoveStream(rtc::scoped_refptr<MediaStreamInterface> stream) {
   }
 
@@ -1152,17 +1158,41 @@ class PeerConnectionObserver {
   virtual void OnTrack(
       rtc::scoped_refptr<RtpTransceiverInterface> transceiver) {}
 
-  // Called when a receiver is completely removed. This is current (Plan B SDP)
-  // behavior that occurs when processing the removal of a remote track, and is
-  // called when the receiver is removed and the track is muted. When Unified
-  // Plan SDP is supported, transceivers can change direction (and receivers
-  // stopped) but receivers are never removed, so this is never called.
+  // Called when signaling indicates that media will no longer be received on a
+  // track.
+  // With Plan B semantics, the given receiver will have been removed from the
+  // PeerConnection and the track muted.
+  // With Unified Plan semantics, the receiver will remain but the transceiver
+  // will have changed direction to either sendonly or inactive.
   // https://w3c.github.io/webrtc-pc/#process-remote-track-removal
-  // TODO(hbos,deadbeef): When Unified Plan SDP is supported and receivers are
-  // no longer removed, deprecate and remove this callback.
   // TODO(hbos,deadbeef): Make pure virtual when all subclasses implement it.
   virtual void OnRemoveTrack(
       rtc::scoped_refptr<RtpReceiverInterface> receiver) {}
+};
+
+// PeerConnectionDependencies holds all of PeerConnections dependencies.
+// A dependency is distinct from a configuration as it defines significant
+// executable code that can be provided by a user of the API.
+//
+// All new dependencies should be added as a unique_ptr to allow the
+// PeerConnection object to be the definitive owner of the dependencies
+// lifetime making injection safer.
+struct PeerConnectionDependencies final {
+  explicit PeerConnectionDependencies(PeerConnectionObserver* observer_in)
+      : observer(observer_in) {}
+  // This object is not copyable or assignable.
+  PeerConnectionDependencies(const PeerConnectionDependencies&) = delete;
+  PeerConnectionDependencies& operator=(const PeerConnectionDependencies&) =
+      delete;
+  // This object is only moveable.
+  PeerConnectionDependencies(PeerConnectionDependencies&&) = default;
+  PeerConnectionDependencies& operator=(PeerConnectionDependencies&&) = default;
+  // Mandatory dependencies
+  PeerConnectionObserver* observer = nullptr;
+  // Optional dependencies
+  std::unique_ptr<cricket::PortAllocator> allocator;
+  std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator;
+  std::unique_ptr<rtc::SSLCertificateVerifier> tls_cert_verifier;
 };
 
 // PeerConnectionFactoryInterface is the factory interface used for creating
@@ -1217,8 +1247,18 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
   // Set the options to be used for subsequently created PeerConnections.
   virtual void SetOptions(const Options& options) = 0;
 
-  // |allocator| and |cert_generator| may be null, in which case default
-  // implementations will be used.
+  // The preferred way to create a new peer connection. Simply provide the
+  // configuration and a PeerConnectionDependencies structure.
+  // TODO(benwright): Make pure virtual once downstream mock PC factory classes
+  // are updated.
+  virtual rtc::scoped_refptr<PeerConnectionInterface> CreatePeerConnection(
+      const PeerConnectionInterface::RTCConfiguration& configuration,
+      PeerConnectionDependencies dependencies) {
+    return nullptr;
+  }
+
+  // Deprecated; |allocator| and |cert_generator| may be null, in which case
+  // default implementations will be used.
   //
   // |observer| must not be null.
   //
@@ -1230,8 +1270,9 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
       const PeerConnectionInterface::RTCConfiguration& configuration,
       std::unique_ptr<cricket::PortAllocator> allocator,
       std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
-      PeerConnectionObserver* observer) = 0;
-
+      PeerConnectionObserver* observer) {
+    return nullptr;
+  }
   // Deprecated; should use RTCConfiguration for everything that previously
   // used constraints.
   virtual rtc::scoped_refptr<PeerConnectionInterface> CreatePeerConnection(
@@ -1239,7 +1280,9 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
       const MediaConstraintsInterface* constraints,
       std::unique_ptr<cricket::PortAllocator> allocator,
       std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
-      PeerConnectionObserver* observer) = 0;
+      PeerConnectionObserver* observer) {
+    return nullptr;
+  }
 
   virtual rtc::scoped_refptr<MediaStreamInterface> CreateLocalMediaStream(
       const std::string& stream_id) = 0;
@@ -1251,7 +1294,9 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
   // Deprecated - use version above.
   // Can use CopyConstraintsIntoAudioOptions to bridge the gap.
   virtual rtc::scoped_refptr<AudioSourceInterface> CreateAudioSource(
-      const MediaConstraintsInterface* constraints) = 0;
+      const MediaConstraintsInterface* constraints) {
+    return nullptr;
+  }
 
   // Creates a VideoTrackSourceInterface from |capturer|.
   // TODO(deadbeef): We should aim to remove cricket::VideoCapturer from the
@@ -1380,6 +1425,8 @@ rtc::scoped_refptr<PeerConnectionFactoryInterface> CreatePeerConnectionFactory(
 // created and used.
 // If |fec_controller_factory| is null, an internal fec controller module will
 // be created and used.
+// If |network_controller_factory| is provided, it will be used if enabled via
+// field trial.
 rtc::scoped_refptr<PeerConnectionFactoryInterface> CreatePeerConnectionFactory(
     rtc::Thread* network_thread,
     rtc::Thread* worker_thread,
@@ -1391,11 +1438,15 @@ rtc::scoped_refptr<PeerConnectionFactoryInterface> CreatePeerConnectionFactory(
     cricket::WebRtcVideoDecoderFactory* video_decoder_factory,
     rtc::scoped_refptr<AudioMixer> audio_mixer,
     rtc::scoped_refptr<AudioProcessing> audio_processing,
-    std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory);
+    std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory,
+    std::unique_ptr<NetworkControllerFactoryInterface>
+        network_controller_factory = nullptr);
 
 // Create a new instance of PeerConnectionFactoryInterface with optional video
 // codec factories. These video factories represents all video codecs, i.e. no
 // extra internal video codecs will be added.
+// When building WebRTC with rtc_use_builtin_sw_codecs = false, this is the
+// only available CreatePeerConnectionFactory overload.
 rtc::scoped_refptr<PeerConnectionFactoryInterface> CreatePeerConnectionFactory(
     rtc::Thread* network_thread,
     rtc::Thread* worker_thread,
@@ -1490,7 +1541,9 @@ CreateModularPeerConnectionFactory(
     std::unique_ptr<cricket::MediaEngineInterface> media_engine,
     std::unique_ptr<CallFactoryInterface> call_factory,
     std::unique_ptr<RtcEventLogFactoryInterface> event_log_factory,
-    std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory);
+    std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory,
+    std::unique_ptr<NetworkControllerFactoryInterface>
+        network_controller_factory = nullptr);
 
 }  // namespace webrtc
 

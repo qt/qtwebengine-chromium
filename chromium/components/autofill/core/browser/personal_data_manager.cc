@@ -16,6 +16,7 @@
 #include "base/feature_list.h"
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/timezone.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -37,6 +38,8 @@
 #include "components/autofill/core/browser/phone_number_i18n.h"
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/common/autofill_clock.h"
+#include "components/autofill/core/common/autofill_constants.h"
+#include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/autofill/core/common/autofill_util.h"
@@ -378,7 +381,7 @@ void PersonalDataManager::Init(scoped_refptr<AutofillWebDataService> database,
     AutofillMetrics::LogIsAutofillEnabledAtStartup(IsAutofillEnabled());
 
   // WebDataService may not be available in tests.
-  if (!database_.get())
+  if (!database_)
     return;
 
   LoadProfiles();
@@ -402,7 +405,7 @@ PersonalDataManager::~PersonalDataManager() {
   CancelPendingQuery(&pending_creditcards_query_);
   CancelPendingQuery(&pending_server_creditcards_query_);
 
-  if (database_.get())
+  if (database_)
     database_->RemoveObserver(this);
 }
 
@@ -418,20 +421,14 @@ void PersonalDataManager::OnSyncServiceInitialized(
   // If the sync service is not enabled for autofill address profiles then run
   // address cleanup/startup code here. Otherwise, defer until after sync has
   // started.
-  if (!IsSyncEnabledFor(sync_service, syncer::AUTOFILL_PROFILE)) {
-    ApplyProfileUseDatesFix();  // One-time fix, otherwise NOP.
-    ApplyDedupingRoutine();     // Once per major version, otherwise NOP.
-    DeleteDisusedAddresses();   // Once per major version, otherwise NOP.
-    CreateTestAddresses();      // Once per user profile startup.
-  }
+  if (!IsSyncEnabledFor(sync_service, syncer::AUTOFILL_PROFILE))
+    ApplyAddressFixesAndCleanups();
 
   // Similarly, if the sync service is not enabled for autofill credit cards
   // then run credit card address cleanup/startup code here. Otherwise, defer
   // until after sync has started.
-  if (!IsSyncEnabledFor(sync_service, syncer::AUTOFILL_WALLET_DATA)) {
-    DeleteDisusedCreditCards();  // Once per major version, otherwise NOP.
-    CreateTestCreditCards();     // Once per user profile startup.
-  }
+  if (!IsSyncEnabledFor(sync_service, syncer::AUTOFILL_WALLET_DATA))
+    ApplyCardFixesAndCleanups();
 
   if (sync_service_ != sync_service) {
     // Before the sync service pointer gets changed, remove the observer.
@@ -440,17 +437,31 @@ void PersonalDataManager::OnSyncServiceInitialized(
 
     sync_service_ = sync_service;
 
+    UMA_HISTOGRAM_BOOLEAN(
+        "Autofill.ResetFullServerCards.SyncServiceNullOnInitialized",
+        !sync_service_);
     if (!sync_service_) {
-      ResetFullServerCards();
+      // TODO(crbug.com/851294): Reset server cards once the auth error
+      // investigation is done.
+      ResetFullServerCards(/*dry_run=*/!base::FeatureList::IsEnabled(
+          features::kAutofillResetFullServerCardsOnAuthError));
       return;
     }
 
     sync_service_->AddObserver(this);
     // Re-mask all server cards if the upload state is not active.
-    if (syncer::GetUploadToGoogleState(
+    bool is_upload_not_active =
+        syncer::GetUploadToGoogleState(
             sync_service_, syncer::ModelType::AUTOFILL_WALLET_DATA) ==
-        syncer::UploadState::NOT_ACTIVE) {
-      ResetFullServerCards();
+        syncer::UploadState::NOT_ACTIVE;
+    UMA_HISTOGRAM_BOOLEAN(
+        "Autofill.ResetFullServerCards.SyncServiceNotActiveOnInitialized",
+        is_upload_not_active);
+    if (is_upload_not_active) {
+      // TODO(crbug.com/851294): Reset server cards once the auth error
+      // investigation is done.
+      ResetFullServerCards(/*dry_run=*/!base::FeatureList::IsEnabled(
+          features::kAutofillResetFullServerCardsOnAuthError));
     }
   }
 }
@@ -522,26 +533,30 @@ void PersonalDataManager::AutofillMultipleChanged() {
 void PersonalDataManager::SyncStarted(syncer::ModelType model_type) {
   // Run deferred autofill address profile startup code.
   // See: OnSyncServiceInitialized
-  if (model_type == syncer::AUTOFILL_PROFILE) {
-    ApplyProfileUseDatesFix();  // One-time fix, otherwise NOP.
-    ApplyDedupingRoutine();     // Once per major version, otherwise NOP.
-    DeleteDisusedAddresses();   // Once per major version, otherwise NOP.
-    CreateTestAddresses();      // Once per user profile startup.
-  }
+  if (model_type == syncer::AUTOFILL_PROFILE)
+    ApplyAddressFixesAndCleanups();
 
   // Run deferred credit card startup code.
   // See: OnSyncServiceInitialized
-  if (model_type == syncer::AUTOFILL_WALLET_DATA) {
-    DeleteDisusedCreditCards();  // Once per major version, otherwise NOP.
-    CreateTestCreditCards();     // Once per user profile startup.
-  }
+  if (model_type == syncer::AUTOFILL_WALLET_DATA)
+    ApplyCardFixesAndCleanups();
 }
 
 void PersonalDataManager::OnStateChanged(syncer::SyncService* sync_service) {
-  if (syncer::GetUploadToGoogleState(sync_service_,
-                                     syncer::ModelType::AUTOFILL_WALLET_DATA) !=
-      syncer::UploadState::ACTIVE) {
-    ResetFullServerCards();
+  // TODO(mastiz,jkrcal): Once AUTOFILL_WALLET is migrated to USS, it shouldn't
+  // be necessary anymore to implement SyncServiceObserver; instead the
+  // notification should flow through the payments sync bridge.
+  DCHECK_EQ(sync_service_, sync_service);
+  syncer::UploadState upload_state = syncer::GetUploadToGoogleState(
+      sync_service_, syncer::ModelType::AUTOFILL_WALLET_DATA);
+  UMA_HISTOGRAM_ENUMERATION(
+      "Autofill.ResetFullServerCards.SyncServiceStatusOnStateChanged",
+      upload_state);
+  if (upload_state == syncer::UploadState::NOT_ACTIVE) {
+    // TODO(crbug.com/851294): Reset server cards once the auth error
+    // investigation is done.
+    ResetFullServerCards(/*dry_run=*/!base::FeatureList::IsEnabled(
+        features::kAutofillResetFullServerCardsOnAuthError));
   }
 }
 
@@ -560,7 +575,7 @@ void PersonalDataManager::MarkObserversInsufficientFormDataForImport() {
 }
 
 void PersonalDataManager::RecordUseOf(const AutofillDataModel& data_model) {
-  if (is_off_the_record_ || !database_.get())
+  if (is_off_the_record_ || !database_)
     return;
 
   CreditCard* credit_card = GetCreditCardByGUID(data_model.guid());
@@ -600,7 +615,7 @@ void PersonalDataManager::AddProfile(const AutofillProfile& profile) {
   if (FindByGUID<AutofillProfile>(web_profiles_, profile.guid()))
     return;
 
-  if (!database_.get())
+  if (!database_)
     return;
 
   // Don't add a duplicate.
@@ -631,7 +646,7 @@ void PersonalDataManager::UpdateProfile(const AutofillProfile& profile) {
     return;
   }
 
-  if (!database_.get())
+  if (!database_)
     return;
 
   // Make the update.
@@ -665,7 +680,7 @@ void PersonalDataManager::AddCreditCard(const CreditCard& credit_card) {
   if (FindByGUID<CreditCard>(local_credit_cards_, credit_card.guid()))
     return;
 
-  if (!database_.get())
+  if (!database_)
     return;
 
   // Don't add a duplicate.
@@ -700,7 +715,7 @@ void PersonalDataManager::UpdateCreditCard(const CreditCard& credit_card) {
   // Update the cached version.
   *existing_credit_card = credit_card;
 
-  if (!database_.get())
+  if (!database_)
     return;
 
   // Make the update.
@@ -716,7 +731,7 @@ void PersonalDataManager::AddFullServerCreditCard(
   DCHECK(!credit_card.IsEmpty(app_locale_));
   DCHECK(!credit_card.server_id().empty());
 
-  if (is_off_the_record_ || !database_.get())
+  if (is_off_the_record_ || !database_)
     return;
 
   // Don't add a duplicate.
@@ -735,7 +750,7 @@ void PersonalDataManager::UpdateServerCreditCard(
     const CreditCard& credit_card) {
   DCHECK_NE(CreditCard::LOCAL_CARD, credit_card.record_type());
 
-  if (is_off_the_record_ || !database_.get())
+  if (is_off_the_record_ || !database_)
     return;
 
   // Look up by server id, not GUID.
@@ -764,7 +779,7 @@ void PersonalDataManager::UpdateServerCardMetadata(
     const CreditCard& credit_card) {
   DCHECK_NE(CreditCard::LOCAL_CARD, credit_card.record_type());
 
-  if (is_off_the_record_ || !database_.get())
+  if (is_off_the_record_ || !database_)
     return;
 
   database_->UpdateServerCardMetadata(credit_card);
@@ -785,14 +800,26 @@ void PersonalDataManager::ResetFullServerCard(const std::string& guid) {
   }
 }
 
-void PersonalDataManager::ResetFullServerCards() {
+void PersonalDataManager::ResetFullServerCards(bool is_dry_run) {
+  size_t nb_cards_reset = 0;
   for (const auto& card : server_credit_cards_) {
     if (card->record_type() == CreditCard::FULL_SERVER_CARD) {
-      CreditCard card_copy = *card;
-      card_copy.set_record_type(CreditCard::MASKED_SERVER_CARD);
-      card_copy.SetNumber(card->LastFourDigits());
-      UpdateServerCreditCard(card_copy);
+      ++nb_cards_reset;
+      if (!is_dry_run) {
+        CreditCard card_copy = *card;
+        card_copy.set_record_type(CreditCard::MASKED_SERVER_CARD);
+        card_copy.SetNumber(card->LastFourDigits());
+        UpdateServerCreditCard(card_copy);
+      }
     }
+  }
+  if (is_dry_run) {
+    UMA_HISTOGRAM_COUNTS_100(
+        "Autofill.ResetFullServerCards.NumberOfCardsReset.DryRun",
+        nb_cards_reset);
+  } else {
+    UMA_HISTOGRAM_COUNTS_100("Autofill.ResetFullServerCards.NumberOfCardsReset",
+                             nb_cards_reset);
   }
 }
 
@@ -854,7 +881,7 @@ void PersonalDataManager::RemoveByGUID(const std::string& guid) {
   if (!is_credit_card && !is_profile)
     return;
 
-  if (!database_.get())
+  if (!database_)
     return;
 
   if (is_credit_card) {
@@ -987,6 +1014,32 @@ void PersonalDataManager::RemoveProfilesNotUsedSinceTimestamp(
       num_profiles_supressed);
 }
 
+// static
+void PersonalDataManager::MaybeRemoveInvalidSuggestions(
+    const AutofillType& type,
+    std::vector<AutofillProfile*>* profiles) {
+  const bool suggest_invalid =
+      base::FeatureList::IsEnabled(kAutofillSuggestInvalidProfileData);
+
+  for (size_t i = 0; i < profiles->size(); ++i) {
+    bool is_invalid = (*profiles)[i]->GetValidityState(
+                          type.GetStorableType()) == AutofillProfile::INVALID;
+    if (is_invalid) {
+      UMA_HISTOGRAM_BOOLEAN("Autofill.InvalidProfileData.UsedForSuggestion",
+                            suggest_invalid);
+      if (!suggest_invalid)
+        (*profiles)[i] = nullptr;
+    }
+  }
+
+  if (!suggest_invalid) {
+    profiles->erase(
+        std::stable_partition(profiles->begin(), profiles->end(),
+                              [](AutofillProfile* p) { return p != nullptr; }),
+        profiles->end());
+  }
+}
+
 std::vector<Suggestion> PersonalDataManager::GetProfileSuggestions(
     const AutofillType& type,
     const base::string16& field_contents,
@@ -1002,13 +1055,15 @@ std::vector<Suggestion> PersonalDataManager::GetProfileSuggestions(
   // Get the profiles to suggest, which are already sorted.
   std::vector<AutofillProfile*> profiles = GetProfilesToSuggest();
 
-  // If enabled, suppress disused address profiles when triggered from an empty
-  // field.
-  if (field_contents_canon.empty() &&
-      base::FeatureList::IsEnabled(kAutofillSuppressDisusedAddresses)) {
-    const base::Time min_last_used =
-        AutofillClock::Now() - kDisusedProfileTimeDelta;
-    RemoveProfilesNotUsedSinceTimestamp(min_last_used, &profiles);
+  // When suggesting with no prefix to match, consider suppressing disused
+  // address suggestions as well as those based on invalid profile data.
+  if (field_contents_canon.empty()) {
+    if (base::FeatureList::IsEnabled(kAutofillSuppressDisusedAddresses)) {
+      const base::Time min_last_used =
+          AutofillClock::Now() - kDisusedProfileTimeDelta;
+      RemoveProfilesNotUsedSinceTimestamp(min_last_used, &profiles);
+    }
+    MaybeRemoveInvalidSuggestions(type, &profiles);
   }
 
   std::vector<Suggestion> suggestions;
@@ -1217,6 +1272,40 @@ void PersonalDataManager::SetPrefService(PrefService* pref_service) {
   }
 }
 
+void PersonalDataManager::ClearProfileNonSettingsOrigins() {
+  bool has_updated = false;
+
+  for (AutofillProfile* profile : GetProfiles()) {
+    if (profile->origin() != kSettingsOrigin && !profile->origin().empty()) {
+      profile->set_origin(std::string());
+      database_->UpdateAutofillProfile(*profile);
+      has_updated = true;
+    }
+  }
+
+  // Refresh the local cache and send notifications to observers if a changed
+  // was made.
+  if (has_updated)
+    Refresh();
+}
+
+void PersonalDataManager::ClearCreditCardNonSettingsOrigins() {
+  bool has_updated = false;
+
+  for (CreditCard* card : GetLocalCreditCards()) {
+    if (card->origin() != kSettingsOrigin && !card->origin().empty()) {
+      card->set_origin(std::string());
+      database_->UpdateCreditCard(*card);
+      has_updated = true;
+    }
+  }
+
+  // Refresh the local cache and send notifications to observers if a changed
+  // was made.
+  if (has_updated)
+    Refresh();
+}
+
 // TODO(crbug.com/618448): Refactor MergeProfile to not depend on class
 // variables.
 std::string PersonalDataManager::MergeProfile(
@@ -1360,7 +1449,7 @@ void PersonalDataManager::SetProfiles(std::vector<AutofillProfile>* profiles) {
                                  IsEmptyFunctor<AutofillProfile>(app_locale_)),
                   profiles->end());
 
-  if (!database_.get())
+  if (!database_)
     return;
 
   // Any profiles that are not in the new profile list should be removed from
@@ -1403,7 +1492,7 @@ void PersonalDataManager::SetCreditCards(
                                      IsEmptyFunctor<CreditCard>(app_locale_)),
                       credit_cards->end());
 
-  if (!database_.get())
+  if (!database_)
     return;
 
   // Any credit cards that are not in the new credit card list should be
@@ -1436,7 +1525,7 @@ void PersonalDataManager::SetCreditCards(
 }
 
 void PersonalDataManager::LoadProfiles() {
-  if (!database_.get()) {
+  if (!database_) {
     NOTREACHED();
     return;
   }
@@ -1449,7 +1538,7 @@ void PersonalDataManager::LoadProfiles() {
 }
 
 void PersonalDataManager::LoadCreditCards() {
-  if (!database_.get()) {
+  if (!database_) {
     NOTREACHED();
     return;
   }
@@ -1464,7 +1553,7 @@ void PersonalDataManager::LoadCreditCards() {
 void PersonalDataManager::CancelPendingQuery(
     WebDataServiceBase::Handle* handle) {
   if (*handle) {
-    if (!database_.get()) {
+    if (!database_) {
       NOTREACHED();
       return;
     }
@@ -1681,12 +1770,11 @@ std::vector<Suggestion> PersonalDataManager::GetSuggestionsForCards(
       } else {
 #if defined(OS_ANDROID)
         // Since Android places the label on its own row, there's more
-        // horizontal
-        // space to work with. Show "Amex - 1234" rather than desktop's "*1234".
+        // horizontal space to work with. Show "Amex - 1234" rather than
+        // desktop's "****1234".
         suggestion->label = credit_card->NetworkOrBankNameAndLastFourDigits();
 #else
-        suggestion->label = base::ASCIIToUTF16("*");
-        suggestion->label.append(credit_card->LastFourDigits());
+        suggestion->label = credit_card->ObfuscatedLastFourDigits();
 #endif
       }
     }
@@ -1703,27 +1791,18 @@ std::vector<Suggestion> PersonalDataManager::GetSuggestionsForCards(
   return suggestions;
 }
 
-void PersonalDataManager::ApplyProfileUseDatesFix() {
+void PersonalDataManager::RemoveOrphanAutofillTableRows() {
   // Don't run if the fix has already been applied.
-  if (pref_service_->GetBoolean(prefs::kAutofillProfileUseDatesFixed))
+  if (pref_service_->GetBoolean(prefs::kAutofillOrphanRowsRemoved))
     return;
 
-  std::vector<AutofillProfile> profiles;
-  bool has_changed_data = false;
-  for (AutofillProfile* profile : GetProfiles()) {
-    if (profile->use_date() == base::Time()) {
-      profile->set_use_date(AutofillClock::Now() -
-                            base::TimeDelta::FromDays(14));
-      has_changed_data = true;
-    }
-    profiles.push_back(*profile);
-  }
+  if (!database_)
+    return;
+
+  database_->RemoveOrphanAutofillTableRows();
 
   // Set the pref so that this fix is never run again.
-  pref_service_->SetBoolean(prefs::kAutofillProfileUseDatesFixed, true);
-
-  if (has_changed_data)
-    SetProfiles(&profiles);
+  pref_service_->SetBoolean(prefs::kAutofillOrphanRowsRemoved, true);
 }
 
 bool PersonalDataManager::ApplyDedupingRoutine() {
@@ -2070,7 +2149,7 @@ std::string PersonalDataManager::MergeServerAddressesIntoProfiles(
   return guid;
 }
 
-void PersonalDataManager::CreateTestAddresses() {
+void PersonalDataManager::MaybeCreateTestAddresses() {
   if (has_created_test_addresses_)
     return;
 
@@ -2083,7 +2162,7 @@ void PersonalDataManager::CreateTestAddresses() {
   AddProfile(CreateDisusedDeletableTestAddress(app_locale_));
 }
 
-void PersonalDataManager::CreateTestCreditCards() {
+void PersonalDataManager::MaybeCreateTestCreditCards() {
   if (has_created_test_credit_cards_)
     return;
 
@@ -2228,10 +2307,30 @@ bool PersonalDataManager::ShouldSuggestServerCards() const {
   if (is_syncing_for_test_)
     return true;
 
+  // Check if the feature to offer server cards on auth error is enabled.
+  if (base::FeatureList::IsEnabled(
+          features::kAutofillEnablePaymentsInteractionsOnAuthError)) {
+    return true;
+  }
+
   // Server cards should be suggested if the sync service active.
   return syncer::GetUploadToGoogleState(
              sync_service_, syncer::ModelType::AUTOFILL_WALLET_DATA) ==
          syncer::UploadState::ACTIVE;
+}
+
+void PersonalDataManager::ApplyAddressFixesAndCleanups() {
+  RemoveOrphanAutofillTableRows();   // One-time fix, otherwise NOP.
+  ApplyDedupingRoutine();            // Once per major version, otherwise NOP.
+  DeleteDisusedAddresses();          // Once per major version, otherwise NOP.
+  MaybeCreateTestAddresses();        // Once per user profile startup.
+  ClearProfileNonSettingsOrigins();  // Ran everytime it is called.
+}
+
+void PersonalDataManager::ApplyCardFixesAndCleanups() {
+  DeleteDisusedCreditCards();    // Once per major version, otherwise NOP.
+  MaybeCreateTestCreditCards();  // Once per user profile startup.
+  ClearCreditCardNonSettingsOrigins();  // Ran everytime it is called.
 }
 
 }  // namespace autofill

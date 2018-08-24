@@ -238,10 +238,6 @@ std::string SavePasswordProgressLogger::GetStringFromID(
       return "|frame| is not the main frame";
     case SavePasswordProgressLogger::STRING_PROVISIONALLY_SAVED_FORM_FOR_FRAME:
       return "provisionally_saved_forms_[form_frame]";
-    case SavePasswordProgressLogger::STRING_PASSWORD_FORM_FOUND_ON_PAGE:
-      return "A password form found on the page";
-    case SavePasswordProgressLogger::STRING_PASSWORD_FORM_NOT_FOUND_ON_PAGE:
-      return "No password form found on the page";
     case SavePasswordProgressLogger::STRING_PROVISIONALLY_SAVE_PASSWORD_METHOD:
       return "PasswordManager::ProvisionallySavePassword";
     case SavePasswordProgressLogger::STRING_PROVISIONALLY_SAVE_PASSWORD_FORM:
@@ -268,8 +264,6 @@ std::string SavePasswordProgressLogger::GetStringFromID(
       return "Blocked password due to same origin but insecure scheme";
     case SavePasswordProgressLogger::STRING_PROVISIONALLY_SAVED_FORM:
       return "provisionally_saved_form";
-    case SavePasswordProgressLogger::STRING_IGNORE_POSSIBLE_USERNAMES:
-      return "Ignore other possible usernames";
     case SavePasswordProgressLogger::STRING_ON_PASSWORD_FORMS_RENDERED_METHOD:
       return "PasswordManager::OnPasswordFormsRendered";
     case SavePasswordProgressLogger::STRING_ON_SAME_DOCUMENT_NAVIGATION:
@@ -422,6 +416,14 @@ std::string SavePasswordProgressLogger::GetStringFromID(
       return "Generated password accepted";
     case STRING_SUCCESSFUL_SUBMISSION_INDICATOR_EVENT:
       return "Successful submission indicator event";
+    case STRING_MAIN_FRAME_ORIGIN:
+      return "Main frame origin";
+    case STRING_IS_FORM_TAG:
+      return "Form with form tag";
+    case STRING_FORM_PARSING_INPUT:
+      return "Form parsing input";
+    case STRING_FORM_PARSING_OUTPUT:
+      return "Form parsing output";
     case SavePasswordProgressLogger::STRING_INVALID:
       return "INVALID";
       // Intentionally no default: clause here -- all IDs need to get covered.

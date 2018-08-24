@@ -54,13 +54,12 @@ SharedBuffer::SharedBuffer() : size_(0) {}
 
 SharedBuffer::SharedBuffer(size_t size) : size_(size), buffer_(size) {}
 
-SharedBuffer::SharedBuffer(const char* data, size_t size) : size_(0) {
-  AppendInternal(data, size);
+SharedBuffer::SharedBuffer(const char* data, size_t size) : size_(size) {
+  buffer_.Append(data, size);
 }
 
-SharedBuffer::SharedBuffer(const unsigned char* data, size_t size) : size_(0) {
-  AppendInternal(reinterpret_cast<const char*>(data), size);
-}
+SharedBuffer::SharedBuffer(const unsigned char* data, size_t size)
+    : SharedBuffer(reinterpret_cast<const char*>(data), size) {}
 
 SharedBuffer::~SharedBuffer() {
   Clear();
@@ -256,7 +255,7 @@ void SharedBuffer::OnMemoryDump(const String& dump_prefix,
     // If there is data in the segments, then it should have been allocated
     // using fastMalloc.
     const String data_dump_name = dump_prefix + "/segments";
-    auto dump = memory_dump->CreateMemoryAllocatorDump(data_dump_name);
+    auto* dump = memory_dump->CreateMemoryAllocatorDump(data_dump_name);
     dump->AddScalar("size", "bytes", size_);
     memory_dump->AddSuballocation(
         dump->Guid(), String(WTF::Partitions::kAllocatedObjectPoolName));

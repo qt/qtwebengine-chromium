@@ -50,6 +50,7 @@
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/dom/get_root_node_options.h"
 #include "third_party/blink/renderer/core/dom/layout_tree_builder_traversal.h"
+#include "third_party/blink/renderer/core/dom/ng/slot_assignment_engine.h"
 #include "third_party/blink/renderer/core/dom/node_lists_node_data.h"
 #include "third_party/blink/renderer/core/dom/node_rare_data.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
@@ -621,7 +622,7 @@ Node* Node::cloneNode(bool deep) const {
 }
 
 void Node::normalize() {
-  UpdateDistribution();
+  UpdateDistributionForFlatTreeTraversal();
 
   // Go through the subtree beneath us, normalizing all nodes. This means that
   // any two adjacent text nodes are merged and any empty text nodes are
@@ -775,7 +776,15 @@ bool Node::MayContainLegacyNodeTreeWhereDistributionShouldBeSupported() const {
   return true;
 }
 
-void Node::UpdateDistribution() {
+void Node::UpdateDistributionForUnknownReasons() {
+  UpdateDistributionInternal();
+  // For the sake of safety, call RecalcSlotAssignments as well as
+  // UpdateDistribution().
+  if (isConnected())
+    GetDocument().GetSlotAssignmentEngine().RecalcSlotAssignments();
+}
+
+void Node::UpdateDistributionInternal() {
   if (!MayContainLegacyNodeTreeWhereDistributionShouldBeSupported())
     return;
   // Extra early out to avoid spamming traces.
@@ -1972,7 +1981,7 @@ void Node::WillMoveToNewDocument(Document& old_document,
       old_document.GetPage() == new_document.GetPage())
     return;
 
-  old_document.GetPage()->GetEventHandlerRegistry().DidMoveOutOfPage(*this);
+  old_document.GetFrame()->GetEventHandlerRegistry().DidMoveOutOfPage(*this);
 
   if (IsElementNode()) {
     StylePropertyMapReadOnly* computed_style_map_item =
@@ -1999,7 +2008,7 @@ void Node::DidMoveToNewDocument(Document& old_document) {
   old_document.Markers().RemoveMarkersForNode(this);
   if (GetDocument().GetPage() &&
       GetDocument().GetPage() != old_document.GetPage()) {
-    GetDocument().GetPage()->GetEventHandlerRegistry().DidMoveIntoPage(*this);
+    GetDocument().GetFrame()->GetEventHandlerRegistry().DidMoveIntoPage(*this);
   }
 
   if (const HeapVector<TraceWrapperMember<MutationObserverRegistration>>*
@@ -2020,9 +2029,10 @@ void Node::AddedEventListener(const AtomicString& event_type,
                               RegisteredEventListener& registered_listener) {
   EventTarget::AddedEventListener(event_type, registered_listener);
   GetDocument().AddListenerTypeIfNeeded(event_type, *this);
-  if (Page* page = GetDocument().GetPage())
-    page->GetEventHandlerRegistry().DidAddEventHandler(
+  if (auto* frame = GetDocument().GetFrame()) {
+    frame->GetEventHandlerRegistry().DidAddEventHandler(
         *this, event_type, registered_listener.Options());
+  }
 }
 
 void Node::RemovedEventListener(
@@ -2032,15 +2042,16 @@ void Node::RemovedEventListener(
   // FIXME: Notify Document that the listener has vanished. We need to keep
   // track of a number of listeners for each type, not just a bool - see
   // https://bugs.webkit.org/show_bug.cgi?id=33861
-  if (Page* page = GetDocument().GetPage())
-    page->GetEventHandlerRegistry().DidRemoveEventHandler(
+  if (auto* frame = GetDocument().GetFrame()) {
+    frame->GetEventHandlerRegistry().DidRemoveEventHandler(
         *this, event_type, registered_listener.Options());
+  }
 }
 
 void Node::RemoveAllEventListeners() {
   if (HasEventListeners() && GetDocument().GetPage())
     GetDocument()
-        .GetPage()
+        .GetFrame()
         ->GetEventHandlerRegistry()
         .DidRemoveAllEventHandlers(*this);
   EventTarget::RemoveAllEventListeners();
@@ -2309,24 +2320,8 @@ void Node::CreateAndDispatchPointerEvent(const AtomicString& mouse_event_name,
   pointer_event_init.setComposed(true);
   pointer_event_init.setDetail(0);
 
-  pointer_event_init.setScreenX(mouse_event.PositionInScreen().x);
-  pointer_event_init.setScreenY(mouse_event.PositionInScreen().y);
-
-  IntPoint location_in_frame_zoomed;
-  if (view && view->GetFrame() && view->GetFrame()->View()) {
-    LocalFrame* frame = view->GetFrame();
-    LocalFrameView* frame_view = frame->View();
-    IntPoint location_in_contents = frame_view->RootFrameToContents(
-        FlooredIntPoint(mouse_event.PositionInRootFrame()));
-    location_in_frame_zoomed =
-        frame_view->ContentsToFrame(location_in_contents);
-    float scale_factor = 1 / frame->PageZoomFactor();
-    location_in_frame_zoomed.Scale(scale_factor, scale_factor);
-  }
-
-  // Set up initial values for coordinates.
-  pointer_event_init.setClientX(location_in_frame_zoomed.X());
-  pointer_event_init.setClientY(location_in_frame_zoomed.Y());
+  MouseEvent::SetCoordinatesFromWebPointerProperties(
+      mouse_event.FlattenTransform(), view, pointer_event_init);
 
   if (pointer_event_name == EventTypeNames::pointerdown ||
       pointer_event_name == EventTypeNames::pointerup) {
@@ -2380,8 +2375,7 @@ void Node::DispatchMouseEvent(const WebMouseEvent& event,
                                 : nullptr);
 
   DispatchEvent(MouseEvent::Create(
-      mouse_event_type, initializer,
-      TimeTicksFromSeconds(event.TimeStampSeconds()),
+      mouse_event_type, initializer, event.TimeStamp(),
       event.FromTouch() ? MouseEvent::kFromTouch
                         : MouseEvent::kRealOrIndistinguishable,
       event.menu_source_type));
@@ -2526,7 +2520,7 @@ void Node::DecrementConnectedSubframeCount() {
 }
 
 StaticNodeList* Node::getDestinationInsertionPoints() {
-  UpdateDistribution();
+  UpdateDistributionForLegacyDistributedNodes();
   HeapVector<Member<V0InsertionPoint>, 8> insertion_points;
   CollectDestinationInsertionPoints(*this, insertion_points);
   HeapVector<Member<Node>> filtered_insertion_points;
@@ -2757,17 +2751,16 @@ void Node::Trace(blink::Visitor* visitor) {
   visitor->Trace(parent_or_shadow_host_node_);
   visitor->Trace(previous_);
   visitor->Trace(next_);
-  // rareData() and m_data.m_layoutObject share their storage. We have to trace
-  // only one of them.
+  // rareData() and data_.node_layout_data_ share their storage. We have to
+  // trace only one of them.
   if (HasRareData())
     visitor->Trace(RareData());
-
+  visitor->Trace(GetEventTargetData());
   visitor->Trace(tree_scope_);
-  // EventTargetData is traced through EventTargetDataMap.
   EventTarget::Trace(visitor);
 }
 
-void Node::TraceWrappers(const ScriptWrappableVisitor* visitor) const {
+void Node::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(parent_or_shadow_host_node_);
   visitor->TraceWrappers(previous_);
   visitor->TraceWrappers(next_);

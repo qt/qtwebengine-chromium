@@ -8,8 +8,8 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/files/file_util_proxy.h"
 #include "base/memory/weak_ptr.h"
+#include "base/sequenced_task_runner.h"
 #include "base/task_scheduler/post_task.h"
 #include "content/browser/renderer_host/pepper/pepper_file_ref_host.h"
 #include "content/browser/renderer_host/pepper/pepper_file_system_browser_host.h"
@@ -49,7 +49,7 @@ PepperFileIOHost::UIThreadStuff GetUIThreadStuffForInternalFileSystems(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   RenderProcessHost* host = RenderProcessHost::FromID(render_process_id);
   if (host) {
-    stuff.resolved_render_process_id = base::GetProcId(host->GetHandle());
+    stuff.resolved_render_process_id = host->GetProcess().Pid();
     StoragePartition* storage_partition = host->GetStoragePartition();
     if (storage_partition)
       stuff.file_system_context = storage_partition->GetFileSystemContext();
@@ -62,7 +62,7 @@ base::ProcessId GetResolvedRenderProcessId(int render_process_id) {
   RenderProcessHost* host = RenderProcessHost::FromID(render_process_id);
   if (!host)
     return base::kNullProcessId;
-  return base::GetProcId(host->GetHandle());
+  return host->GetProcess().Pid();
 }
 
 bool GetPluginAllowedToCallRequestOSFileHandle(int render_process_id,

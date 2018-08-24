@@ -13,6 +13,7 @@
 #include "base/logging.h"
 #include "base/rand_util.h"
 #include "base/timer/timer.h"
+#include "build/build_config.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/webauth/authenticator_type_converters.h"
 #include "content/public/browser/content_browser_client.h"
@@ -240,6 +241,13 @@ device::CtapGetAssertionRequest CreateCtapGetAssertionRequest(
   request_parameter.SetUserVerification(
       mojo::ConvertTo<device::UserVerificationRequirement>(
           options->user_verification));
+
+  if (!options->cable_authentication_data.empty()) {
+    request_parameter.SetCableExtension(
+        mojo::ConvertTo<
+            std::vector<device::FidoCableDiscovery::CableDiscoveryData>>(
+            options->cable_authentication_data));
+  }
   return request_parameter;
 }
 
@@ -328,19 +336,9 @@ std::string Base64UrlEncode(const base::span<const uint8_t> input) {
 }  // namespace
 
 AuthenticatorImpl::AuthenticatorImpl(RenderFrameHost* render_frame_host)
-    : WebContentsObserver(WebContents::FromRenderFrameHost(render_frame_host)),
-      render_frame_host_(render_frame_host),
-      timer_(std::make_unique<base::OneShotTimer>()),
-      binding_(this),
-      weak_factory_(this) {
-  DCHECK(render_frame_host_);
-  DCHECK(timer_);
-
-  protocols_.insert(device::FidoTransportProtocol::kUsbHumanInterfaceDevice);
-  if (base::FeatureList::IsEnabled(features::kWebAuthBle)) {
-    protocols_.insert(device::FidoTransportProtocol::kBluetoothLowEnergy);
-  }
-}
+    : AuthenticatorImpl(render_frame_host,
+                        nullptr /* connector */,
+                        std::make_unique<base::OneShotTimer>()) {}
 
 AuthenticatorImpl::AuthenticatorImpl(RenderFrameHost* render_frame_host,
                                      service_manager::Connector* connector,
@@ -353,6 +351,21 @@ AuthenticatorImpl::AuthenticatorImpl(RenderFrameHost* render_frame_host,
       weak_factory_(this) {
   DCHECK(render_frame_host_);
   DCHECK(timer_);
+
+  protocols_.insert(device::FidoTransportProtocol::kUsbHumanInterfaceDevice);
+  if (base::FeatureList::IsEnabled(features::kWebAuthBle)) {
+    protocols_.insert(device::FidoTransportProtocol::kBluetoothLowEnergy);
+  }
+
+  if (base::FeatureList::IsEnabled(features::kWebAuthCable)) {
+    protocols_.insert(
+        device::FidoTransportProtocol::kCloudAssistedBluetoothLowEnergy);
+  }
+#if defined(OS_MACOSX)
+  if (base::FeatureList::IsEnabled(features::kWebAuthTouchId)) {
+    protocols_.insert(device::FidoTransportProtocol::kInternal);
+  }
+#endif
 }
 
 AuthenticatorImpl::~AuthenticatorImpl() {}
@@ -378,14 +391,13 @@ std::string AuthenticatorImpl::SerializeCollectedClientDataToJson(
   client_data.SetKey(kChallengeKey, base::Value(Base64UrlEncode(challenge)));
   client_data.SetKey(kOriginKey, base::Value(origin.Serialize()));
 
-  base::DictionaryValue token_binding_dict;
-  static constexpr char kTokenBindingStatusKey[] = "status";
-  static constexpr char kTokenBindingIdKey[] = "id";
-  static constexpr char kTokenBindingSupportedStatus[] = "supported";
-  static constexpr char kTokenBindingNotSupportedStatus[] = "not-supported";
-  static constexpr char kTokenBindingPresentStatus[] = "present";
-
   if (token_binding) {
+    base::DictionaryValue token_binding_dict;
+    static constexpr char kTokenBindingStatusKey[] = "status";
+    static constexpr char kTokenBindingIdKey[] = "id";
+    static constexpr char kTokenBindingSupportedStatus[] = "supported";
+    static constexpr char kTokenBindingPresentStatus[] = "present";
+
     if (token_binding->empty()) {
       token_binding_dict.SetKey(kTokenBindingStatusKey,
                                 base::Value(kTokenBindingSupportedStatus));
@@ -395,12 +407,9 @@ std::string AuthenticatorImpl::SerializeCollectedClientDataToJson(
       token_binding_dict.SetKey(kTokenBindingIdKey,
                                 base::Value(Base64UrlEncode(*token_binding)));
     }
-  } else {
-    token_binding_dict.SetKey(kTokenBindingStatusKey,
-                              base::Value(kTokenBindingNotSupportedStatus));
-  }
 
-  client_data.SetKey(kTokenBindingKey, std::move(token_binding_dict));
+    client_data.SetKey(kTokenBindingKey, std::move(token_binding_dict));
+  }
 
   if (base::RandDouble() < 0.2) {
     // An extra key is sometimes added to ensure that RPs do not make
@@ -510,6 +519,11 @@ void AuthenticatorImpl::MakeCredential(
 
   attestation_preference_ = options->attestation;
 
+  // Communication using Cable protocol is only supported for GetAssertion
+  // request on CTAP2 devices.
+  protocols_.erase(
+      device::FidoTransportProtocol::kCloudAssistedBluetoothLowEnergy);
+
   if (base::FeatureList::IsEnabled(features::kWebAuthCtap2)) {
     auto authenticator_selection_criteria =
         options->authenticator_selection
@@ -603,18 +617,19 @@ void AuthenticatorImpl::GetAssertion(
       FilterCredentialList(std::move(options->allow_credentials));
 
   // There are two different descriptions of what should happen when
-  // "allowCredentials" is empty.
+  // "allowCredentials" is empty for U2F.
   // a) WebAuthN 6.2.3 step 6[1] implies "NotAllowedError".
   // b) CTAP step 7.2 step 2[2] says the device should error out with
   // "CTAP2_ERR_OPTION_NOT_SUPPORTED". This also resolves to "NotAllowedError".
   // The behavior in both cases is consistent with the current implementation.
-  // TODO(crbug.com/831712): When CTAP2 authenticators are supported, this check
-  // should be enforced by handlers in fido/device on a per-device basis.
+  // When CTAP2 is enabled, however, this check is done by handlers in
+  // fido/device on a per-device basis.
 
   // [1] https://w3c.github.io/webauthn/#authenticatorgetassertion
   // [2]
   // https://fidoalliance.org/specs/fido-v2.0-ps-20170927/fido-client-to-authenticator-protocol-v2.0-ps-20170927.html
-  if (handles.empty()) {
+  if (!base::FeatureList::IsEnabled(features::kWebAuthCtap2) &&
+      handles.empty()) {
     InvokeCallbackAndCleanup(
         std::move(callback),
         webauth::mojom::AuthenticatorStatus::EMPTY_ALLOW_CREDENTIALS, nullptr);
@@ -646,6 +661,10 @@ void AuthenticatorImpl::GetAssertion(
         base::BindOnce(&AuthenticatorImpl::OnSignResponse,
                        weak_factory_.GetWeakPtr()));
   } else {
+    // Communication using Cable protocol is only supported for CTAP2 devices.
+    protocols_.erase(
+        device::FidoTransportProtocol::kCloudAssistedBluetoothLowEnergy);
+
     u2f_request_ = device::U2fSign::TrySign(
         connector_, protocols_, handles,
         ConstructClientDataHash(client_data_json_), application_parameter,

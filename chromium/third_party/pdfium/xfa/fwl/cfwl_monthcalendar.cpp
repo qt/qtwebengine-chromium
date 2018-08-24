@@ -14,7 +14,6 @@
 #include "third_party/base/stl_util.h"
 #include "xfa/fde/cfde_textout.h"
 #include "xfa/fwl/cfwl_datetimepicker.h"
-#include "xfa/fwl/cfwl_formproxy.h"
 #include "xfa/fwl/cfwl_messagemouse.h"
 #include "xfa/fwl/cfwl_notedriver.h"
 #include "xfa/fwl/cfwl_themebackground.h"
@@ -22,7 +21,6 @@
 #include "xfa/fwl/ifwl_themeprovider.h"
 
 #define MONTHCAL_HSEP_HEIGHT 1
-#define MONTHCAL_VSEP_WIDTH 1
 #define MONTHCAL_HMARGIN 3
 #define MONTHCAL_VMARGIN 2
 #define MONTHCAL_ROWS 9
@@ -88,35 +86,9 @@ CFWL_MonthCalendar::CFWL_MonthCalendar(
     const CFWL_App* app,
     std::unique_ptr<CFWL_WidgetProperties> properties,
     CFWL_Widget* pOuter)
-    : CFWL_Widget(app, std::move(properties), pOuter),
-      m_bInitialized(false),
-      m_iCurYear(2011),
-      m_iCurMonth(1),
-      m_iYear(2011),
-      m_iMonth(1),
-      m_iDay(1),
-      m_iHovered(-1),
-      m_iLBtnPartStates(CFWL_PartState_Normal),
-      m_iRBtnPartStates(CFWL_PartState_Normal),
-      m_bFlag(false) {
-  m_rtHead.Reset();
-  m_rtWeek.Reset();
-  m_rtLBtn.Reset();
-  m_rtRBtn.Reset();
-  m_rtDates.Reset();
-  m_rtHSep.Reset();
-  m_rtHeadText.Reset();
-  m_rtToday.Reset();
-  m_rtTodayFlag.Reset();
-  m_rtClient.Reset();
-  m_rtWeekNum.Reset();
-  m_rtWeekNumSep.Reset();
-}
+    : CFWL_Widget(app, std::move(properties), pOuter) {}
 
-CFWL_MonthCalendar::~CFWL_MonthCalendar() {
-  ClearDateItem();
-  m_arrSelDays.clear();
-}
+CFWL_MonthCalendar::~CFWL_MonthCalendar() = default;
 
 FWL_Type CFWL_MonthCalendar::GetClassID() const {
   return FWL_Type::MonthCalendar;
@@ -333,7 +305,7 @@ void CFWL_MonthCalendar::DrawToday(CXFA_Graphics* pGraphics,
   params.m_pGraphics = pGraphics;
   params.m_dwStates = CFWL_PartState_Normal;
   params.m_iTTOAlign = FDE_TextAlignment::kCenterLeft;
-  params.m_wsText = L"Today" + GetTodayText(m_iYear, m_iMonth, m_iDay);
+  params.m_wsText = GetTodayText(m_iYear, m_iMonth, m_iDay);
 
   m_szToday =
       CalcTextSize(params.m_wsText, m_pProperties->m_pThemeProvider, false);
@@ -461,9 +433,8 @@ CFX_SizeF CFWL_MonthCalendar::CalcSize() {
       m_szHead.width + MONTHCAL_HEADER_BTN_HMARGIN * 2 + m_szCell.width * 2;
   fs.width = std::max(fs.width, fMonthMaxW);
 
-  WideString wsToday = GetTodayText(m_iYear, m_iMonth, m_iDay);
-  m_wsToday = L"Today" + wsToday;
-  m_szToday = CalcTextSize(wsToday, m_pProperties->m_pThemeProvider, false);
+  m_wsToday = GetTodayText(m_iYear, m_iMonth, m_iDay);
+  m_szToday = CalcTextSize(m_wsToday, m_pProperties->m_pThemeProvider, false);
   m_szToday.height = (m_szToday.height >= m_szCell.height) ? m_szToday.height
                                                            : m_szCell.height;
   fs.height = m_szCell.width + m_szCell.height * (MONTHCAL_ROWS - 2) +
@@ -552,11 +523,11 @@ void CFWL_MonthCalendar::GetCapValue() {
 }
 
 void CFWL_MonthCalendar::InitDate() {
-  // TODO(dsinclair): These should pull the real today values instead of
-  // pretending it's 2011-01-01.
-  m_iYear = 2011;
-  m_iMonth = 1;
-  m_iDay = 1;
+  CFX_DateTime now = CFX_DateTime::Now();
+
+  m_iYear = now.GetYear();
+  m_iMonth = now.GetMonth();
+  m_iDay = now.GetDay();
   m_iCurYear = m_iYear;
   m_iCurMonth = m_iMonth;
 
@@ -683,7 +654,7 @@ WideString CFWL_MonthCalendar::GetHeadText(int32_t iYear, int32_t iMonth) {
 WideString CFWL_MonthCalendar::GetTodayText(int32_t iYear,
                                             int32_t iMonth,
                                             int32_t iDay) {
-  return WideString::Format(L", %d/%d/%d", iDay, iMonth, iYear);
+  return WideString::Format(L"Today, %d/%d/%d", iDay, iMonth, iYear);
 }
 
 int32_t CFWL_MonthCalendar::GetDayAtPoint(const CFX_PointF& point) const {
@@ -758,58 +729,10 @@ void CFWL_MonthCalendar::OnLButtonDown(CFWL_MessageMouse* pMsg) {
   } else if (m_rtToday.Contains(pMsg->m_pos)) {
     JumpToToday();
     RepaintRect(m_rtClient);
-  } else {
-    CFWL_DateTimePicker* pIPicker = static_cast<CFWL_DateTimePicker*>(m_pOuter);
-    if (pIPicker->IsMonthCalendarVisible())
-      m_bFlag = true;
   }
 }
 
 void CFWL_MonthCalendar::OnLButtonUp(CFWL_MessageMouse* pMsg) {
-  if (m_pWidgetMgr->IsFormDisabled())
-    return DisForm_OnLButtonUp(pMsg);
-
-  if (m_rtLBtn.Contains(pMsg->m_pos)) {
-    m_iLBtnPartStates = 0;
-    RepaintRect(m_rtLBtn);
-    return;
-  }
-  if (m_rtRBtn.Contains(pMsg->m_pos)) {
-    m_iRBtnPartStates = 0;
-    RepaintRect(m_rtRBtn);
-    return;
-  }
-  if (m_rtToday.Contains(pMsg->m_pos))
-    return;
-
-  int32_t iOldSel = 0;
-  if (!m_arrSelDays.empty())
-    iOldSel = m_arrSelDays[0];
-
-  int32_t iCurSel = GetDayAtPoint(pMsg->m_pos);
-  CFWL_DateTimePicker* pIPicker = static_cast<CFWL_DateTimePicker*>(m_pOuter);
-  if (iCurSel > 0) {
-    DATEINFO* lpDatesInfo = m_arrDates[iCurSel - 1].get();
-    CFX_RectF rtInvalidate(lpDatesInfo->rect);
-    if (iOldSel > 0 && iOldSel <= pdfium::CollectionSize<int32_t>(m_arrDates)) {
-      lpDatesInfo = m_arrDates[iOldSel - 1].get();
-      rtInvalidate.Union(lpDatesInfo->rect);
-    }
-    AddSelDay(iCurSel);
-    if (!m_pOuter)
-      return;
-
-    pIPicker->ProcessSelChanged(m_iCurYear, m_iCurMonth, iCurSel);
-    pIPicker->ShowMonthCalendar(false);
-  } else if (m_bFlag &&
-             (!CFX_RectF(0, 0, pIPicker->GetFormProxy()->GetWidgetRect().Size())
-                   .Contains(pMsg->m_pos))) {
-    pIPicker->ShowMonthCalendar(false);
-  }
-  m_bFlag = false;
-}
-
-void CFWL_MonthCalendar::DisForm_OnLButtonUp(CFWL_MessageMouse* pMsg) {
   if (m_rtLBtn.Contains(pMsg->m_pos)) {
     m_iLBtnPartStates = 0;
     RepaintRect(m_rtLBtn);

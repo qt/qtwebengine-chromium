@@ -53,21 +53,18 @@ class AutofillSaveCardInfoBarDelegateMobile : public ConfirmInfoBarDelegate {
   // to Google.
   bool IsGooglePayBrandingEnabled() const;
 
-  // All following changes are with respect to Google Pay branding.
-  base::string16 GetTitleText() const;
+  // Description text to be shown above the card information in the infobar.
   base::string16 GetDescriptionText() const;
 
   // ConfirmInfoBarDelegate:
   int GetIconId() const override;
   base::string16 GetMessageText() const override;
-  base::string16 GetLinkText() const override;
   infobars::InfoBarDelegate::InfoBarIdentifier GetIdentifier() const override;
   bool ShouldExpire(const NavigationDetails& details) const override;
   void InfoBarDismissed() override;
+  int GetButtons() const override;
   base::string16 GetButtonLabel(InfoBarButton button) const override;
   bool Accept() override;
-  bool Cancel() override;
-  GURL GetLinkURL() const override;
 
  private:
   void LogUserAction(AutofillMetrics::InfoBarMetric user_action);

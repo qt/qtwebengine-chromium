@@ -46,12 +46,10 @@ void XMLParserScriptRunner::PendingScriptFinished(
 
   pending_script->StopWatchingForLoad();
 
-  ScriptLoader* script_loader = pending_script->GetElement()->Loader();
-  DCHECK(script_loader);
-  CHECK_EQ(script_loader->GetScriptType(), ScriptType::kClassic);
+  CHECK_EQ(pending_script->GetScriptType(), ScriptType::kClassic);
 
   // [Parsing] 4. Execute the pending parsing-blocking script. [spec text]
-  script_loader->ExecuteScriptBlock(pending_script, NullURL());
+  pending_script->ExecuteScriptBlock(NullURL());
 
   // [Parsing] 5. There is no longer a pending parsing-blocking script. [spec
   // text]
@@ -69,12 +67,7 @@ void XMLParserScriptRunner::ProcessScriptElement(
   DCHECK(element);
   DCHECK(!parser_blocking_script_);
 
-  ScriptElementBase* script_element_base =
-      ScriptElementBase::FromElementIfPossible(element);
-  CHECK(script_element_base);
-
-  ScriptLoader* script_loader = script_element_base->Loader();
-  DCHECK(script_loader);
+  ScriptLoader* script_loader = ScriptLoaderFromElement(element);
 
   // [Parsing] When the element's end tag is subsequently parsed, the user agent
   // must perform a microtask checkpoint, and then prepare the script element.
@@ -104,13 +97,16 @@ void XMLParserScriptRunner::ProcessScriptElement(
     // TODO(hiroshige): XMLParserScriptRunner doesn't check style sheet that
     // is blocking scripts and thus the script is executed immediately here,
     // and thus Steps 1-3 are skipped.
-    script_loader->ExecuteScriptBlock(script_loader->TakePendingScript(),
-                                      document.Url());
+    script_loader
+        ->TakePendingScript(ScriptSchedulingType::kParserBlockingInline)
+        ->ExecuteScriptBlock(document.Url());
   } else if (script_loader->WillBeParserExecuted()) {
-    // [Prepare] Step 25.B. ... The element is the pending parsing-blocking
-    // script of the Document of the parser that created the element. (There can
-    // only be one such script per Document at a time.) ... [spec text]
-    parser_blocking_script_ = script_loader->TakePendingScript();
+    // <spec label="Prepare" step="25.B">... The element is the pending
+    // parsing-blocking script of the Document of the parser that created the
+    // element. (There can only be one such script per Document at a time.)
+    // ...</spec>
+    parser_blocking_script_ =
+        script_loader->TakePendingScript(ScriptSchedulingType::kParserBlocking);
     parser_blocking_script_->MarkParserBlockingLoadStartTime();
 
     // [Parsing] 1. Block this instance of the XML parser, such that the event

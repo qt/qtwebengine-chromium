@@ -146,6 +146,7 @@ void WindowServerTestBase::OnEmbedRootDestroyed(
 }
 
 void WindowServerTestBase::OnPointerEventObserved(const ui::PointerEvent& event,
+                                                  int64_t display_id,
                                                   aura::Window* target) {}
 
 aura::PropertyConverter* WindowServerTestBase::GetPropertyConverter() {
@@ -239,7 +240,7 @@ void WindowServerTestBase::OnWmDisplayModified(
 ui::mojom::EventResult WindowServerTestBase::OnAccelerator(
     uint32_t accelerator_id,
     const ui::Event& event,
-    std::unordered_map<std::string, std::vector<uint8_t>>* properties) {
+    base::flat_map<std::string, std::vector<uint8_t>>* properties) {
   return window_manager_delegate_ ? window_manager_delegate_->OnAccelerator(
                                         accelerator_id, event, properties)
                                   : ui::mojom::EventResult::UNHANDLED;

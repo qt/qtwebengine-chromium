@@ -12,11 +12,12 @@
 
 #include "modules/desktop_capture/mac/screen_capturer_mac.h"
 
-#include "modules/desktop_capture/mac/desktop_frame_cgimage.h"
+#include "modules/desktop_capture/mac/desktop_frame_provider.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/constructormagic.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/timeutils.h"
+#include "rtc_base/trace_event.h"
 #include "sdk/objc/Framework/Classes/Common/scoped_cftyperef.h"
 
 namespace webrtc {
@@ -84,10 +85,6 @@ class DisplayStreamManager {
 };
 
 namespace {
-
-// Standard Mac displays have 72dpi, but we report 96dpi for
-// consistency with Windows and Linux.
-const int kStandardDPI = 96;
 
 // Scales all coordinates of a rect by a specified factor.
 DesktopRect ScaleAndRoundCGRect(const CGRect& rect, float scale) {
@@ -215,10 +212,14 @@ rtc::ScopedCFTypeRef<CGImageRef> CreateExcludedWindowRegionImage(const DesktopRe
 
 ScreenCapturerMac::ScreenCapturerMac(
     rtc::scoped_refptr<DesktopConfigurationMonitor> desktop_config_monitor,
-    bool detect_updated_region)
+    bool detect_updated_region,
+    bool allow_iosurface)
     : detect_updated_region_(detect_updated_region),
-      desktop_config_monitor_(desktop_config_monitor) {
+      desktop_config_monitor_(desktop_config_monitor),
+      desktop_frame_provider_(allow_iosurface) {
   display_stream_manager_ = new DisplayStreamManager;
+
+  RTC_LOG(LS_INFO) << "Allow IOSurface: " << allow_iosurface;
 }
 
 ScreenCapturerMac::~ScreenCapturerMac() {
@@ -228,13 +229,12 @@ ScreenCapturerMac::~ScreenCapturerMac() {
 }
 
 bool ScreenCapturerMac::Init() {
+  TRACE_EVENT0("webrtc", "ScreenCapturerMac::Init");
+
   desktop_config_monitor_->Lock();
   desktop_config_ = desktop_config_monitor_->desktop_configuration();
   desktop_config_monitor_->Unlock();
-  if (!RegisterRefreshAndMoveHandlers()) {
-    return false;
-  }
-  ScreenConfigurationChanged();
+
   return true;
 }
 
@@ -248,11 +248,21 @@ void ScreenCapturerMac::ReleaseBuffers() {
 void ScreenCapturerMac::Start(Callback* callback) {
   RTC_DCHECK(!callback_);
   RTC_DCHECK(callback);
+  TRACE_EVENT_INSTANT1(
+      "webrtc", "ScreenCapturermac::Start", "target display id ", current_display_);
 
   callback_ = callback;
+  // Start and operate CGDisplayStream handler all from capture thread.
+  if (!RegisterRefreshAndMoveHandlers()) {
+    RTC_LOG(LS_ERROR) << "Failed to register refresh and move handlers.";
+    callback_->OnCaptureResult(Result::ERROR_PERMANENT, nullptr);
+    return;
+  }
+  ScreenConfigurationChanged();
 }
 
 void ScreenCapturerMac::CaptureFrame() {
+  TRACE_EVENT0("webrtc", "creenCapturerMac::CaptureFrame");
   int64_t capture_start_time_nanos = rtc::TimeNanos();
 
   queue_.MoveToNextFrame();
@@ -266,7 +276,11 @@ void ScreenCapturerMac::CaptureFrame() {
     // structures. Occasionally, the refresh and move handlers are lost when
     // the screen mode changes, so re-register them here.
     UnregisterRefreshAndMoveHandlers();
-    RegisterRefreshAndMoveHandlers();
+    if (!RegisterRefreshAndMoveHandlers()) {
+      RTC_LOG(LS_ERROR) << "Failed to register refresh and move handlers.";
+      callback_->OnCaptureResult(Result::ERROR_PERMANENT, nullptr);
+      return;
+    }
     ScreenConfigurationChanged();
   }
 
@@ -406,8 +420,8 @@ bool ScreenCapturerMac::CgBlit(const DesktopFrame& frame, const DesktopRegion& r
       }
     }
 
-    std::unique_ptr<DesktopFrameCGImage> frame_source =
-        DesktopFrameCGImage::CreateForDisplay(display_config.id);
+    std::unique_ptr<DesktopFrame> frame_source =
+        desktop_frame_provider_.TakeLatestFrameForDisplay(display_config.id);
     if (!frame_source) {
       continue;
     }
@@ -518,7 +532,7 @@ bool ScreenCapturerMac::RegisterRefreshAndMoveHandlers() {
       if (count != 0) {
         // According to CGDisplayStream.h, it's safe to call
         // CGDisplayStreamStop() from within the callback.
-        ScreenRefresh(count, rects, display_origin);
+        ScreenRefresh(display_id, count, rects, display_origin, frame_surface);
       }
     };
 
@@ -548,11 +562,15 @@ bool ScreenCapturerMac::RegisterRefreshAndMoveHandlers() {
 
 void ScreenCapturerMac::UnregisterRefreshAndMoveHandlers() {
   display_stream_manager_->UnregisterActiveStreams();
+  // Release obsolete io surfaces.
+  desktop_frame_provider_.Release();
 }
 
-void ScreenCapturerMac::ScreenRefresh(CGRectCount count,
+void ScreenCapturerMac::ScreenRefresh(CGDirectDisplayID display_id,
+                                      CGRectCount count,
                                       const CGRect* rect_array,
-                                      DesktopVector display_origin) {
+                                      DesktopVector display_origin,
+                                      IOSurfaceRef io_surface) {
   if (screen_pixel_bounds_.is_empty()) ScreenConfigurationChanged();
 
   // The refresh rects are in display coordinates. We want to translate to
@@ -574,7 +592,10 @@ void ScreenCapturerMac::ScreenRefresh(CGRectCount count,
 
     region.AddRect(rect);
   }
-
+  // Always having the latest iosurface before invalidating a region.
+  // See https://bugs.chromium.org/p/webrtc/issues/detail?id=8652 for details.
+  desktop_frame_provider_.InvalidateIOSurface(
+      display_id, rtc::ScopedCFTypeRef<IOSurfaceRef>(io_surface, rtc::RetainPolicy::RETAIN));
   helper_.InvalidateRegion(region);
 }
 

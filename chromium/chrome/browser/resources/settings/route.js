@@ -11,6 +11,8 @@
  *   ACCESSIBILITY: (undefined|!settings.Route),
  *   ACCOUNTS: (undefined|!settings.Route),
  *   ADVANCED: (undefined|!settings.Route),
+ *   CROSTINI: (undefined|!settings.Route),
+ *   CROSTINI_DETAILS: (undefined|!settings.Route),
  *   ANDROID_APPS: (undefined|!settings.Route),
  *   ANDROID_APPS_DETAILS: (undefined|!settings.Route),
  *   APPEARANCE: (undefined|!settings.Route),
@@ -45,7 +47,6 @@
  *   LANGUAGES: (undefined|!settings.Route),
  *   LOCK_SCREEN: (undefined|!settings.Route),
  *   MANAGE_ACCESSIBILITY: (undefined|!settings.Route),
- *   MANAGE_GOOGLE_TTS_ENGINE_SETTINGS: (undefined|!settings.Route),
  *   MANAGE_PASSWORDS: (undefined|!settings.Route),
  *   MANAGE_PROFILE: (undefined|!settings.Route),
  *   MANAGE_TTS_SETTINGS: (undefined|!settings.Route),
@@ -244,9 +245,13 @@ cr.define('settings', function() {
     r.SEARCH_ENGINES = r.SEARCH.createChild('/searchEngines');
     // <if expr="chromeos">
     r.GOOGLE_ASSISTANT = r.SEARCH.createChild('/googleAssistant');
-    // </if>
 
-    // <if expr="chromeos">
+    if (loadTimeData.valueExists('showCrostini') &&
+        loadTimeData.getBoolean('showCrostini')) {
+      r.CROSTINI = r.BASIC.createSection('/crostini', 'crostini');
+      r.CROSTINI_DETAILS = r.CROSTINI.createChild('/crostini/details');
+    }
+
     r.ANDROID_APPS = r.BASIC.createSection('/androidApps', 'androidApps');
     r.ANDROID_APPS_DETAILS = r.ANDROID_APPS.createChild('/androidApps/details');
     // </if>
@@ -265,6 +270,7 @@ cr.define('settings', function() {
       // <if expr="chromeos">
       r.CHANGE_PICTURE = r.PEOPLE.createChild('/changePicture');
       r.ACCOUNTS = r.PEOPLE.createChild('/accounts');
+      r.ACCOUNT_MANAGER = r.PEOPLE.createChild('/accountManager');
       r.LOCK_SCREEN = r.PEOPLE.createChild('/lockScreen');
       r.FINGERPRINT = r.LOCK_SCREEN.createChild('/lockScreen/fingerprint');
       // </if>
@@ -388,8 +394,6 @@ cr.define('settings', function() {
           r.ACCESSIBILITY.createChild('/manageAccessibility');
       r.MANAGE_TTS_SETTINGS =
           r.MANAGE_ACCESSIBILITY.createChild('/manageAccessibility/tts');
-      r.MANAGE_GOOGLE_TTS_ENGINE_SETTINGS = r.MANAGE_TTS_SETTINGS.createChild(
-          '/manageAccessibility/tts/googleTtsEngine');
       // </if>
 
       r.SYSTEM = r.ADVANCED.createSection('/system', 'system');
@@ -402,10 +406,7 @@ cr.define('settings', function() {
             r.ADVANCED.createChild('/triggeredResetProfileSettings');
         r.TRIGGERED_RESET_DIALOG.isNavigableDialog = true;
         // <if expr="_google_chrome and is_win">
-        // This should only be added if the feature is enabled.
-        if (loadTimeData.getBoolean('userInitiatedCleanupsEnabled')) {
-          r.CHROME_CLEANUP = r.RESET.createChild('/cleanup');
-        }
+        r.CHROME_CLEANUP = r.RESET.createChild('/cleanup');
         if (loadTimeData.getBoolean('showIncompatibleApplications')) {
           r.INCOMPATIBLE_APPLICATIONS =
               r.RESET.createChild('/incompatibleApplications');

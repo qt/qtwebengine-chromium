@@ -68,7 +68,7 @@ std::unique_ptr<net::HttpRequestHeaders> CreateNetHttpRequestHeaders(
 
 namespace CORS {
 
-WTF::Optional<network::mojom::CORSError> CheckAccess(
+base::Optional<network::mojom::CORSError> CheckAccess(
     const KURL& response_url,
     const int response_status_code,
     const HTTPHeaderMap& response_header,
@@ -85,7 +85,24 @@ WTF::Optional<network::mojom::CORSError> CheckAccess(
       !privilege->block_local_access_from_local_origin_);
 }
 
-WTF::Optional<network::mojom::CORSError> CheckRedirectLocation(
+base::Optional<network::mojom::CORSError> CheckPreflightAccess(
+    const KURL& response_url,
+    const int response_status_code,
+    const HTTPHeaderMap& response_header,
+    network::mojom::FetchCredentialsMode actual_credentials_mode,
+    const SecurityOrigin& origin) {
+  std::unique_ptr<SecurityOrigin::PrivilegeData> privilege =
+      origin.CreatePrivilegeData();
+  return network::cors::CheckPreflightAccess(
+      response_url, response_status_code,
+      GetHeaderValue(response_header, HTTPNames::Access_Control_Allow_Origin),
+      GetHeaderValue(response_header,
+                     HTTPNames::Access_Control_Allow_Credentials),
+      actual_credentials_mode, origin.ToUrlOrigin(),
+      !privilege->block_local_access_from_local_origin_);
+}
+
+base::Optional<network::mojom::CORSError> CheckRedirectLocation(
     const KURL& url) {
   static const bool run_blink_side_scheme_check =
       !RuntimeEnabledFeatures::OutOfBlinkCORSEnabled();
@@ -99,12 +116,12 @@ WTF::Optional<network::mojom::CORSError> CheckRedirectLocation(
   return network::cors::CheckRedirectLocation(url, run_blink_side_scheme_check);
 }
 
-WTF::Optional<network::mojom::CORSError> CheckPreflight(
+base::Optional<network::mojom::CORSError> CheckPreflight(
     const int preflight_response_status_code) {
   return network::cors::CheckPreflight(preflight_response_status_code);
 }
 
-WTF::Optional<network::mojom::CORSError> CheckExternalPreflight(
+base::Optional<network::mojom::CORSError> CheckExternalPreflight(
     const HTTPHeaderMap& response_header) {
   return network::cors::CheckExternalPreflight(GetHeaderValue(
       response_header, HTTPNames::Access_Control_Allow_External));
@@ -208,6 +225,34 @@ bool IsCORSSafelistedHeader(const String& name, const String& value) {
   return network::cors::IsCORSSafelistedHeader(
       std::string(utf8_name.data(), utf8_name.length()),
       std::string(utf8_value.data(), utf8_value.length()));
+}
+
+bool IsForbiddenHeaderName(const String& name) {
+  CString utf8_name = name.Utf8();
+  return network::cors::IsForbiddenHeader(
+      std::string(utf8_name.data(), utf8_name.length()));
+}
+
+bool ContainsOnlyCORSSafelistedHeaders(const HTTPHeaderMap& header_map) {
+  for (const auto& header : header_map) {
+    if (!IsCORSSafelistedHeader(header.key, header.value))
+      return false;
+  }
+  return true;
+}
+
+bool ContainsOnlyCORSSafelistedOrForbiddenHeaders(
+    const HTTPHeaderMap& header_map) {
+  for (const auto& header : header_map) {
+    if (!IsCORSSafelistedHeader(header.key, header.value) &&
+        !IsForbiddenHeaderName(header.key))
+      return false;
+  }
+  return true;
+}
+
+bool IsOkStatus(int status) {
+  return network::cors::IsOkStatus(status);
 }
 
 }  // namespace CORS

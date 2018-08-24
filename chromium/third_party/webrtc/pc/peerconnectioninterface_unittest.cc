@@ -22,6 +22,8 @@
 #include "api/rtpreceiverinterface.h"
 #include "api/rtpsenderinterface.h"
 #include "api/test/fakeconstraints.h"
+#include "api/video_codecs/builtin_video_decoder_factory.h"
+#include "api/video_codecs/builtin_video_encoder_factory.h"
 #include "logging/rtc_event_log/output/rtc_event_log_output_file.h"
 #include "media/base/fakevideocapturer.h"
 #include "media/engine/webrtcmediaengine.h"
@@ -632,13 +634,16 @@ class PeerConnectionFactoryForTest : public webrtc::PeerConnectionFactory {
   CreatePeerConnectionFactoryForTest() {
     auto audio_encoder_factory = webrtc::CreateBuiltinAudioEncoderFactory();
     auto audio_decoder_factory = webrtc::CreateBuiltinAudioDecoderFactory();
+    auto video_encoder_factory = webrtc::CreateBuiltinVideoEncoderFactory();
+    auto video_decoder_factory = webrtc::CreateBuiltinVideoDecoderFactory();
 
     // Use fake audio device module since we're only testing the interface
     // level, and using a real one could make tests flaky when run in parallel.
     auto media_engine = std::unique_ptr<cricket::MediaEngineInterface>(
         cricket::WebRtcMediaEngineFactory::Create(
             FakeAudioCaptureModule::Create(), audio_encoder_factory,
-            audio_decoder_factory, nullptr, nullptr, nullptr,
+            audio_decoder_factory, std::move(video_encoder_factory),
+            std::move(video_decoder_factory), nullptr,
             webrtc::AudioProcessingBuilder().Create()));
 
     std::unique_ptr<webrtc::CallFactoryInterface> call_factory =
@@ -688,8 +693,13 @@ class PeerConnectionInterfaceBaseTest : public testing::Test {
     fake_audio_capture_module_ = FakeAudioCaptureModule::Create();
     pc_factory_ = webrtc::CreatePeerConnectionFactory(
         rtc::Thread::Current(), rtc::Thread::Current(), rtc::Thread::Current(),
-        fake_audio_capture_module_, webrtc::CreateBuiltinAudioEncoderFactory(),
-        webrtc::CreateBuiltinAudioDecoderFactory(), nullptr, nullptr);
+        rtc::scoped_refptr<webrtc::AudioDeviceModule>(
+            fake_audio_capture_module_),
+        webrtc::CreateBuiltinAudioEncoderFactory(),
+        webrtc::CreateBuiltinAudioDecoderFactory(),
+        webrtc::CreateBuiltinVideoEncoderFactory(),
+        webrtc::CreateBuiltinVideoDecoderFactory(), nullptr /* audio_mixer */,
+        nullptr /* audio_processing */);
     ASSERT_TRUE(pc_factory_);
     pc_factory_for_test_ =
         PeerConnectionFactoryForTest::CreatePeerConnectionFactoryForTest();
@@ -1398,7 +1408,10 @@ TEST_P(PeerConnectionInterfaceTest,
           rtc::Thread::Current(), rtc::Thread::Current(),
           rtc::Thread::Current(), fake_audio_capture_module_,
           webrtc::CreateBuiltinAudioEncoderFactory(),
-          webrtc::CreateBuiltinAudioDecoderFactory(), nullptr, nullptr));
+          webrtc::CreateBuiltinAudioDecoderFactory(),
+          webrtc::CreateBuiltinVideoEncoderFactory(),
+          webrtc::CreateBuiltinVideoDecoderFactory(), nullptr /* audio_mixer */,
+          nullptr /* audio_processing */));
   rtc::scoped_refptr<PeerConnectionInterface> pc(
       pc_factory->CreatePeerConnection(
           config, nullptr, std::move(port_allocator), nullptr, &observer_));
@@ -1412,31 +1425,6 @@ TEST_P(PeerConnectionInterfaceTest,
   EXPECT_TRUE(raw_port_allocator->flags() &
               cricket::PORTALLOCATOR_DISABLE_COSTLY_NETWORKS);
   EXPECT_TRUE(raw_port_allocator->prune_turn_ports());
-}
-
-// Test that the PeerConnection initializes the port allocator passed into it,
-// and on the correct thread.
-TEST_P(PeerConnectionInterfaceTest,
-       CreatePeerConnectionInitializesPortAllocatorOnNetworkThread) {
-  std::unique_ptr<rtc::Thread> network_thread(
-      rtc::Thread::CreateWithSocketServer());
-  network_thread->Start();
-  rtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface> pc_factory(
-      webrtc::CreatePeerConnectionFactory(
-          network_thread.get(), rtc::Thread::Current(), rtc::Thread::Current(),
-          fake_audio_capture_module_,
-          webrtc::CreateBuiltinAudioEncoderFactory(),
-          webrtc::CreateBuiltinAudioDecoderFactory(), nullptr, nullptr));
-  std::unique_ptr<cricket::FakePortAllocator> port_allocator(
-      new cricket::FakePortAllocator(network_thread.get(), nullptr));
-  cricket::FakePortAllocator* raw_port_allocator = port_allocator.get();
-  PeerConnectionInterface::RTCConfiguration config;
-  rtc::scoped_refptr<PeerConnectionInterface> pc(
-      pc_factory->CreatePeerConnection(
-          config, nullptr, std::move(port_allocator), nullptr, &observer_));
-  // FakePortAllocator RTC_CHECKs that it's initialized on the right thread,
-  // so all we have to do here is check that it's initialized.
-  EXPECT_TRUE(raw_port_allocator->initialized());
 }
 
 // Check that GetConfiguration returns the configuration the PeerConnection was
@@ -1463,6 +1451,15 @@ TEST_P(PeerConnectionInterfaceTest, GetConfigurationAfterSetConfiguration) {
   PeerConnectionInterface::RTCConfiguration returned_config =
       pc_->GetConfiguration();
   EXPECT_EQ(PeerConnectionInterface::kRelay, returned_config.type);
+}
+
+TEST_P(PeerConnectionInterfaceTest, SetConfigurationFailsAfterClose) {
+  CreatePeerConnection();
+
+  pc_->Close();
+
+  EXPECT_FALSE(
+      pc_->SetConfiguration(PeerConnectionInterface::RTCConfiguration()));
 }
 
 TEST_F(PeerConnectionInterfaceTestPlanB, AddStreams) {
@@ -3778,7 +3775,7 @@ TEST_P(PeerConnectionInterfaceTest,
   CreatePeerConnection(config, nullptr);
 }
 
-// The current bitrate from Call's BitrateConstraintsMask is currently clamped
+// The current bitrate from BitrateSettings is currently clamped
 // by Call's BitrateConstraints, which comes from the SDP or a default value.
 // This test checks that a call to SetBitrate with a current bitrate that will
 // be clamped succeeds.

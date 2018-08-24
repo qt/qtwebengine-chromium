@@ -426,13 +426,16 @@ viz::ScopedSurfaceIdAllocator WindowPortMus::GetSurfaceIdAllocator(
                                        std::move(allocation_task));
 }
 
+void WindowPortMus::UpdateLocalSurfaceIdFromEmbeddedClient(
+    const viz::LocalSurfaceId& embedded_client_local_surface_id) {
+  parent_local_surface_id_allocator_.UpdateFromChild(
+      embedded_client_local_surface_id);
+  local_surface_id_ =
+      parent_local_surface_id_allocator_.GetCurrentLocalSurfaceId();
+}
+
 const viz::LocalSurfaceId& WindowPortMus::GetLocalSurfaceId() {
-  if (base::FeatureList::IsEnabled(features::kMash))
-    return local_surface_id_;
-  if (!window_->IsEmbeddingClient() && !window_->IsRootWindow())
-    return local_surface_id_;
-  return GetOrAllocateLocalSurfaceId(gfx::ConvertSizeToPixel(
-      GetDeviceScaleFactor(), window_->bounds().size()));
+  return local_surface_id_;
 }
 
 std::unique_ptr<WindowMusChangeData>
@@ -481,7 +484,8 @@ void WindowPortMus::OnPreInit(Window* window) {
 
 void WindowPortMus::OnDeviceScaleFactorChanged(float old_device_scale_factor,
                                                float new_device_scale_factor) {
-  if (local_surface_id_.is_valid() && local_layer_tree_frame_sink_) {
+  if (!window_->IsRootWindow() && local_surface_id_.is_valid() &&
+      local_layer_tree_frame_sink_) {
     local_surface_id_ = parent_local_surface_id_allocator_.GenerateId();
     local_layer_tree_frame_sink_->SetLocalSurfaceId(local_surface_id_);
   }
@@ -580,29 +584,12 @@ WindowPortMus::CreateLayerTreeFrameSink() {
   DCHECK(!local_layer_tree_frame_sink_);
 
   std::unique_ptr<cc::LayerTreeFrameSink> frame_sink;
-  if (base::FeatureList::IsEnabled(features::kMash)) {
-    auto client_layer_tree_frame_sink =
-        RequestLayerTreeFrameSink(nullptr, aura::Env::GetInstance()
-                                               ->context_factory()
-                                               ->GetGpuMemoryBufferManager());
-    local_layer_tree_frame_sink_ = client_layer_tree_frame_sink->GetWeakPtr();
-    frame_sink = std::move(client_layer_tree_frame_sink);
-    window_->SetEmbedFrameSinkId(GenerateFrameSinkIdFromServerId());
-  } else {
-    auto* context_factory_private =
-        aura::Env::GetInstance()->context_factory_private();
-    auto frame_sink_id = window_->GetFrameSinkId();
-    DCHECK(frame_sink_id.is_valid());
-    auto layer_tree_frame_sink_local =
-        std::make_unique<LayerTreeFrameSinkLocal>(
-            frame_sink_id, context_factory_private->GetHostFrameSinkManager(),
-            window_->GetName());
-    layer_tree_frame_sink_local->SetSurfaceChangedCallback(base::BindRepeating(
-        &WindowPortMus::OnSurfaceChanged, weak_ptr_factory_.GetWeakPtr()));
-    window_->SetEmbedFrameSinkId(frame_sink_id);
-    local_layer_tree_frame_sink_ = layer_tree_frame_sink_local->GetWeakPtr();
-    frame_sink = std::move(layer_tree_frame_sink_local);
-  }
+  auto client_layer_tree_frame_sink = RequestLayerTreeFrameSink(
+      nullptr,
+      aura::Env::GetInstance()->context_factory()->GetGpuMemoryBufferManager());
+  local_layer_tree_frame_sink_ = client_layer_tree_frame_sink->GetWeakPtr();
+  frame_sink = std::move(client_layer_tree_frame_sink);
+  window_->SetEmbedFrameSinkId(GenerateFrameSinkIdFromServerId());
 
   gfx::Size size_in_pixel =
       gfx::ConvertSizeToPixel(GetDeviceScaleFactor(), window_->bounds().size());
@@ -637,8 +624,6 @@ void WindowPortMus::UpdatePrimarySurfaceId() {
 }
 
 void WindowPortMus::UpdateClientSurfaceEmbedder() {
-  if (!base::FeatureList::IsEnabled(features::kMash))
-    return;
   if (window_mus_type() != WindowMusType::TOP_LEVEL_IN_WM &&
       window_mus_type() != WindowMusType::EMBED_IN_OWNER &&
       window_mus_type() != WindowMusType::DISPLAY_MANUALLY_CREATED &&
@@ -659,14 +644,7 @@ void WindowPortMus::UpdateClientSurfaceEmbedder() {
 void WindowPortMus::OnSurfaceChanged(const viz::SurfaceInfo& surface_info) {
   // TODO(fsamuel): Rename OnFirstSurfaceActivation() and set primary earlier
   // based on feedback from LayerTreeFrameSinkLocal.
-  DCHECK(!base::FeatureList::IsEnabled(features::kMash));
-  DCHECK_EQ(surface_info.id().frame_sink_id(), window_->GetFrameSinkId());
-  DCHECK_EQ(surface_info.id().local_surface_id(), local_surface_id_);
-  window_->layer()->SetShowPrimarySurface(
-      surface_info.id(), window_->bounds().size(), SK_ColorWHITE,
-      cc::DeadlinePolicy::UseDefaultDeadline(),
-      false /* stretch_content_to_fill_bounds */);
-  window_->layer()->SetFallbackSurfaceId(surface_info.id());
+  NOTREACHED();
 }
 
 }  // namespace aura

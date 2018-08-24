@@ -1673,6 +1673,17 @@ _NAMED_TYPE_INFO = {
       'GL_EXCLUSIVE_EXT',
     ],
   },
+  'SwapBuffersFlags': {
+    'type': 'GLbitfield',
+    'is_complete': True,
+    'valid': [
+      '0',
+      'gpu::SwapBuffersFlags::kPresentationFeedback',
+      'gpu::SwapBuffersFlags::kVSyncParams',
+      'gpu::SwapBuffersFlags::kPresentationFeedback | '
+      'gpu::SwapBuffersFlags::kVSyncParams',
+    ],
+  },
 }
 
 # A function info object specifies the type and other special data for the
@@ -1714,7 +1725,6 @@ _NAMED_TYPE_INFO = {
 #               bind function.
 # states:       array of states that get set by this function corresponding to
 #               the given arguments
-# state_flag:   name of flag that is set to true when function is called.
 # no_gl:        no GL function is called.
 # valid_args:   A dictionary of argument indices to args to use in unit tests
 #               when they can not be automatically determined.
@@ -1915,6 +1925,7 @@ _FUNCTION_INFO = {
   },
   'CopyBufferSubData': {
     'decoder_func': 'DoCopyBufferSubData',
+    'impl_func': False,
     'unit_test': False,
     'es3': True,
   },
@@ -2350,17 +2361,6 @@ _FUNCTION_INFO = {
         'GLidProgram program, uint32_t name_bucket_id, GLint* location',
     'result': ['GLint'],
     'error_return': -1,
-  },
-  'GetBufferSubDataAsyncCHROMIUM': {
-    'type': 'Custom',
-    'data_transfer_methods': ['shm'],
-    'cmd_args': 'GLenumBufferTarget target, GLintptrNotNegative offset, '
-                'GLsizeiptr size, '
-                'uint32_t data_shm_id, uint32_t data_shm_offset',
-    'es3': True,
-    'impl_func': False,
-    'client_test': False,
-    'trace_level': 1,
   },
   'GetFragDataIndexEXT': {
     'type': 'Custom',
@@ -3738,7 +3738,7 @@ _FUNCTION_INFO = {
     'client_test': False,
     'cmd_args': 'GLsizei num_textures, GLuint background_color, '
                 'GLuint edge_aa_mask, GLuint filter, GLuint shm_id, '
-                'GLuint shm_offset',
+                'GLuint shm_offset, bool is_protected_video',
     'extension': 'CHROMIUM_schedule_ca_layer',
   },
   'CommitOverlayPlanesCHROMIUM': {
@@ -3920,10 +3920,13 @@ _FUNCTION_INFO = {
     'extension_flag': 'chromium_raster_transport',
   },
   'RasterCHROMIUM': {
-    'type': 'Data',
-    'internal': True,
     'decoder_func': 'DoRasterCHROMIUM',
-    'data_transfer_methods': ['shm'],
+    'internal': True,
+    'impl_func': True,
+    'unit_test': False,
+    'cmd_args': 'GLuint raster_shm_id, GLuint raster_shm_offset,'
+                'GLsizeiptr raster_shm_size, GLuint font_shm_id,'
+                'GLuint font_shm_offset, GLsizeiptr font_shm_size',
     'extension': 'CHROMIUM_raster_transport',
     'extension_flag': 'chromium_raster_transport',
   },
@@ -3932,6 +3935,10 @@ _FUNCTION_INFO = {
     'extension': "CHROMIUM_raster_transport",
   },
   'UnmapRasterCHROMIUM': {
+    'type': 'NoCommand',
+    'extension': "CHROMIUM_raster_transport",
+  },
+  'MapFontBufferCHROMIUM': {
     'type': 'NoCommand',
     'extension': "CHROMIUM_raster_transport",
   },

@@ -60,6 +60,9 @@ class MockDrmDevice : public DrmDevice {
   void RunCallbacks();
 
   // DrmDevice:
+  ScopedDrmResourcesPtr GetResources() override;
+  ScopedDrmObjectPropertyPtr GetObjectProperties(uint32_t object_id,
+                                                 uint32_t object_type) override;
   ScopedDrmCrtcPtr GetCrtc(uint32_t crtc_id) override;
   bool SetCrtc(uint32_t crtc_id,
                uint32_t framebuffer,
@@ -81,7 +84,7 @@ class MockDrmDevice : public DrmDevice {
   ScopedDrmFramebufferPtr GetFramebuffer(uint32_t framebuffer) override;
   bool PageFlip(uint32_t crtc_id,
                 uint32_t framebuffer,
-                const PageFlipCallback& callback) override;
+                PageFlipCallback callback) override;
   bool PageFlipOverlay(uint32_t crtc_id,
                        uint32_t framebuffer,
                        const gfx::Rect& location,
@@ -89,6 +92,7 @@ class MockDrmDevice : public DrmDevice {
                        int overlay_plane) override;
   ScopedDrmPropertyPtr GetProperty(drmModeConnector* connector,
                                    const char* name) override;
+  ScopedDrmPropertyPtr GetProperty(uint32_t id) override;
   bool SetProperty(uint32_t connector_id,
                    uint32_t property_id,
                    uint64_t value) override;
@@ -109,12 +113,10 @@ class MockDrmDevice : public DrmDevice {
   bool CommitProperties(drmModeAtomicReq* properties,
                         uint32_t flags,
                         uint32_t crtc_count,
-                        const PageFlipCallback& callback) override;
-  bool SetColorCorrection(
+                        PageFlipCallback callback) override;
+  bool SetGammaRamp(
       uint32_t crtc_id,
-      const std::vector<display::GammaRampRGBEntry>& degamma_lut,
-      const std::vector<display::GammaRampRGBEntry>& gamma_lut,
-      const std::vector<float>& correction_matrix) override;
+      const std::vector<display::GammaRampRGBEntry>& lut) override;
   bool SetCapability(uint64_t capability, uint64_t value) override;
 
  private:

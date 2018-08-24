@@ -15,7 +15,6 @@
 #include "content/browser/renderer_host/input/gesture_event_queue.h"
 #include "content/browser/renderer_host/input/input_disposition_handler.h"
 #include "content/browser/renderer_host/input/input_router_client.h"
-#include "content/browser/renderer_host/input/touchpad_tap_suppression_controller.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/edit_command.h"
 #include "content/common/input/input_handler.mojom.h"
@@ -69,9 +68,11 @@ ui::WebScopedInputEvent ScaleEvent(const WebInputEvent& event, double scale) {
 
 }  // namespace
 
-InputRouterImpl::InputRouterImpl(InputRouterImplClient* client,
-                                 InputDispositionHandler* disposition_handler,
-                                 const Config& config)
+InputRouterImpl::InputRouterImpl(
+    InputRouterImplClient* client,
+    InputDispositionHandler* disposition_handler,
+    FlingControllerSchedulerClient* fling_scheduler_client,
+    const Config& config)
     : client_(client),
       disposition_handler_(disposition_handler),
       frame_tree_node_id_(-1),
@@ -81,7 +82,10 @@ InputRouterImpl::InputRouterImpl(InputRouterImplClient* client,
           features::kTouchpadAndWheelScrollLatching)),
       wheel_event_queue_(this, wheel_scroll_latching_enabled_),
       touch_event_queue_(this, config.touch_config),
-      gesture_event_queue_(this, this, this, config.gesture_config),
+      gesture_event_queue_(this,
+                           this,
+                           fling_scheduler_client,
+                           config.gesture_config),
       device_scale_factor_(1.f),
       host_binding_(this),
       frame_host_binding_(this),
@@ -90,6 +94,7 @@ InputRouterImpl::InputRouterImpl(InputRouterImplClient* client,
 
   DCHECK(client);
   DCHECK(disposition_handler);
+  DCHECK(fling_scheduler_client);
   UpdateTouchAckTimeoutEnabled();
 }
 
@@ -99,7 +104,7 @@ void InputRouterImpl::SendMouseEvent(
     const MouseEventWithLatencyInfo& mouse_event) {
   if (mouse_event.event.GetType() == WebInputEvent::kMouseDown &&
       gesture_event_queue_.GetTouchpadTapSuppressionController()
-          ->ShouldDeferMouseDown(mouse_event))
+          ->ShouldSuppressMouseDown(mouse_event))
     return;
   if (mouse_event.event.GetType() == WebInputEvent::kMouseUp &&
       gesture_event_queue_.GetTouchpadTapSuppressionController()
@@ -131,7 +136,8 @@ void InputRouterImpl::SendGestureEvent(
 
   GestureEventWithLatencyInfo gesture_event(original_gesture_event);
 
-  if (touch_action_filter_.FilterGestureEvent(&gesture_event.event)) {
+  if (touch_action_filter_.FilterGestureEvent(&gesture_event.event) ==
+      FilterGestureEventResult::kFilterGestureEventFiltered) {
     disposition_handler_->OnGestureEventAck(gesture_event,
                                             InputEventAckSource::BROWSER,
                                             INPUT_EVENT_ACK_STATE_CONSUMED);
@@ -209,21 +215,12 @@ void InputRouterImpl::BindHost(mojom::WidgetInputHandlerHostRequest request,
   }
 }
 
-void InputRouterImpl::ProgressFling(base::TimeTicks current_time) {
-  current_fling_velocity_ = gesture_event_queue_.ProgressFling(current_time);
-}
-
 void InputRouterImpl::StopFling() {
   gesture_event_queue_.StopFling();
 }
 
 bool InputRouterImpl::FlingCancellationIsDeferred() {
   return gesture_event_queue_.FlingCancellationIsDeferred();
-}
-
-void InputRouterImpl::DidStopFlingingOnBrowser() {
-  current_fling_velocity_ = gfx::Vector2dF();
-  client_->DidStopFlinging();
 }
 
 void InputRouterImpl::CancelTouchTimeout() {
@@ -243,7 +240,8 @@ void InputRouterImpl::SetWhiteListedTouchAction(cc::TouchAction touch_action,
 void InputRouterImpl::DidOverscroll(const ui::DidOverscrollParams& params) {
   // Touchpad and Touchscreen flings are handled on the browser side.
   ui::DidOverscrollParams fling_updated_params = params;
-  fling_updated_params.current_fling_velocity = current_fling_velocity_;
+  fling_updated_params.current_fling_velocity =
+      gesture_event_queue_.CurrentFlingVelocity();
   client_->DidOverscroll(fling_updated_params);
 }
 
@@ -268,6 +266,10 @@ void InputRouterImpl::ImeCompositionRangeChanged(
     const gfx::Range& range,
     const std::vector<gfx::Rect>& bounds) {
   client_->OnImeCompositionRangeChanged(range, bounds);
+}
+
+void InputRouterImpl::SetMouseCapture(bool capture) {
+  client_->SetMouseCapture(capture);
 }
 
 bool InputRouterImpl::OnMessageReceived(const IPC::Message& message) {
@@ -390,10 +392,6 @@ void InputRouterImpl::SendGeneratedGestureScrollEvents(
                                               gesture_event.latency);
 }
 
-void InputRouterImpl::SetNeedsBeginFrameForFlingProgress() {
-  client_->SetNeedsBeginFrameForFlingProgress();
-}
-
 void InputRouterImpl::SendMouseWheelEventImmediately(
     const MouseWheelEventWithLatencyInfo& wheel_event) {
   mojom::WidgetInputHandler::DispatchEventCallback callback = base::BindOnce(
@@ -413,6 +411,10 @@ void InputRouterImpl::ForwardGestureEventWithLatencyInfo(
     const blink::WebGestureEvent& event,
     const ui::LatencyInfo& latency_info) {
   client_->ForwardGestureEventWithLatencyInfo(event, latency_info);
+}
+
+bool InputRouterImpl::IsWheelScrollInProgress() {
+  return client_->IsWheelScrollInProgress();
 }
 
 void InputRouterImpl::FilterAndSendWebInputEvent(

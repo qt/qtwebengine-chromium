@@ -14,7 +14,6 @@
 #include "ash/wm/wm_event.h"
 #include "ash/wm/workspace/workspace_window_resizer.h"
 #include "ash/wm/workspace_controller_test_api.h"
-#include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/exo/buffer.h"
@@ -170,6 +169,8 @@ TEST_F(ShellSurfaceTest, Minimize) {
   std::unique_ptr<Surface> surface(new Surface);
   std::unique_ptr<ShellSurface> shell_surface(new ShellSurface(surface.get()));
 
+  EXPECT_TRUE(shell_surface->CanMinimize());
+
   // Minimizing can be performed before the surface is committed.
   shell_surface->Minimize();
   EXPECT_TRUE(shell_surface->GetWidget()->IsMinimized());
@@ -182,8 +183,15 @@ TEST_F(ShellSurfaceTest, Minimize) {
   shell_surface->Restore();
   EXPECT_FALSE(shell_surface->GetWidget()->IsMinimized());
 
-  shell_surface->Minimize();
-  EXPECT_TRUE(shell_surface->GetWidget()->IsMinimized());
+  std::unique_ptr<Surface> child_surface(new Surface);
+  std::unique_ptr<ShellSurface> child_shell_surface(
+      new ShellSurface(child_surface.get()));
+
+  // Transient shell surfaces cannot be minimized.
+  child_surface->SetParent(surface.get(), gfx::Point());
+  child_surface->Attach(buffer.get());
+  child_surface->Commit();
+  EXPECT_FALSE(child_shell_surface->CanMinimize());
 }
 
 TEST_F(ShellSurfaceTest, Restore) {
@@ -241,12 +249,9 @@ TEST_F(ShellSurfaceTest, SetTitle) {
   // have the specified title.
   EXPECT_EQ(base::ASCIIToUTF16("test"),
             shell_surface->GetWidget()->GetNativeWindow()->GetTitle());
-  const ash::CustomFrameViewAsh* frame =
-      static_cast<const ash::CustomFrameViewAsh*>(
-          shell_surface->GetWidget()->non_client_view()->frame_view());
-  // Frame's title is the string to be shown in the title bar. This should be
-  // empty.
-  EXPECT_EQ(base::string16(), frame->GetFrameTitle());
+  // The titlebar shouldn't show the title.
+  EXPECT_FALSE(
+      shell_surface->GetWidget()->widget_delegate()->ShouldShowWindowTitle());
 }
 
 TEST_F(ShellSurfaceTest, SetApplicationId) {
@@ -355,6 +360,15 @@ TEST_F(ShellSurfaceTest, SetMinimumSize) {
                       ->GetNativeWindow()
                       ->delegate()
                       ->GetMinimumSize());
+
+  gfx::Size size_with_frame(50, 82);
+  surface->SetFrame(SurfaceFrameType::NORMAL);
+  EXPECT_EQ(size, shell_surface->GetMinimumSize());
+  EXPECT_EQ(size_with_frame, shell_surface->GetWidget()->GetMinimumSize());
+  EXPECT_EQ(size_with_frame, shell_surface->GetWidget()
+                                 ->GetNativeWindow()
+                                 ->delegate()
+                                 ->GetMinimumSize());
 }
 
 TEST_F(ShellSurfaceTest, SetMaximumSize) {

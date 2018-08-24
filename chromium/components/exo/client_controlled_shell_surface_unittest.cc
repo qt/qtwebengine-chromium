@@ -4,6 +4,7 @@
 
 #include "components/exo/client_controlled_shell_surface.h"
 
+#include "ash/display/screen_orientation_controller.h"
 #include "ash/frame/caption_buttons/caption_button_model.h"
 #include "ash/frame/caption_buttons/frame_caption_button_container_view.h"
 #include "ash/frame/custom_frame_view_ash.h"
@@ -63,6 +64,11 @@ bool IsWidgetPinned(views::Widget* widget) {
 
 int GetShadowElevation(aura::Window* window) {
   return window->GetProperty(wm::kShadowElevationKey);
+}
+
+void EnableTabletMode(bool enable) {
+  ash::Shell::Get()->tablet_mode_controller()->EnableTabletModeWindowManager(
+      enable);
 }
 
 }  // namespace
@@ -451,7 +457,7 @@ TEST_F(ClientControlledShellSurfaceTest, Frame) {
   gfx::Rect client_bounds(20, 50, 300, 200);
   gfx::Rect fullscreen_bounds(0, 0, 800, 500);
   // The window bounds is the client bounds + frame size.
-  gfx::Rect normal_window_bounds(20, 17, 300, 233);
+  gfx::Rect normal_window_bounds(20, 18, 300, 232);
 
   auto shell_surface =
       exo_test_helper()->CreateClientControlledShellSurface(surface.get());
@@ -478,7 +484,7 @@ TEST_F(ClientControlledShellSurfaceTest, Frame) {
   EXPECT_TRUE(frame_view->visible());
   EXPECT_EQ(fullscreen_bounds, widget->GetWindowBoundsInScreen());
   EXPECT_EQ(
-      gfx::Size(800, 467),
+      gfx::Size(800, 468),
       frame_view->GetClientBoundsForWindowBounds(fullscreen_bounds).size());
 
   // AutoHide
@@ -1056,27 +1062,24 @@ TEST_F(ClientControlledShellSurfaceTest, SetExtraTitle) {
   surface->Attach(buffer.get());
   surface->Commit();
 
-  // NativeWindow's title is used within the overview mode. It should be the
-  // specified title, as ShellSurface does. On the other hand, the frame's
-  // GetWindowTitle() should return the extra -- showing the debugging info
-  // in the title bar but otherwise it should have empty string.
-  // See https://crbug.com/831383.
+  // The window title should include the debugging info, if any, and should only
+  // be shown (in the frame) when there is debugging info. See
+  // https://crbug.com/831383.
   const aura::Window* window = shell_surface->GetWidget()->GetNativeWindow();
-  const ash::CustomFrameViewAsh* frame =
-      static_cast<const ash::CustomFrameViewAsh*>(
-          shell_surface->GetWidget()->non_client_view()->frame_view());
+  const views::WidgetDelegate* widget_delegate =
+      shell_surface->GetWidget()->widget_delegate();
 
   shell_surface->SetExtraTitle(base::ASCIIToUTF16("extra"));
-  EXPECT_EQ(base::string16(), window->GetTitle());
-  EXPECT_EQ(base::ASCIIToUTF16("extra"), frame->GetFrameTitle());
+  EXPECT_EQ(base::ASCIIToUTF16(" (extra)"), window->GetTitle());
+  EXPECT_TRUE(widget_delegate->ShouldShowWindowTitle());
 
   shell_surface->SetTitle(base::ASCIIToUTF16("title"));
-  EXPECT_EQ(base::ASCIIToUTF16("title"), window->GetTitle());
-  EXPECT_EQ(base::ASCIIToUTF16("extra"), frame->GetFrameTitle());
+  EXPECT_EQ(base::ASCIIToUTF16("title (extra)"), window->GetTitle());
+  EXPECT_TRUE(widget_delegate->ShouldShowWindowTitle());
 
   shell_surface->SetExtraTitle(base::string16());
   EXPECT_EQ(base::ASCIIToUTF16("title"), window->GetTitle());
-  EXPECT_EQ(base::string16(), frame->GetFrameTitle());
+  EXPECT_FALSE(widget_delegate->ShouldShowWindowTitle());
 }
 
 TEST_F(ClientControlledShellSurfaceTest, WideFrame) {
@@ -1160,6 +1163,66 @@ TEST_F(ClientControlledShellSurfaceTest, MultiDisplay) {
     EXPECT_EQ(gfx::Point(100, 0).ToString(),
               display.bounds().origin().ToString());
   }
+}
+
+// Set orientation lock to a window.
+TEST_F(ClientControlledShellSurfaceTest, SetOrientationLock) {
+  display::test::DisplayManagerTestApi(ash::Shell::Get()->display_manager())
+      .SetFirstDisplayAsInternalDisplay();
+
+  EnableTabletMode(true);
+  ash::ScreenOrientationController* controller =
+      ash::Shell::Get()->screen_orientation_controller();
+
+  gfx::Size buffer_size(256, 256);
+  std::unique_ptr<Buffer> buffer(
+      new Buffer(exo_test_helper()->CreateGpuMemoryBuffer(buffer_size)));
+  std::unique_ptr<Surface> surface(new Surface);
+
+  auto shell_surface =
+      exo_test_helper()->CreateClientControlledShellSurface(surface.get());
+  surface->Attach(buffer.get());
+  shell_surface->SetMaximized();
+  surface->Commit();
+
+  shell_surface->SetOrientationLock(
+      ash::OrientationLockType::kLandscapePrimary);
+  EXPECT_TRUE(controller->rotation_locked());
+  display::Display display(display::Screen::GetScreen()->GetPrimaryDisplay());
+  gfx::Size displaySize = display.size();
+  EXPECT_GT(displaySize.width(), displaySize.height());
+
+  shell_surface->SetOrientationLock(ash::OrientationLockType::kAny);
+  EXPECT_FALSE(controller->rotation_locked());
+
+  EnableTabletMode(false);
+}
+
+// Tests adjust bounds locally should also request remote client bounds update.
+TEST_F(ClientControlledShellSurfaceTest, AdjustBoundsLocally) {
+  UpdateDisplay("800x600");
+  std::unique_ptr<Buffer> buffer(
+      new Buffer(exo_test_helper()->CreateGpuMemoryBuffer(gfx::Size(64, 64))));
+  std::unique_ptr<Surface> surface(new Surface);
+  auto shell_surface =
+      exo_test_helper()->CreateClientControlledShellSurface(surface.get());
+  gfx::Rect requested_bounds;
+  shell_surface->set_bounds_changed_callback(base::BindRepeating(
+      [](gfx::Rect* dst, ash::mojom::WindowStateType current_state,
+         ash::mojom::WindowStateType requested_state, int64_t display_id,
+         const gfx::Rect& bounds, bool is_resize,
+         int bounds_change) { *dst = bounds; },
+      base::Unretained(&requested_bounds)));
+  surface->Attach(buffer.get());
+  surface->Commit();
+
+  gfx::Rect client_bounds(900, 0, 200, 300);
+  shell_surface->SetGeometry(client_bounds);
+  surface->Commit();
+
+  views::Widget* widget = shell_surface->GetWidget();
+  EXPECT_EQ(gfx::Rect(774, 0, 200, 300), widget->GetWindowBoundsInScreen());
+  EXPECT_EQ(gfx::Rect(774, 0, 200, 300), requested_bounds);
 }
 
 }  // namespace exo

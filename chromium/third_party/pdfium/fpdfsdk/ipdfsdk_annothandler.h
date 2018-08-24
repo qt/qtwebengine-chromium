@@ -35,9 +35,14 @@ class IPDFSDK_AnnotHandler {
   virtual void ReleaseAnnot(CPDFSDK_Annot* pAnnot) = 0;
   virtual CFX_FloatRect GetViewBBox(CPDFSDK_PageView* pPageView,
                                     CPDFSDK_Annot* pAnnot) = 0;
+  virtual WideString GetText(CPDFSDK_Annot* pAnnot) = 0;
   virtual WideString GetSelectedText(CPDFSDK_Annot* pAnnot) = 0;
   virtual void ReplaceSelection(CPDFSDK_Annot* pAnnot,
                                 const WideString& text) = 0;
+  virtual bool CanUndo(CPDFSDK_Annot* pAnnot) = 0;
+  virtual bool CanRedo(CPDFSDK_Annot* pAnnot) = 0;
+  virtual bool Undo(CPDFSDK_Annot* pAnnot) = 0;
+  virtual bool Redo(CPDFSDK_Annot* pAnnot) = 0;
   virtual bool HitTest(CPDFSDK_PageView* pPageView,
                        CPDFSDK_Annot* pAnnot,
                        const CFX_PointF& point) = 0;

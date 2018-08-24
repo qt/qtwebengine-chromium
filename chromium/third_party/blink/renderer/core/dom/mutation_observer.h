@@ -95,7 +95,7 @@ class CORE_EXPORT MutationObserver final
     virtual void Deliver(const MutationRecordVector& records,
                          MutationObserver&) = 0;
     virtual void Trace(blink::Visitor* visitor) {}
-    void TraceWrappers(const ScriptWrappableVisitor* visitor) const override {}
+    void TraceWrappers(ScriptWrappableVisitor* visitor) const override {}
     const char* NameInHeapSnapshot() const override {
       return "MutationObserver::Delegate";
     }
@@ -110,7 +110,7 @@ class CORE_EXPORT MutationObserver final
   static void EnqueueSlotChange(HTMLSlotElement&);
   static void CleanSlotChangeList(Document&);
 
-  ~MutationObserver();
+  ~MutationObserver() override;
 
   void observe(Node*, const MutationObserverInit&, ExceptionState&);
   MutationRecordVector takeRecords();
@@ -126,9 +126,9 @@ class CORE_EXPORT MutationObserver final
 
   // Eagerly finalized as destructor accesses heap object members.
   EAGERLY_FINALIZE();
-  void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
-  virtual void TraceWrappers(const ScriptWrappableVisitor*) const;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
  private:
   struct ObserverLessThan;

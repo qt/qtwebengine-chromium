@@ -37,8 +37,7 @@ inline SVGScriptElement::SVGScriptElement(Document& document,
     : SVGElement(SVGNames::scriptTag, document),
       SVGURIReference(this),
       loader_(InitializeScriptLoader(flags.IsCreatedByParser(),
-                                     flags.WasAlreadyStarted(),
-                                     false)) {}
+                                     flags.WasAlreadyStarted())) {}
 
 SVGScriptElement* SVGScriptElement::Create(Document& document,
                                            const CreateElementFlags flags) {
@@ -77,7 +76,7 @@ void SVGScriptElement::DidNotifySubtreeInsertionsToDocument() {
   loader_->DidNotifySubtreeInsertionsToDocument();
 
   if (!loader_->IsParserInserted())
-    loader_->SetHaveFiredLoadEvent(true);
+    have_fired_load_ = true;
 }
 
 void SVGScriptElement::ChildrenChanged(const ChildrenChange& change) {
@@ -96,11 +95,11 @@ bool SVGScriptElement::IsURLAttribute(const Attribute& attribute) const {
 
 void SVGScriptElement::FinishParsingChildren() {
   SVGElement::FinishParsingChildren();
-  loader_->SetHaveFiredLoadEvent(true);
+  have_fired_load_ = true;
 }
 
 bool SVGScriptElement::HaveLoadedRequiredResources() {
-  return loader_->HaveFiredLoadEvent();
+  return have_fired_load_;
 }
 
 String SVGScriptElement::SourceAttributeValue() const {
@@ -156,6 +155,7 @@ Element* SVGScriptElement::CloneWithoutAttributesAndChildren(
 
 void SVGScriptElement::DispatchLoadEvent() {
   DispatchEvent(Event::Create(EventTypeNames::load));
+  have_fired_load_ = true;
 }
 
 void SVGScriptElement::DispatchErrorEvent() {
@@ -184,8 +184,7 @@ void SVGScriptElement::Trace(blink::Visitor* visitor) {
   ScriptElementBase::Trace(visitor);
 }
 
-void SVGScriptElement::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+void SVGScriptElement::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(loader_);
   SVGElement::TraceWrappers(visitor);
 }

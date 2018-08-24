@@ -34,6 +34,7 @@
 #include "third_party/blink/public/mojom/page/page_visibility_state.mojom-shared.h"
 #include "third_party/blink/public/platform/web_common.h"
 #include "third_party/blink/public/platform/web_drag_operation.h"
+#include "third_party/blink/public/platform/web_touch_action.h"
 #include "third_party/blink/public/web/web_widget.h"
 
 namespace blink {
@@ -58,9 +59,9 @@ class WebFrameWidget : public WebWidget {
   // Overrides the WebFrameWidget's background and base background color. You
   // can use this to enforce a transparent background, which is useful if you
   // want to have some custom background rendered behind the widget.
-  virtual void SetBackgroundColorOverride(WebColor) = 0;
+  virtual void SetBackgroundColorOverride(SkColor) = 0;
   virtual void ClearBackgroundColorOverride() = 0;
-  virtual void SetBaseBackgroundColorOverride(WebColor) = 0;
+  virtual void SetBaseBackgroundColorOverride(SkColor) = 0;
   virtual void ClearBaseBackgroundColorOverride() = 0;
 
   // Sets the base color used for this WebFrameWidget's background. This is in
@@ -71,7 +72,7 @@ class WebFrameWidget : public WebWidget {
   // Setting this takes effect for the currently loaded page, if any, and
   // persists across subsequent navigations. Defaults to white prior to the
   // first call to this method.
-  virtual void SetBaseBackgroundColor(WebColor) = 0;
+  virtual void SetBaseBackgroundColor(SkColor) = 0;
 
   // Returns the local root of this WebFrameWidget.
   virtual WebLocalFrame* LocalRoot() const = 0;
@@ -123,6 +124,9 @@ class WebFrameWidget : public WebWidget {
   // Sets the inert bit on an out-of-process iframe, causing it to ignore
   // input.
   virtual void SetIsInert(bool) {}
+
+  // Sets the inherited effective touch action on an out-of-process iframe.
+  virtual void SetInheritedEffectiveTouchAction(WebTouchAction) {}
 
   // Toggles render throttling for an out-of-process iframe. Local frames are
   // throttled based on their visibility in the viewport, but remote frames

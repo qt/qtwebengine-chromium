@@ -31,8 +31,8 @@ rtc_static_library("video_capture_module") {
     "../..:webrtc_common",
     "../../:typedefs",
     "../../api:libjingle_peerconnection_api",
-    "../../api:video_frame_api",
-    "../../api:video_frame_api_i420",
+    "../../api/video:video_frame",
+    "../../api/video:video_frame_i420",
     "../../common_video",
     "../../media:rtc_media_base",
     "../../rtc_base:rtc_base_approved",
@@ -78,28 +78,9 @@ if (!build_with_chromium) {
     }
   }
 
-  config("video_capture_internal_impl_warnings_config") {
-    if (is_win && is_clang) {
-      cflags = [
-        "-Wno-comment",
-        "-Wno-ignored-attributes",
-
-        # See https://bugs.chromium.org/p/webrtc/issues/detail?id=6269
-        # for -Wno-ignored-qualifiers
-        "-Wno-ignored-qualifiers",
-        "-Wno-microsoft-extra-qualification",
-        "-Wno-missing-braces",
-        "-Wno-overloaded-virtual",
-        "-Wno-reorder",
-        "-Wno-writable-strings",
-      ]
-    }
-  }
-
   if (is_ios || is_mac) {
     rtc_source_set("video_capture_internal_impl_objc") {
       visibility = [ ":video_capture_internal_impl" ]
-      configs += [ ":video_capture_internal_impl_warnings_config" ]
 
       deps = [
         ":video_capture_module",
@@ -128,8 +109,6 @@ if (!build_with_chromium) {
   }
 
   rtc_source_set("video_capture_internal_impl") {
-    configs += [ ":video_capture_internal_impl_warnings_config" ]
-
     deps = [
       ":video_capture_module",
       "../../rtc_base:checks",
@@ -233,8 +212,8 @@ if (!build_with_chromium) {
       deps = [
         ":video_capture_internal_impl",
         ":video_capture_module",
-        "../../api:video_frame_api",
-        "../../api:video_frame_api_i420",
+        "../../api/video:video_frame",
+        "../../api/video:video_frame_i420",
         "../../common_video:common_video",
         "../../rtc_base:rtc_base_approved",
         "../../system_wrappers:system_wrappers",

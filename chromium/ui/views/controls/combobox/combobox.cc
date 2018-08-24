@@ -462,6 +462,9 @@ Combobox::Combobox(ui::ComboboxModel* model, Style style)
     arrow_image_ = *ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
         IDR_MENU_DROPARROW);
   }
+
+  if (UseMd())
+    focus_ring_ = FocusRing::Install(this);
 }
 
 Combobox::~Combobox() {
@@ -533,11 +536,9 @@ void Combobox::SetInvalid(bool invalid) {
 
   invalid_ = invalid;
 
-  if (HasFocus() && UseMd()) {
-    FocusRing::Install(this, invalid_
-                                 ? ui::NativeTheme::kColorId_AlertSeverityHigh
-                                 : ui::NativeTheme::kColorId_NumColors);
-  }
+  if (focus_ring_)
+    focus_ring_->SetInvalid(invalid);
+
   UpdateBorder();
   SchedulePaint();
 }
@@ -746,11 +747,6 @@ void Combobox::OnFocus() {
   View::OnFocus();
   // Border renders differently when focused.
   SchedulePaint();
-  if (UseMd()) {
-    FocusRing::Install(this, invalid_
-                                 ? ui::NativeTheme::kColorId_AlertSeverityHigh
-                                 : ui::NativeTheme::kColorId_NumColors);
-  }
 }
 
 void Combobox::OnBlur() {
@@ -761,8 +757,6 @@ void Combobox::OnBlur() {
     selector_->OnViewBlur();
   // Border renders differently when focused.
   SchedulePaint();
-  if (UseMd())
-    FocusRing::Uninstall(this);
 }
 
 void Combobox::GetAccessibleNodeData(ui::AXNodeData* node_data) {

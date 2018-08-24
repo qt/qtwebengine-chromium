@@ -18,18 +18,30 @@
 #include "third_party/blink/renderer/platform/scheduler/base/real_time_domain.h"
 #include "third_party/blink/renderer/platform/scheduler/base/task_queue_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/base/task_queue_manager.h"
+#include "third_party/blink/renderer/platform/scheduler/base/test/task_queue_manager_for_test.h"
 #include "third_party/blink/renderer/platform/scheduler/common/throttling/budget_pool.h"
+#include "third_party/blink/renderer/platform/scheduler/main_thread/auto_advancing_virtual_time_domain.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/frame_scheduler_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.h"
-#include "third_party/blink/renderer/platform/scheduler/renderer/auto_advancing_virtual_time_domain.h"
-#include "third_party/blink/renderer/platform/scheduler/test/task_queue_manager_for_test.h"
 
+using base::sequence_manager::LazyNow;
+using base::sequence_manager::TaskQueue;
 using testing::ElementsAre;
 
 namespace blink {
 namespace scheduler {
 // To avoid symbol collisions in jumbo builds.
 namespace task_queue_throttler_unittest {
+
+class MainThreadSchedulerImplForTest : public MainThreadSchedulerImpl {
+ public:
+  using MainThreadSchedulerImpl::ControlTaskQueue;
+
+  MainThreadSchedulerImplForTest(
+      std::unique_ptr<base::sequence_manager::TaskQueueManager> manager,
+      base::Optional<base::Time> initial_virtual_time)
+      : MainThreadSchedulerImpl(std::move(manager), initial_virtual_time) {}
+};
 
 bool MessageLoopTaskCounter(size_t* count) {
   *count = *count + 1;
@@ -80,13 +92,15 @@ class TaskQueueThrottlerTest : public testing::Test {
     clock_->Advance(base::TimeDelta::FromMicroseconds(5000));
     mock_task_runner_ =
         base::MakeRefCounted<cc::OrderedSimpleTaskRunner>(clock_.get(), true);
-    scheduler_.reset(new MainThreadSchedulerImpl(
-        TaskQueueManagerForTest::Create(nullptr, mock_task_runner_,
-                                        clock_.get()),
+    scheduler_.reset(new MainThreadSchedulerImplForTest(
+        base::sequence_manager::TaskQueueManagerForTest::Create(
+            nullptr, mock_task_runner_, clock_.get()),
         base::nullopt));
+    scheduler_->GetWakeUpBudgetPoolForTesting()->SetWakeUpDuration(
+        base::TimeDelta());
     task_queue_throttler_ = scheduler_->task_queue_throttler();
     timer_queue_ = scheduler_->NewTimerTaskQueue(
-        MainThreadTaskQueue::QueueType::kFrameThrottleable);
+        MainThreadTaskQueue::QueueType::kFrameThrottleable, nullptr);
   }
 
   void TearDown() override {
@@ -118,12 +132,14 @@ class TaskQueueThrottlerTest : public testing::Test {
   }
 
   bool IsQueueBlocked(TaskQueue* task_queue) {
-    internal::TaskQueueImpl* task_queue_impl = task_queue->GetTaskQueueImpl();
+    base::sequence_manager::internal::TaskQueueImpl* task_queue_impl =
+        task_queue->GetTaskQueueImpl();
     if (!task_queue_impl->IsQueueEnabled())
       return true;
     return task_queue_impl->GetFenceForTest() ==
-           static_cast<internal::EnqueueOrder>(
-               internal::EnqueueOrderValues::kBlockingFence);
+           static_cast<base::sequence_manager::internal::EnqueueOrder>(
+               base::sequence_manager::internal::EnqueueOrderValues::
+                   kBlockingFence);
   }
 
  protected:
@@ -133,7 +149,7 @@ class TaskQueueThrottlerTest : public testing::Test {
 
   std::unique_ptr<AutoAdvancingTestClock> clock_;
   scoped_refptr<cc::OrderedSimpleTaskRunner> mock_task_runner_;
-  std::unique_ptr<MainThreadSchedulerImpl> scheduler_;
+  std::unique_ptr<MainThreadSchedulerImplForTest> scheduler_;
   scoped_refptr<TaskQueue> timer_queue_;
   TaskQueueThrottler* task_queue_throttler_;  // NOT OWNED
 
@@ -351,7 +367,7 @@ TEST_P(TaskQueueThrottlerWithAutoAdvancingTimeTest,
        ThrotlingAnEmptyQueueDoesNotPostPumpThrottledTasksLocked) {
   task_queue_throttler_->IncreaseThrottleRefCount(timer_queue_.get());
 
-  EXPECT_TRUE(task_queue_throttler_->task_queue()->IsEmpty());
+  EXPECT_TRUE(scheduler_->ControlTaskQueue()->IsEmpty());
 }
 
 TEST_P(TaskQueueThrottlerWithAutoAdvancingTimeTest,
@@ -359,7 +375,7 @@ TEST_P(TaskQueueThrottlerWithAutoAdvancingTimeTest,
   task_queue_throttler_->OnQueueNextWakeUpChanged(timer_queue_.get(),
                                                   base::TimeTicks());
   // Check PostPumpThrottledTasksLocked was called.
-  EXPECT_FALSE(task_queue_throttler_->task_queue()->IsEmpty());
+  EXPECT_FALSE(scheduler_->ControlTaskQueue()->IsEmpty());
 }
 
 TEST_P(TaskQueueThrottlerWithAutoAdvancingTimeTest,
@@ -371,7 +387,7 @@ TEST_P(TaskQueueThrottlerWithAutoAdvancingTimeTest,
   task_queue_throttler_->OnQueueNextWakeUpChanged(timer_queue_.get(),
                                                   base::TimeTicks());
   // Check PostPumpThrottledTasksLocked was not called.
-  EXPECT_TRUE(task_queue_throttler_->task_queue()->IsEmpty());
+  EXPECT_TRUE(scheduler_->ControlTaskQueue()->IsEmpty());
 }
 
 TEST_P(TaskQueueThrottlerWithAutoAdvancingTimeTest,
@@ -383,11 +399,11 @@ TEST_P(TaskQueueThrottlerWithAutoAdvancingTimeTest,
   voter->SetQueueEnabled(false);
 
   task_queue_throttler_->IncreaseThrottleRefCount(timer_queue_.get());
-  EXPECT_TRUE(task_queue_throttler_->task_queue()->IsEmpty());
+  EXPECT_TRUE(scheduler_->ControlTaskQueue()->IsEmpty());
 
   // Enabling it should trigger a call to PostPumpThrottledTasksLocked.
   voter->SetQueueEnabled(true);
-  EXPECT_FALSE(task_queue_throttler_->task_queue()->IsEmpty());
+  EXPECT_FALSE(scheduler_->ControlTaskQueue()->IsEmpty());
 }
 
 TEST_P(TaskQueueThrottlerWithAutoAdvancingTimeTest,
@@ -400,11 +416,11 @@ TEST_P(TaskQueueThrottlerWithAutoAdvancingTimeTest,
   voter->SetQueueEnabled(false);
 
   task_queue_throttler_->IncreaseThrottleRefCount(timer_queue_.get());
-  EXPECT_TRUE(task_queue_throttler_->task_queue()->IsEmpty());
+  EXPECT_TRUE(scheduler_->ControlTaskQueue()->IsEmpty());
 
   // Enabling it should trigger a call to PostPumpThrottledTasksLocked.
   voter->SetQueueEnabled(true);
-  EXPECT_FALSE(task_queue_throttler_->task_queue()->IsEmpty());
+  EXPECT_FALSE(scheduler_->ControlTaskQueue()->IsEmpty());
 }
 
 TEST_P(TaskQueueThrottlerWithAutoAdvancingTimeTest, WakeUpForNonDelayedTask) {
@@ -654,8 +670,8 @@ TEST_P(TaskQueueThrottlerWithAutoAdvancingTimeTest,
                                      base::TimeDelta::FromMilliseconds(1000)));
   run_times.clear();
 
-  LazyNow lazy_now(clock_.get());
-  pool->DisableThrottling(&lazy_now);
+  LazyNow lazy_now_1(clock_.get());
+  pool->DisableThrottling(&lazy_now_1);
   EXPECT_FALSE(pool->IsThrottlingEnabled());
 
   // Pool should not be throttled now.
@@ -669,8 +685,8 @@ TEST_P(TaskQueueThrottlerWithAutoAdvancingTimeTest,
                                      base::TimeDelta::FromMilliseconds(2000)));
   run_times.clear();
 
-  lazy_now = LazyNow(clock_.get());
-  pool->EnableThrottling(&lazy_now);
+  LazyNow lazy_now_2(clock_.get());
+  pool->EnableThrottling(&lazy_now_2);
   EXPECT_TRUE(pool->IsThrottlingEnabled());
 
   // Because time pool was disabled, time budget level did not replenish
@@ -742,7 +758,7 @@ TEST_P(TaskQueueThrottlerWithAutoAdvancingTimeTest,
   std::vector<base::TimeTicks> run_times;
 
   scoped_refptr<TaskQueue> second_queue = scheduler_->NewTimerTaskQueue(
-      MainThreadTaskQueue::QueueType::kFrameThrottleable);
+      MainThreadTaskQueue::QueueType::kFrameThrottleable, nullptr);
 
   CPUTimeBudgetPool* pool =
       task_queue_throttler_->CreateCPUTimeBudgetPool("test");
@@ -1014,16 +1030,16 @@ TEST_P(TaskQueueThrottlerWithAutoAdvancingTimeTest,
       task_queue_throttler_->CreateCPUTimeBudgetPool("test");
   task_queue_throttler_->IncreaseThrottleRefCount(timer_queue_.get());
 
-  LazyNow lazy_now(clock_.get());
-  pool->DisableThrottling(&lazy_now);
+  LazyNow lazy_now_1(clock_.get());
+  pool->DisableThrottling(&lazy_now_1);
 
   pool->AddQueue(base::TimeTicks(), timer_queue_.get());
 
   mock_task_runner_->RunUntilTime(base::TimeTicks() +
                                   base::TimeDelta::FromMilliseconds(100));
 
-  lazy_now = LazyNow(clock_.get());
-  pool->EnableThrottling(&lazy_now);
+  LazyNow lazy_now_2(clock_.get());
+  pool->EnableThrottling(&lazy_now_2);
 
   timer_queue_->PostDelayedTask(
       FROM_HERE, base::BindOnce(&TestTask, &run_times, clock_.get()),
@@ -1068,7 +1084,7 @@ TEST_P(TaskQueueThrottlerWithAutoAdvancingTimeTest,
 
   scoped_refptr<MainThreadTaskQueue> second_queue =
       scheduler_->NewTimerTaskQueue(
-          MainThreadTaskQueue::QueueType::kFrameThrottleable);
+          MainThreadTaskQueue::QueueType::kFrameThrottleable, nullptr);
 
   task_queue_throttler_->IncreaseThrottleRefCount(timer_queue_.get());
   task_queue_throttler_->IncreaseThrottleRefCount(second_queue.get());
@@ -1104,7 +1120,7 @@ TEST_P(TaskQueueThrottlerWithAutoAdvancingTimeTest, TwoBudgetPools) {
   std::vector<base::TimeTicks> run_times;
 
   scoped_refptr<TaskQueue> second_queue = scheduler_->NewTimerTaskQueue(
-      MainThreadTaskQueue::QueueType::kFrameThrottleable);
+      MainThreadTaskQueue::QueueType::kFrameThrottleable, nullptr);
 
   CPUTimeBudgetPool* pool1 =
       task_queue_throttler_->CreateCPUTimeBudgetPool("test");

@@ -17,6 +17,7 @@
 #include "base/trace_event/trace_event.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/context_group.h"
+#include "gpu/command_buffer/service/decoder_context.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_version_info.h"
@@ -58,6 +59,7 @@ void TraceOutputter::TraceDevice(GpuTracerSource source,
                                  int64_t start_time,
                                  int64_t end_time) {
   DCHECK(source >= 0 && source < NUM_TRACER_SOURCES);
+  DCHECK(end_time >= start_time) << end_time << " >= " << start_time;
   TRACE_EVENT_COPY_BEGIN_WITH_ID_TID_AND_TIMESTAMP2(
       TRACE_DISABLED_BY_DEFAULT("gpu.device"),
       name.c_str(),
@@ -71,12 +73,14 @@ void TraceOutputter::TraceDevice(GpuTracerSource source,
 
   // Time stamps are inclusive, since the traces are durations we subtract
   // 1 microsecond from the end time to make the trace markers show up cleaner.
+  if (end_time > start_time)
+    end_time -= 1;
   TRACE_EVENT_COPY_END_WITH_ID_TID_AND_TIMESTAMP2(
       TRACE_DISABLED_BY_DEFAULT("gpu.device"),
       name.c_str(),
       local_trace_device_id_,
       named_thread_.GetThreadId(),
-      base::TimeTicks::FromInternalValue(end_time - 1),
+      base::TimeTicks::FromInternalValue(end_time),
       "gl_category",
       category.c_str(),
       "channel",
@@ -171,7 +175,7 @@ void GPUTrace::Process() {
   }
 }
 
-GPUTracer::GPUTracer(GLES2Decoder* decoder)
+GPUTracer::GPUTracer(DecoderContext* decoder)
     : gpu_trace_srv_category(TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
           TRACE_DISABLED_BY_DEFAULT("gpu.service"))),
       gpu_trace_dev_category(TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
@@ -297,7 +301,7 @@ bool GPUTracer::HasTracesToProcess() {
 
 void GPUTracer::ProcessTraces() {
   if (!gpu_timing_client_->IsAvailable()) {
-   while (!finished_traces_.empty()) {
+    while (!finished_traces_.empty()) {
       finished_traces_.front()->Destroy(false);
       finished_traces_.pop_front();
     }

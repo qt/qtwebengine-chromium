@@ -9,34 +9,48 @@
 
 #include "base/callback.h"
 #include "base/macros.h"
+#include "chrome/browser/chromeos/arc/voice_interaction/voice_interaction_controller_client.h"
+#include "chrome/browser/ui/webui/chromeos/assistant_optin/assistant_optin_handler.h"
 #include "chrome/browser/ui/webui/chromeos/assistant_optin/assistant_optin_screen_exit_code.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_webui_handler.h"
 #include "chrome/browser/ui/webui/chromeos/system_web_dialog_delegate.h"
+#include "chromeos/services/assistant/public/mojom/settings.mojom.h"
 #include "content/public/browser/web_ui_controller.h"
 #include "ui/web_dialogs/web_dialog_ui.h"
-
-namespace arc {
-class ArcVoiceInteractionArcHomeService;
-}
 
 namespace chromeos {
 
 // Controller for chrome://assistant-optin/ page.
-class AssistantOptInUI : public ui::WebDialogUI {
+class AssistantOptInUI
+    : public ui::WebDialogUI,
+      public arc::VoiceInteractionControllerClient::Observer {
  public:
   explicit AssistantOptInUI(content::WebUI* web_ui);
   ~AssistantOptInUI() override;
 
+  // arc::VoiceInteractionControllerClient::Observer overrides
+  void OnStateChanged(ash::mojom::VoiceInteractionState state) override;
+
  private:
+  // Initilize connection to settings manager.
+  void Initialize();
+
   // Add message handler for optin screens.
   void AddScreenHandler(std::unique_ptr<BaseWebUIHandler> handler);
 
   // Called by a screen when user's done with it.
   void OnExit(AssistantOptInScreenExitCode exit_code);
 
-  // Get ArcHomeService for user action handling.
-  arc::ArcVoiceInteractionArcHomeService* GetVoiceInteractionHomeService();
+  // Handle response from the settings manager.
+  void OnGetSettingsResponse(const std::string& settings);
+  void OnUpdateSettingsResponse(const std::string& settings);
 
+  // Consent token used to complete the opt-in.
+  std::string consent_token_;
+
+  AssistantOptInHandler* assistant_handler_ = nullptr;
+  std::unique_ptr<JSCallsContainer> js_calls_container_;
+  assistant::mojom::AssistantSettingsManagerPtr settings_manager_;
   std::vector<BaseWebUIHandler*> screen_handlers_;
   base::WeakPtrFactory<AssistantOptInUI> weak_factory_;
 

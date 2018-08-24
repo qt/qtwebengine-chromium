@@ -54,7 +54,7 @@ class ContentVerifyJobUnittest : public ExtensionsTest {
   // data dir.
   base::FilePath GetTestPath(const std::string& relative_path) {
     base::FilePath base_path;
-    EXPECT_TRUE(PathService::Get(DIR_TEST_DATA, &base_path));
+    EXPECT_TRUE(base::PathService::Get(DIR_TEST_DATA, &base_path));
     return base_path.AppendASCII("content_hash_fetcher")
         .AppendASCII(relative_path);
   }
@@ -97,7 +97,7 @@ class ContentVerifyJobUnittest : public ExtensionsTest {
                                     std::string* resource_contents) {
       // Simulate serving |resource_contents| from |resource_path|.
       verify_job->BytesRead(resource_contents->size(),
-                            base::string_as_array(resource_contents));
+                            base::data(*resource_contents));
       verify_job->DoneReading();
     };
 

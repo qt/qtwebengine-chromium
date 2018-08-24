@@ -6,7 +6,8 @@
 
 #include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_current.h"
+#include "base/single_thread_task_runner.h"
 #include "base/test/test_mock_time_task_runner.h"
 #include "base/time/time.h"
 #include "media/base/media_util.h"
@@ -71,7 +72,7 @@ class RecordInterceptor : public mojom::VideoDecodeStatsRecorder {
   ~RecordInterceptor() override = default;
 
   // Until move-only types work.
-  void StartNewRecord(mojom::PredictionFeaturesPtr features) {
+  void StartNewRecord(mojom::PredictionFeaturesPtr features) override {
     MockStartNewRecord(features->profile, features->video_size,
                        features->frames_per_sec);
   }
@@ -81,7 +82,7 @@ class RecordInterceptor : public mojom::VideoDecodeStatsRecorder {
                     const gfx::Size& natural_size,
                     int frames_per_sec));
 
-  void UpdateRecord(mojom::PredictionTargetsPtr targets) {
+  void UpdateRecord(mojom::PredictionTargetsPtr targets) override {
     MockUpdateRecord(targets->frames_decoded, targets->frames_dropped,
                      targets->frames_decoded_power_efficient);
   }
@@ -102,8 +103,10 @@ class VideoDecodeStatsReporterTest : public ::testing::Test {
 
   void SetUp() override {
     // Do this first. Lots of pieces depend on the task runner.
+    auto message_loop = base::MessageLoopCurrent::Get();
+    original_task_runner_ = message_loop.task_runner();
     task_runner_ = new base::TestMockTimeTaskRunner();
-    message_loop_.SetTaskRunner(task_runner_);
+    message_loop.SetTaskRunner(task_runner_);
 
     // Make reporter with default configuration. Connects RecordInterceptor as
     // remote mojo VideoDecodeStatsRecorder.
@@ -118,12 +121,11 @@ class VideoDecodeStatsReporterTest : public ::testing::Test {
 
   void TearDown() override {
     // Break the IPC connection if reporter still around.
-    if (reporter_.get()) {
-      reporter_.reset();
-    }
+    reporter_.reset();
 
     // Run task runner to have Mojo cleanup interceptor_.
     task_runner_->RunUntilIdle();
+    base::MessageLoopCurrent::Get().SetTaskRunner(original_task_runner_);
   }
 
   PipelineStatistics MakeAdvancingDecodeStats() {
@@ -344,13 +346,11 @@ class VideoDecodeStatsReporterTest : public ::testing::Test {
   // Placed as a class member to avoid static initialization costs.
   const gfx::Size kDefaultSize_;
 
-  // Put first so it will be destructed *last*. We must let users of the
-  // message loop (e.g. reporter_) destruct before destructing the loop itself.
-  base::MessageLoop message_loop_;
-
-  // Task runner that allows for manual advancing of time. Instantiated and
-  // used by message_loop_ in Setup().
+  // Task runner that allows for manual advancing of time. Instantiated during
+  // Setup(). |original_task_runner_| is a copy of the TaskRunner in place prior
+  // to the start of this test. It's restored after the test completes.
   scoped_refptr<base::TestMockTimeTaskRunner> task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> original_task_runner_;
 
   // Points to the interceptor that acts as a VideoDecodeStatsRecorder. The
   // object is owned by VideoDecodeStatsRecorderPtr, which is itself owned by

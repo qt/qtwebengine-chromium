@@ -194,6 +194,15 @@ void ServiceWorkerRegistration::UnsetVersionInternal(
   }
 }
 
+void ServiceWorkerRegistration::SetUpdateViaCache(
+    blink::mojom::ServiceWorkerUpdateViaCache update_via_cache) {
+  if (update_via_cache_ == update_via_cache)
+    return;
+  update_via_cache_ = update_via_cache;
+  for (auto& observer : listeners_)
+    observer.OnUpdateViaCacheChanged(this);
+}
+
 void ServiceWorkerRegistration::ActivateWaitingVersionWhenReady() {
   DCHECK(waiting_version());
   should_activate_when_ready_ = true;
@@ -219,7 +228,8 @@ void ServiceWorkerRegistration::ClaimClients() {
   DCHECK(active_version());
 
   for (std::unique_ptr<ServiceWorkerContextCore::ProviderHostIterator> it =
-           context_->GetClientProviderHostIterator(pattern_.GetOrigin());
+           context_->GetClientProviderHostIterator(
+               pattern_.GetOrigin(), false /* include_reserved_clients */);
        !it->IsAtEnd(); it->Advance()) {
     ServiceWorkerProviderHost* host = it->GetProviderHost();
     if (host->controller() == active_version())
@@ -271,6 +281,9 @@ void ServiceWorkerRegistration::OnNoControllees(ServiceWorkerVersion* version) {
     return;
   DCHECK_EQ(active_version(), version);
   if (is_uninstalling_) {
+    // TODO(falken): This can destroy the caller during this observer function
+    // call, which is impolite and dangerous. Try to make this async, or make
+    // OnNoControllees not an observer function.
     Clear();
     return;
   }
@@ -543,6 +556,14 @@ void ServiceWorkerRegistration::Clear() {
   is_uninstalling_ = false;
   is_uninstalled_ = true;
   should_activate_when_ready_ = false;
+
+  // Some callbacks, at least OnRegistrationFinishedUninstalling and
+  // NotifyDoneUninstallingRegistration, may drop their references to
+  // |this|, so protect it first.
+  // TODO(falken): Clean this up, can we call the observers from a task
+  // or make the observers more polite?
+  auto protect = base::WrapRefCounted(this);
+
   if (context_)
     context_->storage()->NotifyDoneUninstallingRegistration(this);
 

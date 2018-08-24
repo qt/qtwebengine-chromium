@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/paint/paint_invalidator.h"
 
+#include "base/optional.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
@@ -14,6 +15,7 @@
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/ng/geometry/ng_physical_offset_rect.h"
 #include "third_party/blink/renderer/core/layout/svg/svg_layout_support.h"
+#include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/paint/clip_path_clipper.h"
 #include "third_party/blink/renderer/core/paint/find_paint_offset_and_visual_rect_needing_update.h"
 #include "third_party/blink/renderer/core/paint/ng/ng_paint_fragment.h"
@@ -22,8 +24,6 @@
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/paint/pre_paint_tree_walk.h"
 #include "third_party/blink/renderer/platform/graphics/paint/geometry_mapper.h"
-#include "third_party/blink/renderer/platform/platform_chrome_client.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 
 namespace blink {
 
@@ -115,18 +115,21 @@ LayoutRect PaintInvalidator::MapLocalRectToVisualRectInBacking(
   // coordinates.
   Rect rect = local_rect;
   // Writing-mode flipping doesn't apply to non-root SVG.
-  if (!is_svg_child && !disable_flip) {
-    if (object.IsBox()) {
-      ToLayoutBox(object).FlipForWritingMode(rect);
-    } else if (!(context.subtree_flags &
-                 PaintInvalidatorContext::kSubtreeSlowPathRect)) {
-      // For SPv2 and the GeometryMapper path, we also need to convert the rect
-      // for non-boxes into physical coordinates before applying paint offset.
-      // (Otherwise we'll call mapToVisualrectInAncestorSpace() which requires
-      // physical coordinates for boxes, but "physical coordinates with flipped
-      // block-flow direction" for non-boxes for which we don't need to flip.)
-      // TODO(wangxianzhu): Avoid containingBlock().
-      object.ContainingBlock()->FlipForWritingMode(rect);
+  if (!is_svg_child) {
+    if (!disable_flip) {
+      if (object.IsBox()) {
+        ToLayoutBox(object).FlipForWritingMode(rect);
+      } else if (!(context.subtree_flags &
+                   PaintInvalidatorContext::kSubtreeSlowPathRect)) {
+        // For SPv2 and the GeometryMapper path, we also need to convert the
+        // rect for non-boxes into physical coordinates before applying paint
+        // offset. (Otherwise we'll call mapToVisualrectInAncestorSpace() which
+        // requires physical coordinates for boxes, but "physical coordinates
+        // with flipped block-flow direction" for non-boxes for which we don't
+        // need to flip.)
+        // TODO(wangxianzhu): Avoid containingBlock().
+        object.ContainingBlock()->FlipForWritingMode(rect);
+      }
     }
 
     // Unite visual rect with clip path bounding rect.
@@ -137,7 +140,7 @@ LayoutRect PaintInvalidator::MapLocalRectToVisualRectInBacking(
     // have to wait until pre-paint to ensure clean layout.
     // Note: SVG children don't need this adjustment because their visual
     // overflow rects are already adjusted by clip path.
-    if (Optional<FloatRect> clip_path_bounding_box =
+    if (base::Optional<FloatRect> clip_path_bounding_box =
             ClipPathClipper::LocalClipPathBoundingBox(object)) {
       Rect box(EnclosingIntRect(*clip_path_bounding_box));
       rect.Unite(box);
@@ -355,51 +358,6 @@ void PaintInvalidator::UpdatePaintingLayer(const LayoutObject& object,
   }
 }
 
-namespace {
-
-// This is a helper to handle paint invalidation for frames in
-// non-RootLayerScrolling mode.
-// It undoes LocalFrameView's content clip and scroll for paint invalidation of
-// frame scroll controls to which the content clip and scroll don't apply.
-class ScopedUndoFrameViewContentClipAndScroll {
- public:
-  ScopedUndoFrameViewContentClipAndScroll(
-      const LocalFrameView& frame_view,
-      const PaintPropertyTreeBuilderFragmentContext& tree_builder_context)
-      : tree_builder_context_(
-            const_cast<PaintPropertyTreeBuilderFragmentContext&>(
-                tree_builder_context)),
-        saved_context_(tree_builder_context_.current) {
-    DCHECK(!RuntimeEnabledFeatures::RootLayerScrollingEnabled());
-
-    if (const auto* scroll_node = frame_view.ScrollNode()) {
-      DCHECK_EQ(scroll_node, saved_context_.scroll);
-      tree_builder_context_.current.scroll = saved_context_.scroll->Parent();
-    }
-    if (const auto* scroll_translation = frame_view.ScrollTranslation()) {
-      DCHECK_EQ(scroll_translation, saved_context_.transform);
-      tree_builder_context_.current.transform =
-          saved_context_.transform->Parent();
-    }
-    DCHECK_EQ(frame_view.PreTranslation(),
-              tree_builder_context_.current.transform);
-
-    DCHECK_EQ(frame_view.ContentClip(), saved_context_.clip);
-    tree_builder_context_.current.clip = saved_context_.clip->Parent();
-  }
-
-  ~ScopedUndoFrameViewContentClipAndScroll() {
-    tree_builder_context_.current = saved_context_;
-  }
-
- private:
-  PaintPropertyTreeBuilderFragmentContext& tree_builder_context_;
-  PaintPropertyTreeBuilderFragmentContext::ContainingBlockContext
-      saved_context_;
-};
-
-}  // namespace
-
 void PaintInvalidator::UpdatePaintInvalidationContainer(
     const LayoutObject& object,
     PaintInvalidatorContext& context) {
@@ -537,13 +495,6 @@ void PaintInvalidator::InvalidatePaint(
     context.tree_builder_context_actually_needed_ =
         tree_builder_context->is_actually_needed;
 #endif
-  }
-
-  if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-    Optional<ScopedUndoFrameViewContentClipAndScroll> undo;
-    if (tree_builder_context)
-      undo.emplace(frame_view, *context.tree_builder_context_);
-    frame_view.InvalidatePaintOfScrollControlsIfNeeded(context);
   }
 }
 

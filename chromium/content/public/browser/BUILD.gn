@@ -4,7 +4,6 @@
 
 import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
-import("//media/media_options.gni")
 
 # See //content/BUILD.gn for how this works.
 group("browser") {
@@ -38,10 +37,14 @@ jumbo_source_set("browser_sources") {
     "android/synchronous_compositor.h",
     "android/synchronous_compositor_client.h",
     "appcache_service.h",
+    "audio_service_info.cc",
+    "audio_service_info.h",
     "ax_event_notification_details.cc",
     "ax_event_notification_details.h",
     "background_fetch_delegate.cc",
     "background_fetch_delegate.h",
+    "background_fetch_description.cc",
+    "background_fetch_description.h",
     "background_fetch_response.cc",
     "background_fetch_response.h",
     "background_sync_controller.h",
@@ -86,12 +89,15 @@ jumbo_source_set("browser_sources") {
     "child_process_data.h",
     "child_process_launcher_utils.h",
     "child_process_security_policy.h",
+    "child_process_termination_info.h",
     "client_certificate_delegate.h",
     "color_chooser.h",
     "content_browser_client.cc",
     "content_browser_client.h",
     "context_factory.h",
     "cookie_store_factory.h",
+    "desktop_capture.cc",
+    "desktop_capture.h",
     "desktop_media_id.cc",
     "desktop_media_id.h",
     "devtools_agent_host.h",
@@ -120,6 +126,7 @@ jumbo_source_set("browser_sources") {
     "font_list_async.h",
     "frame_service_base.h",
     "global_request_id.h",
+    "gpu_client.h",
     "gpu_data_manager.h",
     "gpu_data_manager_observer.h",
     "gpu_feature_checker.cc",
@@ -271,6 +278,7 @@ jumbo_source_set("browser_sources") {
     "tracing_delegate.h",
     "url_data_source.cc",
     "url_data_source.h",
+    "url_loader_request_interceptor.h",
     "video_capture_device_launcher.h",
     "visibility.h",
     "vpn_service_proxy.h",
@@ -298,10 +306,11 @@ jumbo_source_set("browser_sources") {
     "web_ui_url_loader_factory.h",
     "webrtc_event_logger.cc",
     "webrtc_event_logger.h",
+    "webrtc_log.cc",
+    "webrtc_log.h",
     "websocket_handshake_request_info.h",
     "webvr_service_provider.cc",
     "webvr_service_provider.h",
-    "zygote_host_linux.h",
   ]
   configs += [
     "//build/config:precompiled_headers",
@@ -320,6 +329,8 @@ jumbo_source_set("browser_sources") {
     "//services/resource_coordinator/public/cpp:resource_coordinator_cpp",
     "//services/service_manager/public/cpp",
     "//services/tracing/public/cpp",
+    "//services/ui/public/interfaces",
+    "//third_party/webrtc/modules/desktop_capture",
 
     # We expose skia headers in the public API.
     "//skia",
@@ -338,6 +349,7 @@ jumbo_source_set("browser_sources") {
     "//media/capture",
     "//net",
     "//ppapi/c",
+    "//services/service_manager/embedder:embedder_result_codes",
     "//ui/accessibility",
     "//ui/base",
     "//ui/events",
@@ -371,15 +383,5 @@ jumbo_source_set("browser_sources") {
       "host_zoom_map.h",
       "zoom_level_delegate.h",
     ]
-  }
-
-  if (enable_webrtc) {
-    sources += [
-      "desktop_capture.cc",
-      "desktop_capture.h",
-      "webrtc_log.cc",
-      "webrtc_log.h",
-    ]
-    public_deps += [ "//third_party/webrtc/modules/desktop_capture" ]
   }
 }

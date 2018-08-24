@@ -6,6 +6,8 @@
 
 #include "base/observer_list.h"
 #include "components/sync/driver/fake_sync_service.h"
+#include "components/sync/driver/sync_token_status.h"
+#include "components/sync/engine/connection_status.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace ukm {
@@ -56,8 +58,8 @@ class MockSyncService : public syncer::FakeSyncService {
   syncer::ModelTypeSet GetPreferredDataTypes() const override {
     return preferred_data_types_;
   }
-  SyncTokenStatus GetSyncTokenStatus() const override {
-    SyncTokenStatus status;
+  syncer::SyncTokenStatus GetSyncTokenStatus() const override {
+    syncer::SyncTokenStatus status;
     status.connection_status = connection_status_;
     return status;
   }
@@ -113,7 +115,7 @@ class SyncDisableObserverTest : public testing::Test {
 
 TEST_F(SyncDisableObserverTest, NoProfiles) {
   TestSyncDisableObserver observer;
-  EXPECT_FALSE(observer.IsHistorySyncEnabledOnAllProfiles());
+  EXPECT_FALSE(observer.SyncStateAllowsUkm());
   EXPECT_FALSE(observer.ResetNotified());
   EXPECT_FALSE(observer.ResetPurged());
 }
@@ -123,7 +125,7 @@ TEST_F(SyncDisableObserverTest, OneEnabled) {
   MockSyncService sync;
   sync.SetStatus(false, true);
   observer.ObserveServiceForSyncDisables(&sync);
-  EXPECT_TRUE(observer.IsHistorySyncEnabledOnAllProfiles());
+  EXPECT_TRUE(observer.SyncStateAllowsUkm());
   EXPECT_TRUE(observer.ResetNotified());
   EXPECT_FALSE(observer.ResetPurged());
 }
@@ -133,7 +135,7 @@ TEST_F(SyncDisableObserverTest, Passphrase) {
   MockSyncService sync;
   sync.SetStatus(true, true);
   observer.ObserveServiceForSyncDisables(&sync);
-  EXPECT_FALSE(observer.IsHistorySyncEnabledOnAllProfiles());
+  EXPECT_FALSE(observer.SyncStateAllowsUkm());
   EXPECT_FALSE(observer.ResetNotified());
   EXPECT_FALSE(observer.ResetPurged());
 }
@@ -143,7 +145,7 @@ TEST_F(SyncDisableObserverTest, HistoryDisabled) {
   MockSyncService sync;
   sync.SetStatus(false, false);
   observer.ObserveServiceForSyncDisables(&sync);
-  EXPECT_FALSE(observer.IsHistorySyncEnabledOnAllProfiles());
+  EXPECT_FALSE(observer.SyncStateAllowsUkm());
   EXPECT_FALSE(observer.ResetNotified());
   EXPECT_FALSE(observer.ResetPurged());
 }
@@ -153,11 +155,11 @@ TEST_F(SyncDisableObserverTest, AuthError) {
   MockSyncService sync;
   sync.SetStatus(false, true);
   observer.ObserveServiceForSyncDisables(&sync);
-  EXPECT_TRUE(observer.IsHistorySyncEnabledOnAllProfiles());
+  EXPECT_TRUE(observer.SyncStateAllowsUkm());
   sync.SetConnectionStatus(syncer::CONNECTION_AUTH_ERROR);
-  EXPECT_FALSE(observer.IsHistorySyncEnabledOnAllProfiles());
+  EXPECT_FALSE(observer.SyncStateAllowsUkm());
   sync.SetConnectionStatus(syncer::CONNECTION_OK);
-  EXPECT_TRUE(observer.IsHistorySyncEnabledOnAllProfiles());
+  EXPECT_TRUE(observer.SyncStateAllowsUkm());
 }
 
 TEST_F(SyncDisableObserverTest, MixedProfiles1) {
@@ -168,7 +170,7 @@ TEST_F(SyncDisableObserverTest, MixedProfiles1) {
   MockSyncService sync2;
   sync2.SetStatus(false, true);
   observer.ObserveServiceForSyncDisables(&sync2);
-  EXPECT_FALSE(observer.IsHistorySyncEnabledOnAllProfiles());
+  EXPECT_FALSE(observer.SyncStateAllowsUkm());
   EXPECT_FALSE(observer.ResetNotified());
   EXPECT_FALSE(observer.ResetPurged());
 }
@@ -182,11 +184,11 @@ TEST_F(SyncDisableObserverTest, MixedProfiles2) {
   MockSyncService sync2;
   sync2.SetStatus(false, false);
   observer.ObserveServiceForSyncDisables(&sync2);
-  EXPECT_FALSE(observer.IsHistorySyncEnabledOnAllProfiles());
+  EXPECT_FALSE(observer.SyncStateAllowsUkm());
   EXPECT_TRUE(observer.ResetNotified());
   EXPECT_FALSE(observer.ResetPurged());
   sync2.Shutdown();
-  EXPECT_TRUE(observer.IsHistorySyncEnabledOnAllProfiles());
+  EXPECT_TRUE(observer.SyncStateAllowsUkm());
   EXPECT_TRUE(observer.ResetNotified());
   EXPECT_FALSE(observer.ResetPurged());
 }
@@ -200,7 +202,7 @@ TEST_F(SyncDisableObserverTest, TwoEnabled) {
   MockSyncService sync2;
   sync2.SetStatus(false, true);
   observer.ObserveServiceForSyncDisables(&sync2);
-  EXPECT_TRUE(observer.IsHistorySyncEnabledOnAllProfiles());
+  EXPECT_TRUE(observer.SyncStateAllowsUkm());
   EXPECT_FALSE(observer.ResetNotified());
   EXPECT_FALSE(observer.ResetPurged());
 }
@@ -209,15 +211,15 @@ TEST_F(SyncDisableObserverTest, OneAddRemove) {
   TestSyncDisableObserver observer;
   MockSyncService sync;
   observer.ObserveServiceForSyncDisables(&sync);
-  EXPECT_FALSE(observer.IsHistorySyncEnabledOnAllProfiles());
+  EXPECT_FALSE(observer.SyncStateAllowsUkm());
   EXPECT_FALSE(observer.ResetNotified());
   EXPECT_FALSE(observer.ResetPurged());
   sync.SetStatus(false, true);
-  EXPECT_TRUE(observer.IsHistorySyncEnabledOnAllProfiles());
+  EXPECT_TRUE(observer.SyncStateAllowsUkm());
   EXPECT_TRUE(observer.ResetNotified());
   EXPECT_FALSE(observer.ResetPurged());
   sync.Shutdown();
-  EXPECT_FALSE(observer.IsHistorySyncEnabledOnAllProfiles());
+  EXPECT_FALSE(observer.SyncStateAllowsUkm());
   EXPECT_TRUE(observer.ResetNotified());
   EXPECT_FALSE(observer.ResetPurged());
 }
@@ -227,15 +229,15 @@ TEST_F(SyncDisableObserverTest, PurgeOnDisable) {
   MockSyncService sync;
   sync.SetStatus(false, true);
   observer.ObserveServiceForSyncDisables(&sync);
-  EXPECT_TRUE(observer.IsHistorySyncEnabledOnAllProfiles());
+  EXPECT_TRUE(observer.SyncStateAllowsUkm());
   EXPECT_TRUE(observer.ResetNotified());
   EXPECT_FALSE(observer.ResetPurged());
   sync.SetStatus(false, false);
-  EXPECT_FALSE(observer.IsHistorySyncEnabledOnAllProfiles());
+  EXPECT_FALSE(observer.SyncStateAllowsUkm());
   EXPECT_TRUE(observer.ResetNotified());
   EXPECT_TRUE(observer.ResetPurged());
   sync.Shutdown();
-  EXPECT_FALSE(observer.IsHistorySyncEnabledOnAllProfiles());
+  EXPECT_FALSE(observer.SyncStateAllowsUkm());
   EXPECT_FALSE(observer.ResetNotified());
   EXPECT_FALSE(observer.ResetPurged());
 }

@@ -17,6 +17,7 @@
 #include "base/time/time.h"
 #include "net/base/net_export.h"
 #include "net/cookies/canonical_cookie.h"
+#include "net/cookies/cookie_deletion_info.h"
 #include "net/cookies/cookie_options.h"
 
 class GURL;
@@ -45,8 +46,6 @@ class NET_EXPORT CookieStore {
       GetCookieListCallback;
   typedef base::OnceCallback<void(bool success)> SetCookiesCallback;
   typedef base::OnceCallback<void(uint32_t num_deleted)> DeleteCallback;
-
-  typedef base::Callback<bool(const CanonicalCookie& cookie)> CookiePredicate;
 
   virtual ~CookieStore();
 
@@ -107,26 +106,19 @@ class NET_EXPORT CookieStore {
   virtual void DeleteCanonicalCookieAsync(const CanonicalCookie& cookie,
                                           DeleteCallback callback) = 0;
 
-  // Deletes all of the cookies that have a creation_date greater than or equal
-  // to |delete_begin| and less than |delete_end|
+  // Deletes all of the cookies that have a creation_date matching
+  // |creation_range|. See CookieDeletionInfo::TimeRange::Matches().
   // Calls |callback| with the number of cookies deleted.
-  virtual void DeleteAllCreatedBetweenAsync(const base::Time& delete_begin,
-                                            const base::Time& delete_end,
-                                            DeleteCallback callback) = 0;
-
-  // Deletes all of the cookies that match the given predicate and that have a
-  // creation_date greater than or equal to |delete_begin| and smaller than
-  // |delete_end|. Null times do not cap their ranges (i.e.
-  // |delete_end.is_null()| would mean that there is no time after which
-  // cookies are not deleted).  This includes all http_only and secure
-  // cookies. Avoid deleting cookies that could leave websites with a
-  // partial set of visible cookies.
-  // Calls |callback| with the number of cookies deleted.
-  virtual void DeleteAllCreatedBetweenWithPredicateAsync(
-      const base::Time& delete_begin,
-      const base::Time& delete_end,
-      const CookiePredicate& predicate,
+  virtual void DeleteAllCreatedInTimeRangeAsync(
+      const CookieDeletionInfo::TimeRange& creation_range,
       DeleteCallback callback) = 0;
+
+  // Deletes all of the cookies matching |delete_info|. This includes all
+  // http_only and secure cookies. Avoid deleting cookies that could leave
+  // websites with a partial set of visible cookies.
+  // Calls |callback| with the number of cookies deleted.
+  virtual void DeleteAllMatchingInfoAsync(CookieDeletionInfo delete_info,
+                                          DeleteCallback callback) = 0;
 
   virtual void DeleteSessionCookiesAsync(DeleteCallback) = 0;
 

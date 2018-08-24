@@ -5,11 +5,13 @@
 import("//build/buildflag_header.gni")
 import("//build/config/ios/ios_sdk.gni")
 import("//build/config/ios/rules.gni")
+import("//build/config/locales.gni")
 import("//components/cronet/native/include/headers.gni")
 import("//components/grpc_support/include/headers.gni")
 import("//ios/build/config.gni")
 import("//ios/web/js_compile.gni")
 import("//ios/web_view/features.gni")
+import("//ios/web_view/repack.gni")
 import("//testing/test.gni")
 import("//tools/grit/repack.gni")
 
@@ -49,6 +51,7 @@ ios_web_view_public_headers = [
   "public/cwv_navigation_type.h",
   "public/cwv_preferences.h",
   "public/cwv_preview_element_info.h",
+  "public/cwv_script_command.h",
   "public/cwv_scroll_view.h",
   "public/cwv_scroll_view_delegate.h",
   "public/cwv_translation_controller.h",
@@ -74,8 +77,11 @@ if (ios_web_view_enable_autofill) {
     "public/cwv_autofill_controller.h",
     "public/cwv_autofill_controller_delegate.h",
     "public/cwv_autofill_data_manager.h",
+    "public/cwv_autofill_data_manager_delegate.h",
     "public/cwv_autofill_profile.h",
     "public/cwv_autofill_suggestion.h",
+    "public/cwv_credit_card.h",
+    "public/cwv_credit_card_verifier.h",
     "public/cwv_preferences_autofill.h",
     "public/cwv_web_view_autofill.h",
     "public/cwv_web_view_configuration_autofill.h",
@@ -105,6 +111,8 @@ ios_web_view_sources = [
   "internal/cwv_preferences_internal.h",
   "internal/cwv_preview_element_info.mm",
   "internal/cwv_preview_element_info_internal.h",
+  "internal/cwv_script_command.mm",
+  "internal/cwv_script_command_internal.h",
   "internal/cwv_scroll_view.mm",
   "internal/cwv_scroll_view_internal.h",
   "internal/cwv_user_content_controller.mm",
@@ -187,6 +195,7 @@ if (ios_web_view_enable_signin) {
 }
 if (ios_web_view_enable_autofill) {
   ios_web_view_sources += [
+    "internal/autofill/cwv_autofill_client_ios_bridge.h",
     "internal/autofill/cwv_autofill_controller.mm",
     "internal/autofill/cwv_autofill_controller_internal.h",
     "internal/autofill/cwv_autofill_data_manager.mm",
@@ -195,13 +204,17 @@ if (ios_web_view_enable_autofill) {
     "internal/autofill/cwv_autofill_profile_internal.h",
     "internal/autofill/cwv_autofill_suggestion.mm",
     "internal/autofill/cwv_autofill_suggestion_internal.h",
+    "internal/autofill/cwv_credit_card.mm",
+    "internal/autofill/cwv_credit_card_internal.h",
+    "internal/autofill/cwv_credit_card_verifier.mm",
+    "internal/autofill/cwv_credit_card_verifier_internal.h",
   ]
 }
 
 ios_web_view_deps = [
   ":web_view_bundle",
   ":web_view_features",
-  ":packed_resources",
+  ":web_view_resources",
   "//base",
   "//components/autofill/core/browser",
   "//components/autofill/core/common",
@@ -213,6 +226,7 @@ ios_web_view_deps = [
   "//components/keyed_service/core",
   "//components/keyed_service/ios",
   "//components/language/core/browser",
+  "//components/language/core/common",
   "//components/net_log",
   "//components/pref_registry",
   "//components/prefs",
@@ -220,7 +234,7 @@ ios_web_view_deps = [
   "//components/signin/core/browser",
   "//components/signin/ios/browser",
   "//components/signin/ios/browser:active_state_manager",
-  "//components/ssl_config",
+  "//components/strings:components_strings_grit",
   "//components/sync",
   "//components/translate/core/browser",
   "//components/translate/core/common",
@@ -305,7 +319,9 @@ test("ios_web_view_unittests") {
   testonly = true
   sources = [
     "internal/autofill/cwv_autofill_controller_unittest.mm",
+    "internal/autofill/cwv_autofill_profile_unittest.mm",
     "internal/autofill/cwv_autofill_suggestion_unittest.mm",
+    "internal/autofill/cwv_credit_card_unittest.mm",
     "internal/cwv_html_element_unittest.mm",
     "internal/cwv_preferences_unittest.mm",
     "internal/cwv_preview_element_info_unittest.mm",
@@ -320,6 +336,7 @@ test("ios_web_view_unittests") {
   deps = [
     "test:test_support",
     "//base/test:run_all_unittests",
+    "//components/autofill/core/browser:test_support",
     "//components/autofill/ios/browser:test_support",
     "//ios/testing:ios_test_support",
     "//ios/web/public/test",
@@ -359,8 +376,20 @@ js_compile_bundle("web_view_bundle") {
   ]
 }
 
+repack_locales("repack_locales") {
+  visibility = [ ":web_view_resources" ]
+  source_patterns = [ "${root_gen_dir}/components/strings/components_strings_" ]
+
+  deps = [
+    "//components/strings:components_strings",
+  ]
+  input_locales = ios_packed_locales
+  output_locales = ios_packed_locales_as_mac_outputs
+  copy_data_to_bundle = true
+}
+
 repack("repack_resources") {
-  visibility = [ ":packed_resources" ]
+  visibility = [ ":web_view_resources" ]
   deps = [
     "//components/resources:components_resources",
     "//ios/web:resources",
@@ -370,19 +399,27 @@ repack("repack_resources") {
     "$root_gen_dir/ios/web/ios_web_resources.pak",
   ]
   output = "$target_gen_dir/web_view_resources.pak"
+  copy_data_to_bundle = true
 }
 
-bundle_data("packed_resources") {
+ios_web_view_repack_all_scales("repack_scalable_resources") {
+  visibility = [ ":web_view_resources" ]
+  scales = [
+    "100",
+    "200",
+    "300",
+  ]
+}
+
+group("web_view_resources") {
   visibility = [ "//ios/web_view:*" ]
-  public_deps = [
+  deps = [
+    ":repack_locales",
     ":repack_resources",
   ]
-  sources = [
-    "$target_gen_dir/web_view_resources.pak",
-  ]
-  outputs = [
-    "{{bundle_resources_dir}}/{{source_file_part}}",
-  ]
+  if (ios_web_view_enable_autofill) {
+    deps += [ ":repack_scalable_resources" ]
+  }
 }
 
 if (additional_toolchains == [] || current_toolchain == default_toolchain) {

@@ -19,9 +19,9 @@
 #include "net/base/host_mapping_rules.h"
 #include "net/base/host_port_pair.h"
 #include "net/http/http_stream_factory.h"
-#include "net/quic/core/crypto/crypto_protocol.h"
-#include "net/quic/core/quic_packets.h"
-#include "net/spdy/core/spdy_protocol.h"
+#include "net/third_party/quic/core/crypto/crypto_protocol.h"
+#include "net/third_party/quic/core/quic_packets.h"
+#include "net/third_party/spdy/core/spdy_protocol.h"
 #include "net/url_request/url_request_context_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -102,7 +102,6 @@ TEST_F(NetworkSessionConfiguratorTest, EnableQuicFromFieldTrialGroup) {
             params_.quic_max_idle_time_before_crypto_handshake_seconds);
   EXPECT_FALSE(params_.quic_race_cert_verification);
   EXPECT_FALSE(params_.quic_estimate_initial_rtt);
-  EXPECT_FALSE(params_.quic_connect_using_default_network);
   EXPECT_FALSE(params_.quic_migrate_sessions_on_network_change);
   EXPECT_FALSE(params_.quic_migrate_sessions_early);
   EXPECT_FALSE(params_.quic_migrate_sessions_on_network_change_v2);
@@ -300,30 +299,6 @@ TEST_F(NetworkSessionConfiguratorTest, QuicEstimateInitialRtt) {
 }
 
 TEST_F(NetworkSessionConfiguratorTest,
-       QuicConnectUsingDefaultNetworkFromFieldTrialParams) {
-  std::map<std::string, std::string> field_trial_params;
-  field_trial_params["connect_using_default_network"] = "true";
-  variations::AssociateVariationParams("QUIC", "Enabled", field_trial_params);
-  base::FieldTrialList::CreateFieldTrial("QUIC", "Enabled");
-
-  ParseFieldTrials();
-
-  EXPECT_TRUE(params_.quic_connect_using_default_network);
-}
-
-TEST_F(NetworkSessionConfiguratorTest,
-       QuicMigrateSessionsOnNetworkChangeFromFieldTrialParams) {
-  std::map<std::string, std::string> field_trial_params;
-  field_trial_params["migrate_sessions_on_network_change"] = "true";
-  variations::AssociateVariationParams("QUIC", "Enabled", field_trial_params);
-  base::FieldTrialList::CreateFieldTrial("QUIC", "Enabled");
-
-  ParseFieldTrials();
-
-  EXPECT_TRUE(params_.quic_migrate_sessions_on_network_change);
-}
-
-TEST_F(NetworkSessionConfiguratorTest,
        QuicMigrateSessionsOnNetworkChangeV2FromFieldTrialParams) {
   std::map<std::string, std::string> field_trial_params;
   field_trial_params["migrate_sessions_on_network_change_v2"] = "true";
@@ -333,18 +308,6 @@ TEST_F(NetworkSessionConfiguratorTest,
   ParseFieldTrials();
 
   EXPECT_TRUE(params_.quic_migrate_sessions_on_network_change_v2);
-}
-
-TEST_F(NetworkSessionConfiguratorTest,
-       QuicMigrateSessionsEarlyFromFieldTrialParams) {
-  std::map<std::string, std::string> field_trial_params;
-  field_trial_params["migrate_sessions_early"] = "true";
-  variations::AssociateVariationParams("QUIC", "Enabled", field_trial_params);
-  base::FieldTrialList::CreateFieldTrial("QUIC", "Enabled");
-
-  ParseFieldTrials();
-
-  EXPECT_TRUE(params_.quic_migrate_sessions_early);
 }
 
 TEST_F(NetworkSessionConfiguratorTest,
@@ -526,9 +489,9 @@ TEST_F(NetworkSessionConfiguratorTest, Http2SettingsFromFieldTrialParams) {
 
   ParseFieldTrials();
 
-  net::SettingsMap expected_settings;
-  expected_settings[static_cast<net::SpdyKnownSettingsId>(7)] = 1234;
-  expected_settings[static_cast<net::SpdyKnownSettingsId>(25)] = 5678;
+  spdy::SettingsMap expected_settings;
+  expected_settings[static_cast<spdy::SpdyKnownSettingsId>(7)] = 1234;
+  expected_settings[static_cast<spdy::SpdyKnownSettingsId>(25)] = 5678;
   EXPECT_EQ(expected_settings, params_.http2_settings);
 }
 
@@ -710,6 +673,26 @@ TEST_F(NetworkSessionConfiguratorTest, TokenBindingEnabled) {
   ParseCommandLineAndFieldTrials(command_line);
 
   EXPECT_TRUE(params_.enable_token_binding);
+}
+
+TEST_F(NetworkSessionConfiguratorTest, ChannelIDEnabled) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(features::kChannelID);
+
+  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
+  ParseCommandLineAndFieldTrials(command_line);
+
+  EXPECT_TRUE(params_.enable_channel_id);
+}
+
+TEST_F(NetworkSessionConfiguratorTest, ChannelIDDisabled) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndDisableFeature(features::kChannelID);
+
+  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
+  ParseCommandLineAndFieldTrials(command_line);
+
+  EXPECT_FALSE(params_.enable_channel_id);
 }
 
 TEST_F(NetworkSessionConfiguratorTest, DefaultCacheBackend) {

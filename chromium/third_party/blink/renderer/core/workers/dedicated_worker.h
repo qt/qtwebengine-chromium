@@ -14,6 +14,7 @@
 #include "third_party/blink/renderer/core/messaging/message_port.h"
 #include "third_party/blink/renderer/core/workers/abstract_worker.h"
 #include "third_party/blink/renderer/core/workers/worker_options.h"
+#include "third_party/blink/renderer/platform/graphics/begin_frame_provider.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 
 namespace v8_inspector {
@@ -28,7 +29,6 @@ class ExecutionContext;
 class ScriptState;
 class WorkerClassicScriptLoader;
 class WorkerClients;
-class WorkerModuleFetchCoordinator;
 struct GlobalScopeCreationParams;
 
 // Implementation of the Worker interface defined in the WebWorker HTML spec:
@@ -59,6 +59,7 @@ class CORE_EXPORT DedicatedWorker final
                    ExceptionState&);
   static bool CanTransferArrayBuffersAndImageBitmaps() { return true; }
   void terminate();
+  BeginFrameProviderParams CreateBeginFrameProviderParams();
 
   // Implements ContextLifecycleObserver (via AbstractWorker).
   void ContextDestroyed(ExecutionContext*) override;
@@ -95,8 +96,6 @@ class CORE_EXPORT DedicatedWorker final
   const Member<DedicatedWorkerMessagingProxy> context_proxy_;
 
   scoped_refptr<WorkerClassicScriptLoader> classic_script_loader_;
-
-  Member<WorkerModuleFetchCoordinator> module_fetch_coordinator_;
 };
 
 }  // namespace blink

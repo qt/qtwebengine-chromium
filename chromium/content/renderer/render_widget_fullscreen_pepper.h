@@ -16,8 +16,8 @@
 #include "third_party/blink/public/web/web_widget.h"
 #include "url/gurl.h"
 
-namespace blink {
-class WebLayer;
+namespace cc {
+class Layer;
 }
 
 namespace content {
@@ -45,7 +45,7 @@ class RenderWidgetFullscreenPepper : public RenderWidget,
   void ScrollRect(int dx, int dy, const blink::WebRect& rect) override;
   void Destroy() override;
   void PepperDidChangeCursor(const blink::WebCursorInfo& cursor) override;
-  void SetLayer(blink::WebLayer* layer) override;
+  void SetLayer(cc::Layer* layer) override;
 
   // RenderWidget overrides.
   bool OnMessageReceived(const IPC::Message& msg) override;
@@ -69,7 +69,8 @@ class RenderWidgetFullscreenPepper : public RenderWidget,
   // RenderWidget API.
   void DidInitiatePaint() override;
   void Close() override;
-  void OnResize(const ResizeParams& params) override;
+  void OnSynchronizeVisualProperties(
+      const VisualProperties& visual_properties) override;
 
   // RenderWidget overrides.
   GURL GetURLForGraphicsContext3D() override;
@@ -83,7 +84,7 @@ class RenderWidgetFullscreenPepper : public RenderWidget,
   // The plugin instance this widget wraps.
   PepperPluginInstanceImpl* plugin_;
 
-  blink::WebLayer* layer_;
+  cc::Layer* layer_;
 
   std::unique_ptr<MouseLockDispatcher> mouse_lock_dispatcher_;
 

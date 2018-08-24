@@ -13,10 +13,6 @@ mojom("data_pipe_interfaces") {
     "data_pipe_getter.mojom",
   ]
 
-  public_deps = [
-    "//mojo/common:common_custom_types",
-  ]
-
   # TODO(crbug/598073): When moving the service implementation to
   # //services/network, add the correct values for export_class_attribute /
   # export_define / export_header here. Context in https://crrev.com/2225673002.
@@ -79,9 +75,12 @@ mojom("mojom") {
   sources = [
     "cookie_manager.mojom",
     "cors.mojom",
+    "ct_log_info.mojom",
+    "digitally_signed.mojom",
     "fetch_api.mojom",
     "http_request_headers.mojom",
     "network_change_manager.mojom",
+    "network_context.mojom",
     "network_param.mojom",
     "network_service.mojom",
     "network_service_test.mojom",
@@ -90,7 +89,10 @@ mojom("mojom") {
     "proxy_config_with_annotation.mojom",
     "request_context_frame_type.mojom",
     "restricted_cookie_manager.mojom",
+    "signed_tree_head.mojom",
+    "ssl_config.mojom",
     "tcp_socket.mojom",
+    "tls_socket.mojom",
     "url_loader.mojom",
     "url_loader_factory.mojom",
   ]

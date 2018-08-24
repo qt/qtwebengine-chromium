@@ -107,7 +107,7 @@ bool CPDFXFA_DocEnvironment::GetPopupPos(CXFA_FFWidget* hWidget,
                                          float fMinPopup,
                                          float fMaxPopup,
                                          const CFX_RectF& rtAnchor,
-                                         CFX_RectF& rtPopup) {
+                                         CFX_RectF* pPopupRect) {
   if (!hWidget)
     return false;
 
@@ -139,9 +139,9 @@ bool CPDFXFA_DocEnvironment::GetPopupPos(CXFA_FFWidget* hWidget,
           static_cast<int>(rtAnchor.top - page_view_rect.top);
 
       if (rtAnchor.left < page_view_rect.left)
-        rtPopup.left += page_view_rect.left - rtAnchor.left;
+        pPopupRect->left += page_view_rect.left - rtAnchor.left;
       if (rtAnchor.right() > page_view_rect.right)
-        rtPopup.left -= rtAnchor.right() - page_view_rect.right;
+        pPopupRect->left -= rtAnchor.right() - page_view_rect.right;
       break;
     }
     case 90: {
@@ -151,9 +151,9 @@ bool CPDFXFA_DocEnvironment::GetPopupPos(CXFA_FFWidget* hWidget,
           static_cast<int>(rtAnchor.left - page_view_rect.left);
 
       if (rtAnchor.bottom() > page_view_rect.bottom)
-        rtPopup.left += rtAnchor.bottom() - page_view_rect.bottom;
+        pPopupRect->left += rtAnchor.bottom() - page_view_rect.bottom;
       if (rtAnchor.top < page_view_rect.top)
-        rtPopup.left -= page_view_rect.top - rtAnchor.top;
+        pPopupRect->left -= page_view_rect.top - rtAnchor.top;
       break;
     }
     case 180: {
@@ -163,9 +163,9 @@ bool CPDFXFA_DocEnvironment::GetPopupPos(CXFA_FFWidget* hWidget,
           static_cast<int>(page_view_rect.bottom - rtAnchor.bottom());
 
       if (rtAnchor.right() > page_view_rect.right)
-        rtPopup.left += rtAnchor.right() - page_view_rect.right;
+        pPopupRect->left += rtAnchor.right() - page_view_rect.right;
       if (rtAnchor.left < page_view_rect.left)
-        rtPopup.left -= page_view_rect.left - rtAnchor.left;
+        pPopupRect->left -= page_view_rect.left - rtAnchor.left;
       break;
     }
     case 270: {
@@ -175,9 +175,9 @@ bool CPDFXFA_DocEnvironment::GetPopupPos(CXFA_FFWidget* hWidget,
           static_cast<int>(page_view_rect.right - rtAnchor.right());
 
       if (rtAnchor.top < page_view_rect.top)
-        rtPopup.left += page_view_rect.top - rtAnchor.top;
+        pPopupRect->left += page_view_rect.top - rtAnchor.top;
       if (rtAnchor.bottom() > page_view_rect.bottom)
-        rtPopup.left -= rtAnchor.bottom() - page_view_rect.bottom;
+        pPopupRect->left -= rtAnchor.bottom() - page_view_rect.bottom;
       break;
     }
   }
@@ -213,24 +213,24 @@ bool CPDFXFA_DocEnvironment::GetPopupPos(CXFA_FFWidget* hWidget,
     case 0:
     case 180: {
       if (draw_below_anchor)
-        rtPopup.top = rtAnchor.height;
+        pPopupRect->top = rtAnchor.height;
       else
-        rtPopup.top = -popup_height;
+        pPopupRect->top = -popup_height;
       break;
     }
     case 90:
     case 270: {
       if (draw_below_anchor)
-        rtPopup.top = rtAnchor.width;
+        pPopupRect->top = rtAnchor.width;
       else
-        rtPopup.top = -popup_height;
+        pPopupRect->top = -popup_height;
       break;
     }
     default:
       break;
   }
 
-  rtPopup.height = popup_height;
+  pPopupRect->height = popup_height;
 
   return true;
 }
@@ -266,7 +266,8 @@ bool CPDFXFA_DocEnvironment::PopupMenu(CXFA_FFWidget* hWidget,
   if (hWidget->CanSelectAll())
     menuFlag |= FXFA_MENU_SELECTALL;
 
-  return pFormFillEnv->PopupMenu(pPage.Get(), hWidget, menuFlag, ptPopup);
+  return pFormFillEnv->PopupMenu(
+      pPage.Get(), FPDFWidgetFromCXFAFFWidget(hWidget), menuFlag, ptPopup);
 }
 
 void CPDFXFA_DocEnvironment::PageViewEvent(CXFA_FFPageView* pPageView,
@@ -351,14 +352,12 @@ int32_t CPDFXFA_DocEnvironment::CountPages(CXFA_FFDoc* hDoc) {
 int32_t CPDFXFA_DocEnvironment::GetCurrentPage(CXFA_FFDoc* hDoc) {
   if (hDoc != m_pContext->GetXFADoc() || !m_pContext->GetFormFillEnv())
     return -1;
+
   if (m_pContext->GetFormType() != FormType::kXFAFull)
     return -1;
 
   CPDFSDK_FormFillEnvironment* pFormFillEnv = m_pContext->GetFormFillEnv();
-  if (!pFormFillEnv)
-    return -1;
-
-  return pFormFillEnv->GetCurrentPageIndex(m_pContext.Get());
+  return pFormFillEnv ? pFormFillEnv->GetCurrentPageIndex() : -1;
 }
 
 void CPDFXFA_DocEnvironment::SetCurrentPage(CXFA_FFDoc* hDoc,
@@ -372,7 +371,8 @@ void CPDFXFA_DocEnvironment::SetCurrentPage(CXFA_FFDoc* hDoc,
   CPDFSDK_FormFillEnvironment* pFormFillEnv = m_pContext->GetFormFillEnv();
   if (!pFormFillEnv)
     return;
-  pFormFillEnv->SetCurrentPage(m_pContext.Get(), iCurPage);
+
+  pFormFillEnv->SetCurrentPage(iCurPage);
 }
 
 bool CPDFXFA_DocEnvironment::IsCalculationsEnabled(CXFA_FFDoc* hDoc) {
@@ -517,7 +517,7 @@ void CPDFXFA_DocEnvironment::ExportData(CXFA_FFDoc* hDoc,
 }
 
 void CPDFXFA_DocEnvironment::GotoURL(CXFA_FFDoc* hDoc,
-                                     const WideString& bsURL) {
+                                     const WideString& wsURL) {
   if (hDoc != m_pContext->GetXFADoc())
     return;
 
@@ -528,8 +528,7 @@ void CPDFXFA_DocEnvironment::GotoURL(CXFA_FFDoc* hDoc,
   if (!pFormFillEnv)
     return;
 
-  WideStringView str(bsURL.c_str());
-  pFormFillEnv->GotoURL(m_pContext.Get(), str);
+  pFormFillEnv->GotoURL(wsURL);
 }
 
 bool CPDFXFA_DocEnvironment::IsValidationsEnabled(CXFA_FFDoc* hDoc) {

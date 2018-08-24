@@ -34,6 +34,7 @@
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/checked_numeric.h"
+#include "third_party/blink/renderer/platform/wtf/math_extras.h"
 
 namespace blink {
 
@@ -259,7 +260,7 @@ void BaseRenderingContext2D::setLineWidth(double width) {
     return;
   if (GetState().LineWidth() == width)
     return;
-  ModifiableState().SetLineWidth(width);
+  ModifiableState().SetLineWidth(clampTo<float>(width));
 }
 
 String BaseRenderingContext2D::lineCap() const {
@@ -297,7 +298,7 @@ void BaseRenderingContext2D::setMiterLimit(double limit) {
     return;
   if (GetState().MiterLimit() == limit)
     return;
-  ModifiableState().SetMiterLimit(limit);
+  ModifiableState().SetMiterLimit(clampTo<float>(limit));
 }
 
 double BaseRenderingContext2D::shadowOffsetX() const {
@@ -309,7 +310,7 @@ void BaseRenderingContext2D::setShadowOffsetX(double x) {
     return;
   if (GetState().ShadowOffset().Width() == x)
     return;
-  ModifiableState().SetShadowOffsetX(x);
+  ModifiableState().SetShadowOffsetX(clampTo<float>(x));
 }
 
 double BaseRenderingContext2D::shadowOffsetY() const {
@@ -321,7 +322,7 @@ void BaseRenderingContext2D::setShadowOffsetY(double y) {
     return;
   if (GetState().ShadowOffset().Height() == y)
     return;
-  ModifiableState().SetShadowOffsetY(y);
+  ModifiableState().SetShadowOffsetY(clampTo<float>(y));
 }
 
 double BaseRenderingContext2D::shadowBlur() const {
@@ -333,7 +334,7 @@ void BaseRenderingContext2D::setShadowBlur(double blur) {
     return;
   if (GetState().ShadowBlur() == blur)
     return;
-  ModifiableState().SetShadowBlur(blur);
+  ModifiableState().SetShadowBlur(clampTo<float>(blur));
 }
 
 String BaseRenderingContext2D::shadowColor() const {
@@ -374,7 +375,7 @@ double BaseRenderingContext2D::lineDashOffset() const {
 void BaseRenderingContext2D::setLineDashOffset(double offset) {
   if (!std::isfinite(offset) || GetState().LineDashOffset() == offset)
     return;
-  ModifiableState().SetLineDashOffset(offset);
+  ModifiableState().SetLineDashOffset(clampTo<float>(offset));
 }
 
 double BaseRenderingContext2D::globalAlpha() const {
@@ -391,20 +392,20 @@ void BaseRenderingContext2D::setGlobalAlpha(double alpha) {
 
 String BaseRenderingContext2D::globalCompositeOperation() const {
   return CompositeOperatorName(
-      CompositeOperatorFromSkia(GetState().GlobalComposite()),
-      BlendModeFromSkia(GetState().GlobalComposite()));
+      CompositeOperatorFromSkBlendMode(GetState().GlobalComposite()),
+      BlendModeFromSkBlendMode(GetState().GlobalComposite()));
 }
 
 void BaseRenderingContext2D::setGlobalCompositeOperation(
     const String& operation) {
   CompositeOperator op = kCompositeSourceOver;
-  WebBlendMode blend_mode = WebBlendMode::kNormal;
-  if (!ParseCompositeAndBlendOperator(operation, op, blend_mode))
+  BlendMode blend_mode = BlendMode::kNormal;
+  if (!ParseCompositeAndBlendMode(operation, op, blend_mode))
     return;
-  SkBlendMode xfermode = WebCoreCompositeToSkiaComposite(op, blend_mode);
-  if (GetState().GlobalComposite() == xfermode)
+  SkBlendMode sk_blend_mode = WebCoreCompositeToSkiaComposite(op, blend_mode);
+  if (GetState().GlobalComposite() == sk_blend_mode)
     return;
-  ModifiableState().SetGlobalComposite(xfermode);
+  ModifiableState().SetGlobalComposite(sk_blend_mode);
 }
 
 String BaseRenderingContext2D::filter() const {
@@ -430,17 +431,6 @@ void BaseRenderingContext2D::setFilter(
   SnapshotStateForFilter();
 }
 
-SVGMatrixTearOff* BaseRenderingContext2D::currentTransform() const {
-  return SVGMatrixTearOff::Create(GetState().Transform());
-}
-
-void BaseRenderingContext2D::setCurrentTransform(
-    SVGMatrixTearOff* matrix_tear_off) {
-  const AffineTransform& transform = matrix_tear_off->Value();
-  setTransform(transform.A(), transform.B(), transform.C(), transform.D(),
-               transform.E(), transform.F());
-}
-
 void BaseRenderingContext2D::scale(double sx, double sy) {
   PaintCanvas* c = DrawingCanvas();
   if (!c)
@@ -450,7 +440,9 @@ void BaseRenderingContext2D::scale(double sx, double sy) {
     return;
 
   AffineTransform new_transform = GetState().Transform();
-  new_transform.ScaleNonUniform(sx, sy);
+  float fsx = clampTo<float>(sx);
+  float fsy = clampTo<float>(sy);
+  new_transform.ScaleNonUniform(fsx, fsy);
   if (GetState().Transform() == new_transform)
     return;
 
@@ -458,8 +450,8 @@ void BaseRenderingContext2D::scale(double sx, double sy) {
   if (!GetState().IsTransformInvertible())
     return;
 
-  c->scale(sx, sy);
-  path_.Transform(AffineTransform().ScaleNonUniform(1.0 / sx, 1.0 / sy));
+  c->scale(fsx, fsy);
+  path_.Transform(AffineTransform().ScaleNonUniform(1.0 / fsx, 1.0 / fsy));
 }
 
 void BaseRenderingContext2D::rotate(double angle_in_radians) {
@@ -478,7 +470,7 @@ void BaseRenderingContext2D::rotate(double angle_in_radians) {
   ModifiableState().SetTransform(new_transform);
   if (!GetState().IsTransformInvertible())
     return;
-  c->rotate(angle_in_radians * (180.0 / piFloat));
+  c->rotate(clampTo<float>(angle_in_radians * (180.0 / piFloat)));
   path_.Transform(AffineTransform().RotateRadians(-angle_in_radians));
 }
 
@@ -493,15 +485,18 @@ void BaseRenderingContext2D::translate(double tx, double ty) {
     return;
 
   AffineTransform new_transform = GetState().Transform();
-  new_transform.Translate(tx, ty);
+  // clamp to float to avoid float cast overflow when used as SkScalar
+  float ftx = clampTo<float>(tx);
+  float fty = clampTo<float>(ty);
+  new_transform.Translate(ftx, fty);
   if (GetState().Transform() == new_transform)
     return;
 
   ModifiableState().SetTransform(new_transform);
   if (!GetState().IsTransformInvertible())
     return;
-  c->translate(tx, ty);
-  path_.Transform(AffineTransform().Translate(-tx, -ty));
+  c->translate(ftx, fty);
+  path_.Transform(AffineTransform().Translate(-ftx, -fty));
 }
 
 void BaseRenderingContext2D::transform(double m11,
@@ -518,7 +513,15 @@ void BaseRenderingContext2D::transform(double m11,
       !std::isfinite(m12) || !std::isfinite(m22) || !std::isfinite(dy))
     return;
 
-  AffineTransform transform(m11, m12, m21, m22, dx, dy);
+  // clamp to float to avoid float cast overflow when used as SkScalar
+  float fm11 = clampTo<float>(m11);
+  float fm12 = clampTo<float>(m12);
+  float fm21 = clampTo<float>(m21);
+  float fm22 = clampTo<float>(m22);
+  float fdx = clampTo<float>(dx);
+  float fdy = clampTo<float>(dy);
+
+  AffineTransform transform(fm11, fm12, fm21, fm22, fdx, fdy);
   AffineTransform new_transform = GetState().Transform() * transform;
   if (GetState().Transform() == new_transform)
     return;
@@ -561,16 +564,43 @@ void BaseRenderingContext2D::setTransform(double m11,
                                           double m22,
                                           double dx,
                                           double dy) {
-  PaintCanvas* c = DrawingCanvas();
-  if (!c)
-    return;
-
   if (!std::isfinite(m11) || !std::isfinite(m21) || !std::isfinite(dx) ||
       !std::isfinite(m12) || !std::isfinite(m22) || !std::isfinite(dy))
     return;
 
   resetTransform();
-  transform(m11, m12, m21, m22, dx, dy);
+  // clamp to float to avoid float cast overflow when used as SkScalar
+  float fm11 = clampTo<float>(m11);
+  float fm12 = clampTo<float>(m12);
+  float fm21 = clampTo<float>(m21);
+  float fm22 = clampTo<float>(m22);
+  float fdx = clampTo<float>(dx);
+  float fdy = clampTo<float>(dy);
+
+  transform(fm11, fm12, fm21, fm22, fdx, fdy);
+}
+
+void BaseRenderingContext2D::setTransform(DOMMatrix2DInit& transform,
+                                          ExceptionState& exception_state) {
+  DOMMatrixReadOnly* m =
+      DOMMatrixReadOnly::fromMatrix2D(transform, exception_state);
+
+  if (!m)
+    return;
+
+  setTransform(m->m11(), m->m12(), m->m21(), m->m22(), m->m41(), m->m42());
+}
+
+DOMMatrix* BaseRenderingContext2D::getTransform() {
+  const AffineTransform& t = GetState().Transform();
+  DOMMatrix* m = DOMMatrix::Create();
+  m->setA(t.A());
+  m->setB(t.B());
+  m->setC(t.C());
+  m->setD(t.D());
+  m->setE(t.E());
+  m->setF(t.F());
+  return m;
 }
 
 void BaseRenderingContext2D::beginPath() {
@@ -677,7 +707,13 @@ void BaseRenderingContext2D::fillRect(double x,
   if (!DrawingCanvas())
     return;
 
-  SkRect rect = SkRect::MakeXYWH(x, y, width, height);
+  // clamp to float to avoid float cast overflow when used as SkScalar
+  float fx = clampTo<float>(x);
+  float fy = clampTo<float>(y);
+  float fwidth = clampTo<float>(width);
+  float fheight = clampTo<float>(height);
+
+  SkRect rect = SkRect::MakeXYWH(fx, fy, fwidth, fheight);
   Draw([&rect](PaintCanvas* c, const PaintFlags* flags)  // draw lambda
        { c->drawRect(rect, *flags); },
        [&rect, this](const SkIRect& clip_bounds)  // overdraw test lambda
@@ -711,7 +747,13 @@ void BaseRenderingContext2D::strokeRect(double x,
   if (!DrawingCanvas())
     return;
 
-  SkRect rect = SkRect::MakeXYWH(x, y, width, height);
+  // clamp to float to avoid float cast overflow when used as SkScalar
+  float fx = clampTo<float>(x);
+  float fy = clampTo<float>(y);
+  float fwidth = clampTo<float>(width);
+  float fheight = clampTo<float>(height);
+
+  SkRect rect = SkRect::MakeXYWH(fx, fy, fwidth, fheight);
   FloatRect bounds = rect;
   InflateStrokeRect(bounds);
   Draw([&rect](PaintCanvas* c, const PaintFlags* flags)  // draw lambda
@@ -771,9 +813,9 @@ bool BaseRenderingContext2D::IsPointInPathInternal(
   if (!GetState().IsTransformInvertible())
     return false;
 
-  FloatPoint point(x, y);
-  if (!std::isfinite(point.X()) || !std::isfinite(point.Y()))
+  if (!std::isfinite(x) || !std::isfinite(y))
     return false;
+  FloatPoint point(clampTo<float>(x), clampTo<float>(y));
   AffineTransform ctm = GetState().Transform();
   FloatPoint transformed_point = ctm.Inverse().MapPoint(point);
 
@@ -800,9 +842,9 @@ bool BaseRenderingContext2D::IsPointInStrokeInternal(const Path& path,
   if (!GetState().IsTransformInvertible())
     return false;
 
-  FloatPoint point(x, y);
-  if (!std::isfinite(point.X()) || !std::isfinite(point.Y()))
+  if (!std::isfinite(x) || !std::isfinite(y))
     return false;
+  FloatPoint point(clampTo<float>(x), clampTo<float>(y));
   AffineTransform ctm = GetState().Transform();
   FloatPoint transformed_point = ctm.Inverse().MapPoint(point);
 
@@ -840,8 +882,14 @@ void BaseRenderingContext2D::clearRect(double x,
   PaintFlags clear_flags;
   clear_flags.setBlendMode(SkBlendMode::kClear);
   clear_flags.setStyle(PaintFlags::kFill_Style);
-  FloatRect rect(x, y, width, height);
 
+  // clamp to float to avoid float cast overflow when used as SkScalar
+  float fx = clampTo<float>(x);
+  float fy = clampTo<float>(y);
+  float fwidth = clampTo<float>(width);
+  float fheight = clampTo<float>(height);
+
+  FloatRect rect(fx, fy, fwidth, fheight);
   if (RectContainsTransformedRect(rect, clip_bounds)) {
     CheckOverdraw(rect, &clear_flags, CanvasRenderingContext2DState::kNoImage,
                   kClipFill);
@@ -1036,16 +1084,6 @@ bool BaseRenderingContext2D::ShouldDrawImageAntialiased(
          dest_rect.Height() * fabs(height_expansion) < 1;
 }
 
-static bool IsDrawScalingDown(const FloatRect& src_rect,
-                              const FloatRect& dst_rect,
-                              float x_scale_squared,
-                              float y_scale_squared) {
-  return dst_rect.Width() * dst_rect.Width() * x_scale_squared <
-             src_rect.Width() * src_rect.Width() &&
-         dst_rect.Height() * dst_rect.Height() * y_scale_squared <
-             src_rect.Height() * src_rect.Height();
-}
-
 void BaseRenderingContext2D::DrawImageInternal(PaintCanvas* c,
                                                CanvasImageSource* image_source,
                                                Image* image,
@@ -1078,12 +1116,6 @@ void BaseRenderingContext2D::DrawImageInternal(PaintCanvas* c,
     image_flags.setBlendMode(SkBlendMode::kSrcOver);
     image_flags.setImageFilter(nullptr);
   }
-
-  if (!imageSmoothingEnabled() &&
-      IsDrawScalingDown(src_rect, dst_rect,
-                        GetState().Transform().XScaleSquared(),
-                        GetState().Transform().YScaleSquared()))
-    image_flags.setFilterQuality(kLow_SkFilterQuality);
 
   if (!image_source->IsVideoElement()) {
     image_flags.setAntiAlias(ShouldDrawImageAntialiased(dst_rect));
@@ -1148,7 +1180,7 @@ void BaseRenderingContext2D::drawImage(ScriptState* script_state,
     return;
 
   double start_time = 0;
-  Optional<CustomCountHistogram> timer;
+  base::Optional<CustomCountHistogram> timer;
   if (!IsPaint2D()) {
     start_time = WTF::CurrentTimeTicksInSeconds();
     if (CanCreateCanvas2dResourceProvider() && IsAccelerated()) {
@@ -1243,8 +1275,18 @@ void BaseRenderingContext2D::drawImage(ScriptState* script_state,
       !std::isfinite(sw) || !std::isfinite(sh) || !dw || !dh || !sw || !sh)
     return;
 
-  FloatRect src_rect = NormalizeRect(FloatRect(sx, sy, sw, sh));
-  FloatRect dst_rect = NormalizeRect(FloatRect(dx, dy, dw, dh));
+  // clamp to float to avoid float cast overflow when used as SkScalar
+  float fsx = clampTo<float>(sx);
+  float fsy = clampTo<float>(sy);
+  float fsw = clampTo<float>(sw);
+  float fsh = clampTo<float>(sh);
+  float fdx = clampTo<float>(dx);
+  float fdy = clampTo<float>(dy);
+  float fdw = clampTo<float>(dw);
+  float fdh = clampTo<float>(dh);
+
+  FloatRect src_rect = NormalizeRect(FloatRect(fsx, fsy, fsw, fsh));
+  FloatRect dst_rect = NormalizeRect(FloatRect(fdx, fdy, fdw, fdh));
   FloatSize image_size = image_source->ElementSize(default_object_size);
 
   ClipRectsToImageRect(FloatRect(FloatPoint(), image_size), &src_rect,
@@ -1342,8 +1384,18 @@ CanvasGradient* BaseRenderingContext2D::createLinearGradient(double x0,
                                                              double y0,
                                                              double x1,
                                                              double y1) {
+  if (!std::isfinite(x0) || !std::isfinite(y0) || !std::isfinite(x1) ||
+      !std::isfinite(y1))
+    return nullptr;
+
+  // clamp to float to avoid float cast overflow
+  float fx0 = clampTo<float>(x0);
+  float fy0 = clampTo<float>(y0);
+  float fx1 = clampTo<float>(x1);
+  float fy1 = clampTo<float>(y1);
+
   CanvasGradient* gradient =
-      CanvasGradient::Create(FloatPoint(x0, y0), FloatPoint(x1, y1));
+      CanvasGradient::Create(FloatPoint(fx0, fy0), FloatPoint(fx1, fy1));
   return gradient;
 }
 
@@ -1362,8 +1414,20 @@ CanvasGradient* BaseRenderingContext2D::createRadialGradient(
     return nullptr;
   }
 
-  CanvasGradient* gradient =
-      CanvasGradient::Create(FloatPoint(x0, y0), r0, FloatPoint(x1, y1), r1);
+  if (!std::isfinite(x0) || !std::isfinite(y0) || !std::isfinite(r0) ||
+      !std::isfinite(x1) || !std::isfinite(y1) || !std::isfinite(r1))
+    return nullptr;
+
+  // clamp to float to avoid float cast overflow
+  float fx0 = clampTo<float>(x0);
+  float fy0 = clampTo<float>(y0);
+  float fr0 = clampTo<float>(r0);
+  float fx1 = clampTo<float>(x1);
+  float fy1 = clampTo<float>(y1);
+  float fr1 = clampTo<float>(r1);
+
+  CanvasGradient* gradient = CanvasGradient::Create(FloatPoint(fx0, fy0), fr0,
+                                                    FloatPoint(fx1, fy1), fr1);
   return gradient;
 }
 
@@ -1453,7 +1517,7 @@ bool BaseRenderingContext2D::ComputeDirtyRect(
   if (AlphaChannel(GetState().ShadowColor())) {
     FloatRect shadow_rect(canvas_rect);
     shadow_rect.Move(GetState().ShadowOffset());
-    shadow_rect.Inflate(GetState().ShadowBlur());
+    shadow_rect.Inflate(clampTo<float>(GetState().ShadowBlur()));
     canvas_rect.Unite(shadow_rect);
   }
 
@@ -1588,7 +1652,7 @@ ImageData* BaseRenderingContext2D::getImageData(
     return nullptr;
   }
 
-  Optional<ScopedUsHistogramTimer> timer;
+  base::Optional<ScopedUsHistogramTimer> timer;
   if (!IsPaint2D()) {
     if (CanCreateCanvas2dResourceProvider() && IsAccelerated()) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
@@ -1703,7 +1767,7 @@ void BaseRenderingContext2D::putImageData(ImageData* data,
   if (dest_rect.IsEmpty())
     return;
 
-  Optional<ScopedUsHistogramTimer> timer;
+  base::Optional<ScopedUsHistogramTimer> timer;
   if (!IsPaint2D()) {
     if (hasResourceProvider && IsAccelerated()) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
@@ -1817,7 +1881,7 @@ void BaseRenderingContext2D::InflateStrokeRect(FloatRect& rect) const {
   else if (GetState().GetLineCap() == kSquareCap)
     delta *= kRoot2;
 
-  rect.Inflate(delta);
+  rect.Inflate(clampTo<float>(delta));
 }
 
 bool BaseRenderingContext2D::imageSmoothingEnabled() const {

@@ -120,9 +120,9 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
 
   virtual void DispatchDidHandleOnloadEvents() = 0;
   virtual void DispatchDidReceiveServerRedirectForProvisionalLoad() = 0;
-  virtual void DispatchDidNavigateWithinPage(HistoryItem*,
-                                             HistoryCommitType,
-                                             bool content_initiated) {}
+  virtual void DidFinishSameDocumentNavigation(HistoryItem*,
+                                               HistoryCommitType,
+                                               bool content_initiated) {}
   virtual void DispatchWillCommitProvisionalLoad() = 0;
   virtual void DispatchDidStartProvisionalLoad(DocumentLoader*,
                                                ResourceRequest&) = 0;
@@ -244,15 +244,12 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
     kFailOnDetachedPlugin,
     kAllowDetachedPlugin,
   };
-  virtual bool CanCreatePluginWithoutRenderer(
-      const String& mime_type) const = 0;
   virtual WebPluginContainerImpl* CreatePlugin(HTMLPlugInElement&,
                                                const KURL&,
                                                const Vector<String>&,
                                                const Vector<String>&,
                                                const String&,
-                                               bool load_manually,
-                                               DetachedPluginPolicy) = 0;
+                                               bool load_manually) = 0;
 
   virtual std::unique_ptr<WebMediaPlayer> CreateWebMediaPlayer(
       HTMLMediaElement&,
@@ -330,7 +327,7 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
 
   virtual void DispatchDidChangeManifest() {}
 
-  virtual unsigned BackForwardLength() { return 0; }
+  unsigned BackForwardLength() override { return 0; }
 
   virtual bool IsLocalFrameClientImpl() const { return false; }
 
@@ -388,6 +385,10 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
       const WebRect&,
       const WebScrollIntoViewParams&) {}
 
+  virtual void BubbleLogicalScrollInParentFrame(
+      ScrollDirection direction,
+      ScrollGranularity granularity) = 0;
+
   virtual void SetVirtualTimePauser(
       WebScopedVirtualTimePauser virtual_time_pauser) {}
 
@@ -402,6 +403,8 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
   virtual Frame* FindFrame(const AtomicString& name) const = 0;
 
   virtual void FrameRectsChanged(const IntRect&) {}
+
+  virtual void SetMouseCapture(bool) {}
 };
 
 }  // namespace blink

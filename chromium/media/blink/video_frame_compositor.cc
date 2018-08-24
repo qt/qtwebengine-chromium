@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/message_loop/message_loop.h"
 #include "base/time/default_tick_clock.h"
 #include "base/trace_event/auto_open_close_event.h"
 #include "base/trace_event/trace_event.h"
@@ -65,11 +64,13 @@ VideoFrameCompositor::~VideoFrameCompositor() {
     client_->StopUsingProvider();
 }
 
-void VideoFrameCompositor::EnableSubmission(const viz::FrameSinkId& id,
-                                            media::VideoRotation rotation) {
+void VideoFrameCompositor::EnableSubmission(
+    const viz::FrameSinkId& id,
+    media::VideoRotation rotation,
+    blink::WebFrameSinkDestroyedCallback frame_sink_destroyed_callback) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   submitter_->SetRotation(rotation);
-  submitter_->StartSubmitting(id);
+  submitter_->EnableSubmission(id, std::move(frame_sink_destroyed_callback));
   client_ = submitter_.get();
 }
 

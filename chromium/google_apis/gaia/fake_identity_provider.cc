@@ -13,8 +13,12 @@ FakeIdentityProvider::FakeIdentityProvider(OAuth2TokenService* token_service)
 FakeIdentityProvider::~FakeIdentityProvider() {
 }
 
-void FakeIdentityProvider::LogIn(const std::string& account_id) {
+void FakeIdentityProvider::SetActiveUsername(const std::string& account_id) {
   account_id_ = account_id;
+}
+
+void FakeIdentityProvider::LogIn(const std::string& account_id) {
+  SetActiveUsername(account_id);
   FireOnActiveAccountLogin();
 }
 
@@ -33,8 +37,4 @@ std::string FakeIdentityProvider::GetActiveAccountId() {
 
 OAuth2TokenService* FakeIdentityProvider::GetTokenService() {
   return token_service_;
-}
-
-bool FakeIdentityProvider::RequestLogin() {
-  return false;
 }

@@ -57,8 +57,7 @@ class CONTENT_EXPORT ServiceWorkerNavigationLoader
   //    determines how the request should be served (e.g. should fallback
   //    to network or should be sent to the SW). If it decides to fallback
   //    to the network this will call |loader_callback| with a null
-  //    RequestHandler, which will be then handled by
-  //    NavigationURLLoaderNetworkService.
+  //    RequestHandler, which will be then handled by NavigationURLLoaderImpl.
   // 2. If it is decided that the request should be sent to the SW,
   //    this job dispatches a FetchEvent in StartRequest.
   // 3. In DidDispatchFetchEvent() this job determines the request's
@@ -69,12 +68,12 @@ class CONTENT_EXPORT ServiceWorkerNavigationLoader
   //    StartResponse().
   // 5. Then StartResponse() will be called with a
   //    network::mojom::URLLoaderClientPtr that is connected to
-  //    NavigationURLLoaderNetworkService (for resource loading for navigation).
+  //    NavigationURLLoaderImpl (for resource loading for navigation).
   //    This forwards the blob/stream data pipe to the NavigationURLLoader if
   //    the response body was sent as a blob/stream.
   //
   // Loads for shared workers work similarly, except SharedWorkerScriptLoader
-  // is used instead of NavigationURLLoaderNetworkService.
+  // is used instead of NavigationURLLoaderImpl.
   ServiceWorkerNavigationLoader(
       NavigationLoaderInterceptor::LoaderCallback loader_callback,
       Delegate* delegate,
@@ -140,7 +139,8 @@ class CONTENT_EXPORT ServiceWorkerNavigationLoader
   void ReturnNetworkError();
 
   // network::mojom::URLLoader:
-  void FollowRedirect() override;
+  void FollowRedirect(const base::Optional<net::HttpRequestHeaders>&
+                          modified_request_headers) override;
   void ProceedWithResponse() override;
   void SetPriority(net::RequestPriority priority,
                    int32_t intra_priority_value) override;

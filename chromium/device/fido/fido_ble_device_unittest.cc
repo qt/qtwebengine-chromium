@@ -9,9 +9,9 @@
 #include "base/test/scoped_task_environment.h"
 #include "device/bluetooth/test/bluetooth_test.h"
 #include "device/fido/fido_constants.h"
+#include "device/fido/fido_parsing_utils.h"
 #include "device/fido/mock_fido_ble_connection.h"
 #include "device/fido/test_callback_receiver.h"
-#include "device/fido/u2f_parsing_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -22,7 +22,7 @@ using ::testing::_;
 using ::testing::Invoke;
 using ::testing::Test;
 using TestDeviceCallbackReceiver =
-    test::TestCallbackReceiver<base::Optional<std::vector<uint8_t>>>;
+    test::ValueCallbackReceiver<base::Optional<std::vector<uint8_t>>>;
 
 constexpr uint16_t kControlPointLength = 20;
 constexpr uint8_t kTestData[] = {'T', 'E', 'S', 'T'};
@@ -100,11 +100,11 @@ TEST_F(FidoBleDeviceTest, SendPingTest_Failure_WriteFailed) {
       }));
 
   TestDeviceCallbackReceiver callback_receiver;
-  auto payload = u2f_parsing_utils::Materialize(kTestData);
+  auto payload = fido_parsing_utils::Materialize(kTestData);
   device()->SendPing(std::move(payload), callback_receiver.callback());
 
   callback_receiver.WaitForCallback();
-  EXPECT_FALSE(std::get<0>(*callback_receiver.result()));
+  EXPECT_FALSE(callback_receiver.value());
 }
 
 TEST_F(FidoBleDeviceTest, SendPingTest_Failure_NoResponse) {
@@ -116,11 +116,11 @@ TEST_F(FidoBleDeviceTest, SendPingTest_Failure_NoResponse) {
       }));
 
   TestDeviceCallbackReceiver callback_receiver;
-  const auto payload = u2f_parsing_utils::Materialize(kTestData);
+  const auto payload = fido_parsing_utils::Materialize(kTestData);
   device()->SendPing(payload, callback_receiver.callback());
 
   callback_receiver.WaitForCallback();
-  EXPECT_FALSE(std::get<0>(*callback_receiver.result()));
+  EXPECT_FALSE(callback_receiver.value().has_value());
 }
 
 TEST_F(FidoBleDeviceTest, SendPingTest_Failure_SlowResponse) {
@@ -132,10 +132,10 @@ TEST_F(FidoBleDeviceTest, SendPingTest_Failure_SlowResponse) {
       }));
 
   TestDeviceCallbackReceiver callback_receiver;
-  auto payload = u2f_parsing_utils::Materialize(kTestData);
+  auto payload = fido_parsing_utils::Materialize(kTestData);
   device()->SendPing(payload, callback_receiver.callback());
   callback_receiver.WaitForCallback();
-  EXPECT_FALSE(std::get<0>(*callback_receiver.result()));
+  EXPECT_FALSE(callback_receiver.value());
 
   // Imitate a ping response from the device after the timeout has passed.
   for (auto&& fragment :
@@ -158,13 +158,13 @@ TEST_F(FidoBleDeviceTest, SendPingTest) {
       }));
 
   TestDeviceCallbackReceiver callback_receiver;
-  const auto payload = u2f_parsing_utils::Materialize(kTestData);
+  const auto payload = fido_parsing_utils::Materialize(kTestData);
   device()->SendPing(payload, callback_receiver.callback());
 
   callback_receiver.WaitForCallback();
-  const auto& result = std::get<0>(*callback_receiver.result());
-  ASSERT_TRUE(result);
-  EXPECT_EQ(payload, *result);
+  const auto& value = callback_receiver.value();
+  ASSERT_TRUE(value);
+  EXPECT_EQ(payload, *value);
 }
 
 TEST_F(FidoBleDeviceTest, SendCancelTest) {
@@ -174,7 +174,7 @@ TEST_F(FidoBleDeviceTest, SendCancelTest) {
   ConnectWithLength(kControlPointLength);
   EXPECT_CALL(*connection(),
               WriteControlPointPtr(
-                  u2f_parsing_utils::Materialize(kBleCancelCommand), _));
+                  fido_parsing_utils::Materialize(kBleCancelCommand), _));
 
   device()->Cancel();
   scoped_task_environment_.FastForwardUntilNoTasksRemain();

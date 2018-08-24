@@ -48,7 +48,7 @@ Design doc: http://www.chromium.org/developers/design-documents/idl-compiler
 import os
 import posixpath
 
-from code_generator import CodeGeneratorBase, render_template, normalize_and_sort_includes
+from code_generator import CodeGeneratorBase
 from idl_definitions import Visitor
 from idl_types import IdlType
 import v8_callback_function
@@ -152,8 +152,8 @@ class CodeGeneratorV8Base(CodeGeneratorBase):
         # This should be implemented in subclasses.
         raise NotImplementedError()
 
-    def get_output_basename(self, definition_name, ext, prefix=None):
-        return build_basename(definition_name, prefix=prefix, ext=ext)
+    def get_output_filename(self, definition_name, ext, prefix=None):
+        return build_basename(definition_name, prefix=prefix) + ext
 
 
 class CodeGeneratorV8(CodeGeneratorV8Base):
@@ -161,9 +161,9 @@ class CodeGeneratorV8(CodeGeneratorV8Base):
         CodeGeneratorV8Base.__init__(self, info_provider, cache_dir, output_dir)
 
     def output_paths(self, definition_name):
-        header_path = posixpath.join(self.output_dir, self.get_output_basename(
+        header_path = posixpath.join(self.output_dir, self.get_output_filename(
             definition_name, '.h', prefix='v8_'))
-        cpp_path = posixpath.join(self.output_dir, self.get_output_basename(
+        cpp_path = posixpath.join(self.output_dir, self.get_output_filename(
             definition_name, '.cc', prefix='v8_'))
         return header_path, cpp_path
 
@@ -185,14 +185,7 @@ class CodeGeneratorV8(CodeGeneratorV8Base):
         include_paths = interface_info.get('dependencies_include_paths')
 
         # Select appropriate Jinja template and contents function
-        #
-        # A callback interface with constants needs a special handling.
-        # https://heycam.github.io/webidl/#legacy-callback-interface-object
-        if interface.is_callback and len(interface.constants) > 0:
-            header_template_filename = 'legacy_callback_interface.h.tmpl'
-            cpp_template_filename = 'legacy_callback_interface.cpp.tmpl'
-            interface_context = v8_callback_interface.legacy_callback_interface_context
-        elif interface.is_callback:
+        if interface.is_callback:
             header_template_filename = 'callback_interface.h.tmpl'
             cpp_template_filename = 'callback_interface.cpp.tmpl'
             interface_context = v8_callback_interface.callback_interface_context
@@ -218,17 +211,16 @@ class CodeGeneratorV8(CodeGeneratorV8Base):
         if IdlType(interface_name).is_typed_array:
             template_context['header_includes'].add('core/typed_arrays/dom_typed_array.h')
         elif interface.is_callback:
-            if len(interface.constants) > 0:  # legacy callback interface
-                includes.add(interface_info['include_path'])
+            pass
         else:
             template_context['header_includes'].add(interface_info['include_path'])
         template_context['header_includes'].update(
             interface_info.get('additional_header_includes', []))
         header_path, cpp_path = self.output_paths(interface_name)
-        template_context['this_include_header_name'] = posixpath.basename(header_path)
+        template_context['this_include_header_path'] = self.normalize_this_header_path(header_path)
         header_template = self.jinja_env.get_template(header_template_filename)
         cpp_template = self.jinja_env.get_template(cpp_template_filename)
-        header_text, cpp_text = self.render_template(
+        header_text, cpp_text = self.render_templates(
             include_paths, header_template, cpp_template, template_context,
             component)
         return (
@@ -252,8 +244,8 @@ class CodeGeneratorV8(CodeGeneratorV8Base):
             template_context['header_includes'].add(self.info_provider.include_path_for_export)
             template_context['exported'] = self.info_provider.specifier_for_export
         header_path, cpp_path = self.output_paths(dictionary_name)
-        template_context['this_include_header_name'] = posixpath.basename(header_path)
-        header_text, cpp_text = self.render_template(
+        template_context['this_include_header_path'] = self.normalize_this_header_path(header_path)
+        header_text, cpp_text = self.render_templates(
             include_paths, header_template, cpp_template, template_context)
         return (
             (header_path, header_text),
@@ -269,9 +261,9 @@ class CodeGeneratorDictionaryImpl(CodeGeneratorV8Base):
         output_dir = posixpath.join(self.output_dir,
                                     interface_info['relative_dir'])
         header_path = posixpath.join(output_dir,
-                                     self.get_output_basename(definition_name, '.h'))
+                                     self.get_output_filename(definition_name, '.h'))
         cpp_path = posixpath.join(output_dir,
-                                  self.get_output_basename(definition_name, '.cc'))
+                                  self.get_output_filename(definition_name, '.cc'))
         return header_path, cpp_path
 
     def generate_code_internal(self, definitions, definition_name):
@@ -290,10 +282,9 @@ class CodeGeneratorDictionaryImpl(CodeGeneratorV8Base):
             template_context['header_includes'].add(self.info_provider.include_path_for_export)
         template_context['header_includes'].update(
             interface_info.get('additional_header_includes', []))
-        header_path, cpp_path = self.output_paths(
-            cpp_name(dictionary), interface_info)
-        template_context['this_include_header_name'] = posixpath.basename(header_path)
-        header_text, cpp_text = self.render_template(
+        header_path, cpp_path = self.output_paths(definition_name, interface_info)
+        template_context['this_include_header_path'] = self.normalize_this_header_path(header_path)
+        header_text, cpp_text = self.render_templates(
             include_paths, header_template, cpp_template, template_context)
         return (
             (header_path, header_text),
@@ -319,25 +310,20 @@ class CodeGeneratorUnionType(CodeGeneratorBase):
             self.typedefs[name] = typedef.idl_type
 
     def _generate_container_code(self, union_type):
+        includes.clear()
         union_type = union_type.resolve_typedefs(self.typedefs)
         header_template = self.jinja_env.get_template('union_container.h.tmpl')
         cpp_template = self.jinja_env.get_template('union_container.cpp.tmpl')
-        template_context = v8_union.container_context(
-            union_type, self.info_provider)
+        template_context = v8_union.container_context(union_type, self.info_provider)
         template_context['header_includes'].append(
             self.info_provider.include_path_for_export)
-        template_context['header_includes'] = normalize_and_sort_includes(
-            template_context['header_includes'])
-        template_context['cpp_includes'] = normalize_and_sort_includes(
-            template_context['cpp_includes'])
-        template_context['code_generator'] = self.generator_name
         template_context['exported'] = self.info_provider.specifier_for_export
         snake_base_name = to_snake_case(shorten_union_name(union_type))
-        template_context['this_include_header_name'] = snake_base_name
-        header_text = render_template(header_template, template_context)
-        cpp_text = render_template(cpp_template, template_context)
         header_path = posixpath.join(self.output_dir, '%s.h' % snake_base_name)
         cpp_path = posixpath.join(self.output_dir, '%s.cc' % snake_base_name)
+        template_context['this_include_header_path'] = self.normalize_this_header_path(header_path)
+        header_text, cpp_text = self.render_templates(
+            [], header_template, cpp_template, template_context)
         return (
             (header_path, header_text),
             (cpp_path, cpp_text),
@@ -394,16 +380,12 @@ class CodeGeneratorCallbackFunction(CodeGeneratorBase):
                 template_context['header_includes'].append(
                     self.info_provider.include_path_for_union_types(argument.idl_type))
 
-        template_context['header_includes'] = normalize_and_sort_includes(
-            template_context['header_includes'])
-        template_context['cpp_includes'] = normalize_and_sort_includes(
-            template_context['cpp_includes'])
-        template_context['code_generator'] = MODULE_PYNAME
-        header_text = render_template(header_template, template_context)
-        cpp_text = render_template(cpp_template, template_context)
         snake_base_name = to_snake_case('V8%s' % callback_function.name)
         header_path = posixpath.join(self.output_dir, '%s.h' % snake_base_name)
         cpp_path = posixpath.join(self.output_dir, '%s.cc' % snake_base_name)
+        template_context['this_include_header_path'] = self.normalize_this_header_path(header_path)
+        header_text, cpp_text = self.render_templates(
+            [], header_template, cpp_template, template_context)
         return (
             (header_path, header_text),
             (cpp_path, cpp_text),

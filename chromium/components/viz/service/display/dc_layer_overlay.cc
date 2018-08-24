@@ -6,10 +6,10 @@
 
 #include "base/metrics/histogram_macros.h"
 #include "cc/base/math_util.h"
-#include "cc/resources/display_resource_provider.h"
 #include "components/viz/common/quads/render_pass_draw_quad.h"
 #include "components/viz/common/quads/solid_color_draw_quad.h"
 #include "components/viz/common/quads/yuv_video_draw_quad.h"
+#include "components/viz/service/display/display_resource_provider.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gl/gl_switches.h"
@@ -19,18 +19,19 @@ namespace viz {
 namespace {
 
 DCLayerOverlayProcessor::DCLayerResult FromYUVQuad(
-    cc::DisplayResourceProvider* resource_provider,
+    DisplayResourceProvider* resource_provider,
     const YUVVideoDrawQuad* quad,
-    DCLayerOverlay* ca_layer_overlay) {
+    DCLayerOverlay* dc_layer_overlay) {
   for (const auto& resource : quad->resources) {
     if (!resource_provider->IsOverlayCandidate(resource))
       return DCLayerOverlayProcessor::DC_LAYER_FAILED_TEXTURE_NOT_CANDIDATE;
   }
-  ca_layer_overlay->resources = quad->resources;
-  ca_layer_overlay->contents_rect = quad->ya_tex_coord_rect;
-  ca_layer_overlay->filter = GL_LINEAR;
-  ca_layer_overlay->color_space = quad->video_color_space;
-  ca_layer_overlay->require_overlay = quad->require_overlay;
+  dc_layer_overlay->resources = quad->resources;
+  dc_layer_overlay->contents_rect = quad->ya_tex_coord_rect;
+  dc_layer_overlay->filter = GL_LINEAR;
+  dc_layer_overlay->color_space = quad->video_color_space;
+  dc_layer_overlay->require_overlay = quad->require_overlay;
+  dc_layer_overlay->is_protected_video = quad->is_protected_video;
   return DCLayerOverlayProcessor::DC_LAYER_SUCCESS;
 }
 
@@ -90,11 +91,11 @@ DCLayerOverlayProcessor::DCLayerOverlayProcessor() = default;
 DCLayerOverlayProcessor::~DCLayerOverlayProcessor() = default;
 
 DCLayerOverlayProcessor::DCLayerResult DCLayerOverlayProcessor::FromDrawQuad(
-    cc::DisplayResourceProvider* resource_provider,
+    DisplayResourceProvider* resource_provider,
     const gfx::RectF& display_rect,
     QuadList::ConstIterator quad_list_begin,
     QuadList::ConstIterator quad,
-    DCLayerOverlay* ca_layer_overlay) {
+    DCLayerOverlay* dc_layer_overlay) {
   if (quad->shared_quad_state->blend_mode != SkBlendMode::kSrcOver)
     return DC_LAYER_FAILED_QUAD_BLEND_MODE;
 
@@ -103,7 +104,7 @@ DCLayerOverlayProcessor::DCLayerResult DCLayerOverlayProcessor::FromDrawQuad(
     case DrawQuad::YUV_VIDEO_CONTENT:
       result =
           FromYUVQuad(resource_provider, YUVVideoDrawQuad::MaterialCast(*quad),
-                      ca_layer_overlay);
+                      dc_layer_overlay);
       break;
     default:
       return DC_LAYER_FAILED_UNSUPPORTED_QUAD;
@@ -123,19 +124,19 @@ DCLayerOverlayProcessor::DCLayerResult DCLayerOverlayProcessor::FromDrawQuad(
   overlay_shared_state->transform =
       quad->shared_quad_state->quad_to_target_transform.matrix();
 
-  ca_layer_overlay->shared_state = overlay_shared_state;
-  ca_layer_overlay->bounds_rect = gfx::RectF(quad->rect);
+  dc_layer_overlay->shared_state = overlay_shared_state;
+  dc_layer_overlay->bounds_rect = gfx::RectF(quad->rect);
 
   return result;
 }
 
 void DCLayerOverlayProcessor::Process(
-    cc::DisplayResourceProvider* resource_provider,
+    DisplayResourceProvider* resource_provider,
     const gfx::RectF& display_rect,
     RenderPassList* render_passes,
     gfx::Rect* overlay_damage_rect,
     gfx::Rect* damage_rect,
-    DCLayerOverlayList* ca_layer_overlays) {
+    DCLayerOverlayList* dc_layer_overlays) {
   DCHECK(pass_info_.empty());
   processed_overlay_in_frame_ = false;
   if (base::FeatureList::IsEnabled(
@@ -145,12 +146,12 @@ void DCLayerOverlayProcessor::Process(
       ProcessRenderPass(resource_provider, display_rect, pass.get(), is_root,
                         overlay_damage_rect,
                         is_root ? damage_rect : &pass->damage_rect,
-                        ca_layer_overlays);
+                        dc_layer_overlays);
     }
   } else {
     ProcessRenderPass(resource_provider, display_rect,
                       render_passes->back().get(), true, overlay_damage_rect,
-                      damage_rect, ca_layer_overlays);
+                      damage_rect, dc_layer_overlays);
   }
   pass_info_.clear();
 }
@@ -218,13 +219,13 @@ QuadList::Iterator DCLayerOverlayProcessor::ProcessRenderPassDrawQuad(
 }
 
 void DCLayerOverlayProcessor::ProcessRenderPass(
-    cc::DisplayResourceProvider* resource_provider,
+    DisplayResourceProvider* resource_provider,
     const gfx::RectF& display_rect,
     RenderPass* render_pass,
     bool is_root,
     gfx::Rect* overlay_damage_rect,
     gfx::Rect* damage_rect,
-    DCLayerOverlayList* ca_layer_overlays) {
+    DCLayerOverlayList* dc_layer_overlays) {
   gfx::Rect this_frame_underlay_rect;
   QuadList* quad_list = &render_pass->quad_list;
 
@@ -286,7 +287,7 @@ void DCLayerOverlayProcessor::ProcessRenderPass(
       overlay_damage_rect->Union(rect_in_root);
 
       RecordDCLayerResult(DC_LAYER_SUCCESS);
-      ca_layer_overlays->push_back(dc_layer);
+      dc_layer_overlays->push_back(dc_layer);
       if (!base::FeatureList::IsEnabled(
               features::kDirectCompositionNonrootOverlays)) {
         // Only allow one overlay for now.

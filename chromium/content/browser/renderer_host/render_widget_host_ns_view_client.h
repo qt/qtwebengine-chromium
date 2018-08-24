@@ -109,7 +109,8 @@ class RenderWidgetHostNSViewClient {
       const blink::WebMouseWheelEvent& web_event) = 0;
 
   // Handling pinch gesture events.
-  virtual void OnNSViewGestureBegin(blink::WebGestureEvent begin_event) = 0;
+  virtual void OnNSViewGestureBegin(blink::WebGestureEvent begin_event,
+                                    bool is_synthetically_injected) = 0;
   virtual void OnNSViewGestureUpdate(blink::WebGestureEvent update_event) = 0;
   virtual void OnNSViewGestureEnd(blink::WebGestureEvent end_event) = 0;
   virtual void OnNSViewSmartMagnify(
@@ -139,10 +140,6 @@ class RenderWidgetHostNSViewClient {
   // specified character range.
   virtual void OnNSViewLookUpDictionaryOverlayFromRange(
       const gfx::Range& range) = 0;
-
-  // Synchronously query the text input type from the
-  virtual void OnNSViewSyncGetTextInputType(
-      ui::TextInputType* text_input_type) = 0;
 
   // Synchronously query the character index for |root_point| and return it in
   // |*index|. Sets it to UINT32_MAX if the request fails or is not completed.

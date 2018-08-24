@@ -14,9 +14,6 @@ if (is_android) {
   import("//build/config/android/config.gni")
   import("//build/config/android/rules.gni")
 }
-if (is_win) {
-  import("//build/config/clang/clang.gni")
-}
 
 group("base") {
   public_deps = [
@@ -221,6 +218,7 @@ rtc_source_set("logging") {
       "logging.cc",
       "logging.h",
     ]
+    deps += [ "system:no_inline" ]
 
     # logging.h needs the deprecation header while downstream projects are
     # removing code that depends on logging implementation details.
@@ -367,6 +365,7 @@ rtc_source_set("rtc_base_approved_generic") {
   cflags = []
   defines = []
   libs = []
+  data_deps = []
   deps = [
     ":atomicops",
     ":checks",
@@ -418,6 +417,8 @@ rtc_source_set("rtc_base_approved_generic") {
     "numerics/histogram_percentile_counter.h",
     "numerics/mod_ops.h",
     "numerics/moving_max_counter.h",
+    "numerics/sample_counter.cc",
+    "numerics/sample_counter.h",
     "onetimeevent.h",
     "pathutils.cc",
     "pathutils.h",
@@ -457,81 +458,14 @@ rtc_source_set("rtc_base_approved_generic") {
   }
 
   if (is_win) {
-    sources += [ "file_win.cc" ]
-  }
-
-  if (is_component_build && is_win) {
-    # Copy the VS runtime DLLs into the isolate so that they don't have to be
-    # preinstalled on the target machine. The debug runtimes have a "d" at
-    # the end.
-    # This is a copy of https://codereview.chromium.org/1783973002.
-    # TODO(ehmaldonado): We'd like Chromium to make this changes easier to use,
-    # so we don't have to copy their changes and risk breakages.
-    # See http://crbug.com/653569
-    if (is_debug) {
-      vcrt_suffix = "d"
-    } else {
-      vcrt_suffix = ""
-    }
-
-    # These runtime files are copied to the output directory by the
-    # vs_toolchain script that runs as part of toolchain configuration.
-    data = [
-      "$root_out_dir/msvcp140${vcrt_suffix}.dll",
-      "$root_out_dir/vccorlib140${vcrt_suffix}.dll",
-      "$root_out_dir/vcruntime140${vcrt_suffix}.dll",
-
-      # Universal Windows 10 CRT files
-      "$root_out_dir/api-ms-win-core-console-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-datetime-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-debug-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-errorhandling-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-file-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-file-l1-2-0.dll",
-      "$root_out_dir/api-ms-win-core-file-l2-1-0.dll",
-      "$root_out_dir/api-ms-win-core-handle-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-heap-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-interlocked-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-libraryloader-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-localization-l1-2-0.dll",
-      "$root_out_dir/api-ms-win-core-memory-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-namedpipe-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-processenvironment-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-processthreads-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-processthreads-l1-1-1.dll",
-      "$root_out_dir/api-ms-win-core-profile-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-rtlsupport-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-string-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-synch-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-synch-l1-2-0.dll",
-      "$root_out_dir/api-ms-win-core-sysinfo-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-timezone-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-core-util-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-crt-conio-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-crt-convert-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-crt-environment-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-crt-filesystem-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-crt-heap-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-crt-locale-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-crt-math-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-crt-multibyte-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-crt-private-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-crt-process-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-crt-runtime-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-crt-stdio-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-crt-string-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-crt-time-l1-1-0.dll",
-      "$root_out_dir/api-ms-win-crt-utility-l1-1-0.dll",
-      "$root_out_dir/ucrtbase${vcrt_suffix}.dll",
+    sources += [
+      "file_win.cc",
+      "win/windows_version.cc",
+      "win/windows_version.h",
     ]
-    if (is_asan) {
-      if (current_cpu == "x64") {
-        data += [ "$clang_base_path/lib/clang/$clang_version/lib/windows/clang_rt.asan_dynamic-x86_64.dll" ]
-      } else {
-        data += [ "$clang_base_path/lib/clang/$clang_version/lib/windows/clang_rt.asan_dynamic-i386.dll" ]
-      }
-    }
+    data_deps += [ "//build/win:runtime_libs" ]
   }
+
   if (is_nacl) {
     deps += [ "//native_client_sdk/src/libraries/nacl_io" ]
   }
@@ -719,17 +653,6 @@ rtc_static_library("rtc_numerics") {
   ]
 }
 
-config("rtc_base_warnings_config") {
-  if (is_win && is_clang) {
-    cflags = [
-      # Disable warnings failing when compiling with Clang on Windows.
-      # https://bugs.chromium.org/p/webrtc/issues/detail?id=5366
-      "-Wno-sign-compare",
-      "-Wno-missing-braces",
-    ]
-  }
-}
-
 rtc_source_set("rtc_json") {
   defines = []
   sources = [
@@ -855,8 +778,8 @@ rtc_static_library("rtc_base_generic") {
     "openssl.h",
     "openssladapter.cc",
     "openssladapter.h",
-    "opensslcommon.cc",
-    "opensslcommon.h",
+    "opensslcertificate.cc",
+    "opensslcertificate.h",
     "openssldigest.cc",
     "openssldigest.h",
     "opensslidentity.cc",
@@ -865,6 +788,8 @@ rtc_static_library("rtc_base_generic") {
     "opensslsessioncache.h",
     "opensslstreamadapter.cc",
     "opensslstreamadapter.h",
+    "opensslutility.cc",
+    "opensslutility.h",
     "physicalsocketserver.cc",
     "physicalsocketserver.h",
     "proxyinfo.cc",
@@ -878,6 +803,7 @@ rtc_static_library("rtc_base_generic") {
     "sigslot.cc",
     "sigslot.h",
     "sigslotrepeater.h",
+    "socket.cc",
     "socket.h",
     "socketadapters.cc",
     "socketadapters.h",
@@ -891,6 +817,8 @@ rtc_static_library("rtc_base_generic") {
     "socketstream.h",
     "ssladapter.cc",
     "ssladapter.h",
+    "sslcertificate.cc",
+    "sslcertificate.h",
     "sslfingerprint.cc",
     "sslfingerprint.h",
     "sslidentity.cc",
@@ -908,14 +836,6 @@ rtc_static_library("rtc_base_generic") {
     ":rtc_base_objc",
   ]
 
-  # TODO(henrike): issue 3307, make rtc_base build with the Chromium default
-  # compiler settings.
-  suppressed_configs += [ "//build/config/compiler:chromium_code" ]
-  configs += [ "//build/config/compiler:no_chromium_code" ]
-  if (!is_win) {
-    cflags += [ "-Wno-uninitialized" ]
-  }
-
   if (build_with_chromium) {
     if (is_win) {
       sources += [ "../../webrtc_overrides/rtc_base/win32socketinit.cc" ]
@@ -923,7 +843,6 @@ rtc_static_library("rtc_base_generic") {
     include_dirs = [ "../../boringssl/src/include" ]
     public_configs += [ ":rtc_base_chromium_config" ]
   } else {
-    configs += [ ":rtc_base_warnings_config" ]
     sources += [
       "callback.h",
       "logsinks.cc",
@@ -951,6 +870,10 @@ rtc_static_library("rtc_base_generic") {
     deps += [ "//third_party/boringssl" ]
   } else {
     configs += [ ":external_ssl_library" ]
+  }
+
+  if (rtc_builtin_ssl_root_certificates) {
+    defines += [ "WEBRTC_ENABLE_BUILT_IN_SSL_ROOT_CERTIFICATES" ]
   }
 
   if (is_android) {
@@ -1050,16 +973,6 @@ config("rtc_base_tests_utils_exported_config") {
   defines = [ "GTEST_RELATIVE_PATH" ]
 }
 
-config("rtc_base_tests_utils_warnings_config") {
-  if (is_win && is_clang) {
-    cflags = [
-      # See https://bugs.chromium.org/p/webrtc/issues/detail?id=6270
-      "-Wno-reorder",
-      "-Wno-sign-compare",
-    ]
-  }
-}
-
 rtc_source_set("rtc_base_tests_utils") {
   testonly = true
   sources = [
@@ -1093,22 +1006,22 @@ rtc_source_set("rtc_base_tests_utils") {
     "sigslottester.h",
     "sigslottester.h.pump",
     "testbase64.h",
+    "testcertificateverifier.h",
     "testclient.cc",
     "testclient.h",
     "testechoserver.cc",
     "testechoserver.h",
     "testutils.cc",
     "testutils.h",
-    "timedelta.h",
     "virtualsocketserver.cc",
     "virtualsocketserver.h",
   ]
-  configs += [ ":rtc_base_tests_utils_warnings_config" ]
   public_configs = [ ":rtc_base_tests_utils_exported_config" ]
   deps = [
     ":checks",
     ":rtc_base",
     ":stringutils",
+    "../api/units:time_delta",
     "../test:field_trial",
     "../test:test_support",
     "system:fallthrough",
@@ -1210,6 +1123,7 @@ if (rtc_include_tests) {
       "numerics/moving_max_counter_unittest.cc",
       "numerics/safe_compare_unittest.cc",
       "numerics/safe_minmax_unittest.cc",
+      "numerics/sample_counter_unittest.cc",
       "onetimeevent_unittest.cc",
       "pathutils_unittest.cc",
       "platform_file_unittest.cc",
@@ -1233,6 +1147,9 @@ if (rtc_include_tests) {
       "virtualsocket_unittest.cc",
       "zero_memory_unittest.cc",
     ]
+    if (is_win) {
+      sources += [ "win/windows_version_unittest.cc" ]
+    }
     deps = [
       ":checks",
       ":rate_limiter",
@@ -1320,13 +1237,9 @@ if (rtc_include_tests) {
     ]
   }
 
-  config("rtc_base_unittests_config") {
-    if (is_clang) {
-      cflags = [ "-Wno-unused-const-variable" ]
-    }
-  }
   rtc_source_set("rtc_base_unittests") {
     testonly = true
+    defines = []
 
     sources = [
       "callback_unittest.cc",
@@ -1364,8 +1277,8 @@ if (rtc_include_tests) {
     if (is_posix || is_fuchsia) {
       sources += [
         "openssladapter_unittest.cc",
-        "opensslcommon_unittest.cc",
         "opensslsessioncache_unittest.cc",
+        "opensslutility_unittest.cc",
         "ssladapter_unittest.cc",
         "sslidentity_unittest.cc",
         "sslstreamadapter_unittest.cc",
@@ -1384,7 +1297,6 @@ if (rtc_include_tests) {
     public_deps = [
       ":rtc_base",
     ]
-    configs += [ ":rtc_base_unittests_config" ]
     if (build_with_chromium) {
       include_dirs = [ "../../boringssl/src/include" ]
     }
@@ -1393,6 +1305,10 @@ if (rtc_include_tests) {
     } else {
       configs += [ ":external_ssl_library" ]
     }
+
+    if (!rtc_builtin_ssl_root_certificates) {
+      defines += [ "WEBRTC_DISABLE_BUILT_IN_SSL_ROOT_CERTIFICATES" ]
+    }
   }
 }
 
@@ -1400,6 +1316,7 @@ if (is_android) {
   rtc_android_library("base_java") {
     java_files = [
       "java/src/org/webrtc/ContextUtils.java",
+      "java/src/org/webrtc/Loggable.java",
       "java/src/org/webrtc/Logging.java",
       "java/src/org/webrtc/Size.java",
       "java/src/org/webrtc/ThreadUtils.java",

@@ -33,7 +33,6 @@
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gpu_fence.h"
 #include "ui/gl/gl_bindings.h"
-#include "ui/gl/gl_switches_util.h"
 
 namespace gpu {
 
@@ -155,8 +154,6 @@ bool CommandBufferProxyImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_SignalAck, OnSignalAck);
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_SwapBuffersCompleted,
                         OnSwapBuffersCompleted);
-    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_UpdateVSyncParameters,
-                        OnUpdateVSyncParameters);
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_BufferPresented, OnBufferPresented);
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_GetGpuFenceHandleComplete,
                         OnGetGpuFenceHandleComplete);
@@ -289,22 +286,10 @@ void CommandBufferProxyImpl::OrderingBarrierHelper(int32_t put_offset) {
   flushed_fence_sync_release_ = next_fence_sync_release_ - 1;
 }
 
-void CommandBufferProxyImpl::SetSwapBuffersCompletionCallback(
-    const SwapBuffersCompletionCallback& callback) {
-  CheckLock();
-  swap_buffers_completion_callback_ = callback;
-}
-
 void CommandBufferProxyImpl::SetUpdateVSyncParametersCallback(
     const UpdateVSyncParametersCallback& callback) {
   CheckLock();
   update_vsync_parameters_completion_callback_ = callback;
-}
-
-void CommandBufferProxyImpl::SetPresentationCallback(
-    const PresentationCallback& callback) {
-  CheckLock();
-  presentation_callback_ = callback;
 }
 
 void CommandBufferProxyImpl::SetNeedsVSync(bool needs_vsync) {
@@ -821,26 +806,19 @@ gpu::CommandBufferSharedState* CommandBufferProxyImpl::shared_state() const {
 
 void CommandBufferProxyImpl::OnSwapBuffersCompleted(
     const SwapBuffersCompleteParams& params) {
-  if (!swap_buffers_completion_callback_.is_null())
-    swap_buffers_completion_callback_.Run(params);
-}
-
-void CommandBufferProxyImpl::OnUpdateVSyncParameters(base::TimeTicks timebase,
-                                                     base::TimeDelta interval) {
-  DCHECK(!gl::IsPresentationCallbackEnabled());
-  if (!update_vsync_parameters_completion_callback_.is_null())
-    update_vsync_parameters_completion_callback_.Run(timebase, interval);
+  if (gpu_control_client_)
+    gpu_control_client_->OnGpuControlSwapBuffersCompleted(params);
 }
 
 void CommandBufferProxyImpl::OnBufferPresented(
     uint64_t swap_id,
     const gfx::PresentationFeedback& feedback) {
-  DCHECK(gl::IsPresentationCallbackEnabled());
-  if (presentation_callback_)
-    presentation_callback_.Run(swap_id, feedback);
-
+  if (gpu_control_client_)
+    gpu_control_client_->OnSwapBufferPresented(swap_id, feedback);
   if (update_vsync_parameters_completion_callback_ &&
-      feedback.timestamp != base::TimeTicks()) {
+      feedback.flags & gfx::PresentationFeedback::kVSync &&
+      feedback.timestamp != base::TimeTicks() &&
+      feedback.interval != base::TimeDelta()) {
     update_vsync_parameters_completion_callback_.Run(feedback.timestamp,
                                                      feedback.interval);
   }

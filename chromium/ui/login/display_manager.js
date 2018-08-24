@@ -40,6 +40,7 @@
 /** @const */ var SCREEN_ACTIVE_DIRECTORY_PASSWORD_CHANGE =
     'ad-password-change';
 /** @const */ var SCREEN_SYNC_CONSENT = 'sync-consent';
+/** @const */ var SCREEN_RECOMMEND_APPS = 'recommend-apps';
 
 /* Accelerator identifiers. Must be kept in sync with webui_login_view.cc. */
 /** @const */ var ACCELERATOR_CANCEL = 'cancel';
@@ -162,7 +163,8 @@ cr.define('cr.ui.login', function() {
     SCREEN_CONFIRM_PASSWORD,
     SCREEN_UPDATE_REQUIRED,
     SCREEN_FATAL_ERROR,
-    SCREEN_SYNC_CONSENT
+    SCREEN_SYNC_CONSENT,
+    SCREEN_RECOMMEND_APPS
   ];
 
   /**
@@ -197,7 +199,7 @@ cr.define('cr.ui.login', function() {
    * @const
    */
   var DEMO_MODE_SETUP_AVAILABLE_SCREEN_GROUP = [
-    SCREEN_GAIA_SIGNIN,
+    SCREEN_OOBE_NETWORK,
   ];
 
   /**
@@ -249,6 +251,15 @@ cr.define('cr.ui.login', function() {
      * @type {string}
      */
     displayType_: DISPLAY_TYPE.UNKNOWN,
+
+    /**
+     * Number of users in the login screen UI. This is used by the views login
+     * screen, and is always 0 for WebUI login screen.
+     * TODO(crbug.com/808271): WebUI and views implementation should return the
+     * same user list.
+     * @type {number}
+     */
+    userCount_: 0,
 
     /**
      * Error message (bubble) was shown. This is checked in tests.
@@ -324,6 +335,16 @@ cr.define('cr.ui.login', function() {
     },
 
     /**
+     * Returns true if the login screen has user pods.
+     * @return {boolean}
+     */
+    get hasUserPods() {
+      var userCount =
+          this.showingViewsLogin ? this.userCount_ : $('pod-row').pods.length;
+      return !!userCount;
+    },
+
+    /**
      * Sets the current size of the client area (display size).
      * @param {number} width client area width
      * @param {number} height client area height
@@ -378,6 +399,14 @@ cr.define('cr.ui.login', function() {
     showVersion: function(show) {
       $('version-labels').hidden = !show;
       this.allowToggleVersion_ = !show;
+    },
+
+    /**
+     * Sets the number of users on the views login screen.
+     * @param {number} userCount The number of users.
+     */
+    setLoginUserCount: function(userCount) {
+      this.userCount_ = userCount;
     },
 
     /**

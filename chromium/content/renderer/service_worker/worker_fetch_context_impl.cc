@@ -5,14 +5,16 @@
 #include "content/renderer/service_worker/worker_fetch_context_impl.h"
 
 #include "base/feature_list.h"
+#include "base/single_thread_task_runner.h"
 #include "content/child/child_thread_impl.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/common/frame_messages.h"
+#include "content/common/service_worker/service_worker_provider.mojom.h"
 #include "content/common/service_worker/service_worker_utils.h"
-#include "content/common/wrapper_shared_url_loader_factory.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/service_names.mojom.h"
 #include "content/public/renderer/url_loader_throttle_provider.h"
+#include "content/public/renderer/websocket_handshake_throttle_provider.h"
 #include "content/renderer/loader/request_extra_data.h"
 #include "content/renderer/loader/resource_dispatcher.h"
 #include "content/renderer/loader/web_url_loader_impl.h"
@@ -21,21 +23,51 @@
 #include "content/renderer/service_worker/service_worker_subresource_loader.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
+#include "services/network/public/cpp/wrapper_shared_url_loader_factory.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
 
 namespace content {
 
-class WorkerFetchContextImpl::URLLoaderFactoryImpl
-    : public blink::WebURLLoaderFactory {
+WorkerFetchContextImpl::RewriteURLFunction g_rewrite_url = nullptr;
+
+namespace {
+
+// Runs on IO thread.
+void CreateSubresourceLoaderFactory(
+    mojom::ServiceWorkerContainerHostPtrInfo container_host_info,
+    const std::string& client_id,
+    std::unique_ptr<network::SharedURLLoaderFactoryInfo> fallback_factory,
+    network::mojom::URLLoaderFactoryRequest request) {
+  ServiceWorkerSubresourceLoaderFactory::Create(
+      base::MakeRefCounted<ControllerServiceWorkerConnector>(
+          std::move(container_host_info), client_id),
+      network::SharedURLLoaderFactory::Create(std::move(fallback_factory)),
+      std::move(request));
+}
+
+}  // namespace
+
+// static
+void WorkerFetchContextImpl::InstallRewriteURLFunction(
+    RewriteURLFunction rewrite_url) {
+  CHECK(!g_rewrite_url);
+  g_rewrite_url = rewrite_url;
+}
+
+// An implementation of WebURLLoaderFactory that is aware of service workers. In
+// the usual case, it creates a loader that uses |loader_factory_|. But if the
+// worker fetch context is controlled by a service worker, it creates a loader
+// that uses |service_worker_loader_factory_| for requests that should be
+// intercepted by the service worker.
+class WorkerFetchContextImpl::Factory : public blink::WebURLLoaderFactory {
  public:
-  URLLoaderFactoryImpl(
-      base::WeakPtr<ResourceDispatcher> resource_dispatcher,
-      scoped_refptr<network::SharedURLLoaderFactory> loader_factory)
+  Factory(base::WeakPtr<ResourceDispatcher> resource_dispatcher,
+          scoped_refptr<network::SharedURLLoaderFactory> loader_factory)
       : resource_dispatcher_(std::move(resource_dispatcher)),
         loader_factory_(std::move(loader_factory)),
         weak_ptr_factory_(this) {}
-  ~URLLoaderFactoryImpl() override = default;
+  ~Factory() override = default;
 
   std::unique_ptr<blink::WebURLLoader> CreateURLLoader(
       const blink::WebURLRequest& request,
@@ -49,15 +81,13 @@ class WorkerFetchContextImpl::URLLoaderFactoryImpl
   }
 
   void SetServiceWorkerURLLoaderFactory(
-      network::mojom::URLLoaderFactoryPtr service_worker_url_loader_factory) {
-    service_worker_url_loader_factory_ =
-        base::MakeRefCounted<WrapperSharedURLLoaderFactory>(
-            std::move(service_worker_url_loader_factory));
+      network::mojom::URLLoaderFactoryPtr service_worker_loader_factory) {
+    service_worker_loader_factory_ =
+        base::MakeRefCounted<network::WrapperSharedURLLoaderFactory>(
+            std::move(service_worker_loader_factory));
   }
 
-  base::WeakPtr<URLLoaderFactoryImpl> GetWeakPtr() {
-    return weak_ptr_factory_.GetWeakPtr();
-  }
+  base::WeakPtr<Factory> GetWeakPtr() { return weak_ptr_factory_.GetWeakPtr(); }
 
  private:
   std::unique_ptr<blink::WebURLLoader> CreateServiceWorkerURLLoader(
@@ -67,9 +97,9 @@ class WorkerFetchContextImpl::URLLoaderFactoryImpl
     // ServiceWorkerNetworkProvider::CreateURLLoader that is used for document
     // cases.
 
-    // We need URLLoaderFactory populated in order to create our own URLLoader
-    // for subresource loading via a service worker.
-    if (!service_worker_url_loader_factory_)
+    // We need the service worker loader factory populated in order to create
+    // our own URLLoader for subresource loading via a service worker.
+    if (!service_worker_loader_factory_)
       return nullptr;
 
     // If it's not for HTTP or HTTPS no need to intercept the request.
@@ -82,36 +112,39 @@ class WorkerFetchContextImpl::URLLoaderFactoryImpl
 
     // Create our own URLLoader to route the request to the controller service
     // worker.
-    return std::make_unique<WebURLLoaderImpl>(
-        resource_dispatcher_.get(), std::move(task_runner),
-        service_worker_url_loader_factory_);
+    return std::make_unique<WebURLLoaderImpl>(resource_dispatcher_.get(),
+                                              std::move(task_runner),
+                                              service_worker_loader_factory_);
   }
 
   base::WeakPtr<ResourceDispatcher> resource_dispatcher_;
   scoped_refptr<network::SharedURLLoaderFactory> loader_factory_;
-  scoped_refptr<network::SharedURLLoaderFactory>
-      service_worker_url_loader_factory_;
-  base::WeakPtrFactory<URLLoaderFactoryImpl> weak_ptr_factory_;
-  DISALLOW_COPY_AND_ASSIGN(URLLoaderFactoryImpl);
+  scoped_refptr<network::SharedURLLoaderFactory> service_worker_loader_factory_;
+  base::WeakPtrFactory<Factory> weak_ptr_factory_;
+  DISALLOW_COPY_AND_ASSIGN(Factory);
 };
 
 WorkerFetchContextImpl::WorkerFetchContextImpl(
     mojom::ServiceWorkerWorkerClientRequest service_worker_client_request,
     mojom::ServiceWorkerContainerHostPtrInfo service_worker_container_host_info,
-    std::unique_ptr<network::SharedURLLoaderFactoryInfo>
-        url_loader_factory_info,
-    std::unique_ptr<network::SharedURLLoaderFactoryInfo>
-        direct_network_factory_info,
-    std::unique_ptr<URLLoaderThrottleProvider> throttle_provider)
+    std::unique_ptr<network::SharedURLLoaderFactoryInfo> loader_factory_info,
+    std::unique_ptr<network::SharedURLLoaderFactoryInfo> fallback_factory_info,
+    std::unique_ptr<URLLoaderThrottleProvider> throttle_provider,
+    std::unique_ptr<WebSocketHandshakeThrottleProvider>
+        websocket_handshake_throttle_provider,
+    ThreadSafeSender* thread_safe_sender,
+    scoped_refptr<base::SingleThreadTaskRunner> io_task_runner)
     : binding_(this),
       service_worker_client_request_(std::move(service_worker_client_request)),
       service_worker_container_host_info_(
           std::move(service_worker_container_host_info)),
-      url_loader_factory_info_(std::move(url_loader_factory_info)),
-      direct_network_loader_factory_info_(
-          std::move(direct_network_factory_info)),
-      thread_safe_sender_(ChildThreadImpl::current()->thread_safe_sender()),
-      throttle_provider_(std::move(throttle_provider)) {
+      loader_factory_info_(std::move(loader_factory_info)),
+      fallback_factory_info_(std::move(fallback_factory_info)),
+      thread_safe_sender_(thread_safe_sender),
+      throttle_provider_(std::move(throttle_provider)),
+      websocket_handshake_throttle_provider_(
+          std::move(websocket_handshake_throttle_provider)),
+      io_task_runner_(std::move(io_task_runner)) {
   if (ServiceWorkerUtils::IsServicificationEnabled()) {
     ChildThreadImpl::current()->GetConnector()->BindInterface(
         mojom::kBrowserServiceName,
@@ -127,6 +160,26 @@ void WorkerFetchContextImpl::SetTerminateSyncLoadEvent(
   terminate_sync_load_event_ = terminate_sync_load_event;
 }
 
+std::unique_ptr<blink::WebWorkerFetchContext>
+WorkerFetchContextImpl::CloneForNestedWorker() {
+  // TODO(japhet?): This doens't plumb service worker state to nested workers,
+  // because dedicated workers in service worker-controlled documents are
+  // currently not spec compliant and we don't want to propagate the wrong
+  // behavior. See https://crbug.com/731604
+  auto new_context = std::make_unique<WorkerFetchContextImpl>(
+      mojom::ServiceWorkerWorkerClientRequest(),
+      mojom::ServiceWorkerContainerHostPtrInfo(), loader_factory_->Clone(),
+      fallback_factory_->Clone(),
+      throttle_provider_ ? throttle_provider_->Clone() : nullptr,
+      websocket_handshake_throttle_provider_
+          ? websocket_handshake_throttle_provider_->Clone()
+          : nullptr,
+      thread_safe_sender_.get(), io_task_runner_);
+  new_context->is_on_sub_frame_ = is_on_sub_frame_;
+  new_context->appcache_host_id_ = appcache_host_id_;
+  return new_context;
+}
+
 void WorkerFetchContextImpl::InitializeOnWorkerThread() {
   DCHECK(!resource_dispatcher_);
   DCHECK(!binding_.is_bound());
@@ -134,10 +187,10 @@ void WorkerFetchContextImpl::InitializeOnWorkerThread() {
   resource_dispatcher_->set_terminate_sync_load_event(
       terminate_sync_load_event_);
 
-  shared_url_loader_factory_ = network::SharedURLLoaderFactory::Create(
-      std::move(url_loader_factory_info_));
-  direct_network_loader_factory_ = network::SharedURLLoaderFactory::Create(
-      std::move(direct_network_loader_factory_info_));
+  loader_factory_ =
+      network::SharedURLLoaderFactory::Create(std::move(loader_factory_info_));
+  fallback_factory_ = network::SharedURLLoaderFactory::Create(
+      std::move(fallback_factory_info_));
   if (service_worker_client_request_.is_pending())
     binding_.Bind(std::move(service_worker_client_request_));
 
@@ -155,11 +208,11 @@ void WorkerFetchContextImpl::InitializeOnWorkerThread() {
 
 std::unique_ptr<blink::WebURLLoaderFactory>
 WorkerFetchContextImpl::CreateURLLoaderFactory() {
-  DCHECK(shared_url_loader_factory_);
-  DCHECK(!url_loader_factory_);
-  auto factory = std::make_unique<URLLoaderFactoryImpl>(
-      resource_dispatcher_->GetWeakPtr(), shared_url_loader_factory_);
-  url_loader_factory_ = factory->GetWeakPtr();
+  DCHECK(loader_factory_);
+  DCHECK(!web_loader_factory_);
+  auto factory = std::make_unique<Factory>(resource_dispatcher_->GetWeakPtr(),
+                                           loader_factory_);
+  web_loader_factory_ = factory->GetWeakPtr();
 
   if (ServiceWorkerUtils::IsServicificationEnabled())
     ResetServiceWorkerURLLoaderFactory();
@@ -170,9 +223,9 @@ WorkerFetchContextImpl::CreateURLLoaderFactory() {
 std::unique_ptr<blink::WebURLLoaderFactory>
 WorkerFetchContextImpl::WrapURLLoaderFactory(
     mojo::ScopedMessagePipeHandle url_loader_factory_handle) {
-  return std::make_unique<content::WebURLLoaderFactoryImpl>(
+  return std::make_unique<WebURLLoaderFactoryImpl>(
       resource_dispatcher_->GetWeakPtr(),
-      base::MakeRefCounted<WrapperSharedURLLoaderFactory>(
+      base::MakeRefCounted<network::WrapperSharedURLLoaderFactory>(
           network::mojom::URLLoaderFactoryPtrInfo(
               std::move(url_loader_factory_handle),
               network::mojom::URLLoaderFactory::Version_)));
@@ -195,6 +248,9 @@ void WorkerFetchContextImpl::WillSendRequest(blink::WebURLRequest& request) {
     // fetch.
     request.SetSkipServiceWorker(true);
   }
+
+  if (g_rewrite_url)
+    request.SetURL(g_rewrite_url(request.Url().GetString().Utf8(), false));
 }
 
 bool WorkerFetchContextImpl::IsControlledByServiceWorker() const {
@@ -244,6 +300,14 @@ WorkerFetchContextImpl::TakeSubresourceFilter() {
   return std::move(subresource_filter_builder_)->Build();
 }
 
+std::unique_ptr<blink::WebSocketHandshakeThrottle>
+WorkerFetchContextImpl::CreateWebSocketHandshakeThrottle() {
+  if (!websocket_handshake_throttle_provider_)
+    return nullptr;
+  return websocket_handshake_throttle_provider_->CreateThrottle(
+      parent_frame_id_);
+}
+
 void WorkerFetchContextImpl::set_service_worker_provider_id(int id) {
   service_worker_provider_id_ = id;
 }
@@ -269,6 +333,10 @@ void WorkerFetchContextImpl::set_origin_url(const GURL& origin_url) {
   origin_url_ = origin_url;
 }
 
+void WorkerFetchContextImpl::set_client_id(const std::string& client_id) {
+  client_id_ = client_id;
+}
+
 void WorkerFetchContextImpl::SetApplicationCacheHostID(int id) {
   appcache_host_id_ = id;
 }
@@ -290,19 +358,25 @@ bool WorkerFetchContextImpl::Send(IPC::Message* message) {
 
 void WorkerFetchContextImpl::ResetServiceWorkerURLLoaderFactory() {
   DCHECK(ServiceWorkerUtils::IsServicificationEnabled());
-  if (!url_loader_factory_)
+  if (!web_loader_factory_)
     return;
   if (!IsControlledByServiceWorker()) {
-    url_loader_factory_->SetServiceWorkerURLLoaderFactory(nullptr);
+    web_loader_factory_->SetServiceWorkerURLLoaderFactory(nullptr);
     return;
   }
+
   network::mojom::URLLoaderFactoryPtr service_worker_url_loader_factory;
-  ServiceWorkerSubresourceLoaderFactory::Create(
-      base::MakeRefCounted<ControllerServiceWorkerConnector>(
-          service_worker_container_host_.get()),
-      direct_network_loader_factory_,
-      mojo::MakeRequest(&service_worker_url_loader_factory));
-  url_loader_factory_->SetServiceWorkerURLLoaderFactory(
+  mojom::ServiceWorkerContainerHostPtrInfo host_ptr_info;
+  service_worker_container_host_->CloneForWorker(
+      mojo::MakeRequest(&host_ptr_info));
+  // To avoid potential dead-lock while synchronous loading, create the
+  // SubresourceLoaderFactory on the IO thread.
+  io_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&CreateSubresourceLoaderFactory, std::move(host_ptr_info),
+                     client_id_, fallback_factory_->Clone(),
+                     mojo::MakeRequest(&service_worker_url_loader_factory)));
+  web_loader_factory_->SetServiceWorkerURLLoaderFactory(
       std::move(service_worker_url_loader_factory));
 }
 

@@ -230,6 +230,32 @@ Formatter.FormatterWorkerPool = class {
               rule => ({line: rule.lineNumber, column: rule.columnNumber, title: rule.selectorText || rule.atRule})));
     }
   }
+
+  /**
+   * @param {string} content
+   * @return {!Promise<?{baseExpression: string, possibleSideEffects:boolean}>}
+   */
+  findLastExpression(content) {
+    return /** @type {!Promise<?{baseExpression: string, possibleSideEffects:boolean}>} */ (
+        this._runTask('findLastExpression', {content}));
+  }
+
+  /**
+   * @param {string} content
+   * @return {!Promise<?{baseExpression: string, possibleSideEffects:boolean, receiver: string, argumentIndex: number, functionName: string}>}
+   */
+  findLastFunctionCall(content) {
+    return /** @type {!Promise<?{baseExpression: string, possibleSideEffects:boolean, receiver: string, argumentIndex: number, functionName: string}>} */ (
+        this._runTask('findLastFunctionCall', {content}));
+  }
+
+  /**
+   * @param {string} content
+   * @return {!Promise<!Array<string>>}
+   */
+  argumentsList(content) {
+    return /** @type {!Promise<!Array<string>>} */ (this._runTask('argumentsList', {content}));
+  }
 };
 
 Formatter.FormatterWorkerPool.MaxWorkers = 2;

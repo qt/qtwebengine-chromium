@@ -120,8 +120,6 @@ class HEADLESS_EXPORT HeadlessBrowserContext::Builder {
   // fetching for different network schemes.
   Builder& SetProtocolHandlers(ProtocolHandlerMap protocol_handlers);
 
-  Builder& AddTabSocketMojoBindings();
-
   // By default if you add mojo bindings, http and https are disabled because
   // its almost certinly unsafe for arbitary sites on the internet to have
   // access to these bindings.  If you know what you're doing it may be OK to
@@ -148,7 +146,6 @@ class HEADLESS_EXPORT HeadlessBrowserContext::Builder {
   Builder& SetIncognitoMode(bool incognito_mode);
   Builder& SetSitePerProcess(bool site_per_process);
   Builder& SetBlockNewWebContents(bool block_new_web_contents);
-  Builder& SetInitialVirtualTime(base::Time initial_virtual_time);
   Builder& SetAllowCookies(bool incognito_mode);
   Builder& SetOverrideWebPreferencesCallback(
       base::RepeatingCallback<void(WebPreferences*)> callback);

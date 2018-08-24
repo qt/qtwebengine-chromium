@@ -26,6 +26,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCROLL_SCROLLABLE_AREA_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCROLL_SCROLLABLE_AREA_H_
 
+#include "base/single_thread_task_runner.h"
 #include "third_party/blink/renderer/platform/geometry/float_quad.h"
 #include "third_party/blink/renderer/platform/geometry/layout_rect.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
@@ -156,7 +157,7 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   }
 
   // See Source/core/layout/README.md for an explanation of scroll origin.
-  const IntPoint& ScrollOrigin() const { return scroll_origin_; }
+  virtual IntPoint ScrollOrigin() const { return scroll_origin_; }
   bool ScrollOriginChanged() const { return scroll_origin_changed_; }
 
   // This is used to determine whether the incoming fractional scroll offset
@@ -373,7 +374,7 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
 
   // Need to promptly let go of owned animator objects.
   EAGERLY_FINALIZE();
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
   virtual void ClearScrollableArea();
 
@@ -492,7 +493,7 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   unsigned mouse_over_scrollbar_ : 1;
 
   // Indicates that the next compositing update needs to call
-  // WebLayer::showScrollbars on our scroll layer. Ignored if not composited.
+  // cc::Layer::ShowScrollbars() on our scroll layer. Ignored if not composited.
   unsigned needs_show_scrollbar_layers_ : 1;
   unsigned uses_composited_scrolling_ : 1;
 

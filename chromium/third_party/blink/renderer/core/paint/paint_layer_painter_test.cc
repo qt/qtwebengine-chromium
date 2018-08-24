@@ -4,11 +4,14 @@
 
 #include "third_party/blink/renderer/core/paint/paint_layer_painter.h"
 
+#include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/blink/renderer/core/layout/layout_box_model_object.h"
 #include "third_party/blink/renderer/core/paint/compositing/composited_layer_mapping.h"
 #include "third_party/blink/renderer/core/paint/paint_controller_paint_test.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
+
+using testing::ElementsAre;
 
 namespace blink {
 
@@ -51,9 +54,7 @@ class PaintLayerPainterTest : public PaintControllerPaintTest {
   }
 };
 
-INSTANTIATE_TEST_CASE_P(All,
-                        PaintLayerPainterTest,
-                        testing::ValuesIn(kAllSlimmingPaintTestConfigurations));
+INSTANTIATE_PAINT_TEST_CASE_P(PaintLayerPainterTest);
 
 TEST_P(PaintLayerPainterTest, CachedSubsequence) {
   SetBodyInnerHTML(R"HTML(
@@ -80,23 +81,15 @@ TEST_P(PaintLayerPainterTest, CachedSubsequence) {
   auto& content2 = *GetLayoutObjectByElementId("content2");
   auto& filler2 = *GetLayoutObjectByElementId("filler2");
 
-  const DisplayItemClient* background_display_item_client;
-  const DisplayItemClient* background_chunk_client;
-  if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled() &&
-      RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-    // With SPv1 and RLS, the document background uses the scrolling contents
-    // layer as its DisplayItemClient.
-    background_display_item_client =
-        GetLayoutView().Layer()->GraphicsLayerBacking();
-    background_chunk_client = background_display_item_client;
-  } else {
-    background_display_item_client = &GetLayoutView();
-    background_chunk_client = GetLayoutView().Layer();
-  }
+  const auto& view_display_item_client = ViewBackgroundClient();
+  const auto& view_chunk_client =
+      RuntimeEnabledFeatures::SlimmingPaintV2Enabled()
+          ? *GetLayoutView().Layer()
+          : view_display_item_client;
 
   EXPECT_DISPLAY_LIST(
       RootPaintController().GetDisplayItemList(), 7,
-      TestDisplayItem(*background_display_item_client, kDocumentBackgroundType),
+      TestDisplayItem(view_display_item_client, kDocumentBackgroundType),
       TestDisplayItem(container1, kBackgroundType),
       TestDisplayItem(content1, kBackgroundType),
       TestDisplayItem(filler1, kBackgroundType),
@@ -105,26 +98,63 @@ TEST_P(PaintLayerPainterTest, CachedSubsequence) {
       TestDisplayItem(filler2, kBackgroundType));
 
   auto* container1_layer = ToLayoutBoxModelObject(container1).Layer();
-  auto* content1_layer = ToLayoutBoxModelObject(content1).Layer();
   auto* filler1_layer = ToLayoutBoxModelObject(filler1).Layer();
   auto* container2_layer = ToLayoutBoxModelObject(container2).Layer();
-  auto* content2_layer = ToLayoutBoxModelObject(content2).Layer();
   auto* filler2_layer = ToLayoutBoxModelObject(filler2).Layer();
+  auto other_chunk_state = GetLayoutView().FirstFragment().ContentsProperties();
+  auto view_chunk_state = other_chunk_state;
+  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+    view_chunk_state =
+        GetLayoutView().FirstFragment().LocalBorderBoxProperties();
+  }
 
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
+  auto view_chunk_type = RuntimeEnabledFeatures::SlimmingPaintV2Enabled()
+                             ? DisplayItem::kLayerChunkBackground
+                             : kDocumentBackgroundType;
+  auto chunk_background_type = DisplayItem::kLayerChunkBackground;
+  auto chunk_foreground_type =
+      DisplayItem::kLayerChunkNormalFlowAndPositiveZOrderChildren;
+  auto filler_chunk_type = DisplayItem::PaintPhaseToDrawingType(
+      PaintPhase::kSelfBlockBackgroundOnly);
+
+  auto check_chunks = [&]() {
     // Check that new paint chunks were forced for |container1| and
     // |container2|.
     const auto& paint_chunks =
         RootPaintController().GetPaintArtifact().PaintChunks();
-    EXPECT_EQ(7u, paint_chunks.size());
-    EXPECT_EQ(background_chunk_client, &paint_chunks[0].id.client);
-    EXPECT_EQ(container1_layer, &paint_chunks[1].id.client);
-    EXPECT_EQ(content1_layer, &paint_chunks[2].id.client);
-    EXPECT_EQ(filler1_layer, &paint_chunks[3].id.client);
-    EXPECT_EQ(container2_layer, &paint_chunks[4].id.client);
-    EXPECT_EQ(content2_layer, &paint_chunks[5].id.client);
-    EXPECT_EQ(filler2_layer, &paint_chunks[6].id.client);
-  }
+    EXPECT_EQ(paint_chunks.size(), 7u);
+    EXPECT_EQ(
+        paint_chunks[0],
+        PaintChunk(0, 1, PaintChunk::Id(view_chunk_client, view_chunk_type),
+                   view_chunk_state));
+    EXPECT_EQ(paint_chunks[1], PaintChunk(1, 2,
+                                          PaintChunk::Id(*container1_layer,
+                                                         chunk_background_type),
+                                          other_chunk_state));
+    EXPECT_EQ(paint_chunks[2], PaintChunk(2, 3,
+                                          PaintChunk::Id(*container1_layer,
+                                                         chunk_foreground_type),
+                                          other_chunk_state));
+    EXPECT_EQ(
+        paint_chunks[3],
+        PaintChunk(3, 4, PaintChunk::Id(*filler1_layer, filler_chunk_type),
+                   other_chunk_state));
+    EXPECT_EQ(paint_chunks[4], PaintChunk(4, 5,
+                                          PaintChunk::Id(*container2_layer,
+                                                         chunk_background_type),
+                                          other_chunk_state));
+    EXPECT_EQ(paint_chunks[5], PaintChunk(5, 6,
+                                          PaintChunk::Id(*container2_layer,
+                                                         chunk_foreground_type),
+                                          other_chunk_state));
+    EXPECT_EQ(
+        paint_chunks[6],
+        PaintChunk(6, 7, PaintChunk::Id(*filler2_layer, filler_chunk_type),
+                   other_chunk_state));
+  };
+
+  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
+    check_chunks();
 
   ToHTMLElement(content1.GetNode())
       ->setAttribute(HTMLNames::styleAttr,
@@ -138,7 +168,7 @@ TEST_P(PaintLayerPainterTest, CachedSubsequence) {
 
   EXPECT_DISPLAY_LIST(
       RootPaintController().GetDisplayItemList(), 7,
-      TestDisplayItem(*background_display_item_client, kDocumentBackgroundType),
+      TestDisplayItem(view_display_item_client, kDocumentBackgroundType),
       TestDisplayItem(container1, kBackgroundType),
       TestDisplayItem(content1, kBackgroundType),
       TestDisplayItem(filler1, kBackgroundType),
@@ -146,19 +176,9 @@ TEST_P(PaintLayerPainterTest, CachedSubsequence) {
       TestDisplayItem(content2, kBackgroundType),
       TestDisplayItem(filler2, kBackgroundType));
 
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    // We should still have the paint chunks forced by the cached subsequences.
-    Vector<PaintChunk> paint_chunks =
-        RootPaintController().GetPaintArtifact().PaintChunks();
-    EXPECT_EQ(7u, paint_chunks.size());
-    EXPECT_EQ(background_chunk_client, &paint_chunks[0].id.client);
-    EXPECT_EQ(container1_layer, &paint_chunks[1].id.client);
-    EXPECT_EQ(content1_layer, &paint_chunks[2].id.client);
-    EXPECT_EQ(filler1_layer, &paint_chunks[3].id.client);
-    EXPECT_EQ(container2_layer, &paint_chunks[4].id.client);
-    EXPECT_EQ(content2_layer, &paint_chunks[5].id.client);
-    EXPECT_EQ(filler2_layer, &paint_chunks[6].id.client);
-  }
+  // We should still have the paint chunks forced by the cached subsequences.
+  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
+    check_chunks();
 }
 
 TEST_P(PaintLayerPainterTest, CachedSubsequenceOnInterestRectChange) {
@@ -208,17 +228,7 @@ TEST_P(PaintLayerPainterTest, CachedSubsequenceOnInterestRectChange) {
   IntRect interest_rect(0, 0, 400, 300);
   Paint(&interest_rect);
 
-  DisplayItemClient* background_display_item_client = nullptr;
-
-  if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled() &&
-      RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-    // With SPv1 and RLS, the document background uses the scrolling contents
-    // layer as its DisplayItemClient.
-    background_display_item_client =
-        GetLayoutView().Layer()->GraphicsLayerBacking();
-  } else {
-    background_display_item_client = &GetLayoutView();
-  }
+  const auto& background_display_item_client = ViewBackgroundClient();
 
   // Container1 is fully in the interest rect;
   // Container2 is partly (including its stacking chidren) in the interest rect;
@@ -226,7 +236,7 @@ TEST_P(PaintLayerPainterTest, CachedSubsequenceOnInterestRectChange) {
   // Container3 is partly in the interest rect.
   EXPECT_DISPLAY_LIST(
       RootPaintController().GetDisplayItemList(), 7,
-      TestDisplayItem(*background_display_item_client, kDocumentBackgroundType),
+      TestDisplayItem(background_display_item_client, kDocumentBackgroundType),
       TestDisplayItem(container1, kBackgroundType),
       TestDisplayItem(content1, kBackgroundType),
       TestDisplayItem(container2, kBackgroundType),
@@ -250,7 +260,7 @@ TEST_P(PaintLayerPainterTest, CachedSubsequenceOnInterestRectChange) {
 
   EXPECT_DISPLAY_LIST(
       RootPaintController().GetDisplayItemList(), 6,
-      TestDisplayItem(*background_display_item_client, kDocumentBackgroundType),
+      TestDisplayItem(background_display_item_client, kDocumentBackgroundType),
       TestDisplayItem(container1, kBackgroundType),
       TestDisplayItem(content1, kBackgroundType),
       TestDisplayItem(container2, kBackgroundType),
@@ -310,21 +320,10 @@ TEST_P(PaintLayerPainterTest,
   LayoutObject& content2 =
       *GetDocument().getElementById("content2")->GetLayoutObject();
 
-  DisplayItemClient* background_display_item_client = nullptr;
-
-  if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled() &&
-      RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-    // With SPv1 and RLS, the document background uses the scrolling contents
-    // layer as its DisplayItemClient.
-    background_display_item_client =
-        GetLayoutView().Layer()->GraphicsLayerBacking();
-  } else {
-    background_display_item_client = &GetLayoutView();
-  }
-
+  const auto& background_display_item_client = ViewBackgroundClient();
   EXPECT_DISPLAY_LIST(
       RootPaintController().GetDisplayItemList(), 5,
-      TestDisplayItem(*background_display_item_client, kDocumentBackgroundType),
+      TestDisplayItem(background_display_item_client, kDocumentBackgroundType),
       TestDisplayItem(container1, kBackgroundType),
       TestDisplayItem(content1, kBackgroundType),
       TestDisplayItem(container2, kBackgroundType),
@@ -342,7 +341,7 @@ TEST_P(PaintLayerPainterTest,
 
   EXPECT_DISPLAY_LIST(
       RootPaintController().GetDisplayItemList(), 5,
-      TestDisplayItem(*background_display_item_client, kDocumentBackgroundType),
+      TestDisplayItem(background_display_item_client, kDocumentBackgroundType),
       TestDisplayItem(container1, kBackgroundType),
       TestDisplayItem(content1, kBackgroundType),
       TestDisplayItem(container2, kBackgroundType),
@@ -576,13 +575,7 @@ TEST_P(PaintLayerPainterTest, PaintPhaseBlockBackground) {
   ToHTMLElement(background_div.GetNode())
       ->setAttribute(HTMLNames::styleAttr, style_without_background);
   GetDocument().View()->UpdateAllLifecyclePhases();
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled() ||
-      !RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-    // In RootLayerScrolls+SPv1, the empty paint phase optimization doesn't
-    // apply to the composited scrolling layer so we don't need this check.
-    EXPECT_FALSE(
-        self_painting_layer.NeedsPaintPhaseDescendantBlockBackgrounds());
-  }
+  EXPECT_FALSE(self_painting_layer.NeedsPaintPhaseDescendantBlockBackgrounds());
 }
 
 TEST_P(PaintLayerPainterTest, PaintPhasesUpdateOnLayerRemoval) {

@@ -38,10 +38,10 @@ class Transform;
 namespace viz {
 class ContextProvider;
 class RenderPass;
+class SharedBitmapReporter;
 }
 
 namespace cc {
-class LayerTreeFrameSink;
 class LayerTreeResourceProvider;
 
 // Specifies what type of data is contained in the mailboxes, as well as how
@@ -79,22 +79,21 @@ class CC_EXPORT VideoResourceUpdater
     : public base::trace_event::MemoryDumpProvider {
  public:
   // For GPU compositing |context_provider| should be provided and for software
-  // compositing |layer_tree_frame_sink| should be provided. If there is a
+  // compositing |shared_bitmap_reporter| should be provided. If there is a
   // non-null |context_provider| we assume GPU compositing.
-  // TODO(kylechar): Don't use LayerTreeFrameSink for the software compositing
-  // path. The UseSurfaceLayerForVideo path isn't compatible with this. We can
-  // maybe use mojom::CompositorFrameSink instead.
   VideoResourceUpdater(viz::ContextProvider* context_provider,
-                       LayerTreeFrameSink* layer_tree_frame_sink,
+                       viz::SharedBitmapReporter* shared_bitmap_reporter,
                        LayerTreeResourceProvider* resource_provider,
                        bool use_stream_video_draw_quad,
-                       bool use_gpu_memory_buffer_resources);
+                       bool use_gpu_memory_buffer_resources,
+                       bool use_r16_texture,
+                       int max_resource_size);
 
   ~VideoResourceUpdater() override;
 
   // For each CompositorFrame the following sequence is expected:
   // 1. ObtainFrameResources(): Import resources for the next video frame with
-  //    LayerTreeResourceProvider. This will reuse existing GPU or SharedBitmap
+  //    LayerTreeResourceProvider. This will reuse existing GPU or SharedMemory
   //    buffers if possible, otherwise it will allocate new ones.
   // 2. AppendQuads(): Add DrawQuads to CompositorFrame for video.
   // 3. ReleaseFrameResources(): After the CompositorFrame has been submitted,
@@ -116,6 +115,8 @@ class CC_EXPORT VideoResourceUpdater
   // TODO(kylechar): This is only public for testing, make private.
   VideoFrameExternalResources CreateExternalResourcesFromVideoFrame(
       scoped_refptr<media::VideoFrame> video_frame);
+
+  viz::ResourceFormat YuvResourceFormat(int bits_per_channel);
 
  private:
   class PlaneResource;
@@ -181,10 +182,13 @@ class CC_EXPORT VideoResourceUpdater
                     base::trace_event::ProcessMemoryDump* pmd) override;
 
   viz::ContextProvider* const context_provider_;
-  LayerTreeFrameSink* const layer_tree_frame_sink_;
+  viz::SharedBitmapReporter* const shared_bitmap_reporter_;
   LayerTreeResourceProvider* const resource_provider_;
   const bool use_stream_video_draw_quad_;
   const bool use_gpu_memory_buffer_resources_;
+  // TODO(crbug.com/759456): Remove after r16 is used without the flag.
+  const bool use_r16_texture_;
+  const int max_resource_size_;
   const int tracing_id_;
   std::unique_ptr<media::PaintCanvasVideoRenderer> video_renderer_;
   uint32_t next_plane_resource_id_ = 1;

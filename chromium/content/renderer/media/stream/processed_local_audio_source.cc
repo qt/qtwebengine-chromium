@@ -46,7 +46,8 @@ ProcessedLocalAudioSource::ProcessedLocalAudioSource(
       audio_processing_properties_(audio_processing_properties),
       started_callback_(started_callback),
       volume_(0),
-      allow_invalid_render_frame_id_for_testing_(false) {
+      allow_invalid_render_frame_id_for_testing_(false),
+      weak_factory_(this) {
   DCHECK(pc_factory_);
   DVLOG(1) << "ProcessedLocalAudioSource::ProcessedLocalAudioSource()";
   SetDevice(device);
@@ -71,13 +72,10 @@ void* ProcessedLocalAudioSource::GetClassIdentifier() const {
 }
 
 bool ProcessedLocalAudioSource::EnsureSourceIsStarted() {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(GetTaskRunner()->BelongsToCurrentThread());
 
-  {
-    base::AutoLock auto_lock(source_lock_);
-    if (source_)
-      return true;
-  }
+  if (source_)
+    return true;
 
   // Sanity-check that the consuming RenderFrame still exists. This is required
   // to initialize the audio source.
@@ -188,7 +186,6 @@ bool ProcessedLocalAudioSource::EnsureSourceIsStarted() {
   // ProcessedLocalAudioSource to the processor's output format.
   media::AudioParameters params(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
                                 channel_layout, device().input.sample_rate(),
-                                16,
                                 GetBufferSize(device().input.sample_rate()));
   params.set_effects(device().input.effects());
   DCHECK(params.IsValid());
@@ -201,14 +198,12 @@ bool ProcessedLocalAudioSource::EnsureSourceIsStarted() {
           << params.AsHumanReadableString() << "} and output parameters={"
           << GetAudioParameters().AsHumanReadableString() << '}';
   scoped_refptr<media::AudioCapturerSource> new_source =
-      AudioDeviceFactory::NewAudioCapturerSource(consumer_render_frame_id_);
-  new_source->Initialize(params, this, device().session_id);
+      AudioDeviceFactory::NewAudioCapturerSource(consumer_render_frame_id_,
+                                                 device().session_id);
+  new_source->Initialize(params, this);
   // We need to set the AGC control before starting the stream.
   new_source->SetAutomaticGainControl(true);
-  {
-    base::AutoLock auto_lock(source_lock_);
-    source_ = std::move(new_source);
-  }
+  source_ = std::move(new_source);
   source_->Start();
 
   // Register this source with the WebRtcAudioDeviceImpl.
@@ -218,15 +213,12 @@ bool ProcessedLocalAudioSource::EnsureSourceIsStarted() {
 }
 
 void ProcessedLocalAudioSource::EnsureSourceIsStopped() {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(GetTaskRunner()->BelongsToCurrentThread());
 
-  scoped_refptr<media::AudioCapturerSource> source_to_stop;
-  {
-    base::AutoLock auto_lock(source_lock_);
-    if (!source_)
-      return;
-    source_to_stop = std::move(source_);
-  }
+  if (!source_)
+    return;
+
+  scoped_refptr<media::AudioCapturerSource> source_to_stop(std::move(source_));
 
   if (WebRtcAudioDeviceImpl* rtc_audio_device =
       pc_factory_->GetWebRtcAudioDevice()) {
@@ -245,21 +237,9 @@ void ProcessedLocalAudioSource::EnsureSourceIsStopped() {
 void ProcessedLocalAudioSource::SetVolume(int volume) {
   DVLOG(1) << "ProcessedLocalAudioSource::SetVolume()";
   DCHECK_LE(volume, MaxVolume());
-
   const double normalized_volume = static_cast<double>(volume) / MaxVolume();
-
-  // Hold a strong reference to |source_| while its SetVolume() method is
-  // called. This will prevent the object from being destroyed on another thread
-  // in the meantime. It's possible the |source_| will be stopped on another
-  // thread while calling SetVolume() here; but this is safe: The operation will
-  // simply be ignored.
-  scoped_refptr<media::AudioCapturerSource> maybe_source;
-  {
-    base::AutoLock auto_lock(source_lock_);
-    maybe_source = source_;
-  }
-  if (maybe_source)
-    maybe_source->SetVolume(normalized_volume);
+  if (source_)
+    source_->SetVolume(normalized_volume);
 }
 
 int ProcessedLocalAudioSource::Volume() const {
@@ -345,8 +325,9 @@ void ProcessedLocalAudioSource::Capture(const media::AudioBus* audio_bus,
                         reference_clock_snapshot - processed_data_audio_delay);
 
     if (new_volume) {
-      SetVolume(new_volume);
-
+      GetTaskRunner()->PostTask(
+          FROM_HERE, base::BindOnce(&ProcessedLocalAudioSource::SetVolume,
+                                    weak_factory_.GetWeakPtr(), new_volume));
       // Update the |current_volume| to avoid passing the old volume to AGC.
       current_volume = new_volume;
     }
@@ -367,8 +348,15 @@ media::AudioParameters ProcessedLocalAudioSource::GetInputFormat() const {
                           : media::AudioParameters();
 }
 
+void ProcessedLocalAudioSource::SetOutputDeviceForAec(
+    const std::string& output_device_id) {
+  DVLOG(1) << "ProcessedLocalAudioSource::SetOutputDeviceForAec()";
+  if (source_)
+    source_->SetOutputDeviceForAec(output_device_id);
+}
+
 int ProcessedLocalAudioSource::GetBufferSize(int sample_rate) const {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(GetTaskRunner()->BelongsToCurrentThread());
 #if defined(OS_ANDROID)
   // TODO(henrika): Re-evaluate whether to use same logic as other platforms.
   // http://crbug.com/638081

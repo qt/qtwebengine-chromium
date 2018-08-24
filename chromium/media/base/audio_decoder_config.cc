@@ -10,15 +10,7 @@
 
 namespace media {
 
-AudioDecoderConfig::AudioDecoderConfig()
-    : codec_(kUnknownAudioCodec),
-      sample_format_(kUnknownSampleFormat),
-      bytes_per_channel_(0),
-      channel_layout_(CHANNEL_LAYOUT_UNSUPPORTED),
-      samples_per_second_(0),
-      bytes_per_frame_(0),
-      codec_delay_(0),
-      should_discard_decoder_delay_(true) {}
+AudioDecoderConfig::AudioDecoderConfig() {}
 
 AudioDecoderConfig::AudioDecoderConfig(
     AudioCodec codec,
@@ -97,8 +89,9 @@ std::string AudioDecoderConfig::AsHumanReadableString() const {
     << " bytes_per_frame: " << bytes_per_frame()
     << " seek_preroll: " << seek_preroll().InMilliseconds() << "ms"
     << " codec_delay: " << codec_delay() << " has extra data? "
-    << (extra_data().empty() ? "false" : "true") << " encrypted? "
-    << (is_encrypted() ? "true" : "false") << " discard decoder delay? "
+    << (extra_data().empty() ? "false" : "true")
+    << " encryption scheme: " << encryption_scheme()
+    << " discard decoder delay? "
     << (should_discard_decoder_delay() ? "true" : "false");
   return s.str();
 }

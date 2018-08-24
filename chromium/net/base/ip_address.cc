@@ -8,6 +8,7 @@
 #include <climits>
 
 #include "base/containers/stack_container.h"
+#include "base/stl_util.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
@@ -20,7 +21,8 @@ namespace {
 
 // The prefix for IPv6 mapped IPv4 addresses.
 // https://tools.ietf.org/html/rfc4291#section-2.5.5.2
-const uint8_t kIPv4MappedPrefix[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF};
+constexpr uint8_t kIPv4MappedPrefix[] = {0, 0, 0, 0, 0,    0,
+                                         0, 0, 0, 0, 0xFF, 0xFF};
 
 // Note that this function assumes:
 // * |ip_address| is at least |prefix_length_in_bits| (bits) long;
@@ -82,8 +84,7 @@ bool IsPubliclyRoutableIPv4(const IPAddressBytes& ip_address) {
 // IPv6 ranges, plus the blacklist of reserved IPv4 ranges mapped to IPv6.
 // Sources for info:
 // www.iana.org/assignments/ipv6-address-space/ipv6-address-space.xhtml
-bool IsPubliclyRoutableIPv6(const IPAddressBytes& ip_address,
-                            bool include_mapped_ipv4) {
+bool IsPubliclyRoutableIPv6(const IPAddressBytes& ip_address) {
   DCHECK_EQ(IPAddress::kIPv6AddressSize, ip_address.size());
   struct {
     const uint8_t address_prefix[2];
@@ -99,9 +100,6 @@ bool IsPubliclyRoutableIPv6(const IPAddressBytes& ip_address,
       return true;
     }
   }
-
-  if (!include_mapped_ipv4)
-    return false;
 
   IPAddress addr(ip_address);
   if (addr.IsIPv4MappedIPv6()) {
@@ -234,21 +232,11 @@ bool IPAddress::IsValid() const {
   return IsIPv4() || IsIPv6();
 }
 
-bool IPAddress::IsReserved() const {
-  if (IsIPv4()) {
-    return !IsPubliclyRoutableIPv4(ip_address_);
-  } else if (IsIPv6()) {
-    return !IsPubliclyRoutableIPv6(ip_address_,
-                                   false /* include_mapped_ipv4 */);
-  }
-  return false;
-}
-
 bool IPAddress::IsPubliclyRoutable() const {
   if (IsIPv4()) {
     return IsPubliclyRoutableIPv4(ip_address_);
   } else if (IsIPv6()) {
-    return IsPubliclyRoutableIPv6(ip_address_, true /* include_mapped_ipv4 */);
+    return IsPubliclyRoutableIPv6(ip_address_);
   }
   return true;
 }
@@ -373,7 +361,7 @@ IPAddress ConvertIPv4MappedIPv6ToIPv4(const IPAddress& address) {
 
   base::StackVector<uint8_t, 16> bytes;
   bytes->insert(bytes->end(),
-                address.bytes().begin() + arraysize(kIPv4MappedPrefix),
+                address.bytes().begin() + base::size(kIPv4MappedPrefix),
                 address.bytes().end());
   return IPAddress(bytes->data(), bytes->size());
 }

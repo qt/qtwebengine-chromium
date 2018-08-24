@@ -17,6 +17,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback_helpers.h"
+#include "base/command_line.h"
 #include "base/environment.h"
 #include "base/files/file.h"
 #include "base/files/file_enumerator.h"
@@ -28,27 +29,33 @@
 #include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/multiprocess_test.h"
 #include "base/test/scoped_environment_variable_override.h"
 #include "base/test/test_file_util.h"
+#include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "testing/multiprocess_func_list.h"
 #include "testing/platform_test.h"
 
 #if defined(OS_WIN)
-#include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <tchar.h>
+#include <windows.h>
 #include <winioctl.h>
+#include "base/strings/string_number_conversions.h"
 #include "base/win/scoped_handle.h"
+#include "base/win/win_util.h"
 #endif
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 #endif
 
@@ -66,6 +73,8 @@
 namespace base {
 
 namespace {
+
+const size_t kLargeFileSize = (1 << 16) + 3;
 
 // To test that NormalizeFilePath() deals with NTFS reparse points correctly,
 // we need functions to create and delete reparse points.
@@ -315,7 +324,7 @@ void GetIsInheritable(FILE* stream, bool* is_inheritable) {
   DWORD info = 0;
   ASSERT_EQ(TRUE, ::GetHandleInformation(handle, &info));
   *is_inheritable = ((info & HANDLE_FLAG_INHERIT) != 0);
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   int fd = fileno(stream);
   ASSERT_NE(-1, fd);
   int flags = fcntl(fd, F_GETFD, 0);
@@ -628,7 +637,7 @@ TEST_F(FileUtilTest, CreateTemporaryFileInDirLongPathTest) {
 
 #endif  // defined(OS_WIN)
 
-#if !defined(OS_FUCHSIA) && defined(OS_POSIX)
+#if defined(OS_POSIX)
 
 TEST_F(FileUtilTest, CreateAndReadSymlinks) {
   FilePath link_from = temp_dir_.GetPath().Append(FPL("from_file"));
@@ -1210,7 +1219,7 @@ TEST_F(FileUtilTest, CopyFileExecutablePermission) {
   EXPECT_EQ(0777, mode);
 }
 
-#endif  // !defined(OS_FUCHSIA) && defined(OS_POSIX)
+#endif  // defined(OS_POSIX)
 
 #if !defined(OS_FUCHSIA)
 
@@ -1909,7 +1918,7 @@ TEST_F(FileUtilTest, CopyDirectoryWithTrailingSeparators) {
 #if defined(OS_WIN)
   FilePath from_path =
       temp_dir_.GetPath().Append(FILE_PATH_LITERAL("Copy_From_Subdir\\\\\\"));
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   FilePath from_path =
       temp_dir_.GetPath().Append(FILE_PATH_LITERAL("Copy_From_Subdir///"));
 #endif
@@ -1923,7 +1932,7 @@ TEST_F(FileUtilTest, CopyDirectoryWithTrailingSeparators) {
   EXPECT_TRUE(PathExists(file_name_to));
 }
 
-#if !defined(OS_FUCHSIA) && defined(OS_POSIX)
+#if defined(OS_POSIX)
 TEST_F(FileUtilTest, CopyDirectoryWithNonRegularFiles) {
   // Create a directory.
   FilePath dir_name_from =
@@ -2136,7 +2145,7 @@ TEST_F(FileUtilTest, CopyDirectoryExclFileOverFifo) {
   // Check that copying fails.
   EXPECT_FALSE(CopyDirectoryExcl(dir_name_from, dir_name_to, false));
 }
-#endif  // !defined(OS_FUCHSIA) && defined(OS_POSIX)
+#endif  // defined(OS_POSIX)
 
 TEST_F(FileUtilTest, CopyFile) {
   // Create a directory
@@ -2442,7 +2451,7 @@ TEST_F(FileUtilTest, CreateNewTemporaryDirInDirTest) {
   EXPECT_TRUE(DeleteFile(new_dir, false));
 }
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
 TEST_F(FileUtilTest, GetShmemTempDirTest) {
   FilePath dir;
   EXPECT_TRUE(GetShmemTempDir(false, &dir));
@@ -2467,7 +2476,7 @@ TEST_F(FileUtilTest, CreateDirectoryTest) {
 #if defined(OS_WIN)
   FilePath test_path =
       test_root.Append(FILE_PATH_LITERAL("dir\\tree\\likely\\doesnt\\exist\\"));
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   FilePath test_path =
       test_root.Append(FILE_PATH_LITERAL("dir/tree/likely/doesnt/exist/"));
 #endif
@@ -2767,7 +2776,8 @@ TEST_F(FileUtilTest, ReadFileToString) {
           .Append(FILE_PATH_LITERAL("ReadFileToStringTest"));
 
   // Create test file.
-  ASSERT_EQ(4, WriteFile(file_path, kTestData, 4));
+  ASSERT_EQ(static_cast<int>(strlen(kTestData)),
+            WriteFile(file_path, kTestData, strlen(kTestData)));
 
   EXPECT_TRUE(ReadFileToString(file_path, &data));
   EXPECT_EQ(kTestData, data);
@@ -2780,15 +2790,15 @@ TEST_F(FileUtilTest, ReadFileToString) {
   EXPECT_FALSE(ReadFileToStringWithMaxSize(file_path, &data, 2));
   EXPECT_EQ("01", data);
 
-  data.clear();
+  data = "temp";
   EXPECT_FALSE(ReadFileToStringWithMaxSize(file_path, &data, 3));
   EXPECT_EQ("012", data);
 
-  data.clear();
+  data = "temp";
   EXPECT_TRUE(ReadFileToStringWithMaxSize(file_path, &data, 4));
   EXPECT_EQ("0123", data);
 
-  data.clear();
+  data = "temp";
   EXPECT_TRUE(ReadFileToStringWithMaxSize(file_path, &data, 6));
   EXPECT_EQ("0123", data);
 
@@ -2810,6 +2820,406 @@ TEST_F(FileUtilTest, ReadFileToString) {
   data = "temp";
   EXPECT_FALSE(ReadFileToStringWithMaxSize(file_path, &data, 6));
   EXPECT_EQ(0u, data.length());
+}
+
+#if !defined(OS_WIN)
+TEST_F(FileUtilTest, ReadFileToStringWithUnknownFileSize) {
+  FilePath file_path("/dev/zero");
+  std::string data = "temp";
+
+  EXPECT_FALSE(ReadFileToStringWithMaxSize(file_path, &data, 0));
+  EXPECT_EQ(0u, data.length());
+
+  data = "temp";
+  EXPECT_FALSE(ReadFileToStringWithMaxSize(file_path, &data, 2));
+  EXPECT_EQ(std::string(2, '\0'), data);
+
+  EXPECT_FALSE(ReadFileToStringWithMaxSize(file_path, nullptr, 6));
+
+  // Read more than buffer size.
+  data = "temp";
+  EXPECT_FALSE(ReadFileToStringWithMaxSize(file_path, &data, kLargeFileSize));
+  EXPECT_EQ(kLargeFileSize, data.length());
+  EXPECT_EQ(std::string(kLargeFileSize, '\0'), data);
+
+  EXPECT_FALSE(ReadFileToStringWithMaxSize(file_path, nullptr, kLargeFileSize));
+}
+#endif  // !defined(OS_WIN)
+
+#if !defined(OS_WIN) && !defined(OS_NACL) && !defined(OS_FUCHSIA) && \
+    !defined(OS_IOS)
+#define ChildMain WriteToPipeChildMain
+#define ChildMainString "WriteToPipeChildMain"
+
+MULTIPROCESS_TEST_MAIN(ChildMain) {
+  const char kTestData[] = "0123";
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  const FilePath pipe_path = command_line->GetSwitchValuePath("pipe-path");
+
+  int fd = open(pipe_path.value().c_str(), O_WRONLY);
+  CHECK_NE(-1, fd);
+  size_t written = 0;
+  while (written < strlen(kTestData)) {
+    ssize_t res = write(fd, kTestData + written, strlen(kTestData) - written);
+    if (res == -1)
+      break;
+    written += res;
+  }
+  CHECK_EQ(strlen(kTestData), written);
+  CHECK_EQ(0, close(fd));
+  return 0;
+}
+
+#define MoreThanBufferSizeChildMain WriteToPipeMoreThanBufferSizeChildMain
+#define MoreThanBufferSizeChildMainString \
+  "WriteToPipeMoreThanBufferSizeChildMain"
+
+MULTIPROCESS_TEST_MAIN(MoreThanBufferSizeChildMain) {
+  std::string data(kLargeFileSize, 'c');
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  const FilePath pipe_path = command_line->GetSwitchValuePath("pipe-path");
+
+  int fd = open(pipe_path.value().c_str(), O_WRONLY);
+  CHECK_NE(-1, fd);
+
+  size_t written = 0;
+  while (written < data.size()) {
+    ssize_t res = write(fd, data.c_str() + written, data.size() - written);
+    if (res == -1) {
+      // We are unable to write because reading process has already read
+      // requested number of bytes and closed pipe.
+      break;
+    }
+    written += res;
+  }
+  CHECK_EQ(0, close(fd));
+  return 0;
+}
+
+TEST_F(FileUtilTest, ReadFileToStringWithNamedPipe) {
+  FilePath pipe_path =
+      temp_dir_.GetPath().Append(FILE_PATH_LITERAL("test_pipe"));
+  ASSERT_EQ(0, mkfifo(pipe_path.value().c_str(), 0600));
+
+  base::CommandLine child_command_line(
+      base::GetMultiProcessTestChildBaseCommandLine());
+  child_command_line.AppendSwitchPath("pipe-path", pipe_path);
+
+  {
+    base::Process child_process = base::SpawnMultiProcessTestChild(
+        ChildMainString, child_command_line, base::LaunchOptions());
+    ASSERT_TRUE(child_process.IsValid());
+
+    std::string data = "temp";
+    EXPECT_FALSE(ReadFileToStringWithMaxSize(pipe_path, &data, 2));
+    EXPECT_EQ("01", data);
+
+    int rv = -1;
+    ASSERT_TRUE(WaitForMultiprocessTestChildExit(
+        child_process, TestTimeouts::action_timeout(), &rv));
+    ASSERT_EQ(0, rv);
+  }
+  {
+    base::Process child_process = base::SpawnMultiProcessTestChild(
+        ChildMainString, child_command_line, base::LaunchOptions());
+    ASSERT_TRUE(child_process.IsValid());
+
+    std::string data = "temp";
+    EXPECT_TRUE(ReadFileToStringWithMaxSize(pipe_path, &data, 6));
+    EXPECT_EQ("0123", data);
+
+    int rv = -1;
+    ASSERT_TRUE(WaitForMultiprocessTestChildExit(
+        child_process, TestTimeouts::action_timeout(), &rv));
+    ASSERT_EQ(0, rv);
+  }
+  {
+    base::Process child_process = base::SpawnMultiProcessTestChild(
+        MoreThanBufferSizeChildMainString, child_command_line,
+        base::LaunchOptions());
+    ASSERT_TRUE(child_process.IsValid());
+
+    std::string data = "temp";
+    EXPECT_FALSE(ReadFileToStringWithMaxSize(pipe_path, &data, 6));
+    EXPECT_EQ("cccccc", data);
+
+    int rv = -1;
+    ASSERT_TRUE(WaitForMultiprocessTestChildExit(
+        child_process, TestTimeouts::action_timeout(), &rv));
+    ASSERT_EQ(0, rv);
+  }
+  {
+    base::Process child_process = base::SpawnMultiProcessTestChild(
+        MoreThanBufferSizeChildMainString, child_command_line,
+        base::LaunchOptions());
+    ASSERT_TRUE(child_process.IsValid());
+
+    std::string data = "temp";
+    EXPECT_FALSE(
+        ReadFileToStringWithMaxSize(pipe_path, &data, kLargeFileSize - 1));
+    EXPECT_EQ(std::string(kLargeFileSize - 1, 'c'), data);
+
+    int rv = -1;
+    ASSERT_TRUE(WaitForMultiprocessTestChildExit(
+        child_process, TestTimeouts::action_timeout(), &rv));
+    ASSERT_EQ(0, rv);
+  }
+  {
+    base::Process child_process = base::SpawnMultiProcessTestChild(
+        MoreThanBufferSizeChildMainString, child_command_line,
+        base::LaunchOptions());
+    ASSERT_TRUE(child_process.IsValid());
+
+    std::string data = "temp";
+    EXPECT_TRUE(ReadFileToStringWithMaxSize(pipe_path, &data, kLargeFileSize));
+    EXPECT_EQ(std::string(kLargeFileSize, 'c'), data);
+
+    int rv = -1;
+    ASSERT_TRUE(WaitForMultiprocessTestChildExit(
+        child_process, TestTimeouts::action_timeout(), &rv));
+    ASSERT_EQ(0, rv);
+  }
+  {
+    base::Process child_process = base::SpawnMultiProcessTestChild(
+        MoreThanBufferSizeChildMainString, child_command_line,
+        base::LaunchOptions());
+    ASSERT_TRUE(child_process.IsValid());
+
+    std::string data = "temp";
+    EXPECT_TRUE(
+        ReadFileToStringWithMaxSize(pipe_path, &data, kLargeFileSize * 5));
+    EXPECT_EQ(std::string(kLargeFileSize, 'c'), data);
+
+    int rv = -1;
+    ASSERT_TRUE(WaitForMultiprocessTestChildExit(
+        child_process, TestTimeouts::action_timeout(), &rv));
+    ASSERT_EQ(0, rv);
+  }
+
+  ASSERT_EQ(0, unlink(pipe_path.value().c_str()));
+}
+#endif  // !defined(OS_WIN) && !defined(OS_NACL) && !defined(OS_FUCHSIA) &&
+        // !defined(OS_IOS)
+
+#if defined(OS_WIN)
+#define ChildMain WriteToPipeChildMain
+#define ChildMainString "WriteToPipeChildMain"
+
+MULTIPROCESS_TEST_MAIN(ChildMain) {
+  const char kTestData[] = "0123";
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  const FilePath pipe_path = command_line->GetSwitchValuePath("pipe-path");
+  std::string switch_string = command_line->GetSwitchValueASCII("sync_event");
+  EXPECT_FALSE(switch_string.empty());
+  unsigned int switch_uint = 0;
+  EXPECT_TRUE(StringToUint(switch_string, &switch_uint));
+  win::ScopedHandle sync_event(win::Uint32ToHandle(switch_uint));
+
+  HANDLE ph = CreateNamedPipe(pipe_path.value().c_str(), PIPE_ACCESS_OUTBOUND,
+                              PIPE_WAIT, 1, 0, 0, 0, NULL);
+  EXPECT_NE(ph, INVALID_HANDLE_VALUE);
+  EXPECT_TRUE(SetEvent(sync_event.Get()));
+  EXPECT_TRUE(ConnectNamedPipe(ph, NULL));
+
+  DWORD written;
+  EXPECT_TRUE(::WriteFile(ph, kTestData, strlen(kTestData), &written, NULL));
+  EXPECT_EQ(strlen(kTestData), written);
+  CloseHandle(ph);
+  return 0;
+}
+
+#define MoreThanBufferSizeChildMain WriteToPipeMoreThanBufferSizeChildMain
+#define MoreThanBufferSizeChildMainString \
+  "WriteToPipeMoreThanBufferSizeChildMain"
+
+MULTIPROCESS_TEST_MAIN(MoreThanBufferSizeChildMain) {
+  std::string data(kLargeFileSize, 'c');
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  const FilePath pipe_path = command_line->GetSwitchValuePath("pipe-path");
+  std::string switch_string = command_line->GetSwitchValueASCII("sync_event");
+  EXPECT_FALSE(switch_string.empty());
+  unsigned int switch_uint = 0;
+  EXPECT_TRUE(StringToUint(switch_string, &switch_uint));
+  win::ScopedHandle sync_event(win::Uint32ToHandle(switch_uint));
+
+  HANDLE ph = CreateNamedPipe(pipe_path.value().c_str(), PIPE_ACCESS_OUTBOUND,
+                              PIPE_WAIT, 1, data.size(), data.size(), 0, NULL);
+  EXPECT_NE(ph, INVALID_HANDLE_VALUE);
+  EXPECT_TRUE(SetEvent(sync_event.Get()));
+  EXPECT_TRUE(ConnectNamedPipe(ph, NULL));
+
+  DWORD written;
+  EXPECT_TRUE(::WriteFile(ph, data.c_str(), data.size(), &written, NULL));
+  EXPECT_EQ(data.size(), written);
+  CloseHandle(ph);
+  return 0;
+}
+
+TEST_F(FileUtilTest, ReadFileToStringWithNamedPipe) {
+  FilePath pipe_path(FILE_PATH_LITERAL("\\\\.\\pipe\\test_pipe"));
+  win::ScopedHandle sync_event(CreateEvent(0, false, false, nullptr));
+
+  base::CommandLine child_command_line(
+      base::GetMultiProcessTestChildBaseCommandLine());
+  child_command_line.AppendSwitchPath("pipe-path", pipe_path);
+  child_command_line.AppendSwitchASCII(
+      "sync_event", UintToString(win::HandleToUint32(sync_event.Get())));
+
+  base::LaunchOptions options;
+  options.handles_to_inherit.push_back(sync_event.Get());
+
+  {
+    base::Process child_process = base::SpawnMultiProcessTestChild(
+        ChildMainString, child_command_line, options);
+    ASSERT_TRUE(child_process.IsValid());
+    // Wait for pipe creation in child process.
+    EXPECT_EQ(WAIT_OBJECT_0, WaitForSingleObject(sync_event.Get(), INFINITE));
+
+    std::string data = "temp";
+    EXPECT_FALSE(ReadFileToStringWithMaxSize(pipe_path, &data, 2));
+    EXPECT_EQ("01", data);
+
+    int rv = -1;
+    ASSERT_TRUE(WaitForMultiprocessTestChildExit(
+        child_process, TestTimeouts::action_timeout(), &rv));
+    ASSERT_EQ(0, rv);
+  }
+  {
+    base::Process child_process = base::SpawnMultiProcessTestChild(
+        ChildMainString, child_command_line, options);
+    ASSERT_TRUE(child_process.IsValid());
+    // Wait for pipe creation in child process.
+    EXPECT_EQ(WAIT_OBJECT_0, WaitForSingleObject(sync_event.Get(), INFINITE));
+
+    std::string data = "temp";
+    EXPECT_TRUE(ReadFileToStringWithMaxSize(pipe_path, &data, 6));
+    EXPECT_EQ("0123", data);
+
+    int rv = -1;
+    ASSERT_TRUE(WaitForMultiprocessTestChildExit(
+        child_process, TestTimeouts::action_timeout(), &rv));
+    ASSERT_EQ(0, rv);
+  }
+  {
+    base::Process child_process = base::SpawnMultiProcessTestChild(
+        MoreThanBufferSizeChildMainString, child_command_line, options);
+    ASSERT_TRUE(child_process.IsValid());
+    // Wait for pipe creation in child process.
+    EXPECT_EQ(WAIT_OBJECT_0, WaitForSingleObject(sync_event.Get(), INFINITE));
+
+    std::string data = "temp";
+    EXPECT_FALSE(ReadFileToStringWithMaxSize(pipe_path, &data, 6));
+    EXPECT_EQ("cccccc", data);
+
+    int rv = -1;
+    ASSERT_TRUE(WaitForMultiprocessTestChildExit(
+        child_process, TestTimeouts::action_timeout(), &rv));
+    ASSERT_EQ(0, rv);
+  }
+  {
+    base::Process child_process = base::SpawnMultiProcessTestChild(
+        MoreThanBufferSizeChildMainString, child_command_line, options);
+    ASSERT_TRUE(child_process.IsValid());
+    // Wait for pipe creation in child process.
+    EXPECT_EQ(WAIT_OBJECT_0, WaitForSingleObject(sync_event.Get(), INFINITE));
+
+    std::string data = "temp";
+    EXPECT_FALSE(
+        ReadFileToStringWithMaxSize(pipe_path, &data, kLargeFileSize - 1));
+    EXPECT_EQ(std::string(kLargeFileSize - 1, 'c'), data);
+
+    int rv = -1;
+    ASSERT_TRUE(WaitForMultiprocessTestChildExit(
+        child_process, TestTimeouts::action_timeout(), &rv));
+    ASSERT_EQ(0, rv);
+  }
+  {
+    base::Process child_process = base::SpawnMultiProcessTestChild(
+        MoreThanBufferSizeChildMainString, child_command_line, options);
+    ASSERT_TRUE(child_process.IsValid());
+    // Wait for pipe creation in child process.
+    EXPECT_EQ(WAIT_OBJECT_0, WaitForSingleObject(sync_event.Get(), INFINITE));
+
+    std::string data = "temp";
+    EXPECT_TRUE(ReadFileToStringWithMaxSize(pipe_path, &data, kLargeFileSize));
+    EXPECT_EQ(std::string(kLargeFileSize, 'c'), data);
+
+    int rv = -1;
+    ASSERT_TRUE(WaitForMultiprocessTestChildExit(
+        child_process, TestTimeouts::action_timeout(), &rv));
+    ASSERT_EQ(0, rv);
+  }
+  {
+    base::Process child_process = base::SpawnMultiProcessTestChild(
+        MoreThanBufferSizeChildMainString, child_command_line, options);
+    ASSERT_TRUE(child_process.IsValid());
+    // Wait for pipe creation in child process.
+    EXPECT_EQ(WAIT_OBJECT_0, WaitForSingleObject(sync_event.Get(), INFINITE));
+
+    std::string data = "temp";
+    EXPECT_TRUE(
+        ReadFileToStringWithMaxSize(pipe_path, &data, kLargeFileSize * 5));
+    EXPECT_EQ(std::string(kLargeFileSize, 'c'), data);
+
+    int rv = -1;
+    ASSERT_TRUE(WaitForMultiprocessTestChildExit(
+        child_process, TestTimeouts::action_timeout(), &rv));
+    ASSERT_EQ(0, rv);
+  }
+}
+#endif  // defined(OS_WIN)
+
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_FUCHSIA)
+TEST_F(FileUtilTest, ReadFileToStringWithProcFileSystem) {
+  FilePath file_path("/proc/cpuinfo");
+  std::string data = "temp";
+
+  EXPECT_FALSE(ReadFileToStringWithMaxSize(file_path, &data, 0));
+  EXPECT_EQ(0u, data.length());
+
+  data = "temp";
+  EXPECT_FALSE(ReadFileToStringWithMaxSize(file_path, &data, 2));
+#if defined(OS_ANDROID)
+  EXPECT_EQ("Pr", data);
+#else
+  EXPECT_EQ("pr", data);
+#endif
+
+  data = "temp";
+  EXPECT_FALSE(ReadFileToStringWithMaxSize(file_path, &data, 4));
+#if defined(OS_ANDROID)
+  EXPECT_EQ("Proc", data);
+#else
+  EXPECT_EQ("proc", data);
+#endif
+
+  EXPECT_FALSE(ReadFileToStringWithMaxSize(file_path, nullptr, 4));
+}
+#endif  // defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_FUCHSIA)
+
+TEST_F(FileUtilTest, ReadFileToStringWithLargeFile) {
+  std::string data(kLargeFileSize, 'c');
+
+  FilePath file_path =
+      temp_dir_.GetPath().Append(FILE_PATH_LITERAL("ReadFileToStringTest"));
+
+  // Create test file.
+  ASSERT_EQ(static_cast<int>(kLargeFileSize),
+            WriteFile(file_path, data.c_str(), kLargeFileSize));
+
+  std::string actual_data = "temp";
+  EXPECT_TRUE(ReadFileToString(file_path, &actual_data));
+  EXPECT_EQ(data, actual_data);
+
+  actual_data = "temp";
+  EXPECT_FALSE(ReadFileToStringWithMaxSize(file_path, &actual_data, 0));
+  EXPECT_EQ(0u, actual_data.length());
+
+  // Read more than buffer size.
+  actual_data = "temp";
+  EXPECT_FALSE(
+      ReadFileToStringWithMaxSize(file_path, &actual_data, kLargeFileSize - 1));
+  EXPECT_EQ(std::string(kLargeFileSize - 1, 'c'), actual_data);
 }
 
 TEST_F(FileUtilTest, TouchFile) {
@@ -2869,7 +3279,7 @@ TEST_F(FileUtilTest, IsDirectoryEmpty) {
   EXPECT_FALSE(IsDirectoryEmpty(empty_dir));
 }
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
 
 TEST_F(FileUtilTest, SetNonBlocking) {
   const int kInvalidFd = 99999;
@@ -2897,7 +3307,7 @@ TEST_F(FileUtilTest, SetCloseOnExec) {
 
 #endif
 
-#if defined(OS_POSIX) && !defined(OS_FUCHSIA)
+#if defined(OS_POSIX)
 
 // Testing VerifyPathControlledByAdmin() is hard, because there is no
 // way a test can make a file owned by root, or change file paths
@@ -3181,7 +3591,7 @@ TEST_F(VerifyPathControlledByUserTest, WriteBitChecks) {
   EXPECT_TRUE(VerifyPathControlledByUser(sub_dir_, text_file_, uid_, ok_gids_));
 }
 
-#endif  // defined(OS_POSIX) && !defined(OS_FUCHSIA)
+#endif  // defined(OS_POSIX)
 
 #if defined(OS_ANDROID)
 TEST_F(FileUtilTest, ValidContentUriTest) {
@@ -3227,7 +3637,7 @@ TEST_F(FileUtilTest, NonExistentContentUriTest) {
 }
 #endif
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
 
 TEST(ScopedFD, ScopedFDDoesClose) {
   int fds[2];
@@ -3266,7 +3676,7 @@ TEST(ScopedFD, ScopedFDCrashesOnCloseFailure) {
 #endif
 }
 
-#endif  // defined(OS_POSIX)
+#endif  // defined(OS_POSIX) || defined(OS_FUCHSIA)
 
 }  // namespace
 

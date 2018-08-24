@@ -25,6 +25,7 @@
 #include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
+#include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "third_party/skia_shared/SkFloatToDecimal.h"
 
 namespace {
@@ -37,8 +38,7 @@ std::ostream& operator<<(std::ostream& ar, const CFX_Matrix& matrix) {
 
 bool GetColor(const CPDF_Color* pColor, float* rgb) {
   int intRGB[3];
-  if (!pColor ||
-      pColor->GetColorSpace() != CPDF_ColorSpace::GetStockCS(PDFCS_DEVICERGB) ||
+  if (!pColor || !pColor->IsColorSpaceRGB() ||
       !pColor->GetRGB(&intRGB[0], &intRGB[1], &intRGB[2])) {
     return false;
   }
@@ -52,7 +52,7 @@ bool GetColor(const CPDF_Color* pColor, float* rgb) {
 
 CPDF_PageContentGenerator::CPDF_PageContentGenerator(
     CPDF_PageObjectHolder* pObjHolder)
-    : m_pObjHolder(pObjHolder), m_pDocument(pObjHolder->m_pDocument.Get()) {
+    : m_pObjHolder(pObjHolder), m_pDocument(pObjHolder->GetDocument()) {
   for (const auto& pObj : *pObjHolder->GetPageObjectList()) {
     if (pObj)
       m_pageObjects.emplace_back(pObj.get());
@@ -81,7 +81,7 @@ void CPDF_PageContentGenerator::GenerateContent() {
   buf << "Q\n";
 
   // Add buffer to a stream in page's 'Contents'
-  CPDF_Dictionary* pPageDict = m_pObjHolder->m_pFormDict.Get();
+  CPDF_Dictionary* pPageDict = m_pObjHolder->GetFormDict();
   CPDF_Object* pContent =
       pPageDict ? pPageDict->GetObjectFor("Contents") : nullptr;
   CPDF_Stream* pStream = pDoc->NewIndirect<CPDF_Stream>();
@@ -128,7 +128,7 @@ ByteString CPDF_PageContentGenerator::RealizeResource(
   ASSERT(dwResourceObjNum);
   if (!m_pObjHolder->m_pResources) {
     m_pObjHolder->m_pResources = m_pDocument->NewIndirect<CPDF_Dictionary>();
-    m_pObjHolder->m_pFormDict->SetNewFor<CPDF_Reference>(
+    m_pObjHolder->GetFormDict()->SetNewFor<CPDF_Reference>(
         "Resources", m_pDocument.Get(),
         m_pObjHolder->m_pResources->GetObjNum());
   }

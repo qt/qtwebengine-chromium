@@ -105,14 +105,6 @@ class TestResourceDispatcherHostDelegate final
   TestResourceDispatcherHostDelegate() = default;
   ~TestResourceDispatcherHostDelegate() override = default;
 
-  bool ShouldBeginRequest(const std::string& method,
-                          const GURL& url,
-                          ResourceType resource_type,
-                          ResourceContext* resource_context) override {
-    ADD_FAILURE() << "ShouldBeginRequest should not be called.";
-    return false;
-  }
-
   void RequestBeginning(
       net::URLRequest* request,
       ResourceContext* resource_context,
@@ -1219,7 +1211,7 @@ TEST_P(MojoAsyncResourceHandlerWithAllocationSizeTest, RedirectHandling) {
 
   ASSERT_EQ(MockResourceLoader::Status::CALLBACK_PENDING,
             mock_loader_->status());
-  handler_->FollowRedirect();
+  handler_->FollowRedirect(base::nullopt);
   ASSERT_EQ(MockResourceLoader::Status::IDLE, mock_loader_->status());
 
   url_loader_client_.ClearHasReceivedRedirect();
@@ -1240,7 +1232,7 @@ TEST_P(MojoAsyncResourceHandlerWithAllocationSizeTest, RedirectHandling) {
 
   ASSERT_EQ(MockResourceLoader::Status::CALLBACK_PENDING,
             mock_loader_->status());
-  handler_->FollowRedirect();
+  handler_->FollowRedirect(base::nullopt);
   ASSERT_EQ(MockResourceLoader::Status::IDLE, mock_loader_->status());
 
   // Give the final response.
@@ -1264,7 +1256,7 @@ TEST_P(MojoAsyncResourceHandlerWithAllocationSizeTest, RedirectHandling) {
 // redirect, despite the fact that no redirect has been received yet.
 TEST_P(MojoAsyncResourceHandlerWithAllocationSizeTest,
        MalformedFollowRedirectRequest) {
-  handler_->FollowRedirect();
+  handler_->FollowRedirect(base::nullopt);
 
   EXPECT_TRUE(handler_->has_received_bad_message());
 }

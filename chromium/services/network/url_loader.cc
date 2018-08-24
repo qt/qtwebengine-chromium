@@ -4,7 +4,10 @@
 
 #include "services/network/url_loader.h"
 
+#include <limits>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "base/files/file.h"
 #include "base/memory/weak_ptr.h"
@@ -21,10 +24,10 @@
 #include "net/ssl/client_cert_store.h"
 #include "net/ssl/ssl_private_key.h"
 #include "net/url_request/url_request_context.h"
-#include "net/url_request/url_request_context_getter.h"
 #include "services/network/chunked_data_pipe_upload_data_stream.h"
 #include "services/network/data_pipe_element_reader.h"
 #include "services/network/loader_util.h"
+#include "services/network/network_usage_accumulator.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/net_adapters.h"
 #include "services/network/public/cpp/resource_request.h"
@@ -261,7 +264,7 @@ class SSLPrivateKeyInternal : public net::SSLPrivateKey {
 }  // namespace
 
 URLLoader::URLLoader(
-    scoped_refptr<net::URLRequestContextGetter> url_request_context_getter,
+    net::URLRequestContext* url_request_context,
     mojom::NetworkServiceClient* network_service_client,
     DeleteCallback delete_callback,
     mojom::URLLoaderRequest url_loader_request,
@@ -270,22 +273,24 @@ URLLoader::URLLoader(
     bool report_raw_headers,
     mojom::URLLoaderClientPtr url_loader_client,
     const net::NetworkTrafficAnnotationTag& traffic_annotation,
-    uint32_t process_id,
+    const mojom::URLLoaderFactoryParams* factory_params,
     uint32_t request_id,
     scoped_refptr<ResourceSchedulerClient> resource_scheduler_client,
-    base::WeakPtr<KeepaliveStatisticsRecorder> keepalive_statistics_recorder)
-    : url_request_context_getter_(url_request_context_getter),
+    base::WeakPtr<KeepaliveStatisticsRecorder> keepalive_statistics_recorder,
+    base::WeakPtr<NetworkUsageAccumulator> network_usage_accumulator)
+    : url_request_context_(url_request_context),
       network_service_client_(network_service_client),
       delete_callback_(std::move(delete_callback)),
       options_(options),
       resource_type_(request.resource_type),
       is_load_timing_enabled_(request.enable_load_timing),
-      process_id_(process_id),
+      factory_params_(std::move(factory_params)),
       render_frame_id_(request.render_frame_id),
       request_id_(request_id),
-      connected_(true),
       keepalive_(request.keepalive),
+      do_not_prompt_for_login_(request.do_not_prompt_for_login),
       binding_(this, std::move(url_loader_request)),
+      auth_challenge_responder_binding_(this),
       url_loader_client_(std::move(url_loader_client)),
       writable_handle_watcher_(FROM_HERE,
                                mojo::SimpleWatcher::ArmingPolicy::MANUAL,
@@ -296,6 +301,7 @@ URLLoader::URLLoader(
       report_raw_headers_(report_raw_headers),
       resource_scheduler_client_(std::move(resource_scheduler_client)),
       keepalive_statistics_recorder_(std::move(keepalive_statistics_recorder)),
+      network_usage_accumulator_(std::move(network_usage_accumulator)),
       first_auth_attempt_(true),
       weak_ptr_factory_(this) {
   DCHECK(delete_callback_);
@@ -315,9 +321,8 @@ URLLoader::URLLoader(
   binding_.set_connection_error_handler(
       base::BindOnce(&URLLoader::OnConnectionError, base::Unretained(this)));
 
-  url_request_ =
-      url_request_context_getter_->GetURLRequestContext()->CreateRequest(
-          GURL(request.url), request.priority, this, traffic_annotation);
+  url_request_ = url_request_context_->CreateRequest(
+      GURL(request.url), request.priority, this, traffic_annotation);
   url_request_->set_method(request.method);
   url_request_->set_site_for_cookies(request.site_for_cookies);
   url_request_->set_attach_same_site_cookies(request.attach_same_site_cookies);
@@ -359,7 +364,7 @@ URLLoader::URLLoader(
   }
 
   if (keepalive_ && keepalive_statistics_recorder_)
-    keepalive_statistics_recorder_->OnLoadStarted(process_id_);
+    keepalive_statistics_recorder_->OnLoadStarted(factory_params_->process_id);
 
   bool defer = false;
   if (resource_scheduler_client_) {
@@ -381,10 +386,14 @@ URLLoader::~URLLoader() {
   RecordBodyReadFromNetBeforePausedIfNeeded();
 
   if (keepalive_ && keepalive_statistics_recorder_)
-    keepalive_statistics_recorder_->OnLoadFinished(process_id_);
+    keepalive_statistics_recorder_->OnLoadFinished(factory_params_->process_id);
 }
 
-void URLLoader::FollowRedirect() {
+void URLLoader::FollowRedirect(
+    const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
+  DCHECK(!modified_request_headers.has_value()) << "Redirect with modified "
+                                                   "headers was not supported "
+                                                   "yet. crbug.com/845683";
   if (!url_request_) {
     NotifyCompleted(net::ERR_UNEXPECTED);
     // |this| may have been deleted.
@@ -471,15 +480,26 @@ void URLLoader::OnReceivedRedirect(net::URLRequest* url_request,
 void URLLoader::OnAuthRequired(net::URLRequest* unused,
                                net::AuthChallengeInfo* auth_info) {
   if (!network_service_client_) {
-    OnAuthRequiredResponse(base::nullopt);
+    OnAuthCredentials(base::nullopt);
     return;
   }
 
+  if (do_not_prompt_for_login_) {
+    OnAuthCredentials(base::nullopt);
+    return;
+  }
+
+  network::mojom::AuthChallengeResponderPtr auth_challenge_responder;
+  auto request = mojo::MakeRequest(&auth_challenge_responder);
+  DCHECK(!auth_challenge_responder_binding_.is_bound());
+  auth_challenge_responder_binding_.Bind(std::move(request));
+  auth_challenge_responder_binding_.set_connection_error_handler(
+      base::BindOnce(&URLLoader::DeleteSelf, base::Unretained(this)));
   network_service_client_->OnAuthRequired(
-      process_id_, render_frame_id_, request_id_, resource_type_,
-      url_request_->url(), first_auth_attempt_, auth_info,
-      base::BindOnce(&URLLoader::OnAuthRequiredResponse,
-                     weak_ptr_factory_.GetWeakPtr()));
+      factory_params_->process_id, render_frame_id_, request_id_,
+      url_request_->url(), url_request_->site_for_cookies(),
+      first_auth_attempt_, auth_info, resource_type_,
+      std::move(auth_challenge_responder));
 
   first_auth_attempt_ = false;
 }
@@ -493,7 +513,7 @@ void URLLoader::OnCertificateRequested(net::URLRequest* unused,
   }
 
   network_service_client_->OnCertificateRequested(
-      process_id_, render_frame_id_, request_id_, cert_info,
+      factory_params_->process_id, render_frame_id_, request_id_, cert_info,
       base::BindOnce(&URLLoader::OnCertificateRequestedResponse,
                      weak_ptr_factory_.GetWeakPtr()));
 }
@@ -506,8 +526,8 @@ void URLLoader::OnSSLCertificateError(net::URLRequest* request,
     return;
   }
   network_service_client_->OnSSLCertificateError(
-      process_id_, render_frame_id_, request_id_, resource_type_,
-      url_request_->url(), ssl_info, fatal,
+      factory_params_->process_id, render_frame_id_, request_id_,
+      resource_type_, url_request_->url(), ssl_info, fatal,
       base::Bind(&URLLoader::OnSSLCertificateErrorResponse,
                  weak_ptr_factory_.GetWeakPtr(), ssl_info));
 }
@@ -590,8 +610,7 @@ void URLLoader::ReadMore() {
         &response_body_stream_, &pending_write_, &pending_write_buffer_size_);
     if (result != MOJO_RESULT_OK && result != MOJO_RESULT_SHOULD_WAIT) {
       // The response body stream is in a bad state. Bail.
-      // TODO: How should this be communicated to our client?
-      CloseResponseBodyStreamProducer();
+      NotifyCompleted(net::ERR_FAILED);
       return;
     }
 
@@ -666,9 +685,7 @@ void URLLoader::DidRead(int num_bytes, bool completed_synchronously) {
   if (!url_request_->status().is_success() || num_bytes == 0) {
     CompletePendingWrite();
     NotifyCompleted(url_request_->status().ToNetError());
-
-    CloseResponseBodyStreamProducer();
-    // |this| may have been deleted.
+    // |this| will have been deleted.
     return;
   }
 
@@ -695,6 +712,20 @@ net::LoadState URLLoader::GetLoadStateForTesting() const {
   if (!url_request_)
     return net::LOAD_STATE_IDLE;
   return url_request_->GetLoadState().state;
+}
+
+void URLLoader::OnAuthCredentials(
+    const base::Optional<net::AuthCredentials>& credentials) {
+  auth_challenge_responder_binding_.Close();
+
+  if (!url_request_)
+    return;
+
+  if (!credentials.has_value()) {
+    url_request_->CancelAuth();
+  } else {
+    url_request_->SetAuth(credentials.value());
+  }
 }
 
 void URLLoader::NotifyCompleted(int error_code) {
@@ -728,54 +759,39 @@ void URLLoader::NotifyCompleted(int error_code) {
     status.ssl_info = url_request_->ssl_info();
   }
 
+  if (network_usage_accumulator_) {
+    network_usage_accumulator_->OnBytesTransferred(
+        factory_params_->process_id, render_frame_id_,
+        url_request_->GetTotalReceivedBytes(),
+        url_request_->GetTotalSentBytes());
+  }
+
   url_loader_client_->OnComplete(status);
-  DeleteIfNeeded();
+  DeleteSelf();
 }
 
 void URLLoader::OnConnectionError() {
-  connected_ = false;
-  DeleteIfNeeded();
+  NotifyCompleted(net::ERR_FAILED);
 }
 
 void URLLoader::OnResponseBodyStreamConsumerClosed(MojoResult result) {
-  CloseResponseBodyStreamProducer();
+  NotifyCompleted(net::ERR_FAILED);
 }
 
 void URLLoader::OnResponseBodyStreamReady(MojoResult result) {
   if (result != MOJO_RESULT_OK) {
-    CloseResponseBodyStreamProducer();
+    NotifyCompleted(net::ERR_FAILED);
     return;
   }
 
   ReadMore();
 }
 
-void URLLoader::CloseResponseBodyStreamProducer() {
-  RecordBodyReadFromNetBeforePausedIfNeeded();
-
-  resource_scheduler_request_handle_.reset();
-  url_request_.reset();
-  peer_closed_handle_watcher_.Cancel();
-  writable_handle_watcher_.Cancel();
-  response_body_stream_.reset();
-
-  pending_write_buffer_offset_ = 0;
-  pending_write_ = nullptr;
-
-  // Make sure if a ResumeReadingBodyFromNet() call is received later, we don't
-  // try to do ReadMore().
-  paused_reading_body_ = false;
-
-  DeleteIfNeeded();
-}
-
-void URLLoader::DeleteIfNeeded() {
-  if (!connected_ && !HasDataPipe())
-    std::move(delete_callback_).Run(this);
+void URLLoader::DeleteSelf() {
+  std::move(delete_callback_).Run(this);
 }
 
 void URLLoader::SendResponseToClient() {
-  base::Optional<net::SSLInfo> ssl_info;
   mojom::DownloadedTempFilePtr downloaded_file_ptr;
   url_loader_client_->OnReceiveResponse(response_->head,
                                         std::move(downloaded_file_ptr));
@@ -848,18 +864,6 @@ void URLLoader::OnCertificateRequestedResponse(
     } else {
       url_request_->ContinueWithCertificate(nullptr, nullptr);
     }
-  }
-}
-
-void URLLoader::OnAuthRequiredResponse(
-    const base::Optional<net::AuthCredentials>& credentials) {
-  if (!url_request_)
-    return;
-
-  if (!credentials.has_value()) {
-    url_request_->CancelAuth();
-  } else {
-    url_request_->SetAuth(credentials.value());
   }
 }
 

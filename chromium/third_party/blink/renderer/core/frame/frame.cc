@@ -37,6 +37,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/window_proxy_manager.h"
 #include "third_party/blink/renderer/core/dom/document_type.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
+#include "third_party/blink/renderer/core/dom/node_computed_style.h"
 #include "third_party/blink/renderer/core/dom/user_gesture_indicator.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
@@ -75,6 +76,7 @@ void Frame::Trace(blink::Visitor* visitor) {
 
 void Frame::Detach(FrameDetachType type) {
   DCHECK(client_);
+  detach_stack_ = base::debug::StackTrace();
   // By the time this method is called, the subclasses should have already
   // advanced to the Detaching state.
   DCHECK_EQ(lifecycle_.GetState(), FrameLifecycle::kDetaching);
@@ -252,13 +254,24 @@ bool Frame::IsFeatureEnabled(mojom::FeaturePolicyFeature feature) const {
 void Frame::SetOwner(FrameOwner* owner) {
   owner_ = owner;
   UpdateInertIfPossible();
+  UpdateInheritedEffectiveTouchActionIfPossible();
 }
 
 void Frame::UpdateInertIfPossible() {
   if (owner_ && owner_->IsLocal()) {
-    ToHTMLFrameOwnerElement(owner_)->UpdateDistribution();
+    ToHTMLFrameOwnerElement(owner_)->UpdateDistributionForFlatTreeTraversal();
     if (ToHTMLFrameOwnerElement(owner_)->IsInert())
       SetIsInert(true);
+  }
+}
+
+void Frame::UpdateInheritedEffectiveTouchActionIfPossible() {
+  if (owner_) {
+    Frame* owner_frame = owner_->ContentFrame();
+    if (owner_frame) {
+      SetInheritedEffectiveTouchAction(
+          owner_frame->InheritedEffectiveTouchAction());
+    }
   }
 }
 
@@ -279,7 +292,8 @@ Frame::Frame(FrameClient* client,
       client_(client),
       window_proxy_manager_(window_proxy_manager),
       is_loading_(false),
-      devtools_frame_token_(client->GetDevToolsFrameToken()) {
+      devtools_frame_token_(client->GetDevToolsFrameToken()),
+      create_stack_(base::debug::StackTrace()) {
   InstanceCounters::IncrementCounter(InstanceCounters::kFrameCounter);
 
   if (owner_)

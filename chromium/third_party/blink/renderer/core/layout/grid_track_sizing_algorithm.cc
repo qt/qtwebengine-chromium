@@ -64,7 +64,7 @@ void GridTrack::SetInfinitelyGrowable(bool infinitely_growable) {
   infinitely_growable_ = infinitely_growable;
 }
 
-void GridTrack::SetGrowthLimitCap(Optional<LayoutUnit> growth_limit_cap) {
+void GridTrack::SetGrowthLimitCap(base::Optional<LayoutUnit> growth_limit_cap) {
   DCHECK(!growth_limit_cap || *growth_limit_cap >= 0);
   growth_limit_cap_ = growth_limit_cap;
 }
@@ -88,16 +88,19 @@ class IndefiniteSizeStrategy final : public GridTrackSizingAlgorithmStrategy {
       LayoutBox&,
       bool override_size_has_changed) const override;
   void MaximizeTracks(Vector<GridTrack>&,
-                      Optional<LayoutUnit>& free_space) override;
-  double FindUsedFlexFraction(Vector<size_t>& flexible_sized_tracks_index,
-                              GridTrackSizingDirection,
-                              Optional<LayoutUnit> free_space) const override;
+                      base::Optional<LayoutUnit>& free_space) override;
+  double FindUsedFlexFraction(
+      Vector<size_t>& flexible_sized_tracks_index,
+      GridTrackSizingDirection,
+      base::Optional<LayoutUnit> free_space) const override;
   bool RecomputeUsedFlexFractionIfNeeded(
       Vector<size_t>& flexible_sized_tracks_index,
       double& flex_fraction,
       Vector<LayoutUnit>& increments,
       LayoutUnit& total_growth) const override;
   LayoutUnit FreeSpaceForStretchAutoTracksStep() const override;
+  LayoutUnit MinContentForChild(LayoutBox&) const override;
+  LayoutUnit MaxContentForChild(LayoutBox&) const override;
 };
 
 class DefiniteSizeStrategy final : public GridTrackSizingAlgorithmStrategy {
@@ -110,10 +113,11 @@ class DefiniteSizeStrategy final : public GridTrackSizingAlgorithmStrategy {
       LayoutBox&,
       bool override_size_has_changed) const override;
   void MaximizeTracks(Vector<GridTrack>&,
-                      Optional<LayoutUnit>& free_space) override;
-  double FindUsedFlexFraction(Vector<size_t>& flexible_sized_tracks_index,
-                              GridTrackSizingDirection,
-                              Optional<LayoutUnit> free_space) const override;
+                      base::Optional<LayoutUnit>& free_space) override;
+  double FindUsedFlexFraction(
+      Vector<size_t>& flexible_sized_tracks_index,
+      GridTrackSizingDirection,
+      base::Optional<LayoutUnit> free_space) const override;
   bool RecomputeUsedFlexFractionIfNeeded(
       Vector<size_t>& flexible_sized_tracks_index,
       double& flex_fraction,
@@ -123,13 +127,6 @@ class DefiniteSizeStrategy final : public GridTrackSizingAlgorithmStrategy {
   }
   LayoutUnit FreeSpaceForStretchAutoTracksStep() const override;
 };
-
-void GridTrackSizingAlgorithmStrategy::SetNeedsLayoutForChild(
-    LayoutBox& child) const {
-  if (algorithm_.is_in_perform_layout_) {
-    child.SetNeedsLayout(LayoutInvalidationReason::kGridChanged, kMarkOnlyThis);
-  }
-}
 
 GridTrackSizingAlgorithmStrategy::~GridTrackSizingAlgorithmStrategy() = default;
 
@@ -159,40 +156,14 @@ void GridTrackSizingAlgorithmStrategy::
     child.SetOverrideContainingBlockContentLogicalHeight(size);
 }
 
-LayoutUnit GridTrackSizingAlgorithm::AssumedRowsSizeForOrthogonalChild(
-    const LayoutBox& child) const {
-  DCHECK(GridLayoutUtils::IsOrthogonalChild(*layout_grid_, child));
-  const GridSpan& span = grid_.GridItemSpan(child, kForRows);
-  LayoutUnit grid_area_size;
-  bool grid_area_is_indefinite = false;
-  LayoutUnit containing_block_available_size =
-      layout_grid_->ContainingBlockLogicalHeightForContent(
-          kExcludeMarginBorderPadding);
-  for (auto track_position : span) {
-    GridLength max_track_size =
-        GetGridTrackSize(kForRows, track_position).MaxTrackBreadth();
-    if (max_track_size.IsContentSized() || max_track_size.IsFlex()) {
-      grid_area_is_indefinite = true;
-    } else {
-      grid_area_size += ValueForLength(max_track_size.length(),
-                                       containing_block_available_size);
-    }
-  }
-
-  grid_area_size +=
-      layout_grid_->GuttersSize(grid_, kForRows, span.StartLine(),
-                                span.IntegerSpan(), AvailableSpace(kForRows));
-
-  return grid_area_is_indefinite
-             ? std::max(child.MaxPreferredLogicalWidth(), grid_area_size)
-             : grid_area_size;
-}
-
 LayoutUnit GridTrackSizingAlgorithm::GridAreaBreadthForChild(
     const LayoutBox& child,
     GridTrackSizingDirection direction) {
-  if (direction == kForRows && sizing_state_ == kColumnSizingFirstIteration)
-    return AssumedRowsSizeForOrthogonalChild(child);
+  if (direction == kForRows && sizing_state_ == kColumnSizingFirstIteration) {
+    DCHECK(GridLayoutUtils::IsOrthogonalChild(*layout_grid_, child));
+    return layout_grid_->EstimatedGridAreaBreadthForChild(grid_, child,
+                                                          kForRows);
+  }
 
   Vector<GridTrack>& all_tracks = Tracks(direction);
   const GridSpan& span = grid_.GridItemSpan(child, direction);
@@ -211,12 +182,10 @@ bool GridTrackSizingAlgorithmStrategy::
     UpdateOverrideContainingBlockContentSizeForChild(
         LayoutBox& child,
         GridTrackSizingDirection direction,
-        Optional<LayoutUnit> override_size) const {
+        base::Optional<LayoutUnit> override_size) const {
   if (!override_size)
     override_size = algorithm_.GridAreaBreadthForChild(child, direction);
-  if (GridLayoutUtils::HasOverrideContainingBlockContentSizeForChild(
-          child, direction) &&
-      GridLayoutUtils::OverrideContainingBlockContentSizeForChild(
+  if (GridLayoutUtils::OverrideContainingBlockContentSizeForChild(
           child, direction) == override_size.value())
     return false;
 
@@ -225,7 +194,7 @@ bool GridTrackSizingAlgorithmStrategy::
   return true;
 }
 
-Optional<LayoutUnit>
+base::Optional<LayoutUnit>
 GridTrackSizingAlgorithmStrategy::ExtentForBaselineAlignment(
     const LayoutBox& child) const {
   const LayoutGrid& layout_grid = *GetLayoutGrid();
@@ -234,7 +203,7 @@ GridTrackSizingAlgorithmStrategy::ExtentForBaselineAlignment(
           ? kGridRowAxis
           : kGridColumnAxis;
   if (!layout_grid.IsBaselineAlignmentForChild(child, baseline_axis))
-    return WTF::nullopt;
+    return base::nullopt;
 
   ItemPosition align =
       layout_grid.SelfAlignmentForChild(baseline_axis, child).GetPosition();
@@ -260,7 +229,7 @@ LayoutUnit GridTrackSizingAlgorithmStrategy::LogicalHeightForChild(
           *GetLayoutGrid(), child, child_block_direction)) {
     SetOverrideContainingBlockContentSizeForChild(child, child_block_direction,
                                                   LayoutUnit(-1));
-    SetNeedsLayoutForChild(child);
+    child.SetNeedsLayout(LayoutInvalidationReason::kGridChanged, kMarkOnlyThis);
   }
 
   child.LayoutIfNeeded();
@@ -294,7 +263,7 @@ LayoutUnit GridTrackSizingAlgorithmStrategy::MinContentForChild(
 
   if (UpdateOverrideContainingBlockContentSizeForChild(
           child, child_inline_direction)) {
-    SetNeedsLayoutForChild(child);
+    child.SetNeedsLayout(LayoutInvalidationReason::kGridChanged, kMarkOnlyThis);
   }
   return LogicalHeightForChild(child);
 }
@@ -315,7 +284,7 @@ LayoutUnit GridTrackSizingAlgorithmStrategy::MaxContentForChild(
 
   if (UpdateOverrideContainingBlockContentSizeForChild(
           child, child_inline_direction)) {
-    SetNeedsLayoutForChild(child);
+    child.SetNeedsLayout(LayoutInvalidationReason::kGridChanged, kMarkOnlyThis);
   }
   return LogicalHeightForChild(child);
 }
@@ -444,13 +413,15 @@ LayoutUnit GridTrackSizingAlgorithmStrategy::MinLogicalWidthForChild(
 void DefiniteSizeStrategy::LayoutGridItemForMinSizeComputation(
     LayoutBox& child,
     bool override_size_has_changed) const {
-  if (override_size_has_changed)
-    SetNeedsLayoutForChild(child);
-  child.LayoutIfNeeded();
+  if (override_size_has_changed) {
+    child.SetNeedsLayout(LayoutInvalidationReason::kGridChanged, kMarkOnlyThis);
+    child.LayoutIfNeeded();
+  }
 }
 
-void DefiniteSizeStrategy::MaximizeTracks(Vector<GridTrack>& tracks,
-                                          Optional<LayoutUnit>& free_space) {
+void DefiniteSizeStrategy::MaximizeTracks(
+    Vector<GridTrack>& tracks,
+    base::Optional<LayoutUnit>& free_space) {
   size_t tracks_size = tracks.size();
   Vector<GridTrack*> tracks_for_distribution(tracks_size);
   for (size_t i = 0; i < tracks_size; ++i) {
@@ -469,7 +440,7 @@ void DefiniteSizeStrategy::MaximizeTracks(Vector<GridTrack>& tracks,
 double DefiniteSizeStrategy::FindUsedFlexFraction(
     Vector<size_t>& flexible_sized_tracks_index,
     GridTrackSizingDirection direction,
-    Optional<LayoutUnit> free_space) const {
+    base::Optional<LayoutUnit> free_space) const {
   GridSpan all_tracks_span = GridSpan::TranslatedDefiniteGridSpan(
       0, algorithm_.Tracks(direction).size());
   DCHECK(free_space);
@@ -484,13 +455,14 @@ LayoutUnit DefiniteSizeStrategy::FreeSpaceForStretchAutoTracksStep() const {
 void IndefiniteSizeStrategy::LayoutGridItemForMinSizeComputation(
     LayoutBox& child,
     bool override_size_has_changed) const {
-  if (override_size_has_changed && Direction() != kForColumns)
-    SetNeedsLayoutForChild(child);
-  child.LayoutIfNeeded();
+  if (override_size_has_changed && Direction() != kForColumns) {
+    child.SetNeedsLayout(LayoutInvalidationReason::kGridChanged, kMarkOnlyThis);
+    child.LayoutIfNeeded();
+  }
 }
 
 void IndefiniteSizeStrategy::MaximizeTracks(Vector<GridTrack>& tracks,
-                                            Optional<LayoutUnit>&) {
+                                            base::Optional<LayoutUnit>&) {
   for (auto& track : tracks)
     track.SetBaseSize(track.GrowthLimit());
 }
@@ -503,7 +475,7 @@ static inline double NormalizedFlexFraction(const GridTrack& track,
 double IndefiniteSizeStrategy::FindUsedFlexFraction(
     Vector<size_t>& flexible_sized_tracks_index,
     GridTrackSizingDirection direction,
-    Optional<LayoutUnit>) const {
+    base::Optional<LayoutUnit>) const {
   auto all_tracks = algorithm_.Tracks(direction);
 
   double flex_fraction = 0;
@@ -593,24 +565,61 @@ LayoutUnit IndefiniteSizeStrategy::FreeSpaceForStretchAutoTracksStep() const {
   return min_size - ComputeTrackBasedSize();
 }
 
-Optional<LayoutUnit> GridTrackSizingAlgorithm::FreeSpace(
+DISABLE_CFI_PERF
+LayoutUnit IndefiniteSizeStrategy::MinContentForChild(LayoutBox& child) const {
+  GridTrackSizingDirection child_inline_direction =
+      GridLayoutUtils::FlowAwareDirectionForChild(*GetLayoutGrid(), child,
+                                                  kForColumns);
+  if (Direction() == child_inline_direction || Direction() == kForRows)
+    return GridTrackSizingAlgorithmStrategy::MinContentForChild(child);
+
+  // This code is executed only when computing the grid's intrinsic
+  // width based on an orthogonal child. We rely on the pre-layout
+  // performed in LayoutGrid::LayoutOrthogonalWritingModeRoots.
+  DCHECK(GridLayoutUtils::IsOrthogonalChild(*GetLayoutGrid(), child));
+
+  if (auto baseline_extent = ExtentForBaselineAlignment(child))
+    return baseline_extent.value();
+
+  return child.LogicalHeight() +
+         GridLayoutUtils::MarginLogicalHeightForChild(*GetLayoutGrid(), child);
+}
+
+DISABLE_CFI_PERF
+LayoutUnit IndefiniteSizeStrategy::MaxContentForChild(LayoutBox& child) const {
+  GridTrackSizingDirection child_inline_direction =
+      GridLayoutUtils::FlowAwareDirectionForChild(*GetLayoutGrid(), child,
+                                                  kForColumns);
+  if (Direction() == child_inline_direction || Direction() == kForRows)
+    return GridTrackSizingAlgorithmStrategy::MaxContentForChild(child);
+
+  // This code is executed only when computing the grid's intrinsic
+  // width based on an orthogonal child. We rely on the pre-layout
+  // performed in LayoutGrid::LayoutOrthogonalWritingModeRoots.
+  DCHECK(GridLayoutUtils::IsOrthogonalChild(*GetLayoutGrid(), child));
+
+  return child.LogicalHeight() +
+         GridLayoutUtils::MarginLogicalHeightForChild(*GetLayoutGrid(), child);
+}
+
+base::Optional<LayoutUnit> GridTrackSizingAlgorithm::FreeSpace(
     GridTrackSizingDirection direction) const {
   return direction == kForRows ? free_space_rows_ : free_space_columns_;
 }
 
-Optional<LayoutUnit> GridTrackSizingAlgorithm::AvailableSpace(
+base::Optional<LayoutUnit> GridTrackSizingAlgorithm::AvailableSpace(
     GridTrackSizingDirection direction) const {
   return direction == kForRows ? available_space_rows_
                                : available_space_columns_;
 }
 
-Optional<LayoutUnit> GridTrackSizingAlgorithm::AvailableSpace() const {
+base::Optional<LayoutUnit> GridTrackSizingAlgorithm::AvailableSpace() const {
   return AvailableSpace(direction_);
 }
 
 void GridTrackSizingAlgorithm::SetAvailableSpace(
     GridTrackSizingDirection direction,
-    Optional<LayoutUnit> available_space) {
+    base::Optional<LayoutUnit> available_space) {
   if (direction == kForColumns)
     available_space_columns_ = available_space;
   else
@@ -627,8 +636,9 @@ const Vector<GridTrack>& GridTrackSizingAlgorithm::Tracks(
   return direction == kForColumns ? columns_ : rows_;
 }
 
-void GridTrackSizingAlgorithm::SetFreeSpace(GridTrackSizingDirection direction,
-                                            Optional<LayoutUnit> free_space) {
+void GridTrackSizingAlgorithm::SetFreeSpace(
+    GridTrackSizingDirection direction,
+    base::Optional<LayoutUnit> free_space) {
   if (direction == kForColumns)
     free_space_columns_ = free_space;
   else
@@ -1242,7 +1252,7 @@ void GridTrackSizingAlgorithm::ComputeGridContainerIntrinsicSizes() {
     max_content_size_ += track.GrowthLimit();
     // The growth limit caps must be cleared now in order to properly sort
     // tracks by growth potential on an eventual "Maximize Tracks".
-    track.SetGrowthLimitCap(WTF::nullopt);
+    track.SetGrowthLimitCap(base::nullopt);
   }
 }
 
@@ -1351,7 +1361,7 @@ void GridTrackSizingAlgorithm::ComputeFlexSizedTracksGrowth(
 }
 
 void GridTrackSizingAlgorithm::StretchFlexibleTracks(
-    Optional<LayoutUnit> free_space) {
+    base::Optional<LayoutUnit> free_space) {
   if (flexible_sized_tracks_index_.IsEmpty())
     return;
 
@@ -1434,22 +1444,20 @@ bool GridTrackSizingAlgorithm::IsValidTransition() const {
   return false;
 }
 
-void GridTrackSizingAlgorithm::Setup(GridTrackSizingDirection direction,
-                                     size_t num_tracks,
-                                     Optional<LayoutUnit> available_space) {
+void GridTrackSizingAlgorithm::Setup(
+    GridTrackSizingDirection direction,
+    size_t num_tracks,
+    base::Optional<LayoutUnit> available_space) {
   DCHECK(needs_setup_);
   direction_ = direction;
   SetAvailableSpace(
       direction, available_space ? available_space.value().ClampNegativeToZero()
                                  : available_space);
 
-  if (available_space) {
+  if (available_space)
     strategy_ = std::make_unique<DefiniteSizeStrategy>(*this);
-  } else {
+  else
     strategy_ = std::make_unique<IndefiniteSizeStrategy>(*this);
-    is_in_perform_layout_ =
-        layout_grid_->GetDocument().View()->IsInPerformLayout();
-  }
 
   content_sized_tracks_index_.Shrink(0);
   flexible_sized_tracks_index_.Shrink(0);
@@ -1460,7 +1468,7 @@ void GridTrackSizingAlgorithm::Setup(GridTrackSizingDirection direction,
         grid_, direction, 0, grid_.NumTracks(direction), available_space);
     SetFreeSpace(direction, available_space.value() - gutters_size);
   } else {
-    SetFreeSpace(direction, WTF::nullopt);
+    SetFreeSpace(direction, base::nullopt);
   }
   Tracks(direction).resize(num_tracks);
 
@@ -1474,7 +1482,7 @@ void GridTrackSizingAlgorithm::Run() {
   StateMachine state_machine(*this);
 
   // Step 1.
-  Optional<LayoutUnit> initial_free_space = FreeSpace(direction_);
+  base::Optional<LayoutUnit> initial_free_space = FreeSpace(direction_);
   InitializeTrackSizes();
 
   // Step 2.
@@ -1514,8 +1522,8 @@ void GridTrackSizingAlgorithm::Reset() {
   content_sized_tracks_index_.Shrink(0);
   flexible_sized_tracks_index_.Shrink(0);
   auto_sized_tracks_for_stretch_index_.Shrink(0);
-  SetAvailableSpace(kForRows, WTF::nullopt);
-  SetAvailableSpace(kForColumns, WTF::nullopt);
+  SetAvailableSpace(kForRows, base::nullopt);
+  SetAvailableSpace(kForColumns, base::nullopt);
 }
 
 #if DCHECK_IS_ON()

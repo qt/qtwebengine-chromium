@@ -17,7 +17,7 @@
 #include "ortc/testrtpparameters.h"
 #include "p2p/base/udptransport.h"
 #include "pc/test/fakeaudiocapturemodule.h"
-#include "pc/test/fakeperiodicvideosource.h"
+#include "pc/test/fakeperiodicvideotracksource.h"
 #include "pc/test/fakevideotrackrenderer.h"
 #include "pc/videotracksource.h"
 #include "rtc_base/criticalsection.h"
@@ -219,15 +219,13 @@ class OrtcFactoryIntegrationTest : public testing::Test {
     return ortc_factory->CreateAudioTrack(id, source);
   }
 
-  // Stores created video source in |fake_video_sources_|.
+  // Stores created video source in |fake_video_track_sources_|.
   rtc::scoped_refptr<webrtc::VideoTrackInterface>
   CreateLocalVideoTrackAndFakeSource(const std::string& id,
                                      OrtcFactoryInterface* ortc_factory) {
-    fake_video_sources_.emplace_back(
-        rtc::MakeUnique<FakePeriodicVideoSource>());
     fake_video_track_sources_.emplace_back(
-        new rtc::RefCountedObject<VideoTrackSource>(
-            fake_video_sources_.back().get(), false /* remote */));
+        new rtc::RefCountedObject<FakePeriodicVideoTrackSource>(
+            false /* remote */));
     return rtc::scoped_refptr<VideoTrackInterface>(
         ortc_factory->CreateVideoTrack(
             id, fake_video_track_sources_.back()));
@@ -352,7 +350,6 @@ class OrtcFactoryIntegrationTest : public testing::Test {
   rtc::scoped_refptr<FakeAudioCaptureModule> fake_audio_capture_module2_;
   std::unique_ptr<OrtcFactoryInterface> ortc_factory1_;
   std::unique_ptr<OrtcFactoryInterface> ortc_factory2_;
-  std::vector<std::unique_ptr<FakePeriodicVideoSource>> fake_video_sources_;
   std::vector<rtc::scoped_refptr<VideoTrackSource>> fake_video_track_sources_;
   int received_audio_frames1_ = 0;
   int received_audio_frames2_ = 0;
@@ -465,9 +462,7 @@ TEST_F(OrtcFactoryIntegrationTest, SetTrackWhileSending) {
   // Destroy old source, set a new track, and verify new frames are received
   // from the new track. The VideoTrackSource is reference counted and may live
   // a little longer, so tell it that its source is going away now.
-  fake_video_track_sources_[0]->OnSourceDestroyed();
   fake_video_track_sources_[0] = nullptr;
-  fake_video_sources_[0].reset();
   int prev_num_frames = fake_renderer.num_rendered_frames();
   error = sender->SetTrack(
       CreateLocalVideoTrackAndFakeSource("video_2", ortc_factory1_.get()));
@@ -477,14 +472,37 @@ TEST_F(OrtcFactoryIntegrationTest, SetTrackWhileSending) {
       kDefaultTimeout);
 }
 
+// TODO(webrtc:7915, webrtc:9184): Tests below are disabled for iOS 64 on debug
+// builds because of flakiness.
+#if !(defined(WEBRTC_IOS) && defined(WEBRTC_ARCH_64_BITS) && !defined(NDEBUG))
+#define MAYBE_BasicTwoWayAudioVideoRtpSendersAndReceivers \
+  BasicTwoWayAudioVideoRtpSendersAndReceivers
+#define MAYBE_BasicTwoWayAudioVideoSrtpSendersAndReceivers \
+  BasicTwoWayAudioVideoSrtpSendersAndReceivers
+#define MAYBE_SrtpSendersAndReceiversWithMismatchingKeys \
+  SrtpSendersAndReceiversWithMismatchingKeys
+#define MAYBE_OneSideSrtpSenderAndReceiver OneSideSrtpSenderAndReceiver
+#define MAYBE_FullTwoWayAudioVideoSrtpSendersAndReceivers \
+  FullTwoWayAudioVideoSrtpSendersAndReceivers
+#else
+#define MAYBE_BasicTwoWayAudioVideoRtpSendersAndReceivers \
+  DISABLED_BasicTwoWayAudioVideoRtpSendersAndReceivers
+#define MAYBE_BasicTwoWayAudioVideoSrtpSendersAndReceivers \
+  DISABLED_BasicTwoWayAudioVideoSrtpSendersAndReceivers
+#define MAYBE_SrtpSendersAndReceiversWithMismatchingKeys \
+  DISABLED_SrtpSendersAndReceiversWithMismatchingKeys
+#define MAYBE_OneSideSrtpSenderAndReceiver DISABLED_OneSideSrtpSenderAndReceiver
+#define MAYBE_FullTwoWayAudioVideoSrtpSendersAndReceivers \
+  DISABLED_FullTwoWayAudioVideoSrtpSendersAndReceivers
+#endif
+
 // End-to-end test with two pairs of RTP senders and receivers, for audio and
 // video.
 //
 // Uses muxed RTCP, and minimal parameters with hard-coded configs that are
 // known to work.
-#if !(defined(WEBRTC_IOS) && defined(WEBRTC_ARCH_64_BITS) && !defined(NDEBUG))
 TEST_F(OrtcFactoryIntegrationTest,
-       BasicTwoWayAudioVideoRtpSendersAndReceivers) {
+       MAYBE_BasicTwoWayAudioVideoRtpSendersAndReceivers) {
   auto udp_transports = CreateAndConnectUdpTransportPair();
   auto rtp_transports =
       CreateRtpTransportPair(MakeRtcpMuxParameters(), udp_transports);
@@ -494,7 +512,7 @@ TEST_F(OrtcFactoryIntegrationTest,
 }
 
 TEST_F(OrtcFactoryIntegrationTest,
-       BasicTwoWayAudioVideoSrtpSendersAndReceivers) {
+       MAYBE_BasicTwoWayAudioVideoSrtpSendersAndReceivers) {
   auto udp_transports = CreateAndConnectUdpTransportPair();
   auto srtp_transports = CreateSrtpTransportPairAndSetKeys(
       MakeRtcpMuxParameters(), udp_transports);
@@ -502,10 +520,11 @@ TEST_F(OrtcFactoryIntegrationTest,
   BasicTwoWayRtpSendersAndReceiversTest(std::move(srtp_transports),
                                         expect_success);
 }
-#endif
 
 // Tests that the packets cannot be decoded if the keys are mismatched.
-TEST_F(OrtcFactoryIntegrationTest, SrtpSendersAndReceiversWithMismatchingKeys) {
+// TODO(webrtc:9184): Disabled because this test is flaky.
+TEST_F(OrtcFactoryIntegrationTest,
+       MAYBE_SrtpSendersAndReceiversWithMismatchingKeys) {
   auto udp_transports = CreateAndConnectUdpTransportPair();
   auto srtp_transports = CreateSrtpTransportPairAndSetMismatchingKeys(
       MakeRtcpMuxParameters(), udp_transports);
@@ -518,7 +537,7 @@ TEST_F(OrtcFactoryIntegrationTest, SrtpSendersAndReceiversWithMismatchingKeys) {
 }
 
 // Tests that the frames cannot be decoded if only one side uses SRTP.
-TEST_F(OrtcFactoryIntegrationTest, OneSideSrtpSenderAndReceiver) {
+TEST_F(OrtcFactoryIntegrationTest, MAYBE_OneSideSrtpSenderAndReceiver) {
   auto rtcp_parameters = MakeRtcpMuxParameters();
   auto udp_transports = CreateAndConnectUdpTransportPair();
   auto rtcp_udp_transports = UdpTransportPair();
@@ -557,7 +576,7 @@ TEST_F(OrtcFactoryIntegrationTest, OneSideSrtpSenderAndReceiver) {
 // TODO(deadbeef): Update this test as more audio/video features become
 // supported.
 TEST_F(OrtcFactoryIntegrationTest,
-       FullTwoWayAudioVideoSrtpSendersAndReceivers) {
+       MAYBE_FullTwoWayAudioVideoSrtpSendersAndReceivers) {
   // We want four pairs of UDP transports for this test, for audio/video and
   // RTP/RTCP.
   auto audio_rtp_udp_transports = CreateAndConnectUdpTransportPair();

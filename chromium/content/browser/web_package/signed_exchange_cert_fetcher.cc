@@ -11,6 +11,7 @@
 #include "base/trace_event/trace_event.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/web_package/signed_exchange_consts.h"
+#include "content/browser/web_package/signed_exchange_devtools_proxy.h"
 #include "content/browser/web_package/signed_exchange_utils.h"
 #include "content/common/throttling_url_loader.h"
 #include "content/public/common/resource_type.h"
@@ -69,15 +70,16 @@ SignedExchangeCertFetcher::CreateAndStart(
     const GURL& cert_url,
     url::Origin request_initiator,
     bool force_fetch,
+    SignedExchangeVersion version,
     CertificateCallback callback,
-    const signed_exchange_utils::LogCallback& error_message_callback) {
+    SignedExchangeDevToolsProxy* devtools_proxy) {
   TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("loading"),
                "SignedExchangeCertFetcher::CreateAndStart");
   std::unique_ptr<SignedExchangeCertFetcher> cert_fetcher(
       new SignedExchangeCertFetcher(
           std::move(shared_url_loader_factory), std::move(throttles), cert_url,
-          std::move(request_initiator), force_fetch, std::move(callback),
-          std::move(error_message_callback)));
+          std::move(request_initiator), force_fetch, version,
+          std::move(callback), devtools_proxy));
   cert_fetcher->Start();
   return cert_fetcher;
 }
@@ -88,13 +90,15 @@ SignedExchangeCertFetcher::SignedExchangeCertFetcher(
     const GURL& cert_url,
     url::Origin request_initiator,
     bool force_fetch,
+    SignedExchangeVersion version,
     CertificateCallback callback,
-    const signed_exchange_utils::LogCallback& error_message_callback)
+    SignedExchangeDevToolsProxy* devtools_proxy)
     : shared_url_loader_factory_(std::move(shared_url_loader_factory)),
       throttles_(std::move(throttles)),
       resource_request_(std::make_unique<network::ResourceRequest>()),
+      version_(version),
       callback_(std::move(callback)),
-      error_message_callback_(std::move(error_message_callback)) {
+      devtools_proxy_(devtools_proxy) {
   // TODO(https://crbug.com/803774): Revisit more ResourceRequest flags.
   resource_request_->url = cert_url;
   resource_request_->request_initiator = std::move(request_initiator);
@@ -109,11 +113,20 @@ SignedExchangeCertFetcher::SignedExchangeCertFetcher(
         net::LOAD_DISABLE_CACHE | net::LOAD_BYPASS_CACHE;
   }
   resource_request_->render_frame_id = MSG_ROUTING_NONE;
+  if (devtools_proxy_) {
+    cert_request_id_ = base::UnguessableToken::Create();
+    resource_request_->enable_load_timing = true;
+  }
 }
 
 SignedExchangeCertFetcher::~SignedExchangeCertFetcher() = default;
 
 void SignedExchangeCertFetcher::Start() {
+  if (devtools_proxy_) {
+    DCHECK(cert_request_id_);
+    devtools_proxy_->CertificateRequestSent(*cert_request_id_,
+                                            *resource_request_);
+  }
   url_loader_ = ThrottlingURLLoader::CreateLoaderAndStart(
       std::move(shared_url_loader_factory_), std::move(throttles_),
       0 /* routing_id */,
@@ -130,6 +143,7 @@ void SignedExchangeCertFetcher::Abort() {
   body_.reset();
   handle_watcher_ = nullptr;
   body_string_.clear();
+  devtools_proxy_ = nullptr;
   std::move(callback_).Run(nullptr);
 }
 
@@ -143,10 +157,10 @@ void SignedExchangeCertFetcher::OnHandleReady(MojoResult result) {
   if (rv == MOJO_RESULT_OK) {
     if (body_string_.size() + num_bytes > g_max_cert_size_for_signed_exchange) {
       body_->EndReadData(num_bytes);
-      Abort();
-      signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
-          "SignedExchangeCertFetcher::OnHandleReady", error_message_callback_,
+      signed_exchange_utils::ReportErrorAndEndTraceEvent(
+          devtools_proxy_, "SignedExchangeCertFetcher::OnHandleReady",
           "The response body size of certificate message exceeds the limit.");
+      Abort();
       return;
     }
     body_string_.append(static_cast<const char*>(buffer), num_bytes);
@@ -169,13 +183,15 @@ void SignedExchangeCertFetcher::OnDataComplete() {
   handle_watcher_ = nullptr;
 
   std::unique_ptr<SignedExchangeCertificateChain> cert_chain =
-      SignedExchangeCertificateChain::Parse(body_string_);
+      SignedExchangeCertificateChain::Parse(
+          version_, base::as_bytes(base::make_span(body_string_)),
+          devtools_proxy_);
   body_string_.clear();
   if (!cert_chain) {
-    std::move(callback_).Run(nullptr);
-    signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
-        "SignedExchangeCertFetcher::OnDataComplete", error_message_callback_,
+    signed_exchange_utils::ReportErrorAndEndTraceEvent(
+        devtools_proxy_, "SignedExchangeCertFetcher::OnDataComplete",
         "Failed to get certificate chain from message.");
+    std::move(callback_).Run(nullptr);
     return;
   }
   std::move(callback_).Run(std::move(cert_chain));
@@ -187,26 +203,29 @@ void SignedExchangeCertFetcher::OnDataComplete() {
 void SignedExchangeCertFetcher::OnReceiveResponse(
     const network::ResourceResponseHead& head,
     network::mojom::DownloadedTempFilePtr downloaded_file) {
+  if (devtools_proxy_) {
+    DCHECK(cert_request_id_);
+    devtools_proxy_->CertificateResponseReceived(*cert_request_id_,
+                                                 resource_request_->url, head);
+  }
   TRACE_EVENT_BEGIN0(TRACE_DISABLED_BY_DEFAULT("loading"),
                      "SignedExchangeCertFetcher::OnReceiveResponse");
   if (head.headers->response_code() != net::HTTP_OK) {
-    Abort();
-    signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
-        "SignedExchangeCertFetcher::OnReceiveResponse", error_message_callback_,
+    signed_exchange_utils::ReportErrorAndEndTraceEvent(
+        devtools_proxy_, "SignedExchangeCertFetcher::OnReceiveResponse",
         base::StringPrintf("Invalid reponse code: %d",
                            head.headers->response_code()));
+    Abort();
     return;
   }
   if (head.content_length > 0) {
     if (base::checked_cast<size_t>(head.content_length) >
         g_max_cert_size_for_signed_exchange) {
-      Abort();
-      signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
-          "SignedExchangeCertFetcher::OnReceiveResponse",
-          error_message_callback_,
+      signed_exchange_utils::ReportErrorAndEndTraceEvent(
+          devtools_proxy_, "SignedExchangeCertFetcher::OnReceiveResponse",
           base::StringPrintf("Invalid content length: %" PRIu64,
                              head.content_length));
-
+      Abort();
       return;
     }
     body_string_.reserve(head.content_length);
@@ -267,6 +286,10 @@ void SignedExchangeCertFetcher::OnComplete(
     const network::URLLoaderCompletionStatus& status) {
   TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("loading"),
                "SignedExchangeCertFetcher::OnComplete");
+  if (devtools_proxy_) {
+    DCHECK(cert_request_id_);
+    devtools_proxy_->CertificateRequestCompleted(*cert_request_id_, status);
+  }
   if (!handle_watcher_)
     Abort();
 }

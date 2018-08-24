@@ -5,16 +5,17 @@
 #include "third_party/blink/renderer/platform/scheduler/base/task_queue.h"
 
 #include "base/bind_helpers.h"
+#include "base/optional.h"
 #include "third_party/blink/renderer/platform/scheduler/base/task_queue_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/base/task_queue_manager_impl.h"
 
-namespace blink {
-namespace scheduler {
+namespace base {
+namespace sequence_manager {
 
 TaskQueue::TaskQueue(std::unique_ptr<internal::TaskQueueImpl> impl,
                      const TaskQueue::Spec& spec)
     : impl_(std::move(impl)),
-      thread_id_(base::PlatformThread::CurrentId()),
+      thread_id_(PlatformThread::CurrentId()),
       task_queue_manager_(impl_ ? impl_->GetTaskQueueManagerWeakPtr()
                                 : nullptr),
       graceful_queue_shutdown_helper_(
@@ -30,18 +31,17 @@ TaskQueue::~TaskQueue() {
       TakeTaskQueueImpl());
 }
 
-TaskQueue::Task::Task(TaskQueue::PostedTask task,
-                      base::TimeTicks desired_run_time)
+TaskQueue::Task::Task(TaskQueue::PostedTask task, TimeTicks desired_run_time)
     : PendingTask(task.posted_from,
                   std::move(task.callback),
                   desired_run_time,
                   task.nestable),
       task_type_(task.task_type) {}
 
-TaskQueue::PostedTask::PostedTask(base::OnceClosure callback,
-                                  base::Location posted_from,
-                                  base::TimeDelta delay,
-                                  base::Nestable nestable,
+TaskQueue::PostedTask::PostedTask(OnceClosure callback,
+                                  Location posted_from,
+                                  TimeDelta delay,
+                                  Nestable nestable,
                                   int task_type)
     : callback(std::move(callback)),
       posted_from(posted_from),
@@ -49,9 +49,18 @@ TaskQueue::PostedTask::PostedTask(base::OnceClosure callback,
       nestable(nestable),
       task_type(task_type) {}
 
+TaskQueue::PostedTask::PostedTask(PostedTask&& move_from)
+    : callback(std::move(move_from.callback)),
+      posted_from(move_from.posted_from),
+      delay(move_from.delay),
+      nestable(move_from.nestable),
+      task_type(move_from.task_type) {}
+
+TaskQueue::PostedTask::~PostedTask() = default;
+
 void TaskQueue::ShutdownTaskQueue() {
   DCHECK_CALLED_ON_VALID_THREAD(main_thread_checker_);
-  base::AutoLock lock(impl_lock_);
+  AutoLock lock(impl_lock_);
   if (!impl_)
     return;
   if (!task_queue_manager_) {
@@ -70,43 +79,33 @@ bool TaskQueue::RunsTasksInCurrentSequence() const {
   return IsOnMainThread();
 }
 
-bool TaskQueue::PostDelayedTask(const base::Location& from_here,
-                                base::OnceClosure task,
-                                base::TimeDelta delay) {
-  internal::TaskQueueImpl::PostTaskResult result;
-  {
-    auto lock = AcquireImplReadLockIfNeeded();
-    if (!impl_)
-      return false;
-    result = impl_->PostDelayedTask(PostedTask(
-        std::move(task), from_here, delay, base::Nestable::kNestable));
-  }
-  return result.success;
+bool TaskQueue::PostDelayedTask(const Location& from_here,
+                                OnceClosure task,
+                                TimeDelta delay) {
+  return PostTaskWithMetadata(
+      PostedTask(std::move(task), from_here, delay, Nestable::kNestable));
 }
 
-bool TaskQueue::PostNonNestableDelayedTask(const base::Location& from_here,
-                                           base::OnceClosure task,
-                                           base::TimeDelta delay) {
-  internal::TaskQueueImpl::PostTaskResult result;
-  {
-    auto lock = AcquireImplReadLockIfNeeded();
-    if (!impl_)
-      return false;
-    result = impl_->PostDelayedTask(PostedTask(
-        std::move(task), from_here, delay, base::Nestable::kNonNestable));
-  }
-  return result.success;
+bool TaskQueue::PostNonNestableDelayedTask(const Location& from_here,
+                                           OnceClosure task,
+                                           TimeDelta delay) {
+  return PostTaskWithMetadata(
+      PostedTask(std::move(task), from_here, delay, Nestable::kNonNestable));
 }
 
 bool TaskQueue::PostTaskWithMetadata(PostedTask task) {
-  internal::TaskQueueImpl::PostTaskResult result;
-  {
-    auto lock = AcquireImplReadLockIfNeeded();
-    if (!impl_)
-      return false;
-    result = impl_->PostDelayedTask(std::move(task));
-  }
-  return result.success;
+  Optional<MoveableAutoLock> lock = AcquireImplReadLockIfNeeded();
+  if (!impl_)
+    return false;
+  internal::TaskQueueImpl::PostTaskResult result(
+      impl_->PostDelayedTask(std::move(task)));
+  if (result.success)
+    return true;
+  // If posting task was unsuccessful then |result| will contain
+  // the original task which should be destructed outside of the lock.
+  lock = nullopt;
+  // Task gets implicitly destructed here.
+  return false;
 }
 
 std::unique_ptr<TaskQueue::QueueEnabledVoter>
@@ -145,10 +144,10 @@ bool TaskQueue::HasTaskToRunImmediately() const {
   return impl_->HasTaskToRunImmediately();
 }
 
-base::Optional<base::TimeTicks> TaskQueue::GetNextScheduledWakeUp() {
+Optional<TimeTicks> TaskQueue::GetNextScheduledWakeUp() {
   DCHECK_CALLED_ON_VALID_THREAD(main_thread_checker_);
   if (!impl_)
-    return base::nullopt;
+    return nullopt;
   return impl_->GetNextScheduledWakeUp();
 }
 
@@ -166,16 +165,14 @@ TaskQueue::QueuePriority TaskQueue::GetQueuePriority() const {
   return impl_->GetQueuePriority();
 }
 
-void TaskQueue::AddTaskObserver(
-    base::MessageLoop::TaskObserver* task_observer) {
+void TaskQueue::AddTaskObserver(MessageLoop::TaskObserver* task_observer) {
   DCHECK_CALLED_ON_VALID_THREAD(main_thread_checker_);
   if (!impl_)
     return;
   impl_->AddTaskObserver(task_observer);
 }
 
-void TaskQueue::RemoveTaskObserver(
-    base::MessageLoop::TaskObserver* task_observer) {
+void TaskQueue::RemoveTaskObserver(MessageLoop::TaskObserver* task_observer) {
   DCHECK_CALLED_ON_VALID_THREAD(main_thread_checker_);
   if (!impl_)
     return;
@@ -196,8 +193,7 @@ TimeDomain* TaskQueue::GetTimeDomain() const {
   return impl_->GetTimeDomain();
 }
 
-void TaskQueue::SetBlameContext(
-    base::trace_event::BlameContext* blame_context) {
+void TaskQueue::SetBlameContext(trace_event::BlameContext* blame_context) {
   DCHECK_CALLED_ON_VALID_THREAD(main_thread_checker_);
   if (!impl_)
     return;
@@ -211,7 +207,7 @@ void TaskQueue::InsertFence(InsertFencePosition position) {
   impl_->InsertFence(position);
 }
 
-void TaskQueue::InsertFenceAt(base::TimeTicks time) {
+void TaskQueue::InsertFenceAt(TimeTicks time) {
   impl_->InsertFenceAt(time);
 }
 
@@ -250,23 +246,21 @@ void TaskQueue::SetObserver(Observer* observer) {
   if (observer) {
     // Observer is guaranteed to outlive TaskQueue and TaskQueueImpl lifecycle
     // is controlled by |this|.
-    impl_->SetOnNextWakeUpChangedCallback(base::BindRepeating(
-        &TaskQueue::Observer::OnQueueNextWakeUpChanged,
-        base::Unretained(observer), base::Unretained(this)));
-  } else {
     impl_->SetOnNextWakeUpChangedCallback(
-        base::RepeatingCallback<void(base::TimeTicks)>());
+        BindRepeating(&TaskQueue::Observer::OnQueueNextWakeUpChanged,
+                      Unretained(observer), Unretained(this)));
+  } else {
+    impl_->SetOnNextWakeUpChangedCallback(RepeatingCallback<void(TimeTicks)>());
   }
 }
 
 bool TaskQueue::IsOnMainThread() const {
-  return thread_id_ == base::PlatformThread::CurrentId();
+  return thread_id_ == PlatformThread::CurrentId();
 }
 
-base::Optional<MoveableAutoLock> TaskQueue::AcquireImplReadLockIfNeeded()
-    const {
+Optional<MoveableAutoLock> TaskQueue::AcquireImplReadLockIfNeeded() const {
   if (IsOnMainThread())
-    return base::nullopt;
+    return nullopt;
   return MoveableAutoLock(impl_lock_);
 }
 
@@ -275,5 +269,5 @@ std::unique_ptr<internal::TaskQueueImpl> TaskQueue::TakeTaskQueueImpl() {
   return std::move(impl_);
 }
 
-}  // namespace scheduler
-}  // namespace blink
+}  // namespace sequence_manager
+}  // namespace base

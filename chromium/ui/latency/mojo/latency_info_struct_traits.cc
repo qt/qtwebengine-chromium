@@ -63,9 +63,6 @@ ui::mojom::LatencyComponentType UILatencyComponentTypeToMojo(
     case ui::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT:
       return ui::mojom::LatencyComponentType::
           INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT;
-    case ui::BROWSER_SNAPSHOT_FRAME_NUMBER_COMPONENT:
-      return ui::mojom::LatencyComponentType::
-          WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT;
     case ui::TAB_SHOW_COMPONENT:
       return ui::mojom::LatencyComponentType::TAB_SHOW_COMPONENT;
     case ui::INPUT_EVENT_LATENCY_RENDERER_SWAP_COMPONENT:
@@ -151,9 +148,6 @@ ui::LatencyComponentType MojoLatencyComponentTypeToUI(
       return ui::INPUT_EVENT_LATENCY_FORWARD_SCROLL_UPDATE_TO_MAIN_COMPONENT;
     case ui::mojom::LatencyComponentType::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT:
       return ui::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT;
-    case ui::mojom::LatencyComponentType::
-        WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT:
-      return ui::BROWSER_SNAPSHOT_FRAME_NUMBER_COMPONENT;
     case ui::mojom::LatencyComponentType::TAB_SHOW_COMPONENT:
       return ui::TAB_SHOW_COMPONENT;
     case ui::mojom::LatencyComponentType::
@@ -197,6 +191,8 @@ ui::mojom::SourceEventType UISourceEventTypeToMojo(ui::SourceEventType type) {
       return ui::mojom::SourceEventType::MOUSE;
     case ui::TOUCH:
       return ui::mojom::SourceEventType::TOUCH;
+    case ui::INERTIAL:
+      return ui::mojom::SourceEventType::INERTIAL;
     case ui::KEY_PRESS:
       return ui::mojom::SourceEventType::KEY_PRESS;
     case ui::FRAME:
@@ -218,6 +214,8 @@ ui::SourceEventType MojoSourceEventTypeToUI(ui::mojom::SourceEventType type) {
       return ui::MOUSE;
     case ui::mojom::SourceEventType::TOUCH:
       return ui::TOUCH;
+    case ui::mojom::SourceEventType::INERTIAL:
+      return ui::INERTIAL;
     case ui::mojom::SourceEventType::KEY_PRESS:
       return ui::KEY_PRESS;
     case ui::mojom::SourceEventType::FRAME:
@@ -230,13 +228,6 @@ ui::SourceEventType MojoSourceEventTypeToUI(ui::mojom::SourceEventType type) {
 }
 
 }  // namespace
-
-// static
-int64_t StructTraits<ui::mojom::LatencyComponentDataView,
-                     ui::LatencyInfo::LatencyComponent>::
-    sequence_number(const ui::LatencyInfo::LatencyComponent& component) {
-  return component.sequence_number;
-}
 
 // static
 base::TimeTicks StructTraits<ui::mojom::LatencyComponentDataView,
@@ -277,7 +268,6 @@ bool StructTraits<ui::mojom::LatencyComponentDataView,
     return false;
   if (!data.ReadLastEventTime(&out->last_event_time))
     return false;
-  out->sequence_number = data.sequence_number();
   out->event_count = data.event_count();
   return true;
 }
@@ -328,6 +318,13 @@ int64_t StructTraits<ui::mojom::LatencyInfoDataView, ui::LatencyInfo>::trace_id(
 }
 
 // static
+const ui::LatencyInfo::SnapshotMap&
+StructTraits<ui::mojom::LatencyInfoDataView, ui::LatencyInfo>::snapshots(
+    const ui::LatencyInfo& info) {
+  return info.Snapshots();
+}
+
+// static
 ukm::SourceId
 StructTraits<ui::mojom::LatencyInfoDataView, ui::LatencyInfo>::ukm_source_id(
     const ui::LatencyInfo& info) {
@@ -360,12 +357,6 @@ StructTraits<ui::mojom::LatencyInfoDataView,
 }
 
 // static
-base::TimeDelta StructTraits<ui::mojom::LatencyInfoDataView, ui::LatencyInfo>::
-    expected_queueing_time_on_dispatch(const ui::LatencyInfo& info) {
-  return info.expected_queueing_time_on_dispatch();
-}
-
-// static
 bool StructTraits<ui::mojom::LatencyInfoDataView, ui::LatencyInfo>::Read(
     ui::mojom::LatencyInfoDataView data,
     ui::LatencyInfo* out) {
@@ -386,14 +377,15 @@ bool StructTraits<ui::mojom::LatencyInfoDataView, ui::LatencyInfo>::Read(
   }
 
   out->trace_id_ = data.trace_id();
+  if (!data.ReadSnapshots(&out->snapshots_))
+    return false;
   out->ukm_source_id_ = data.ukm_source_id();
   out->coalesced_ = data.coalesced();
   out->began_ = data.began();
   out->terminated_ = data.terminated();
   out->source_event_type_ = MojoSourceEventTypeToUI(data.source_event_type());
 
-  return data.ReadExpectedQueueingTimeOnDispatch(
-      &out->expected_queueing_time_on_dispatch_);
+  return true;
 }
 
 }  // namespace mojo

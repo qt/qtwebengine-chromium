@@ -12,11 +12,7 @@
 #include "third_party/blink/renderer/platform/graphics/paint/paint_property_node.h"
 #include "third_party/blink/renderer/platform/graphics/paint/scroll_paint_property_node.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/transforms/transformation_matrix.h"
-#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
-
-#include <iosfwd>
 
 namespace blink {
 
@@ -31,76 +27,70 @@ namespace blink {
 class PLATFORM_EXPORT TransformPaintPropertyNode
     : public PaintPropertyNode<TransformPaintPropertyNode> {
  public:
+  enum class BackfaceVisibility : unsigned char {
+    // backface-visibility is not inherited per the css spec. However, for an
+    // element that don't create a new plane, for now we let the element
+    // inherit the parent backface-visibility.
+    kInherited,
+    // backface-visibility: hidden for the new plane.
+    kHidden,
+    // backface-visibility: visible for the new plane.
+    kVisible,
+  };
+
+  // To make it less verbose and more readable to construct and update a node,
+  // a struct with default values is used to represent the state.
+  struct State {
+    TransformationMatrix matrix;
+    FloatPoint3D origin;
+    bool flattens_inherited_transform = false;
+    BackfaceVisibility backface_visibility = BackfaceVisibility::kInherited;
+    unsigned rendering_context_id = 0;
+    CompositingReasons direct_compositing_reasons = CompositingReason::kNone;
+    CompositorElementId compositor_element_id;
+    scoped_refptr<const ScrollPaintPropertyNode> scroll;
+
+    bool operator==(const State& o) const {
+      return matrix == o.matrix && origin == o.origin &&
+             flattens_inherited_transform == o.flattens_inherited_transform &&
+             backface_visibility == o.backface_visibility &&
+             rendering_context_id == o.rendering_context_id &&
+             direct_compositing_reasons == o.direct_compositing_reasons &&
+             compositor_element_id == o.compositor_element_id &&
+             scroll == o.scroll;
+    }
+  };
+
   // This node is really a sentinel, and does not represent a real transform
   // space.
   static TransformPaintPropertyNode* Root();
 
   static scoped_refptr<TransformPaintPropertyNode> Create(
       scoped_refptr<const TransformPaintPropertyNode> parent,
-      const TransformationMatrix& matrix,
-      const FloatPoint3D& origin,
-      bool flattens_inherited_transform = false,
-      unsigned rendering_context_id = 0,
-      CompositingReasons direct_compositing_reasons = CompositingReason::kNone,
-      const CompositorElementId& compositor_element_id = CompositorElementId(),
-      scoped_refptr<const ScrollPaintPropertyNode> scroll = nullptr) {
-    if (scroll) {
-      // If there is an associated scroll node, this can only be a 2d
-      // translation for scroll offset.
-      DCHECK(matrix.IsIdentityOr2DTranslation());
-      // The scroll compositor element id should be stored on the scroll node.
-      DCHECK(!compositor_element_id);
-    }
-    return base::AdoptRef(new TransformPaintPropertyNode(
-        std::move(parent), matrix, origin, flattens_inherited_transform,
-        rendering_context_id, direct_compositing_reasons, compositor_element_id,
-        std::move(scroll)));
+      State&& state) {
+    return base::AdoptRef(
+        new TransformPaintPropertyNode(std::move(parent), std::move(state)));
   }
 
-  bool Update(
-      scoped_refptr<const TransformPaintPropertyNode> parent,
-      const TransformationMatrix& matrix,
-      const FloatPoint3D& origin,
-      bool flattens_inherited_transform = false,
-      unsigned rendering_context_id = 0,
-      CompositingReasons direct_compositing_reasons = CompositingReason::kNone,
-      CompositorElementId compositor_element_id = CompositorElementId(),
-      scoped_refptr<const ScrollPaintPropertyNode> scroll = nullptr) {
-    bool parent_changed = PaintPropertyNode::Update(std::move(parent));
-
-    if (scroll) {
-      // If there is an associated scroll node, this can only be a 2d
-      // translation for scroll offset.
-      DCHECK(matrix.IsIdentityOr2DTranslation());
-      // The scroll compositor element id should be stored on the scroll node.
-      DCHECK(!compositor_element_id);
-    }
-
-    if (matrix == matrix_ && origin == origin_ &&
-        flattens_inherited_transform == flattens_inherited_transform_ &&
-        (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled() ||
-         (rendering_context_id == rendering_context_id_ &&
-          direct_compositing_reasons == direct_compositing_reasons_ &&
-          compositor_element_id == compositor_element_id_)) &&
-        scroll == scroll_)
+  bool Update(scoped_refptr<const TransformPaintPropertyNode> parent,
+              State&& state) {
+    bool parent_changed = SetParent(parent);
+    if (state == state_)
       return parent_changed;
 
     SetChanged();
-    matrix_ = matrix;
-    origin_ = origin;
-    flattens_inherited_transform_ = flattens_inherited_transform;
-    rendering_context_id_ = rendering_context_id;
-    direct_compositing_reasons_ = direct_compositing_reasons;
-    compositor_element_id_ = compositor_element_id;
-    scroll_ = std::move(scroll);
+    state_ = std::move(state);
+    Validate();
     return true;
   }
 
-  const TransformationMatrix& Matrix() const { return matrix_; }
-  const FloatPoint3D& Origin() const { return origin_; }
+  const TransformationMatrix& Matrix() const { return state_.matrix; }
+  const FloatPoint3D& Origin() const { return state_.origin; }
 
   // The associated scroll node, or nullptr otherwise.
-  const ScrollPaintPropertyNode* ScrollNode() const { return scroll_.get(); }
+  const ScrollPaintPropertyNode* ScrollNode() const {
+    return state_.scroll.get();
+  }
 
   // If this is a scroll offset translation (i.e., has an associated scroll
   // node), returns this. Otherwise, returns the transform node that this node
@@ -111,71 +101,70 @@ class PLATFORM_EXPORT TransformPaintPropertyNode
   // the plane of its parent. This is implemented by flattening the total
   // accumulated transform from its ancestors.
   bool FlattensInheritedTransform() const {
-    return flattens_inherited_transform_;
+    return state_.flattens_inherited_transform;
+  }
+
+  BackfaceVisibility GetBackfaceVisibility() const {
+    return state_.backface_visibility;
   }
 
   bool HasDirectCompositingReasons() const {
-    return direct_compositing_reasons_ != CompositingReason::kNone;
+    return state_.direct_compositing_reasons != CompositingReason::kNone;
   }
 
   bool RequiresCompositingForAnimation() const {
-    return direct_compositing_reasons_ &
+    return state_.direct_compositing_reasons &
            CompositingReason::kComboActiveAnimation;
   }
 
   const CompositorElementId& GetCompositorElementId() const {
-    return compositor_element_id_;
+    return state_.compositor_element_id;
   }
 
   // Content whose transform nodes have a common rendering context ID are 3D
   // sorted. If this is 0, content will not be 3D sorted.
-  unsigned RenderingContextId() const { return rendering_context_id_; }
-  bool HasRenderingContext() const { return rendering_context_id_; }
+  unsigned RenderingContextId() const { return state_.rendering_context_id; }
+  bool HasRenderingContext() const { return state_.rendering_context_id; }
 
 #if DCHECK_IS_ON()
   // The clone function is used by FindPropertiesNeedingUpdate.h for recording
   // a transform node before it has been updated, to later detect changes.
   scoped_refptr<TransformPaintPropertyNode> Clone() const {
-    return base::AdoptRef(new TransformPaintPropertyNode(
-        Parent(), matrix_, origin_, flattens_inherited_transform_,
-        rendering_context_id_, direct_compositing_reasons_,
-        compositor_element_id_, scroll_));
+    return base::AdoptRef(
+        new TransformPaintPropertyNode(Parent(), State(state_)));
   }
 
   // The equality operator is used by FindPropertiesNeedingUpdate.h for checking
   // if a transform node has changed.
   bool operator==(const TransformPaintPropertyNode& o) const {
-    return Parent() == o.Parent() && matrix_ == o.matrix_ &&
-           origin_ == o.origin_ &&
-           flattens_inherited_transform_ == o.flattens_inherited_transform_ &&
-           (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled() ||
-            (rendering_context_id_ == o.rendering_context_id_ &&
-             direct_compositing_reasons_ == o.direct_compositing_reasons_ &&
-             compositor_element_id_ == o.compositor_element_id_)) &&
-           scroll_ == o.scroll_;
+    return Parent() == o.Parent() && state_ == o.state_;
   }
 #endif
 
   std::unique_ptr<JSONObject> ToJSON() const;
 
+  // Returns memory usage of the transform cache of this node plus ancestors.
+  size_t CacheMemoryUsageInBytes() const;
+
  private:
   TransformPaintPropertyNode(
       scoped_refptr<const TransformPaintPropertyNode> parent,
-      const TransformationMatrix& matrix,
-      const FloatPoint3D& origin,
-      bool flattens_inherited_transform,
-      unsigned rendering_context_id,
-      CompositingReasons direct_compositing_reasons,
-      CompositorElementId compositor_element_id,
-      scoped_refptr<const ScrollPaintPropertyNode> scroll = nullptr)
-      : PaintPropertyNode(std::move(parent)),
-        matrix_(matrix),
-        origin_(origin),
-        flattens_inherited_transform_(flattens_inherited_transform),
-        rendering_context_id_(rendering_context_id),
-        direct_compositing_reasons_(direct_compositing_reasons),
-        compositor_element_id_(compositor_element_id),
-        scroll_(std::move(scroll)) {}
+      State&& state)
+      : PaintPropertyNode(std::move(parent)), state_(std::move(state)) {
+    Validate();
+  }
+
+  void Validate() const {
+#if DCHECK_IS_ON()
+    if (state_.scroll) {
+      // If there is an associated scroll node, this can only be a 2d
+      // translation for scroll offset.
+      DCHECK(state_.matrix.IsIdentityOr2DTranslation());
+      // The scroll compositor element id should be stored on the scroll node.
+      DCHECK(!state_.compositor_element_id);
+    }
+#endif
+  }
 
   // For access to getTransformCache() and setCachedTransform.
   friend class GeometryMapper;
@@ -189,14 +178,7 @@ class PLATFORM_EXPORT TransformPaintPropertyNode
     return *transform_cache_;
   }
 
-  TransformationMatrix matrix_;
-  FloatPoint3D origin_;
-  bool flattens_inherited_transform_;
-  unsigned rendering_context_id_;
-  CompositingReasons direct_compositing_reasons_;
-  CompositorElementId compositor_element_id_;
-  scoped_refptr<const ScrollPaintPropertyNode> scroll_;
-
+  State state_;
   mutable std::unique_ptr<GeometryMapperTransformCache> transform_cache_;
 };
 

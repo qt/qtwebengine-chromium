@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <memory>
+#include <utility>
 
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
@@ -81,6 +82,17 @@ TEST_F(NetworkServiceTest, DestroyingServiceDestroysContext) {
   run_loop.Run();
 }
 
+TEST_F(NetworkServiceTest, CreateContextWithoutChannelID) {
+  mojom::NetworkContextParamsPtr params = CreateContextParams();
+  params->cookie_path = base::FilePath();
+  mojom::NetworkContextPtr network_context;
+  service()->CreateNetworkContext(mojo::MakeRequest(&network_context),
+                                  std::move(params));
+  network_context.reset();
+  // Make sure the NetworkContext is destroyed.
+  base::RunLoop().RunUntilIdle();
+}
+
 namespace {
 
 class ServiceTestClient : public service_manager::test::ServiceTestClient,
@@ -145,8 +157,12 @@ class NetworkServiceTestWithService
   void StartLoadingURL(const ResourceRequest& request, uint32_t process_id) {
     client_.reset(new TestURLLoaderClient());
     mojom::URLLoaderFactoryPtr loader_factory;
+    mojom::URLLoaderFactoryParamsPtr params =
+        mojom::URLLoaderFactoryParams::New();
+    params->process_id = process_id;
+    params->is_corb_enabled = false;
     network_context_->CreateURLLoaderFactory(mojo::MakeRequest(&loader_factory),
-                                             process_id);
+                                             std::move(params));
 
     loader_factory->CreateLoaderAndStart(
         mojo::MakeRequest(&loader_), 1, 1, mojom::kURLLoadOptionNone, request,
@@ -203,7 +219,7 @@ TEST_F(NetworkServiceTestWithService, RawRequestHeadersAbsent) {
   client()->RunUntilRedirectReceived();
   EXPECT_TRUE(client()->has_received_redirect());
   EXPECT_TRUE(!client()->response_head().raw_request_response_info);
-  loader()->FollowRedirect();
+  loader()->FollowRedirect(base::nullopt);
   client()->RunUntilComplete();
   EXPECT_TRUE(!client()->response_head().raw_request_response_info);
 }
@@ -232,7 +248,7 @@ TEST_F(NetworkServiceTestWithService, RawRequestHeadersPresent) {
                                  "HTTP/1.1 301 Moved Permanently\r",
                                  base::CompareCase::SENSITIVE));
   }
-  loader()->FollowRedirect();
+  loader()->FollowRedirect(base::nullopt);
   client()->RunUntilComplete();
   {
     scoped_refptr<HttpRawRequestResponseInfo> request_response_info =

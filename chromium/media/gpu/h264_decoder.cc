@@ -601,8 +601,8 @@ bool H264Decoder::ModifyReferencePicList(const H264SliceHeader* slice_hdr,
       default:
         // May be recoverable.
         DVLOG(1) << "Invalid modification_of_pic_nums_idc="
-                 << list_mod->modification_of_pic_nums_idc
-                 << " in position " << i;
+                 << list_mod->modification_of_pic_nums_idc << " in position "
+                 << i;
         break;
     }
 
@@ -627,8 +627,8 @@ void H264Decoder::OutputPic(scoped_refptr<H264Picture> pic) {
   }
 
   DVLOG_IF(1, pic->pic_order_cnt < last_output_poc_)
-      << "Outputting out of order, likely a broken stream: "
-      << last_output_poc_ << " -> " << pic->pic_order_cnt;
+      << "Outputting out of order, likely a broken stream: " << last_output_poc_
+      << " -> " << pic->pic_order_cnt;
   last_output_poc_ = pic->pic_order_cnt;
 
   DVLOG(4) << "Posting output task for POC: " << pic->pic_order_cnt;
@@ -1224,9 +1224,17 @@ bool H264Decoder::ProcessCurrentSlice() {
     return H264Decoder::kDecodeError;  \
   } while (0)
 
-void H264Decoder::SetStream(int32_t id, const uint8_t* ptr, size_t size) {
+void H264Decoder::SetStream(int32_t id,
+                            const uint8_t* ptr,
+                            size_t size,
+                            const DecryptConfig* decrypt_config) {
   DCHECK(ptr);
   DCHECK(size);
+  if (decrypt_config) {
+    NOTIMPLEMENTED();
+    state_ = kError;
+    return;
+  }
 
   DVLOG(4) << "New input stream id: " << id << " at: " << (void*)ptr
            << " size: " << size;

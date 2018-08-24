@@ -104,7 +104,7 @@ void SetWebTouchEventAttributesFromWebPointerEvent(
       web_pointer_event.moved_beyond_slop_region;
   web_touch_event->SetFrameScale(web_pointer_event.FrameScale());
   web_touch_event->SetFrameTranslate(web_pointer_event.FrameTranslate());
-  web_touch_event->SetTimeStampSeconds(web_pointer_event.TimeStampSeconds());
+  web_touch_event->SetTimeStamp(web_pointer_event.TimeStamp());
   web_touch_event->SetModifiers(web_pointer_event.GetModifiers());
 }
 
@@ -223,7 +223,7 @@ WebCoalescedInputEvent TouchEventManager::GenerateWebCoalescedInputEvent() {
     available_ids.push_back(id);
   std::sort(available_ids.begin(), available_ids.end());
   for (const int& touch_point_id : available_ids) {
-    const auto& touch_point_attribute = touch_attribute_map_.at(touch_point_id);
+    auto* const touch_point_attribute = touch_attribute_map_.at(touch_point_id);
     const WebPointerEvent& touch_pointer_event = touch_point_attribute->event_;
     event.touches[event.touches_length++] =
         CreateWebTouchPointFromWebPointerEvent(touch_pointer_event,
@@ -255,7 +255,7 @@ WebCoalescedInputEvent TouchEventManager::GenerateWebCoalescedInputEvent() {
   // Create all coalesced touch events based on pointerevents
   struct {
     bool operator()(const WebPointerEvent& a, const WebPointerEvent& b) {
-      return a.TimeStampSeconds() < b.TimeStampSeconds();
+      return a.TimeStamp() < b.TimeStamp();
     }
   } timestamp_based_event_comparison;
   std::sort(all_coalesced_events.begin(), all_coalesced_events.end(),
@@ -273,8 +273,8 @@ WebCoalescedInputEvent TouchEventManager::GenerateWebCoalescedInputEvent() {
         if (last_coalesced_touch_event_.touches[i].id == web_pointer_event.id) {
           last_coalesced_touch_event_.touches[i] =
               CreateWebTouchPointFromWebPointerEvent(web_pointer_event, false);
-          last_coalesced_touch_event_.SetTimeStampSeconds(
-              web_pointer_event.TimeStampSeconds());
+          last_coalesced_touch_event_.SetTimeStamp(
+              web_pointer_event.TimeStamp());
           found_existing_id = true;
           break;
         }
@@ -301,8 +301,8 @@ WebCoalescedInputEvent TouchEventManager::GenerateWebCoalescedInputEvent() {
         if (last_coalesced_touch_event_.touches[i].id == web_pointer_event.id) {
           last_coalesced_touch_event_.touches[i] =
               CreateWebTouchPointFromWebPointerEvent(web_pointer_event, false);
-          last_coalesced_touch_event_.SetTimeStampSeconds(
-              web_pointer_event.TimeStampSeconds());
+          last_coalesced_touch_event_.SetTimeStamp(
+              web_pointer_event.TimeStamp());
           result.AddCoalescedEvent(last_coalesced_touch_event_);
 
           // Remove up and canceled points.
@@ -390,7 +390,7 @@ TouchEventManager::DispatchTouchEventFromAccumulatdTouchPoints() {
     available_ids.push_back(id);
   std::sort(available_ids.begin(), available_ids.end());
   for (const int& touch_point_id : available_ids) {
-    const auto& touch_point_attribute = touch_attribute_map_.at(touch_point_id);
+    auto* const touch_point_attribute = touch_attribute_map_.at(touch_point_id);
     WebInputEvent::Type event_type = touch_point_attribute->event_.GetType();
     bool known_target;
 
@@ -616,8 +616,7 @@ WebInputEventResult TouchEventManager::FlushEvents() {
   // sending the event.
   if (touch_sequence_document_ && touch_sequence_document_->GetPage() &&
       HasTouchHandlers(
-          touch_sequence_document_->GetPage()->GetEventHandlerRegistry()) &&
-      touch_sequence_document_->GetFrame() &&
+          touch_sequence_document_->GetFrame()->GetEventHandlerRegistry()) &&
       touch_sequence_document_->GetFrame()->View()) {
     result = DispatchTouchEventFromAccumulatdTouchPoints();
   }

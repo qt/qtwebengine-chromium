@@ -22,6 +22,7 @@
 #include "net/dns/mock_mdns_socket_factory.h"
 #include "net/dns/record_rdata.h"
 #include "net/socket/udp_client_socket.h"
+#include "net/test/test_with_scoped_task_environment.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -364,9 +365,9 @@ class PtrRecordCopyContainer {
 class MockClock : public base::Clock {
  public:
   MockClock() = default;
-  virtual ~MockClock() = default;
+  ~MockClock() override = default;
 
-  MOCK_METHOD0(Now, base::Time());
+  MOCK_CONST_METHOD0(Now, base::Time());
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockClock);
@@ -375,11 +376,11 @@ class MockClock : public base::Clock {
 class MockTimer : public base::MockTimer {
  public:
   MockTimer() : base::MockTimer(false, false) {}
-  ~MockTimer() = default;
+  ~MockTimer() override = default;
 
   void Start(const base::Location& posted_from,
              base::TimeDelta delay,
-             const base::Closure& user_task) {
+             const base::Closure& user_task) override {
     StartObserver(posted_from, delay, user_task);
     base::MockTimer::Start(posted_from, delay, user_task);
   }
@@ -397,7 +398,7 @@ class MockTimer : public base::MockTimer {
 
 }  // namespace
 
-class MDnsTest : public ::testing::Test {
+class MDnsTest : public TestWithScopedTaskEnvironment {
  public:
   void SetUp() override;
   void DeleteTransaction();
@@ -1115,7 +1116,7 @@ class SimpleMockSocketFactory : public MDnsSocketFactory {
 
 class MockMDnsConnectionDelegate : public MDnsConnection::Delegate {
  public:
-  virtual void HandlePacket(DnsResponse* response, int size) {
+  void HandlePacket(DnsResponse* response, int size) override {
     HandlePacketInternal(std::string(response->io_buffer()->data(), size));
   }
 
@@ -1124,7 +1125,7 @@ class MockMDnsConnectionDelegate : public MDnsConnection::Delegate {
   MOCK_METHOD1(OnConnectionError, void(int error));
 };
 
-class MDnsConnectionTest : public ::testing::Test {
+class MDnsConnectionTest : public TestWithScopedTaskEnvironment {
  public:
   MDnsConnectionTest() : connection_(&delegate_) {
   }

@@ -17,7 +17,7 @@
 #include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
-#include "core/fpdfapi/parser/fpdf_parser_decode.h"
+#include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "core/fxcrt/fx_stream.h"
 #include "third_party/base/logging.h"
 #include "third_party/base/stl_util.h"
@@ -42,10 +42,12 @@ CPDF_Object::Type CPDF_Dictionary::GetType() const {
   return DICTIONARY;
 }
 
-CPDF_Dictionary* CPDF_Dictionary::GetDict() const {
-  // The method should be made non-const if we want to not be const.
-  // See bug #234.
-  return const_cast<CPDF_Dictionary*>(this);
+CPDF_Dictionary* CPDF_Dictionary::GetDict() {
+  return this;
+}
+
+const CPDF_Dictionary* CPDF_Dictionary::GetDict() const {
+  return this;
 }
 
 bool CPDF_Dictionary::IsDictionary() const {

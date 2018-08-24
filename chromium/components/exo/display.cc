@@ -36,24 +36,6 @@
 #endif
 
 namespace exo {
-namespace {
-#if defined(USE_OZONE)
-// TODO(dcastagna): The following formats should be determined at runtime
-// querying kms (via ozone).
-const gfx::BufferFormat kOverlayFormats[] = {
-// TODO(dcastagna): Remove RGBX/RGBA once all the platforms using the fullscreen
-// optimization will have switched to atomic.
-#if defined(ARCH_CPU_ARM_FAMILY)
-    gfx::BufferFormat::RGBX_8888, gfx::BufferFormat::RGBA_8888,
-#endif
-    gfx::BufferFormat::BGRX_8888, gfx::BufferFormat::BGRA_8888};
-
-const gfx::BufferFormat kOverlayFormatsForDrmAtomic[] = {
-    gfx::BufferFormat::RGBX_8888, gfx::BufferFormat::RGBA_8888,
-    gfx::BufferFormat::BGR_565, gfx::BufferFormat::YUV_420_BIPLANAR};
-#endif
-
-}  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
 // Display, public:
@@ -66,19 +48,10 @@ Display::Display(NotificationSurfaceManager* notification_surface_manager,
       file_helper_(std::move(file_helper))
 #if defined(USE_OZONE)
       ,
-      overlay_formats_(std::begin(kOverlayFormats), std::end(kOverlayFormats)),
       client_native_pixmap_factory_(
           gfx::CreateClientNativePixmapFactoryDmabuf())
 #endif
 {
-#if defined(USE_OZONE)
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableDrmAtomic)) {
-    overlay_formats_.insert(overlay_formats_.end(),
-                            std::begin(kOverlayFormatsForDrmAtomic),
-                            std::end(kOverlayFormatsForDrmAtomic));
-  }
-#endif
 }
 
 Display::~Display() {}
@@ -130,9 +103,7 @@ std::unique_ptr<Buffer> Display::CreateLinuxDMABufBuffer(
   // Using zero-copy for optimal performance.
   bool use_zero_copy = true;
 
-  bool is_overlay_candidate =
-      std::find(overlay_formats_.begin(), overlay_formats_.end(), format) !=
-      overlay_formats_.end();
+  bool is_overlay_candidate = true;
 
   return std::make_unique<Buffer>(
       std::move(gpu_memory_buffer), GL_TEXTURE_EXTERNAL_OES,

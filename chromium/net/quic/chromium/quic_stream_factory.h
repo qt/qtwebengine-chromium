@@ -33,14 +33,14 @@
 #include "net/quic/chromium/quic_chromium_client_session.h"
 #include "net/quic/chromium/quic_clock_skew_detector.h"
 #include "net/quic/chromium/quic_session_key.h"
-#include "net/quic/core/quic_client_push_promise_index.h"
-#include "net/quic/core/quic_config.h"
-#include "net/quic/core/quic_crypto_stream.h"
-#include "net/quic/core/quic_packets.h"
-#include "net/quic/core/quic_server_id.h"
-#include "net/quic/platform/api/quic_string_piece.h"
 #include "net/socket/client_socket_pool.h"
 #include "net/ssl/ssl_config_service.h"
+#include "net/third_party/quic/core/quic_client_push_promise_index.h"
+#include "net/third_party/quic/core/quic_config.h"
+#include "net/third_party/quic/core/quic_crypto_stream.h"
+#include "net/third_party/quic/core/quic_packets.h"
+#include "net/third_party/quic/core/quic_server_id.h"
+#include "net/third_party/quic/platform/api/quic_string_piece.h"
 
 namespace base {
 class Value;
@@ -229,7 +229,6 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
       int reduced_ping_timeout_seconds,
       int max_time_before_crypto_handshake_seconds,
       int max_idle_time_before_crypto_handshake_seconds,
-      bool connect_using_default_network,
       bool migrate_sessions_on_network_change,
       bool migrate_sessions_early,
       bool migrate_sessions_on_network_change_v2,
@@ -243,6 +242,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
       const QuicTagVector& connection_options,
       const QuicTagVector& client_connection_options,
       bool enable_token_binding,
+      bool enable_channel_id,
       bool enable_socket_recv_optimization);
   ~QuicStreamFactory() override;
 
@@ -521,10 +521,6 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   int yield_after_packets_;
   QuicTime::Delta yield_after_duration_;
 
-  // Set if sockets should explicitly use default network to connect and
-  // NetworkHandle is supported.
-  const bool connect_using_default_network_;
-
   // Set if all sessions should be closed when any local IP address changes.
   const bool close_sessions_on_ip_change_;
 
@@ -534,6 +530,11 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // Set if early migration should be attempted after probing when the
   // connection experiences poor connectivity.
   const bool migrate_sessions_early_v2_;
+
+  // If |migrate_sessions_early_v2_| is true, tracks the current default
+  // network, and is updated OnNetworkMadeDefault.
+  // Otherwise, always set to NetworkChangeNotifier::kInvalidNetwork.
+  NetworkChangeNotifier::NetworkHandle default_network_;
 
   // Maximum time sessions could use on non-default network before try to
   // migrate back to default network.
@@ -561,7 +562,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   bool estimate_initial_rtt;
 
   // If true, client headers will include HTTP/2 stream dependency info
-  // derived from SpdyPriority.
+  // derived from spdy::SpdyPriority.
   bool headers_include_h2_stream_dependency_;
 
   // Local address of socket that was created in CreateSession.

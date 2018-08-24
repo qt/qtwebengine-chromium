@@ -16,6 +16,8 @@
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/optional.h"
+#include "base/single_thread_task_runner.h"
 #include "base/threading/thread_checker.h"
 #include "components/viz/common/constants.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
@@ -112,13 +114,7 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
   // HitTestAggregatorDelegate implementation:
   void OnAggregatedHitTestRegionListUpdated(
       const FrameSinkId& frame_sink_id,
-      mojo::ScopedSharedBufferHandle active_handle,
-      uint32_t active_handle_size,
-      mojo::ScopedSharedBufferHandle idle_handle,
-      uint32_t idle_handle_size) override;
-  void SwitchActiveAggregatedHitTestRegionList(
-      const FrameSinkId& frame_sink_id,
-      uint8_t active_handle_index) override;
+      const std::vector<AggregatedHitTestRegion>& hit_test_data) override;
 
   // CompositorFrameSinkSupport, hierarchy, and BeginFrameSource can be
   // registered and unregistered in any order with respect to each other.
@@ -152,7 +148,7 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
   void SubmitHitTestRegionList(
       const SurfaceId& surface_id,
       uint64_t frame_index,
-      mojom::HitTestRegionListPtr hit_test_region_list);
+      base::Optional<HitTestRegionList> hit_test_region_list);
 
   // Instantiates |video_detector_| for tests where we simulate the passage of
   // time.

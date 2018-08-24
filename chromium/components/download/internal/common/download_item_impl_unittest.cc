@@ -66,7 +66,7 @@ base::HistogramBase::Sample ToHistogramSample(T t) {
 
 class MockDelegate : public DownloadItemImplDelegate {
  public:
-  MockDelegate() : DownloadItemImplDelegate() { SetDefaultExpectations(); }
+  MockDelegate() { SetDefaultExpectations(); }
 
   MOCK_METHOD2(DetermineDownloadTarget,
                void(DownloadItemImpl*,
@@ -89,6 +89,7 @@ class MockDelegate : public DownloadItemImplDelegate {
   MOCK_METHOD1(DownloadOpened, void(DownloadItemImpl*));
   MOCK_METHOD1(DownloadRemoved, void(DownloadItemImpl*));
   MOCK_CONST_METHOD1(AssertStateConsistent, void(DownloadItemImpl*));
+  MOCK_CONST_METHOD0(IsOffTheRecord, bool());
 
   void VerifyAndClearExpectations() {
     ::testing::Mock::VerifyAndClearExpectations(this);
@@ -101,6 +102,7 @@ class MockDelegate : public DownloadItemImplDelegate {
     EXPECT_CALL(*this, ShouldOpenFileBasedOnExtension(_))
         .WillRepeatedly(Return(false));
     EXPECT_CALL(*this, ShouldOpenDownload(_, _)).WillRepeatedly(Return(true));
+    EXPECT_CALL(*this, IsOffTheRecord()).WillRepeatedly(Return(false));
   }
 };
 
@@ -2010,6 +2012,48 @@ TEST_F(DownloadItemTest, StealInterruptedNonContinuableDangerousDownload) {
   EXPECT_TRUE(returned_path.empty());
 }
 
+// Tests that for an incognito download, the target file is annotated with an
+// empty source URL.
+TEST_F(DownloadItemTest, AnnotationWithEmptyURLInIncognito) {
+  // Non-incognito case
+  DownloadItemImpl* item = CreateDownloadItem();
+  MockDownloadFile* download_file =
+      DoIntermediateRename(item, DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS);
+  // Target file should be annotated with the source URL.
+  EXPECT_CALL(*download_file,
+              RenameAndAnnotate(_, _, create_info()->url(), _, _))
+      .WillOnce(ScheduleRenameAndAnnotateCallback(
+          DOWNLOAD_INTERRUPT_REASON_NONE, base::FilePath(kDummyTargetPath),
+          base::ThreadTaskRunnerHandle::Get()));
+  EXPECT_CALL(*mock_delegate(), ShouldCompleteDownload(item, _))
+      .WillOnce(Return(true));
+  EXPECT_CALL(*download_file, FullPath())
+      .WillOnce(ReturnRefOfCopy(base::FilePath()));
+  EXPECT_CALL(*download_file, Detach());
+  item->DestinationObserverAsWeakPtr()->DestinationCompleted(
+      0, std::unique_ptr<crypto::SecureHash>());
+  task_environment_.RunUntilIdle();
+
+  // Incognito case
+  item = CreateDownloadItem();
+  download_file =
+      DoIntermediateRename(item, DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS);
+  // Target file should be annotated with an empty URL.
+  EXPECT_CALL(*download_file, RenameAndAnnotate(_, _, GURL(), _, _))
+      .WillOnce(ScheduleRenameAndAnnotateCallback(
+          DOWNLOAD_INTERRUPT_REASON_NONE, base::FilePath(kDummyTargetPath),
+          base::ThreadTaskRunnerHandle::Get()));
+  EXPECT_CALL(*mock_delegate(), ShouldCompleteDownload(item, _))
+      .WillOnce(Return(true));
+  EXPECT_CALL(*mock_delegate(), IsOffTheRecord()).WillRepeatedly(Return(true));
+  EXPECT_CALL(*download_file, FullPath())
+      .WillOnce(ReturnRefOfCopy(base::FilePath()));
+  EXPECT_CALL(*download_file, Detach());
+  item->DestinationObserverAsWeakPtr()->DestinationCompleted(
+      0, std::unique_ptr<crypto::SecureHash>());
+  task_environment_.RunUntilIdle();
+}
+
 namespace {
 
 // The DownloadItemDestinationUpdateRaceTest fixture (defined below) is used to
@@ -2191,8 +2235,7 @@ class DownloadItemDestinationUpdateRaceTest
       public ::testing::WithParamInterface<EventList> {
  public:
   DownloadItemDestinationUpdateRaceTest()
-      : DownloadItemTest(),
-        item_(CreateDownloadItem()),
+      : item_(CreateDownloadItem()),
         file_(new ::testing::StrictMock<MockDownloadFile>()),
         request_handle_(new ::testing::StrictMock<MockRequestHandle>()) {
     DCHECK_EQ(GetParam().size(), static_cast<unsigned>(kEventCount));

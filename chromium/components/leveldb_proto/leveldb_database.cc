@@ -49,7 +49,7 @@ bool LevelDB::Init(const base::FilePath& database_dir,
   open_options_ = options;
 
   if (database_dir.empty()) {
-    env_.reset(leveldb_chrome::NewMemEnv(leveldb::Env::Default()));
+    env_ = leveldb_chrome::NewMemEnv("LevelDB");
     open_options_.env = env_.get();
   }
 
@@ -100,6 +100,11 @@ bool LevelDB::Save(const base::StringPairs& entries_to_save,
 }
 
 bool LevelDB::Load(std::vector<std::string>* entries) {
+  return LoadWithFilter(KeyFilter(), entries);
+}
+
+bool LevelDB::LoadWithFilter(const KeyFilter& filter,
+                             std::vector<std::string>* entries) {
   DFAKE_SCOPED_LOCK(thread_checker_);
   if (!db_)
     return false;
@@ -107,6 +112,11 @@ bool LevelDB::Load(std::vector<std::string>* entries) {
   leveldb::ReadOptions options;
   std::unique_ptr<leveldb::Iterator> db_iterator(db_->NewIterator(options));
   for (db_iterator->SeekToFirst(); db_iterator->Valid(); db_iterator->Next()) {
+    if (!filter.is_null()) {
+      leveldb::Slice key_slice = db_iterator->key();
+      if (!filter.Run(std::string(key_slice.data(), key_slice.size())))
+        continue;
+    }
     leveldb::Slice value_slice = db_iterator->value();
     std::string entry(value_slice.data(), value_slice.size());
     entries->push_back(entry);

@@ -32,13 +32,14 @@
 #include "net/socket/next_proto.h"
 #include "net/socket/socket_tag.h"
 #include "net/socket/socket_test_util.h"
-#include "net/spdy/chromium/spdy_session.h"
-#include "net/spdy/chromium/spdy_session_pool.h"
-#include "net/spdy/chromium/spdy_test_util_common.h"
+#include "net/spdy/spdy_session.h"
+#include "net/spdy/spdy_session_pool.h"
+#include "net/spdy/spdy_test_util_common.h"
 #include "net/ssl/ssl_config_service_defaults.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/gtest_util.h"
 #include "net/test/test_certificate_data.h"
+#include "net/test/test_with_scoped_task_environment.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -87,7 +88,7 @@ void TestLoadTimingInfoNoDns(const ClientSocketHandle& handle) {
   ExpectLoadTimingHasOnlyConnectionTimes(load_timing_info);
 }
 
-class SSLClientSocketPoolTest : public testing::Test {
+class SSLClientSocketPoolTest : public TestWithScopedTaskEnvironment {
  protected:
   SSLClientSocketPoolTest()
       : cert_verifier_(new MockCertVerifier),
@@ -198,7 +199,7 @@ class SSLClientSocketPoolTest : public testing::Test {
   std::unique_ptr<MockCertVerifier> cert_verifier_;
   std::unique_ptr<TransportSecurityState> transport_security_state_;
   MultiLogCTVerifier ct_verifier_;
-  CTPolicyEnforcer ct_policy_enforcer_;
+  DefaultCTPolicyEnforcer ct_policy_enforcer_;
   const std::unique_ptr<ProxyResolutionService> proxy_resolution_service_;
   const scoped_refptr<SSLConfigService> ssl_config_service_;
   const std::unique_ptr<HttpAuthHandlerFactory> http_auth_handler_factory_;
@@ -409,8 +410,7 @@ TEST_F(SSLClientSocketPoolTest, DirectWithNPN) {
   EXPECT_TRUE(handle.is_initialized());
   EXPECT_TRUE(handle.socket());
   TestLoadTimingInfo(handle);
-  SSLClientSocket* ssl_socket = static_cast<SSLClientSocket*>(handle.socket());
-  EXPECT_TRUE(ssl_socket->WasAlpnNegotiated());
+  EXPECT_TRUE(handle.socket()->WasAlpnNegotiated());
 }
 
 TEST_F(SSLClientSocketPoolTest, DirectGotSPDY) {
@@ -437,9 +437,8 @@ TEST_F(SSLClientSocketPoolTest, DirectGotSPDY) {
   EXPECT_TRUE(handle.socket());
   TestLoadTimingInfo(handle);
 
-  SSLClientSocket* ssl_socket = static_cast<SSLClientSocket*>(handle.socket());
-  EXPECT_TRUE(ssl_socket->WasAlpnNegotiated());
-  EXPECT_EQ(kProtoHTTP2, ssl_socket->GetNegotiatedProtocol());
+  EXPECT_TRUE(handle.socket()->WasAlpnNegotiated());
+  EXPECT_EQ(kProtoHTTP2, handle.socket()->GetNegotiatedProtocol());
 }
 
 TEST_F(SSLClientSocketPoolTest, SOCKSFail) {
@@ -607,8 +606,7 @@ TEST_F(SSLClientSocketPoolTest, HttpProxyBasic) {
   MockRead reads[] = {
       MockRead(SYNCHRONOUS, "HTTP/1.1 200 Connection Established\r\n\r\n"),
   };
-  StaticSocketDataProvider data(reads, arraysize(reads), writes,
-                                arraysize(writes));
+  StaticSocketDataProvider data(reads, writes);
   data.set_connect_data(MockConnect(SYNCHRONOUS, OK));
   socket_factory_.AddSocketDataProvider(&data);
   AddAuthToCache();
@@ -642,8 +640,7 @@ TEST_F(SSLClientSocketPoolTest, SetTransportPriorityOnInitHTTP) {
   MockRead reads[] = {
       MockRead(SYNCHRONOUS, "HTTP/1.1 200 Connection Established\r\n\r\n"),
   };
-  StaticSocketDataProvider data(reads, arraysize(reads), writes,
-                                arraysize(writes));
+  StaticSocketDataProvider data(reads, writes);
   data.set_connect_data(MockConnect(SYNCHRONOUS, OK));
   socket_factory_.AddSocketDataProvider(&data);
   AddAuthToCache();
@@ -673,8 +670,7 @@ TEST_F(SSLClientSocketPoolTest, HttpProxyBasicAsync) {
   MockRead reads[] = {
       MockRead("HTTP/1.1 200 Connection Established\r\n\r\n"),
   };
-  StaticSocketDataProvider data(reads, arraysize(reads), writes,
-                                arraysize(writes));
+  StaticSocketDataProvider data(reads, writes);
   socket_factory_.AddSocketDataProvider(&data);
   AddAuthToCache();
   SSLSocketDataProvider ssl(ASYNC, OK);
@@ -711,8 +707,7 @@ TEST_F(SSLClientSocketPoolTest, NeedProxyAuth) {
       MockRead("Content-Length: 10\r\n\r\n"),
       MockRead("0123456789"),
   };
-  StaticSocketDataProvider data(reads, arraysize(reads), writes,
-                                arraysize(writes));
+  StaticSocketDataProvider data(reads, writes);
   socket_factory_.AddSocketDataProvider(&data);
   SSLSocketDataProvider ssl(ASYNC, OK);
   socket_factory_.AddSSLSocketDataProvider(&ssl);
@@ -775,7 +770,7 @@ TEST_F(SSLClientSocketPoolTest, IPPooling) {
   MockRead reads[] = {
       MockRead(ASYNC, ERR_IO_PENDING),
   };
-  StaticSocketDataProvider data(reads, arraysize(reads), NULL, 0);
+  StaticSocketDataProvider data(reads, base::span<MockWrite>());
   socket_factory_.AddSocketDataProvider(&data);
   SSLSocketDataProvider ssl(ASYNC, OK);
   ssl.ssl_info.cert = X509Certificate::CreateFromBytes(
@@ -835,7 +830,7 @@ void SSLClientSocketPoolTest::TestIPPoolingDisabled(
   MockRead reads[] = {
       MockRead(ASYNC, ERR_IO_PENDING),
   };
-  StaticSocketDataProvider data(reads, arraysize(reads), NULL, 0);
+  StaticSocketDataProvider data(reads, base::span<MockWrite>());
   socket_factory_.AddSocketDataProvider(&data);
   socket_factory_.AddSSLSocketDataProvider(ssl);
 

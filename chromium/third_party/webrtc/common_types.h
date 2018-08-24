@@ -13,12 +13,13 @@
 
 #include <stddef.h>
 #include <string.h>
-#include <ostream>
 #include <string>
 #include <vector>
 
 #include "api/array_view.h"
 #include "api/optional.h"
+// TODO(sprang): Remove this include when all usage includes it directly.
+#include "api/video/video_bitrate_allocation.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/deprecation.h"
 #include "typedefs.h"  // NOLINT(build/include)
@@ -27,14 +28,6 @@
 // Disable "new behavior: elements of array will be default initialized"
 // warning. Affects OverUseDetectorOptions.
 #pragma warning(disable : 4351)
-#endif
-
-#if defined(WEBRTC_EXPORT)
-#define WEBRTC_DLLEXPORT _declspec(dllexport)
-#elif defined(WEBRTC_DLL)
-#define WEBRTC_DLLEXPORT _declspec(dllimport)
-#else
-#define WEBRTC_DLLEXPORT
 #endif
 
 #ifndef NULL
@@ -54,34 +47,6 @@
 #endif
 
 namespace webrtc {
-
-class RewindableStream {
- public:
-  virtual ~RewindableStream() {}
-  virtual int Rewind() = 0;
-};
-
-class InStream : public RewindableStream {
- public:
-  // Reads |len| bytes from file to |buf|. Returns the number of bytes read
-  // or -1 on error.
-  virtual int Read(void* buf, size_t len) = 0;
-};
-
-class OutStream : public RewindableStream {
- public:
-  // Writes |len| bytes from |buf| to file. The actual writing may happen
-  // some time later. Call Flush() to force a write.
-  virtual bool Write(const void* buf, size_t len) = 0;
-};
-
-// For the deprecated MediaFile module.
-enum FileFormats {
-  kFileFormatWavFile = 1,
-  kFileFormatPcm16kHzFile = 7,
-  kFileFormatPcm8kHzFile = 8,
-  kFileFormatPcm32kHzFile = 9,
-};
 
 enum FrameType {
   kEmptyFrame = 0,
@@ -186,14 +151,6 @@ class RtcpPacketTypeCounterObserver {
       const RtcpPacketTypeCounter& packet_counter) = 0;
 };
 
-// Rate statistics for a stream.
-struct BitrateStatistics {
-  BitrateStatistics() : bitrate_bps(0), packet_rate(0) {}
-
-  uint32_t bitrate_bps;  // Bitrate in bits per second.
-  uint32_t packet_rate;  // Packet rate in packets per second.
-};
-
 // Callback, used to notify an observer whenever new rates have been estimated.
 class BitrateStatisticsObserver {
  public:
@@ -268,34 +225,10 @@ struct CodecInst {
   }
 
   bool operator!=(const CodecInst& other) const { return !(*this == other); }
-
-  friend std::ostream& operator<<(std::ostream& os, const CodecInst& ci) {
-    os << "{pltype: " << ci.pltype;
-    os << ", plname: " << ci.plname;
-    os << ", plfreq: " << ci.plfreq;
-    os << ", pacsize: " << ci.pacsize;
-    os << ", channels: " << ci.channels;
-    os << ", rate: " << ci.rate << "}";
-    return os;
-  }
 };
 
 // RTP
 enum { kRtpCsrcSize = 15 };  // RFC 3550 page 13
-
-enum PayloadFrequencies {
-  kFreq8000Hz = 8000,
-  kFreq16000Hz = 16000,
-  kFreq32000Hz = 32000
-};
-
-// Degree of bandwidth reduction.
-enum VadModes {
-  kVadConventional = 0,  // lowest reduction
-  kVadAggressiveLow,
-  kVadAggressiveMid,
-  kVadAggressiveHigh  // highest reduction
-};
 
 // NETEQ statistics.
 struct NetworkStatistics {
@@ -397,10 +330,6 @@ enum class VideoType {
 };
 
 // Video codec
-enum { kMaxSimulcastStreams = 4 };
-enum { kMaxSpatialLayers = 5 };
-enum { kMaxTemporalStreams = 4 };
-
 enum VideoCodecComplexity {
   kComplexityNormal = 0,
   kComplexityHigh = 1,
@@ -408,18 +337,6 @@ enum VideoCodecComplexity {
   kComplexityMax = 3
 };
 
-enum VP8ResilienceMode {
-  kResilienceOff,    // The stream produced by the encoder requires a
-                     // recovery frame (typically a key frame) to be
-                     // decodable after a packet loss.
-  kResilientStream,  // A stream produced by the encoder is resilient to
-                     // packet losses, but packets within a frame subsequent
-                     // to a loss can't be decoded.
-  kResilientFrames   // Same as kResilientStream but with added resilience
-                     // within a frame.
-};
-
-class TemporalLayersFactory;
 // VP8 specific
 struct VideoCodecVP8 {
   bool operator==(const VideoCodecVP8& other) const;
@@ -427,13 +344,20 @@ struct VideoCodecVP8 {
     return !(*this == other);
   }
   VideoCodecComplexity complexity;
-  VP8ResilienceMode resilience;
   unsigned char numberOfTemporalLayers;
   bool denoisingOn;
   bool automaticResizeOn;
   bool frameDroppingOn;
   int keyFrameInterval;
-  TemporalLayersFactory* tl_factory;
+};
+
+enum class InterLayerPredMode {
+  kOn,       // Allow inter-layer prediction for all frames.
+             // Frame of low spatial layer can be used for
+             // prediction of next spatial layer frame.
+  kOff,      // Encoder produces independent spatial layers.
+  kOnKeyPic  // Allow inter-layer prediction only for frames
+             // within key picture.
 };
 
 // VP9 specific.
@@ -443,7 +367,6 @@ struct VideoCodecVP9 {
     return !(*this == other);
   }
   VideoCodecComplexity complexity;
-  bool resilienceOn;
   unsigned char numberOfTemporalLayers;
   bool denoisingOn;
   bool frameDroppingOn;
@@ -452,6 +375,7 @@ struct VideoCodecVP9 {
   bool automaticResizeOn;
   unsigned char numberOfSpatialLayers;
   bool flexibleMode;
+  InterLayerPredMode interLayerPred;
 };
 
 // TODO(magjed): Move this and other H264 related classes out to their own file.
@@ -591,55 +515,8 @@ class VideoCodec {
   VideoCodecUnion codec_specific_;
 };
 
-class BitrateAllocation {
- public:
-  static const uint32_t kMaxBitrateBps;
-  BitrateAllocation();
-
-  bool SetBitrate(size_t spatial_index,
-                  size_t temporal_index,
-                  uint32_t bitrate_bps);
-
-  bool HasBitrate(size_t spatial_index, size_t temporal_index) const;
-
-  uint32_t GetBitrate(size_t spatial_index, size_t temporal_index) const;
-
-  // Whether the specific spatial layers has the bitrate set in any of its
-  // temporal layers.
-  bool IsSpatialLayerUsed(size_t spatial_index) const;
-
-  // Get the sum of all the temporal layer for a specific spatial layer.
-  uint32_t GetSpatialLayerSum(size_t spatial_index) const;
-
-  // Sum of bitrates of temporal layers, from layer 0 to |temporal_index|
-  // inclusive, of specified spatial layer |spatial_index|. Bitrates of lower
-  // spatial layers are not included.
-  uint32_t GetTemporalLayerSum(size_t spatial_index,
-                               size_t temporal_index) const;
-
-  // Returns a vector of the temporal layer bitrates for the specific spatial
-  // layer. Length of the returned vector is cropped to the highest temporal
-  // layer with a defined bitrate.
-  std::vector<uint32_t> GetTemporalLayerAllocation(size_t spatial_index) const;
-
-  uint32_t get_sum_bps() const { return sum_; }  // Sum of all bitrates.
-  uint32_t get_sum_kbps() const { return (sum_ + 500) / 1000; }
-
-  inline bool operator==(const BitrateAllocation& other) const {
-    return memcmp(bitrates_, other.bitrates_, sizeof(bitrates_)) == 0;
-  }
-  inline bool operator!=(const BitrateAllocation& other) const {
-    return !(*this == other);
-  }
-
-  // Expensive, please use only in tests.
-  std::string ToString() const;
-
- private:
-  uint32_t sum_;
-  uint32_t bitrates_[kMaxSpatialLayers][kMaxTemporalStreams];
-  bool has_bitrate_[kMaxSpatialLayers][kMaxTemporalStreams];
-};
+// TODO(sprang): Remove this when downstream projects have been updated.
+using BitrateAllocation = VideoBitrateAllocation;
 
 // Bandwidth over-use detector options.  These are used to drive
 // experimentation with bandwidth estimation parameters.

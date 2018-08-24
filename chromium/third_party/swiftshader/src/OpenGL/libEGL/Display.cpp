@@ -183,14 +183,10 @@ bool Display::initialize()
 
 	for(unsigned int samplesIndex = 0; samplesIndex < sizeof(samples) / sizeof(int); samplesIndex++)
 	{
-		for(unsigned int formatIndex = 0; formatIndex < sizeof(renderTargetFormats) / sizeof(sw::Format); formatIndex++)
+		for(sw::Format renderTargetFormat : renderTargetFormats)
 		{
-			sw::Format renderTargetFormat = renderTargetFormats[formatIndex];
-
-			for(unsigned int depthStencilIndex = 0; depthStencilIndex < sizeof(depthStencilFormats) / sizeof(sw::Format); depthStencilIndex++)
+			for(sw::Format depthStencilFormat : depthStencilFormats)
 			{
-				sw::Format depthStencilFormat = depthStencilFormats[depthStencilIndex];
-
 				configSet.add(currentDisplayFormat, mMinSwapInterval, mMaxSwapInterval, renderTargetFormat, depthStencilFormat, samples[samplesIndex]);
 			}
 		}
@@ -396,6 +392,7 @@ EGLSurface Display::createPBufferSurface(EGLConfig config, const EGLint *attribL
 				{
 				case GL_UNSIGNED_BYTE:
 				case GL_UNSIGNED_SHORT:
+				case GL_HALF_FLOAT_OES:
 				case GL_HALF_FLOAT:
 					clientBufferType = attribList[1];
 					break;
@@ -425,7 +422,8 @@ EGLSurface Display::createPBufferSurface(EGLConfig config, const EGLint *attribL
 			case EGL_MIPMAP_TEXTURE:
 				if(attribList[1] != EGL_FALSE)
 				{
-					return error(EGL_BAD_ATTRIBUTE, EGL_NO_SURFACE);
+					UNIMPLEMENTED();
+					return error(EGL_BAD_MATCH, EGL_NO_SURFACE);
 				}
 				break;
 			case EGL_VG_COLORSPACE:
@@ -493,6 +491,7 @@ EGLSurface Display::createPBufferSurface(EGLConfig config, const EGLint *attribL
 				return error(EGL_BAD_PARAMETER, EGL_NO_SURFACE);
 			}
 			break;
+		case GL_HALF_FLOAT_OES:
 		case GL_HALF_FLOAT:
 			switch(clientBufferFormat)
 			{

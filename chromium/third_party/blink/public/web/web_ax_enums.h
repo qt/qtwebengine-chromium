@@ -106,6 +106,50 @@ enum WebAXRole {
   kWebAXRoleDialog,
   kWebAXRoleDirectory,
   kWebAXRoleDisclosureTriangle,
+  // --------------------------------------------------------------
+  // DPub Roles:
+  // https://www.w3.org/TR/dpub-aam-1.0/#mapping_role_table
+  kWebAXRoleDocAbstract,
+  kWebAXRoleDocAcknowledgments,
+  kWebAXRoleDocAfterword,
+  kWebAXRoleDocAppendix,
+  kWebAXRoleDocBackLink,
+  kWebAXRoleDocBiblioEntry,
+  kWebAXRoleDocBibliography,
+  kWebAXRoleDocBiblioRef,
+  kWebAXRoleDocChapter,
+  kWebAXRoleDocColophon,
+  kWebAXRoleDocConclusion,
+  kWebAXRoleDocCover,
+  kWebAXRoleDocCredit,
+  kWebAXRoleDocCredits,
+  kWebAXRoleDocDedication,
+  kWebAXRoleDocEndnote,
+  kWebAXRoleDocEndnotes,
+  kWebAXRoleDocEpigraph,
+  kWebAXRoleDocEpilogue,
+  kWebAXRoleDocErrata,
+  kWebAXRoleDocExample,
+  kWebAXRoleDocFootnote,
+  kWebAXRoleDocForeword,
+  kWebAXRoleDocGlossary,
+  kWebAXRoleDocGlossRef,
+  kWebAXRoleDocIndex,
+  kWebAXRoleDocIntroduction,
+  kWebAXRoleDocNoteRef,
+  kWebAXRoleDocNotice,
+  kWebAXRoleDocPageBreak,
+  kWebAXRoleDocPageList,
+  kWebAXRoleDocPart,
+  kWebAXRoleDocPreface,
+  kWebAXRoleDocPrologue,
+  kWebAXRoleDocPullquote,
+  kWebAXRoleDocQna,
+  kWebAXRoleDocSubtitle,
+  kWebAXRoleDocTip,
+  kWebAXRoleDocToc,
+  // End DPub roles.
+  // --------------------------------------------------------------
   kWebAXRoleDocument,
   kWebAXRoleEmbeddedObject,
   kWebAXRoleFeed,
@@ -114,6 +158,14 @@ enum WebAXRole {
   kWebAXRoleFooter,
   kWebAXRoleForm,
   kWebAXRoleGenericContainer,
+  // --------------------------------------------------------------
+  // ARIA Graphics module roles:
+  // https://rawgit.com/w3c/graphics-aam/master/#mapping_role_table
+  kWebAXRoleGraphicsDocument,
+  kWebAXRoleGraphicsObject,
+  kWebAXRoleGraphicsSymbol,
+  // End ARIA Graphics module roles.
+  // --------------------------------------------------------------
   kWebAXRoleGrid,
   kWebAXRoleGroup,
   kWebAXRoleHeading,
@@ -171,7 +223,6 @@ enum WebAXRole {
   kWebAXRoleSearchBox,
   kWebAXRoleSlider,
   kWebAXRoleSliderThumb,
-  kWebAXRoleSpinButtonPart,
   kWebAXRoleSpinButton,
   kWebAXRoleSplitter,
   kWebAXRoleStaticText,
@@ -221,6 +272,12 @@ enum WebAXTextDirection {
   kWebAXTextDirectionRL,
   kWebAXTextDirectionTB,
   kWebAXTextDirectionBT
+};
+
+enum WebAXTextPosition {
+  kWebAXTextPositionNone = 0,
+  kWebAXTextPositionSubscript,
+  kWebAXTextPositionSuperscript
 };
 
 // Sort direction, only used for roles = WebAXRoleRowHeader and
@@ -274,6 +331,16 @@ enum WebAXAriaCurrentState {
   kWebAXAriaCurrentStateLocation,
   kWebAXAriaCurrentStateDate,
   kWebAXAriaCurrentStateTime
+};
+
+enum WebAXHasPopup {
+  kWebAXHasPopupFalse = 0,
+  kWebAXHasPopupTrue,
+  kWebAXHasPopupMenu,
+  kWebAXHasPopupListbox,
+  kWebAXHasPopupTree,
+  kWebAXHasPopupGrid,
+  kWebAXHasPopupDialog
 };
 
 // Only used by HTML form controls and any other element that has

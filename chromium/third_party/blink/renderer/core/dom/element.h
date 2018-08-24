@@ -31,6 +31,7 @@
 #include "third_party/blink/renderer/core/css/css_selector.h"
 #include "third_party/blink/renderer/core/dom/container_node.h"
 #include "third_party/blink/renderer/core/dom/element_data.h"
+#include "third_party/blink/renderer/core/dom/names_map.h"
 #include "third_party/blink/renderer/core/dom/whitespace_attacher.h"
 #include "third_party/blink/renderer/core/html/focus_options.h"
 #include "third_party/blink/renderer/core/html_names.h"
@@ -94,10 +95,9 @@ enum class ElementFlags {
   kIsInCanvasSubtree = 1 << 2,
   kContainsFullScreenElement = 1 << 3,
   kIsInTopLayer = 1 << 4,
-  kHasPendingResources = 1 << 5,
-  kContainsPersistentVideo = 1 << 6,
+  kContainsPersistentVideo = 1 << 5,
 
-  kNumberOfElementFlags = 7,  // Size of bitfield used to store the flags.
+  kNumberOfElementFlags = 6,  // Size of bitfield used to store the flags.
 };
 
 enum class ShadowRootType;
@@ -495,7 +495,10 @@ class CORE_EXPORT Element : public ContainerNode {
   ShadowRoot* attachShadow(const ScriptState*,
                            const ShadowRootInit&,
                            ExceptionState&);
-  ShadowRoot& CreateShadowRootInternal();
+
+  ShadowRoot& CreateV0ShadowRootForTesting() {
+    return CreateShadowRootInternal();
+  }
   ShadowRoot& CreateUserAgentShadowRoot();
   ShadowRoot& AttachShadowRootInternal(ShadowRootType,
                                        bool delegates_focus = false);
@@ -764,15 +767,6 @@ class CORE_EXPORT Element : public ContainerNode {
 
   virtual bool ShouldForceLegacyLayout() const { return false; }
 
-  bool HasPendingResources() const {
-    return HasElementFlag(ElementFlags::kHasPendingResources);
-  }
-  void SetHasPendingResources() {
-    SetElementFlag(ElementFlags::kHasPendingResources);
-  }
-  void ClearHasPendingResources() {
-    ClearElementFlag(ElementFlags::kHasPendingResources);
-  }
   virtual void BuildPendingResource() {}
 
   void V0SetCustomElementDefinition(V0CustomElementDefinition*);
@@ -815,6 +809,9 @@ class CORE_EXPORT Element : public ContainerNode {
   bool HasPartName() const;
   const SpaceSplitString* PartNames() const;
 
+  bool HasPartNamesMap() const;
+  const NamesMap* PartNamesMap() const;
+
   ScrollOffset SavedLayerScrollOffset() const;
   void SetSavedLayerScrollOffset(const ScrollOffset&);
 
@@ -845,9 +842,8 @@ class CORE_EXPORT Element : public ContainerNode {
       const char element[],
       const AttributeModificationParams&);
 
-  virtual void Trace(blink::Visitor*);
-
-  virtual void TraceWrappers(const ScriptWrappableVisitor*) const;
+  void Trace(blink::Visitor*) override;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
   SpellcheckAttributeState GetSpellcheckAttributeState() const;
 
@@ -943,6 +939,7 @@ class CORE_EXPORT Element : public ContainerNode {
       delete;  // This will catch anyone doing an unnecessary check.
 
   bool CanAttachShadowRoot() const;
+  ShadowRoot& CreateShadowRootInternal();
 
   void StyleAttributeChanged(const AtomicString& new_style_string,
                              AttributeModificationReason);
@@ -959,7 +956,6 @@ class CORE_EXPORT Element : public ContainerNode {
   scoped_refptr<ComputedStyle> PropagateInheritedProperties(StyleRecalcChange);
 
   StyleRecalcChange RecalcOwnStyle(StyleRecalcChange);
-  void RecalcOwnStyleForReattach();
   void RecalcShadowIncludingDescendantStylesForReattach();
   void RecalcShadowRootStylesForReattach();
 

@@ -42,8 +42,8 @@ ImageTransportSurfaceOverlayMac::ImageTransportSurfaceOverlayMac(
     : delegate_(delegate),
       use_remote_layer_api_(ui::RemoteLayerAPISupported()),
       scale_factor_(1),
-      swap_id_(0),
-      gl_renderer_id_(0) {
+      gl_renderer_id_(0),
+      weak_ptr_factory_(this) {
   ui::GpuSwitchingManager::GetInstance()->AddObserver(this);
 
   static bool av_disabled_at_command_line =
@@ -83,15 +83,26 @@ bool ImageTransportSurfaceOverlayMac::Initialize(gl::GLSurfaceFormat format) {
   return true;
 }
 
+void ImageTransportSurfaceOverlayMac::PrepareToDestroy(bool have_context) {
+  if (!previous_frame_fence_)
+    return;
+  if (!have_context) {
+    // If we have no context, leak the GL objects, since we have no way to
+    // delete them.
+    DLOG(ERROR) << "Leaking GL fences.";
+    previous_frame_fence_.release();
+    return;
+  }
+  // Ensure we are using the context with which the fence was created.
+  DCHECK_EQ(fence_context_obj_, CGLGetCurrentContext());
+  CheckGLErrors("Before destroy fence");
+  previous_frame_fence_.reset();
+  CheckGLErrors("After destroy fence");
+}
+
 void ImageTransportSurfaceOverlayMac::Destroy() {
   ca_layer_tree_coordinator_.reset();
-  if (previous_frame_fence_) {
-    // Ensure we are using the context with which the fence was created.
-    gl::ScopedCGLSetCurrentContext scoped_set_current(fence_context_obj_);
-    CheckGLErrors("Before destroy fence");
-    previous_frame_fence_.reset();
-    CheckGLErrors("After destroy fence");
-  }
+  DCHECK(!previous_frame_fence_);
 }
 
 bool ImageTransportSurfaceOverlayMac::IsOffscreen() {
@@ -172,8 +183,18 @@ void ImageTransportSurfaceOverlayMac::ApplyBackpressure(
   }
 }
 
+void ImageTransportSurfaceOverlayMac::BufferPresented(
+    const PresentationCallback& callback,
+    const gfx::PresentationFeedback& feedback) {
+  DCHECK(!callback.is_null());
+  callback.Run(feedback);
+  if (delegate_)
+    delegate_->BufferPresented(feedback);
+}
+
 gfx::SwapResult ImageTransportSurfaceOverlayMac::SwapBuffersInternal(
-    const gfx::Rect& pixel_damage_rect) {
+    const gfx::Rect& pixel_damage_rect,
+    const PresentationCallback& callback) {
   TRACE_EVENT0("gpu", "ImageTransportSurfaceOverlayMac::SwapBuffersInternal");
 
   // Do a GL fence for flush to apply back-pressure before drawing.
@@ -209,7 +230,7 @@ gfx::SwapResult ImageTransportSurfaceOverlayMac::SwapBuffersInternal(
     params.ca_layer_params.pixel_size = pixel_size_;
     params.ca_layer_params.scale_factor = scale_factor_;
     params.ca_layer_params.is_empty = false;
-    params.swap_response.swap_id = swap_id_++;
+    params.swap_response.swap_id = 0;  // Set later, in DecoderClient.
     params.swap_response.result = gfx::SwapResult::SWAP_ACK;
     // TODO(brianderson): Tie swap_start to before_flush_time.
     params.swap_response.swap_start = after_flush_before_commit_time;
@@ -232,16 +253,23 @@ gfx::SwapResult ImageTransportSurfaceOverlayMac::SwapBuffersInternal(
 
   // Send the swap parameters to the browser.
   delegate_->DidSwapBuffersComplete(std::move(params));
-
+  constexpr int64_t kRefreshIntervalInMicroseconds =
+      base::Time::kMicrosecondsPerSecond / 60;
+  gfx::PresentationFeedback feedback(
+      base::TimeTicks::Now(),
+      base::TimeDelta::FromMicroseconds(kRefreshIntervalInMicroseconds),
+      0 /* flags */);
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE,
+      base::BindOnce(&ImageTransportSurfaceOverlayMac::BufferPresented,
+                     weak_ptr_factory_.GetWeakPtr(), callback, feedback));
   return gfx::SwapResult::SWAP_ACK;
 }
 
 gfx::SwapResult ImageTransportSurfaceOverlayMac::SwapBuffers(
     const PresentationCallback& callback) {
-  // TODO(penghuang): Provide useful presentation feedback.
-  // https://crbug.com/776877
   return SwapBuffersInternal(
-      gfx::Rect(0, 0, pixel_size_.width(), pixel_size_.height()));
+      gfx::Rect(0, 0, pixel_size_.width(), pixel_size_.height()), callback);
 }
 
 gfx::SwapResult ImageTransportSurfaceOverlayMac::PostSubBuffer(
@@ -250,9 +278,7 @@ gfx::SwapResult ImageTransportSurfaceOverlayMac::PostSubBuffer(
     int width,
     int height,
     const PresentationCallback& callback) {
-  // TODO(penghuang): Provide useful presentation feedback.
-  // https://crbug.com/776877
-  return SwapBuffersInternal(gfx::Rect(x, y, width, height));
+  return SwapBuffersInternal(gfx::Rect(x, y, width, height), callback);
 }
 
 bool ImageTransportSurfaceOverlayMac::SupportsPostSubBuffer() {
@@ -285,7 +311,8 @@ bool ImageTransportSurfaceOverlayMac::ScheduleOverlayPlane(
     gl::GLImage* image,
     const gfx::Rect& pixel_frame_rect,
     const gfx::RectF& crop_rect,
-    bool enable_blend) {
+    bool enable_blend,
+    std::unique_ptr<gfx::GpuFence> gpu_fence) {
   if (transform != gfx::OVERLAY_TRANSFORM_NONE) {
     DLOG(ERROR) << "Invalid overlay plane transform.";
     return false;
@@ -335,6 +362,10 @@ void ImageTransportSurfaceOverlayMac::ScheduleCALayerInUseQuery(
 }
 
 bool ImageTransportSurfaceOverlayMac::IsSurfaceless() const {
+  return true;
+}
+
+bool ImageTransportSurfaceOverlayMac::SupportsPresentationCallback() {
   return true;
 }
 

@@ -22,12 +22,14 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/page/launching_process_state.h"
 #include "third_party/blink/renderer/platform/scheduler/base/real_time_domain.h"
+#include "third_party/blink/renderer/platform/scheduler/base/test/task_queue_manager_for_test.h"
 #include "third_party/blink/renderer/platform/scheduler/child/features.h"
 #include "third_party/blink/renderer/platform/scheduler/common/throttling/budget_pool.h"
+#include "third_party/blink/renderer/platform/scheduler/main_thread/auto_advancing_virtual_time_domain.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/frame_scheduler_impl.h"
-#include "third_party/blink/renderer/platform/scheduler/renderer/auto_advancing_virtual_time_domain.h"
-#include "third_party/blink/renderer/platform/scheduler/test/task_queue_manager_for_test.h"
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
+
+using base::sequence_manager::TaskQueue;
 
 namespace blink {
 namespace scheduler {
@@ -214,9 +216,15 @@ class MainThreadSchedulerImplForTest : public MainThreadSchedulerImpl {
   using MainThreadSchedulerImpl::OnIdlePeriodEnded;
   using MainThreadSchedulerImpl::OnIdlePeriodStarted;
   using MainThreadSchedulerImpl::OnPendingTasksChanged;
+  using MainThreadSchedulerImpl::CompositorTaskQueue;
+  using MainThreadSchedulerImpl::ControlTaskQueue;
+  using MainThreadSchedulerImpl::DefaultTaskQueue;
+  using MainThreadSchedulerImpl::InputTaskQueue;
+  using MainThreadSchedulerImpl::V8TaskQueue;
+  using MainThreadSchedulerImpl::VirtualTimeControlTaskQueue;
 
   MainThreadSchedulerImplForTest(
-      std::unique_ptr<TaskQueueManager> manager,
+      std::unique_ptr<base::sequence_manager::TaskQueueManager> manager,
       base::Optional<base::Time> initial_virtual_time)
       : MainThreadSchedulerImpl(std::move(manager), initial_virtual_time),
         update_policy_count_(0) {}
@@ -291,7 +299,7 @@ class MainThreadSchedulerImplTest : public testing::Test {
           base::MakeRefCounted<cc::OrderedSimpleTaskRunner>(&clock_, false);
     }
     Initialize(std::make_unique<MainThreadSchedulerImplForTest>(
-        TaskQueueManagerForTest::Create(
+        base::sequence_manager::TaskQueueManagerForTest::Create(
             message_loop_.get(),
             message_loop_ ? message_loop_->task_runner() : mock_task_runner_,
             &clock_),
@@ -310,15 +318,15 @@ class MainThreadSchedulerImplTest : public testing::Test {
     compositor_task_runner_ = scheduler_->CompositorTaskQueue();
     input_task_runner_ = scheduler_->InputTaskQueue();
     loading_task_runner_ = scheduler_->NewLoadingTaskQueue(
-        MainThreadTaskQueue::QueueType::kFrameLoading);
+        MainThreadTaskQueue::QueueType::kFrameLoading, nullptr);
     loading_control_task_runner_ = scheduler_->NewLoadingTaskQueue(
-        MainThreadTaskQueue::QueueType::kFrameLoadingControl);
+        MainThreadTaskQueue::QueueType::kFrameLoadingControl, nullptr);
     idle_task_runner_ = scheduler_->IdleTaskRunner();
     timer_task_runner_ = scheduler_->NewTimerTaskQueue(
-        MainThreadTaskQueue::QueueType::kFrameThrottleable);
+        MainThreadTaskQueue::QueueType::kFrameThrottleable, nullptr);
     v8_task_runner_ = scheduler_->V8TaskQueue();
     fake_queue_ = scheduler_->NewLoadingTaskQueue(
-        MainThreadTaskQueue::QueueType::kFrameLoading);
+        MainThreadTaskQueue::QueueType::kFrameLoading, nullptr);
   }
 
   void TearDown() override {
@@ -583,10 +591,6 @@ class MainThreadSchedulerImplTest : public testing::Test {
     return scheduler_->main_thread_only().estimated_next_frame_begin;
   }
 
-  int NavigationTaskExpectedCount() {
-    return scheduler_->main_thread_only().navigation_task_expected_count;
-  }
-
   void AdvanceTimeWithTask(double duration) {
     base::TimeTicks start = clock_.NowTicks();
     scheduler_->OnTaskStarted(fake_queue_.get(), fake_task_, start);
@@ -594,14 +598,6 @@ class MainThreadSchedulerImplTest : public testing::Test {
     base::TimeTicks end = clock_.NowTicks();
     scheduler_->OnTaskCompleted(fake_queue_.get(), fake_task_, start, end,
                                 base::nullopt);
-  }
-
-  void GetQueueingTimeEstimatorLock() {
-    scheduler_->seqlock_queueing_time_estimator_.seqlock.WriteBegin();
-  }
-
-  void DropQueueingTimeEstimatorLock() {
-    scheduler_->seqlock_queueing_time_estimator_.seqlock.WriteEnd();
   }
 
   void RunSlowCompositorTask() {
@@ -700,18 +696,14 @@ class MainThreadSchedulerImplTest : public testing::Test {
         MainThreadSchedulerImpl::kEndIdleWhenHiddenDelayMillis);
   }
 
-  static base::TimeDelta delay_for_background_tab_stopping() {
+  static base::TimeDelta delay_for_background_tab_freezing() {
     return base::TimeDelta::FromMilliseconds(
-        MainThreadSchedulerImpl::kDelayForBackgroundTabStoppingMillis);
+        MainThreadSchedulerImpl::kDelayForBackgroundTabFreezingMillis);
   }
 
   static base::TimeDelta rails_response_time() {
     return base::TimeDelta::FromMilliseconds(
         MainThreadSchedulerImpl::kRailsResponseTimeMillis);
-  }
-
-  static base::TimeDelta responsiveness_threshold() {
-    return base::TimeDelta::FromMilliseconds(200);
   }
 
   template <typename E>
@@ -1875,7 +1867,8 @@ class MainThreadSchedulerImplWithMockSchedulerTest
     mock_task_runner_ =
         base::MakeRefCounted<cc::OrderedSimpleTaskRunner>(&clock_, false);
     mock_scheduler_ = new MainThreadSchedulerImplForTest(
-        TaskQueueManagerForTest::Create(nullptr, mock_task_runner_, &clock_),
+        base::sequence_manager::TaskQueueManagerForTest::Create(
+            nullptr, mock_task_runner_, &clock_),
         base::nullopt);
     Initialize(base::WrapUnique(mock_scheduler_));
   }
@@ -2110,7 +2103,6 @@ class MainThreadSchedulerImplWithMessageLoopTest
   void PostFromNestedRunloop(
       std::vector<std::pair<SingleThreadIdleTaskRunner::IdleTask, bool>>*
           tasks) {
-    base::MessageLoop::ScopedNestableTaskAllower allow(message_loop_.get());
     for (std::pair<SingleThreadIdleTaskRunner::IdleTask, bool>& pair : *tasks) {
       if (pair.second) {
         idle_task_runner_->PostIdleTask(FROM_HERE, std::move(pair.first));
@@ -2120,7 +2112,7 @@ class MainThreadSchedulerImplWithMessageLoopTest
       }
     }
     EnableIdleTasks();
-    base::RunLoop().RunUntilIdle();
+    base::RunLoop(base::RunLoop::Type::kNestableTasksAllowed).RunUntilIdle();
   }
 
  private:
@@ -2307,7 +2299,7 @@ TEST_F(MainThreadSchedulerImplTest, TestLongIdlePeriodInTouchStartPolicy) {
   EXPECT_EQ(1, run_count);
 }
 
-void TestCanExceedIdleDeadlineIfRequiredTask(WebMainThreadScheduler* scheduler,
+void TestCanExceedIdleDeadlineIfRequiredTask(ThreadScheduler* scheduler,
                                              bool* can_exceed_idle_deadline_out,
                                              int* run_count,
                                              base::TimeTicks deadline) {
@@ -2527,7 +2519,7 @@ TEST_F(MainThreadSchedulerImplTest, ShutdownPreventsPostingOfNewTasks) {
 }
 
 TEST_F(MainThreadSchedulerImplTest, TestRendererBackgroundedTimerSuspension) {
-  scheduler_->SetStoppingWhenBackgroundedEnabled(true);
+  scheduler_->SetFreezingWhenBackgroundedEnabled(true);
 
   std::vector<std::string> run_order;
   PostTestTasks(&run_order, "T1 T2");
@@ -2551,7 +2543,7 @@ TEST_F(MainThreadSchedulerImplTest, TestRendererBackgroundedTimerSuspension) {
   EXPECT_THAT(run_order, testing::ElementsAre(std::string("T3")));
 
   // Advance the time until after the scheduled timer queue suspension.
-  now = base::TimeTicks() + delay_for_background_tab_stopping() +
+  now = base::TimeTicks() + delay_for_background_tab_freezing() +
         base::TimeDelta::FromMilliseconds(10);
   run_order.clear();
   clock_.SetNowTicks(now);
@@ -2743,115 +2735,11 @@ TEST_F(MainThreadSchedulerImplTest,
   scheduler_->SetHasVisibleRenderWidgetWithTouchHandler(true);
   SimulateExpensiveTasks(loading_task_runner_);
   ForceTouchStartToBeExpectedSoon();
-  scheduler_->AddPendingNavigation(
-      scheduler::WebMainThreadScheduler::NavigatingFrameType::kChildFrame);
 
   PostTestTasks(&run_order, "L1 D1");
   RunUntilIdle();
 
   // The expensive loading task gets blocked.
-  EXPECT_THAT(run_order, testing::ElementsAre(std::string("D1")));
-  EXPECT_EQ(v8::PERFORMANCE_RESPONSE, GetRAILMode());
-}
-
-TEST_F(MainThreadSchedulerImplTest,
-       ExpensiveLoadingTasksNotBlockedIfMainFrameNavigationExpected) {
-  std::vector<std::string> run_order;
-
-  DoMainFrame();
-  scheduler_->SetHasVisibleRenderWidgetWithTouchHandler(true);
-  SimulateExpensiveTasks(loading_task_runner_);
-  ForceTouchStartToBeExpectedSoon();
-  scheduler_->AddPendingNavigation(
-      scheduler::WebMainThreadScheduler::NavigatingFrameType::kMainFrame);
-
-  PostTestTasks(&run_order, "L1 D1");
-  RunUntilIdle();
-
-  EXPECT_EQ(UseCase::kNone, ForceUpdatePolicyAndGetCurrentUseCase());
-  EXPECT_TRUE(HaveSeenABeginMainframe());
-  EXPECT_TRUE(LoadingTasksSeemExpensive());
-  EXPECT_FALSE(TimerTasksSeemExpensive());
-  EXPECT_TRUE(TouchStartExpectedSoon());
-  EXPECT_EQ(1, NavigationTaskExpectedCount());
-  EXPECT_THAT(run_order,
-              testing::ElementsAre(std::string("L1"), std::string("D1")));
-
-  // After the nagigation has been cancelled, the expensive loading tasks should
-  // get blocked.
-  scheduler_->RemovePendingNavigation(
-      scheduler::WebMainThreadScheduler::NavigatingFrameType::kMainFrame);
-  run_order.clear();
-
-  PostTestTasks(&run_order, "L1 D1");
-  RunUntilIdle();
-
-  EXPECT_EQ(UseCase::kNone, CurrentUseCase());
-  EXPECT_TRUE(HaveSeenABeginMainframe());
-  EXPECT_TRUE(LoadingTasksSeemExpensive());
-  EXPECT_FALSE(TimerTasksSeemExpensive());
-  EXPECT_TRUE(TouchStartExpectedSoon());
-  EXPECT_EQ(0, NavigationTaskExpectedCount());
-  EXPECT_THAT(run_order, testing::ElementsAre(std::string("D1")));
-  EXPECT_EQ(v8::PERFORMANCE_RESPONSE, GetRAILMode());
-}
-
-TEST_F(MainThreadSchedulerImplTest,
-       ExpensiveLoadingTasksNotBlockedIfMainFrameNavigationExpected_Multiple) {
-  std::vector<std::string> run_order;
-
-  DoMainFrame();
-  scheduler_->SetHasVisibleRenderWidgetWithTouchHandler(true);
-  SimulateExpensiveTasks(loading_task_runner_);
-  ForceTouchStartToBeExpectedSoon();
-  scheduler_->AddPendingNavigation(
-      scheduler::WebMainThreadScheduler::NavigatingFrameType::kMainFrame);
-  scheduler_->AddPendingNavigation(
-      scheduler::WebMainThreadScheduler::NavigatingFrameType::kMainFrame);
-
-  PostTestTasks(&run_order, "L1 D1");
-  RunUntilIdle();
-
-  EXPECT_EQ(UseCase::kNone, ForceUpdatePolicyAndGetCurrentUseCase());
-  EXPECT_TRUE(HaveSeenABeginMainframe());
-  EXPECT_TRUE(LoadingTasksSeemExpensive());
-  EXPECT_FALSE(TimerTasksSeemExpensive());
-  EXPECT_TRUE(TouchStartExpectedSoon());
-  EXPECT_EQ(2, NavigationTaskExpectedCount());
-  EXPECT_THAT(run_order,
-              testing::ElementsAre(std::string("L1"), std::string("D1")));
-
-  run_order.clear();
-  scheduler_->RemovePendingNavigation(
-      scheduler::WebMainThreadScheduler::NavigatingFrameType::kMainFrame);
-  // Navigation task expected ref count non-zero so expensive tasks still not
-  // blocked.
-  PostTestTasks(&run_order, "L1 D1");
-  RunUntilIdle();
-
-  EXPECT_EQ(UseCase::kNone, ForceUpdatePolicyAndGetCurrentUseCase());
-  EXPECT_TRUE(HaveSeenABeginMainframe());
-  EXPECT_TRUE(LoadingTasksSeemExpensive());
-  EXPECT_FALSE(TimerTasksSeemExpensive());
-  EXPECT_TRUE(TouchStartExpectedSoon());
-  EXPECT_EQ(1, NavigationTaskExpectedCount());
-  EXPECT_THAT(run_order,
-              testing::ElementsAre(std::string("L1"), std::string("D1")));
-
-  run_order.clear();
-  scheduler_->RemovePendingNavigation(
-      scheduler::WebMainThreadScheduler::NavigatingFrameType::kMainFrame);
-  // Navigation task expected ref count is now zero, the expensive loading tasks
-  // should get blocked.
-  PostTestTasks(&run_order, "L1 D1");
-  RunUntilIdle();
-
-  EXPECT_EQ(UseCase::kNone, CurrentUseCase());
-  EXPECT_TRUE(HaveSeenABeginMainframe());
-  EXPECT_TRUE(LoadingTasksSeemExpensive());
-  EXPECT_FALSE(TimerTasksSeemExpensive());
-  EXPECT_TRUE(TouchStartExpectedSoon());
-  EXPECT_EQ(0, NavigationTaskExpectedCount());
   EXPECT_THAT(run_order, testing::ElementsAre(std::string("D1")));
   EXPECT_EQ(v8::PERFORMANCE_RESPONSE, GetRAILMode());
 }
@@ -3623,7 +3511,7 @@ TEST_F(MainThreadSchedulerImplTest,
   scheduler_->SetVirtualTimePolicy(
       PageSchedulerImpl::VirtualTimePolicy::kPause);
   scoped_refptr<MainThreadTaskQueue> timer_tq = scheduler_->NewTimerTaskQueue(
-      MainThreadTaskQueue::QueueType::kFrameThrottleable);
+      MainThreadTaskQueue::QueueType::kFrameThrottleable, nullptr);
   EXPECT_FALSE(timer_tq->HasActiveFence());
 }
 
@@ -3634,11 +3522,11 @@ TEST_F(MainThreadSchedulerImplTest, EnableVirtualTime) {
   EXPECT_TRUE(scheduler_->IsVirtualTimeEnabled());
   scoped_refptr<MainThreadTaskQueue> loading_tq =
       scheduler_->NewLoadingTaskQueue(
-          MainThreadTaskQueue::QueueType::kFrameLoading);
+          MainThreadTaskQueue::QueueType::kFrameLoading, nullptr);
   scoped_refptr<TaskQueue> loading_control_tq = scheduler_->NewLoadingTaskQueue(
-      MainThreadTaskQueue::QueueType::kFrameLoadingControl);
+      MainThreadTaskQueue::QueueType::kFrameLoadingControl, nullptr);
   scoped_refptr<MainThreadTaskQueue> timer_tq = scheduler_->NewTimerTaskQueue(
-      MainThreadTaskQueue::QueueType::kFrameThrottleable);
+      MainThreadTaskQueue::QueueType::kFrameThrottleable, nullptr);
   scoped_refptr<MainThreadTaskQueue> unthrottled_tq =
       scheduler_->NewTaskQueue(MainThreadTaskQueue::QueueCreationParams(
           MainThreadTaskQueue::QueueType::kUnthrottled));
@@ -3667,14 +3555,14 @@ TEST_F(MainThreadSchedulerImplTest, EnableVirtualTime) {
   EXPECT_EQ(unthrottled_tq->GetTimeDomain(),
             scheduler_->GetVirtualTimeDomain());
 
-  EXPECT_EQ(
-      scheduler_
-          ->NewLoadingTaskQueue(MainThreadTaskQueue::QueueType::kFrameLoading)
-          ->GetTimeDomain(),
-      scheduler_->GetVirtualTimeDomain());
+  EXPECT_EQ(scheduler_
+                ->NewLoadingTaskQueue(
+                    MainThreadTaskQueue::QueueType::kFrameLoading, nullptr)
+                ->GetTimeDomain(),
+            scheduler_->GetVirtualTimeDomain());
   EXPECT_EQ(scheduler_
                 ->NewTimerTaskQueue(
-                    MainThreadTaskQueue::QueueType::kFrameThrottleable)
+                    MainThreadTaskQueue::QueueType::kFrameThrottleable, nullptr)
                 ->GetTimeDomain(),
             scheduler_->GetVirtualTimeDomain());
   EXPECT_EQ(scheduler_
@@ -3716,7 +3604,7 @@ TEST_F(MainThreadSchedulerImplTest, DisableVirtualTimeForTesting) {
       MainThreadSchedulerImpl::BaseTimeOverridePolicy::DO_NOT_OVERRIDE);
 
   scoped_refptr<MainThreadTaskQueue> timer_tq = scheduler_->NewTimerTaskQueue(
-      MainThreadTaskQueue::QueueType::kFrameThrottleable);
+      MainThreadTaskQueue::QueueType::kFrameThrottleable, nullptr);
   scoped_refptr<MainThreadTaskQueue> unthrottled_tq =
       scheduler_->NewTaskQueue(MainThreadTaskQueue::QueueCreationParams(
           MainThreadTaskQueue::QueueType::kUnthrottled));
@@ -3844,80 +3732,6 @@ TEST_F(MainThreadSchedulerImplTest,
   EXPECT_THAT(run_times,
               testing::ElementsAre(base::TimeTicks() +
                                    base::TimeDelta::FromMilliseconds(1300)));
-}
-
-TEST_F(MainThreadSchedulerImplTest, UnresponsiveMainThread) {
-  EXPECT_FALSE(
-      scheduler_->MainThreadSeemsUnresponsive(responsiveness_threshold()));
-
-  // Add one second long task.
-  AdvanceTimeWithTask(1);
-  EXPECT_TRUE(
-      scheduler_->MainThreadSeemsUnresponsive(responsiveness_threshold()));
-
-  // Wait a second.
-  clock_.Advance(base::TimeDelta::FromSecondsD(2));
-
-  AdvanceTimeWithTask(0.5);
-  EXPECT_FALSE(
-      scheduler_->MainThreadSeemsUnresponsive(responsiveness_threshold()));
-}
-
-// As |responsiveness_threshold| == expected queueing time threshold == 0.2s,
-// for a task shorter than the length of the window (1s), the critical value of
-// the length of task x can be calculated by (x/2) * (x/1) = 0.2, in which x =
-// 0.6324.
-TEST_F(MainThreadSchedulerImplTest, UnresponsiveMainThreadAboveThreshold) {
-  EXPECT_FALSE(
-      scheduler_->MainThreadSeemsUnresponsive(responsiveness_threshold()));
-
-  AdvanceTimeWithTask(0.64);
-  EXPECT_TRUE(
-      scheduler_->MainThreadSeemsUnresponsive(responsiveness_threshold()));
-}
-
-// As |responsiveness_threshold| == expected queueing time threshold == 0.2s,
-// for a task shorter than the length of the window (1s), the critical value of
-// the length of task x can be calculated by (x/2) * (x/1) = 0.2, in which x =
-// 0.6324.
-TEST_F(MainThreadSchedulerImplTest, ResponsiveMainThreadBelowThreshold) {
-  EXPECT_FALSE(
-      scheduler_->MainThreadSeemsUnresponsive(responsiveness_threshold()));
-
-  AdvanceTimeWithTask(0.63);
-  EXPECT_FALSE(
-      scheduler_->MainThreadSeemsUnresponsive(responsiveness_threshold()));
-}
-
-TEST_F(MainThreadSchedulerImplTest, ResponsiveMainThreadDuringTask) {
-  EXPECT_FALSE(
-      scheduler_->MainThreadSeemsUnresponsive(responsiveness_threshold()));
-  clock_.Advance(base::TimeDelta::FromSecondsD(2));
-  scheduler_->OnTaskStarted(fake_queue_.get(), fake_task_, clock_.NowTicks());
-  EXPECT_FALSE(
-      scheduler_->MainThreadSeemsUnresponsive(responsiveness_threshold()));
-}
-
-TEST_F(MainThreadSchedulerImplTest, UnresponsiveMainThreadWithContention) {
-  // Process a long task, lock the queueing time estimator, and check that we
-  // still report the main thread is unresponsive.
-  AdvanceTimeWithTask(1);
-  EXPECT_TRUE(
-      scheduler_->MainThreadSeemsUnresponsive(responsiveness_threshold()));
-  GetQueueingTimeEstimatorLock();
-  EXPECT_TRUE(
-      scheduler_->MainThreadSeemsUnresponsive(responsiveness_threshold()));
-
-  // Advance the clock, so that in the last second, we were responsive.
-  clock_.Advance(base::TimeDelta::FromSecondsD(2));
-  // While the queueing time estimator is locked, we believe the thread to still
-  // be unresponsive.
-  EXPECT_TRUE(
-      scheduler_->MainThreadSeemsUnresponsive(responsiveness_threshold()));
-  // Once we've dropped the lock, we realize the main thread is responsive.
-  DropQueueingTimeEstimatorLock();
-  EXPECT_FALSE(
-      scheduler_->MainThreadSeemsUnresponsive(responsiveness_threshold()));
 }
 
 //                  Nav Start     Nav Start            assert
@@ -4096,7 +3910,7 @@ class MainThreadSchedulerImplWithInitalVirtualTimeTest
           base::MakeRefCounted<cc::OrderedSimpleTaskRunner>(&clock_, false);
     }
     Initialize(std::make_unique<MainThreadSchedulerImplForTest>(
-        TaskQueueManagerForTest::Create(
+        base::sequence_manager::TaskQueueManagerForTest::Create(
             message_loop_.get(),
             message_loop_ ? message_loop_->task_runner() : mock_task_runner_,
             &clock_),
@@ -4109,6 +3923,27 @@ TEST_F(MainThreadSchedulerImplWithInitalVirtualTimeTest, VirtualTimeOverride) {
   EXPECT_EQ(PageSchedulerImpl::VirtualTimePolicy::kPause,
             scheduler_->virtual_time_policy());
   EXPECT_EQ(base::Time::Now(), base::Time::FromJsTime(1000000.0));
+}
+
+TEST_F(MainThreadSchedulerImplTest, ShouldIgnoreTaskForUkm) {
+  bool supports_thread_ticks = base::ThreadTicks::IsSupported();
+  double sampling_rate;
+
+  sampling_rate = 0.0001;
+  EXPECT_FALSE(scheduler_->ShouldIgnoreTaskForUkm(true, &sampling_rate));
+  if (supports_thread_ticks) {
+    EXPECT_EQ(0.01, sampling_rate);
+  } else {
+    EXPECT_EQ(0.0001, sampling_rate);
+  }
+
+  sampling_rate = 0.0001;
+  if (supports_thread_ticks) {
+    EXPECT_TRUE(scheduler_->ShouldIgnoreTaskForUkm(false, &sampling_rate));
+  } else {
+    EXPECT_FALSE(scheduler_->ShouldIgnoreTaskForUkm(false, &sampling_rate));
+    EXPECT_EQ(0.0001, sampling_rate);
+  }
 }
 
 }  // namespace main_thread_scheduler_impl_unittest

@@ -4,15 +4,15 @@
 
 #include "third_party/blink/renderer/platform/scheduler/child/idle_canceled_delayed_task_sweeper.h"
 
+#include "base/task/sequence_manager/lazy_now.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "components/viz/test/ordered_simple_task_runner.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/renderer/platform/scheduler/base/lazy_now.h"
 #include "third_party/blink/renderer/platform/scheduler/base/task_queue.h"
+#include "third_party/blink/renderer/platform/scheduler/base/test/task_queue_manager_for_test.h"
 #include "third_party/blink/renderer/platform/scheduler/child/idle_helper.h"
 #include "third_party/blink/renderer/platform/scheduler/common/scheduler_helper.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_helper.h"
-#include "third_party/blink/renderer/platform/scheduler/test/task_queue_manager_for_test.h"
 
 namespace blink {
 namespace scheduler {
@@ -32,9 +32,10 @@ class IdleCanceledDelayedTaskSweeperTest : public testing::Test,
   IdleCanceledDelayedTaskSweeperTest()
       : mock_task_runner_(new cc::OrderedSimpleTaskRunner(&clock_, true)),
         scheduler_helper_(new MainThreadSchedulerHelper(
-            TaskQueueManagerForTest::Create(nullptr,
-                                            mock_task_runner_,
-                                            &clock_),
+            base::sequence_manager::TaskQueueManagerForTest::Create(
+                nullptr,
+                mock_task_runner_,
+                &clock_),
             nullptr)),
         idle_helper_(
             new IdleHelper(scheduler_helper_.get(),
@@ -69,7 +70,7 @@ class IdleCanceledDelayedTaskSweeperTest : public testing::Test,
   void IsNotQuiescent() override {}
   void OnIdlePeriodStarted() override {}
   void OnIdlePeriodEnded() override {}
-  void OnPendingTasksChanged(bool has_tasks) {}
+  void OnPendingTasksChanged(bool has_tasks) override {}
 
  protected:
   base::SimpleTestTickClock clock_;
@@ -79,7 +80,7 @@ class IdleCanceledDelayedTaskSweeperTest : public testing::Test,
   std::unique_ptr<IdleHelper> idle_helper_;
   std::unique_ptr<IdleCanceledDelayedTaskSweeper>
       idle_canceled_delayed_taks_sweeper_;
-  scoped_refptr<TaskQueue> default_task_queue_;
+  scoped_refptr<base::sequence_manager::TaskQueue> default_task_queue_;
 
   DISALLOW_COPY_AND_ASSIGN(IdleCanceledDelayedTaskSweeperTest);
 };

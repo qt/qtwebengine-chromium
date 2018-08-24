@@ -151,7 +151,7 @@ class PasswordFormMetricsRecorder
     kEditedUsernameInBubble = 100,
     kSelectedDifferentPasswordInBubble = 101,
     kTriggeredManualFallbackForSaving = 102,
-    kTriggeredManualFallbackForUpdating = 103,
+    kObsoleteTriggeredManualFallbackForUpdating = 103,  // unused
 
     // Interactions with form.
     kCorrectedUsernameInForm = 200,
@@ -194,6 +194,11 @@ class PasswordFormMetricsRecorder
   // Call this once the submitted form type has been determined.
   void SetSubmittedFormType(SubmittedFormType form_type);
 
+  // Call this when a password is saved to indicate which path led to
+  // submission.
+  void SetSubmissionIndicatorEvent(
+      autofill::PasswordForm::SubmissionIndicatorEvent event);
+
   // Records all histograms in the PasswordManager.SuppressedAccount.* family.
   // Takes the FormFetcher intance which owns the login data from PasswordStore.
   // |pending_credentials| stores credentials when the form was submitted but
@@ -230,6 +235,11 @@ class PasswordFormMetricsRecorder
   // Records a low entropy hash of the form signature in order to be able to
   // distinguish two forms on the same site.
   void RecordFormSignature(autofill::FormSignature form_signature);
+
+  // Records that Chrome noticed that it should show a manual fallback for
+  // saving.
+  void RecordShowManualFallbackForSaving(bool has_generated_password,
+                                         bool is_update);
 
  private:
   friend class base::RefCounted<PasswordFormMetricsRecorder>;
@@ -316,6 +326,12 @@ class PasswordFormMetricsRecorder
   // Counter for DetailedUserActions observed during the lifetime of a
   // PasswordFormManager. Reported upon destruction.
   std::map<DetailedUserAction, int64_t> detailed_user_actions_counts_;
+
+  // Bitmap of whether and why a manual fallback for saving was shown:
+  // 1 = the fallback was shown.
+  // 2 = the password was generated.
+  // 4 = this was an update prompt.
+  base::Optional<uint32_t> showed_manual_fallback_for_saving_;
 
   DISALLOW_COPY_AND_ASSIGN(PasswordFormMetricsRecorder);
 };

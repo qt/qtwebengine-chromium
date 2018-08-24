@@ -36,6 +36,18 @@ enum AccessibilityAlert {
   WINDOW_OVERVIEW_MODE_ENTERED
 };
 
+enum SelectToSpeakState {
+  // Select to Speak is not actively selecting text or speaking.
+  kSelectToSpeakStateInactive,
+
+  // Select to Speak is being used to actively select a new region. Note that
+  // it might also be speaking, but the selecting state takes precedence.
+  kSelectToSpeakStateSelecting,
+
+  // Select to Speak is currently speaking.
+  kSelectToSpeakStateSpeaking,
+};
+
 // Interface for ash client (e.g. Chrome) to control and query accessibility
 // features.
 interface AccessibilityController {
@@ -49,12 +61,17 @@ interface AccessibilityController {
   // Called when braille display state is changed.
   BrailleDisplayStateChanged(bool connected);
 
-  // Sets the focus highlight rect using |bounds_in_screen|.
+  // Sets the focus highlight rect using |bounds_in_screen|. Called when focus
+  // changed in page and a11y focus highlight feature is enabled.
   SetFocusHighlightRect(gfx.mojom.Rect bounds_in_screen);
 
   // Sets whether the accessibility panel is filling the entire screen (e.g. to
   // show the expanded UI for the ChromeVox spoken feedback extension).
   SetAccessibilityPanelFullscreen(bool fullscreen);
+
+  // Sets the current Select-to-Speak state. This should be used by the Select-
+  // to-Speak extension to inform ash of its updated state.
+  SetSelectToSpeakState(SelectToSpeakState state);
 };
 
 // Interface for ash to request accessibility service from its client (e.g.
@@ -78,7 +95,8 @@ interface AccessibilityControllerClient {
   HandleAccessibilityGesture(ax.mojom.Gesture gesture);
 
   // Starts or stops dictation (type what you speak).
-  ToggleDictation();
+  // Returns the new dictation state after the toggle.
+  ToggleDictation() => (bool dictation_on);
 
   // Cancels all current and queued speech immediately.
   SilenceSpokenFeedback();
@@ -98,4 +116,10 @@ interface AccessibilityControllerClient {
   // Plays tick sound indicating spoken feedback will be toggled after
   // countdown.
   PlaySpokenFeedbackToggleCountdown(int32 tick_count);
+
+  // Requests the Select-to-Speak extension to change its state. This lets users
+  // do the same things in tablet mode as with a keyboard. Specifically, if
+  // Select-to-Speak is not speaking, move to capturing state; if
+  // Select-to-Speak is speaking, cancel speaking and move to inactive state.
+  RequestSelectToSpeakStateChange();
 };

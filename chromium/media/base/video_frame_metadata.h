@@ -109,7 +109,7 @@ class MEDIA_EXPORT VideoFrameMetadata {
     // if ALLOW_OVERLAY is set.  However, it allows us to process the overlay
     // to see if it would have been promoted, if it were backed by a SurfaceView
     // instead.  This lets us figure out when SurfaceViews are appropriate.
-    SURFACE_TEXTURE,
+    TEXTURE_OWNER,
 
     // Android only: if set, then this frame's resource would like to be
     // notified about its promotability to an overlay.
@@ -119,8 +119,21 @@ class MEDIA_EXPORT VideoFrameMetadata {
     // rather than being composited into the framebuffer.
     REQUIRE_OVERLAY,
 
+    // Windows only: this video has protected content.
+    PROTECTED_VIDEO,
+
     // Whether this frame was decoded in a power efficient way.
     POWER_EFFICIENT,
+
+    // CompositorFrameMetadata variables associated with this frame. Used for
+    // remote debugging.
+    // Use Get/SetDouble() for these keys.
+    // TODO(crbug.com/832220): Use a customized dictionary value instead of
+    // using these keys directly.
+    DEVICE_SCALE_FACTOR,
+    PAGE_SCALE_FACTOR,
+    ROOT_SCROLL_OFFSET_X,
+    ROOT_SCROLL_OFFSET_Y,
 
     NUM_KEYS
   };

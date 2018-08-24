@@ -246,10 +246,10 @@ Polymer({
     if (!this.didSetFocus_) {
       // Focus a button once the initial state is set.
       this.didSetFocus_ = true;
-      const button = this.$$('#titleDiv .primary-button:not([hidden])') ||
+      const button = this.$$('#titleDiv .action-button:not([hidden])') ||
           this.$$('#titleDiv paper-button:not([hidden])');
       if (button)
-        button.focus();
+        setTimeout(() => button.focus());
     }
 
     if (this.shouldShowConfigureWhenNetworkLoaded_ &&
@@ -510,6 +510,8 @@ Polymer({
    * @private
    */
   showForget_: function(networkProperties) {
+    if (this.isSecondaryUser_)
+      return false;
     const type = networkProperties.Type;
     if (type != CrOnc.Type.WI_FI && type != CrOnc.Type.VPN)
       return false;
@@ -525,6 +527,8 @@ Polymer({
    * @private
    */
   showActivate_: function(networkProperties) {
+    if (this.isSecondaryUser_)
+      return false;
     if (!this.isCellular_(networkProperties))
       return false;
     const activation = networkProperties.Cellular.ActivationState;
@@ -539,11 +543,19 @@ Polymer({
    * @private
    */
   showConfigure_: function(networkProperties, globalPolicy) {
+    if (this.isSecondaryUser_)
+      return false;
     if (this.connectNotAllowed_(networkProperties, globalPolicy))
       return false;
     const type = networkProperties.Type;
     if (type == CrOnc.Type.CELLULAR || type == CrOnc.Type.TETHER)
       return false;
+    if (type == CrOnc.Type.WI_FI) {
+      const security = networkProperties.WiFi &&
+          CrOnc.getActiveValue(networkProperties.WiFi.Security);
+      if (!security || security == CrOnc.Security.NONE)
+        return false;
+    }
     if ((type == CrOnc.Type.WI_FI || type == CrOnc.Type.WI_MAX) &&
         networkProperties.ConnectionState !=
             CrOnc.ConnectionState.NOT_CONNECTED) {
@@ -562,6 +574,9 @@ Polymer({
    * @private
    */
   showViewAccount_: function(networkProperties) {
+    if (this.isSecondaryUser_)
+      return false;
+
     // Show either the 'Activate' or the 'View Account' button (Cellular only).
     if (!this.isCellular_(networkProperties) ||
         this.showActivate_(networkProperties)) {
@@ -605,6 +620,8 @@ Polymer({
     if (!this.showConnect_(networkProperties, globalPolicy))
       return false;
     if (!networkPropertiesReceived || outOfRange)
+      return false;
+    if (this.isSecondaryUser_ && this.networkProperties.Connectable === false)
       return false;
     if ((networkProperties.Type == CrOnc.Type.CELLULAR) &&
         (CrOnc.isSimLocked(networkProperties) ||
@@ -1085,8 +1102,6 @@ Polymer({
       // network.
       return false;
     }
-    if (networkProperties.Type == CrOnc.Type.VPN)
-      return false;
     if (networkProperties.Type == CrOnc.Type.CELLULAR)
       return true;
     return this.isRememberedOrConnected_(networkProperties);

@@ -27,6 +27,7 @@
 #include "sdk/android/generated_peerconnection_jni/jni/PeerConnectionFactory_jni.h"
 #include "sdk/android/native_api/jni/java_types.h"
 #include "sdk/android/src/jni/jni_helpers.h"
+#include "sdk/android/src/jni/logging/logsink.h"
 #include "sdk/android/src/jni/pc/androidnetworkmonitor.h"
 #include "sdk/android/src/jni/pc/audio.h"
 #include "sdk/android/src/jni/pc/icecandidate.h"
@@ -80,6 +81,9 @@ static char* field_trials_init_string = nullptr;
 // Set in PeerConnectionFactory_initializeAndroidGlobals().
 static bool factory_static_initialized = false;
 static bool video_hw_acceleration_enabled = true;
+
+// Set in PeerConnectionFactory_InjectLoggable().
+static std::unique_ptr<JNILogSink> jni_log_sink;
 
 void PeerConnectionFactoryNetworkThreadReady() {
   RTC_LOG(LS_INFO) << "Network thread JavaCallback";
@@ -412,28 +416,6 @@ static void JNI_PeerConnectionFactory_StopAecDump(JNIEnv* jni,
   factory->StopAecDump();
 }
 
-static void JNI_PeerConnectionFactory_SetOptions(
-    JNIEnv* jni,
-    const JavaParamRef<jobject>&,
-    jlong native_factory,
-    const JavaParamRef<jobject>& options) {
-  rtc::scoped_refptr<PeerConnectionFactoryInterface> factory(
-      factoryFromJava(native_factory));
-  PeerConnectionFactoryInterface::Options options_to_set =
-      JavaToNativePeerConnectionFactoryOptions(jni, options);
-  factory->SetOptions(options_to_set);
-
-  if (options_to_set.disable_network_monitor) {
-    OwnedFactoryAndThreads* owner =
-        reinterpret_cast<OwnedFactoryAndThreads*>(native_factory);
-    if (owner->network_monitor_factory()) {
-      rtc::NetworkMonitorFactory::ReleaseFactory(
-          owner->network_monitor_factory());
-      owner->clear_network_monitor_factory();
-    }
-  }
-}
-
 static jlong JNI_PeerConnectionFactory_CreatePeerConnection(
     JNIEnv* jni,
     const JavaParamRef<jclass>&,
@@ -480,13 +462,12 @@ static jlong JNI_PeerConnectionFactory_CreateVideoSource(
     JNIEnv* jni,
     const JavaParamRef<jclass>&,
     jlong native_factory,
-    const JavaParamRef<jobject>& j_surface_texture_helper,
     jboolean is_screencast) {
   OwnedFactoryAndThreads* factory =
       reinterpret_cast<OwnedFactoryAndThreads*>(native_factory);
-  return jlongFromPointer(CreateVideoSource(
-      jni, factory->signaling_thread(), factory->worker_thread(),
-      j_surface_texture_helper, is_screencast));
+  return jlongFromPointer(CreateVideoSource(jni, factory->signaling_thread(),
+                                            factory->worker_thread(),
+                                            is_screencast));
 }
 
 static jlong JNI_PeerConnectionFactory_CreateVideoTrack(
@@ -524,6 +505,30 @@ static jlong JNI_PeerConnectionFactory_GetNativePeerConnectionFactory(
     const JavaParamRef<jclass>&,
     jlong native_factory) {
   return jlongFromPointer(factoryFromJava(native_factory));
+}
+
+static void JNI_PeerConnectionFactory_InjectLoggable(
+    JNIEnv* jni,
+    const JavaParamRef<jclass>&,
+    const JavaParamRef<jobject>& j_logging,
+    jint nativeSeverity) {
+  // If there is already a LogSink, remove it from LogMessage.
+  if (jni_log_sink) {
+    rtc::LogMessage::RemoveLogToStream(jni_log_sink.get());
+  }
+  jni_log_sink = rtc::MakeUnique<JNILogSink>(jni, j_logging);
+  rtc::LogMessage::AddLogToStream(
+      jni_log_sink.get(), static_cast<rtc::LoggingSeverity>(nativeSeverity));
+  rtc::LogMessage::LogToDebug(rtc::LS_NONE);
+}
+
+static void JNI_PeerConnectionFactory_DeleteLoggable(
+    JNIEnv* jni,
+    const JavaParamRef<jclass>&) {
+  if (jni_log_sink) {
+    rtc::LogMessage::RemoveLogToStream(jni_log_sink.get());
+    jni_log_sink.reset();
+  }
 }
 
 }  // namespace jni

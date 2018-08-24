@@ -32,7 +32,6 @@
 
 #include <algorithm>
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_compositor_support.h"
 #include "third_party/blink/renderer/core/animation/animation.h"
 #include "third_party/blink/renderer/core/animation/animation_clock.h"
 #include "third_party/blink/renderer/core/animation/animation_effect.h"
@@ -202,16 +201,6 @@ void DocumentTimeline::DocumentTimelineTiming::ServiceOnNextFrame() {
 void DocumentTimeline::DocumentTimelineTiming::Trace(blink::Visitor* visitor) {
   visitor->Trace(timeline_);
   DocumentTimeline::PlatformTiming::Trace(visitor);
-}
-
-size_t DocumentTimeline::MainThreadCompositableAnimationsCount() const {
-  size_t main_thread_compositable_animations_count = 0;
-  for (Animation* animation : animations_needing_update_) {
-    if (animation->IsNonCompositedCompositable() &&
-        animation->PlayStateInternal() != Animation::kFinished)
-      main_thread_compositable_animations_count++;
-  }
-  return main_thread_compositable_animations_count;
 }
 
 double DocumentTimeline::ZeroTime() {

@@ -13,6 +13,7 @@
 
 #include "base/base64.h"
 #include "base/command_line.h"
+#include "base/debug/profiler.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/macros.h"
@@ -295,16 +296,13 @@ bool BeginSmoothScroll(GpuBenchmarkingContext* context,
   }
 
   if (gesture_source_type == SyntheticGestureParams::MOUSE_INPUT) {
-    // Ensure the mouse is centered and visible, in case it will
+    // Ensure the mouse is visible and move to start position, in case it will
     // trigger any hover or mousemove effects.
     context->web_view()->SetIsActive(true);
-    blink::WebRect content_rect =
-        context->render_view_impl()->GetWidget()->ViewRect();
-    blink::WebMouseEvent mouseMove(
-        blink::WebInputEvent::kMouseMove, blink::WebInputEvent::kNoModifiers,
-        ui::EventTimeStampToSeconds(ui::EventTimeForNow()));
-    mouseMove.SetPositionInWidget((content_rect.x + content_rect.width / 2.0),
-                                  (content_rect.y + content_rect.height / 2.0));
+    blink::WebMouseEvent mouseMove(blink::WebInputEvent::kMouseMove,
+                                   blink::WebInputEvent::kNoModifiers,
+                                   ui::EventTimeForNow());
+    mouseMove.SetPositionInWidget(start_x, start_y);
     context->web_view()->HandleInputEvent(
         blink::WebCoalescedInputEvent(mouseMove));
     context->web_view()->SetCursorVisibilityState(true);
@@ -550,7 +548,9 @@ gin::ObjectTemplateBuilder GpuBenchmarking::GetObjectTemplateBuilder(
       .SetMethod("hasGpuChannel", &GpuBenchmarking::HasGpuChannel)
       .SetMethod("hasGpuProcess", &GpuBenchmarking::HasGpuProcess)
       .SetMethod("getGpuDriverBugWorkarounds",
-                 &GpuBenchmarking::GetGpuDriverBugWorkarounds);
+                 &GpuBenchmarking::GetGpuDriverBugWorkarounds)
+      .SetMethod("startProfiling", &GpuBenchmarking::StartProfiling)
+      .SetMethod("stopProfiling", &GpuBenchmarking::StopProfiling);
 }
 
 void GpuBenchmarking::SetNeedsDisplayOnAllLayers() {
@@ -800,12 +800,12 @@ bool GpuBenchmarking::PinchBy(gin::Arguments* args) {
   float anchor_y;
   v8::Local<v8::Function> callback;
   float relative_pointer_speed_in_pixels_s = 800;
+  int gesture_source_type = SyntheticGestureParams::DEFAULT_INPUT;
 
-  if (!GetArg(args, &scale_factor) ||
-      !GetArg(args, &anchor_x) ||
-      !GetArg(args, &anchor_y) ||
-      !GetOptionalArg(args, &callback) ||
-      !GetOptionalArg(args, &relative_pointer_speed_in_pixels_s)) {
+  if (!GetArg(args, &scale_factor) || !GetArg(args, &anchor_x) ||
+      !GetArg(args, &anchor_y) || !GetOptionalArg(args, &callback) ||
+      !GetOptionalArg(args, &relative_pointer_speed_in_pixels_s) ||
+      !GetOptionalArg(args, &gesture_source_type)) {
     return false;
   }
 
@@ -822,6 +822,27 @@ bool GpuBenchmarking::PinchBy(gin::Arguments* args) {
   gesture_params.anchor.SetPoint(anchor_x, anchor_y);
   gesture_params.relative_pointer_speed_in_pixels_s =
       relative_pointer_speed_in_pixels_s;
+
+  if (gesture_source_type < 0 ||
+      gesture_source_type > SyntheticGestureParams::GESTURE_SOURCE_TYPE_MAX) {
+    args->ThrowTypeError("Unknown gesture source type");
+    return false;
+  }
+
+  gesture_params.gesture_source_type =
+      static_cast<SyntheticGestureParams::GestureSourceType>(
+          gesture_source_type);
+
+  switch (gesture_params.gesture_source_type) {
+    case SyntheticGestureParams::DEFAULT_INPUT:
+    case SyntheticGestureParams::TOUCH_INPUT:
+    case SyntheticGestureParams::MOUSE_INPUT:
+      break;
+    case SyntheticGestureParams::PEN_INPUT:
+      args->ThrowTypeError(
+          "Gesture is not implemented for the given source type");
+      return false;
+  }
 
   scoped_refptr<CallbackAndContext> callback_and_context =
       new CallbackAndContext(args->isolate(), callback,
@@ -1073,6 +1094,23 @@ void GpuBenchmarking::GetGpuDriverBugWorkarounds(gin::Arguments* args) {
   v8::Local<v8::Value> result;
   if (gin::TryConvertToV8(args->isolate(), gpu_driver_bug_workarounds, &result))
     args->Return(result);
+}
+
+void GpuBenchmarking::StartProfiling(gin::Arguments* args) {
+  if (base::debug::BeingProfiled())
+    return;
+  std::string file_name;
+  if (!GetOptionalArg(args, &file_name))
+    return;
+  if (!file_name.length())
+    file_name = "profile.pb";
+  base::debug::StartProfiling(file_name);
+  base::debug::RestartProfilingAfterFork();
+}
+
+void GpuBenchmarking::StopProfiling() {
+  if (base::debug::BeingProfiled())
+    base::debug::StopProfiling();
 }
 
 }  // namespace content

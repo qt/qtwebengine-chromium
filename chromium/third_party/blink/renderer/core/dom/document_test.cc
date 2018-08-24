@@ -35,6 +35,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/web_application_cache_host.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
 #include "third_party/blink/renderer/core/dom/document_fragment.h"
 #include "third_party/blink/renderer/core/dom/node_with_index.h"
@@ -154,7 +155,7 @@ class TestSynchronousMutationObserver
     return updated_character_data_records_;
   }
 
-  void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   // Implement |SynchronousMutationObserver| member functions.
@@ -255,7 +256,7 @@ class TestDocumentShutdownObserver
     return context_destroyed_called_counter_;
   }
 
-  void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   // Implement |DocumentShutdownObserver| member functions.
@@ -926,7 +927,7 @@ TEST_F(DocumentTest, ViewportPropagationNoRecalc) {
 
 class InvalidatorObserver : public InterfaceInvalidator::Observer {
  public:
-  void OnInvalidate() { ++invalidate_called_counter_; }
+  void OnInvalidate() override { ++invalidate_called_counter_; }
 
   int CountInvalidateCalled() const { return invalidate_called_counter_; }
 
@@ -945,20 +946,56 @@ TEST_F(DocumentTest, InterfaceInvalidatorDestruction) {
   EXPECT_EQ(1, obs.CountInvalidateCalled());
 }
 
-typedef bool TestParamRootLayerScrolling;
-class ParameterizedDocumentTest
-    : public testing::WithParamInterface<TestParamRootLayerScrolling>,
-      private ScopedRootLayerScrollingForTest,
-      public DocumentTest {
- public:
-  ParameterizedDocumentTest() : ScopedRootLayerScrollingForTest(GetParam()) {}
-};
+TEST_F(DocumentTest, CanExecuteScriptsWithSandboxAndIsolatedWorld) {
+  constexpr SandboxFlags kSandboxMask = kSandboxScripts;
+  GetDocument().EnforceSandboxFlags(kSandboxMask);
 
-INSTANTIATE_TEST_CASE_P(All, ParameterizedDocumentTest, testing::Bool());
+  LocalFrame* frame = GetDocument().GetFrame();
+  frame->GetSettings()->SetScriptEnabled(true);
+  ScriptState* main_world_script_state = ToScriptStateForMainWorld(frame);
+  v8::Isolate* isolate = main_world_script_state->GetIsolate();
+
+  constexpr int kIsolatedWorldWithoutCSPId = 1;
+  scoped_refptr<DOMWrapperWorld> world_without_csp =
+      DOMWrapperWorld::EnsureIsolatedWorld(isolate, kIsolatedWorldWithoutCSPId);
+  ScriptState* isolated_world_without_csp_script_state =
+      ToScriptState(frame, *world_without_csp);
+  ASSERT_TRUE(world_without_csp->IsIsolatedWorld());
+  EXPECT_FALSE(world_without_csp->IsolatedWorldHasContentSecurityPolicy());
+
+  constexpr int kIsolatedWorldWithCSPId = 2;
+  scoped_refptr<DOMWrapperWorld> world_with_csp =
+      DOMWrapperWorld::EnsureIsolatedWorld(isolate, kIsolatedWorldWithCSPId);
+  DOMWrapperWorld::SetIsolatedWorldContentSecurityPolicy(
+      kIsolatedWorldWithCSPId, String::FromUTF8("script-src *"));
+  ScriptState* isolated_world_with_csp_script_state =
+      ToScriptState(frame, *world_with_csp);
+  ASSERT_TRUE(world_with_csp->IsIsolatedWorld());
+  EXPECT_TRUE(world_with_csp->IsolatedWorldHasContentSecurityPolicy());
+
+  {
+    // Since the page is sandboxed, main world script execution shouldn't be
+    // allowed.
+    ScriptState::Scope scope(main_world_script_state);
+    EXPECT_FALSE(GetDocument().CanExecuteScripts(kAboutToExecuteScript));
+  }
+  {
+    // Isolated worlds without a dedicated CSP should also not be allowed to
+    // run scripts.
+    ScriptState::Scope scope(isolated_world_without_csp_script_state);
+    EXPECT_FALSE(GetDocument().CanExecuteScripts(kAboutToExecuteScript));
+  }
+  {
+    // An isolated world with a CSP should bypass the main world CSP, and be
+    // able to run scripts.
+    ScriptState::Scope scope(isolated_world_with_csp_script_state);
+    EXPECT_TRUE(GetDocument().CanExecuteScripts(kAboutToExecuteScript));
+  }
+}
 
 // Android does not support non-overlay top-level scrollbars.
 #if !defined(OS_ANDROID)
-TEST_P(ParameterizedDocumentTest, ElementFromPointOnScrollbar) {
+TEST_F(DocumentTest, ElementFromPointOnScrollbar) {
   GetDocument().SetCompatibilityMode(Document::kQuirksMode);
   // This test requires that scrollbars take up space.
   ScopedOverlayScrollbarsForTest no_overlay_scrollbars(false);
@@ -986,7 +1023,7 @@ TEST_P(ParameterizedDocumentTest, ElementFromPointOnScrollbar) {
 }
 #endif  // defined(OS_ANDROID)
 
-TEST_P(ParameterizedDocumentTest, ElementFromPointWithPageZoom) {
+TEST_F(DocumentTest, ElementFromPointWithPageZoom) {
   GetDocument().SetCompatibilityMode(Document::kQuirksMode);
   // This test requires that scrollbars take up space.
   ScopedOverlayScrollbarsForTest no_overlay_scrollbars(false);
@@ -1012,5 +1049,124 @@ TEST_P(ParameterizedDocumentTest, ElementFromPointWithPageZoom) {
   // A hit test below the content div should not hit it.
   EXPECT_EQ(GetDocument().ElementFromPoint(1, 12), GetDocument().body());
 }
+
+/**
+ * Tests for viewport-fit propagation.
+ */
+
+class ViewportFitDocumentTest : public DocumentTest {
+ public:
+  void SetUp() override {
+    DocumentTest::SetUp();
+
+    RuntimeEnabledFeatures::SetDisplayCutoutViewportFitEnabled(true);
+    GetDocument().GetSettings()->SetViewportMetaEnabled(true);
+  }
+};
+
+// Test both meta and @viewport present but no viewport-fit.
+TEST_F(ViewportFitDocumentTest, MetaCSSViewportButNoFit) {
+  SetHtmlInnerHTML(
+      "<style>@viewport { min-width: 100px; }</style>"
+      "<meta name='viewport' content='initial-scale=1'>");
+
+  EXPECT_EQ(ViewportDescription::ViewportFit::kAuto,
+            GetDocument().GetViewportDescription().GetViewportFit());
+}
+
+// Test @viewport present but no viewport-fit.
+TEST_F(ViewportFitDocumentTest, CSSViewportButNoFit) {
+  SetHtmlInnerHTML("<style>@viewport { min-width: 100px; }</style>");
+
+  EXPECT_EQ(ViewportDescription::ViewportFit::kAuto,
+            GetDocument().GetViewportDescription().GetViewportFit());
+}
+
+// Test meta viewport present but no viewport-fit.
+TEST_F(ViewportFitDocumentTest, MetaViewportButNoFit) {
+  SetHtmlInnerHTML("<meta name='viewport' content='initial-scale=1'>");
+
+  EXPECT_EQ(ViewportDescription::ViewportFit::kAuto,
+            GetDocument().GetViewportDescription().GetViewportFit());
+}
+
+// This is a test case for testing a combination of viewport-fit meta value,
+// viewport CSS value and the expected outcome.
+using ViewportTestCase =
+    std::tuple<const char*, const char*, ViewportDescription::ViewportFit>;
+
+class ParameterizedViewportFitDocumentTest
+    : public ViewportFitDocumentTest,
+      public testing::WithParamInterface<ViewportTestCase> {
+ protected:
+  void LoadTestHTML() {
+    const char* kMetaValue = std::get<0>(GetParam());
+    const char* kCSSValue = std::get<1>(GetParam());
+    StringBuilder html;
+
+    if (kCSSValue) {
+      html.Append("<style>@viewport { viewport-fit: ");
+      html.Append(kCSSValue);
+      html.Append("; }</style>");
+    }
+
+    if (kMetaValue) {
+      html.Append("<meta name='viewport' content='viewport-fit=");
+      html.Append(kMetaValue);
+      html.Append("'>");
+    }
+
+    GetDocument().documentElement()->SetInnerHTMLFromString(html.ToString());
+    GetDocument().View()->UpdateAllLifecyclePhases();
+  }
+};
+
+TEST_P(ParameterizedViewportFitDocumentTest, EffectiveViewportFit) {
+  LoadTestHTML();
+  EXPECT_EQ(std::get<2>(GetParam()),
+            GetDocument().GetViewportDescription().GetViewportFit());
+}
+
+INSTANTIATE_TEST_CASE_P(
+    All,
+    ParameterizedViewportFitDocumentTest,
+    testing::Values(
+        // Test the default case.
+        ViewportTestCase(nullptr,
+                         nullptr,
+                         ViewportDescription::ViewportFit::kAuto),
+        // Test the different values set through CSS.
+        ViewportTestCase(nullptr,
+                         "auto",
+                         ViewportDescription::ViewportFit::kAuto),
+        ViewportTestCase(nullptr,
+                         "contain",
+                         ViewportDescription::ViewportFit::kContain),
+        ViewportTestCase(nullptr,
+                         "cover",
+                         ViewportDescription::ViewportFit::kCover),
+        ViewportTestCase(nullptr,
+                         "invalid",
+                         ViewportDescription::ViewportFit::kAuto),
+        // Test the different values set through the meta tag.
+        ViewportTestCase("auto",
+                         nullptr,
+                         ViewportDescription::ViewportFit::kAuto),
+        ViewportTestCase("contain",
+                         nullptr,
+                         ViewportDescription::ViewportFit::kContain),
+        ViewportTestCase("cover",
+                         nullptr,
+                         ViewportDescription::ViewportFit::kCover),
+        ViewportTestCase("invalid",
+                         nullptr,
+                         ViewportDescription::ViewportFit::kAuto),
+        // Test that the CSS should override the meta tag.
+        ViewportTestCase("cover",
+                         "auto",
+                         ViewportDescription::ViewportFit::kAuto),
+        ViewportTestCase("cover",
+                         "contain",
+                         ViewportDescription::ViewportFit::kContain)));
 
 }  // namespace blink

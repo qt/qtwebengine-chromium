@@ -14,6 +14,7 @@ general use and is not localized.
     <link rel="stylesheet" href="chrome://resources/css/action_link.css">
     <link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
     <script src="chrome://resources/js/cr.js"></script>
+    <script src="chrome://resources/js/icon.js"></script>
     <script src="chrome://resources/js/mojo_bindings.js"></script>
     <script src="chrome://resources/js/util.js"></script>
     <script src="chrome/browser/ui/webui/discards/discards.mojom.js"></script>
@@ -32,10 +33,12 @@ general use and is not localized.
       <thead>
         <tr id="tab-discards-info-table-header">
           <th data-sort-key="utilityRank" class="sort-column">Utility Rank</th>
+          <th data-sort-key="reactivationScore">Reactivation Score</th>
           <th data-sort-key="title">Tab Title</th>
           <th data-sort-key="tabUrl">Tab URL</th>
           <th data-sort-key="visibility">Visibility</th>
           <th data-sort-key="isMedia">Media</th>
+          <th data-sort-key="isFrozen">Frozen</th>
           <th data-sort-key="isDiscarded">Discarded</th>
           <th data-sort-key="discardCount">Discard Count</th>
           <th data-sort-key="isAutoDiscardable">Auto Discardable</th>
@@ -48,17 +51,17 @@ general use and is not localized.
     <template id="tab-discard-info-row">
       <tr>
         <td class="utility-rank-cell"></td>
+        <td class="reactivation-score-cell"></td>
         <td class="title-cell">
           <div class="title-cell-container">
-            <div class="favicon-div">
-              <img class="favicon" alt="FavIcon">
-            </div>
+            <div class="favicon-div"></div>
             <div class="title-div"></div>
           </div>
         </td>
         <td class="tab-url-cell"></td>
         <td class="visibility-cell"></td>
         <td class="is-media-cell boolean-cell"></td>
+        <td class="is-frozen-cell boolean-cell"></td>
         <td class="is-discarded-cell boolean-cell"></td>
         <td class="discard-count-cell"></td>
         <td class="is-auto-discardable-cell boolean-cell">

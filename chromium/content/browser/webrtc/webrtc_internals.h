@@ -151,8 +151,7 @@ class CONTENT_EXPORT WebRTCInternals : public RenderProcessHostObserver,
 
   // RenderProcessHostObserver implementation.
   void RenderProcessExited(RenderProcessHost* host,
-                           base::TerminationStatus status,
-                           int exit_code) override;
+                           const ChildProcessTerminationInfo& info) override;
 
   // ui::SelectFileDialog::Listener implementation.
   void FileSelected(const base::FilePath& path,
@@ -163,11 +162,9 @@ class CONTENT_EXPORT WebRTCInternals : public RenderProcessHostObserver,
   // Called when a renderer exits (including crashes).
   void OnRendererExit(int render_process_id);
 
-#if BUILDFLAG(ENABLE_WEBRTC)
   // Enables diagnostic audio recordings on all render process hosts using
   // |audio_debug_recordings_file_path_|.
   void EnableAudioDebugRecordingsOnAllRenderProcessHosts();
-#endif
 
   // Updates the number of open PeerConnections. Called when a PeerConnection
   // is stopped or removed.

@@ -5,9 +5,10 @@
 #ifndef NGLayoutInputNode_h
 #define NGLayoutInputNode_h
 
+#include "base/optional.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/platform/layout_unit.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
+#include "third_party/blink/renderer/platform/text/writing_mode.h"
 
 namespace blink {
 
@@ -59,6 +60,7 @@ class CORE_EXPORT NGLayoutInputNode {
   bool ShouldBeConsideredAsReplaced() const;
   bool IsListItem() const;
   bool IsListMarker() const;
+  bool IsAnonymous() const;
 
   // If the node is a quirky container for margin collapsing, see:
   // https://html.spec.whatwg.org/#margin-collapsing-quirks
@@ -70,7 +72,8 @@ class CORE_EXPORT NGLayoutInputNode {
   // Performs layout on this input node, will return the layout result.
   scoped_refptr<NGLayoutResult> Layout(const NGConstraintSpace&, NGBreakToken*);
 
-  MinMaxSize ComputeMinMaxSize(const MinMaxSizeInput&,
+  MinMaxSize ComputeMinMaxSize(WritingMode,
+                               const MinMaxSizeInput&,
                                const NGConstraintSpace* = nullptr);
 
   // Returns intrinsic sizing information for replaced elements.
@@ -79,8 +82,8 @@ class CORE_EXPORT NGLayoutInputNode {
   // computations: LayoutReplaced::IntrinsicSizingInfo,
   // and LayoutReplaced::IntrinsicSize.
   void IntrinsicSize(NGLogicalSize* default_intrinsic_size,
-                     Optional<LayoutUnit>* computed_inline_size,
-                     Optional<LayoutUnit>* computed_block_size,
+                     base::Optional<LayoutUnit>* computed_inline_size,
+                     base::Optional<LayoutUnit>* computed_block_size,
                      NGLogicalSize* aspect_ratio) const;
 
   // Returns the next sibling.

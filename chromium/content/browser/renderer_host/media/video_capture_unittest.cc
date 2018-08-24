@@ -153,10 +153,11 @@ class VideoCaptureTest : public testing::Test,
     {
       base::RunLoop run_loop;
       media_stream_manager_->OpenDevice(
-          render_process_id, render_frame_id,
-          browser_context_.GetMediaDeviceIDSalt(), page_request_id,
+          render_process_id, render_frame_id, page_request_id,
           video_devices[0].device_id, MEDIA_DEVICE_VIDEO_CAPTURE,
-          security_origin,
+          MediaDeviceSaltAndOrigin{browser_context_.GetMediaDeviceIDSalt(),
+                                   browser_context_.GetMediaDeviceIDSalt(),
+                                   security_origin},
           base::BindOnce(&VideoCaptureTest::OnDeviceOpened,
                          base::Unretained(this), run_loop.QuitClosure()),
           MediaStreamManager::DeviceStoppedCallback());
@@ -176,11 +177,11 @@ class VideoCaptureTest : public testing::Test,
  protected:
   // media::mojom::VideoCaptureObserver implementation.
   MOCK_METHOD1(OnStateChanged, void(media::mojom::VideoCaptureState));
-  void OnBufferCreated(int32_t buffer_id,
-                       mojo::ScopedSharedBufferHandle handle) override {
-    DoOnBufferCreated(buffer_id);
+  void OnNewBuffer(int32_t buffer_id,
+                   media::mojom::VideoBufferHandlePtr buffer_handle) override {
+    DoOnNewBuffer(buffer_id);
   }
-  MOCK_METHOD1(DoOnBufferCreated, void(int32_t));
+  MOCK_METHOD1(DoOnNewBuffer, void(int32_t));
   void OnBufferReady(int32_t buffer_id,
                      media::mojom::VideoFrameInfoPtr info) override {
     DoOnBufferReady(buffer_id);
@@ -196,7 +197,7 @@ class VideoCaptureTest : public testing::Test,
 
     EXPECT_CALL(*this,
                 OnStateChanged(media::mojom::VideoCaptureState::STARTED));
-    EXPECT_CALL(*this, DoOnBufferCreated(_))
+    EXPECT_CALL(*this, DoOnNewBuffer(_))
         .Times(AnyNumber())
         .WillRepeatedly(Return());
     EXPECT_CALL(*this, DoOnBufferReady(_))
@@ -298,7 +299,7 @@ class VideoCaptureTest : public testing::Test,
   }
 
   // |media_stream_manager_| needs to outlive |thread_bundle_| because it is a
-  // MessageLoop::DestructionObserver.
+  // MessageLoopCurrent::DestructionObserver.
   std::unique_ptr<MediaStreamManager> media_stream_manager_;
   const content::TestBrowserThreadBundle thread_bundle_;
   std::unique_ptr<media::AudioManager> audio_manager_;

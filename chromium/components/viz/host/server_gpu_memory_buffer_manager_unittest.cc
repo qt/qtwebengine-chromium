@@ -106,7 +106,8 @@ class TestGpuService : public mojom::GpuService {
   void RequestCompleteGpuInfo(
       RequestCompleteGpuInfoCallback callback) override {}
 
-  void GetGpuSupportedRuntimeVersion() override {}
+  void GetGpuSupportedRuntimeVersion(
+      GetGpuSupportedRuntimeVersionCallback callback) override {}
 
   void RequestHDRStatus(RequestHDRStatusCallback callback) override {}
 
@@ -122,7 +123,11 @@ class TestGpuService : public mojom::GpuService {
 
   void DestroyAllChannels() override {}
 
+  void OnBackgroundCleanup() override {}
+
   void OnBackgrounded() override {}
+
+  void OnForegrounded() override {}
 
   void Crash() override {}
 

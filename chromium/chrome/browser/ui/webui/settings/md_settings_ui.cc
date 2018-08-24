@@ -13,6 +13,7 @@
 
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
+#include "build/build_config.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/unified_consent_helper.h"
 #include "chrome/browser/ui/webui/metrics_handler.h"
@@ -55,7 +56,7 @@
 #include "chrome/browser/safe_browsing/chrome_cleaner/srt_field_trial_win.h"
 #include "chrome/browser/ui/webui/settings/chrome_cleanup_handler.h"
 #if defined(GOOGLE_CHROME_BUILD)
-#include "chrome/browser/conflicts/problematic_programs_updater_win.h"
+#include "chrome/browser/conflicts/incompatible_applications_updater_win.h"
 #include "chrome/browser/conflicts/token_util_win.h"
 #include "chrome/browser/ui/webui/settings/incompatible_applications_handler_win.h"
 #include "chrome/grit/chrome_unscaled_resources.h"
@@ -69,12 +70,17 @@
 
 #if defined(OS_CHROMEOS)
 #include "ash/public/cpp/stylus_utils.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/arc/arc_util.h"
+#include "chrome/browser/chromeos/crostini/crostini_util.h"
 #include "chrome/browser/chromeos/login/quick_unlock/quick_unlock_utils.h"
+#include "chrome/browser/signin/account_tracker_service_factory.h"
 #include "chrome/browser/ui/ash/ash_util.h"
 #include "chrome/browser/ui/webui/settings/chromeos/accessibility_handler.h"
+#include "chrome/browser/ui/webui/settings/chromeos/account_manager_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/android_apps_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/change_picture_handler.h"
+#include "chrome/browser/ui/webui/settings/chromeos/crostini_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/cups_printers_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/date_time_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/device_keyboard_handler.h"
@@ -88,6 +94,8 @@
 #include "chrome/browser/ui/webui/settings/chromeos/internet_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/smb_handler.h"
 #include "chrome/common/chrome_switches.h"
+#include "chromeos/account_manager/account_manager.h"
+#include "chromeos/account_manager/account_manager_factory.h"
 #include "chromeos/chromeos_switches.h"
 #include "components/arc/arc_util.h"
 #else  // !defined(OS_CHROMEOS)
@@ -173,8 +181,22 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
       std::make_unique<chromeos::settings::AccessibilityHandler>(web_ui));
   AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::AndroidAppsHandler>(profile));
+
+  chromeos::AccountManagerFactory* factory =
+      g_browser_process->platform_part()->GetAccountManagerFactory();
+  chromeos::AccountManager* account_manager =
+      factory->GetAccountManager(profile->GetPath().value());
+  DCHECK(account_manager);
+  AddSettingsPageUIHandler(
+      std::make_unique<chromeos::settings::AccountManagerUIHandler>(
+          account_manager,
+          AccountTrackerServiceFactory::GetInstance()->GetForProfile(profile)));
   AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::ChangePictureHandler>());
+  if (IsCrostiniUIAllowedForProfile(profile)) {
+    AddSettingsPageUIHandler(
+        std::make_unique<chromeos::settings::CrostiniHandler>());
+  }
   AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::CupsPrintersHandler>(web_ui));
   AddSettingsPageUIHandler(
@@ -208,17 +230,11 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
 
   content::WebUIDataSource* html_source =
       content::WebUIDataSource::Create(chrome::kChromeUISettingsHost);
+  html_source->OverrideContentSecurityPolicyScriptSrc(
+      "script-src chrome://resources 'self';");
 
 #if defined(OS_WIN)
-  bool chromeCleanupEnabled = false;
-  bool userInitiatedCleanupsEnabled = false;
-
   AddSettingsPageUIHandler(std::make_unique<ChromeCleanupHandler>(profile));
-
-  safe_browsing::ChromeCleanerController* cleaner_controller =
-      safe_browsing::ChromeCleanerController::GetInstance();
-  chromeCleanupEnabled = cleaner_controller->ShouldShowCleanupInSettingsUI();
-  userInitiatedCleanupsEnabled = safe_browsing::UserInitiatedCleanupsEnabled();
 
 #if defined(GOOGLE_CHROME_BUILD)
   html_source->AddResourcePath("partner-logo.svg", IDR_CHROME_CLEANUP_PARTNER);
@@ -226,18 +242,12 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
   exclude_from_gzip.push_back("partner-logo.svg");
 #endif
 #endif  // defined(GOOGLE_CHROME_BUILD)
-
-  html_source->AddBoolean("chromeCleanupEnabled", chromeCleanupEnabled);
-  // Don't need to save this variable in UpdateCleanupDataSource() because it
-  // should never change while Chrome is open.
-  html_source->AddBoolean("userInitiatedCleanupsEnabled",
-                          userInitiatedCleanupsEnabled);
 #endif  // defined(OS_WIN)
 
 #if defined(OS_WIN) && defined(GOOGLE_CHROME_BUILD)
   bool has_incompatible_applications =
-      ProblematicProgramsUpdater::IsIncompatibleApplicationsWarningEnabled() &&
-      ProblematicProgramsUpdater::HasCachedPrograms();
+      IncompatibleApplicationsUpdater::IsWarningEnabled() &&
+      IncompatibleApplicationsUpdater::HasCachedApplications();
   html_source->AddBoolean("showIncompatibleApplications",
                           has_incompatible_applications);
   html_source->AddBoolean("hasAdminRights", HasAdminRights());
@@ -284,6 +294,9 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
   html_source->AddBoolean("hasInternalStylus",
                           ash::stylus_utils::HasInternalStylus());
 
+  html_source->AddBoolean("showCrostini",
+                          IsCrostiniUIAllowedForProfile(profile));
+
   // We have 2 variants of Android apps settings. Default case, when the Play
   // Store app exists we show expandable section that allows as to
   // enable/disable the Play Store and link to Android settings which is
@@ -310,10 +323,6 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
 
   html_source->AddBoolean("unifiedConsentEnabled",
                           IsUnifiedConsentEnabled(profile));
-
-  html_source->AddBoolean("showExportPasswords",
-                          base::FeatureList::IsEnabled(
-                              password_manager::features::kPasswordExport));
 
   html_source->AddBoolean("showImportPasswords",
                           base::FeatureList::IsEnabled(
@@ -348,14 +357,6 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
 
   content::WebUIDataSource::Add(web_ui->GetWebContents()->GetBrowserContext(),
                                 html_source);
-
-#if defined(OS_WIN)
-  // This needs to be below content::WebUIDataSource::Add to make sure there
-  // is a WebUIDataSource to update if the observer is immediately notified.
-  cleanup_observer_.reset(
-      new safe_browsing::ChromeCleanerStateChangeObserver(base::Bind(
-          &MdSettingsUI::UpdateCleanupDataSource, base::Unretained(this))));
-#endif  // defined(OS_WIN)
 }
 
 MdSettingsUI::~MdSettingsUI() {
@@ -385,18 +386,5 @@ void MdSettingsUI::DocumentOnLoadCompletedInMainFrame() {
   UMA_HISTOGRAM_TIMES("Settings.LoadCompletedTime.MD",
                       base::Time::Now() - load_start_time_);
 }
-
-#if defined(OS_WIN)
-void MdSettingsUI::UpdateCleanupDataSource(bool cleanupEnabled) {
-  DCHECK(web_ui());
-  Profile* profile = Profile::FromWebUI(web_ui());
-
-  std::unique_ptr<base::DictionaryValue> update(new base::DictionaryValue);
-  update->SetBoolean("chromeCleanupEnabled", cleanupEnabled);
-
-  content::WebUIDataSource::Update(profile, chrome::kChromeUISettingsHost,
-                                   std::move(update));
-}
-#endif  // defined(OS_WIN)
 
 }  // namespace settings

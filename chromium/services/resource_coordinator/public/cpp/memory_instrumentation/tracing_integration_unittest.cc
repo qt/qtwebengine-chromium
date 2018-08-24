@@ -9,6 +9,7 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/test/test_io_thread.h"
 #include "base/test/trace_event_analyzer.h"
 #include "base/threading/sequenced_task_runner_handle.h"
@@ -125,6 +126,7 @@ class MockCoordinator : public Coordinator, public mojom::Coordinator {
 
   void RequestGlobalMemoryDumpForPid(
       base::ProcessId pid,
+      const std::vector<std::string>& allocator_dump_names,
       RequestGlobalMemoryDumpForPidCallback) override {}
 
   void RequestGlobalMemoryDumpAndAppendToTrace(

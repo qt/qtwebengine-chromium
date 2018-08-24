@@ -21,6 +21,10 @@ static_library("dom_keycode_converter") {
     "keycodes/dom/dom_code.h",
     "keycodes/dom/dom_key.h",
     "keycodes/dom/dom_key_data.inc",
+    "keycodes/dom/dom_keyboard_layout.cc",
+    "keycodes/dom/dom_keyboard_layout.h",
+    "keycodes/dom/dom_keyboard_layout_manager.cc",
+    "keycodes/dom/dom_keyboard_layout_manager.h",
     "keycodes/dom/keycode_converter.cc",
     "keycodes/dom/keycode_converter.h",
     "keycodes/dom/keycode_converter_data.inc",
@@ -130,6 +134,7 @@ component("events") {
     "event_modifiers.h",
     "event_processor.cc",
     "event_processor.h",
+    "event_rewriter.cc",
     "event_rewriter.h",
     "event_sink.h",
     "event_source.cc",
@@ -149,6 +154,7 @@ component("events") {
     "keyboard_hook_base.h",
     "keycodes/platform_key_map_win.cc",
     "keycodes/platform_key_map_win.h",
+    "mac/keyboard_hook_mac.mm",
     "null_event_targeter.cc",
     "null_event_targeter.h",
     "scoped_target_handler.cc",
@@ -156,10 +162,11 @@ component("events") {
     "system_input_injector.cc",
     "system_input_injector.h",
     "win/events_win.cc",
+    "win/events_win_utils.cc",
+    "win/events_win_utils.h",
     "win/keyboard_hook_win.cc",
     "win/system_event_state_lookup.cc",
     "win/system_event_state_lookup.h",
-    "x/keyboard_hook_posix.cc",
   ]
 
   defines = [ "EVENTS_IMPLEMENTATION" ]
@@ -179,7 +186,10 @@ component("events") {
   ]
 
   if (use_x11) {
-    sources += [ "x/events_x.cc" ]
+    sources += [
+      "x/events_x.cc",
+      "x/keyboard_hook_x11.cc",
+    ]
     configs += [ "//build/config/linux:x11" ]
     deps += [
       "//ui/events/devices",
@@ -197,10 +207,15 @@ component("events") {
     sources += [ "events_default.cc" ]
   }
 
+  if (is_win && use_ozone) {
+    sources -= [ "win/events_win.cc" ]
+  }
+
   if (use_ozone) {
     sources += [
       "ozone/events_ozone.cc",
       "ozone/events_ozone.h",
+      "ozone/keyboard_hook_ozone.cc",
     ]
     deps += [ "//ui/events/ozone:events_ozone_layout" ]
   }
@@ -225,11 +240,16 @@ component("events") {
     sources += [
       "android/drag_event_android.cc",
       "android/drag_event_android.h",
+      "android/event_handler_android.cc",
+      "android/event_handler_android.h",
       "android/gesture_event_android.cc",
       "android/gesture_event_android.h",
       "android/gesture_event_type.h",
+      "android/key_event_android.cc",
+      "android/key_event_android.h",
       "android/key_event_utils.cc",
       "android/key_event_utils.h",
+      "android/keyboard_hook_android.cc",
       "android/motion_event_android.cc",
       "android/motion_event_android.h",
     ]
@@ -299,6 +319,8 @@ component("gesture_detection") {
 
   if (is_android) {
     sources += [ "gesture_detection/gesture_configuration_android.cc" ]
+  } else if (is_chromecast) {
+    sources += [ "gesture_detection/gesture_configuration_cast.cc" ]
   } else if (use_aura) {
     sources += [ "gesture_detection/gesture_configuration_aura.cc" ]
   } else {
@@ -384,8 +406,6 @@ if (!is_ios) {
       "blink/fling_booster_unittest.cc",
       "blink/input_handler_proxy_unittest.cc",
       "blink/input_scroll_elasticity_controller_unittest.cc",
-      "blink/snap_fling_controller_unittest.cc",
-      "blink/snap_fling_curve_unittest.cc",
       "blink/web_input_event_traits_unittest.cc",
       "blink/web_input_event_unittest.cc",
       "cocoa/events_mac_unittest.mm",

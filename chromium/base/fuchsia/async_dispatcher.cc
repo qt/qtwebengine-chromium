@@ -4,6 +4,7 @@
 
 #include "base/fuchsia/async_dispatcher.h"
 
+#include <lib/async/default.h>
 #include <lib/async/task.h>
 #include <lib/async/wait.h>
 #include <zircon/syscalls.h>
@@ -63,7 +64,7 @@ class AsyncDispatcher::TaskState : public LinkNode<TaskState> {
   DISALLOW_COPY_AND_ASSIGN(TaskState);
 };
 
-AsyncDispatcher::AsyncDispatcher() {
+AsyncDispatcher::AsyncDispatcher() : ops_storage_({}) {
   zx_status_t status = zx_port_create(0u, port_.receive());
   ZX_DCHECK(status == ZX_OK, status);
 
@@ -81,11 +82,14 @@ AsyncDispatcher::AsyncDispatcher() {
                                 ZX_WAIT_ASYNC_REPEATING);
   ZX_DCHECK(status == ZX_OK, status);
 
-  static const async_ops_t async_ops_t_impl = {
-      NowOp,        BeginWaitOp,   CancelWaitOp,       PostTaskOp,
-      CancelTaskOp, QueuePacketOp, SetGuestBellTrapOp,
-  };
-  ops = &async_ops_t_impl;
+  ops_storage_.v1.now = NowOp;
+  ops_storage_.v1.begin_wait = BeginWaitOp;
+  ops_storage_.v1.cancel_wait = CancelWaitOp;
+  ops_storage_.v1.post_task = PostTaskOp;
+  ops_storage_.v1.cancel_task = CancelTaskOp;
+  ops_storage_.v1.queue_packet = QueuePacketOp;
+  ops_storage_.v1.set_guest_bell_trap = SetGuestBellTrapOp;
+  ops = &ops_storage_;
 
   DCHECK(!async_get_default());
   async_set_default(this);
@@ -119,7 +123,7 @@ zx_status_t AsyncDispatcher::DispatchOrWaitUntil(zx_time_t deadline) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   zx_port_packet_t packet = {};
-  zx_status_t status = zx_port_wait(port_.get(), deadline, &packet, 0);
+  zx_status_t status = zx_port_wait(port_.get(), deadline, &packet, 1);
   if (status != ZX_OK)
     return status;
 

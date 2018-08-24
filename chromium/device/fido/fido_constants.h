@@ -212,6 +212,19 @@ enum class UserVerificationRequirement {
   kDiscouraged,
 };
 
+// Enumerates the two types of application parameter values used: the
+// "primary" value is the hash of the relying party ID[1] and is always
+// provided. The "alternative" value is the hash of a U2F AppID, specified in
+// an extension[2], for compatibility with keys that were registered with the
+// old API.
+//
+// [1] https://w3c.github.io/webauthn/#rp-id
+// [2] https://w3c.github.io/webauthn/#sctn-appid-extension
+enum class ApplicationParameterType {
+  kPrimary,
+  kAlternative,
+};
+
 // Parameters for fake U2F registration used to check for user presence.
 COMPONENT_EXPORT(DEVICE_FIDO)
 extern const std::array<uint8_t, 32> kBogusAppParam;
@@ -261,15 +274,6 @@ COMPONENT_EXPORT(DEVICE_FIDO) extern const uint8_t kP1IndividualAttestation;
 COMPONENT_EXPORT(DEVICE_FIDO) extern const size_t kMaxKeyHandleLength;
 COMPONENT_EXPORT(DEVICE_FIDO) extern const size_t kU2fParameterLength;
 
-// Suffix added to APDU encoded command for legacy version request.
-COMPONENT_EXPORT(DEVICE_FIDO)
-extern const std::array<uint8_t, 2> kLegacyVersionSuffix;
-
-// Expected response data for version request from U2F device.
-// https://fidoalliance.org/specs/fido-u2f-v1.2-ps-20170411/fido-u2f-raw-message-formats-v1.2-ps-20170411.html#getversion-request-and-response---u2f_version
-COMPONENT_EXPORT(DEVICE_FIDO)
-extern const std::array<uint8_t, 6> kU2fVersionResponse;
-
 // Maximum wait time before client error outs on device.
 COMPONENT_EXPORT(DEVICE_FIDO) extern const base::TimeDelta kDeviceTimeout;
 
@@ -290,14 +294,7 @@ COMPONENT_EXPORT(DEVICE_FIDO) extern const char kNoneAttestationValue[];
 COMPONENT_EXPORT(DEVICE_FIDO)
 extern const char kPublicKey[];
 
-constexpr const char* to_string(CredentialType type) {
-  switch (type) {
-    case CredentialType::kPublicKey:
-      return kPublicKey;
-  }
-  NOTREACHED();
-  return kPublicKey;
-}
+const char* CredentialTypeToString(CredentialType type);
 
 }  // namespace device
 

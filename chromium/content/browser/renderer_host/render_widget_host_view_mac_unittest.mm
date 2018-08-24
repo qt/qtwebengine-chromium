@@ -21,6 +21,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "components/viz/common/surfaces/child_local_surface_id_allocator.h"
 #include "content/browser/frame_host/render_widget_host_view_guest.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
@@ -359,7 +360,6 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
     ui::SetEventTickClockForTesting(&mock_clock_);
     SetFeatureList();
 
-    mojo_feature_list_.InitAndEnableFeature(features::kMojoInputMessages);
     vsync_feature_list_.InitAndEnableFeature(
         features::kVsyncAlignedInputEvents);
   }
@@ -451,7 +451,6 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
   // This class isn't derived from PlatformTest.
   base::mac::ScopedNSAutoreleasePool pool_;
 
-  base::test::ScopedFeatureList mojo_feature_list_;
   base::test::ScopedFeatureList vsync_feature_list_;
   base::test::ScopedFeatureList feature_list_;
 
@@ -1078,22 +1077,22 @@ TEST_F(RenderWidgetHostViewMacTest, Background) {
   const IPC::Message* set_background = nullptr;
   std::tuple<bool> sent_background;
 
-  // If no color has been specified then default color of white should be
-  // returned.
-  EXPECT_EQ(static_cast<unsigned>(SK_ColorWHITE),
-            rwhv_mac_->background_color());
+  // If no color has been specified then background_color is not set yet.
+  ASSERT_FALSE(rwhv_mac_->GetBackgroundColor());
 
   // Set the color to red. The background is initially assumed to be opaque, so
   // no opacity message change should be sent.
   rwhv_mac_->SetBackgroundColor(SK_ColorRED);
-  EXPECT_EQ(static_cast<unsigned>(SK_ColorRED), rwhv_mac_->background_color());
+  EXPECT_EQ(static_cast<unsigned>(SK_ColorRED),
+            *rwhv_mac_->GetBackgroundColor());
   set_background = process_host_->sink().GetUniqueMessageMatching(
       ViewMsg_SetBackgroundOpaque::ID);
   ASSERT_FALSE(set_background);
 
   // Set the color to blue. This should not send an opacity message.
   rwhv_mac_->SetBackgroundColor(SK_ColorBLUE);
-  EXPECT_EQ(static_cast<unsigned>(SK_ColorBLUE), rwhv_mac_->background_color());
+  EXPECT_EQ(static_cast<unsigned>(SK_ColorBLUE),
+            *rwhv_mac_->GetBackgroundColor());
   set_background = process_host_->sink().GetUniqueMessageMatching(
       ViewMsg_SetBackgroundOpaque::ID);
   ASSERT_FALSE(set_background);
@@ -1104,7 +1103,7 @@ TEST_F(RenderWidgetHostViewMacTest, Background) {
   process_host_->sink().ClearMessages();
   rwhv_mac_->SetBackgroundColor(SK_ColorTRANSPARENT);
   EXPECT_EQ(static_cast<unsigned>(SK_ColorWHITE),
-            rwhv_mac_->background_color());
+            *rwhv_mac_->GetBackgroundColor());
   set_background = process_host_->sink().GetUniqueMessageMatching(
       ViewMsg_SetBackgroundOpaque::ID);
   ASSERT_TRUE(set_background);
@@ -1114,7 +1113,8 @@ TEST_F(RenderWidgetHostViewMacTest, Background) {
   // Set the color to red. This should send an opacity message.
   process_host_->sink().ClearMessages();
   rwhv_mac_->SetBackgroundColor(SK_ColorBLUE);
-  EXPECT_EQ(static_cast<unsigned>(SK_ColorBLUE), rwhv_mac_->background_color());
+  EXPECT_EQ(static_cast<unsigned>(SK_ColorBLUE),
+            *rwhv_mac_->GetBackgroundColor());
   set_background = process_host_->sink().GetUniqueMessageMatching(
       ViewMsg_SetBackgroundOpaque::ID);
   ASSERT_TRUE(set_background);
@@ -1935,13 +1935,72 @@ TEST_F(InputMethodMacTest, MonitorCompositionRangeForActiveWidget) {
 }
 
 TEST_F(RenderWidgetHostViewMacTest, ClearCompositorFrame) {
-  BrowserCompositorMac* browser_compositor =
-      rwhv_mac_->BrowserCompositorForTesting();
-  EXPECT_NE(browser_compositor->CompositorForTesting(), nullptr);
-  EXPECT_TRUE(browser_compositor->CompositorForTesting()->IsLocked());
+  BrowserCompositorMac* browser_compositor = rwhv_mac_->BrowserCompositor();
+  ui::Compositor* ui_compositor = browser_compositor->GetCompositorForTesting();
+  EXPECT_NE(ui_compositor, nullptr);
+  EXPECT_TRUE(ui_compositor->IsLocked());
   rwhv_mac_->ClearCompositorFrame();
-  EXPECT_NE(browser_compositor->CompositorForTesting(), nullptr);
-  EXPECT_FALSE(browser_compositor->CompositorForTesting()->IsLocked());
+  EXPECT_EQ(browser_compositor->GetCompositorForTesting(), ui_compositor);
+  EXPECT_FALSE(ui_compositor->IsLocked());
+}
+
+// This test verifies that in AutoResize mode a child-allocated
+// viz::LocalSurfaceId will be properly routed and stored in the parent.
+TEST_F(RenderWidgetHostViewMacTest, ChildAllocationAcceptedInParent) {
+  viz::LocalSurfaceId local_surface_id1(rwhv_mac_->GetLocalSurfaceId());
+  EXPECT_TRUE(local_surface_id1.is_valid());
+
+  host_->SetAutoResize(true, gfx::Size(50, 50), gfx::Size(100, 100));
+
+  viz::ChildLocalSurfaceIdAllocator child_allocator;
+  child_allocator.UpdateFromParent(local_surface_id1);
+  viz::LocalSurfaceId local_surface_id2 = child_allocator.GenerateId();
+  cc::RenderFrameMetadata metadata;
+  metadata.viewport_size_in_pixels = gfx::Size(75, 75);
+  metadata.local_surface_id = local_surface_id2;
+  host_->DidUpdateVisualProperties(metadata);
+
+  viz::LocalSurfaceId local_surface_id3(rwhv_mac_->GetLocalSurfaceId());
+  EXPECT_NE(local_surface_id1, local_surface_id3);
+  EXPECT_EQ(local_surface_id2, local_surface_id3);
+}
+
+// This test verifies that when the child and parent both allocate their own
+// viz::LocalSurfaceId the resulting conflict is resolved.
+TEST_F(RenderWidgetHostViewMacTest, ConflictingAllocationsResolve) {
+  viz::LocalSurfaceId local_surface_id1(rwhv_mac_->GetLocalSurfaceId());
+  EXPECT_TRUE(local_surface_id1.is_valid());
+
+  host_->SetAutoResize(true, gfx::Size(50, 50), gfx::Size(100, 100));
+  viz::ChildLocalSurfaceIdAllocator child_allocator;
+  child_allocator.UpdateFromParent(local_surface_id1);
+  viz::LocalSurfaceId local_surface_id2 = child_allocator.GenerateId();
+  cc::RenderFrameMetadata metadata;
+  metadata.viewport_size_in_pixels = gfx::Size(75, 75);
+  metadata.local_surface_id = local_surface_id2;
+  host_->DidUpdateVisualProperties(metadata);
+
+  // Cause a conflicting viz::LocalSurfaceId allocation
+  BrowserCompositorMac* browser_compositor = rwhv_mac_->BrowserCompositor();
+  EXPECT_TRUE(browser_compositor->ForceNewSurfaceForTesting());
+  viz::LocalSurfaceId local_surface_id3(rwhv_mac_->GetLocalSurfaceId());
+  EXPECT_NE(local_surface_id1, local_surface_id3);
+
+  // RenderWidgetHostImpl has delayed auto-resize processing. Yield here to
+  // let it complete.
+  base::RunLoop run_loop;
+  base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
+                                                run_loop.QuitClosure());
+  run_loop.Run();
+
+  viz::LocalSurfaceId local_surface_id4(rwhv_mac_->GetLocalSurfaceId());
+  EXPECT_NE(local_surface_id1, local_surface_id4);
+  EXPECT_NE(local_surface_id2, local_surface_id4);
+  viz::LocalSurfaceId merged_local_surface_id(
+      local_surface_id2.parent_sequence_number() + 1,
+      local_surface_id2.child_sequence_number(),
+      local_surface_id2.embed_token());
+  EXPECT_EQ(local_surface_id4, merged_local_surface_id);
 }
 
 }  // namespace content

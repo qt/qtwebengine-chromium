@@ -134,20 +134,13 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostViewChildFrameTest,
       root->child_at(0)->current_frame_host()->GetRenderWidgetHost()->GetView();
 
   // Fake an auto-resize update from the parent renderer.
-  int routing_id =
-      root->current_frame_host()->GetRenderWidgetHost()->GetRoutingID();
-  ViewHostMsg_ResizeOrRepaint_ACK_Params params;
-  params.view_size = gfx::Size(75, 75);
-  params.flags = 0;
-  root->current_frame_host()->GetRenderWidgetHost()->OnMessageReceived(
-      ViewHostMsg_ResizeOrRepaint_ACK(routing_id, params));
-
-  // RenderWidgetHostImpl has delayed auto-resize processing. Yield here to
-  // let it complete.
-  base::RunLoop run_loop;
-  base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
-                                                run_loop.QuitClosure());
-  run_loop.Run();
+  viz::LocalSurfaceId local_surface_id(10, 10,
+                                       base::UnguessableToken::Create());
+  cc::RenderFrameMetadata metadata;
+  metadata.viewport_size_in_pixels = gfx::Size(75, 75);
+  metadata.local_surface_id = local_surface_id;
+  root->current_frame_host()->GetRenderWidgetHost()->DidUpdateVisualProperties(
+      metadata);
 
   // The child frame's RenderWidgetHostView should now use the auto-resize value
   // for its visible viewport.
@@ -168,8 +161,8 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostViewChildFrameTest, ChildFrameSinkId) {
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
-  scoped_refptr<UpdateResizeParamsMessageFilter> message_filter(
-      new UpdateResizeParamsMessageFilter());
+  scoped_refptr<SynchronizeVisualPropertiesMessageFilter> message_filter(
+      new SynchronizeVisualPropertiesMessageFilter());
   root->current_frame_host()->GetProcess()->AddFilter(message_filter.get());
 
   // Load cross-site page into iframe.

@@ -110,9 +110,9 @@ void ExtensionOptionsGuest::CreateWebContents(
       browser_context(),
       content::SiteInstance::CreateForURL(browser_context(), extension_url));
   params.guest_delegate = this;
-  WebContents* wc = WebContents::Create(params);
-  SetViewType(wc, VIEW_TYPE_EXTENSION_GUEST);
-  callback.Run(wc);
+  // TODO(erikchen): Fix ownership semantics for guest views.
+  // https://crbug.com/832879.
+  callback.Run(WebContents::Create(params).release());
 }
 
 void ExtensionOptionsGuest::DidInitialize(
@@ -152,17 +152,23 @@ void ExtensionOptionsGuest::OnPreferredSizeChanged(const gfx::Size& pref_size) {
       options.ToValue()));
 }
 
-void ExtensionOptionsGuest::AddNewContents(WebContents* source,
-                                           WebContents* new_contents,
-                                           WindowOpenDisposition disposition,
-                                           const gfx::Rect& initial_rect,
-                                           bool user_gesture,
-                                           bool* was_blocked) {
+void ExtensionOptionsGuest::AddNewContents(
+    WebContents* source,
+    std::unique_ptr<WebContents> new_contents,
+    WindowOpenDisposition disposition,
+    const gfx::Rect& initial_rect,
+    bool user_gesture,
+    bool* was_blocked) {
+  // |new_contents| is potentially used as a non-embedded WebContents, so we
+  // check that it isn't a guest. The only place that this method should be
+  // called is WebContentsImpl::ViewSource - which generates a non-guest
+  // WebContents.
+  DCHECK(!ExtensionOptionsGuest::FromWebContents(new_contents.get()));
   if (!attached() || !embedder_web_contents()->GetDelegate())
     return;
 
   embedder_web_contents()->GetDelegate()->AddNewContents(
-      source, new_contents, disposition, initial_rect, user_gesture,
+      source, std::move(new_contents), disposition, initial_rect, user_gesture,
       was_blocked);
 }
 

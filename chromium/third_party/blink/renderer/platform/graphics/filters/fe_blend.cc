@@ -27,22 +27,18 @@
 #include "SkXfermodeImageFilter.h"
 #include "third_party/blink/renderer/platform/graphics/filters/paint_filter_builder.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
-#include "third_party/blink/renderer/platform/text/text_stream.h"
+#include "third_party/blink/renderer/platform/wtf/text/text_stream.h"
 
 namespace blink {
 
-FEBlend::FEBlend(Filter* filter, WebBlendMode mode)
+FEBlend::FEBlend(Filter* filter, BlendMode mode)
     : FilterEffect(filter), mode_(mode) {}
 
-FEBlend* FEBlend::Create(Filter* filter, WebBlendMode mode) {
+FEBlend* FEBlend::Create(Filter* filter, BlendMode mode) {
   return new FEBlend(filter, mode);
 }
 
-WebBlendMode FEBlend::BlendMode() const {
-  return mode_;
-}
-
-bool FEBlend::SetBlendMode(WebBlendMode mode) {
+bool FEBlend::SetBlendMode(BlendMode mode) {
   if (mode_ == mode)
     return false;
   mode_ = mode;
@@ -61,12 +57,13 @@ sk_sp<PaintFilter> FEBlend::CreateImageFilter() {
                                          std::move(foreground), &crop_rect);
 }
 
-TextStream& FEBlend::ExternalRepresentation(TextStream& ts, int indent) const {
+WTF::TextStream& FEBlend::ExternalRepresentation(WTF::TextStream& ts,
+                                                 int indent) const {
   WriteIndent(ts, indent);
   ts << "[feBlend";
   FilterEffect::ExternalRepresentation(ts);
   ts << " mode=\""
-     << (mode_ == WebBlendMode::kNormal
+     << (mode_ == BlendMode::kNormal
              ? "normal"
              : CompositeOperatorName(kCompositeSourceOver, mode_))
      << "\"]\n";

@@ -31,25 +31,38 @@ _CONFIG = [
 
             # //base constructs that are allowed everywhere
             'base::AdoptRef',
+            'base::AutoReset',
+            'base::GetUniqueIdForProcess',
             'base::Location',
             'base::MakeRefCounted',
             'base::Optional',
+            'base::OptionalOrNullptr',
             'base::RefCountedData',
             'base::CreateSequencedTaskRunnerWithTraits',
             'base::SequencedTaskRunner',
             'base::SingleThreadTaskRunner',
+            'base::ScopedFD',
+            'base::SysInfo',
             'base::ThreadChecker',
             'base::Time',
             'base::TimeDelta',
             'base::TimeTicks',
             'base::UnguessableToken',
+            'base::UnsafeSharedMemoryRegion',
             'base::WeakPtr',
             'base::WeakPtrFactory',
+            'base::WritableSharedMemoryMapping',
+            'base::in_place',
             'base::make_optional',
             'base::make_span',
             'base::nullopt',
+            'base::sequence_manager::TaskTimeObserver',
+            'base::size',
             'base::span',
             'logging::GetVlogLevel',
+
+            # //base/bind_helpers.h.
+            'base::DoNothing',
 
             # //base/callback.h is allowed, but you need to use WTF::Bind or
             # WTF::BindRepeating to create callbacks in Blink.
@@ -67,10 +80,49 @@ _CONFIG = [
             # Debugging helpers from //base/debug are allowed everywhere.
             'base::debug::.+',
 
+            # (Cryptographic) random number generation
+            'base::RandUint64',
+            'base::RandInt',
+            'base::RandGenerator',
+            'base::RandDouble',
+            'base::RandBytes',
+
             # Feature list checking.
             'base::Feature.*',
             'base::FEATURE_.+',
 
+            # Chromium geometry types.
+            'gfx::Point',
+            'gfx::Rect',
+            'gfx::RectF',
+            'gfx::Size',
+            'gfx::SizeF',
+            'gfx::Transform',
+            # Wrapper of SkRegion used in Chromium.
+            'cc::Region',
+
+            # A geometric set of TouchActions associated with areas, and only
+            # depends on the geometry types above.
+            'cc::TouchActionRegion',
+
+            # cc::Layers.
+            'cc::Layer',
+
+            # cc::Layer helper data structs.
+            'cc::ElementId',
+            'cc::LayerPositionConstraint',
+            'cc::LayerStickyPositionConstraint',
+            'cc::OverscrollBehavior',
+            'cc::Scrollbar',
+            'cc::ScrollbarLayerInterface',
+            'cc::ScrollbarOrientation',
+            'cc::ScrollbarPart',
+
+            # cc::Layer helper enums.
+            'cc::HORIZONTAL',
+            'cc::VERTICAL',
+            'cc::THUMB',
+            'cc::TICKMARKS',
 
             # Standalone utility libraries that only depend on //base
             'skia::.+',
@@ -125,6 +177,9 @@ _CONFIG = [
 
             # Blink uses UKM for logging e.g. always-on leak detection (crbug/757374)
             'ukm::.+',
+
+            # WebRTC classes
+            'webrtc::.+',
         ],
         'disallowed': ['.+'],
     },
@@ -140,9 +195,37 @@ _CONFIG = [
         ],
     },
     {
-        'paths': ['third_party/blink/renderer/core/inspector/InspectorMemoryAgent.cpp'],
+        'paths': ['third_party/blink/renderer/core/paint'],
+        'allowed': [
+            # cc painting types.
+            'cc::ContentLayerClient',
+            'cc::DisplayItemList',
+            'cc::DrawRecordOp',
+            'cc::PictureLayer',
+        ],
+    },
+    {
+        'paths': ['third_party/blink/renderer/core/page/scrolling'],
+        'allowed': [
+            # cc painting types.
+            'cc::PaintCanvas',
+
+            # cc scrollbar layer types.
+            'cc::PaintedOverlayScrollbarLayer',
+            'cc::PaintedScrollbarLayer',
+            'cc::SolidColorScrollbarLayer',
+        ],
+    },
+    {
+        'paths': ['third_party/blink/renderer/core/inspector/inspector_memory_agent.cc'],
         'allowed': [
             'base::SamplingHeapProfiler',
+        ],
+    },
+    {
+        'paths': ['third_party/blink/renderer/core/inspector/inspector_performance_agent.cc'],
+        'allowed': [
+            'base::subtle::TimeTicksNowIgnoringOverride',
         ],
     },
     {
@@ -160,9 +243,12 @@ _CONFIG = [
             'third_party/blink/renderer/modules/webgl/',
             'third_party/blink/renderer/modules/xr/',
         ],
-        # These modules need access to GL drawing.
+        # The modules listed above need access to the following GL drawing and
+        # display-related types.
         'allowed': [
             'gpu::gles2::GLES2Interface',
+            'gpu::MailboxHolder',
+            'display::Display',
         ],
     },
     {
@@ -191,6 +277,21 @@ _CONFIG = [
             'third_party/blink/renderer/modules/webdatabase/',
         ],
         'allowed': ['sql::.+'],
+    },
+    {
+        'paths': [
+            'third_party/blink/renderer/core/layout/layout_theme.cc',
+            'third_party/blink/renderer/core/paint/fallback_theme.cc',
+            'third_party/blink/renderer/core/paint/fallback_theme.h',
+            'third_party/blink/renderer/core/paint/theme_painter.cc',
+        ],
+        'allowed': ['ui::NativeTheme.*'],
+    },
+    {
+        'paths': [
+            'third_party/blink/renderer/modules/crypto/',
+        ],
+        'allowed': ['crypto::.+'],
     },
 ]
 

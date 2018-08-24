@@ -55,8 +55,8 @@ class CFDE_TextOut {
   void SetMatrix(const CFX_Matrix& matrix) { m_Matrix = matrix; }
   void SetLineBreakTolerance(float fTolerance);
 
-  void CalcLogicSize(const WideString& str, CFX_SizeF& size);
-  void CalcLogicSize(const WideString& str, CFX_RectF& rect);
+  void CalcLogicSize(const WideString& str, CFX_SizeF* pSize);
+  void CalcLogicSize(const WideString& str, CFX_RectF* pRect);
   void DrawLogicText(CFX_RenderDevice* device,
                      const WideStringView& str,
                      const CFX_RectF& rect);
@@ -82,18 +82,18 @@ class CFDE_TextOut {
   };
 
   bool RetrieveLineWidth(CFX_BreakType dwBreakStatus,
-                         float& fStartPos,
-                         float& fWidth,
-                         float& fHeight);
+                         float* pStartPos,
+                         float* pWidth,
+                         float* pHeight);
   void LoadText(const WideString& str, const CFX_RectF& rect);
 
   void Reload(const CFX_RectF& rect);
   void ReloadLinePiece(CFDE_TTOLine* pLine, const CFX_RectF& rect);
   bool RetrievePieces(CFX_BreakType dwBreakStatus,
-                      int32_t& iStartChar,
-                      int32_t& iPieceWidths,
                       bool bReload,
-                      const CFX_RectF& rect);
+                      const CFX_RectF& rect,
+                      int32_t* pStartChar,
+                      int32_t* pPieceWidths);
   void AppendPiece(const FDE_TTOPIECE& ttoPiece, bool bNeedReload, bool bEnd);
   void DoAlignment(const CFX_RectF& rect);
   int32_t GetDisplayPos(FDE_TTOPIECE* pPiece);

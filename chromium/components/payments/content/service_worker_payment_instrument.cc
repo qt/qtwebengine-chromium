@@ -13,6 +13,7 @@
 #include "content/public/browser/payment_app_provider.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/gfx/image/image_skia.h"
+#include "url/origin.h"
 
 namespace payments {
 
@@ -20,14 +21,14 @@ namespace payments {
 // resource Id.
 ServiceWorkerPaymentInstrument::ServiceWorkerPaymentInstrument(
     content::BrowserContext* browser_context,
-    const GURL& top_level_origin,
+    const GURL& top_origin,
     const GURL& frame_origin,
     const PaymentRequestSpec* spec,
     std::unique_ptr<content::StoredPaymentApp> stored_payment_app_info,
     PaymentRequestDelegate* payment_request_delegate)
     : PaymentInstrument(0, PaymentInstrument::Type::SERVICE_WORKER_APP),
       browser_context_(browser_context),
-      top_level_origin_(top_level_origin),
+      top_origin_(top_origin),
       frame_origin_(frame_origin),
       spec_(spec),
       stored_payment_app_info_(std::move(stored_payment_app_info)),
@@ -37,7 +38,7 @@ ServiceWorkerPaymentInstrument::ServiceWorkerPaymentInstrument(
       needs_installation_(false),
       weak_ptr_factory_(this) {
   DCHECK(browser_context_);
-  DCHECK(top_level_origin_.is_valid());
+  DCHECK(top_origin_.is_valid());
   DCHECK(frame_origin_.is_valid());
   DCHECK(spec_);
 
@@ -55,14 +56,14 @@ ServiceWorkerPaymentInstrument::ServiceWorkerPaymentInstrument(
 // resource Id.
 ServiceWorkerPaymentInstrument::ServiceWorkerPaymentInstrument(
     content::WebContents* web_contents,
-    const GURL& top_level_origin,
+    const GURL& top_origin,
     const GURL& frame_origin,
     const PaymentRequestSpec* spec,
     std::unique_ptr<WebAppInstallationInfo> installable_payment_app_info,
     const std::string& enabled_method,
     PaymentRequestDelegate* payment_request_delegate)
     : PaymentInstrument(0, PaymentInstrument::Type::SERVICE_WORKER_APP),
-      top_level_origin_(top_level_origin),
+      top_origin_(top_origin),
       frame_origin_(frame_origin),
       spec_(spec),
       delegate_(nullptr),
@@ -74,7 +75,7 @@ ServiceWorkerPaymentInstrument::ServiceWorkerPaymentInstrument(
       installable_enabled_method_(enabled_method),
       weak_ptr_factory_(this) {
   DCHECK(web_contents_);
-  DCHECK(top_level_origin_.is_valid());
+  DCHECK(top_origin_.is_valid());
   DCHECK(frame_origin_.is_valid());
   DCHECK(spec_);
 
@@ -105,6 +106,13 @@ void ServiceWorkerPaymentInstrument::ValidateCanMakePayment(
     ValidateCanMakePaymentCallback callback) {
   // Returns true for payment app that needs installation.
   if (needs_installation_) {
+    OnCanMakePayment(std::move(callback), true);
+    return;
+  }
+
+  // Returns true if we are in incognito (avoiding sending the event to the
+  // payment handler).
+  if (payment_request_delegate_->IsIncognito()) {
     OnCanMakePayment(std::move(callback), true);
     return;
   }
@@ -156,7 +164,7 @@ ServiceWorkerPaymentInstrument::CreateCanMakePaymentEventData() {
   mojom::CanMakePaymentEventDataPtr event_data =
       mojom::CanMakePaymentEventData::New();
 
-  event_data->top_level_origin = top_level_origin_;
+  event_data->top_origin = top_origin_;
   event_data->payment_request_origin = frame_origin_;
 
   for (const auto& modifier : spec_->details().modifiers) {
@@ -228,7 +236,7 @@ ServiceWorkerPaymentInstrument::CreatePaymentRequestEventData() {
   mojom::PaymentRequestEventDataPtr event_data =
       mojom::PaymentRequestEventData::New();
 
-  event_data->top_level_origin = top_level_origin_;
+  event_data->top_origin = top_origin_;
   event_data->payment_request_origin = frame_origin_;
 
   if (spec_->details().id.has_value())
@@ -323,9 +331,10 @@ base::string16 ServiceWorkerPaymentInstrument::GetSublabel() const {
   if (needs_installation_) {
     DCHECK(GURL(installable_web_app_info_->sw_scope).is_valid());
     return base::UTF8ToUTF16(
-        GURL(installable_web_app_info_->sw_scope).GetOrigin().spec());
+        url::Origin::Create(GURL(installable_web_app_info_->sw_scope)).host());
   }
-  return base::UTF8ToUTF16(stored_payment_app_info_->scope.GetOrigin().spec());
+  return base::UTF8ToUTF16(
+      url::Origin::Create(stored_payment_app_info_->scope).host());
 }
 
 bool ServiceWorkerPaymentInstrument::IsValidForModifier(

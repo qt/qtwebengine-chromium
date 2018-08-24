@@ -16,7 +16,7 @@
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/graphics/image_data_buffer.h"
 #include "third_party/blink/renderer/platform/histogram.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/threading/background_task_runner.h"
 #include "third_party/blink/renderer/platform/web_task_runner.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
@@ -37,14 +37,17 @@ const double kIdleTaskStartTimeoutDelayMs = 1000.0;
 const double kIdleTaskStartTimeoutDelayMs = 4000.0;  // For ChromeOS, Mobile
 #endif
 
+/* The value is based on user statistics on May 2018. */
 // We should be more lenient on completion timeout delay to ensure that the
 // switch from idle to main thread only happens to a minority of toBlob calls
 #if !defined(OS_ANDROID)
 // Png image encoding on 4k by 4k canvas on Mac HDD takes 5.7+ seconds
-const double kIdleTaskCompleteTimeoutDelayMs = 10000.0;
+// We see that 99% users require less than 5 seconds.
+const double kIdleTaskCompleteTimeoutDelayMs = 5700.0;
 #else
 // Png image encoding on 4k by 4k canvas on Android One takes 9.0+ seconds
-const double kIdleTaskCompleteTimeoutDelayMs = 20000.0;
+// We see that 99% users require less than 9 seconds.
+const double kIdleTaskCompleteTimeoutDelayMs = 9000.0;
 #endif
 
 bool IsDeadlineNearOrPassed(double deadline_seconds) {
@@ -53,31 +56,29 @@ bool IsDeadlineNearOrPassed(double deadline_seconds) {
           0);
 }
 
-String ConvertMimeTypeEnumToString(
-    CanvasAsyncBlobCreator::MimeType mime_type_enum) {
+String ConvertMimeTypeEnumToString(ImageEncoder::MimeType mime_type_enum) {
   switch (mime_type_enum) {
-    case CanvasAsyncBlobCreator::kMimeTypePng:
+    case ImageEncoder::kMimeTypePng:
       return "image/png";
-    case CanvasAsyncBlobCreator::kMimeTypeJpeg:
+    case ImageEncoder::kMimeTypeJpeg:
       return "image/jpeg";
-    case CanvasAsyncBlobCreator::kMimeTypeWebp:
+    case ImageEncoder::kMimeTypeWebp:
       return "image/webp";
     default:
       return "image/unknown";
   }
 }
 
-CanvasAsyncBlobCreator::MimeType ConvertMimeTypeStringToEnum(
-    const String& mime_type) {
-  CanvasAsyncBlobCreator::MimeType mime_type_enum;
+ImageEncoder::MimeType ConvertMimeTypeStringToEnum(const String& mime_type) {
+  ImageEncoder::MimeType mime_type_enum;
   if (mime_type == "image/png") {
-    mime_type_enum = CanvasAsyncBlobCreator::kMimeTypePng;
+    mime_type_enum = ImageEncoder::kMimeTypePng;
   } else if (mime_type == "image/jpeg") {
-    mime_type_enum = CanvasAsyncBlobCreator::kMimeTypeJpeg;
+    mime_type_enum = ImageEncoder::kMimeTypeJpeg;
   } else if (mime_type == "image/webp") {
-    mime_type_enum = CanvasAsyncBlobCreator::kMimeTypeWebp;
+    mime_type_enum = ImageEncoder::kMimeTypeWebp;
   } else {
-    mime_type_enum = CanvasAsyncBlobCreator::kNumberOfMimeTypeSupported;
+    mime_type_enum = ImageEncoder::kNumberOfMimeTypeSupported;
   }
   return mime_type_enum;
 }
@@ -101,44 +102,44 @@ enum ElapsedTimeHistogramType {
 };
 
 void RecordElapsedTimeHistogram(ElapsedTimeHistogramType type,
-                                CanvasAsyncBlobCreator::MimeType mime_type,
+                                ImageEncoder::MimeType mime_type,
                                 double elapsed_time) {
   if (type == kInitiateEncodingDelay) {
-    if (mime_type == CanvasAsyncBlobCreator::kMimeTypePng) {
+    if (mime_type == ImageEncoder::kMimeTypePng) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
           CustomCountHistogram, to_blob_png_initiate_encoding_counter,
           ("Blink.Canvas.ToBlob.InitiateEncodingDelay.PNG", 0, 10000000, 50));
       to_blob_png_initiate_encoding_counter.Count(elapsed_time * 1000000.0);
-    } else if (mime_type == CanvasAsyncBlobCreator::kMimeTypeJpeg) {
+    } else if (mime_type == ImageEncoder::kMimeTypeJpeg) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
           CustomCountHistogram, to_blob_jpeg_initiate_encoding_counter,
           ("Blink.Canvas.ToBlob.InitiateEncodingDelay.JPEG", 0, 10000000, 50));
       to_blob_jpeg_initiate_encoding_counter.Count(elapsed_time * 1000000.0);
     }
   } else if (type == kCompleteEncodingDelay) {
-    if (mime_type == CanvasAsyncBlobCreator::kMimeTypePng) {
+    if (mime_type == ImageEncoder::kMimeTypePng) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
           CustomCountHistogram, to_blob_png_idle_encode_counter,
           ("Blink.Canvas.ToBlob.CompleteEncodingDelay.PNG", 0, 10000000, 50));
       to_blob_png_idle_encode_counter.Count(elapsed_time * 1000000.0);
-    } else if (mime_type == CanvasAsyncBlobCreator::kMimeTypeJpeg) {
+    } else if (mime_type == ImageEncoder::kMimeTypeJpeg) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
           CustomCountHistogram, to_blob_jpeg_idle_encode_counter,
           ("Blink.Canvas.ToBlob.CompleteEncodingDelay.JPEG", 0, 10000000, 50));
       to_blob_jpeg_idle_encode_counter.Count(elapsed_time * 1000000.0);
     }
   } else if (type == kToBlobDuration) {
-    if (mime_type == CanvasAsyncBlobCreator::kMimeTypePng) {
+    if (mime_type == ImageEncoder::kMimeTypePng) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
           CustomCountHistogram, to_blob_png_counter,
           ("Blink.Canvas.ToBlobDuration.PNG", 0, 10000000, 50));
       to_blob_png_counter.Count(elapsed_time * 1000000.0);
-    } else if (mime_type == CanvasAsyncBlobCreator::kMimeTypeJpeg) {
+    } else if (mime_type == ImageEncoder::kMimeTypeJpeg) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
           CustomCountHistogram, to_blob_jpeg_counter,
           ("Blink.Canvas.ToBlobDuration.JPEG", 0, 10000000, 50));
       to_blob_jpeg_counter.Count(elapsed_time * 1000000.0);
-    } else if (mime_type == CanvasAsyncBlobCreator::kMimeTypeWebp) {
+    } else if (mime_type == ImageEncoder::kMimeTypeWebp) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
           CustomCountHistogram, to_blob_webp_counter,
           ("Blink.Canvas.ToBlobDuration.WEBP", 0, 10000000, 50));
@@ -173,7 +174,7 @@ CanvasAsyncBlobCreator* CanvasAsyncBlobCreator::Create(
 
 CanvasAsyncBlobCreator::CanvasAsyncBlobCreator(
     scoped_refptr<StaticBitmapImage> image,
-    MimeType mime_type,
+    ImageEncoder::MimeType mime_type,
     V8BlobCallback* callback,
     double start_time,
     ExecutionContext* context,
@@ -187,12 +188,49 @@ CanvasAsyncBlobCreator::CanvasAsyncBlobCreator(
       callback_(ToV8PersistentCallbackFunction(callback)),
       script_promise_resolver_(resolver) {
   DCHECK(image);
+  // We use pixmap to access the image pixels. Make the image unaccelerated if
+  // necessary.
+  image_ = image_->MakeUnaccelerated();
+
   sk_sp<SkImage> skia_image = image_->PaintImageForCurrentFrame().GetSkImage();
   DCHECK(skia_image);
-  if (skia_image->peekPixels(&src_data_))
+
+  // If image is lazy decoded, we can either draw it on a canvas or
+  // call readPixels() to trigger decoding. We expect drawing on a very small
+  // canvas to be faster than readPixels().
+  if (skia_image->isLazyGenerated()) {
+    SkImageInfo info = SkImageInfo::MakeN32(1, 1, skia_image->alphaType());
+    sk_sp<SkSurface> surface = SkSurface::MakeRaster(info);
+    if (surface) {
+      SkPaint paint;
+      paint.setBlendMode(SkBlendMode::kSrc);
+      surface->getCanvas()->drawImage(skia_image.get(), 0, 0, &paint);
+    }
+  }
+
+  // toBlob always encodes in sRGB and does not include the color space
+  // information.
+  if (skia_image->colorSpace()) {
+    image_ = image_->ConvertToColorSpace(SkColorSpace::MakeSRGB(),
+                                         SkTransferFunctionBehavior::kIgnore);
+    skia_image = image_->PaintImageForCurrentFrame().GetSkImage();
+  }
+
+  if (skia_image->peekPixels(&src_data_)) {
+    // Ensure that the size of the to-be-encoded-image does not pass the maximum
+    // size supported by the encoders.
+    int max_dimension = ImageEncoder::MaxDimension(mime_type_);
+    if (std::max(src_data_.width(), src_data_.height()) > max_dimension) {
+      SkImageInfo info = src_data_.info();
+      info = info.makeWH(std::min(info.width(), max_dimension),
+                         std::min(info.height(), max_dimension));
+      src_data_.reset(info, src_data_.addr(), src_data_.rowBytes());
+    }
+
+    src_data_.setColorSpace(nullptr);
     static_bitmap_image_loaded_ = true;
-  else
-    LoadStaticBitmapImage();
+  }
+  DCHECK(!src_data_.colorSpace());
 
   idle_task_status_ = kIdleTaskNotSupported;
   num_rows_completed_ = 0;
@@ -233,7 +271,7 @@ void CanvasAsyncBlobCreator::ScheduleAsyncBlobCreation(const double& quality) {
                              WrapPersistent(this)));
     return;
   }
-  if (mime_type_ == kMimeTypeWebp) {
+  if (mime_type_ == ImageEncoder::kMimeTypeWebp) {
     if (!IsMainThread()) {
       DCHECK(function_type_ == kOffscreenCanvasToBlobPromise);
       // When OffscreenCanvas.convertToBlob() occurs on worker thread,
@@ -271,32 +309,6 @@ void CanvasAsyncBlobCreator::ScheduleAsyncBlobCreation(const double& quality) {
         WTF::Bind(&CanvasAsyncBlobCreator::IdleTaskStartTimeoutEvent,
                   WrapPersistent(this), quality),
         kIdleTaskStartTimeoutDelayMs);
-  }
-}
-
-void CanvasAsyncBlobCreator::LoadStaticBitmapImage() {
-  DCHECK(image_ && !static_bitmap_image_loaded_);
-  if (image_->IsTextureBacked()) {
-    image_ = image_->MakeUnaccelerated();
-    sk_sp<SkImage> skia_image =
-        image_->PaintImageForCurrentFrame().GetSkImage();
-    if (skia_image->peekPixels(&src_data_))
-      static_bitmap_image_loaded_ = true;
-  } else {
-    // If image is lazy decoded, we can either draw it on a canvas or
-    // call readPixels() to trigger decoding. We expect drawing on a very small
-    // canvas to be faster than readPixels().
-    sk_sp<SkImage> skia_image =
-        image_->PaintImageForCurrentFrame().GetSkImage();
-    SkImageInfo info = SkImageInfo::MakeN32(1, 1, skia_image->alphaType());
-    sk_sp<SkSurface> surface = SkSurface::MakeRaster(info);
-    if (surface) {
-      SkPaint paint;
-      paint.setBlendMode(SkBlendMode::kSrc);
-      surface->getCanvas()->drawImage(skia_image.get(), 0, 0, &paint);
-      if (skia_image->peekPixels(&src_data_))
-        static_bitmap_image_loaded_ = true;
-    }
   }
 }
 
@@ -432,7 +444,7 @@ void CanvasAsyncBlobCreator::CreateNullAndReturnResult() {
 
 void CanvasAsyncBlobCreator::EncodeImageOnEncoderThread(double quality) {
   DCHECK(!IsMainThread());
-  DCHECK(mime_type_ == kMimeTypeWebp);
+  DCHECK(mime_type_ == ImageEncoder::kMimeTypeWebp);
 
   if (!EncodeImage(quality)) {
     PostCrossThreadTask(
@@ -452,7 +464,7 @@ bool CanvasAsyncBlobCreator::InitializeEncoder(double quality) {
   // This is solely used for unit tests.
   if (fail_encoder_initialization_for_test_)
     return false;
-  if (mime_type_ == kMimeTypeJpeg) {
+  if (mime_type_ == ImageEncoder::kMimeTypeJpeg) {
     SkJpegEncoder::Options options;
     options.fQuality = ImageEncoder::ComputeJpegQuality(quality);
     options.fAlphaOption = SkJpegEncoder::AlphaOption::kBlendOnBlack;
@@ -465,9 +477,9 @@ bool CanvasAsyncBlobCreator::InitializeEncoder(double quality) {
     // Progressive encoding is only applicable to png and jpeg image format,
     // and thus idle tasks scheduling can only be applied to these image
     // formats.
-    // TODO(xlai): Progressive encoding on webp image formats
+    // TODO(zakerinasab): Progressive encoding on webp image formats
     // (crbug.com/571399)
-    DCHECK_EQ(kMimeTypePng, mime_type_);
+    DCHECK_EQ(ImageEncoder::kMimeTypePng, mime_type_);
     SkPngEncoder::Options options;
     options.fFilterFlags = SkPngEncoder::FilterFlag::kSub;
     options.fZLibLevel = 3;
@@ -493,7 +505,8 @@ void CanvasAsyncBlobCreator::IdleTaskStartTimeoutEvent(double quality) {
     idle_task_status_ = kIdleTaskSwitchedToImmediateTask;
     SignalTaskSwitchInStartTimeoutEventForTesting();
 
-    DCHECK(mime_type_ == kMimeTypePng || mime_type_ == kMimeTypeJpeg);
+    DCHECK(mime_type_ == ImageEncoder::kMimeTypePng ||
+           mime_type_ == ImageEncoder::kMimeTypeJpeg);
     if (InitializeEncoder(quality)) {
       context_->GetTaskRunner(TaskType::kCanvasBlobSerialization)
           ->PostTask(
@@ -519,7 +532,8 @@ void CanvasAsyncBlobCreator::IdleTaskCompleteTimeoutEvent() {
     idle_task_status_ = kIdleTaskSwitchedToImmediateTask;
     SignalTaskSwitchInCompleteTimeoutEventForTesting();
 
-    DCHECK(mime_type_ == kMimeTypePng || mime_type_ == kMimeTypeJpeg);
+    DCHECK(mime_type_ == ImageEncoder::kMimeTypePng ||
+           mime_type_ == ImageEncoder::kMimeTypeJpeg);
     context_->GetTaskRunner(TaskType::kCanvasBlobSerialization)
         ->PostTask(
             FROM_HERE,

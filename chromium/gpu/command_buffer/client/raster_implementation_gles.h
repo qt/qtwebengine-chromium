@@ -9,15 +9,17 @@
 
 #include "base/containers/flat_map.h"
 #include "base/macros.h"
+#include "base/optional.h"
+#include "gpu/command_buffer/client/client_font_manager.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/client/raster_interface.h"
 #include "gpu/command_buffer/common/capabilities.h"
 #include "gpu/raster_export.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "third_party/skia/include/core/SkColorSpace.h"
 
 namespace gpu {
-
-class ContextSupport;
+class CommandBuffer;
 
 namespace raster {
 
@@ -27,7 +29,7 @@ struct Capabilities;
 class RASTER_EXPORT RasterImplementationGLES : public RasterInterface {
  public:
   RasterImplementationGLES(gles2::GLES2Interface* gl,
-                           ContextSupport* support,
+                           CommandBuffer* command_buffer,
                            const gpu::Capabilities& caps);
   ~RasterImplementationGLES() override;
 
@@ -104,11 +106,6 @@ class RASTER_EXPORT RasterImplementationGLES : public RasterInterface {
                                           GLsizei width,
                                           GLsizei height) override;
 
-  // Discardable textures.
-  void InitializeDiscardableTextureCHROMIUM(GLuint texture_id) override;
-  void UnlockDiscardableTextureCHROMIUM(GLuint texture_id) override;
-  bool LockDiscardableTextureCHROMIUM(GLuint texture_id) override;
-
   // OOP-Raster
   void BeginRasterCHROMIUM(
       GLuint texture_id,
@@ -131,6 +128,10 @@ class RASTER_EXPORT RasterImplementationGLES : public RasterInterface {
   void BeginGpuRaster() override;
   void EndGpuRaster() override;
 
+  void TraceBeginCHROMIUM(const char* category_name,
+                          const char* trace_name) override;
+  void TraceEndCHROMIUM() override;
+
  private:
   struct Texture {
     Texture(GLuint id,
@@ -149,8 +150,6 @@ class RASTER_EXPORT RasterImplementationGLES : public RasterInterface {
   Texture* EnsureTextureBound(Texture* texture);
 
   gles2::GLES2Interface* gl_;
-  SkColor background_color_;
-  ContextSupport* support_;
   gpu::Capabilities caps_;
   bool use_texture_storage_;
   bool use_texture_storage_image_;

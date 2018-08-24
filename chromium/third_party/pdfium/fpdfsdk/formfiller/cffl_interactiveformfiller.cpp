@@ -459,7 +459,7 @@ bool CFFL_InteractiveFormFiller::IsFillingAllowed(CPDFSDK_Widget* pWidget) {
     return false;
 
   CPDF_Page* pPage = pWidget->GetPDFPage();
-  uint32_t dwPermissions = pPage->m_pDocument->GetUserPermissions();
+  uint32_t dwPermissions = pPage->GetDocument()->GetUserPermissions();
   return (dwPermissions & FPDFPERM_FILL_FORM) ||
          (dwPermissions & FPDFPERM_ANNOT_FORM) ||
          (dwPermissions & FPDFPERM_MODIFY);
@@ -511,6 +511,12 @@ CFFL_FormFiller* CFFL_InteractiveFormFiller::GetFormFiller(
   return pFormFiller;
 }
 
+WideString CFFL_InteractiveFormFiller::GetText(CPDFSDK_Annot* pAnnot) {
+  ASSERT(pAnnot->GetPDFAnnot()->GetSubtype() == CPDF_Annot::Subtype::WIDGET);
+  CFFL_FormFiller* pFormFiller = GetFormFiller(pAnnot, false);
+  return pFormFiller ? pFormFiller->GetText(pAnnot) : WideString();
+}
+
 WideString CFFL_InteractiveFormFiller::GetSelectedText(CPDFSDK_Annot* pAnnot) {
   ASSERT(pAnnot->GetPDFAnnot()->GetSubtype() == CPDF_Annot::Subtype::WIDGET);
   CFFL_FormFiller* pFormFiller = GetFormFiller(pAnnot, false);
@@ -525,6 +531,30 @@ void CFFL_InteractiveFormFiller::ReplaceSelection(CPDFSDK_Annot* pAnnot,
     return;
 
   pFormFiller->ReplaceSelection(pAnnot, text);
+}
+
+bool CFFL_InteractiveFormFiller::CanUndo(CPDFSDK_Annot* pAnnot) {
+  ASSERT(pAnnot->GetPDFAnnot()->GetSubtype() == CPDF_Annot::Subtype::WIDGET);
+  CFFL_FormFiller* pFormFiller = GetFormFiller(pAnnot, false);
+  return pFormFiller && pFormFiller->CanUndo(pAnnot);
+}
+
+bool CFFL_InteractiveFormFiller::CanRedo(CPDFSDK_Annot* pAnnot) {
+  ASSERT(pAnnot->GetPDFAnnot()->GetSubtype() == CPDF_Annot::Subtype::WIDGET);
+  CFFL_FormFiller* pFormFiller = GetFormFiller(pAnnot, false);
+  return pFormFiller && pFormFiller->CanRedo(pAnnot);
+}
+
+bool CFFL_InteractiveFormFiller::Undo(CPDFSDK_Annot* pAnnot) {
+  ASSERT(pAnnot->GetPDFAnnot()->GetSubtype() == CPDF_Annot::Subtype::WIDGET);
+  CFFL_FormFiller* pFormFiller = GetFormFiller(pAnnot, false);
+  return pFormFiller && pFormFiller->Undo(pAnnot);
+}
+
+bool CFFL_InteractiveFormFiller::Redo(CPDFSDK_Annot* pAnnot) {
+  ASSERT(pAnnot->GetPDFAnnot()->GetSubtype() == CPDF_Annot::Subtype::WIDGET);
+  CFFL_FormFiller* pFormFiller = GetFormFiller(pAnnot, false);
+  return pFormFiller && pFormFiller->Redo(pAnnot);
 }
 
 void CFFL_InteractiveFormFiller::UnRegisterFormFiller(CPDFSDK_Annot* pAnnot) {

@@ -696,9 +696,9 @@ void HostContentSettingsMap::AddSettingsForOneType(
 
   while (rule_iterator->HasNext()) {
     const content_settings::Rule& rule = rule_iterator->Next();
-    settings->push_back(ContentSettingPatternSource(
+    settings->emplace_back(
         rule.primary_pattern, rule.secondary_pattern, rule.value->Clone(),
-        kProviderNamesSourceMap[provider_type].provider_name, incognito));
+        kProviderNamesSourceMap[provider_type].provider_name, incognito);
   }
 }
 
@@ -850,7 +850,7 @@ HostContentSettingsMap::GetContentSettingValueAndPatterns(
           *primary_pattern = rule.primary_pattern;
         if (secondary_pattern)
           *secondary_pattern = rule.secondary_pattern;
-        return base::WrapUnique(rule.value.get()->DeepCopy());
+        return base::WrapUnique(rule.value->DeepCopy());
       }
     }
   }

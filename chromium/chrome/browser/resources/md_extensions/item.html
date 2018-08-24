@@ -62,7 +62,7 @@
       #card {
         @apply --shadow-elevation-2dp;
         background: white;
-        border-radius: 2px;
+        border-radius: var(--cr-card-border-radius);
         display: flex;
         flex-direction: column;
         height: 160px;
@@ -78,7 +78,7 @@
       #main {
         display: flex;
         flex: 1;
-        padding: 16px 20px 17px;
+        padding: 16px 20px;
       }
 
       #content {
@@ -139,9 +139,7 @@
       }
 
       #button-strip {
-        /* Avoid ripple from overlapping container. */
-        -webkit-margin-end: 20px;
-        border-top: var(--cr-separator-line);
+        -webkit-padding-end: 20px;
         box-sizing: border-box;
         flex-shrink: 0;
         height: var(--cr-section-min-height);

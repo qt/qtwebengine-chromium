@@ -4,36 +4,24 @@
 
 #include "components/search_engines/template_url_service.h"
 
-#include <algorithm>
-#include <utility>
-
 #include "base/auto_reset.h"
 #include "base/callback.h"
-#include "base/command_line.h"
-#include "base/compiler_specific.h"
 #include "base/debug/crash_logging.h"
 #include "base/format_macros.h"
 #include "base/guid.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_split.h"
-#include "base/strings/string_util.h"
-#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time/default_clock.h"
-#include "base/time/time.h"
 #include "components/omnibox/browser/omnibox_field_trial.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "components/rappor/rappor_service_impl.h"
 #include "components/search_engines/search_engines_pref_names.h"
-#include "components/search_engines/search_host_to_urls_map.h"
 #include "components/search_engines/search_terms_data.h"
-#include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_prepopulate_data.h"
 #include "components/search_engines/template_url_service_client.h"
 #include "components/search_engines/template_url_service_observer.h"
 #include "components/search_engines/util.h"
-#include "components/sync/model/sync_change.h"
 #include "components/sync/model/sync_error_factory.h"
 #include "components/sync/protocol/search_engine_specifics.pb.h"
 #include "components/sync/protocol/sync.pb.h"
@@ -45,13 +33,6 @@ typedef SearchHostToURLsMap::TemplateURLSet TemplateURLSet;
 typedef TemplateURLService::SyncDataMap SyncDataMap;
 
 namespace {
-
-bool IdenticalSyncGUIDs(const TemplateURLData* data, const TemplateURL* turl) {
-  if (!data || !turl)
-    return !data && !turl;
-
-  return data->sync_guid == turl->sync_guid();
-}
 
 const char kDeleteSyncedEngineHistogramName[] =
     "Search.DeleteSyncedSearchEngine";
@@ -285,57 +266,26 @@ TemplateURLService::TemplateURLService(
       google_url_tracker_(google_url_tracker),
       rappor_service_(rappor_service),
       dsp_change_callback_(dsp_change_callback),
-      provider_map_(new SearchHostToURLsMap),
-      loaded_(false),
-      load_failed_(false),
-      disable_load_(false),
-      load_handle_(0),
-      default_search_provider_(nullptr),
-      next_id_(kInvalidTemplateURLID + 1),
-      clock_(new base::DefaultClock),
-      models_associated_(false),
-      processing_syncer_changes_(false),
-      dsp_change_origin_(DSP_CHANGE_OTHER),
       default_search_manager_(
           prefs_,
-          base::BindRepeating(&TemplateURLService::OnDefaultSearchChange,
-                              base::Unretained(this))),
-      outstanding_scoper_handles_(0),
-      model_mutated_notification_pending_(false) {
+          base::BindRepeating(&TemplateURLService::ApplyDefaultSearchChange,
+                              base::Unretained(this))) {
   DCHECK(search_terms_data_);
   Init(nullptr, 0);
 }
 
 TemplateURLService::TemplateURLService(const Initializer* initializers,
                                        const int count)
-    : prefs_(nullptr),
-      search_terms_data_(new SearchTermsData),
-      web_data_service_(nullptr),
-      google_url_tracker_(nullptr),
-      rappor_service_(nullptr),
-      provider_map_(new SearchHostToURLsMap),
-      loaded_(false),
-      load_failed_(false),
-      disable_load_(false),
-      load_handle_(0),
-      default_search_provider_(nullptr),
-      next_id_(kInvalidTemplateURLID + 1),
-      clock_(new base::DefaultClock),
-      models_associated_(false),
-      processing_syncer_changes_(false),
-      dsp_change_origin_(DSP_CHANGE_OTHER),
-      default_search_manager_(
+    : default_search_manager_(
           prefs_,
-          base::BindRepeating(&TemplateURLService::OnDefaultSearchChange,
-                              base::Unretained(this))),
-      outstanding_scoper_handles_(0),
-      model_mutated_notification_pending_(false) {
+          base::BindRepeating(&TemplateURLService::ApplyDefaultSearchChange,
+                              base::Unretained(this))) {
   Init(initializers, count);
 }
 
 TemplateURLService::~TemplateURLService() {
   // |web_data_service_| should be deleted during Shutdown().
-  DCHECK(!web_data_service_.get());
+  DCHECK(!web_data_service_);
 }
 
 // static
@@ -505,12 +455,21 @@ void TemplateURLService::Remove(const TemplateURL* template_url) {
   template_urls_.erase(i);
 
   if (template_url->type() == TemplateURL::NORMAL) {
-    if (web_data_service_.get())
+    if (web_data_service_)
       web_data_service_->RemoveKeyword(template_url->id());
 
     // Inform sync of the deletion.
     ProcessTemplateURLChange(FROM_HERE, template_url,
                              syncer::SyncChange::ACTION_DELETE);
+
+    // The default search engine can't be deleted. But the user defined DSE can
+    // be hidden by an extension or policy and then deleted. Clean up the user
+    // prefs then.
+    if (prefs_ &&
+        (template_url->sync_guid() ==
+         prefs_->GetString(prefs::kSyncedDefaultSearchProviderGUID))) {
+      prefs_->SetString(prefs::kSyncedDefaultSearchProviderGUID, std::string());
+    }
 
     UMA_HISTOGRAM_ENUMERATION(kDeleteSyncedEngineHistogramName,
                               DELETE_ENGINE_USER_ACTION, DELETE_ENGINE_MAX);
@@ -600,7 +559,7 @@ void TemplateURLService::IncrementUsageCount(TemplateURL* url) {
     return;
   ++url->data_.usage_count;
 
-  if (web_data_service_.get())
+  if (web_data_service_)
     web_data_service_->UpdateKeyword(url->data());
 }
 
@@ -622,6 +581,33 @@ void TemplateURLService::ResetTemplateURL(TemplateURL* url,
   data.safe_for_autoreplace = false;
   data.last_modified = clock_->Now();
   Update(url, TemplateURL(data));
+}
+
+void TemplateURLService::UpdateProviderFavicons(
+    const GURL& potential_search_url,
+    const GURL& favicon_url) {
+  DCHECK(loaded_);
+  DCHECK(potential_search_url.is_valid());
+
+  const TemplateURLSet* urls_for_host =
+      provider_map_->GetURLsForHost(potential_search_url.host());
+  if (!urls_for_host)
+    return;
+
+  // Make a copy of the container of the matching TemplateURLs, as the original
+  // container is invalidated as we update the contained TemplateURLs.
+  TemplateURLSet urls_for_host_copy(*urls_for_host);
+
+  Scoper scoper(this);
+  for (TemplateURL* turl : urls_for_host_copy) {
+    if (!IsCreatedByExtension(turl) &&
+        turl->IsSearchURL(potential_search_url, search_terms_data()) &&
+        turl->favicon_url() != favicon_url) {
+      TemplateURLData data(turl->data());
+      data.favicon_url = favicon_url;
+      Update(turl, TemplateURL(data));
+    }
+  }
 }
 
 bool TemplateURLService::CanMakeDefault(const TemplateURL* url) const {
@@ -649,8 +635,8 @@ void TemplateURLService::SetUserSelectedDefaultSearchProvider(
                                DefaultSearchManager::FROM_USER);
     }
   } else {
-    // We rely on the DefaultSearchManager to call OnDefaultSearchChange if, in
-    // fact, the effective DSE changes.
+    // We rely on the DefaultSearchManager to call ApplyDefaultSearchChange if,
+    // in fact, the effective DSE changes.
     if (url)
       default_search_manager_.SetUserSelectedDefaultSearchEngine(url->data());
     else
@@ -764,14 +750,15 @@ void TemplateURLService::Load() {
   if (loaded_ || load_handle_ || disable_load_)
     return;
 
-  if (web_data_service_.get())
+  if (web_data_service_)
     load_handle_ = web_data_service_->GetKeywords(this);
   else
     ChangeToLoadedState();
 }
 
 std::unique_ptr<TemplateURLService::Subscription>
-TemplateURLService::RegisterOnLoadedCallback(const base::Closure& callback) {
+TemplateURLService::RegisterOnLoadedCallback(
+    const base::RepeatingClosure& callback) {
   return loaded_ ? std::unique_ptr<TemplateURLService::Subscription>()
                  : on_loaded_callbacks_.Add(callback);
 }
@@ -872,7 +859,7 @@ void TemplateURLService::Shutdown() {
   // that no clients of KeywordWebDataService are holding ptrs to it after the
   // first phase of the KeyedService Shutdown() process.
   if (load_handle_) {
-    DCHECK(web_data_service_.get());
+    DCHECK(web_data_service_);
     web_data_service_->CancelRequest(load_handle_);
   }
   web_data_service_ = nullptr;
@@ -931,7 +918,7 @@ syncer::SyncError TemplateURLService::ProcessSyncChanges(
         CreateTemplateURLFromTemplateURLAndSyncData(
             client_.get(), prefs_, search_terms_data(), existing_turl,
             iter->sync_data(), &new_changes));
-    if (!turl.get())
+    if (!turl)
       continue;
 
     // Explicitly don't check for conflicts against extension keywords; in this
@@ -1001,7 +988,7 @@ syncer::SyncError TemplateURLService::ProcessSyncChanges(
           std::make_unique<TemplateURL>(data);
       TemplateURL* added = added_ptr.get();
       if (Add(std::move(added_ptr)))
-        MaybeUpdateDSEAfterSync(added);
+        MaybeUpdateDSEViaPrefs(added);
     } else if (iter->change_type() == syncer::SyncChange::ACTION_UPDATE) {
       if (!existing_turl) {
         error = sync_error_factory_->CreateAndUploadError(
@@ -1016,7 +1003,7 @@ syncer::SyncError TemplateURLService::ProcessSyncChanges(
                                    &new_changes);
       }
       if (Update(existing_turl, *turl))
-        MaybeUpdateDSEAfterSync(existing_turl);
+        MaybeUpdateDSEViaPrefs(existing_turl);
     } else {
       // We've unexpectedly received an ACTION_INVALID.
       error = sync_error_factory_->CreateAndUploadError(
@@ -1043,9 +1030,9 @@ syncer::SyncMergeResult TemplateURLService::MergeDataAndStartSyncing(
     std::unique_ptr<syncer::SyncErrorFactory> sync_error_factory) {
   DCHECK(loaded_);
   DCHECK_EQ(type, syncer::SEARCH_ENGINES);
-  DCHECK(!sync_processor_.get());
-  DCHECK(sync_processor.get());
-  DCHECK(sync_error_factory.get());
+  DCHECK(!sync_processor_);
+  DCHECK(sync_processor);
+  DCHECK(sync_error_factory);
   syncer::SyncMergeResult merge_result(type);
 
   // Disable sync if we failed to load.
@@ -1086,7 +1073,7 @@ syncer::SyncMergeResult TemplateURLService::MergeDataAndStartSyncing(
         CreateTemplateURLFromTemplateURLAndSyncData(
             client_.get(), prefs_, search_terms_data(), local_turl,
             iter->second, &new_changes));
-    if (!sync_turl.get())
+    if (!sync_turl)
       continue;
 
     if (pre_sync_deletes_.find(sync_turl->sync_guid()) !=
@@ -1667,11 +1654,10 @@ bool TemplateURLService::Update(TemplateURL* existing_turl,
                              syncer::SyncChange::ACTION_UPDATE);
   }
 
-  if (default_search_provider_ == existing_turl &&
-      default_search_provider_source_ == DefaultSearchManager::FROM_USER) {
-    default_search_manager_.SetUserSelectedDefaultSearchEngine(
-        default_search_provider_->data());
-  }
+  // Even if the DSE is controlled by an extension or policy, update the user
+  // preferences as they may take over later.
+  if (default_search_provider_source_ != DefaultSearchManager::FROM_FALLBACK)
+    MaybeUpdateDSEViaPrefs(existing_turl);
 
   DCHECK(!HasDuplicateKeywords());
   return true;
@@ -1696,7 +1682,7 @@ void TemplateURLService::UpdateTemplateURLIfPrepopulated(
   }
 }
 
-void TemplateURLService::MaybeUpdateDSEAfterSync(TemplateURL* synced_turl) {
+void TemplateURLService::MaybeUpdateDSEViaPrefs(TemplateURL* synced_turl) {
   if (prefs_ &&
       (synced_turl->sync_guid() ==
           prefs_->GetString(prefs::kSyncedDefaultSearchProviderGUID))) {
@@ -1834,17 +1820,6 @@ void TemplateURLService::GoogleBaseURLChanged() {
       Update(turl, updated_turl);
     }
   }
-}
-
-void TemplateURLService::OnDefaultSearchChange(
-    const TemplateURLData* data,
-    DefaultSearchManager::Source source) {
-  if (prefs_ && (source == DefaultSearchManager::FROM_USER) &&
-      ((source != default_search_provider_source_) ||
-       !IdenticalSyncGUIDs(data, GetDefaultSearchProvider()))) {
-    prefs_->SetString(prefs::kSyncedDefaultSearchProviderGUID, data->sync_guid);
-  }
-  ApplyDefaultSearchChange(data, source);
 }
 
 void TemplateURLService::ApplyDefaultSearchChange(
@@ -2012,7 +1987,7 @@ TemplateURL* TemplateURLService::Add(std::unique_ptr<TemplateURL> template_url,
   AddToMaps(template_url_ptr);
 
   if (newly_adding && (template_url_ptr->type() == TemplateURL::NORMAL)) {
-    if (web_data_service_.get())
+    if (web_data_service_)
       web_data_service_->AddKeyword(template_url_ptr->data());
 
     // Inform sync of the addition. Note that this will assign a GUID to
@@ -2062,7 +2037,7 @@ void TemplateURLService::UpdateProvidersCreatedByPolicy(
       TemplateURLID id = template_url->id();
       RemoveFromMaps(template_url);
       i = template_urls->erase(i);
-      if (web_data_service_.get())
+      if (web_data_service_)
         web_data_service_->RemoveKeyword(id);
     } else {
       ++i;
@@ -2284,7 +2259,7 @@ void TemplateURLService::MergeInSyncTemplateURL(
     base::AutoReset<DefaultSearchChangeOrigin> change_origin(
         &dsp_change_origin_, DSP_CHANGE_SYNC_ADD);
     if (Add(std::move(added_ptr)))
-      MaybeUpdateDSEAfterSync(added);
+      MaybeUpdateDSEViaPrefs(added);
     merge_result->set_num_items_added(merge_result->num_items_added() + 1);
   }
 }
@@ -2297,7 +2272,7 @@ void TemplateURLService::PatchMissingSyncGUIDs(
     if (template_url->sync_guid().empty() &&
         (template_url->type() == TemplateURL::NORMAL)) {
       template_url->data_.sync_guid = base::GenerateGUID();
-      if (web_data_service_.get())
+      if (web_data_service_)
         web_data_service_->UpdateKeyword(template_url->data());
     }
   }

@@ -147,17 +147,17 @@ class TestBluetoothAdapter : public BluetoothAdapter {
   void AddDiscoverySession(
       BluetoothDiscoveryFilter* discovery_filter,
       const base::Closure& callback,
-      const DiscoverySessionErrorCallback& error_callback) override {}
+      DiscoverySessionErrorCallback error_callback) override {}
 
   void RemoveDiscoverySession(
       BluetoothDiscoveryFilter* discovery_filter,
       const base::Closure& callback,
-      const DiscoverySessionErrorCallback& error_callback) override {}
+      DiscoverySessionErrorCallback error_callback) override {}
 
   void SetDiscoveryFilter(
       std::unique_ptr<BluetoothDiscoveryFilter> discovery_filter,
       const base::Closure& callback,
-      const DiscoverySessionErrorCallback& error_callback) override {}
+      DiscoverySessionErrorCallback error_callback) override {}
 
   void RemovePairingDelegateInternal(
       BluetoothDevice::PairingDelegate* pairing_delegate) override {}
@@ -434,12 +434,17 @@ TEST(BluetoothAdapterTest, GetMergedDiscoveryFilterAllFields) {
 }
 
 // TODO(scheib): Enable BluetoothTest fixture tests on all platforms.
-#if defined(OS_ANDROID) || defined(OS_MACOSX) || defined(OS_WIN)
+#if defined(OS_ANDROID) || defined(OS_MACOSX)
 #define MAYBE_ConstructDefaultAdapter ConstructDefaultAdapter
 #else
 #define MAYBE_ConstructDefaultAdapter DISABLED_ConstructDefaultAdapter
 #endif
+
+#if defined(OS_WIN)
+TEST_P(BluetoothTestWinrt, ConstructDefaultAdapter) {
+#else
 TEST_F(BluetoothTest, MAYBE_ConstructDefaultAdapter) {
+#endif
   InitWithDefaultAdapter();
   if (!adapter_->IsPresent()) {
     LOG(WARNING) << "Bluetooth adapter not present; skipping unit test.";
@@ -464,13 +469,18 @@ TEST_F(BluetoothTest, MAYBE_ConstructDefaultAdapter) {
 }
 
 // TODO(scheib): Enable BluetoothTest fixture tests on all platforms.
-#if defined(OS_ANDROID) || defined(OS_MACOSX) || defined(OS_WIN)
+#if defined(OS_ANDROID) || defined(OS_MACOSX)
 #define MAYBE_ConstructWithoutDefaultAdapter ConstructWithoutDefaultAdapter
 #else
 #define MAYBE_ConstructWithoutDefaultAdapter \
   DISABLED_ConstructWithoutDefaultAdapter
 #endif
+
+#if defined(OS_WIN)
+TEST_P(BluetoothTestWinrt, ConstructWithoutDefaultAdapter) {
+#else
 TEST_F(BluetoothTest, MAYBE_ConstructWithoutDefaultAdapter) {
+#endif  // defined(OS_WIN)
   InitWithoutDefaultAdapter();
   EXPECT_EQ(adapter_->GetAddress(), "");
   EXPECT_EQ(adapter_->GetName(), "");
@@ -481,12 +491,17 @@ TEST_F(BluetoothTest, MAYBE_ConstructWithoutDefaultAdapter) {
 }
 
 // TODO(scheib): Enable BluetoothTest fixture tests on all platforms.
-#if defined(OS_ANDROID) || defined(OS_MACOSX) || defined(OS_WIN)
+#if defined(OS_ANDROID) || defined(OS_MACOSX)
 #define MAYBE_ConstructFakeAdapter ConstructFakeAdapter
 #else
 #define MAYBE_ConstructFakeAdapter DISABLED_ConstructFakeAdapter
 #endif
+
+#if defined(OS_WIN)
+TEST_P(BluetoothTestWinrt, ConstructFakeAdapter) {
+#else
 TEST_F(BluetoothTest, MAYBE_ConstructFakeAdapter) {
+#endif  // defined(OS_WIN)
   if (!PlatformSupportsLowEnergy()) {
     LOG(WARNING) << "Low Energy Bluetooth unavailable, skipping unit test.";
     return;
@@ -1324,5 +1339,12 @@ TEST_F(BluetoothTest, DiscoverConnectedLowEnergyDeviceTwice) {
   EXPECT_EQ(1u, adapter_->GetDevices().size());
 }
 #endif  // defined(OS_MACOSX)
+
+#if defined(OS_WIN)
+INSTANTIATE_TEST_CASE_P(
+    /* no prefix */,
+    BluetoothTestWinrt,
+    ::testing::Bool());
+#endif  // defined(OS_WIN)
 
 }  // namespace device

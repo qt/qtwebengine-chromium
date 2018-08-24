@@ -24,6 +24,7 @@
 #include "third_party/blink/renderer/core/xmlhttprequest/xml_http_request.h"
 
 #include <memory>
+#include "base/auto_reset.h"
 #include "third_party/blink/public/mojom/feature_policy/feature_policy.mojom-blink.h"
 #include "third_party/blink/public/platform/web_cors.h"
 #include "third_party/blink/public/platform/web_url_request.h"
@@ -53,8 +54,8 @@
 #include "third_party/blink/renderer/core/html/forms/form_data.h"
 #include "third_party/blink/renderer/core/html/html_document.h"
 #include "third_party/blink/renderer/core/html/parser/text_resource_decoder.h"
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/loader/threadable_loader.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
@@ -87,7 +88,6 @@
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/cstring.h"
 
@@ -1045,7 +1045,7 @@ void XMLHttpRequest::CreateRequest(scoped_refptr<EncodedFormData> http_body,
   upload_events_allowed_ =
       same_origin_request_ || upload_events ||
       !CORS::IsCORSSafelistedMethod(method_) ||
-      !FetchUtils::ContainsOnlyCORSSafelistedHeaders(request_headers_);
+      !CORS::ContainsOnlyCORSSafelistedHeaders(request_headers_);
 
   ResourceRequest request(url_);
   request.SetHTTPMethod(method_);
@@ -1119,7 +1119,8 @@ void XMLHttpRequest::CreateRequest(scoped_refptr<EncodedFormData> http_body,
     if (upload_)
       request.SetReportUploadProgress(true);
 
-    DCHECK(!loader_);
+    // TODO(yhirano): Turn this CHECK into DCHECK: see https://crbug.com/570946.
+    CHECK(!loader_);
     DCHECK(send_flag_);
     loader_ = ThreadableLoader::Create(execution_context, this, options,
                                        resource_loader_options);
@@ -1182,6 +1183,8 @@ void XMLHttpRequest::Dispose() {
   probe::detachClientRequest(GetExecutionContext(), this);
   progress_event_throttle_->Stop();
   InternalAbort();
+  // TODO(yhirano): Remove this CHECK: see https://crbug.com/570946.
+  CHECK(!loader_);
 }
 
 void XMLHttpRequest::ClearVariablesForLoading() {
@@ -1408,7 +1411,7 @@ void XMLHttpRequest::setRequestHeader(const AtomicString& name,
 
   // "5. Terminate these steps if |name| is a forbidden header name."
   // No script (privileged or not) can set unsafe headers.
-  if (FetchUtils::IsForbiddenHeaderName(name)) {
+  if (CORS::IsForbiddenHeaderName(name)) {
     LogConsoleError(GetExecutionContext(),
                     "Refused to set unsafe header \"" + name + "\"");
     return;
@@ -1619,7 +1622,7 @@ void XMLHttpRequest::DidFailRedirectCheck() {
   HandleNetworkError();
 }
 
-void XMLHttpRequest::DidFinishLoading(unsigned long identifier, double) {
+void XMLHttpRequest::DidFinishLoading(unsigned long identifier) {
   NETWORK_DVLOG(1) << this << " didFinishLoading(" << identifier << ")";
   ScopedEventDispatchProtect protect(&event_dispatch_recursion_level_);
 
@@ -1708,7 +1711,7 @@ void XMLHttpRequest::EndLoading() {
   if (loader_) {
     // Set |m_error| in order to suppress the cancel notification (see
     // XMLHttpRequest::didFail).
-    AutoReset<bool> scope(&error_, true);
+    base::AutoReset<bool> scope(&error_, true);
     loader_.Release()->Cancel();
   }
 
@@ -1719,7 +1722,7 @@ void XMLHttpRequest::EndLoading() {
     return;
 
   if (GetDocument() && GetDocument()->GetFrame() &&
-      GetDocument()->GetFrame()->GetPage() && FetchUtils::IsOkStatus(status()))
+      GetDocument()->GetFrame()->GetPage() && CORS::IsOkStatus(status()))
     GetDocument()->GetFrame()->GetPage()->GetChromeClient().AjaxSucceeded(
         GetDocument()->GetFrame());
 }
@@ -2007,8 +2010,7 @@ void XMLHttpRequest::Trace(blink::Visitor* visitor) {
   PausableObject::Trace(visitor);
 }
 
-void XMLHttpRequest::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+void XMLHttpRequest::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(response_blob_);
   visitor->TraceWrappers(response_document_);
   visitor->TraceWrappers(response_array_buffer_);

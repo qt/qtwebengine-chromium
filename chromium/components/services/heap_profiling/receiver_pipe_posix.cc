@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_current.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/threading/thread.h"
 #include "build/build_config.h"
@@ -18,7 +18,7 @@
 
 namespace heap_profiling {
 
-ReceiverPipe::ReceiverPipe(mojo::edk::ScopedPlatformHandle handle)
+ReceiverPipe::ReceiverPipe(mojo::edk::ScopedInternalPlatformHandle handle)
     : ReceiverPipeBase(std::move(handle)),
       controller_(FROM_HERE),
       read_buffer_(new char[SenderPipe::kPipeSize]) {}
@@ -26,7 +26,7 @@ ReceiverPipe::ReceiverPipe(mojo::edk::ScopedPlatformHandle handle)
 ReceiverPipe::~ReceiverPipe() {}
 
 void ReceiverPipe::StartReadingOnIOThread() {
-  base::MessageLoopForIO::current()->WatchFileDescriptor(
+  base::MessageLoopCurrentForIO::Get()->WatchFileDescriptor(
       handle_.get().handle, true, base::MessagePumpForIO::WATCH_READ,
       &controller_, this);
   OnFileCanReadWithoutBlocking(handle_.get().handle);
@@ -35,16 +35,17 @@ void ReceiverPipe::StartReadingOnIOThread() {
 void ReceiverPipe::OnFileCanReadWithoutBlocking(int fd) {
   ssize_t bytes_read = 0;
   do {
-    base::circular_deque<mojo::edk::PlatformHandle> dummy_for_receive;
+    base::circular_deque<mojo::edk::InternalPlatformHandle> dummy_for_receive;
 
     bytes_read = HANDLE_EINTR(
         read(handle_.get().handle, read_buffer_.get(), SenderPipe::kPipeSize));
     if (bytes_read > 0) {
       receiver_task_runner_->PostTask(
-          FROM_HERE, base::BindOnce(&ReceiverPipe::OnStreamDataThunk, this,
-                                    base::MessageLoop::current()->task_runner(),
-                                    std::move(read_buffer_),
-                                    static_cast<size_t>(bytes_read)));
+          FROM_HERE,
+          base::BindOnce(&ReceiverPipe::OnStreamDataThunk, this,
+                         base::MessageLoopCurrent::Get()->task_runner(),
+                         std::move(read_buffer_),
+                         static_cast<size_t>(bytes_read)));
       read_buffer_.reset(new char[SenderPipe::kPipeSize]);
       return;
     } else if (bytes_read == 0) {

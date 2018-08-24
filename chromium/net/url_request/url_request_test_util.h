@@ -27,6 +27,7 @@
 #include "net/base/network_delegate_impl.h"
 #include "net/base/request_priority.h"
 #include "net/cert/cert_verifier.h"
+#include "net/cert/ct_policy_enforcer.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/ftp/ftp_network_layer.h"
@@ -128,12 +129,16 @@ class TestURLRequestContextGetter : public URLRequestContextGetter {
   scoped_refptr<base::SingleThreadTaskRunner> GetNetworkTaskRunner()
       const override;
 
+  // see NotifyContextShuttingDown() in the base class.
+  void NotifyContextShuttingDown();
+
  protected:
   ~TestURLRequestContextGetter() override;
 
  private:
   const scoped_refptr<base::SingleThreadTaskRunner> network_task_runner_;
   std::unique_ptr<TestURLRequestContext> context_;
+  bool is_shut_down_ = false;
 };
 
 //-----------------------------------------------------------------------------

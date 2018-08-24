@@ -6,19 +6,17 @@
 #define NGInlineItem_h
 
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/layout/ng/inline/ng_offset_mapping.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_style_variant.h"
-#include "third_party/blink/renderer/platform/fonts/font_fallback_priority.h"
+#include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result.h"
-#include "third_party/blink/renderer/platform/fonts/simple_font_data.h"
-#include "third_party/blink/renderer/platform/layout_unit.h"
 #include "third_party/blink/renderer/platform/text/text_direction.h"
-#include "third_party/blink/renderer/platform/wtf/hash_set.h"
 
 #include <unicode/ubidi.h>
+#include <unicode/uscript.h>
 
 namespace blink {
 
-class ComputedStyle;
 class LayoutObject;
 
 // Class representing a single text node or styled inline element with text
@@ -66,8 +64,15 @@ class CORE_EXPORT NGInlineItem {
                unsigned start,
                unsigned end,
                const ComputedStyle* style = nullptr,
-               LayoutObject* layout_object = nullptr);
+               LayoutObject* layout_object = nullptr,
+               bool end_may_collapse = false);
   ~NGInlineItem();
+
+  // Copy constructor adjusting start/end and shape results.
+  NGInlineItem(const NGInlineItem&,
+               unsigned adjusted_start,
+               unsigned adjusted_end,
+               scoped_refptr<const ShapeResult>);
 
   NGInlineItemType Type() const { return static_cast<NGInlineItemType>(type_); }
   const char* NGInlineItemTypeToString(int val) const;
@@ -118,7 +123,13 @@ class CORE_EXPORT NGInlineItem {
   }
   void SetEndCollapseType(NGCollapseType type) { end_collapse_type_ = type; }
 
+  // Whether the item may be affected by whitespace collapsing. Unlike the
+  // EndCollapseType() method this returns true even if a trailing space has
+  // been removed.
+  bool EndMayCollapse() const { return end_may_collapse_; }
+
   static void Split(Vector<NGInlineItem>&, unsigned index, unsigned offset);
+  void SetBidiLevel(UBiDiLevel);
   static unsigned SetBidiLevel(Vector<NGInlineItem>&,
                                unsigned index,
                                unsigned end_offset,
@@ -146,6 +157,7 @@ class CORE_EXPORT NGInlineItem {
   unsigned should_create_box_fragment_ : 1;
   unsigned style_variant_ : 2;
   unsigned end_collapse_type_ : 2;  // NGCollapseType
+  unsigned end_may_collapse_ : 1;
   friend class NGInlineNode;
 };
 
@@ -159,41 +171,23 @@ inline void NGInlineItem::AssertEndOffset(unsigned offset) const {
   DCHECK_LE(offset, end_offset_);
 }
 
-// A vector-like object that points to a subset of an array of |NGInlineItem|.
-// The source vector must keep alive and must not resize while this object
-// is alive.
-class NGInlineItemRange {
-  STACK_ALLOCATED();
+// Represents a text content with a list of NGInlineItem. A node may have an
+// additional NGInlineItemsData for ::first-line pseudo element.
+struct CORE_EXPORT NGInlineItemsData {
+  // Text content for all inline items represented by a single NGInlineNode.
+  // Encoded either as UTF-16 or latin-1 depending on the content.
+  String text_content;
+  Vector<NGInlineItem> items;
 
- public:
-  NGInlineItemRange(Vector<NGInlineItem>*,
-                    unsigned start_index,
-                    unsigned end_index);
+  // The DOM to text content offset mapping of this inline node.
+  std::unique_ptr<NGOffsetMapping> offset_mapping;
 
-  unsigned StartIndex() const { return start_index_; }
-  unsigned EndIndex() const { return start_index_ + size_; }
-  unsigned Size() const { return size_; }
-
-  NGInlineItem& operator[](unsigned index) {
-    CHECK_LT(index, size_);
-    return start_item_[index];
+  void AssertOffset(unsigned index, unsigned offset) const {
+    items[index].AssertOffset(offset);
   }
-  const NGInlineItem& operator[](unsigned index) const {
-    CHECK_LT(index, size_);
-    return start_item_[index];
+  void AssertEndOffset(unsigned index, unsigned offset) const {
+    items[index].AssertEndOffset(offset);
   }
-
-  using iterator = NGInlineItem*;
-  using const_iterator = const NGInlineItem*;
-  iterator begin() { return start_item_; }
-  iterator end() { return start_item_ + size_; }
-  const_iterator begin() const { return start_item_; }
-  const_iterator end() const { return start_item_ + size_; }
-
- private:
-  NGInlineItem* start_item_;
-  unsigned size_;
-  unsigned start_index_;
 };
 
 }  // namespace blink

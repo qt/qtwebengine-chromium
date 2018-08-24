@@ -76,6 +76,7 @@ namespace blink {
 ServiceWorkerGlobalScope* ServiceWorkerGlobalScope::Create(
     ServiceWorkerThread* thread,
     std::unique_ptr<GlobalScopeCreationParams> creation_params,
+    mojom::blink::CacheStoragePtrInfo cache_storage_info,
     double time_origin) {
   // If the script is being loaded via script streaming, the script is not yet
   // loaded.
@@ -89,22 +90,40 @@ ServiceWorkerGlobalScope* ServiceWorkerGlobalScope::Create(
     DCHECK(creation_params->origin_trial_tokens->IsEmpty());
   }
   return new ServiceWorkerGlobalScope(std::move(creation_params), thread,
+                                      std::move(cache_storage_info),
                                       time_origin);
 }
 
 ServiceWorkerGlobalScope::ServiceWorkerGlobalScope(
     std::unique_ptr<GlobalScopeCreationParams> creation_params,
     ServiceWorkerThread* thread,
+    mojom::blink::CacheStoragePtrInfo cache_storage_info,
     double time_origin)
-    : WorkerGlobalScope(std::move(creation_params), thread, time_origin) {}
+    : WorkerGlobalScope(std::move(creation_params), thread, time_origin),
+      cache_storage_info_(std::move(cache_storage_info)) {}
 
 ServiceWorkerGlobalScope::~ServiceWorkerGlobalScope() = default;
+
+void ServiceWorkerGlobalScope::ReadyToEvaluateScript() {
+  DCHECK(!evaluate_script_ready_);
+  evaluate_script_ready_ = true;
+  if (evaluate_script_)
+    std::move(evaluate_script_).Run();
+}
 
 void ServiceWorkerGlobalScope::EvaluateClassicScript(
     const KURL& script_url,
     String source_code,
     std::unique_ptr<Vector<char>> cached_meta_data) {
   DCHECK(IsContextThread());
+
+  if (!evaluate_script_ready_) {
+    evaluate_script_ =
+        WTF::Bind(&ServiceWorkerGlobalScope::EvaluateClassicScript,
+                  WrapWeakPersistent(this), script_url, std::move(source_code),
+                  std::move(cached_meta_data));
+    return;
+  }
 
   // Receive the main script via script streaming if needed.
   InstalledScriptsManager* installed_scripts_manager =
@@ -126,7 +145,7 @@ void ServiceWorkerGlobalScope::EvaluateClassicScript(
     source_code = script_data.TakeSourceText();
     cached_meta_data = script_data.TakeMetaData();
 
-    WTF::Optional<ContentSecurityPolicyResponseHeaders>
+    base::Optional<ContentSecurityPolicyResponseHeaders>
         content_security_policy_raw_headers =
             script_data.GetContentSecurityPolicyResponseHeaders();
     ApplyContentSecurityPolicyFromHeaders(
@@ -148,6 +167,14 @@ void ServiceWorkerGlobalScope::EvaluateClassicScript(
 
   WorkerGlobalScope::EvaluateClassicScript(script_url, source_code,
                                            std::move(cached_meta_data));
+}
+
+void ServiceWorkerGlobalScope::ImportModuleScript(
+    const KURL& module_url_record,
+    network::mojom::FetchCredentialsMode credentials_mode) {
+  // TODO(nhiroki): Implement module loading for service workers.
+  // (https://crbug.com/824647)
+  NOTREACHED();
 }
 
 void ServiceWorkerGlobalScope::CountWorkerScript(size_t script_size,
@@ -363,6 +390,10 @@ void ServiceWorkerGlobalScope::SetIsInstalling(bool is_installing) {
     cache_storage_installed_script_metadata_total_size_histogram.Count(
         cache_storage_installed_script_metadata_total_size_);
   }
+}
+
+mojom::blink::CacheStoragePtrInfo ServiceWorkerGlobalScope::TakeCacheStorage() {
+  return std::move(cache_storage_info_);
 }
 
 }  // namespace blink

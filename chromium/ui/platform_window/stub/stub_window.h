@@ -15,6 +15,8 @@ namespace ui {
 
 class PlatformWindowDelegate;
 
+// StubWindow is useful for tests, as well as implementations that only care
+// about bounds.
 class STUB_WINDOW_EXPORT StubWindow : public PlatformWindow {
  public:
   explicit StubWindow(PlatformWindowDelegate* delegate,
@@ -41,6 +43,7 @@ class STUB_WINDOW_EXPORT StubWindow : public PlatformWindow {
   void Maximize() override;
   void Minimize() override;
   void Restore() override;
+  PlatformWindowState GetPlatformWindowState() const override;
   void SetCursor(PlatformCursor cursor) override;
   void MoveCursorTo(const gfx::Point& location) override;
   void ConfineCursorToBounds(const gfx::Rect& bounds) override;

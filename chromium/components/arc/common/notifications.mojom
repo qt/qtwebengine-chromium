@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// Next MinVersion: 16
+// Next MinVersion: 17
 
 module arc.mojom;
 
@@ -34,14 +34,16 @@ enum ArcNotificationType {
   BUNDLED = 4,
 };
 
-// These values are corresponding to the priorities of Android notification.
+// These values are corresponding to the priorities or importance of Android
+// notification.
 [Extensible]
 enum ArcNotificationPriority {
-  MIN = -2,  // same value as Notification.PRIORITY_MIN
-  LOW = -1,  // same value as Notification.PRIORITY_LOW
-  DEFAULT = 0,  // same value as Notification.PRIORITY_DEFAULT
-  HIGH = 1,  // same value as Notification.PRIORITY_HIGH
-  MAX = 2,  // same value as Notification.PRIORITY_MAX
+  NONE = -3,
+  MIN = -2,
+  LOW = -1,
+  DEFAULT = 0,
+  HIGH = 1,
+  MAX = 2,
 };
 
 // DEPRECATED
@@ -139,7 +141,7 @@ struct ArcNotificationData {
   string? package_name;
 };
 
-// Next Method ID: 6
+// Next Method ID: 7
 interface NotificationsHost {
   // Tells the Chrome that a notification is posted (created or updated) on
   // Android. If you know that the notification exists, please consider to use
@@ -154,6 +156,10 @@ interface NotificationsHost {
   [MinVersion=13]
   // Notifies that an existing notiication is updated on Android.
   OnNotificationUpdated@5(ArcNotificationData notification_data);
+
+  [MinVersion=16]
+  // Opens the Chrome OS message center.
+  OpenMessageCenter@6();
 };
 
 // Next Method ID: 6

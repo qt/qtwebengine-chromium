@@ -148,10 +148,6 @@ void WebSettingsImpl::SetAutoZoomFocusedNodeToLegibleScale(
       auto_zoom_focused_node_to_legible_scale;
 }
 
-void WebSettingsImpl::SetBrowserSideNavigationEnabled(bool enabled) {
-  settings_->SetBrowserSideNavigationEnabled(enabled);
-}
-
 void WebSettingsImpl::SetTextAutosizingEnabled(bool enabled) {
   dev_tools_emulator_->SetTextAutosizingEnabled(enabled);
 }
@@ -627,6 +623,14 @@ void WebSettingsImpl::SetShouldRespectImageOrientation(bool enabled) {
 
 void WebSettingsImpl::SetPictureInPictureEnabled(bool enabled) {
   settings_->SetPictureInPictureEnabled(enabled);
+}
+
+void WebSettingsImpl::SetDataSaverHoldbackWebApi(bool enabled) {
+  settings_->SetDataSaverHoldbackWebApi(enabled);
+}
+
+void WebSettingsImpl::SetDataSaverHoldbackMediaApi(bool enabled) {
+  settings_->SetDataSaverHoldbackMediaApi(enabled);
 }
 
 void WebSettingsImpl::SetMediaPlaybackGestureWhitelistScope(

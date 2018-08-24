@@ -5,7 +5,6 @@
 #include "third_party/blink/renderer/platform/graphics/paint/paint_artifact.h"
 
 #include "cc/paint/display_item_list.h"
-#include "third_party/blink/public/platform/web_display_item_list.h"
 #include "third_party/blink/renderer/platform/geometry/int_rect.h"
 #include "third_party/blink/renderer/platform/graphics/compositing/paint_chunks_to_cc_layer.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
@@ -20,6 +19,10 @@ namespace {
 
 void ComputeChunkBoundsAndOpaqueness(const DisplayItemList& display_items,
                                      Vector<PaintChunk>& paint_chunks) {
+  // This happens in tests testing paint chunks without display items.
+  if (display_items.IsEmpty())
+    return;
+
   for (PaintChunk& chunk : paint_chunks) {
     FloatRect bounds;
     SkRegion known_to_be_opaque_region;
@@ -46,33 +49,43 @@ void ComputeChunkBoundsAndOpaqueness(const DisplayItemList& display_items,
 PaintArtifact::PaintArtifact() : display_item_list_(0) {}
 
 PaintArtifact::PaintArtifact(DisplayItemList display_items,
-                             Vector<PaintChunk> paint_chunks)
+                             PaintChunksAndRasterInvalidations data)
     : display_item_list_(std::move(display_items)),
-      paint_chunks_(std::move(paint_chunks)) {
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    ComputeChunkBoundsAndOpaqueness(display_item_list_, paint_chunks_);
+      chunks_and_invalidations_(std::move(data)) {
+  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
+    ComputeChunkBoundsAndOpaqueness(display_item_list_,
+                                    chunks_and_invalidations_.chunks);
+  }
 }
 
 PaintArtifact::PaintArtifact(PaintArtifact&& source)
     : display_item_list_(std::move(source.display_item_list_)),
-      paint_chunks_(std::move(source.paint_chunks_)) {}
+      chunks_and_invalidations_(std::move(source.chunks_and_invalidations_)) {}
 
 PaintArtifact::~PaintArtifact() = default;
 
 PaintArtifact& PaintArtifact::operator=(PaintArtifact&& source) {
   display_item_list_ = std::move(source.display_item_list_);
-  paint_chunks_ = std::move(source.paint_chunks_);
+  chunks_and_invalidations_ = std::move(source.chunks_and_invalidations_);
   return *this;
 }
 
 void PaintArtifact::Reset() {
   display_item_list_.Clear();
-  paint_chunks_.clear();
+  chunks_and_invalidations_.Clear();
 }
 
 size_t PaintArtifact::ApproximateUnsharedMemoryUsage() const {
-  return sizeof(*this) + display_item_list_.MemoryUsageInBytes() +
-         paint_chunks_.capacity() * sizeof(paint_chunks_[0]);
+  // This function must be called after a full document life cycle update,
+  // when we have cleared raster invalidation information.
+  DCHECK(chunks_and_invalidations_.raster_invalidation_rects.IsEmpty());
+  DCHECK(chunks_and_invalidations_.raster_invalidation_trackings.IsEmpty());
+  size_t total_size = sizeof(*this) + display_item_list_.MemoryUsageInBytes() +
+                      chunks_and_invalidations_.chunks.capacity() *
+                          sizeof(chunks_and_invalidations_.chunks[0]);
+  for (const auto& chunk : chunks_and_invalidations_.chunks)
+    total_size += chunk.MemoryUsageInBytes();
+  return total_size;
 }
 
 void PaintArtifact::Replay(GraphicsContext& graphics_context,
@@ -102,12 +115,20 @@ void PaintArtifact::Replay(PaintCanvas& canvas,
 }
 
 DISABLE_CFI_PERF
-void PaintArtifact::AppendToWebDisplayItemList(
-    const FloatSize& visual_rect_offset,
-    WebDisplayItemList* list) const {
-  TRACE_EVENT0("blink,benchmark", "PaintArtifact::appendToWebDisplayItemList");
+void PaintArtifact::AppendToDisplayItemList(const FloatSize& visual_rect_offset,
+                                            cc::DisplayItemList& list) const {
+  TRACE_EVENT0("blink,benchmark", "PaintArtifact::AppendToDisplayItemList");
   for (const DisplayItem& item : display_item_list_)
-    item.AppendToWebDisplayItemList(visual_rect_offset, list);
+    item.AppendToDisplayItemList(visual_rect_offset, list);
+}
+
+void PaintArtifact::FinishCycle() {
+  for (auto& chunk : chunks_and_invalidations_.chunks) {
+    chunk.client_is_just_created = false;
+    chunk.properties.ClearChangedToRoot();
+  }
+  chunks_and_invalidations_.raster_invalidation_rects.clear();
+  chunks_and_invalidations_.raster_invalidation_trackings.clear();
 }
 
 }  // namespace blink

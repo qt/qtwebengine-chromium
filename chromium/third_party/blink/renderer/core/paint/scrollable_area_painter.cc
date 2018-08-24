@@ -19,6 +19,7 @@
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/scoped_paint_chunk_properties.h"
 #include "third_party/blink/renderer/platform/platform_chrome_client.h"
+#include "third_party/blink/renderer/platform/scroll/scrollbar_theme.h"
 
 namespace blink {
 
@@ -173,17 +174,21 @@ void ScrollableAreaPainter::PaintOverflowControls(
 
   GraphicsContext& context = paint_info.context;
 
-  Optional<ClipRecorder> clip_recorder;
-  Optional<ScopedPaintChunkProperties> scoped_paint_chunk_properties;
+  base::Optional<ClipRecorder> clip_recorder;
+  base::Optional<ScopedPaintChunkProperties> scoped_paint_chunk_properties;
   if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     const auto& box = *GetScrollableArea().GetLayoutBox();
     if (const auto* fragment = paint_info.FragmentToPaint(box)) {
       const auto* properties = fragment->PaintProperties();
+      // TODO(crbug.com/849278): Remove either the DCHECK or the if condition
+      // when we figure out in what cases that the box doesn't have properties.
       DCHECK(properties);
-      if (const auto* clip = properties->OverflowControlsClip()) {
-        scoped_paint_chunk_properties.emplace(
-            context.GetPaintController(), clip, box,
-            DisplayItem::kClipLayerOverflowControls);
+      if (properties) {
+        if (const auto* clip = properties->OverflowControlsClip()) {
+          scoped_paint_chunk_properties.emplace(
+              context.GetPaintController(), clip, box,
+              DisplayItem::kClipLayerOverflowControls);
+        }
       }
     }
   } else {
@@ -261,18 +266,23 @@ void ScrollableAreaPainter::PaintScrollCorner(
     return;
   }
 
-  // We don't want to paint white if we have overlay scrollbars, since we need
+  // We don't want to paint opaque if we have overlay scrollbars, since we need
   // to see what is behind it.
   if (GetScrollableArea().HasOverlayScrollbars())
     return;
 
-  const auto& client = DisplayItemClientForCorner();
-  if (DrawingRecorder::UseCachedDrawingIfPossible(
-          context, client, DisplayItem::kScrollbarCorner))
-    return;
+  ScrollbarTheme* theme = nullptr;
 
-  DrawingRecorder recorder(context, client, DisplayItem::kScrollbarCorner);
-  context.FillRect(abs_rect, Color::kWhite);
+  if (GetScrollableArea().HorizontalScrollbar()) {
+    theme = &GetScrollableArea().HorizontalScrollbar()->GetTheme();
+  } else if (GetScrollableArea().VerticalScrollbar()) {
+    theme = &GetScrollableArea().VerticalScrollbar()->GetTheme();
+  } else {
+    NOTREACHED();
+  }
+
+  const auto& client = DisplayItemClientForCorner();
+  theme->PaintScrollCorner(context, client, abs_rect);
 }
 
 PaintLayerScrollableArea& ScrollableAreaPainter::GetScrollableArea() const {

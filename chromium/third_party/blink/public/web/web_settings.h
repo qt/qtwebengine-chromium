@@ -151,7 +151,6 @@ class WebSettings {
   virtual void SetAntialiasedClips2dCanvasEnabled(bool) = 0;
   virtual void SetAutoplayPolicy(AutoplayPolicy) = 0;
   virtual void SetAutoZoomFocusedNodeToLegibleScale(bool) = 0;
-  virtual void SetBrowserSideNavigationEnabled(bool) = 0;
   virtual void SetClobberUserAgentInitialScaleQuirk(bool) = 0;
   virtual void SetCookieEnabled(bool) = 0;
   virtual void SetNavigateOnDragDrop(bool) = 0;
@@ -203,6 +202,8 @@ class WebSettings {
   virtual void SetMainFrameResizesAreOrientationChanges(bool) = 0;
   virtual void SetMaxTouchPoints(int) = 0;
   virtual void SetPictureInPictureEnabled(bool) = 0;
+  virtual void SetDataSaverHoldbackWebApi(bool) = 0;
+  virtual void SetDataSaverHoldbackMediaApi(bool) = 0;
   virtual void SetMediaPlaybackGestureWhitelistScope(const WebString&) = 0;
   virtual void SetPresentationRequiresUserGesture(bool) = 0;
   virtual void SetEmbeddedMediaExperienceEnabled(bool) = 0;

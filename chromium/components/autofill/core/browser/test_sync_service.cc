@@ -8,6 +8,7 @@
 
 #include "components/sync/base/model_type.h"
 #include "components/sync/base/progress_marker_map.h"
+#include "components/sync/driver/sync_token_status.h"
 #include "components/sync/engine/cycle/model_neutral_state.h"
 #include "components/sync/engine/cycle/sync_cycle_snapshot.h"
 
@@ -53,14 +54,16 @@ syncer::SyncCycleSnapshot TestSyncService::GetLastCycleSnapshot() const {
         7, false, 0, base::Time::Now(), base::Time::Now(),
         std::vector<int>(syncer::MODEL_TYPE_COUNT, 0),
         std::vector<int>(syncer::MODEL_TYPE_COUNT, 0),
-        sync_pb::SyncEnums::UNKNOWN_ORIGIN);
+        sync_pb::SyncEnums::UNKNOWN_ORIGIN,
+        /*short_poll_interval=*/base::TimeDelta::FromMinutes(30),
+        /*long_poll_interval=*/base::TimeDelta::FromMinutes(180),
+        /*has_remaining_local_changes=*/false);
   }
   return syncer::SyncCycleSnapshot();
 }
 
-syncer::SyncService::SyncTokenStatus TestSyncService::GetSyncTokenStatus()
-    const {
-  syncer::SyncService::SyncTokenStatus token;
+syncer::SyncTokenStatus TestSyncService::GetSyncTokenStatus() const {
+  syncer::SyncTokenStatus token;
 
   if (is_in_auth_error_) {
     token.connection_status = syncer::ConnectionStatus::CONNECTION_AUTH_ERROR;

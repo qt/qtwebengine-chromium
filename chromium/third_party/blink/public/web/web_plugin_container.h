@@ -35,6 +35,10 @@
 #include "third_party/blink/public/platform/web_common.h"
 #include "v8/include/v8.h"
 
+namespace cc {
+class Layer;
+}
+
 namespace blink {
 
 class WebDocument;
@@ -43,7 +47,6 @@ class WebPlugin;
 class WebString;
 class WebURL;
 class WebURLRequest;
-class WebLayer;
 class WebDOMMessageEvent;
 struct WebPoint;
 struct WebRect;
@@ -132,13 +135,16 @@ class WebPluginContainer {
   // The caller is then responsible for destroying the old plugin.
   virtual void SetPlugin(WebPlugin*) = 0;
 
+  // Sets |this| as find handler for the associated frame.
+  virtual void UsePluginAsFindHandler() = 0;
+
   virtual float DeviceScaleFactor() = 0;
   virtual float PageScaleFactor() = 0;
   virtual float PageZoomFactor() = 0;
 
   // Sets the layer representing the plugin for compositing. The
   // WebPluginContainer does *not* take ownership.
-  virtual void SetWebLayer(WebLayer*) = 0;
+  virtual void SetCcLayer(cc::Layer*, bool prevent_contents_opaque_changes) = 0;
 
   virtual void RequestFullscreen() = 0;
   virtual bool IsFullscreenElement() const = 0;

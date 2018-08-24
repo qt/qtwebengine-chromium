@@ -27,6 +27,7 @@
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_request.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_test.h"
+#include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 
 namespace blink {
 
@@ -44,7 +45,7 @@ class TapEventBuilder : public WebGestureEvent {
   TapEventBuilder(FloatPoint position, int tap_count)
       : WebGestureEvent(WebInputEvent::kGestureTap,
                         WebInputEvent::kNoModifiers,
-                        CurrentTimeTicksInSeconds(),
+                        CurrentTimeTicks(),
                         kWebGestureDeviceTouchscreen) {
     SetPositionInWidget(position);
     SetPositionInScreen(position);
@@ -55,12 +56,42 @@ class TapEventBuilder : public WebGestureEvent {
   }
 };
 
+class TapDownEventBuilder : public WebGestureEvent {
+ public:
+  TapDownEventBuilder(FloatPoint position)
+      : WebGestureEvent(WebInputEvent::kGestureTapDown,
+                        WebInputEvent::kNoModifiers,
+                        CurrentTimeTicks(),
+                        kWebGestureDeviceTouchscreen) {
+    SetPositionInWidget(position);
+    SetPositionInScreen(position);
+    data.tap_down.width = 5;
+    data.tap_down.height = 5;
+    frame_scale_ = 1;
+  }
+};
+
+class ShowPressEventBuilder : public WebGestureEvent {
+ public:
+  ShowPressEventBuilder(FloatPoint position)
+      : WebGestureEvent(WebInputEvent::kGestureShowPress,
+                        WebInputEvent::kNoModifiers,
+                        CurrentTimeTicks(),
+                        kWebGestureDeviceTouchscreen) {
+    SetPositionInWidget(position);
+    SetPositionInScreen(position);
+    data.show_press.width = 5;
+    data.show_press.height = 5;
+    frame_scale_ = 1;
+  }
+};
+
 class LongPressEventBuilder : public WebGestureEvent {
  public:
   LongPressEventBuilder(FloatPoint position)
       : WebGestureEvent(WebInputEvent::kGestureLongPress,
                         WebInputEvent::kNoModifiers,
-                        CurrentTimeTicksInSeconds(),
+                        CurrentTimeTicks(),
                         kWebGestureDeviceTouchscreen) {
     SetPositionInWidget(position);
     SetPositionInScreen(position);
@@ -77,7 +108,7 @@ class MousePressEventBuilder : public WebMouseEvent {
                          WebMouseEvent::Button button_param)
       : WebMouseEvent(WebInputEvent::kMouseDown,
                       WebInputEvent::kNoModifiers,
-                      CurrentTimeTicksInSeconds()) {
+                      CurrentTimeTicks()) {
     click_count = click_count_param;
     button = button_param;
     SetPositionInWidget(position_param.X(), position_param.Y());
@@ -147,9 +178,8 @@ TEST_F(EventHandlerTest, dragSelectionAfterScroll) {
   GetDocument().GetFrame()->GetEventHandler().HandleMouseMoveEvent(
       mouse_move_event, Vector<WebMouseEvent>());
 
-  GetPage().GetAutoscrollController().Animate(WTF::CurrentTimeTicksInSeconds());
-  GetPage().Animator().ServiceScriptedAnimations(
-      WTF::CurrentTimeTicksInSeconds());
+  GetPage().GetAutoscrollController().Animate();
+  GetPage().Animator().ServiceScriptedAnimations(WTF::CurrentTimeTicks());
 
   WebMouseEvent mouse_up_event(
       WebMouseEvent::kMouseUp, WebFloatPoint(100, 50), WebFloatPoint(200, 250),
@@ -576,7 +606,7 @@ TEST_F(EventHandlerTest, sendContextMenuEventWithHover) {
   WebMouseEvent mouse_down_event(
       WebMouseEvent::kMouseDown, WebFloatPoint(0, 0), WebFloatPoint(100, 200),
       WebPointerProperties::Button::kRight, 1,
-      WebInputEvent::Modifiers::kRightButtonDown, CurrentTimeTicksInSeconds());
+      WebInputEvent::Modifiers::kRightButtonDown, CurrentTimeTicks());
   mouse_down_event.SetFrameScale(1);
   EXPECT_EQ(WebInputEventResult::kHandledApplication,
             GetDocument().GetFrame()->GetEventHandler().SendContextMenuEvent(
@@ -733,7 +763,7 @@ TEST_F(EventHandlerTest, dragEndInNewDrag) {
   WebMouseEvent mouse_down_event(
       WebInputEvent::kMouseDown, WebFloatPoint(50, 50), WebFloatPoint(50, 50),
       WebPointerProperties::Button::kLeft, 1,
-      WebInputEvent::Modifiers::kLeftButtonDown, CurrentTimeTicksInSeconds());
+      WebInputEvent::Modifiers::kLeftButtonDown, CurrentTimeTicks());
   mouse_down_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(
       mouse_down_event);
@@ -741,7 +771,7 @@ TEST_F(EventHandlerTest, dragEndInNewDrag) {
   WebMouseEvent mouse_move_event(
       WebInputEvent::kMouseMove, WebFloatPoint(51, 50), WebFloatPoint(51, 50),
       WebPointerProperties::Button::kLeft, 1,
-      WebInputEvent::Modifiers::kLeftButtonDown, CurrentTimeTicksInSeconds());
+      WebInputEvent::Modifiers::kLeftButtonDown, CurrentTimeTicks());
   mouse_move_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseMoveEvent(
       mouse_move_event, Vector<WebMouseEvent>());
@@ -752,10 +782,10 @@ TEST_F(EventHandlerTest, dragEndInNewDrag) {
   // this contrived test. Given the current code, it is unclear how the
   // dragSourceEndedAt() call could occur before a drag operation is started.
 
-  WebMouseEvent mouse_up_event(
-      WebInputEvent::kMouseUp, WebFloatPoint(100, 50), WebFloatPoint(200, 250),
-      WebPointerProperties::Button::kLeft, 1, WebInputEvent::kNoModifiers,
-      CurrentTimeTicksInSeconds());
+  WebMouseEvent mouse_up_event(WebInputEvent::kMouseUp, WebFloatPoint(100, 50),
+                               WebFloatPoint(200, 250),
+                               WebPointerProperties::Button::kLeft, 1,
+                               WebInputEvent::kNoModifiers, CurrentTimeTicks());
   mouse_up_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().DragSourceEndedAt(
       mouse_up_event, kDragOperationNone);
@@ -844,7 +874,7 @@ TEST_F(EventHandlerTooltipTest, mouseLeaveClearsTooltip) {
   WebMouseEvent mouse_move_event(
       WebInputEvent::kMouseMove, WebFloatPoint(51, 50), WebFloatPoint(51, 50),
       WebPointerProperties::Button::kNoButton, 0, WebInputEvent::kNoModifiers,
-      CurrentTimeTicksInSeconds());
+      CurrentTimeTicks());
   mouse_move_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseMoveEvent(
       mouse_move_event, Vector<WebMouseEvent>());
@@ -854,7 +884,7 @@ TEST_F(EventHandlerTooltipTest, mouseLeaveClearsTooltip) {
   WebMouseEvent mouse_leave_event(
       WebInputEvent::kMouseLeave, WebFloatPoint(0, 0), WebFloatPoint(0, 0),
       WebPointerProperties::Button::kNoButton, 0, WebInputEvent::kNoModifiers,
-      CurrentTimeTicksInSeconds());
+      CurrentTimeTicks());
   mouse_leave_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseLeaveEvent(
       mouse_leave_event);
@@ -913,7 +943,7 @@ TEST_F(EventHandlerLatencyTest, NeedsUnbufferedInput) {
   WebMouseEvent mouse_press_event(
       WebInputEvent::kMouseDown, WebFloatPoint(51, 50), WebFloatPoint(51, 50),
       WebPointerProperties::Button::kLeft, 0, WebInputEvent::kNoModifiers,
-      CurrentTimeTicksInSeconds());
+      CurrentTimeTicks());
   mouse_press_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(
       mouse_press_event);
@@ -971,7 +1001,7 @@ TEST_F(EventHandlerNavigationTest, MouseButtonsNavigate) {
   WebMouseEvent mouse_back_event(
       WebInputEvent::kMouseUp, WebFloatPoint(51, 50), WebFloatPoint(51, 50),
       WebPointerProperties::Button::kBack, 0, WebInputEvent::kNoModifiers,
-      CurrentTimeTicksInSeconds());
+      CurrentTimeTicks());
   mouse_back_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseReleaseEvent(
       mouse_back_event);
@@ -981,7 +1011,7 @@ TEST_F(EventHandlerNavigationTest, MouseButtonsNavigate) {
   WebMouseEvent mouse_forward_event(
       WebInputEvent::kMouseUp, WebFloatPoint(51, 50), WebFloatPoint(51, 50),
       WebPointerProperties::Button::kForward, 0, WebInputEvent::kNoModifiers,
-      CurrentTimeTicksInSeconds());
+      CurrentTimeTicks());
   mouse_forward_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseReleaseEvent(
       mouse_forward_event);
@@ -1003,7 +1033,7 @@ TEST_F(EventHandlerNavigationTest, MouseButtonsDontNavigate) {
   WebMouseEvent mouse_back_event(
       WebInputEvent::kMouseUp, WebFloatPoint(51, 50), WebFloatPoint(51, 50),
       WebPointerProperties::Button::kBack, 0, WebInputEvent::kNoModifiers,
-      CurrentTimeTicksInSeconds());
+      CurrentTimeTicks());
   mouse_back_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseReleaseEvent(
       mouse_back_event);
@@ -1013,7 +1043,7 @@ TEST_F(EventHandlerNavigationTest, MouseButtonsDontNavigate) {
   WebMouseEvent mouse_forward_event(
       WebInputEvent::kMouseUp, WebFloatPoint(51, 50), WebFloatPoint(51, 50),
       WebPointerProperties::Button::kForward, 0, WebInputEvent::kNoModifiers,
-      CurrentTimeTicksInSeconds());
+      CurrentTimeTicks());
   mouse_forward_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseReleaseEvent(
       mouse_forward_event);
@@ -1153,6 +1183,70 @@ TEST_F(EventHandlerSimTest, CursorStyleBeforeStartDragging) {
                                      ->GetChromeClient()
                                      .LastSetCursorForTesting()
                                      .GetType());
+}
+
+// Ensure that tap on element in iframe should apply active state.
+TEST_F(EventHandlerSimTest, TapActiveInFrame) {
+  WebView().Resize(WebSize(800, 600));
+
+  SimRequest main_resource("https://example.com/test.html", "text/html");
+  SimRequest frame_resource("https://example.com/iframe.html", "text/html");
+  LoadURL("https://example.com/test.html");
+  main_resource.Complete(R"HTML(
+    <!DOCTYPE html>
+    <style>
+    body {
+      margin: 0;
+    }
+    iframe {
+      width: 200px;
+      height: 200px;
+    }
+    </style>
+    <iframe id='iframe' src='iframe.html'>
+    </iframe>
+  )HTML");
+
+  frame_resource.Complete(R"HTML(
+    <!DOCTYPE html>
+    <style>
+    body {
+      margin: 0;
+    }
+    div {
+      width: 100px;
+      height: 100px;
+    }
+    </style>
+    <div></div>
+  )HTML");
+  Compositor().BeginFrame();
+
+  auto* iframe_element =
+      ToHTMLIFrameElement(GetDocument().getElementById("iframe"));
+  Document* iframe_doc = iframe_element->contentDocument();
+
+  TapDownEventBuilder tap_down(FloatPoint(10, 10));
+  GetDocument().GetFrame()->GetEventHandler().HandleGestureEvent(tap_down);
+
+  ShowPressEventBuilder show_press(FloatPoint(10, 10));
+  GetDocument().GetFrame()->GetEventHandler().HandleGestureEvent(show_press);
+
+  // TapDown and ShowPress active the iframe.
+  EXPECT_TRUE(GetDocument().GetActiveElement());
+  EXPECT_TRUE(iframe_doc->GetActiveElement());
+
+  TapEventBuilder tap(FloatPoint(10, 10), 1);
+  GetDocument().GetFrame()->GetEventHandler().HandleGestureEvent(tap);
+
+  // Should still active.
+  EXPECT_TRUE(GetDocument().GetActiveElement());
+  EXPECT_TRUE(iframe_doc->GetActiveElement());
+
+  // The active will cancel after 15ms.
+  test::RunDelayedTasks(TimeDelta::FromSecondsD(0.2));
+  EXPECT_FALSE(GetDocument().GetActiveElement());
+  EXPECT_FALSE(iframe_doc->GetActiveElement());
 }
 
 }  // namespace blink

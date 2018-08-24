@@ -44,6 +44,9 @@ static bool IsAlmostZero(float value) {
 
 }  // namespace
 
+// static
+int ColorSpace::kInvalidId = -1;
+
 ColorSpace::ColorSpace() {}
 
 ColorSpace::ColorSpace(PrimaryID primaries,
@@ -227,6 +230,10 @@ bool ColorSpace::FullRangeEncodedValues() const {
          transfer_ == TransferID::IEC61966_2_1_HDR ||
          transfer_ == TransferID::BT1361_ECG ||
          transfer_ == TransferID::IEC61966_2_4;
+}
+
+bool ColorSpace::IsParametricAccurate() const {
+  return icc_profile_id_ == 0;
 }
 
 ColorSpace ColorSpace::GetParametricApproximation() const {
@@ -416,6 +423,26 @@ ColorSpace ColorSpace::GetAsFullRangeRGB() const {
     return result;
   result.matrix_ = MatrixID::RGB;
   result.range_ = RangeID::FULL;
+  return result;
+}
+
+ColorSpace ColorSpace::GetAsRGB() const {
+  ColorSpace result(*this);
+  if (IsValid())
+    result.matrix_ = MatrixID::RGB;
+  return result;
+}
+
+ColorSpace ColorSpace::GetScaledColorSpace(float factor) const {
+  ColorSpace result(*this);
+  SkMatrix44 to_XYZD50;
+  GetPrimaryMatrix(&to_XYZD50);
+  for (int row = 0; row < 3; ++row) {
+    for (int col = 0; col < 3; ++col) {
+      to_XYZD50.set(row, col, to_XYZD50.get(row, col) * factor);
+    }
+  }
+  result.SetCustomPrimaries(to_XYZD50);
   return result;
 }
 
@@ -927,7 +954,7 @@ void ColorSpace::GetRangeAdjustMatrix(SkMatrix44* matrix) const {
   }
 }
 
-bool ColorSpace::ToSkYUVColorSpace(SkYUVColorSpace* out) {
+bool ColorSpace::ToSkYUVColorSpace(SkYUVColorSpace* out) const {
   if (range_ == RangeID::FULL) {
     *out = kJPEG_SkYUVColorSpace;
     return true;

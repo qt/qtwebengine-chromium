@@ -5,26 +5,61 @@
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_physical_line_box_fragment.h"
 
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_break_token.h"
+#include "third_party/blink/renderer/core/layout/ng/inline/ng_physical_text_fragment.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 
 namespace blink {
 
+namespace {
+
+static const NGPhysicalFragment* LastLogicalLeafExceptLinebreakInternal(
+    const NGPhysicalFragment& runner,
+    TextDirection direction) {
+  if (runner.IsText()) {
+    if (ToNGPhysicalTextFragment(runner).IsLineBreak())
+      return nullptr;
+    return &runner;
+  }
+  if (!runner.IsContainer() || runner.IsBlockLayoutRoot())
+    return &runner;
+  const auto& children = ToNGPhysicalContainerFragment(runner).Children();
+  for (size_t i = 0; i < children.size(); i++) {
+    // TODO(xiaochengh): This isn't correct for mixed Bidi. Fix it. Besides, we
+    // should compute and store it during layout.
+    // We want a logical last child in a line.
+    const size_t index =
+        direction == TextDirection::kLtr ? (children.size() - 1 - i) : i;
+    const NGPhysicalFragment* child = children[index].get();
+    DCHECK(child);
+    if (const NGPhysicalFragment* candidate =
+            LastLogicalLeafExceptLinebreakInternal(*child, direction))
+      return candidate;
+  }
+  return nullptr;
+}
+
+}  // namespace
+
 NGPhysicalLineBoxFragment::NGPhysicalLineBoxFragment(
     const ComputedStyle& style,
+    NGStyleVariant style_variant,
     NGPhysicalSize size,
     Vector<scoped_refptr<NGPhysicalFragment>>& children,
     const NGPhysicalOffsetRect& contents_visual_rect,
+    const NGPhysicalOffsetRect& scrollable_overflow,
     const NGLineHeightMetrics& metrics,
     TextDirection base_direction,
     scoped_refptr<NGBreakToken> break_token)
     : NGPhysicalContainerFragment(nullptr,
                                   style,
+                                  style_variant,
                                   size,
                                   kFragmentLineBox,
                                   0,
                                   children,
                                   contents_visual_rect,
                                   std::move(break_token)),
+      scrollable_overflow_(scrollable_overflow),
       metrics_(metrics) {
   base_direction_ = static_cast<unsigned>(base_direction);
 }
@@ -80,16 +115,18 @@ const NGPhysicalFragment* NGPhysicalLineBoxFragment::LastLogicalLeaf() const {
   return runner;
 }
 
+const NGPhysicalFragment*
+NGPhysicalLineBoxFragment::LastLogicalLeafIgnoringLineBreak() const {
+  if (Children().IsEmpty())
+    return nullptr;
+  return LastLogicalLeafExceptLinebreakInternal(*this, this->BaseDirection());
+}
+
 bool NGPhysicalLineBoxFragment::HasSoftWrapToNextLine() const {
   DCHECK(BreakToken());
   DCHECK(BreakToken()->IsInlineType());
   const NGInlineBreakToken& break_token = ToNGInlineBreakToken(*BreakToken());
   return !break_token.IsFinished() && !break_token.IsForcedBreak();
-}
-
-PositionWithAffinity NGPhysicalLineBoxFragment::PositionForPoint(
-    const NGPhysicalOffset& point) const {
-  return PositionForPointInInlineLevelBox(point);
 }
 
 }  // namespace blink

@@ -19,11 +19,11 @@
 #include "mojo/edk/system/dispatcher.h"
 #include "mojo/edk/system/handle_signals_state.h"
 #include "mojo/edk/system/handle_table.h"
-#include "mojo/edk/system/mapping_table.h"
 #include "mojo/edk/system/node_controller.h"
 #include "mojo/edk/system/system_impl_export.h"
 #include "mojo/public/c/system/buffer.h"
 #include "mojo/public/c/system/data_pipe.h"
+#include "mojo/public/c/system/invitation.h"
 #include "mojo/public/c/system/message_pipe.h"
 #include "mojo/public/c/system/platform_handle.h"
 #include "mojo/public/c/system/trap.h"
@@ -35,6 +35,8 @@ class PortProvider;
 
 namespace mojo {
 namespace edk {
+
+class PlatformSharedMemoryMapping;
 
 // |Core| is an object that implements the Mojo system calls. All public methods
 // are thread-safe.
@@ -53,6 +55,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   NodeController* GetNodeController();
 
   scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle);
+  scoped_refptr<Dispatcher> GetAndRemoveDispatcher(MojoHandle handle);
 
   void SetDefaultProcessErrorCallback(const ProcessErrorCallback& callback);
 
@@ -137,23 +140,13 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
       bool in_transit);
 
   // See "mojo/edk/embedder/embedder.h" for more information on these functions.
-  MojoResult CreatePlatformHandleWrapper(ScopedPlatformHandle platform_handle,
-                                         MojoHandle* wrapper_handle);
+  MojoResult CreateInternalPlatformHandleWrapper(
+      ScopedInternalPlatformHandle platform_handle,
+      MojoHandle* wrapper_handle);
 
-  MojoResult PassWrappedPlatformHandle(MojoHandle wrapper_handle,
-                                       ScopedPlatformHandle* platform_handle);
-
-  MojoResult CreateSharedBufferWrapper(
-      base::SharedMemoryHandle shared_memory_handle,
-      size_t num_bytes,
-      bool read_only,
-      MojoHandle* mojo_wrapper_handle);
-
-  MojoResult PassSharedMemoryHandle(
-      MojoHandle mojo_handle,
-      base::SharedMemoryHandle* shared_memory_handle,
-      size_t* num_bytes,
-      bool* read_only);
+  MojoResult PassWrappedInternalPlatformHandle(
+      MojoHandle wrapper_handle,
+      ScopedInternalPlatformHandle* platform_handle);
 
   // Requests that the EDK tear itself down. |callback| will be called once
   // the shutdown process is complete. Note that |callback| is always called
@@ -162,8 +155,6 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   // until the callback is called. If there is no running loop, the |callback|
   // may be called from any thread. Beware!
   void RequestShutdown(const base::Closure& callback);
-
-  MojoResult SetProperty(MojoPropertyType type, const void* value);
 
   // ---------------------------------------------------------------------------
 
@@ -223,7 +214,6 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   MojoResult GetMessageContext(MojoMessageHandle message_handle,
                                const MojoGetMessageContextOptions* options,
                                uintptr_t* context);
-  MojoResult GetProperty(MojoPropertyType type, void* value);
 
   // These methods correspond to the API functions defined in
   // "mojo/public/c/system/message_pipe.h":
@@ -232,14 +222,17 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
                                MojoHandle* message_pipe_handle1);
   MojoResult WriteMessage(MojoHandle message_pipe_handle,
                           MojoMessageHandle message_handle,
-                          MojoWriteMessageFlags flags);
+                          const MojoWriteMessageOptions* options);
   MojoResult ReadMessage(MojoHandle message_pipe_handle,
-                         MojoMessageHandle* message_handle,
-                         MojoReadMessageFlags flags);
-  MojoResult FuseMessagePipes(MojoHandle handle0, MojoHandle handle1);
+                         const MojoReadMessageOptions* options,
+                         MojoMessageHandle* message_handle);
+  MojoResult FuseMessagePipes(MojoHandle handle0,
+                              MojoHandle handle1,
+                              const MojoFuseMessagePipesOptions* options);
   MojoResult NotifyBadMessage(MojoMessageHandle message_handle,
                               const char* error,
-                              size_t error_num_bytes);
+                              size_t error_num_bytes,
+                              const MojoNotifyBadMessageOptions* options);
 
   // These methods correspond to the API functions defined in
   // "mojo/public/c/system/data_pipe.h":
@@ -249,28 +242,30 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   MojoResult WriteData(MojoHandle data_pipe_producer_handle,
                        const void* elements,
                        uint32_t* num_bytes,
-                       MojoWriteDataFlags flags);
+                       const MojoWriteDataOptions* options);
   MojoResult BeginWriteData(MojoHandle data_pipe_producer_handle,
+                            const MojoBeginWriteDataOptions* options,
                             void** buffer,
-                            uint32_t* buffer_num_bytes,
-                            MojoWriteDataFlags flags);
+                            uint32_t* buffer_num_bytes);
   MojoResult EndWriteData(MojoHandle data_pipe_producer_handle,
-                          uint32_t num_bytes_written);
+                          uint32_t num_bytes_written,
+                          const MojoEndWriteDataOptions* options);
   MojoResult ReadData(MojoHandle data_pipe_consumer_handle,
+                      const MojoReadDataOptions* options,
                       void* elements,
-                      uint32_t* num_bytes,
-                      MojoReadDataFlags flags);
+                      uint32_t* num_bytes);
   MojoResult BeginReadData(MojoHandle data_pipe_consumer_handle,
+                           const MojoBeginReadDataOptions* options,
                            const void** buffer,
-                           uint32_t* buffer_num_bytes,
-                           MojoReadDataFlags flags);
+                           uint32_t* buffer_num_bytes);
   MojoResult EndReadData(MojoHandle data_pipe_consumer_handle,
-                         uint32_t num_bytes_read);
+                         uint32_t num_bytes_read,
+                         const MojoEndReadDataOptions* options);
 
   // These methods correspond to the API functions defined in
   // "mojo/public/c/system/buffer.h":
-  MojoResult CreateSharedBuffer(const MojoCreateSharedBufferOptions* options,
-                                uint64_t num_bytes,
+  MojoResult CreateSharedBuffer(uint64_t num_bytes,
+                                const MojoCreateSharedBufferOptions* options,
                                 MojoHandle* shared_buffer_handle);
   MojoResult DuplicateBufferHandle(
       MojoHandle buffer_handle,
@@ -279,31 +274,66 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   MojoResult MapBuffer(MojoHandle buffer_handle,
                        uint64_t offset,
                        uint64_t num_bytes,
-                       void** buffer,
-                       MojoMapBufferFlags flags);
+                       const MojoMapBufferOptions* options,
+                       void** buffer);
   MojoResult UnmapBuffer(void* buffer);
   MojoResult GetBufferInfo(MojoHandle buffer_handle,
-                           const MojoSharedBufferOptions* options,
+                           const MojoGetBufferInfoOptions* options,
                            MojoSharedBufferInfo* info);
 
   // These methods correspond to the API functions defined in
   // "mojo/public/c/system/platform_handle.h".
-  MojoResult WrapPlatformHandle(const MojoPlatformHandle* platform_handle,
-                                MojoHandle* mojo_handle);
-  MojoResult UnwrapPlatformHandle(MojoHandle mojo_handle,
-                                  MojoPlatformHandle* platform_handle);
-  MojoResult WrapPlatformSharedBufferHandle(
+  MojoResult WrapInternalPlatformHandle(
       const MojoPlatformHandle* platform_handle,
-      size_t size,
-      const MojoSharedBufferGuid* guid,
-      MojoPlatformSharedBufferHandleFlags flags,
+      const MojoWrapPlatformHandleOptions* options,
       MojoHandle* mojo_handle);
-  MojoResult UnwrapPlatformSharedBufferHandle(
+  MojoResult UnwrapInternalPlatformHandle(
       MojoHandle mojo_handle,
-      MojoPlatformHandle* platform_handle,
-      size_t* size,
+      const MojoUnwrapPlatformHandleOptions* options,
+      MojoPlatformHandle* platform_handle);
+  MojoResult WrapPlatformSharedMemoryRegion(
+      const MojoPlatformHandle* platform_handles,
+      uint32_t num_platform_handles,
+      uint64_t size,
+      const MojoSharedBufferGuid* guid,
+      MojoPlatformSharedMemoryRegionAccessMode access_mode,
+      const MojoWrapPlatformSharedMemoryRegionOptions* options,
+      MojoHandle* mojo_handle);
+  MojoResult UnwrapPlatformSharedMemoryRegion(
+      MojoHandle mojo_handle,
+      const MojoUnwrapPlatformSharedMemoryRegionOptions* options,
+      MojoPlatformHandle* platform_handles,
+      uint32_t* num_platform_handles,
+      uint64_t* size,
       MojoSharedBufferGuid* guid,
-      MojoPlatformSharedBufferHandleFlags* flags);
+      MojoPlatformSharedMemoryRegionAccessMode* access_mode);
+
+  // Invitation API.
+  MojoResult CreateInvitation(const MojoCreateInvitationOptions* options,
+                              MojoHandle* invitation_handle);
+  MojoResult AttachMessagePipeToInvitation(
+      MojoHandle invitation_handle,
+      const void* name,
+      uint32_t name_num_bytes,
+      const MojoAttachMessagePipeToInvitationOptions* options,
+      MojoHandle* message_pipe_handle);
+  MojoResult ExtractMessagePipeFromInvitation(
+      MojoHandle invitation_handle,
+      const void* name,
+      uint32_t name_num_bytes,
+      const MojoExtractMessagePipeFromInvitationOptions* options,
+      MojoHandle* message_pipe_handle);
+  MojoResult SendInvitation(
+      MojoHandle invitation_handle,
+      const MojoPlatformProcessHandle* process_handle,
+      const MojoInvitationTransportEndpoint* transport_endpoint,
+      MojoProcessErrorHandler error_handler,
+      uintptr_t error_handler_context,
+      const MojoSendInvitationOptions* options);
+  MojoResult AcceptInvitation(
+      const MojoInvitationTransportEndpoint* transport_endpoint,
+      const MojoAcceptInvitationOptions* options,
+      MojoHandle* invitation_handle);
 
   void GetActiveHandlesForTest(std::vector<MojoHandle>* handles);
 
@@ -334,11 +364,10 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   std::unique_ptr<HandleTable> handles_;
 
   base::Lock mapping_table_lock_;  // Protects |mapping_table_|.
-  MappingTable mapping_table_;
 
-  base::Lock property_lock_;
-  // Properties that can be read using the MojoGetProperty() API.
-  bool property_sync_call_allowed_ = true;
+  using MappingTable =
+      std::unordered_map<void*, std::unique_ptr<PlatformSharedMemoryMapping>>;
+  MappingTable mapping_table_;
 
   DISALLOW_COPY_AND_ASSIGN(Core);
 };

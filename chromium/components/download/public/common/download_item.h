@@ -112,7 +112,7 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadItem : public base::SupportsUserData {
   // parallel downloading is enabled. Slices should have different offsets
   // so that they don't overlap. |finished| will be marked as true when the
   // download stream is successfully completed.
-  struct COMPONENTS_DOWNLOAD_EXPORT ReceivedSlice {
+  struct ReceivedSlice {
     ReceivedSlice(int64_t offset, int64_t received_bytes)
         : offset(offset), received_bytes(received_bytes), finished(false) {}
 
@@ -431,6 +431,11 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadItem : public base::SupportsUserData {
   // up after completion and not shown in the UI, and will not prompt to user
   // for target file path determination.
   virtual bool IsTransient() const = 0;
+
+  // Returns whether the download item corresponds to a parallel download. This
+  // usually means parallel download has been enabled and the download job is
+  // parallelizable.
+  virtual bool IsParallelDownload() const = 0;
 
   // External state transitions/setters ----------------------------------------
 

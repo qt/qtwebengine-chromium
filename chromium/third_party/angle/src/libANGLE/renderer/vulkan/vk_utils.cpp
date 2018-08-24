@@ -313,6 +313,25 @@ bool Error::isError() const
     return (mResult != VK_SUCCESS);
 }
 
+BufferAndMemory::BufferAndMemory() = default;
+
+BufferAndMemory::BufferAndMemory(Buffer &&buffer, DeviceMemory &&deviceMemory)
+    : buffer(std::move(buffer)), memory(std::move(deviceMemory))
+{
+}
+
+BufferAndMemory::BufferAndMemory(BufferAndMemory &&other)
+    : buffer(std::move(other.buffer)), memory(std::move(other.memory))
+{
+}
+
+BufferAndMemory &BufferAndMemory::operator=(BufferAndMemory &&other)
+{
+    buffer = std::move(other.buffer);
+    memory = std::move(other.memory);
+    return *this;
+}
+
 // CommandPool implementation.
 CommandPool::CommandPool()
 {
@@ -436,6 +455,19 @@ void CommandBuffer::copyBufferToImage(VkBuffer srcBuffer,
                            regions);
 }
 
+void CommandBuffer::copyImageToBuffer(const Image &srcImage,
+                                      VkImageLayout srcImageLayout,
+                                      VkBuffer dstBuffer,
+                                      uint32_t regionCount,
+                                      const VkBufferImageCopy *regions)
+{
+    ASSERT(valid());
+    ASSERT(dstBuffer != VK_NULL_HANDLE);
+    ASSERT(srcImage.valid());
+    vkCmdCopyImageToBuffer(mHandle, srcImage.getHandle(), srcImageLayout, dstBuffer, regionCount,
+                           regions);
+}
+
 void CommandBuffer::clearColorImage(const vk::Image &image,
                                     VkImageLayout imageLayout,
                                     const VkClearColorValue &color,
@@ -553,6 +585,25 @@ void CommandBuffer::executeCommands(uint32_t commandBufferCount,
 {
     ASSERT(valid());
     vkCmdExecuteCommands(mHandle, commandBufferCount, commandBuffers[0].ptr());
+}
+
+void CommandBuffer::updateBuffer(const vk::Buffer &buffer,
+                                 VkDeviceSize dstOffset,
+                                 VkDeviceSize dataSize,
+                                 const void *data)
+{
+    ASSERT(valid() && buffer.valid());
+    vkCmdUpdateBuffer(mHandle, buffer.getHandle(), dstOffset, dataSize, data);
+}
+
+void CommandBuffer::pushConstants(const PipelineLayout &layout,
+                                  VkShaderStageFlags flag,
+                                  uint32_t offset,
+                                  uint32_t size,
+                                  const void *data)
+{
+    ASSERT(valid() && layout.valid());
+    vkCmdPushConstants(mHandle, layout.getHandle(), flag, offset, size, data);
 }
 
 // Image implementation.
@@ -1139,6 +1190,61 @@ void GarbageObject::destroy(VkDevice device)
 
 namespace gl_vk
 {
+
+VkFilter GetFilter(const GLenum filter)
+{
+    switch (filter)
+    {
+        case GL_LINEAR_MIPMAP_LINEAR:
+        case GL_LINEAR_MIPMAP_NEAREST:
+        case GL_LINEAR:
+            return VK_FILTER_LINEAR;
+        case GL_NEAREST_MIPMAP_LINEAR:
+        case GL_NEAREST_MIPMAP_NEAREST:
+        case GL_NEAREST:
+            return VK_FILTER_NEAREST;
+        default:
+            UNIMPLEMENTED();
+            return VK_FILTER_MAX_ENUM;
+    }
+}
+
+VkSamplerMipmapMode GetSamplerMipmapMode(const GLenum filter)
+{
+    switch (filter)
+    {
+        case GL_LINEAR:
+        case GL_LINEAR_MIPMAP_LINEAR:
+        case GL_NEAREST_MIPMAP_LINEAR:
+            return VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        case GL_NEAREST:
+        case GL_NEAREST_MIPMAP_NEAREST:
+        case GL_LINEAR_MIPMAP_NEAREST:
+            return VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        default:
+            UNIMPLEMENTED();
+            return VK_SAMPLER_MIPMAP_MODE_MAX_ENUM;
+    }
+}
+
+VkSamplerAddressMode GetSamplerAddressMode(const GLenum wrap)
+{
+    switch (wrap)
+    {
+        case GL_REPEAT:
+            return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        case GL_MIRRORED_REPEAT:
+            return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+        case GL_CLAMP_TO_BORDER:
+            return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        case GL_CLAMP_TO_EDGE:
+            return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        default:
+            UNIMPLEMENTED();
+            return VK_SAMPLER_ADDRESS_MODE_MAX_ENUM;
+    }
+}
+
 VkRect2D GetRect(const gl::Rectangle &source)
 {
     return {{source.x, source.y},
@@ -1277,6 +1383,42 @@ void GetExtent(const gl::Extents &glExtent, VkExtent3D *vkExtent)
     vkExtent->width  = glExtent.width;
     vkExtent->height = glExtent.height;
     vkExtent->depth  = glExtent.depth;
+}
+
+VkImageType GetImageType(gl::TextureType textureType)
+{
+    switch (textureType)
+    {
+        case gl::TextureType::_2D:
+            return VK_IMAGE_TYPE_2D;
+        case gl::TextureType::CubeMap:
+            return VK_IMAGE_TYPE_2D;
+        default:
+            // We will need to implement all the texture types for ES3+.
+            UNIMPLEMENTED();
+            return VK_IMAGE_TYPE_MAX_ENUM;
+    }
+}
+
+VkImageViewType GetImageViewType(gl::TextureType textureType)
+{
+    switch (textureType)
+    {
+        case gl::TextureType::_2D:
+            return VK_IMAGE_VIEW_TYPE_2D;
+        case gl::TextureType::CubeMap:
+            return VK_IMAGE_VIEW_TYPE_CUBE;
+        default:
+            // We will need to implement all the texture types for ES3+.
+            UNIMPLEMENTED();
+            return VK_IMAGE_VIEW_TYPE_MAX_ENUM;
+    }
+}
+
+VkColorComponentFlags GetColorComponentFlags(bool red, bool green, bool blue, bool alpha)
+{
+    return (red ? VK_COLOR_COMPONENT_R_BIT : 0) | (green ? VK_COLOR_COMPONENT_G_BIT : 0) |
+           (blue ? VK_COLOR_COMPONENT_B_BIT : 0) | (alpha ? VK_COLOR_COMPONENT_A_BIT : 0);
 }
 }  // namespace gl_vk
 }  // namespace rx

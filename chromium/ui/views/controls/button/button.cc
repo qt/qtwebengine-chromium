@@ -22,6 +22,7 @@
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/button/radio_button.h"
 #include "ui/views/controls/button/toggle_button.h"
+#include "ui/views/controls/focus_ring.h"
 #include "ui/views/painter.h"
 #include "ui/views/style/platform_style.h"
 #include "ui/views/widget/widget.h"
@@ -143,6 +144,13 @@ void Button::StopThrobbing() {
 
 void Button::SetAnimationDuration(int duration) {
   hover_animation_.SetSlideDuration(duration);
+}
+
+void Button::SetInstallFocusRingOnFocus(bool install) {
+  if (install)
+    focus_ring_ = FocusRing::Install(this);
+  else
+    focus_ring_.reset();
 }
 
 void Button::SetHotTracked(bool is_hot_tracked) {
@@ -443,7 +451,7 @@ void Button::OnBlur() {
 
 std::unique_ptr<InkDrop> Button::CreateInkDrop() {
   std::unique_ptr<views::InkDropImpl> ink_drop = CreateDefaultInkDropImpl();
-  ink_drop->SetShowHighlightOnFocus(true);
+  ink_drop->SetShowHighlightOnFocus(!focus_ring_);
   ink_drop->SetAutoHighlightModeForPlatform();
   return std::move(ink_drop);
 }

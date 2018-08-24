@@ -107,7 +107,7 @@ class CORE_EXPORT Event : public ScriptWrappable {
     return new Event(type, initializer);
   }
 
-  virtual ~Event();
+  ~Event() override;
 
   void initEvent(const AtomicString& type, bool bubbles, bool cancelable);
   void initEvent(const AtomicString& event_type_arg,
@@ -130,7 +130,7 @@ class CORE_EXPORT Event : public ScriptWrappable {
   // at the current target. It should only be used to influence UMA metrics
   // and not change functionality since observing the presence of listeners
   // is dangerous.
-  virtual void DoneDispatchingEventAtCurrentTarget() {}
+  virtual void DoneDispatchingEventAtCurrentTarget();
 
   void SetRelatedTargetIfExists(EventTarget* related_target);
 
@@ -179,6 +179,7 @@ class CORE_EXPORT Event : public ScriptWrappable {
   virtual bool IsRelatedEvent() const;
   virtual bool IsPointerEvent() const;
   virtual bool IsInputEvent() const;
+  virtual bool IsCompositionEvent() const;
 
   // Drag events are a subset of mouse events.
   virtual bool IsDragEvent() const;
@@ -250,9 +251,17 @@ class CORE_EXPORT Event : public ScriptWrappable {
     return prevent_default_called_on_uncancelable_event_;
   }
 
+  bool executedListenerOrDefaultAction() const {
+    return executed_listener_or_default_action_;
+  }
+
+  void SetExecutedListenerOrDefaultAction() {
+    executed_listener_or_default_action_ = true;
+  }
+
   virtual DispatchEventResult DispatchEvent(EventDispatcher&);
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  protected:
   Event();
@@ -299,6 +308,9 @@ class CORE_EXPORT Event : public ScriptWrappable {
   unsigned default_handled_ : 1;
   unsigned was_initialized_ : 1;
   unsigned is_trusted_ : 1;
+  // Only if at least one listeners or default actions are executed on an event
+  // does Event Timing report it.
+  unsigned executed_listener_or_default_action_ : 1;
 
   // Whether preventDefault was called when |m_handlingPassive| is
   // true. This field is reset on each call to setHandlingPassive.

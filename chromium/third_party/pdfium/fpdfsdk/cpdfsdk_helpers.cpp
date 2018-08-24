@@ -6,22 +6,24 @@
 
 #include "fpdfsdk/cpdfsdk_helpers.h"
 
+#include "constants/stream_dict_common.h"
 #include "core/fpdfapi/cpdf_modulemgr.h"
+#include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
 #include "core/fpdfdoc/cpdf_annot.h"
 #include "core/fpdfdoc/cpdf_interform.h"
 #include "core/fpdfdoc/cpdf_metadata.h"
-#include "core/fxcrt/xml/cxml_content.h"
-#include "core/fxcrt/xml/cxml_element.h"
 #include "public/fpdf_ext.h"
+
+#ifdef PDF_ENABLE_XFA
+#include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
+#endif
 
 namespace {
 
-FPDF_DOCUMENT FPDFDocumentFromUnderlying(UnderlyingDocumentType* doc) {
-  return static_cast<FPDF_DOCUMENT>(doc);
-}
+constexpr char kQuadPoints[] = "QuadPoints";
 
 bool RaiseUnSupportError(int nError) {
   CFSDK_UnsupportInfo_Adapter* pAdapter =
@@ -35,52 +37,11 @@ bool RaiseUnSupportError(int nError) {
   return true;
 }
 
-bool CheckSharedForm(const CXML_Element* pElement, ByteString cbName) {
-  size_t count = pElement->CountAttrs();
-  for (size_t i = 0; i < count; ++i) {
-    ByteString space;
-    ByteString name;
-    WideString value;
-    pElement->GetAttrByIndex(i, &space, &name, &value);
-    if (space == "xmlns" && name == "adhocwf" &&
-        value == L"http://ns.adobe.com/AcrobatAdhocWorkflow/1.0/") {
-      CXML_Element* pVersion =
-          pElement->GetElement("adhocwf", cbName.AsStringView(), 0);
-      if (!pVersion)
-        continue;
-      CXML_Content* pContent = ToContent(pVersion->GetChild(0));
-      if (!pContent)
-        continue;
-      switch (pContent->m_Content.GetInteger()) {
-        case 1:
-          RaiseUnSupportError(FPDF_UNSP_DOC_SHAREDFORM_ACROBAT);
-          break;
-        case 2:
-          RaiseUnSupportError(FPDF_UNSP_DOC_SHAREDFORM_FILESYSTEM);
-          break;
-        case 0:
-          RaiseUnSupportError(FPDF_UNSP_DOC_SHAREDFORM_EMAIL);
-          break;
-      }
-    }
-  }
-
-  size_t nCount = pElement->CountChildren();
-  for (size_t i = 0; i < nCount; ++i) {
-    CXML_Element* pChild = ToElement(pElement->GetChild(i));
-    if (pChild && CheckSharedForm(pChild, cbName))
-      return true;
-  }
-  return false;
-}
-
 #ifdef PDF_ENABLE_XFA
 class FPDF_FileHandlerContext : public IFX_SeekableStream {
  public:
   template <typename T, typename... Args>
   friend RetainPtr<T> pdfium::MakeRetain(Args&&... args);
-
-  ~FPDF_FileHandlerContext() override;
 
   // IFX_SeekableStream:
   FX_FILESIZE GetSize() override;
@@ -95,6 +56,7 @@ class FPDF_FileHandlerContext : public IFX_SeekableStream {
 
  protected:
   explicit FPDF_FileHandlerContext(FPDF_FILEHANDLER* pFS);
+  ~FPDF_FileHandlerContext() override;
 
   FPDF_FILEHANDLER* m_pFS;
   FX_FILESIZE m_nCurPos;
@@ -181,30 +143,24 @@ bool FPDF_FileHandlerContext::Flush() {
 
 }  // namespace
 
-UnderlyingDocumentType* UnderlyingFromFPDFDocument(FPDF_DOCUMENT doc) {
-  return static_cast<UnderlyingDocumentType*>(doc);
+UnderlyingPageType* UnderlyingFromFPDFPage(FPDF_PAGE page) {
+  return reinterpret_cast<UnderlyingPageType*>(page);
 }
 
-UnderlyingPageType* UnderlyingFromFPDFPage(FPDF_PAGE page) {
-  return static_cast<UnderlyingPageType*>(page);
+FPDF_PAGE FPDFPageFromUnderlying(UnderlyingPageType* page) {
+  return reinterpret_cast<FPDF_PAGE>(page);
 }
 
 CPDF_Document* CPDFDocumentFromFPDFDocument(FPDF_DOCUMENT doc) {
-#ifdef PDF_ENABLE_XFA
-  return doc ? UnderlyingFromFPDFDocument(doc)->GetPDFDoc() : nullptr;
-#else   // PDF_ENABLE_XFA
-  return UnderlyingFromFPDFDocument(doc);
-#endif  // PDF_ENABLE_XFA
+  return reinterpret_cast<CPDF_Document*>(doc);
 }
 
 FPDF_DOCUMENT FPDFDocumentFromCPDFDocument(CPDF_Document* doc) {
 #ifdef PDF_ENABLE_XFA
-  return doc ? FPDFDocumentFromUnderlying(
-                   new CPDFXFA_Context(pdfium::WrapUnique(doc)))
-             : nullptr;
-#else   // PDF_ENABLE_XFA
-  return FPDFDocumentFromUnderlying(doc);
+  if (doc && !doc->GetExtension())
+    doc->SetExtension(new CPDFXFA_Context(pdfium::WrapUnique(doc)));
 #endif  // PDF_ENABLE_XFA
+  return reinterpret_cast<FPDF_DOCUMENT>(doc);
 }
 
 CPDF_Page* CPDFPageFromFPDFPage(FPDF_PAGE page) {
@@ -215,18 +171,10 @@ CPDF_Page* CPDFPageFromFPDFPage(FPDF_PAGE page) {
 #endif  // PDF_ENABLE_XFA
 }
 
-CPDF_PageObject* CPDFPageObjectFromFPDFPageObject(FPDF_PAGEOBJECT page_object) {
-  return static_cast<CPDF_PageObject*>(page_object);
-}
-
 ByteString CFXByteStringFromFPDFWideString(FPDF_WIDESTRING wide_string) {
   return WideString::FromUTF16LE(wide_string,
                                  WideString::WStringLength(wide_string))
       .UTF8Encode();
-}
-
-CFX_DIBitmap* CFXBitmapFromFPDFBitmap(FPDF_BITMAP bitmap) {
-  return static_cast<CFX_DIBitmap*>(bitmap);
 }
 
 void CheckUnSupportAnnot(CPDF_Document* pDoc, const CPDF_Annot* pPDFAnnot) {
@@ -298,10 +246,15 @@ void CheckUnSupportError(CPDF_Document* pDoc, uint32_t err_code) {
   }
 
   // SharedForm
-  CPDF_Metadata metaData(pDoc);
-  const CXML_Element* pElement = metaData.GetRoot();
-  if (pElement)
-    CheckSharedForm(pElement, "workflowType");
+  const CPDF_Dictionary* pRoot = pDoc->GetRoot();
+  if (pRoot) {
+    CPDF_Stream* pStream = pRoot->GetStreamFor("Metadata");
+    if (pStream) {
+      CPDF_Metadata metaData(pStream);
+      for (const auto& err : metaData.CheckForSharedForm())
+        RaiseUnSupportError(static_cast<int>(err));
+    }
+  }
 
 #ifndef PDF_ENABLE_XFA
   // XFA Forms
@@ -376,15 +329,17 @@ unsigned long DecodeStreamMaybeCopyAndReturnLength(const CPDF_Stream* stream,
   ASSERT(stream);
   uint8_t* data = stream->GetRawData();
   uint32_t len = stream->GetRawSize();
-  CPDF_Dictionary* dict = stream->GetDict();
-  CPDF_Object* decoder = dict ? dict->GetDirectObjectFor("Filter") : nullptr;
+  const CPDF_Dictionary* dict = stream->GetDict();
+  const CPDF_Object* decoder =
+      dict ? dict->GetDirectObjectFor("Filter") : nullptr;
   if (decoder && (decoder->IsArray() || decoder->IsName())) {
     // Decode the stream if one or more stream filters are specified.
     uint8_t* decoded_data = nullptr;
     uint32_t decoded_len = 0;
     ByteString dummy_last_decoder;
     CPDF_Dictionary* dummy_last_param;
-    if (PDF_DataDecode(data, len, dict, dict->GetIntegerFor("DL"), false,
+    if (PDF_DataDecode(data, len, dict,
+                       dict->GetIntegerFor(pdfium::stream::kDL), false,
                        &decoded_data, &decoded_len, &dummy_last_decoder,
                        &dummy_last_param)) {
       if (buffer && buflen >= decoded_len)
@@ -429,8 +384,39 @@ CFX_FloatRect CFXFloatRectFromFSRECTF(const FS_RECTF& rect) {
   return CFX_FloatRect(rect.left, rect.bottom, rect.right, rect.top);
 }
 
-const CPDF_Array* GetQuadPointsArrayFromDictionary(CPDF_Dictionary* dict) {
+CPDF_Array* GetQuadPointsArrayFromDictionary(const CPDF_Dictionary* dict) {
   return dict ? dict->GetArrayFor("QuadPoints") : nullptr;
+}
+
+CPDF_Array* AddQuadPointsArrayToDictionary(CPDF_Dictionary* dict) {
+  if (!dict)
+    return nullptr;
+  return dict->SetNewFor<CPDF_Array>(kQuadPoints);
+}
+
+bool IsValidQuadPointsIndex(const CPDF_Array* array, size_t index) {
+  return array && index < array->GetCount() / 8;
+}
+
+bool GetQuadPointsAtIndex(const CPDF_Array* array,
+                          size_t quad_index,
+                          FS_QUADPOINTSF* quad_points) {
+  ASSERT(quad_points);
+  ASSERT(array);
+
+  if (!IsValidQuadPointsIndex(array, quad_index))
+    return false;
+
+  quad_index *= 8;
+  quad_points->x1 = array->GetNumberAt(quad_index);
+  quad_points->y1 = array->GetNumberAt(quad_index + 1);
+  quad_points->x2 = array->GetNumberAt(quad_index + 2);
+  quad_points->y2 = array->GetNumberAt(quad_index + 3);
+  quad_points->x3 = array->GetNumberAt(quad_index + 4);
+  quad_points->y3 = array->GetNumberAt(quad_index + 5);
+  quad_points->x4 = array->GetNumberAt(quad_index + 6);
+  quad_points->y4 = array->GetNumberAt(quad_index + 7);
+  return true;
 }
 
 bool GetQuadPointsFromDictionary(CPDF_Dictionary* dict,

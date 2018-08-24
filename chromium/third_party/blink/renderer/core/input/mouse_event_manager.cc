@@ -18,6 +18,7 @@
 #include "third_party/blink/renderer/core/editing/visible_selection.h"
 #include "third_party/blink/renderer/core/events/drag_event.h"
 #include "third_party/blink/renderer/core/events/mouse_event.h"
+#include "third_party/blink/renderer/core/events/web_input_event_conversion.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
@@ -246,8 +247,7 @@ WebInputEventResult MouseEventManager::DispatchMouseEvent(
             : nullptr);
 
     MouseEvent* event = MouseEvent::Create(
-        mouse_event_type, initializer,
-        TimeTicksFromSeconds(mouse_event.TimeStampSeconds()),
+        mouse_event_type, initializer, mouse_event.TimeStamp(),
         mouse_event.FromTouch() ? MouseEvent::kFromTouch
                                 : MouseEvent::kRealOrIndistinguishable,
         mouse_event.menu_source_type);
@@ -308,8 +308,8 @@ WebInputEventResult MouseEventManager::DispatchMouseClickIfNeeded(
     // Updates distribution because a 'mouseup' event listener can make the
     // tree dirty at dispatchMouseEvent() invocation above.
     // Unless distribution is updated, commonAncestor would hit ASSERT.
-    mouse_down_element_->UpdateDistribution();
-    mouse_release_target.UpdateDistribution();
+    mouse_down_element_->UpdateDistributionForFlatTreeTraversal();
+    mouse_release_target.UpdateDistributionForFlatTreeTraversal();
     click_target_node = mouse_release_target.CommonAncestor(
         *mouse_down_element_, EventHandlingUtil::ParentForClickEvent);
   }
@@ -367,15 +367,13 @@ void MouseEventManager::FakeMouseMoveEventTimerFired(TimerBase* timer) {
     button = WebPointerProperties::Button::kLeft;
     modifiers |= WebInputEvent::kLeftButtonDown;
   }
-  WebMouseEvent fake_mouse_move_event(
-      WebInputEvent::kMouseMove, last_known_mouse_position_,
-      last_known_mouse_global_position_, button, 0, modifiers,
-      CurrentTimeTicksInSeconds());
-  // TODO(dtapuska): Update m_lastKnowMousePosition to be viewport coordinates.
-  fake_mouse_move_event.SetFrameScale(1);
+  WebMouseEvent fake_mouse_move_event(WebInputEvent::kMouseMove,
+                                      last_known_mouse_position_,
+                                      last_known_mouse_global_position_, button,
+                                      0, modifiers, CurrentTimeTicks());
   Vector<WebMouseEvent> coalesced_events;
-  frame_->GetEventHandler().HandleMouseMoveEvent(fake_mouse_move_event,
-                                                 coalesced_events);
+  frame_->GetEventHandler().HandleMouseMoveEvent(
+      TransformWebMouseEvent(view, fake_mouse_move_event), coalesced_events);
 }
 
 void MouseEventManager::CancelFakeMouseMoveEvent() {
@@ -587,7 +585,7 @@ void MouseEventManager::HandleMousePressEventUpdateStates(
   SetLastKnownMousePosition(mouse_event);
   mouse_down_may_start_drag_ = false;
   mouse_down_may_start_autoscroll_ = false;
-  mouse_down_timestamp_ = TimeTicksFromSeconds(mouse_event.TimeStampSeconds());
+  mouse_down_timestamp_ = mouse_event.TimeStamp();
 
   if (LocalFrameView* view = frame_->View()) {
     mouse_down_pos_ = view->RootFrameToContents(
@@ -614,7 +612,7 @@ FloatPoint MouseEventManager::LastKnownMousePositionGlobal() {
 
 void MouseEventManager::SetLastKnownMousePosition(const WebMouseEvent& event) {
   is_mouse_position_unknown_ = event.GetType() == WebInputEvent::kMouseLeave;
-  last_known_mouse_position_ = event.PositionInRootFrame();
+  last_known_mouse_position_ = event.PositionInWidget();
   last_known_mouse_global_position_ = event.PositionInScreen();
 }
 
@@ -654,8 +652,7 @@ void MouseEventManager::DispatchFakeMouseMoveEventSoonInQuad(
   if (!view)
     return;
 
-  if (!quad.ContainsPoint(
-          view->RootFrameToContents(last_known_mouse_position_)))
+  if (!quad.ContainsPoint(view->ViewportToContents(last_known_mouse_position_)))
     return;
 
   DispatchFakeMouseMoveEventSoon(
@@ -741,7 +738,7 @@ void MouseEventManager::UpdateSelectionForMouseDrag() {
   frame_->GetEventHandler()
       .GetSelectionController()
       .UpdateSelectionForMouseDrag(drag_start_pos_,
-                                   FlooredIntPoint(last_known_mouse_position_));
+                                   LayoutPoint(last_known_mouse_position_));
 }
 
 bool MouseEventManager::HandleDragDropIfPossible(
@@ -758,7 +755,7 @@ bool MouseEventManager::HandleDragDropIfPossible(
         WebPointerProperties::Button::kLeft, 1,
         modifiers | WebInputEvent::Modifiers::kLeftButtonDown |
             WebInputEvent::Modifiers::kIsCompatibilityEventForTouch,
-        CurrentTimeTicksInSeconds());
+        CurrentTimeTicks());
     mouse_down_ = mouse_down_event;
 
     WebMouseEvent mouse_drag_event(
@@ -766,7 +763,7 @@ bool MouseEventManager::HandleDragDropIfPossible(
         WebPointerProperties::Button::kLeft, 1,
         modifiers | WebInputEvent::Modifiers::kLeftButtonDown |
             WebInputEvent::Modifiers::kIsCompatibilityEventForTouch,
-        CurrentTimeTicksInSeconds());
+        CurrentTimeTicks());
     HitTestRequest request(HitTestRequest::kReadOnly);
     MouseEventWithHitTestResults mev =
         EventHandlingUtil::PerformMouseEventHitTest(frame_, request,
@@ -853,7 +850,7 @@ WebInputEventResult MouseEventManager::HandleMouseDraggedEvent(
 
   frame_->GetEventHandler().GetSelectionController().HandleMouseDraggedEvent(
       event, mouse_down_pos_, drag_start_pos_,
-      FlooredIntPoint(last_known_mouse_position_));
+      LayoutPoint(last_known_mouse_position_));
 
   // The call into HandleMouseDraggedEvent may have caused a re-layout,
   // so get the LayoutObject again.
@@ -896,9 +893,7 @@ bool MouseEventManager::HandleDrag(const MouseEventWithHitTestResults& event,
     Node* node = result.InnerNode();
     if (node) {
       DragController::SelectionDragPolicy selection_drag_policy =
-          TimeTicksFromSeconds(event.Event().TimeStampSeconds()) -
-                      mouse_down_timestamp_ <
-                  kTextDragDelay
+          event.Event().TimeStamp() - mouse_down_timestamp_ < kTextDragDelay
               ? DragController::kDelayedSelectionDragResolution
               : DragController::kImmediateSelectionDragResolution;
       GetDragState().drag_src_ =
@@ -943,7 +938,7 @@ bool MouseEventManager::HandleDrag(const MouseEventWithHitTestResults& event,
       frame_->GetEventHandler().HandlePointerEvent(
           WebPointerEvent::CreatePointerCausesUaActionEvent(
               WebPointerProperties::PointerType::kMouse,
-              event.Event().TimeStampSeconds()),
+              event.Event().TimeStamp()),
           Vector<WebPointerEvent>());
     }
     // TODO(crbug.com/708278): If the drag starts with touch the touch cancel
@@ -975,40 +970,44 @@ bool MouseEventManager::TryStartDrag(
                                                 mouse_down_pos_))
     return false;
 
+  if (DispatchDragSrcEvent(EventTypeNames::dragstart, mouse_down_) !=
+      WebInputEventResult::kNotHandled)
+    return false;
+
+  // Dispatching the event could cause |frame_| to be detached.
+  if (!frame_->GetPage())
+    return false;
+
   // If dispatching dragstart brings about another mouse down -- one way
   // this will happen is if a DevTools user breaks within a dragstart
   // handler and then clicks on the suspended page -- the drag state is
   // reset. Hence, need to check if this particular drag operation can
   // continue even if dispatchEvent() indicates no (direct) cancellation.
   // Do that by checking if m_dragSrc is still set.
-  mouse_down_may_start_drag_ = false;
-  if (DispatchDragSrcEvent(EventTypeNames::dragstart, mouse_down_) ==
-          WebInputEventResult::kNotHandled &&
-      GetDragState().drag_src_) {
-    // TODO(editing-dev): The use of
-    // updateStyleAndLayoutIgnorePendingStylesheets needs to be audited.  See
-    // http://crbug.com/590369 for more details.
-    frame_->GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
-    mouse_down_may_start_drag_ = !IsInPasswordField(
-        frame_->Selection().ComputeVisibleSelectionInDOMTree().Start());
-  }
+  if (!GetDragState().drag_src_)
+    return false;
 
-  // Invalidate clipboard here against anymore pasteboard writing for security.
-  // The drag image can still be changed as we drag, but not the pasteboard
-  // data.
+  // Do not start dragging in password field.
+  // TODO(editing-dev): The use of
+  // updateStyleAndLayoutIgnorePendingStylesheets needs to be audited.  See
+  // http://crbug.com/590369 for more details.
+  frame_->GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
+  if (IsInPasswordField(
+          frame_->Selection().ComputeVisibleSelectionInDOMTree().Start()))
+    return false;
+
+  // Invalidate clipboard here against anymore pasteboard writing for
+  // security. The drag image can still be changed as we drag, but not
+  // the pasteboard data.
   GetDragState().drag_data_transfer_->SetAccessPolicy(
       DataTransferAccessPolicy::kImageWritable);
 
-  if (mouse_down_may_start_drag_) {
-    // Dispatching the event could cause Page to go away. Make sure it's still
-    // valid before trying to use DragController.
-    if (frame_->GetPage() &&
-        drag_controller.StartDrag(frame_, GetDragState(), event.Event(),
-                                  mouse_down_pos_))
-      return true;
-    // Drag was canned at the last minute - we owe m_dragSrc a DRAGEND event
-    DispatchDragSrcEvent(EventTypeNames::dragend, event.Event());
-  }
+  if (drag_controller.StartDrag(frame_, GetDragState(), event.Event(),
+                                mouse_down_pos_))
+    return true;
+
+  // Drag was canned at the last minute - we owe m_dragSrc a DRAGEND event
+  DispatchDragSrcEvent(EventTypeNames::dragend, event.Event());
 
   return false;
 }
@@ -1064,10 +1063,10 @@ WebInputEventResult MouseEventManager::DispatchDragEvent(
   UIEventWithKeyState::SetFromWebInputEventModifiers(
       initializer, static_cast<WebInputEvent::Modifiers>(event.GetModifiers()));
 
-  DragEvent* me = DragEvent::Create(
-      event_type, initializer, TimeTicksFromSeconds(event.TimeStampSeconds()),
-      event.FromTouch() ? MouseEvent::kFromTouch
-                        : MouseEvent::kRealOrIndistinguishable);
+  DragEvent* me = DragEvent::Create(event_type, initializer, event.TimeStamp(),
+                                    event.FromTouch()
+                                        ? MouseEvent::kFromTouch
+                                        : MouseEvent::kRealOrIndistinguishable);
 
   return EventHandlingUtil::ToWebInputEventResult(
       drag_target->DispatchEvent(me));
@@ -1139,7 +1138,7 @@ bool MouseEventManager::HandleSvgPanIfNeeded(bool is_release_event) {
     return false;
   svg_pan_ = !is_release_event;
   frame_->GetDocument()->AccessSVGExtensions().UpdatePan(
-      frame_->View()->RootFrameToContents(last_known_mouse_position_));
+      frame_->View()->ViewportToContents(last_known_mouse_position_));
   return true;
 }
 

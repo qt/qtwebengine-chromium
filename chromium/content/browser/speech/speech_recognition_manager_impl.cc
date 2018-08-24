@@ -218,10 +218,8 @@ SpeechRecognitionManagerImpl* SpeechRecognitionManagerImpl::GetInstance() {
 
 SpeechRecognitionManagerImpl::SpeechRecognitionManagerImpl(
     media::AudioSystem* audio_system,
-    media::AudioManager* audio_manager,
     MediaStreamManager* media_stream_manager)
     : audio_system_(audio_system),
-      audio_manager_(audio_manager),
       media_stream_manager_(media_stream_manager),
       primary_session_id_(kSessionIDInvalid),
       last_session_id_(kSessionIDInvalid),
@@ -277,7 +275,7 @@ int SpeechRecognitionManagerImpl::CreateSession(
   remote_engine_config.continuous = config.continuous;
   remote_engine_config.interim_results = config.interim_results;
   remote_engine_config.max_hypotheses = config.max_hypotheses;
-  remote_engine_config.origin_url = config.origin_url;
+  remote_engine_config.origin_url = config.origin.Serialize();
   remote_engine_config.auth_token = config.auth_token;
   remote_engine_config.auth_scope = config.auth_scope;
   remote_engine_config.preamble = config.preamble;
@@ -287,7 +285,7 @@ int SpeechRecognitionManagerImpl::CreateSession(
   google_remote_engine->SetConfig(remote_engine_config);
 
   session->recognizer = new SpeechRecognizerImpl(
-      this, audio_system_, audio_manager_, session_id, config.continuous,
+      this, audio_system_, session_id, config.continuous,
       config.interim_results, google_remote_engine);
 #else
   session->recognizer = new SpeechRecognizerImplAndroid(this, session_id);
@@ -348,9 +346,8 @@ void SpeechRecognitionManagerImpl::RecognitionAllowedCallback(int session_id,
   if (ask_user) {
     SpeechRecognitionSessionContext& context = session->context;
     context.label = media_stream_manager_->MakeMediaAccessRequest(
-        context.render_process_id, context.render_frame_id, context.request_id,
-        StreamControls(true, false),
-        url::Origin::Create(GURL(context.context_name)),
+        context.render_process_id, context.render_frame_id, session_id,
+        StreamControls(true, false), context.security_origin,
         base::BindOnce(
             &SpeechRecognitionManagerImpl::MediaRequestPermissionCallback,
             weak_factory_.GetWeakPtr(), session_id));
@@ -590,26 +587,6 @@ void SpeechRecognitionManagerImpl::OnRecognitionEnd(int session_id) {
       FROM_HERE, base::BindOnce(&SpeechRecognitionManagerImpl::DispatchEvent,
                                 weak_factory_.GetWeakPtr(), session_id,
                                 EVENT_RECOGNITION_ENDED));
-}
-
-int SpeechRecognitionManagerImpl::GetSession(int render_process_id,
-                                             int render_frame_id,
-                                             int request_id) const {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  auto iter = std::find_if(
-      sessions_.begin(), sessions_.end(),
-      [render_process_id, render_frame_id, request_id](
-          const std::pair<int, std::unique_ptr<Session>>& session_pair) {
-        const SpeechRecognitionSessionContext& context =
-            session_pair.second->context;
-        return context.render_process_id == render_process_id &&
-               context.render_frame_id == render_frame_id &&
-               context.request_id == request_id;
-      });
-  if (iter == sessions_.end())
-    return kSessionIDInvalid;
-
-  return iter->first;
 }
 
 SpeechRecognitionSessionContext

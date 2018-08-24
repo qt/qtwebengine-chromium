@@ -5,19 +5,18 @@
 #ifndef CONTENT_PUBLIC_BROWSER_ANDROID_CONTENT_VIEW_LAYER_RENDERER_H_
 #define CONTENT_PUBLIC_BROWSER_ANDROID_CONTENT_VIEW_LAYER_RENDERER_H_
 
-// This interface is used by consumers of the ContentViewRenderView to
-// attach/detach layers.
-
-namespace blink {
-class WebLayer;
+namespace cc {
+class Layer;
 }
 
 namespace content {
 
+// This interface is used by consumers of the ContentViewRenderView to
+// attach/detach layers.
 class ContentViewLayerRenderer {
  public:
-  virtual void AttachLayer(blink::WebLayer* layer) = 0;
-  virtual void DetachLayer(blink::WebLayer* layer) = 0;
+  virtual void AttachLayer(cc::Layer* layer) = 0;
+  virtual void DetachLayer(cc::Layer* layer) = 0;
 
  protected:
   virtual ~ContentViewLayerRenderer() {}

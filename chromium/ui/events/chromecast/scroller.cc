@@ -28,7 +28,10 @@ const float kEpsilon = 1e-5f;
 
 // Fling scroll is stopped when the scroll position is |kThresholdForFlingEnd|
 // pixels or closer from the end.
-const float kThresholdForFlingEnd = 0.1;
+const float kThresholdForFlingEnd = 0.1f;
+
+// Scale factor applied to incoming fling velocity.
+const float kFlingVelocityAttenuationFactor = 1.0f;
 
 bool ApproxEquals(float a, float b) {
   return std::abs(a - b) < kEpsilon;
@@ -186,7 +189,7 @@ Scroller::Scroller(const Config& config)
       distance_(0),
       fling_friction_(config.fling_friction),
       deceleration_(ComputeDeceleration(fling_friction_)),
-      tuning_coeff_(ComputeDeceleration(3.25f)) {
+      tuning_coeff_(ComputeDeceleration(0.8f)) {
 }
 
 Scroller::~Scroller() {
@@ -267,6 +270,7 @@ void Scroller::Fling(float start_x,
   finished_ = false;
 
   float velocity = std::sqrt(velocity_x * velocity_x + velocity_y * velocity_y);
+  velocity *= kFlingVelocityAttenuationFactor;
 
   velocity_ = velocity;
   duration_ = GetSplineFlingDuration(velocity);

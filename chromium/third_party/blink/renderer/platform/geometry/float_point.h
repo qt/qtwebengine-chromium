@@ -44,6 +44,11 @@ typedef struct CGPoint CGPoint;
 
 struct SkPoint;
 
+namespace gfx {
+class PointF;
+class ScrollOffset;
+}
+
 namespace blink {
 
 class DoublePoint;
@@ -128,10 +133,8 @@ class PLATFORM_EXPORT FloatPoint {
   operator CGPoint() const;
 #endif
 
-  // Can we remove this one?
-  SkPoint Data() const;
-
-  operator SkPoint() const;
+  operator gfx::PointF() const;
+  explicit operator gfx::ScrollOffset() const;
 
   String ToString() const;
 
@@ -236,6 +239,8 @@ PLATFORM_EXPORT bool FindIntersection(const FloatPoint& p1,
                                       FloatPoint& intersection);
 
 PLATFORM_EXPORT std::ostream& operator<<(std::ostream&, const FloatPoint&);
+PLATFORM_EXPORT WTF::TextStream& operator<<(WTF::TextStream&,
+                                            const FloatPoint&);
 
 }  // namespace blink
 

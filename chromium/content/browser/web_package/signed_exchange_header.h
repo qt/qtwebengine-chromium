@@ -14,7 +14,6 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "content/browser/web_package/signed_exchange_header_parser.h"
-#include "content/browser/web_package/signed_exchange_utils.h"
 #include "content/common/content_export.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
@@ -22,17 +21,18 @@
 
 namespace content {
 
+class SignedExchangeDevToolsProxy;
+
 // SignedExchangeHeader contains all information captured in signed exchange
 // envelope but the payload.
 // https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html
 class CONTENT_EXPORT SignedExchangeHeader {
  public:
-  static constexpr size_t kEncodedHeaderLengthInBytes = 3;
-  // Parse big-endian encoded length of the following CBOR-encoded
-  // signed exchange header.
+  static constexpr size_t kEncodedLengthInBytes = 3;
+  // Parse encoded length of the variable-length field in the signed exchange.
   // Note: |input| must be pointing to a valid memory address that has at least
-  // |kEncodedHeaderLengthInBytes|.
-  static size_t ParseHeadersLength(base::span<const uint8_t> input);
+  // |kEncodedLengthInBytes|.
+  static size_t ParseEncodedLength(base::span<const uint8_t> input);
 
   using HeaderMap = std::map<std::string, std::string>;
 
@@ -43,7 +43,7 @@ class CONTENT_EXPORT SignedExchangeHeader {
   // https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html#cross-origin-trust
   static base::Optional<SignedExchangeHeader> Parse(
       base::span<const uint8_t> input,
-      const signed_exchange_utils::LogCallback& error_message_callback);
+      SignedExchangeDevToolsProxy* devtools_proxy);
   SignedExchangeHeader();
   SignedExchangeHeader(const SignedExchangeHeader&);
   SignedExchangeHeader(SignedExchangeHeader&&);

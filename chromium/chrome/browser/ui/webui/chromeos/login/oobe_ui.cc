@@ -8,6 +8,7 @@
 
 #include <memory>
 
+#include "ash/public/cpp/ash_features.h"
 #include "ash/public/cpp/ash_switches.h"
 #include "base/command_line.h"
 #include "base/logging.h"
@@ -54,6 +55,7 @@
 #include "chrome/browser/ui/webui/chromeos/login/network_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/network_state_informer.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_display_chooser.h"
+#include "chrome/browser/ui/webui/chromeos/login/recommend_apps_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/reset_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/supervised_user_creation_screen_handler.h"
@@ -116,6 +118,7 @@ const char kEnrollmentCSSPath[] = "enrollment.css";
 const char kEnrollmentJSPath[] = "enrollment.js";
 const char kArcAssistantLogoPath[] = "assistant_logo.png";
 const char kArcPlaystoreCSSPath[] = "playstore.css";
+const char kArcOverlayCSSPath[] = "overlay.css";
 const char kArcPlaystoreJSPath[] = "playstore.js";
 const char kArcPlaystoreLogoPath[] = "playstore.svg";
 const char kProductLogoPath[] = "product-logo.png";
@@ -123,6 +126,7 @@ const char kProductLogoPath[] = "product-logo.png";
 #if defined(GOOGLE_CHROME_BUILD)
 const char kLogo24PX1XSvgPath[] = "logo_24px-1x.svg";
 const char kLogo24PX2XSvgPath[] = "logo_24px-2x.svg";
+const char kSyncConsentIcons[] = "sync-consent-icons.html";
 #endif
 
 // Creates a WebUIDataSource for chrome://oobe
@@ -166,10 +170,13 @@ content::WebUIDataSource* CreateOobeUIDataSource(
 #if defined(GOOGLE_CHROME_BUILD)
   source->AddResourcePath(kLogo24PX1XSvgPath, IDR_PRODUCT_LOGO_24PX_1X);
   source->AddResourcePath(kLogo24PX2XSvgPath, IDR_PRODUCT_LOGO_24PX_2X);
+  source->AddResourcePath(kSyncConsentIcons,
+                          IDR_PRODUCT_CHROMEOS_SYNC_CONSENT_SCREEN_ICONS);
   // No #else section here as Sync Settings screen is Chrome-specific.
 #endif
 
-  // Required for postprocessing of Goolge PlayStore Terms.
+  // Required for postprocessing of Goolge PlayStore Terms and Overlay help.
+  source->AddResourcePath(kArcOverlayCSSPath, IDR_ARC_SUPPORT_OVERLAY_CSS);
   source->AddResourcePath(kArcPlaystoreCSSPath, IDR_ARC_SUPPORT_PLAYSTORE_CSS);
   source->AddResourcePath(kArcPlaystoreJSPath, IDR_ARC_SUPPORT_PLAYSTORE_JS);
   source->AddResourcePath(kArcPlaystoreLogoPath,
@@ -291,6 +298,8 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
   AddScreenHandler(std::make_unique<SyncConsentScreenHandler>());
 
   AddScreenHandler(std::make_unique<ArcTermsOfServiceScreenHandler>());
+
+  AddScreenHandler(std::make_unique<RecommendAppsScreenHandler>());
 
   AddScreenHandler(std::make_unique<UserImageScreenHandler>());
 
@@ -438,6 +447,10 @@ ArcTermsOfServiceScreenView* OobeUI::GetArcTermsOfServiceScreenView() {
   return GetView<ArcTermsOfServiceScreenHandler>();
 }
 
+RecommendAppsScreenView* OobeUI::GetRecommendAppsScreenView() {
+  return GetView<RecommendAppsScreenHandler>();
+}
+
 WrongHWIDScreenView* OobeUI::GetWrongHWIDScreenView() {
   return GetView<WrongHWIDScreenHandler>();
 }
@@ -538,7 +551,7 @@ void OobeUI::GetLocalizedStrings(base::DictionaryValue* localized_strings) {
   localized_strings->SetString(
       "showViewsLock", ash::switches::IsUsingViewsLock() ? "on" : "off");
   localized_strings->SetString(
-      "showViewsLogin", ash::switches::IsUsingViewsLogin() ? "on" : "off");
+      "showViewsLogin", ash::features::IsViewsLoginEnabled() ? "on" : "off");
   localized_strings->SetBoolean(
       "changePictureVideoModeEnabled",
       base::FeatureList::IsEnabled(features::kChangePictureVideoMode));
@@ -683,6 +696,10 @@ void OobeUI::UpdateLocalizedStringsIfNeeded() {
 void OobeUI::OnDisplayConfigurationChanged() {
   if (oobe_display_chooser_)
     oobe_display_chooser_->TryToPlaceUiOnTouchDisplay();
+}
+
+void OobeUI::SetLoginUserCount(int user_count) {
+  core_handler_->SetLoginUserCount(user_count);
 }
 
 }  // namespace chromeos

@@ -9,8 +9,10 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
+#include "media/base/callback_registry.h"
 #include "media/base/cdm_context.h"
 #include "media/base/cdm_proxy_context.h"
+#include "media/gpu/windows/d3d11_decryptor.h"
 
 namespace media {
 
@@ -94,6 +96,7 @@ class D3D11CdmContext : public CdmContext {
               const std::vector<uint8_t>& key_id,
               const std::vector<uint8_t>& key_blob) {
     cdm_proxy_context_.SetKey(crypto_session, key_id, key_blob);
+    new_key_callbacks_.Notify();
   }
   void RemoveKey(ID3D11CryptoSession* crypto_session,
                  const std::vector<uint8_t>& key_id) {
@@ -105,10 +108,25 @@ class D3D11CdmContext : public CdmContext {
   }
 
   // CdmContext implementation.
+  std::unique_ptr<CallbackRegistration> RegisterNewKeyCB(
+      base::RepeatingClosure new_key_cb) override {
+    return new_key_callbacks_.Register(std::move(new_key_cb));
+  }
   CdmProxyContext* GetCdmProxyContext() override { return &cdm_proxy_context_; }
+
+  Decryptor* GetDecryptor() override {
+    if (!decryptor_)
+      decryptor_.reset(new D3D11Decryptor(&cdm_proxy_context_));
+
+    return decryptor_.get();
+  }
 
  private:
   D3D11CdmProxyContext cdm_proxy_context_;
+
+  std::unique_ptr<D3D11Decryptor> decryptor_;
+
+  ClosureRegistry new_key_callbacks_;
 
   base::WeakPtrFactory<D3D11CdmContext> weak_factory_;
 

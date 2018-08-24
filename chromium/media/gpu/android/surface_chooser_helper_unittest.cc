@@ -77,6 +77,13 @@ TEST_F(SurfaceChooserHelperTest, SetIsFullscreen) {
   // We don't really care if it sets expecting_relayout, clears it, or not.
 }
 
+TEST_F(SurfaceChooserHelperTest, SetVideoRotation) {
+  // VideoRotation should be forwarded to the chooser.
+  helper_->SetVideoRotation(VIDEO_ROTATION_90);
+  UpdateChooserState();
+  ASSERT_EQ(chooser_->current_state_.video_rotation, VIDEO_ROTATION_90);
+}
+
 TEST_F(SurfaceChooserHelperTest, SetIsOverlayRequired) {
   // The default helper was created without |is_required|, so verify that.
   UpdateChooserState();
@@ -242,7 +249,7 @@ TEST_F(SurfaceChooserHelperTest, FrameInformationIsCorrectForL3) {
 
   ASSERT_EQ(SurfaceChooserHelper::FrameInformation::OVERLAY_L3,
             helper_->ComputeFrameInformation(true));
-  ASSERT_EQ(SurfaceChooserHelper::FrameInformation::SURFACETEXTURE_L3,
+  ASSERT_EQ(SurfaceChooserHelper::FrameInformation::NON_OVERLAY_L3,
             helper_->ComputeFrameInformation(false));
 }
 
@@ -251,8 +258,8 @@ TEST_F(SurfaceChooserHelperTest, FrameInformationIsCorrectForInsecure) {
   helper_->SetSecureSurfaceMode(
       SurfaceChooserHelper::SecureSurfaceMode::kInsecure);
 
-  // Not using an overlay should be SURFACETEXTURE_INSECURE
-  ASSERT_EQ(SurfaceChooserHelper::FrameInformation::SURFACETEXTURE_INSECURE,
+  // Not using an overlay should be NON_OVERLAY_INSECURE
+  ASSERT_EQ(SurfaceChooserHelper::FrameInformation::NON_OVERLAY_INSECURE,
             helper_->ComputeFrameInformation(false));
 
   // Fullscreen state should affect the result, so that we can tell the

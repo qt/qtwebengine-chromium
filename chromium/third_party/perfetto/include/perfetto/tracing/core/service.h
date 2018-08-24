@@ -23,6 +23,8 @@
 #include <memory>
 #include <vector>
 
+#include "perfetto/base/export.h"
+#include "perfetto/base/scoped_file.h"
 #include "perfetto/tracing/core/basic_types.h"
 #include "perfetto/tracing/core/shared_memory.h"
 
@@ -32,6 +34,7 @@ namespace base {
 class TaskRunner;
 }  // namespace base
 
+class CommitDataRequest;
 class Consumer;
 class DataSourceDescriptor;
 class Producer;
@@ -51,7 +54,7 @@ class TraceWriter;
 //
 // Subclassed by:
 //   The service business logic in src/core/service_impl.cc.
-class Service {
+class PERFETTO_EXPORT Service {
  public:
   // The API for the Producer port of the Service.
   // Subclassed by:
@@ -59,27 +62,26 @@ class Service {
   //    the ConnectProducer() method.
   // 2. The transport layer (e.g., src/ipc) when the producer and
   //    the service don't talk locally but via some IPC mechanism.
-  class ProducerEndpoint {
+  class PERFETTO_EXPORT ProducerEndpoint {
    public:
-    virtual ~ProducerEndpoint() = default;
+    virtual ~ProducerEndpoint();
 
-    // Called by the Producer to (un)register data sources. The Services returns
-    // asynchronousy the ID for the data source.
-    // TODO(primiano): thinking twice there is no reason why the service choses
-    // ID rather than the Producer. Update in upcoming CLs.
-    using RegisterDataSourceCallback = std::function<void(DataSourceID)>;
-    virtual void RegisterDataSource(const DataSourceDescriptor&,
-                                    RegisterDataSourceCallback) = 0;
-    virtual void UnregisterDataSource(DataSourceID) = 0;
+    // Called by the Producer to (un)register data sources. Data sources are
+    // identified by their name (i.e. DataSourceDescriptor.name)
+    virtual void RegisterDataSource(const DataSourceDescriptor&) = 0;
+    virtual void UnregisterDataSource(const std::string& name) = 0;
 
     // Called by the Producer to signal that some pages in the shared memory
     // buffer (shared between Service and Producer) have changed.
-    virtual void NotifySharedMemoryUpdate(
-        const std::vector<uint32_t>& changed_pages) = 0;
+    using CommitDataCallback = std::function<void()>;
+    virtual void CommitData(const CommitDataRequest&,
+                            CommitDataCallback callback = {}) = 0;
 
-    // TODO(primiano): remove this, we shouldn't be exposing the raw
-    // SHM object but only the TraceWriter (below).
     virtual SharedMemory* shared_memory() const = 0;
+
+    // Size of shared memory buffer pages. It's always a multiple of 4K.
+    // See shared_memory_abi.h
+    virtual size_t shared_buffer_page_size_kb() const = 0;
 
     // Creates a trace writer, which allows to create events, handling the
     // underying shared memory buffer and signalling to the Service. This method
@@ -93,6 +95,10 @@ class Service {
     // DataSourceConfig.target_buffer().
     virtual std::unique_ptr<TraceWriter> CreateTraceWriter(
         BufferID target_buffer) = 0;
+
+    // Called in response to a Producer::Flush(request_id) call after all data
+    // for the flush request has been committed.
+    virtual void NotifyFlushComplete(FlushRequestID) = 0;
   };  // class ProducerEndpoint.
 
   // The API for the Consumer port of the Service.
@@ -103,10 +109,20 @@ class Service {
   //    the service don't talk locally but via some IPC mechanism.
   class ConsumerEndpoint {
    public:
-    virtual ~ConsumerEndpoint() = default;
+    virtual ~ConsumerEndpoint();
 
-    virtual void EnableTracing(const TraceConfig&) = 0;
+    // Enables tracing with the given TraceConfig. The ScopedFile argument is
+    // used only when TraceConfig.write_into_file == true.
+    virtual void EnableTracing(const TraceConfig&,
+                               base::ScopedFile = base::ScopedFile()) = 0;
     virtual void DisableTracing() = 0;
+
+    // Requests all data sources to flush their data immediately and invokes the
+    // passed callback once all of them have acked the flush (in which case
+    // the callback argument |success| will be true) or |timeout_ms| are elapsed
+    // (in which case |success| will be false).
+    using FlushCallback = std::function<void(bool /*success*/)>;
+    virtual void Flush(uint32_t timeout_ms, FlushCallback) = 0;
 
     // Tracing data will be delivered invoking Consumer::OnTraceData().
     virtual void ReadBuffers() = 0;
@@ -119,7 +135,7 @@ class Service {
       std::unique_ptr<SharedMemory::Factory>,
       base::TaskRunner*);
 
-  virtual ~Service() = default;
+  virtual ~Service();
 
   // Connects a Producer instance and obtains a ProducerEndpoint, which is
   // essentially a 1:1 channel between one Producer and the Service.
@@ -127,12 +143,18 @@ class Service {
   // as the returned ProducerEndpoint is alive.
   // To disconnect just destroy the returned ProducerEndpoint object. It is safe
   // to destroy the Producer once the Producer::OnDisconnect() has been invoked.
-  // |shared_buffer_size_hint_bytes| is an optional hint on the size of the
+  // |uid| is the trusted user id of the producer process, used by the consumers
+  // for validating the origin of trace data.
+  // |shared_memory_size_hint_bytes| is an optional hint on the size of the
   // shared memory buffer. The service can ignore the hint (e.g., if the hint
   // is unreasonably large).
+  // Can return null in the unlikely event that service has too many producers
+  // connected.
   virtual std::unique_ptr<ProducerEndpoint> ConnectProducer(
       Producer*,
-      size_t shared_buffer_size_hint_bytes = 0) = 0;
+      uid_t uid,
+      const std::string& name,
+      size_t shared_memory_size_hint_bytes = 0) = 0;
 
   // Coonects a Consumer instance and obtains a ConsumerEndpoint, which is
   // essentially a 1:1 channel between one Consumer and the Service.

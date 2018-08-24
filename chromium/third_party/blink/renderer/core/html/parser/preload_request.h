@@ -67,18 +67,16 @@ class CORE_EXPORT PreloadRequest {
         referrer_policy, referrer_source, is_image_set));
   }
 
-  bool IsSafeToSendToAnotherThread() const;
-
   Resource* Start(Document*, CSSPreloaderResourceClient*);
 
   void SetDefer(FetchParameters::DeferOption defer) { defer_ = defer; }
-  void SetCharset(const String& charset) { charset_ = charset.IsolatedCopy(); }
+  void SetCharset(const String& charset) { charset_ = charset; }
   void SetCrossOrigin(CrossOriginAttributeValue cross_origin) {
     cross_origin_ = cross_origin;
   }
   CrossOriginAttributeValue CrossOrigin() const { return cross_origin_; }
 
-  void SetNonce(const String& nonce) { nonce_ = nonce.IsolatedCopy(); }
+  void SetNonce(const String& nonce) { nonce_ = nonce; }
   const String& Nonce() const { return nonce_; }
 
   Resource::Type ResourceType() const { return resource_type_; }
@@ -131,12 +129,11 @@ class CORE_EXPORT PreloadRequest {
                  ResourceFetcher::IsImageSet is_image_set)
       : initiator_name_(initiator_name),
         initiator_position_(initiator_position),
-        resource_url_(resource_url.IsolatedCopy()),
-        base_url_(base_url.Copy()),
+        resource_url_(resource_url),
+        base_url_(base_url),
         resource_type_(resource_type),
         script_type_(ScriptType::kClassic),
         cross_origin_(kCrossOriginAttributeNotSet),
-        discovery_time_(CurrentTimeTicksInSeconds()),
         defer_(FetchParameters::kNoDefer),
         resource_width_(resource_width),
         client_hints_preferences_(client_hints_preferences),
@@ -157,7 +154,6 @@ class CORE_EXPORT PreloadRequest {
   ScriptType script_type_;
   CrossOriginAttributeValue cross_origin_;
   String nonce_;
-  double discovery_time_;
   FetchParameters::DeferOption defer_;
   FetchParameters::ResourceWidth resource_width_;
   ClientHintsPreferences client_hints_preferences_;

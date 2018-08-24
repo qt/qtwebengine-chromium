@@ -15,7 +15,6 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/observer_list.h"
 #include "cc/base/region.h"
 #include "cc/layers/content_layer_client.h"
@@ -321,7 +320,7 @@ class COMPOSITOR_EXPORT Layer : public LayerAnimationDelegate,
   // Returns the fallback SurfaceId set by SetFallbackSurfaceId.
   const viz::SurfaceId* GetFallbackSurfaceId() const;
 
-  bool has_external_content() {
+  bool has_external_content() const {
     return texture_layer_.get() || surface_layer_.get();
   }
 
@@ -403,10 +402,9 @@ class COMPOSITOR_EXPORT Layer : public LayerAnimationDelegate,
   float device_scale_factor() const { return device_scale_factor_; }
 
   // LayerClient implementation.
-  std::unique_ptr<base::trace_event::ConvertableToTraceFormat> TakeDebugInfo(
+  std::unique_ptr<base::trace_event::TracedValue> TakeDebugInfo(
       cc::Layer* layer) override;
-  void didUpdateMainThreadScrollingReasons() override;
-  void didChangeScrollbarsHiddenIfOverlay(bool) override;
+  void DidChangeScrollbarsHiddenIfOverlay(bool) override;
 
   // Triggers a call to SwitchToLayer.
   void SwitchCCLayerForTest();
@@ -444,6 +442,11 @@ class COMPOSITOR_EXPORT Layer : public LayerAnimationDelegate,
   // If |surface_layer_| exists, return whether the contents should stretch to
   // fill the bounds of |this|. Defaults to false.
   bool StretchContentToFillBounds() const;
+
+  // If |surface_layer_| exists, update the size. The updated size is necessary
+  // for proper scaling if the embedder is resized and the |surface_layer_| is
+  // set to stretch to fill bounds.
+  void SetSurfaceSize(gfx::Size surface_size_in_dip);
 
  private:
   friend class LayerOwner;

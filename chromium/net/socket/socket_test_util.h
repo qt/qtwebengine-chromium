@@ -11,9 +11,11 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/callback.h"
+#include "base/containers/span.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
@@ -28,6 +30,7 @@
 #include "net/base/test_completion_callback.h"
 #include "net/http/http_auth_controller.h"
 #include "net/http/http_proxy_client_socket_pool.h"
+#include "net/http/proxy_client_socket.h"
 #include "net/log/net_log_with_source.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_handle.h"
@@ -217,6 +220,7 @@ class SocketDataProvider {
   virtual MockWriteResult OnWrite(const std::string& data) = 0;
   virtual bool AllReadDataConsumed() const = 0;
   virtual bool AllWriteDataConsumed() const = 0;
+  virtual void CancelPendingRead() {}
 
   virtual void OnEnableTCPFastOpenIfSupported();
 
@@ -276,10 +280,8 @@ class AsyncSocket {
 // StaticSocketDataHelper manages a list of reads and writes.
 class StaticSocketDataHelper {
  public:
-  StaticSocketDataHelper(const MockRead* reads,
-                         size_t reads_count,
-                         const MockWrite* writes,
-                         size_t writes_count);
+  StaticSocketDataHelper(base::span<const MockRead> reads,
+                         base::span<const MockWrite> writes);
   ~StaticSocketDataHelper();
 
   // These functions get access to the next available read and write data. They
@@ -301,23 +303,21 @@ class StaticSocketDataHelper {
 
   size_t read_index() const { return read_index_; }
   size_t write_index() const { return write_index_; }
-  size_t read_count() const { return read_count_; }
-  size_t write_count() const { return write_count_; }
+  size_t read_count() const { return reads_.size(); }
+  size_t write_count() const { return writes_.size(); }
 
-  bool AllReadDataConsumed() const { return read_index_ >= read_count_; }
-  bool AllWriteDataConsumed() const { return write_index_ >= write_count_; }
+  bool AllReadDataConsumed() const { return read_index() >= read_count(); }
+  bool AllWriteDataConsumed() const { return write_index() >= write_count(); }
 
  private:
   // Returns the next available read or write that is not a pause event. CHECK
   // fails if no data is available.
   const MockWrite& PeekRealWrite() const;
 
-  const MockRead* const reads_;
+  const base::span<const MockRead> reads_;
   size_t read_index_;
-  const size_t read_count_;
-  const MockWrite* const writes_;
+  const base::span<const MockWrite> writes_;
   size_t write_index_;
-  const size_t write_count_;
 
   DISALLOW_COPY_AND_ASSIGN(StaticSocketDataHelper);
 };
@@ -327,10 +327,8 @@ class StaticSocketDataHelper {
 class StaticSocketDataProvider : public SocketDataProvider {
  public:
   StaticSocketDataProvider();
-  StaticSocketDataProvider(const MockRead* reads,
-                           size_t reads_count,
-                           const MockWrite* writes,
-                           size_t writes_count);
+  StaticSocketDataProvider(base::span<const MockRead> reads,
+                           base::span<const MockWrite> writes);
   ~StaticSocketDataProvider() override;
 
   // From SocketDataProvider:
@@ -351,6 +349,17 @@ class StaticSocketDataProvider : public SocketDataProvider {
   StaticSocketDataHelper helper_;
 
   DISALLOW_COPY_AND_ASSIGN(StaticSocketDataProvider);
+};
+
+// ProxyClientSocketDataProvider only need to keep track of the return code from
+// calls to Connect().
+struct ProxyClientSocketDataProvider {
+  ProxyClientSocketDataProvider(IoMode mode, int result);
+  ProxyClientSocketDataProvider(const ProxyClientSocketDataProvider& other);
+  ~ProxyClientSocketDataProvider();
+
+  // Result for Connect().
+  MockConnect connect;
 };
 
 // SSLSocketDataProviders only need to keep track of the return code from calls
@@ -385,21 +394,19 @@ struct SSLSocketDataProvider {
 // complete the operations in a specified order.
 class SequencedSocketData : public SocketDataProvider {
  public:
+  SequencedSocketData();
+
   // |reads| is the list of MockRead completions.
   // |writes| is the list of MockWrite completions.
-  SequencedSocketData(const MockRead* reads,
-                      size_t reads_count,
-                      const MockWrite* writes,
-                      size_t writes_count);
+  SequencedSocketData(base::span<const MockRead> reads,
+                      base::span<const MockWrite> writes);
 
   // |connect| is the result for the connect phase.
   // |reads| is the list of MockRead completions.
   // |writes| is the list of MockWrite completions.
   SequencedSocketData(const MockConnect& connect,
-                      const MockRead* reads,
-                      size_t reads_count,
-                      const MockWrite* writes,
-                      size_t writes_count);
+                      base::span<const MockRead> reads,
+                      base::span<const MockWrite> writes);
 
   ~SequencedSocketData() override;
 
@@ -410,6 +417,7 @@ class SequencedSocketData : public SocketDataProvider {
   bool AllWriteDataConsumed() const override;
   void OnEnableTCPFastOpenIfSupported() override;
   bool IsIdle() const override;
+  void CancelPendingRead() override;
 
   // An ASYNC read event with a return value of ERR_IO_PENDING will cause the
   // socket data to pause at that event, and advance no further, until Resume is
@@ -507,6 +515,7 @@ class SocketDataProviderArray {
 class MockUDPClientSocket;
 class MockTCPClientSocket;
 class MockSSLClientSocket;
+class MockProxyClientSocket;
 
 // ClientSocketFactory which contains arrays of sockets of each type.
 // You should first fill the arrays using AddMock{SSL,}Socket. When the factory
@@ -520,6 +529,7 @@ class MockClientSocketFactory : public ClientSocketFactory {
 
   void AddSocketDataProvider(SocketDataProvider* socket);
   void AddSSLSocketDataProvider(SSLSocketDataProvider* socket);
+  void AddProxyClientSocketDataProvider(ProxyClientSocketDataProvider* socket);
   void ResetNextMockIndexes();
 
   SocketDataProviderArray<SocketDataProvider>& mock_data() {
@@ -529,6 +539,9 @@ class MockClientSocketFactory : public ClientSocketFactory {
   void set_enable_read_if_ready(bool enable_read_if_ready) {
     enable_read_if_ready_ = enable_read_if_ready;
   }
+
+  // Uses mock ProxyClientSocket instead of the default ProxyClientSocket.
+  void UseMockProxyClientSockets() { use_mock_proxy_client_sockets_ = true; }
 
   // ClientSocketFactory
   std::unique_ptr<DatagramClientSocket> CreateDatagramClientSocket(
@@ -545,6 +558,16 @@ class MockClientSocketFactory : public ClientSocketFactory {
       const HostPortPair& host_and_port,
       const SSLConfig& ssl_config,
       const SSLClientSocketContext& context) override;
+  std::unique_ptr<ProxyClientSocket> CreateProxyClientSocket(
+      std::unique_ptr<ClientSocketHandle> transport_socket,
+      const std::string& user_agent,
+      const HostPortPair& endpoint,
+      HttpAuthController* http_auth_controller,
+      bool tunnel,
+      bool using_spdy,
+      NextProto negotiated_protocol,
+      bool is_https_proxy,
+      const NetworkTrafficAnnotationTag& traffic_annotation) override;
   void ClearSSLSessionCache() override;
 
   const std::vector<uint16_t>& udp_client_socket_ports() const {
@@ -554,11 +577,13 @@ class MockClientSocketFactory : public ClientSocketFactory {
  private:
   SocketDataProviderArray<SocketDataProvider> mock_data_;
   SocketDataProviderArray<SSLSocketDataProvider> mock_ssl_data_;
+  SocketDataProviderArray<ProxyClientSocketDataProvider> mock_proxy_data_;
   std::vector<uint16_t> udp_client_socket_ports_;
 
   // If true, ReadIfReady() is enabled; otherwise ReadIfReady() returns
   // ERR_READ_IF_READY_NOT_IMPLEMENTED.
   bool enable_read_if_ready_;
+  bool use_mock_proxy_client_sockets_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(MockClientSocketFactory);
 };
@@ -573,25 +598,24 @@ class MockClientSocket : public TransportClientSocket {
   // Socket implementation.
   int Read(IOBuffer* buf,
            int buf_len,
-           const CompletionCallback& callback) override = 0;
+           CompletionOnceCallback callback) override = 0;
   int Write(IOBuffer* buf,
             int buf_len,
-            const CompletionCallback& callback,
+            CompletionOnceCallback callback,
             const NetworkTrafficAnnotationTag& traffic_annotation) override = 0;
   int SetReceiveBufferSize(int32_t size) override;
   int SetSendBufferSize(int32_t size) override;
 
   // TransportClientSocket implementation.
   int Bind(const net::IPEndPoint& local_addr) override;
-  int Connect(const CompletionCallback& callback) override = 0;
+  // StreamSocket implementation.
+  int Connect(CompletionOnceCallback callback) override = 0;
   void Disconnect() override;
   bool IsConnected() const override;
   bool IsConnectedAndIdle() const override;
   int GetPeerAddress(IPEndPoint* address) const override;
   int GetLocalAddress(IPEndPoint* address) const override;
   const NetLogWithSource& NetLog() const override;
-  void SetSubresourceSpeculation() override {}
-  void SetOmniboxSpeculation() override {}
   bool WasAlpnNegotiated() const override;
   NextProto GetNegotiatedProtocol() const override;
   void GetConnectionAttempts(ConnectionAttempts* out) const override;
@@ -599,11 +623,10 @@ class MockClientSocket : public TransportClientSocket {
   void AddConnectionAttempts(const ConnectionAttempts& attempts) override {}
   int64_t GetTotalReceivedBytes() const override;
   void ApplySocketTag(const SocketTag& tag) override {}
-
  protected:
   ~MockClientSocket() override;
-  void RunCallbackAsync(const CompletionCallback& callback, int result);
-  void RunCallback(const CompletionCallback& callback, int result);
+  void RunCallbackAsync(CompletionOnceCallback callback, int result);
+  void RunCallback(CompletionOnceCallback callback, int result);
 
   // True if Connect completed successfully and Disconnect hasn't been called.
   bool connected_;
@@ -631,17 +654,18 @@ class MockTCPClientSocket : public MockClientSocket, public AsyncSocket {
   // Socket implementation.
   int Read(IOBuffer* buf,
            int buf_len,
-           const CompletionCallback& callback) override;
+           CompletionOnceCallback callback) override;
   int ReadIfReady(IOBuffer* buf,
                   int buf_len,
-                  const CompletionCallback& callback) override;
+                  CompletionOnceCallback callback) override;
+  int CancelReadIfReady() override;
   int Write(IOBuffer* buf,
             int buf_len,
-            const CompletionCallback& callback,
+            CompletionOnceCallback callback,
             const NetworkTrafficAnnotationTag& traffic_annotation) override;
 
   // StreamSocket implementation.
-  int Connect(const CompletionCallback& callback) override;
+  int Connect(CompletionOnceCallback callback) override;
   void Disconnect() override;
   bool IsConnected() const override;
   bool IsConnectedAndIdle() const override;
@@ -667,7 +691,7 @@ class MockTCPClientSocket : public MockClientSocket, public AsyncSocket {
   void RetryRead(int rv);
   int ReadIfReadyImpl(IOBuffer* buf,
                       int buf_len,
-                      const CompletionCallback& callback);
+                      CompletionOnceCallback callback);
   AddressList addresses_;
 
   SocketDataProvider* data_;
@@ -683,13 +707,13 @@ class MockTCPClientSocket : public MockClientSocket, public AsyncSocket {
   // While an asynchronous read is pending, we save our user-buffer state.
   scoped_refptr<IOBuffer> pending_read_buf_;
   int pending_read_buf_len_;
-  CompletionCallback pending_read_callback_;
+  CompletionOnceCallback pending_read_callback_;
 
   // Non-null when a ReadIfReady() is pending.
-  CompletionCallback pending_read_if_ready_callback_;
+  CompletionOnceCallback pending_read_if_ready_callback_;
 
-  CompletionCallback pending_connect_callback_;
-  CompletionCallback pending_write_callback_;
+  CompletionOnceCallback pending_connect_callback_;
+  CompletionOnceCallback pending_write_callback_;
   bool was_used_to_convey_data_;
 
   // If true, ReadIfReady() is enabled; otherwise ReadIfReady() returns
@@ -699,6 +723,72 @@ class MockTCPClientSocket : public MockClientSocket, public AsyncSocket {
   ConnectionAttempts connection_attempts_;
 
   DISALLOW_COPY_AND_ASSIGN(MockTCPClientSocket);
+};
+
+class MockProxyClientSocket : public AsyncSocket, public ProxyClientSocket {
+ public:
+  MockProxyClientSocket(std::unique_ptr<ClientSocketHandle> transport_socket,
+                        HttpAuthController* auth_controller,
+                        ProxyClientSocketDataProvider* data);
+  ~MockProxyClientSocket() override;
+  // ProxyClientSocket implementation.
+  const HttpResponseInfo* GetConnectResponseInfo() const override;
+  std::unique_ptr<HttpStream> CreateConnectResponseStream() override;
+  const scoped_refptr<HttpAuthController>& GetAuthController() const override;
+  int RestartWithAuth(CompletionOnceCallback callback) override;
+  bool IsUsingSpdy() const override;
+  NextProto GetProxyNegotiatedProtocol() const override;
+
+  // Socket implementation.
+  int Read(IOBuffer* buf,
+           int buf_len,
+           CompletionOnceCallback callback) override;
+  int ReadIfReady(IOBuffer* buf,
+                  int buf_len,
+                  CompletionOnceCallback callback) override;
+  int Write(IOBuffer* buf,
+            int buf_len,
+            CompletionOnceCallback callback,
+            const NetworkTrafficAnnotationTag& traffic_annotation) override;
+
+  // StreamSocket implementation.
+  int Connect(CompletionOnceCallback callback) override;
+  void Disconnect() override;
+  bool IsConnected() const override;
+  bool IsConnectedAndIdle() const override;
+  bool WasEverUsed() const override;
+  int GetPeerAddress(IPEndPoint* address) const override;
+  int GetLocalAddress(IPEndPoint* address) const override;
+  bool WasAlpnNegotiated() const override;
+  NextProto GetNegotiatedProtocol() const override;
+  bool GetSSLInfo(SSLInfo* ssl_info) override;
+  void ApplySocketTag(const SocketTag& tag) override;
+  const NetLogWithSource& NetLog() const override;
+  void GetConnectionAttempts(ConnectionAttempts* out) const override;
+  void ClearConnectionAttempts() override {}
+  void AddConnectionAttempts(const ConnectionAttempts& attempts) override {}
+  int64_t GetTotalReceivedBytes() const override;
+  int SetReceiveBufferSize(int32_t size) override;
+  int SetSendBufferSize(int32_t size) override;
+
+  // This MockSocket does not implement the manual async IO feature.
+  void OnReadComplete(const MockRead& data) override;
+  void OnWriteComplete(int rv) override;
+  void OnConnectComplete(const MockConnect& data) override;
+  void OnDataProviderDestroyed() override {}
+
+ private:
+  void RunCallback(CompletionOnceCallback callback, int result);
+  void RunCallbackAsync(CompletionOnceCallback callback, int result);
+
+  NetLogWithSource net_log_;
+  std::unique_ptr<ClientSocketHandle> transport_;
+  ProxyClientSocketDataProvider* data_;
+  scoped_refptr<HttpAuthController> auth_controller_;
+
+  base::WeakPtrFactory<MockProxyClientSocket> weak_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockProxyClientSocket);
 };
 
 class MockSSLClientSocket : public AsyncSocket, public SSLClientSocket {
@@ -712,17 +802,17 @@ class MockSSLClientSocket : public AsyncSocket, public SSLClientSocket {
   // Socket implementation.
   int Read(IOBuffer* buf,
            int buf_len,
-           const CompletionCallback& callback) override;
+           CompletionOnceCallback callback) override;
   int ReadIfReady(IOBuffer* buf,
                   int buf_len,
-                  const CompletionCallback& callback) override;
+                  CompletionOnceCallback callback) override;
   int Write(IOBuffer* buf,
             int buf_len,
-            const CompletionCallback& callback,
+            CompletionOnceCallback callback,
             const NetworkTrafficAnnotationTag& traffic_annotation) override;
 
   // StreamSocket implementation.
-  int Connect(const CompletionCallback& callback) override;
+  int Connect(CompletionOnceCallback callback) override;
   void Disconnect() override;
   bool IsConnected() const override;
   bool IsConnectedAndIdle() const override;
@@ -732,10 +822,15 @@ class MockSSLClientSocket : public AsyncSocket, public SSLClientSocket {
   bool WasAlpnNegotiated() const override;
   NextProto GetNegotiatedProtocol() const override;
   bool GetSSLInfo(SSLInfo* ssl_info) override;
+  void GetSSLCertRequestInfo(
+      SSLCertRequestInfo* cert_request_info) const override;
+  Error GetTokenBindingSignature(crypto::ECPrivateKey* key,
+                                 TokenBindingType tb_type,
+                                 std::vector<uint8_t>* out) override;
+  ChannelIDService* GetChannelIDService() const override;
+  crypto::ECPrivateKey* GetChannelIDKey() const override;
   void ApplySocketTag(const SocketTag& tag) override;
   const NetLogWithSource& NetLog() const override;
-  void SetSubresourceSpeculation() override {}
-  void SetOmniboxSpeculation() override {}
   void GetConnectionAttempts(ConnectionAttempts* out) const override;
   void ClearConnectionAttempts() override {}
   void AddConnectionAttempts(const ConnectionAttempts& attempts) override {}
@@ -743,18 +838,12 @@ class MockSSLClientSocket : public AsyncSocket, public SSLClientSocket {
   int SetReceiveBufferSize(int32_t size) override;
   int SetSendBufferSize(int32_t size) override;
 
-  // SSLClientSocket implementation.
-  void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info) override;
-  Error GetTokenBindingSignature(crypto::ECPrivateKey* key,
-                                 TokenBindingType tb_type,
-                                 std::vector<uint8_t>* out) override;
+  // SSLSocket implementation.
   int ExportKeyingMaterial(const base::StringPiece& label,
                            bool has_context,
                            const base::StringPiece& context,
                            unsigned char* out,
                            unsigned int outlen) override;
-  ChannelIDService* GetChannelIDService() const override;
-  crypto::ECPrivateKey* GetChannelIDKey() const override;
 
   // This MockSocket does not implement the manual async IO feature.
   void OnReadComplete(const MockRead& data) override;
@@ -767,11 +856,11 @@ class MockSSLClientSocket : public AsyncSocket, public SSLClientSocket {
 
  private:
   static void ConnectCallback(MockSSLClientSocket* ssl_client_socket,
-                              const CompletionCallback& callback,
+                              CompletionOnceCallback callback,
                               int rv);
 
-  void RunCallbackAsync(const CompletionCallback& callback, int result);
-  void RunCallback(const CompletionCallback& callback, int result);
+  void RunCallbackAsync(CompletionOnceCallback callback, int result);
+  void RunCallback(CompletionOnceCallback callback, int result);
 
   bool connected_ = false;
   NetLogWithSource net_log_;
@@ -793,19 +882,19 @@ class MockUDPClientSocket : public DatagramClientSocket, public AsyncSocket {
   // Socket implementation.
   int Read(IOBuffer* buf,
            int buf_len,
-           const CompletionCallback& callback) override;
+           CompletionOnceCallback callback) override;
   int Write(IOBuffer* buf,
             int buf_len,
-            const CompletionCallback& callback,
+            CompletionOnceCallback callback,
             const NetworkTrafficAnnotationTag& traffic_annotation) override;
   int WriteAsync(
       DatagramBuffers buffers,
-      const CompletionCallback& callback,
+      CompletionOnceCallback callback,
       const NetworkTrafficAnnotationTag& traffic_annotation) override;
   int WriteAsync(
       const char* buffer,
       size_t buf_len,
-      const CompletionCallback& callback,
+      CompletionOnceCallback callback,
       const NetworkTrafficAnnotationTag& traffic_annotation) override;
   DatagramBuffers GetUnwrittenBuffers() override;
 
@@ -856,8 +945,8 @@ class MockUDPClientSocket : public DatagramClientSocket, public AsyncSocket {
  private:
   int CompleteRead();
 
-  void RunCallbackAsync(const CompletionCallback& callback, int result);
-  void RunCallback(const CompletionCallback& callback, int result);
+  void RunCallbackAsync(CompletionOnceCallback callback, int result);
+  void RunCallback(CompletionOnceCallback callback, int result);
 
   bool connected_;
   SocketDataProvider* data_;
@@ -875,8 +964,8 @@ class MockUDPClientSocket : public DatagramClientSocket, public AsyncSocket {
   // While an asynchronous IO is pending, we save our user-buffer state.
   scoped_refptr<IOBuffer> pending_read_buf_;
   int pending_read_buf_len_;
-  CompletionCallback pending_read_callback_;
-  CompletionCallback pending_write_callback_;
+  CompletionOnceCallback pending_read_callback_;
+  CompletionOnceCallback pending_write_callback_;
 
   NetLogWithSource net_log_;
 
@@ -899,7 +988,7 @@ class TestSocketRequest : public TestCompletionCallbackBase {
 
   ClientSocketHandle* handle() { return &handle_; }
 
-  const CompletionCallback& callback() const { return callback_; }
+  CompletionOnceCallback callback() const { return callback_; }
 
  private:
   void OnComplete(int result);
@@ -995,7 +1084,7 @@ class MockTransportClientSocketPool : public TransportClientSocketPool {
     MockConnectJob(std::unique_ptr<StreamSocket> socket,
                    ClientSocketHandle* handle,
                    const SocketTag& socket_tag,
-                   const CompletionCallback& callback);
+                   CompletionOnceCallback callback);
     ~MockConnectJob();
 
     int Connect();
@@ -1007,7 +1096,7 @@ class MockTransportClientSocketPool : public TransportClientSocketPool {
     std::unique_ptr<StreamSocket> socket_;
     ClientSocketHandle* handle_;
     const SocketTag socket_tag_;
-    CompletionCallback user_callback_;
+    CompletionOnceCallback user_callback_;
 
     DISALLOW_COPY_AND_ASSIGN(MockConnectJob);
   };
@@ -1097,15 +1186,13 @@ class WrappedStreamSocket : public TransportClientSocket {
 
   // StreamSocket implementation:
   int Bind(const net::IPEndPoint& local_addr) override;
-  int Connect(const CompletionCallback& callback) override;
+  int Connect(CompletionOnceCallback callback) override;
   void Disconnect() override;
   bool IsConnected() const override;
   bool IsConnectedAndIdle() const override;
   int GetPeerAddress(IPEndPoint* address) const override;
   int GetLocalAddress(IPEndPoint* address) const override;
   const NetLogWithSource& NetLog() const override;
-  void SetSubresourceSpeculation() override;
-  void SetOmniboxSpeculation() override;
   bool WasEverUsed() const override;
   bool WasAlpnNegotiated() const override;
   NextProto GetNegotiatedProtocol() const override;
@@ -1119,13 +1206,13 @@ class WrappedStreamSocket : public TransportClientSocket {
   // Socket implementation:
   int Read(IOBuffer* buf,
            int buf_len,
-           const CompletionCallback& callback) override;
+           CompletionOnceCallback callback) override;
   int ReadIfReady(IOBuffer* buf,
                   int buf_len,
-                  const CompletionCallback& callback) override;
+                  CompletionOnceCallback callback) override;
   int Write(IOBuffer* buf,
             int buf_len,
-            const CompletionCallback& callback,
+            CompletionOnceCallback callback,
             const NetworkTrafficAnnotationTag& traffic_annotation) override;
   int SetReceiveBufferSize(int32_t size) override;
   int SetSendBufferSize(int32_t size) override;
@@ -1143,7 +1230,7 @@ class MockTaggingStreamSocket : public WrappedStreamSocket {
   ~MockTaggingStreamSocket() override {}
 
   // StreamSocket implementation.
-  int Connect(const CompletionCallback& callback) override;
+  int Connect(CompletionOnceCallback callback) override;
   void ApplySocketTag(const SocketTag& tag) override;
 
   // Returns false if socket's tag was changed after the socket was connected,
@@ -1214,10 +1301,10 @@ extern const char kSOCKS5OkResponse[];
 extern const int kSOCKS5OkResponseLength;
 
 // Helper function to get the total data size of the MockReads in |reads|.
-int64_t CountReadBytes(const MockRead reads[], size_t reads_size);
+int64_t CountReadBytes(base::span<const MockRead> reads);
 
 // Helper function to get the total data size of the MockWrites in |writes|.
-int64_t CountWriteBytes(const MockWrite writes[], size_t writes_size);
+int64_t CountWriteBytes(base::span<const MockWrite> writes);
 
 #if defined(OS_ANDROID)
 // Query the system to find out how many bytes were received with tag

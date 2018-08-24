@@ -22,7 +22,6 @@
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
-#include "cc/blink/web_layer_impl.h"
 #include "cc/layers/texture_layer.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/frame_messages.h"
@@ -125,6 +124,7 @@
 #include "third_party/blink/public/web/web_view.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "ui/events/blink/blink_event_util.h"
+#include "ui/events/blink/web_input_event.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_rep.h"
@@ -134,7 +134,7 @@
 
 #if BUILDFLAG(ENABLE_PRINTING)
 // nogncheck because dependency on //printing is conditional upon
-// enable_basic_printing or enable_print_preview flags.
+// enable_basic_printing flags.
 #include "printing/metafile_skia_wrapper.h"  // nogncheck
 #include "printing/pdf_metafile_skia.h"  // nogncheck
 #endif
@@ -443,7 +443,7 @@ void PepperPluginInstanceImpl::ExternalDocumentLoader::ReplayReceivedData(
     document_loader->DidReceiveData(it->c_str(), it->length());
   }
   if (finished_loading_) {
-    document_loader->DidFinishLoading(0 /* finish_time */);
+    document_loader->DidFinishLoading();
   } else if (error_.get()) {
     DCHECK(!finished_loading_);
     document_loader->DidFail(*error_);
@@ -456,8 +456,7 @@ void PepperPluginInstanceImpl::ExternalDocumentLoader::DidReceiveData(
   data_.push_back(std::string(data, data_length));
 }
 
-void PepperPluginInstanceImpl::ExternalDocumentLoader::DidFinishLoading(
-    double finish_time) {
+void PepperPluginInstanceImpl::ExternalDocumentLoader::DidFinishLoading() {
   DCHECK(!finished_loading_);
 
   if (error_.get())
@@ -542,9 +541,6 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
       input_event_mask_(0),
       filtered_input_event_mask_(0),
       text_input_type_(kPluginDefaultTextInputType),
-      text_input_caret_(0, 0, 0, 0),
-      text_input_caret_bounds_(0, 0, 0, 0),
-      text_input_caret_set_(false),
       selection_caret_(0),
       selection_anchor_(0),
       pending_user_gesture_(0.0),
@@ -666,10 +662,6 @@ v8::Local<v8::Context> PepperPluginInstanceImpl::GetMainWorldContext() {
 
 void PepperPluginInstanceImpl::Delete() {
   is_deleted_ = true;
-
-  if (render_frame_ && render_frame_->plugin_find_handler() == this) {
-    render_frame_->set_plugin_find_handler(nullptr);
-  }
 
   // Keep a reference on the stack. See NOTE above.
   scoped_refptr<PepperPluginInstanceImpl> ref(this);
@@ -1103,7 +1095,7 @@ bool PepperPluginInstanceImpl::IsPluginAcceptingCompositionEvents() const {
 }
 
 gfx::Rect PepperPluginInstanceImpl::GetCaretBounds() const {
-  if (!text_input_caret_set_) {
+  if (!text_input_caret_info_) {
     // If it is never set by the plugin, use the bottom left corner.
     gfx::Rect rect(view_data_.rect.point.x,
                    view_data_.rect.point.y + view_data_.rect.size.height,
@@ -1113,12 +1105,12 @@ gfx::Rect PepperPluginInstanceImpl::GetCaretBounds() const {
   }
 
   // TODO(kinaba) Take CSS transformation into account.
-  // TODO(kinaba) Take |text_input_caret_bounds_| into account. On
-  // some platforms, an "exclude rectangle" where candidate window
-  // must avoid the region can be passed to IME. Currently, we pass
-  // only the caret rectangle because it is the only information
-  // supported uniformly in Chromium.
-  gfx::Rect caret(text_input_caret_);
+  // TODO(kinaba) Take |text_input_caret_info_->caret_bounds| into account. On
+  // some platforms, an "exclude rectangle" where candidate window must avoid
+  // the region can be passed to IME. Currently, we pass only the caret
+  // rectangle because it is the only information supported uniformly in
+  // Chromium.
+  gfx::Rect caret = text_input_caret_info_->caret;
   caret.Offset(view_data_.rect.point.x, view_data_.rect.point.y);
   ConvertDIPToViewport(&caret);
   return caret;
@@ -1520,13 +1512,85 @@ void PepperPluginInstanceImpl::SetSelectionBounds(const gfx::PointF& base,
 bool PepperPluginInstanceImpl::CanEditText() {
   if (!LoadPdfInterface())
     return false;
+  // No reference to |this| on the stack. Do not do any more work after this.
+  // See NOTE above.
   return PP_ToBool(plugin_pdf_interface_->CanEditText(pp_instance()));
+}
+
+bool PepperPluginInstanceImpl::HasEditableText() {
+  if (!LoadPdfInterface())
+    return false;
+
+  // No reference to |this| on the stack. Do not do any more work after this.
+  // See NOTE above.
+  return PP_ToBool(plugin_pdf_interface_->HasEditableText(pp_instance()));
 }
 
 void PepperPluginInstanceImpl::ReplaceSelection(const std::string& text) {
   if (!LoadPdfInterface())
     return;
+
+  // No reference to |this| on the stack. Do not do any more work after this.
+  // See NOTE above.
   plugin_pdf_interface_->ReplaceSelection(pp_instance(), text.c_str());
+}
+
+void PepperPluginInstanceImpl::SelectAll() {
+  if (!LoadPdfInterface())
+    return;
+
+  // Keep a reference on the stack. See NOTE above.
+  scoped_refptr<PepperPluginInstanceImpl> ref(this);
+
+  // TODO(https://crbug.com/836074) |kPlatformModifier| should be
+  // |ui::EF_PLATFORM_ACCELERATOR| (|ui::EF_COMMAND_DOWN| on Mac).
+  static const ui::EventFlags kPlatformModifier = ui::EF_CONTROL_DOWN;
+  // Synthesize a ctrl + a key event to send to the plugin and let it sort out
+  // the event. See also https://crbug.com/739529.
+  ui::KeyEvent char_event(L'A', ui::VKEY_A, kPlatformModifier);
+
+  // Also synthesize a key up event to look more like a real key press.
+  // Otherwise the plugin will not do all the required work to keep the renderer
+  // in sync.
+  ui::KeyEvent keyup_event(ui::ET_KEY_RELEASED, ui::VKEY_A, kPlatformModifier);
+
+  WebCursorInfo dummy_cursor_info;
+  HandleInputEvent(MakeWebKeyboardEvent(char_event), &dummy_cursor_info);
+  HandleInputEvent(MakeWebKeyboardEvent(keyup_event), &dummy_cursor_info);
+}
+
+bool PepperPluginInstanceImpl::CanUndo() {
+  if (!LoadPdfInterface())
+    return false;
+
+  // No reference to |this| on the stack. Do not do any more work after this.
+  // See NOTE above.
+  return PP_ToBool(plugin_pdf_interface_->CanUndo(pp_instance()));
+}
+
+bool PepperPluginInstanceImpl::CanRedo() {
+  if (!LoadPdfInterface())
+    return false;
+
+  // No reference to |this| on the stack. Do not do any more work after this.
+  // See NOTE above.
+  return PP_ToBool(plugin_pdf_interface_->CanRedo(pp_instance()));
+}
+
+void PepperPluginInstanceImpl::Undo() {
+  if (!LoadPdfInterface())
+    return;
+
+  // No reference to |this| on the stack. Do not do any more work after this.
+  // See NOTE above.
+  plugin_pdf_interface_->Undo(pp_instance());
+}
+
+void PepperPluginInstanceImpl::Redo() {
+  if (!LoadPdfInterface())
+    return;
+
+  plugin_pdf_interface_->Redo(pp_instance());
 }
 
 void PepperPluginInstanceImpl::RequestSurroundingText(
@@ -1900,7 +1964,8 @@ int PepperPluginInstanceImpl::PrintBegin(const WebPrintParams& print_params) {
     NOTREACHED();
     return 0;
   }
-  int num_pages = 0;
+
+  int num_pages;
   PP_PrintSettings_Dev print_settings;
   print_settings.printable_area = PP_FromGfxRect(print_params.printable_area);
   print_settings.content_area = PP_FromGfxRect(print_params.print_content_area);
@@ -1911,9 +1976,20 @@ int PepperPluginInstanceImpl::PrintBegin(const WebPrintParams& print_params) {
   print_settings.print_scaling_option =
       static_cast<PP_PrintScalingOption_Dev>(print_params.print_scaling_option);
   print_settings.format = format;
-  num_pages = plugin_print_interface_->Begin(pp_instance(), &print_settings);
+
+  if (LoadPdfInterface()) {
+    PP_PdfPrintSettings_Dev pdf_print_settings;
+    pdf_print_settings.num_pages_per_sheet = print_params.num_pages_per_sheet;
+    pdf_print_settings.scale_factor = print_params.scale_factor;
+
+    num_pages = plugin_pdf_interface_->PrintBegin(
+        pp_instance(), &print_settings, &pdf_print_settings);
+  } else {
+    num_pages = plugin_print_interface_->Begin(pp_instance(), &print_settings);
+  }
   if (!num_pages)
     return 0;
+
   current_print_settings_ = print_settings;
   metafile_ = nullptr;
   ranges_.clear();
@@ -2143,10 +2219,9 @@ void PepperPluginInstanceImpl::UpdateLayer(bool force_creation) {
 
   if (texture_layer_ || compositor_layer_) {
     if (!layer_bound_to_fullscreen_)
-      container_->SetWebLayer(nullptr);
+      container_->SetCcLayer(nullptr, false);
     else if (fullscreen_container_)
       fullscreen_container_->SetLayer(nullptr);
-    web_layer_.reset();
     if (texture_layer_) {
       texture_layer_->ClearClient();
       texture_layer_ = nullptr;
@@ -2154,6 +2229,7 @@ void PepperPluginInstanceImpl::UpdateLayer(bool force_creation) {
     compositor_layer_ = nullptr;
   }
 
+  cc::Layer* either_layer = nullptr;
   if (want_texture_layer) {
     bool opaque = false;
     if (want_3d_layer) {
@@ -2170,28 +2246,24 @@ void PepperPluginInstanceImpl::UpdateLayer(bool force_creation) {
       texture_layer_->SetFlipped(false);
     }
 
-    auto layer = std::make_unique<cc_blink::WebLayerImpl>(texture_layer_);
     // Ignore transparency in fullscreen, since that's what Flash always
     // wants to do, and that lets it not recreate a context if
     // wmode=transparent was specified.
     opaque = opaque || fullscreen_container_;
-    layer->layer()->SetContentsOpaque(opaque);
-    layer->SetContentsOpaqueIsFixed(true);
-    web_layer_ = std::move(layer);
+    texture_layer_->SetContentsOpaque(opaque);
+    either_layer = texture_layer_.get();
   } else if (want_compositor_layer) {
     compositor_layer_ = bound_compositor_->layer();
-    web_layer_ = std::make_unique<cc_blink::WebLayerImpl>(compositor_layer_);
+    either_layer = compositor_layer_.get();
   }
 
-  if (web_layer_) {
-    if (fullscreen_container_) {
-      fullscreen_container_->SetLayer(web_layer_.get());
-    } else {
-      container_->SetWebLayer(web_layer_.get());
-    }
-    if (is_flash_plugin_) {
-      web_layer_->CcLayer()->SetMayContainVideo(true);
-    }
+  if (either_layer) {
+    if (fullscreen_container_)
+      fullscreen_container_->SetLayer(either_layer);
+    else
+      container_->SetCcLayer(either_layer, true);
+    if (is_flash_plugin_)
+      either_layer->SetMayContainVideo(true);
   }
 
   layer_bound_to_fullscreen_ = !!fullscreen_container_;
@@ -2536,8 +2608,7 @@ uint32_t PepperPluginInstanceImpl::GetAudioHardwareOutputSampleRate(
     PP_Instance instance) {
   return render_frame() ? AudioDeviceFactory::GetOutputDeviceInfo(
                               render_frame()->GetRoutingID(),
-                              0 /* session_id */, std::string() /* device_id */,
-                              url::Origin::Create(document_url()))
+                              0 /* session_id */, std::string() /* device_id */)
                               .output_params()
                               .sample_rate()
                         : 0;
@@ -2547,8 +2618,8 @@ uint32_t PepperPluginInstanceImpl::GetAudioHardwareOutputBufferSize(
     PP_Instance instance) {
   return render_frame() ? AudioDeviceFactory::GetOutputDeviceInfo(
                               render_frame()->GetRoutingID(),
-                              0 /* session_id */, std::string() /* device_id */,
-                              url::Origin::Create(document_url()))
+                              0 /* session_id */, std::string() /* device_id */
+                              )
                               .output_params()
                               .frames_per_buffer()
                         : 0;
@@ -2570,7 +2641,7 @@ void PepperPluginInstanceImpl::SetPluginToHandleFindRequests(
       render_frame_->GetRenderView()->GetMainRenderFrame() == render_frame_;
   if (!is_main_frame)
     return;
-  render_frame_->set_plugin_find_handler(this);
+  container_->UsePluginAsFindHandler();
 }
 
 void PepperPluginInstanceImpl::NumberOfFindResultsChanged(
@@ -2804,9 +2875,8 @@ void PepperPluginInstanceImpl::UpdateCaretPosition(
     const PP_Rect& bounding_box) {
   if (!render_frame_)
     return;
-  text_input_caret_ = PP_ToGfxRect(caret);
-  text_input_caret_bounds_ = PP_ToGfxRect(bounding_box);
-  text_input_caret_set_ = true;
+  TextInputCaretInfo info = {PP_ToGfxRect(caret), PP_ToGfxRect(bounding_box)};
+  text_input_caret_info_ = std::move(info);
   render_frame_->PepperCaretPositionChanged(this);
 }
 

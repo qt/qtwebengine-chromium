@@ -3,7 +3,6 @@
 [![Build Status](https://travis-ci.org/google/crc32c.svg?branch=master)](https://travis-ci.org/google/crc32c)
 [![Build Status](https://ci.appveyor.com/api/projects/status/moiq7331pett4xuj/branch/master?svg=true)](https://ci.appveyor.com/project/pwnall/crc32c)
 
-**This is not an official Google product.**
 New file format authors should consider
 [HighwayHash](https://github.com/google/highwayhash). The initial version of
 this code was extracted from [LevelDB](https://github.com/google/leveldb), which
@@ -78,15 +77,15 @@ apm install autocomplete-plus build build-cmake clang-format language-cmake \
 The following commands build and install the project.
 
 ```bash
-mkdir out
-cd out
+mkdir build
+cd build
 cmake -DCRC32C_BUILD_TESTS=0 -DCRC32C_BUILD_BENCHMARKS=0 .. && make all install
 ```
 
 
 ## Development
 
-The following command (when executed from `out/`) (re)builds the project and
+The following command (when executed from `build/`) (re)builds the project and
 runs the tests.
 
 ```bash
@@ -102,7 +101,8 @@ useful for benchmarking against ARM processors.
 ```bash
 cmake .. -DCMAKE_SYSTEM_NAME=Android -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a \
     -DCMAKE_ANDROID_NDK=$HOME/Library/Android/sdk/ndk-bundle \
-    -DCMAKE_ANDROID_NDK_TOOLCHAIN_VERSION=clang -DCRC32C_USE_GLOG=0 \
+    -DCMAKE_ANDROID_NDK_TOOLCHAIN_VERSION=clang \
+    -DCMAKE_ANDROID_STL_TYPE=c++_static -DCRC32C_USE_GLOG=0 \
     -DCMAKE_BUILD_TYPE=Release && cmake --build .
 ```
 

@@ -62,6 +62,12 @@ Polymer({
     syncStatus: Object,
 
     /**
+     * Dictionary defining page visibility.
+     * @type {!GuestModePageVisibility}
+     */
+    pageVisibility: Object,
+
+    /**
      * The currently selected profile icon URL. May be a data URL.
      * @private
      */
@@ -152,10 +158,24 @@ Polymer({
         return map;
       },
     },
+
+    /**
+     * True if current user is child user.
+     */
+    isChild_: Boolean,
   },
 
   /** @private {?settings.SyncBrowserProxy} */
   syncBrowserProxy_: null,
+
+  /** @override */
+  created: function() {
+    // <if expr="chromeos">
+    chrome.usersPrivate.getCurrentUser(user => {
+      this.isChild_ = user.isChild;
+    });
+    // </if>
+  },
 
   /** @override */
   attached: function() {
@@ -535,5 +555,16 @@ Polymer({
    */
   showSignin_: function(syncStatus) {
     return !!syncStatus.signinAllowed && !syncStatus.signedIn;
+  },
+
+  /**
+   * Looks up the translation id, which depends on PIN login support.
+   * @param {boolean} hasPinLogin
+   * @private
+   */
+  selectLockScreenTitleString(hasPinLogin) {
+    if (hasPinLogin)
+      return this.i18n('lockScreenTitleLoginLock');
+    return this.i18n('lockScreenTitleLock');
   },
 });

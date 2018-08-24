@@ -73,6 +73,44 @@ class AnimationAnimationTest : public RenderingTest {
 
   void StartTimeline() { SimulateFrame(0); }
 
+  void ResetWithCompositedAnimation() {
+    // Get rid of the default animation.
+    animation->cancel();
+
+    EnableCompositing();
+
+    SetBodyInnerHTML("<div id='target'></div>");
+
+    // Create a compositable animation; in this case opacity from 1 to 0.
+    Timing timing;
+    timing.iteration_duration = 30;
+
+    scoped_refptr<StringKeyframe> start_keyframe = StringKeyframe::Create();
+    start_keyframe->SetCSSPropertyValue(CSSPropertyOpacity, "1.0",
+                                        SecureContextMode::kInsecureContext,
+                                        nullptr);
+    scoped_refptr<StringKeyframe> end_keyframe = StringKeyframe::Create();
+    end_keyframe->SetCSSPropertyValue(CSSPropertyOpacity, "0.0",
+                                      SecureContextMode::kInsecureContext,
+                                      nullptr);
+
+    StringKeyframeVector keyframes;
+    keyframes.push_back(start_keyframe);
+    keyframes.push_back(end_keyframe);
+
+    Element* element = GetElementById("target");
+    StringKeyframeEffectModel* model =
+        StringKeyframeEffectModel::Create(keyframes);
+    animation = timeline->Play(KeyframeEffect::Create(element, model, timing));
+
+    // After creating the animation we need to clean the lifecycle so that the
+    // animation can be pushed to the compositor.
+    UpdateAllLifecyclePhases();
+
+    document->GetAnimationClock().UpdateTime(base::TimeTicks());
+    document->GetPendingAnimations().Update(base::nullopt, true);
+  }
+
   KeyframeEffectModelBase* MakeEmptyEffectModel() {
     return StringKeyframeEffectModel::Create(StringKeyframeVector());
   }
@@ -85,10 +123,12 @@ class AnimationAnimationTest : public RenderingTest {
     return KeyframeEffect::Create(nullptr, MakeEmptyEffectModel(), timing);
   }
 
-  bool SimulateFrame(double time,
-                     Optional<CompositorElementIdSet> composited_element_ids =
-                         Optional<CompositorElementIdSet>()) {
-    document->GetAnimationClock().UpdateTime(time);
+  bool SimulateFrame(
+      double time,
+      base::Optional<CompositorElementIdSet> composited_element_ids =
+          base::Optional<CompositorElementIdSet>()) {
+    document->GetAnimationClock().UpdateTime(
+        base::TimeTicks() + base::TimeDelta::FromSecondsD(time));
     document->GetPendingAnimations().Update(composited_element_ids, false);
     // The timeline does not know about our animation, so we have to explicitly
     // call update().
@@ -126,7 +166,8 @@ TEST_F(AnimationAnimationTest, CurrentTimeDoesNotSetOutdated) {
   // FIXME: We should split simulateFrame into a version that doesn't update
   // the animation and one that does, as most of the tests don't require
   // update() to be called.
-  document->GetAnimationClock().UpdateTime(10);
+  document->GetAnimationClock().UpdateTime(base::TimeTicks() +
+                                           base::TimeDelta::FromSecondsD(10));
   EXPECT_EQ(10, animation->CurrentTimeInternal());
   EXPECT_FALSE(animation->Outdated());
 }
@@ -808,7 +849,7 @@ TEST_F(AnimationAnimationTest, NoCompositeWithoutCompositedElementId) {
   LayoutObject* object_composited = GetLayoutObjectByElementId("foo");
   LayoutObject* object_not_composited = GetLayoutObjectByElementId("bar");
 
-  Optional<CompositorElementIdSet> composited_element_ids =
+  base::Optional<CompositorElementIdSet> composited_element_ids =
       CompositorElementIdSet();
   CompositorElementId expected_compositor_element_id =
       CompositorElementIdFromUniqueObjectId(
@@ -844,41 +885,7 @@ TEST_F(AnimationAnimationTest, NoCompositeWithoutCompositedElementId) {
 // compositor side), the pausing must still set compositor pending or the pause
 // won't be synced.
 TEST_F(AnimationAnimationTest, SetCompositorPendingWithUnresolvedStartTimes) {
-  // Get rid of the default animation.
-  animation->cancel();
-
-  EnableCompositing();
-
-  SetBodyInnerHTML("<div id='target'></div>");
-
-  // Create a compositable animation; in this case opacity from 1 to 0.
-  Timing timing;
-  timing.iteration_duration = 30;
-
-  scoped_refptr<StringKeyframe> start_keyframe = StringKeyframe::Create();
-  start_keyframe->SetCSSPropertyValue(
-      CSSPropertyOpacity, "1.0", SecureContextMode::kInsecureContext, nullptr);
-  scoped_refptr<StringKeyframe> end_keyframe = StringKeyframe::Create();
-  end_keyframe->SetCSSPropertyValue(
-      CSSPropertyOpacity, "0.0", SecureContextMode::kInsecureContext, nullptr);
-
-  StringKeyframeVector keyframes;
-  keyframes.push_back(start_keyframe);
-  keyframes.push_back(end_keyframe);
-
-  auto* element = GetElementById("target");
-  StringKeyframeEffectModel* model =
-      StringKeyframeEffectModel::Create(keyframes);
-  KeyframeEffect* keyframe_effect_composited =
-      KeyframeEffect::Create(element, model, timing);
-  Animation* animation = timeline->Play(keyframe_effect_composited);
-
-  // After creating the animation we need to clean the lifecycle so that the
-  // animation can be pushed to the compositor.
-  UpdateAllLifecyclePhases();
-
-  document->GetAnimationClock().UpdateTime(0);
-  document->GetPendingAnimations().Update(WTF::nullopt, true);
+  ResetWithCompositedAnimation();
 
   // At this point, the animation exists on both the compositor and blink side,
   // but no start time has arrived on either side. The compositor is currently
@@ -895,41 +902,7 @@ TEST_F(AnimationAnimationTest, SetCompositorPendingWithUnresolvedStartTimes) {
 }
 
 TEST_F(AnimationAnimationTest, PreCommitWithUnresolvedStartTimes) {
-  // Get rid of the default animation.
-  animation->cancel();
-
-  EnableCompositing();
-
-  SetBodyInnerHTML("<div id='target'></div>");
-
-  // Create a compositable animation; in this case opacity from 1 to 0.
-  Timing timing;
-  timing.iteration_duration = 30;
-
-  scoped_refptr<StringKeyframe> start_keyframe = StringKeyframe::Create();
-  start_keyframe->SetCSSPropertyValue(
-      CSSPropertyOpacity, "1.0", SecureContextMode::kInsecureContext, nullptr);
-  scoped_refptr<StringKeyframe> end_keyframe = StringKeyframe::Create();
-  end_keyframe->SetCSSPropertyValue(
-      CSSPropertyOpacity, "0.0", SecureContextMode::kInsecureContext, nullptr);
-
-  StringKeyframeVector keyframes;
-  keyframes.push_back(start_keyframe);
-  keyframes.push_back(end_keyframe);
-
-  auto* element = GetElementById("target");
-  StringKeyframeEffectModel* model =
-      StringKeyframeEffectModel::Create(keyframes);
-  KeyframeEffect* keyframe_effect_composited =
-      KeyframeEffect::Create(element, model, timing);
-  Animation* animation = timeline->Play(keyframe_effect_composited);
-
-  // After creating the animation we need to clean the lifecycle so that the
-  // animation can be pushed to the compositor.
-  UpdateAllLifecyclePhases();
-
-  document->GetAnimationClock().UpdateTime(0);
-  document->GetPendingAnimations().Update(WTF::nullopt, true);
+  ResetWithCompositedAnimation();
 
   // At this point, the animation exists on both the compositor and blink side,
   // but no start time has arrived on either side. The compositor is currently
@@ -938,7 +911,33 @@ TEST_F(AnimationAnimationTest, PreCommitWithUnresolvedStartTimes) {
 
   // At this point, a call to PreCommit should bail out and tell us to wait for
   // next commit because there are no resolved start times.
-  EXPECT_FALSE(animation->PreCommit(0, WTF::nullopt, true));
+  EXPECT_FALSE(animation->PreCommit(0, base::nullopt, true));
+}
+
+TEST_F(AnimationAnimationTest, SetKeyframesCausesCompositorPending) {
+  ResetWithCompositedAnimation();
+
+  // At this point, the animation exists on both the compositor and blink side,
+  // but no start time has arrived on either side. The compositor is currently
+  // synced, no update is pending.
+  EXPECT_FALSE(animation->CompositorPendingForTesting());
+
+  // Now change the keyframes; this should mark the animation as compositor
+  // pending as we need to sync the compositor side.
+  scoped_refptr<StringKeyframe> start_keyframe = StringKeyframe::Create();
+  start_keyframe->SetCSSPropertyValue(
+      CSSPropertyOpacity, "0.0", SecureContextMode::kInsecureContext, nullptr);
+  scoped_refptr<StringKeyframe> end_keyframe = StringKeyframe::Create();
+  end_keyframe->SetCSSPropertyValue(
+      CSSPropertyOpacity, "1.0", SecureContextMode::kInsecureContext, nullptr);
+
+  StringKeyframeVector keyframes;
+  keyframes.push_back(start_keyframe);
+  keyframes.push_back(end_keyframe);
+
+  ToKeyframeEffect(animation->effect())->SetKeyframes(keyframes);
+
+  EXPECT_TRUE(animation->CompositorPendingForTesting());
 }
 
 }  // namespace blink

@@ -16,11 +16,11 @@
 #include <vector>
 
 #include "api/optional.h"
+#include "api/video/video_bitrate_allocation.h"
 #include "api/video/video_frame.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "common_video/include/video_frame.h"
 #include "rtc_base/checks.h"
-#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -197,7 +197,7 @@ class VideoEncoder {
 
   // Default fallback: Just use the sum of bitrates as the single target rate.
   // TODO(sprang): Remove this default implementation when we remove SetRates().
-  virtual int32_t SetRateAllocation(const BitrateAllocation& allocation,
+  virtual int32_t SetRateAllocation(const VideoBitrateAllocation& allocation,
                                     uint32_t framerate);
 
   // Any encoder implementation wishing to use the WebRTC provided

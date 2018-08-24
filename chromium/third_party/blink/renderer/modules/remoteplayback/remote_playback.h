@@ -117,6 +117,7 @@ class MODULES_EXPORT RemotePlayback final
   void PromptCancelled() override;
   bool RemotePlaybackAvailable() const override;
   void SourceChanged(const WebURL&, bool is_source_supported) override;
+  WebString GetPresentationId() override;
 
   // ScriptWrappable implementation.
   bool HasPendingActivity() const final;
@@ -128,8 +129,8 @@ class MODULES_EXPORT RemotePlayback final
   DEFINE_ATTRIBUTE_EVENT_LISTENER(connect);
   DEFINE_ATTRIBUTE_EVENT_LISTENER(disconnect);
 
-  virtual void Trace(blink::Visitor*);
-  virtual void TraceWrappers(const ScriptWrappableVisitor*) const;
+  void Trace(blink::Visitor*) override;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
  private:
   friend class V8RemotePlayback;

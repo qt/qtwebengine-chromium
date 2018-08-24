@@ -11,7 +11,6 @@
 #include "modules/audio_processing/audio_processing_impl.h"
 
 #include "modules/audio_processing/test/test_utils.h"
-#include "modules/include/module_common_types.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -33,6 +32,24 @@ class MockInitialize : public AudioProcessingImpl {
   MOCK_CONST_METHOD0(AddRef, void());
   MOCK_CONST_METHOD0(Release, rtc::RefCountReleaseStatus());
 };
+
+void GenerateFixedFrame(int16_t audio_level,
+                        size_t input_rate,
+                        size_t num_channels,
+                        AudioFrame* fixed_frame) {
+  const size_t samples_per_input_channel = rtc::CheckedDivExact(
+      input_rate, static_cast<size_t>(rtc::CheckedDivExact(
+                      1000, AudioProcessing::kChunkSizeMs)));
+  fixed_frame->samples_per_channel_ = samples_per_input_channel;
+  fixed_frame->sample_rate_hz_ = input_rate;
+  fixed_frame->num_channels_ = num_channels;
+
+  RTC_DCHECK_LE(samples_per_input_channel * num_channels,
+                AudioFrame::kMaxDataSizeSamples);
+  for (size_t i = 0; i < samples_per_input_channel * num_channels; ++i) {
+    fixed_frame->mutable_data()[i] = audio_level;
+  }
+}
 
 }  // namespace
 
@@ -73,6 +90,36 @@ TEST(AudioProcessingImplTest, AudioParameterChangeTriggersInit) {
   SetFrameSampleRate(&frame, 16000);
   EXPECT_CALL(mock, InitializeLocked()).Times(1);
   EXPECT_NOERR(mock.ProcessReverseStream(&frame));
+}
+
+TEST(AudioProcessingImplTest, UpdateCapturePreGainRuntimeSetting) {
+  std::unique_ptr<AudioProcessing> apm(AudioProcessingBuilder().Create());
+  webrtc::AudioProcessing::Config apm_config;
+  apm_config.pre_amplifier.enabled = true;
+  apm_config.pre_amplifier.fixed_gain_factor = 1.f;
+  apm->ApplyConfig(apm_config);
+
+  AudioFrame frame;
+  constexpr int16_t audio_level = 10000;
+  constexpr size_t input_rate = 48000;
+  constexpr size_t num_channels = 2;
+
+  GenerateFixedFrame(audio_level, input_rate, num_channels, &frame);
+  apm->ProcessStream(&frame);
+  EXPECT_EQ(frame.data()[100], audio_level)
+      << "With factor 1, frame shouldn't be modified.";
+
+  constexpr float gain_factor = 2.f;
+  apm->SetRuntimeSetting(
+      AudioProcessing::RuntimeSetting::CreateCapturePreGain(gain_factor));
+
+  // Process for two frames to have time to ramp up gain.
+  for (int i = 0; i < 2; ++i) {
+    GenerateFixedFrame(audio_level, input_rate, num_channels, &frame);
+    apm->ProcessStream(&frame);
+  }
+  EXPECT_EQ(frame.data()[100], gain_factor * audio_level)
+      << "Frame should be amplified.";
 }
 
 }  // namespace webrtc

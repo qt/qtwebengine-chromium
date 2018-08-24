@@ -33,14 +33,16 @@
 #include <memory>
 
 #include "build/build_config.h"
+#include "third_party/blink/public/common/experiments/memory_ablation_experiment.h"
 #include "third_party/blink/public/platform/interface_registry.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_thread.h"
 #include "third_party/blink/public/web/blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_initializer.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_context_snapshot_external_references.h"
+#include "third_party/blink/renderer/controller/blink_leak_detector.h"
+#include "third_party/blink/renderer/controller/bloated_renderer_detector.h"
 #include "third_party/blink/renderer/controller/dev_tools_frontend_impl.h"
-#include "third_party/blink/renderer/controller/oom_intervention_impl.h"
 #include "third_party/blink/renderer/core/animation/animation_clock.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/platform/bindings/microtask.h"
@@ -51,6 +53,10 @@
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/wtf.h"
 #include "v8/include/v8.h"
+
+#if defined(OS_ANDROID)
+#include "third_party/blink/renderer/controller/oom_intervention_impl.h"
+#endif
 
 namespace blink {
 
@@ -105,6 +111,12 @@ void Initialize(Platform* platform, service_manager::BinderRegistry* registry) {
   // BlinkInitializer::Initialize() must be called before InitializeMainThread
   GetBlinkInitializer().Initialize();
 
+  if (RuntimeEnabledFeatures::BloatedRendererDetectionEnabled()) {
+    BloatedRendererDetector::Initialize();
+    V8Initializer::SetNearV8HeapLimitOnMainThreadCallback(
+        BloatedRendererDetector::OnNearV8HeapLimitOnMainThread);
+  }
+
   V8Initializer::InitializeMainThread(
       V8ContextSnapshotExternalReferences::GetTable());
 
@@ -115,6 +127,13 @@ void Initialize(Platform* platform, service_manager::BinderRegistry* registry) {
     DCHECK(!g_end_of_task_runner);
     g_end_of_task_runner = new EndOfTaskRunner;
     current_thread->AddTaskObserver(g_end_of_task_runner);
+  }
+
+  if (WebThread* main_thread = Platform::Current()->MainThread()) {
+    scoped_refptr<base::SequencedTaskRunner> task_runner =
+        main_thread->GetTaskRunner();
+    if (task_runner)
+      MemoryAblationExperiment::MaybeStartForRenderer(task_runner);
   }
 }
 
@@ -127,8 +146,14 @@ void BlinkInitializer::RegisterInterfaces(
   if (!main_thread || !main_thread->GetTaskRunner())
     return;
 
+#if defined(OS_ANDROID)
   registry.AddInterface(
       ConvertToBaseCallback(CrossThreadBind(&OomInterventionImpl::Create)),
+      main_thread->GetTaskRunner());
+#endif
+
+  registry.AddInterface(
+      ConvertToBaseCallback(CrossThreadBind(&BlinkLeakDetector::Create)),
       main_thread->GetTaskRunner());
 }
 

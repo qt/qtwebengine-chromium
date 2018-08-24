@@ -22,6 +22,7 @@
 #include "base/synchronization/lock.h"
 #include "components/download/public/common/download_item_impl_delegate.h"
 #include "components/download/public/common/download_url_parameters.h"
+#include "components/download/public/common/in_progress_download_manager.h"
 #include "components/download/public/common/url_download_handler.h"
 #include "content/browser/loader/navigation_url_loader.h"
 #include "content/common/content_export.h"
@@ -41,12 +42,11 @@ class DownloadRequestHandleInterface;
 
 namespace content {
 class ResourceContext;
-class StoragePartitionImpl;
-class URLLoaderFactoryGetter;
 
 class CONTENT_EXPORT DownloadManagerImpl
     : public DownloadManager,
       public download::UrlDownloadHandler::Delegate,
+      public download::InProgressDownloadManager::Delegate,
       private download::DownloadItemImplDelegate {
  public:
   using DownloadItemImplCreated =
@@ -69,7 +69,6 @@ class CONTENT_EXPORT DownloadManagerImpl
       int render_process_id,
       int render_frame_id,
       std::unique_ptr<download::DownloadRequestHandleInterface> request_handle,
-      const ukm::SourceId ukm_source_id,
       const DownloadItemImplCreated& item_created);
 
   // DownloadManager functions.
@@ -77,12 +76,12 @@ class CONTENT_EXPORT DownloadManagerImpl
   DownloadManagerDelegate* GetDelegate() const override;
   void Shutdown() override;
   void GetAllDownloads(DownloadVector* result) override;
-  void StartDownload(
-      std::unique_ptr<download::DownloadCreateInfo> info,
-      std::unique_ptr<download::InputStream> stream,
-      scoped_refptr<network::SharedURLLoaderFactory> shared_url_loader_factory,
-      const download::DownloadUrlParameters::OnStartedCallback& on_started)
-      override;
+  void StartDownload(std::unique_ptr<download::DownloadCreateInfo> info,
+                     std::unique_ptr<download::InputStream> stream,
+                     scoped_refptr<download::DownloadURLLoaderFactoryGetter>
+                         url_loader_factory_getter,
+                     const download::DownloadUrlParameters::OnStartedCallback&
+                         on_started) override;
 
   int RemoveDownloadsByURLAndTime(
       const base::Callback<bool(const GURL&)>& url_filter,
@@ -90,9 +89,10 @@ class CONTENT_EXPORT DownloadManagerImpl
       base::Time remove_end) override;
   void DownloadUrl(
       std::unique_ptr<download::DownloadUrlParameters> parameters) override;
-  void DownloadUrl(
-      std::unique_ptr<download::DownloadUrlParameters> params,
-      std::unique_ptr<storage::BlobDataHandle> blob_data_handle) override;
+  void DownloadUrl(std::unique_ptr<download::DownloadUrlParameters> params,
+                   std::unique_ptr<storage::BlobDataHandle> blob_data_handle,
+                   scoped_refptr<network::SharedURLLoaderFactory>
+                       blob_url_loader_factory) override;
   void AddObserver(Observer* observer) override;
   void RemoveObserver(Observer* observer) override;
   download::DownloadItem* CreateDownloadItem(
@@ -135,7 +135,8 @@ class CONTENT_EXPORT DownloadManagerImpl
   void OnUrlDownloadStarted(
       std::unique_ptr<download::DownloadCreateInfo> download_create_info,
       std::unique_ptr<download::InputStream> stream,
-      scoped_refptr<network::SharedURLLoaderFactory> shared_url_loader_factory,
+      scoped_refptr<download::DownloadURLLoaderFactoryGetter>
+          url_loader_factory_getter,
       const download::DownloadUrlParameters::OnStartedCallback& callback)
       override;
   void OnUrlDownloadStopped(download::UrlDownloadHandler* downloader) override;
@@ -165,7 +166,6 @@ class CONTENT_EXPORT DownloadManagerImpl
   void InterceptNavigation(
       std::unique_ptr<network::ResourceRequest> resource_request,
       std::vector<GURL> url_chain,
-      const base::Optional<std::string>& suggested_filename,
       scoped_refptr<network::ResourceResponse> response,
       network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
       net::CertStatus cert_status,
@@ -181,14 +181,6 @@ class CONTENT_EXPORT DownloadManagerImpl
   friend class DownloadManagerTest;
   friend class DownloadTest;
 
-  void StartDownloadWithId(
-      std::unique_ptr<download::DownloadCreateInfo> info,
-      std::unique_ptr<download::InputStream> stream,
-      scoped_refptr<network::SharedURLLoaderFactory> shared_url_loader_factory,
-      const download::DownloadUrlParameters::OnStartedCallback& on_started,
-      bool new_download,
-      uint32_t id);
-
   void CreateSavePackageDownloadItemWithId(
       const base::FilePath& main_file_path,
       const GURL& page_url,
@@ -196,13 +188,20 @@ class CONTENT_EXPORT DownloadManagerImpl
       int render_process_id,
       int render_frame_id,
       std::unique_ptr<download::DownloadRequestHandleInterface> request_handle,
-      const ukm::SourceId ukm_source_id,
       const DownloadItemImplCreated& on_started,
       uint32_t id);
 
-  // Intercepts the download to another system if applicable. Returns true if
-  // the download was intercepted.
-  bool InterceptDownload(const download::DownloadCreateInfo& info);
+  // InProgressDownloadManager::Delegate implementations.
+  bool InterceptDownload(const download::DownloadCreateInfo& info) override;
+  base::FilePath GetDefaultDownloadDirectory() override;
+  download::DownloadItemImpl* GetDownloadItem(
+      uint32_t id,
+      bool new_download,
+      const download::DownloadCreateInfo& info) override;
+  net::URLRequestContextGetter* GetURLRequestContextGetter(
+      const download::DownloadCreateInfo& info) override;
+  void OnNewDownloadStarted(download::DownloadItem* download) override;
+  void GetNextId(const DownloadIdCallback& callback) override;
 
   // Create a new active item based on the info.  Separate from
   // StartDownload() for testing.
@@ -210,9 +209,6 @@ class CONTENT_EXPORT DownloadManagerImpl
       uint32_t id,
       const download::DownloadCreateInfo& info);
 
-  // Get next download id. |callback| is called on the UI thread and may
-  // be called synchronously.
-  void GetNextId(const DownloadIdCallback& callback);
 
   // Called with the result of DownloadManagerDelegate::CheckForFileExistence.
   // Updates the state of the file and then notifies this update to the file's
@@ -220,7 +216,6 @@ class CONTENT_EXPORT DownloadManagerImpl
   void OnFileExistenceChecked(uint32_t download_id, bool result);
 
   // Overridden from DownloadItemImplDelegate
-  // (Note that |GetBrowserContext| are present in both interfaces.)
   void DetermineDownloadTarget(download::DownloadItemImpl* item,
                                const DownloadTargetCallback& callback) override;
   bool ShouldCompleteDownload(download::DownloadItemImpl* item,
@@ -245,47 +240,35 @@ class CONTENT_EXPORT DownloadManagerImpl
   bool IsOffTheRecord() const override;
   void ReportBytesWasted(download::DownloadItemImpl* download) override;
 
+  // Drops a download before it is created.
+  void DropDownload();
+
   // Helper method to start or resume a download.
   void BeginDownloadInternal(
       std::unique_ptr<download::DownloadUrlParameters> params,
       std::unique_ptr<storage::BlobDataHandle> blob_data_handle,
+      scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory,
       uint32_t id,
-      StoragePartitionImpl* storage_partition);
+      const GURL& site_url);
 
   void InterceptNavigationOnChecksComplete(
       ResourceRequestInfo::WebContentsGetter web_contents_getter,
       std::unique_ptr<network::ResourceRequest> resource_request,
       std::vector<GURL> url_chain,
-      const base::Optional<std::string>& suggested_filename,
       scoped_refptr<network::ResourceResponse> response,
       net::CertStatus cert_status,
       network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
       bool is_download_allowed);
-
-  // Called when a navigation turns to be a download. Create a new
-  // DownloadHandler. It will be used to continue the loading instead of the
-  // regular document loader. Must be called on the IO thread.
-  static void CreateDownloadHandlerForNavigation(
-      base::WeakPtr<DownloadManagerImpl> download_manager,
-      std::unique_ptr<network::ResourceRequest> resource_request,
-      int render_process_id,
-      int render_frame_id,
+  void BeginResourceDownloadOnChecksComplete(
+      std::unique_ptr<download::DownloadUrlParameters> params,
+      std::unique_ptr<storage::BlobDataHandle> blob_data_handle,
+      scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory,
+      uint32_t id,
       const GURL& site_url,
-      const GURL& tab_url,
-      const GURL& tab_referrer_url,
-      std::vector<GURL> url_chain,
-      const base::Optional<std::string>& suggested_filename,
-      scoped_refptr<network::ResourceResponse> response,
-      net::CertStatus cert_status,
-      network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
-      scoped_refptr<URLLoaderFactoryGetter> url_loader_factory_getter,
-      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
+      bool is_download_allowed);
 
   // Factory for creation of downloads items.
   std::unique_ptr<download::DownloadItemFactory> item_factory_;
-
-  // Factory for the creation of download files.
-  std::unique_ptr<download::DownloadFileFactory> file_factory_;
 
   // |downloads_| is the owning set for all downloads known to the
   // DownloadManager.  This includes downloads started by the user in
@@ -325,8 +308,11 @@ class CONTENT_EXPORT DownloadManagerImpl
   // Allows an embedder to control behavior. Guaranteed to outlive this object.
   DownloadManagerDelegate* delegate_;
 
+  // TODO(qinmin): remove this once network service is enabled by default.
   std::vector<download::UrlDownloadHandler::UniqueUrlDownloadHandlerPtr>
       url_download_handlers_;
+
+  std::unique_ptr<download::InProgressDownloadManager> in_progress_manager_;
 
   base::WeakPtrFactory<DownloadManagerImpl> weak_factory_;
 

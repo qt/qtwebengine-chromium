@@ -246,7 +246,7 @@ size_t CFDE_TextEditEngine::CountCharsExceedingSize(const WideString& text,
   for (size_t i = 0; i < num_to_check; i++) {
     // This does a lot of string copying ....
     // TODO(dsinclair): make CalcLogicSize take a WideStringC instead.
-    text_out->CalcLogicSize(WideString(temp), text_rect);
+    text_out->CalcLogicSize(WideString(temp), &text_rect);
 
     if (limit_horizontal_area_ && text_rect.width <= available_width_)
       break;
@@ -274,7 +274,14 @@ void CFDE_TextEditEngine::Insert(size_t idx,
   // If we're going to be too big we insert what we can and notify the
   // delegate we've filled the text after the insert is done.
   bool exceeded_limit = false;
-  if (has_character_limit_ && text_length_ + length > character_limit_) {
+
+  // Currently we allow inserting a number of characters over the text limit if
+  // the text edit is already empty. This allows supporting text fields which
+  // do formatting. Otherwise, if you enter 123456789 for an SSN into a field
+  // with a 9 character limit and we reformat to 123-45-6789 we'll truncate
+  // the 89 when inserting into the text edit. See https://crbug.com/pdfium/1089
+  if (has_character_limit_ && text_length_ > 0 &&
+      text_length_ + length > character_limit_) {
     exceeded_limit = true;
     length = character_limit_ - text_length_;
   }
@@ -821,6 +828,7 @@ WideString CFDE_TextEditEngine::Delete(size_t start_idx,
   gap_size_ += length;
 
   text_length_ -= length;
+  is_dirty_ = true;
   ClearSelection();
 
   if (delegate_)
@@ -899,14 +907,26 @@ size_t CFDE_TextEditEngine::GetIndexForPoint(const CFX_PointF& point) {
 
   size_t start_it_idx = start_it->nStart;
   for (; start_it <= end_it; ++start_it) {
-    if (!start_it->rtPiece.Contains(point))
+    bool piece_contains_point_vertically =
+        (point.y >= start_it->rtPiece.top &&
+         point.y < start_it->rtPiece.bottom());
+    if (!piece_contains_point_vertically)
       continue;
 
     std::vector<CFX_RectF> rects = GetCharRects(*start_it);
     for (size_t i = 0; i < rects.size(); ++i) {
-      if (!rects[i].Contains(point))
+      bool character_contains_point_horizontally =
+          (point.x >= rects[i].left && point.x < rects[i].right());
+      if (!character_contains_point_horizontally)
         continue;
-      size_t pos = start_it->nStart + i;
+
+      // When clicking on the left half of a character, the cursor should be
+      // moved before it. If the click was on the right half of that character,
+      // move the cursor after it.
+      bool closer_to_left =
+          (point.x - rects[i].left < rects[i].right() - point.x);
+      int caret_pos = (closer_to_left ? i : i + 1);
+      size_t pos = start_it->nStart + caret_pos;
       if (pos >= text_length_)
         return text_length_;
 
@@ -920,6 +940,28 @@ size_t CFDE_TextEditEngine::GetIndexForPoint(const CFX_PointF& point) {
       // TODO(dsinclair): Old code had a before flag set based on bidi?
       return pos;
     }
+
+    // Point is not within the horizontal range of any characters, it's
+    // afterwards. Return the position after the the last character.
+    // The last line has nCount equal to the number of characters + 1 (sentinel
+    // character maybe?). Restrict to the text_length_ to account for that.
+    size_t pos = std::min(
+        static_cast<size_t>(start_it->nStart + start_it->nCount), text_length_);
+
+    // If the line is not the last one and it was broken right after a breaking
+    // whitespace (space or line break), the cursor should not be placed after
+    // the whitespace, but before it. If the cursor is moved after the
+    // whitespace, it goes to the beginning of the next line.
+    bool is_last_line = (std::next(start_it) == text_piece_info_.end());
+    if (!is_last_line && pos > 0) {
+      wchar_t previous_char = GetChar(pos - 1);
+      if (previous_char == L' ' || previous_char == L'\n' ||
+          previous_char == L'\r') {
+        --pos;
+      }
+    }
+
+    return pos;
   }
 
   if (start_it == text_piece_info_.end())
@@ -939,6 +981,7 @@ std::vector<CFX_RectF> CFDE_TextEditEngine::GetCharRects(
 
   FX_TXTRUN tr;
   tr.pEdtEngine = this;
+  tr.iStart = piece.nStart;
   tr.iLength = piece.nCount;
   tr.pFont = font_;
   tr.fFontSize = font_size_;
@@ -955,6 +998,7 @@ std::vector<FXTEXT_CHARPOS> CFDE_TextEditEngine::GetDisplayPos(
 
   FX_TXTRUN tr;
   tr.pEdtEngine = this;
+  tr.iStart = piece.nStart;
   tr.iLength = piece.nCount;
   tr.pFont = font_;
   tr.fFontSize = font_size_;

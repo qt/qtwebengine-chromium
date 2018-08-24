@@ -13,18 +13,18 @@
 #include "base/callback_forward.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/message_loop/incoming_task_queue.h"
+#include "base/message_loop/message_loop_current.h"
 #include "base/message_loop/message_loop_task_runner.h"
 #include "base/message_loop/message_pump.h"
-#include "base/message_loop/message_pump_for_io.h"
-#include "base/message_loop/message_pump_for_ui.h"
 #include "base/message_loop/timer_slack.h"
 #include "base/observer_list.h"
 #include "base/pending_task.h"
 #include "base/run_loop.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/sequence_local_storage_map.h"
+#include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 
@@ -41,6 +41,18 @@ class ThreadTaskRunnerHandle;
 // time permits) and signals sent to a registered set of HANDLEs may also be
 // processed.
 //
+// The MessageLoop's API should only be used directly by its owner (and users
+// which the owner opts to share a MessageLoop* with). Other ways to access
+// subsets of the MessageLoop API:
+//   - base::RunLoop : Drive the MessageLoop from the thread it's bound to.
+//   - base::Thread/SequencedTaskRunnerHandle : Post back to the MessageLoop
+//     from a task running on it.
+//   - SequenceLocalStorageSlot : Bind external state to this MessageLoop.
+//   - base::MessageLoopCurrent : Access statically exposed APIs of this
+//     MessageLoop.
+//   - Embedders may provide their own static accessors to post tasks on
+//     specific loops (e.g. content::BrowserThreads).
+//
 // NOTE: Unless otherwise specified, a MessageLoop's methods may only be called
 // on the thread where the MessageLoop's Run method executes.
 //
@@ -55,7 +67,7 @@ class ThreadTaskRunnerHandle;
 // Sample workaround when inner task processing is needed:
 //   HRESULT hr;
 //   {
-//     MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
+//     MessageLoopCurrent::ScopedNestableTaskAllower allow;
 //     hr = DoDragDrop(...); // Implicitly runs a modal message loop.
 //   }
 //   // Process |hr| (the result returned by DoDragDrop()).
@@ -63,9 +75,17 @@ class ThreadTaskRunnerHandle;
 // Please be SURE your task is reentrant (nestable) and all global variables
 // are stable and accessible before calling SetNestableTasksAllowed(true).
 //
+// TODO(gab): MessageLoop doesn't need to be a MessageLoopCurrent once callers
+// that store MessageLoop::current() in a MessageLoop* variable have been
+// updated to use a MessageLoopCurrent variable.
 class BASE_EXPORT MessageLoop : public MessagePump::Delegate,
-                                public RunLoop::Delegate {
+                                public RunLoop::Delegate,
+                                public MessageLoopCurrent {
  public:
+  // TODO(gab): Migrate usage of this class to MessageLoopCurrent and remove
+  // this forwarded declaration.
+  using DestructionObserver = MessageLoopCurrent::DestructionObserver;
+
   // A MessageLoop has a particular type, which indicates the set of
   // asynchronous events it may process in addition to tasks and timers.
   //
@@ -108,8 +128,8 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate,
 
   ~MessageLoop() override;
 
-  // Returns the MessageLoop object for the current thread, or null if none.
-  static MessageLoop* current();
+  // TODO(gab): Mass migrate callers to MessageLoopCurrent::Get().
+  static MessageLoopCurrent current();
 
   using MessagePumpFactory = std::unique_ptr<MessagePump>();
   // Uses the given base::MessagePumpForUIFactory to override the default
@@ -120,35 +140,6 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate,
   // Creates the default MessagePump based on |type|. Caller owns return
   // value.
   static std::unique_ptr<MessagePump> CreateMessagePumpForType(Type type);
-
-  // A DestructionObserver is notified when the current MessageLoop is being
-  // destroyed.  These observers are notified prior to MessageLoop::current()
-  // being changed to return NULL.  This gives interested parties the chance to
-  // do final cleanup that depends on the MessageLoop.
-  //
-  // NOTE: Any tasks posted to the MessageLoop during this notification will
-  // not be run.  Instead, they will be deleted.
-  //
-  class BASE_EXPORT DestructionObserver {
-   public:
-    virtual void WillDestroyCurrentMessageLoop() = 0;
-
-   protected:
-    virtual ~DestructionObserver();
-  };
-
-  // Add a DestructionObserver, which will start receiving notifications
-  // immediately.
-  void AddDestructionObserver(DestructionObserver* destruction_observer);
-
-  // Remove a DestructionObserver.  It is safe to call this method while a
-  // DestructionObserver is receiving a notification callback.
-  void RemoveDestructionObserver(DestructionObserver* destruction_observer);
-
-  // Deprecated: use RunLoop instead.
-  // Construct a Closure that will call QuitWhenIdle(). Useful to schedule an
-  // arbitrary MessageLoop to QuitWhenIdle.
-  static Closure QuitWhenIdleClosure();
 
   // Set the timer slack for this message loop.
   void SetTimerSlack(TimerSlack timer_slack) {
@@ -170,7 +161,7 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate,
   std::string GetThreadName() const;
 
   // Gets the TaskRunner associated with this message loop.
-  const scoped_refptr<SingleThreadTaskRunner>& task_runner() {
+  const scoped_refptr<SingleThreadTaskRunner>& task_runner() const {
     return task_runner_;
   }
 
@@ -185,72 +176,9 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate,
   // Must be called on the thread to which the message loop is bound.
   void ClearTaskRunnerForTesting();
 
-  // Enables or disables the recursive task processing. This happens in the case
-  // of recursive message loops. Some unwanted message loops may occur when
-  // using common controls or printer functions. By default, recursive task
-  // processing is disabled.
-  //
-  // Please use |ScopedNestableTaskAllower| instead of calling these methods
-  // directly.  In general, nestable message loops are to be avoided.  They are
-  // dangerous and difficult to get right, so please use with extreme caution.
-  //
-  // The specific case where tasks get queued is:
-  // - The thread is running a message loop.
-  // - It receives a task #1 and executes it.
-  // - The task #1 implicitly starts a message loop, like a MessageBox in the
-  //   unit test. This can also be StartDoc or GetSaveFileName.
-  // - The thread receives a task #2 before or while in this second message
-  //   loop.
-  // - With NestableTasksAllowed set to true, the task #2 will run right away.
-  //   Otherwise, it will get executed right after task #1 completes at "thread
-  //   message loop level".
-  //
-  // DEPRECATED: Use RunLoop::Type on the relevant RunLoop instead of these
-  // methods.
-  // TODO(gab): Migrate usage and delete these methods.
-  void SetNestableTasksAllowed(bool allowed);
-  bool NestableTasksAllowed() const;
-
-  // Enables nestable tasks on |loop| while in scope.
-  // DEPRECATED: This should not be used when the nested loop is driven by
-  // RunLoop (use RunLoop::Type::kNestableTasksAllowed instead). It can however
-  // still be useful in a few scenarios where re-entrancy is caused by a native
-  // message loop.
-  // TODO(gab): Remove usage of this class alongside RunLoop and rename it to
-  // ScopedApplicationTasksAllowedInNativeNestedLoop(?).
-  class ScopedNestableTaskAllower {
-   public:
-    explicit ScopedNestableTaskAllower(MessageLoop* loop)
-        : loop_(loop),
-          old_state_(loop_->NestableTasksAllowed()) {
-      loop_->SetNestableTasksAllowed(true);
-    }
-    ~ScopedNestableTaskAllower() {
-      loop_->SetNestableTasksAllowed(old_state_);
-    }
-
-   private:
-    MessageLoop* const loop_;
-    const bool old_state_;
-  };
-
-  // A TaskObserver is an object that receives task notifications from the
-  // MessageLoop.
-  //
-  // NOTE: A TaskObserver implementation should be extremely fast!
-  class BASE_EXPORT TaskObserver {
-   public:
-    TaskObserver();
-
-    // This method is called before processing a task.
-    virtual void WillProcessTask(const PendingTask& pending_task) = 0;
-
-    // This method is called after processing a task.
-    virtual void DidProcessTask(const PendingTask& pending_task) = 0;
-
-   protected:
-    virtual ~TaskObserver();
-  };
+  // TODO(https://crbug.com/825327): Remove users of TaskObservers through
+  // MessageLoop::current() and migrate the type back here.
+  using TaskObserver = MessageLoopCurrent::TaskObserver;
 
   // These functions can only be called on the same thread that |this| is
   // running on.
@@ -287,6 +215,9 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate,
 
  private:
   friend class internal::IncomingTaskQueue;
+  friend class MessageLoopCurrent;
+  friend class MessageLoopCurrentForIO;
+  friend class MessageLoopCurrentForUI;
   friend class ScheduleWorkTest;
   friend class Thread;
   FRIEND_TEST_ALL_PREFIXES(MessageLoopTest, DeleteUnboundLoop);
@@ -385,6 +316,10 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate,
   std::unique_ptr<internal::ScopedSetSequenceLocalStorageMapForCurrentThread>
       scoped_set_sequence_local_storage_map_for_current_thread_;
 
+  // Verifies that calls are made on the thread on which BindToCurrentThread()
+  // was invoked.
+  THREAD_CHECKER(bound_thread_checker_);
+
   DISALLOW_COPY_AND_ASSIGN(MessageLoop);
 };
 
@@ -394,8 +329,11 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate,
 // MessageLoopForUI extends MessageLoop with methods that are particular to a
 // MessageLoop instantiated with TYPE_UI.
 //
-// This class is typically used like so:
-//   MessageLoopForUI::current()->...call some method...
+// By instantiating a MessageLoopForUI on the current thread, the owner enables
+// native UI message pumping.
+//
+// MessageLoopCurrentForUI is exposed statically on its thread via
+// MessageLoopCurrentForUI::Get() to provide additional functionality.
 //
 class BASE_EXPORT MessageLoopForUI : public MessageLoop {
  public:
@@ -404,23 +342,9 @@ class BASE_EXPORT MessageLoopForUI : public MessageLoop {
 
   explicit MessageLoopForUI(std::unique_ptr<MessagePump> pump);
 
-  // Returns the MessageLoopForUI of the current thread.
-  static MessageLoopForUI* current() {
-    MessageLoop* loop = MessageLoop::current();
-    DCHECK(loop);
-#if defined(OS_ANDROID)
-    DCHECK(loop->IsType(MessageLoop::TYPE_UI) ||
-           loop->IsType(MessageLoop::TYPE_JAVA));
-#else
-    DCHECK(loop->IsType(MessageLoop::TYPE_UI));
-#endif
-    return static_cast<MessageLoopForUI*>(loop);
-  }
-
-  static bool IsCurrent() {
-    MessageLoop* loop = MessageLoop::current();
-    return loop && loop->IsType(MessageLoop::TYPE_UI);
-  }
+  // TODO(gab): Mass migrate callers to MessageLoopCurrentForUI::Get()/IsSet().
+  static MessageLoopCurrentForUI current();
+  static bool IsCurrent();
 
 #if defined(OS_IOS)
   // On iOS, the main message loop cannot be Run().  Instead call Attach(),
@@ -440,17 +364,9 @@ class BASE_EXPORT MessageLoopForUI : public MessageLoop {
   void Abort();
 #endif
 
-#if (defined(USE_OZONE) && !defined(OS_FUCHSIA)) || \
-    (defined(USE_X11) && !defined(USE_GLIB))
-  // Please see MessagePumpLibevent for definition.
-  static_assert(std::is_same<MessagePumpForUI, MessagePumpLibevent>::value,
-                "MessageLoopForUI::WatchFileDescriptor is not supported when "
-                "MessagePumpForUI is not a MessagePumpLibevent.");
-  bool WatchFileDescriptor(int fd,
-                           bool persistent,
-                           MessagePumpForUI::Mode mode,
-                           MessagePumpForUI::FdWatchController* controller,
-                           MessagePumpForUI::FdWatcher* delegate);
+#if defined(OS_WIN)
+  // See method of the same name in the Windows MessagePumpForUI implementation.
+  void EnableWmQuit();
 #endif
 };
 
@@ -466,53 +382,19 @@ static_assert(sizeof(MessageLoop) == sizeof(MessageLoopForUI),
 // MessageLoopForIO extends MessageLoop with methods that are particular to a
 // MessageLoop instantiated with TYPE_IO.
 //
-// This class is typically used like so:
-//   MessageLoopForIO::current()->...call some method...
+// By instantiating a MessageLoopForIO on the current thread, the owner enables
+// native async IO message pumping.
+//
+// MessageLoopCurrentForIO is exposed statically on its thread via
+// MessageLoopCurrentForIO::Get() to provide additional functionality.
 //
 class BASE_EXPORT MessageLoopForIO : public MessageLoop {
  public:
-  MessageLoopForIO() : MessageLoop(TYPE_IO) {
-  }
+  MessageLoopForIO() : MessageLoop(TYPE_IO) {}
 
-  // Returns the MessageLoopForIO of the current thread.
-  static MessageLoopForIO* current() {
-    MessageLoop* loop = MessageLoop::current();
-    DCHECK(loop);
-    DCHECK_EQ(MessageLoop::TYPE_IO, loop->type());
-    return static_cast<MessageLoopForIO*>(loop);
-  }
-
-  static bool IsCurrent() {
-    MessageLoop* loop = MessageLoop::current();
-    return loop && loop->type() == MessageLoop::TYPE_IO;
-  }
-
-#if !defined(OS_NACL_SFI)
-
-#if defined(OS_WIN)
-  // Please see MessagePumpWin for definitions of these methods.
-  void RegisterIOHandler(HANDLE file, MessagePumpForIO::IOHandler* handler);
-  bool RegisterJobObject(HANDLE job, MessagePumpForIO::IOHandler* handler);
-  bool WaitForIOCompletion(DWORD timeout, MessagePumpForIO::IOHandler* filter);
-#elif defined(OS_POSIX)
-  // Please see WatchableIOMessagePumpPosix for definition.
-  // Prefer base::FileDescriptorWatcher for non-critical IO.
-  bool WatchFileDescriptor(int fd,
-                           bool persistent,
-                           MessagePumpForIO::Mode mode,
-                           MessagePumpForIO::FdWatchController* controller,
-                           MessagePumpForIO::FdWatcher* delegate);
-#endif  // defined(OS_IOS) || defined(OS_POSIX)
-#endif  // !defined(OS_NACL_SFI)
-
-#if defined(OS_FUCHSIA)
-  // Additional watch API for native platform resources.
-  bool WatchZxHandle(zx_handle_t handle,
-                     bool persistent,
-                     zx_signals_t signals,
-                     MessagePumpForIO::ZxHandleWatchController* controller,
-                     MessagePumpForIO::ZxHandleWatcher* delegate);
-#endif
+  // TODO(gab): Mass migrate callers to MessageLoopCurrentForIO::Get()/IsSet().
+  static MessageLoopCurrentForIO current();
+  static bool IsCurrent();
 };
 
 // Do not add any member variables to MessageLoopForIO!  This is important b/c

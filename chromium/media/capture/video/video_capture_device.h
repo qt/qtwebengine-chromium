@@ -147,6 +147,22 @@ class CAPTURE_EXPORT VideoCaptureDevice
                                         base::TimeDelta timestamp,
                                         int frame_feedback_id = 0) = 0;
 
+    // Captured a new video frame, data for which is stored in the
+    // GpuMemoryBuffer pointed to by |buffer|.  The format of the frame is
+    // described by |frame_format|.  Since the memory buffer pointed to by
+    // |buffer| may be allocated with some size/address alignment requirement,
+    // this method takes into consideration the size and offset of each plane in
+    // |buffer| when creating the content of the output buffer.
+    // |clockwise_rotation|, |reference_time|, |timestamp|, and
+    // |frame_feedback_id| serve the same purposes as in OnIncomingCapturedData.
+    virtual void OnIncomingCapturedGfxBuffer(
+        gfx::GpuMemoryBuffer* buffer,
+        const VideoCaptureFormat& frame_format,
+        int clockwise_rotation,
+        base::TimeTicks reference_time,
+        base::TimeDelta timestamp,
+        int frame_feedback_id = 0) = 0;
+
     // Reserve an output buffer into which contents can be captured directly.
     // The returned Buffer will always be allocated with a memory size suitable
     // for holding a packed video frame with pixels of |format| format, of
@@ -159,7 +175,6 @@ class CAPTURE_EXPORT VideoCaptureDevice
     // holds on to the contained |buffer_read_write_permission|.
     virtual Buffer ReserveOutputBuffer(const gfx::Size& dimensions,
                                        VideoPixelFormat format,
-                                       VideoPixelStorage storage,
                                        int frame_feedback_id) = 0;
 
     // Provides VCD::Client with a populated Buffer containing the content of
@@ -189,7 +204,6 @@ class CAPTURE_EXPORT VideoCaptureDevice
     // When this operation fails, nullptr will be returned.
     virtual Buffer ResurrectLastOutputBuffer(const gfx::Size& dimensions,
                                              VideoPixelFormat format,
-                                             VideoPixelStorage storage,
                                              int new_frame_feedback_id) = 0;
 
     // An error has occurred that cannot be handled and VideoCaptureDevice must

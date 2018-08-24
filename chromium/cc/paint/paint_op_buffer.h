@@ -28,6 +28,11 @@
 #include "third_party/skia/include/core/SkRect.h"
 #include "third_party/skia/include/core/SkScalar.h"
 #include "third_party/skia/include/core/SkTextBlob.h"
+#include "ui/gfx/color_space.h"
+
+class SkColorSpace;
+class SkStrikeClient;
+class SkStrikeServer;
 
 // PaintOpBuffer is a reimplementation of SkLiteDL.
 // See: third_party/skia/src/core/SkLiteDL.h.
@@ -105,8 +110,11 @@ struct CC_PAINT_EXPORT PlaybackParams {
       DidDrawOpCallback did_draw_op_callback = DidDrawOpCallback());
   ~PlaybackParams();
 
+  PlaybackParams(const PlaybackParams& other);
+  PlaybackParams& operator=(const PlaybackParams& other);
+
   ImageProvider* image_provider;
-  const SkMatrix original_ctm;
+  SkMatrix original_ctm;
   CustomDataRasterCallback custom_callback;
   DidDrawOpCallback did_draw_op_callback;
 };
@@ -132,26 +140,35 @@ class CC_PAINT_EXPORT PaintOp {
   bool operator!=(const PaintOp& other) const { return !(*this == other); }
 
   struct CC_PAINT_EXPORT SerializeOptions {
-    SerializeOptions();
     SerializeOptions(ImageProvider* image_provider,
                      TransferCacheSerializeHelper* transfer_cache,
                      SkCanvas* canvas,
+                     SkStrikeServer* strike_server,
+                     SkColorSpace* color_space,
+                     bool can_use_lcd_text,
                      const SkMatrix& original_ctm);
 
     // Required.
+    ImageProvider* image_provider = nullptr;
     TransferCacheSerializeHelper* transfer_cache = nullptr;
     SkCanvas* canvas = nullptr;
+    SkStrikeServer* strike_server = nullptr;
+    SkColorSpace* color_space = nullptr;
+    bool can_use_lcd_text = false;
 
     // Optional.
-    ImageProvider* image_provider = nullptr;
     SkMatrix original_ctm = SkMatrix::I();
     // The flags to use when serializing this op. This can be used to override
     // the flags serialized with the op. Valid only for PaintOpWithFlags.
     const PaintFlags* flags_to_serialize = nullptr;
   };
 
-  struct DeserializeOptions {
+  struct CC_PAINT_EXPORT DeserializeOptions {
+    DeserializeOptions(TransferCacheDeserializeHelper* transfer_cache,
+                       SkStrikeClient* strike_client);
     TransferCacheDeserializeHelper* transfer_cache = nullptr;
+    uint32_t raster_color_space_id = gfx::ColorSpace::kInvalidId;
+    SkStrikeClient* strike_client = nullptr;
   };
 
   // Indicates how PaintImages are serialized.
@@ -457,7 +474,10 @@ class CC_PAINT_EXPORT DrawImageOp final : public PaintOpWithFlags {
                               const PaintFlags* flags,
                               SkCanvas* canvas,
                               const PlaybackParams& params);
-  bool IsValid() const { return flags.IsValid(); }
+  bool IsValid() const {
+    return flags.IsValid() && SkScalarIsFinite(scale_adjustment.width()) &&
+           SkScalarIsFinite(scale_adjustment.height());
+  }
   static bool AreEqual(const PaintOp* left, const PaintOp* right);
   bool HasDiscardableImages() const;
   bool HasNonAAPaint() const { return false; }
@@ -469,6 +489,10 @@ class CC_PAINT_EXPORT DrawImageOp final : public PaintOpWithFlags {
 
  private:
   DrawImageOp();
+
+  // Scale that has already been applied to the decoded image during
+  // serialization. Used with OOP raster.
+  SkSize scale_adjustment = SkSize::Make(1.f, 1.f);
 };
 
 class CC_PAINT_EXPORT DrawImageRectOp final : public PaintOpWithFlags {
@@ -486,7 +510,9 @@ class CC_PAINT_EXPORT DrawImageRectOp final : public PaintOpWithFlags {
                               SkCanvas* canvas,
                               const PlaybackParams& params);
   bool IsValid() const {
-    return flags.IsValid() && src.isFinite() && dst.isFinite();
+    return flags.IsValid() && src.isFinite() && dst.isFinite() &&
+           SkScalarIsFinite(scale_adjustment.width()) &&
+           SkScalarIsFinite(scale_adjustment.height());
   }
   static bool AreEqual(const PaintOp* left, const PaintOp* right);
   bool HasDiscardableImages() const;
@@ -499,6 +525,10 @@ class CC_PAINT_EXPORT DrawImageRectOp final : public PaintOpWithFlags {
 
  private:
   DrawImageRectOp();
+
+  // Scale that has already been applied to the decoded image during
+  // serialization. Used with OOP raster.
+  SkSize scale_adjustment = SkSize::Make(1.f, 1.f);
 };
 
 class CC_PAINT_EXPORT DrawIRectOp final : public PaintOpWithFlags {

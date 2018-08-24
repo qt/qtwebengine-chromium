@@ -225,6 +225,7 @@ void ResourceLoadScheduler::TrafficMonitor::Report(
 
   switch (current_state_) {
     case FrameScheduler::ThrottlingState::kThrottled:
+    case FrameScheduler::ThrottlingState::kHidden:
       if (is_main_frame_) {
         request_count_by_circumstance.Count(
             ToSample(ReportCircumstance::kMainframeThrottled));
@@ -602,7 +603,8 @@ bool ResourceLoadScheduler::IsThrottablePriority(
     // If this scheduler is throttled by the associated FrameScheduler,
     // consider every prioritiy as throttlable.
     const auto state = frame_scheduler_throttling_state_;
-    if (state == FrameScheduler::ThrottlingState::kThrottled ||
+    if (state == FrameScheduler::ThrottlingState::kHidden ||
+        state == FrameScheduler::ThrottlingState::kThrottled ||
         state == FrameScheduler::ThrottlingState::kStopped) {
       return true;
     }
@@ -613,12 +615,16 @@ bool ResourceLoadScheduler::IsThrottablePriority(
 
 void ResourceLoadScheduler::OnThrottlingStateChanged(
     FrameScheduler::ThrottlingState state) {
+  if (frame_scheduler_throttling_state_ == state)
+    return;
+
   if (traffic_monitor_)
     traffic_monitor_->OnThrottlingStateChanged(state);
 
   frame_scheduler_throttling_state_ = state;
 
   switch (state) {
+    case FrameScheduler::ThrottlingState::kHidden:
     case FrameScheduler::ThrottlingState::kThrottled:
       if (throttling_history_ == ThrottlingHistory::kInitial)
         throttling_history_ = ThrottlingHistory::kThrottled;
@@ -651,22 +657,8 @@ void ResourceLoadScheduler::MaybeRun() {
     return;
 
   while (!pending_requests_.empty()) {
-    // TODO(yhirano): Consider using a unified value.
-    const auto num_requests =
-        frame_scheduler_throttling_state_ ==
-                FrameScheduler::ThrottlingState::kNotThrottled
-            ? running_throttlable_requests_.size()
-            : running_requests_.size();
-
-    const bool has_enough_running_requets =
-        num_requests >= GetOutstandingLimit();
-
     if (IsThrottablePriority(pending_requests_.begin()->priority) &&
-        has_enough_running_requets) {
-      break;
-    }
-    if (IsThrottablePriority(pending_requests_.begin()->priority) &&
-        has_enough_running_requets) {
+        running_throttlable_requests_.size() >= GetOutstandingLimit()) {
       break;
     }
 
@@ -697,6 +689,7 @@ size_t ResourceLoadScheduler::GetOutstandingLimit() const {
   size_t limit = kOutstandingUnlimited;
 
   switch (frame_scheduler_throttling_state_) {
+    case FrameScheduler::ThrottlingState::kHidden:
     case FrameScheduler::ThrottlingState::kThrottled:
       limit = std::min(limit, outstanding_limit_for_throttled_frame_scheduler_);
       break;

@@ -24,8 +24,8 @@
 #include "net/base/host_mapping_rules.h"
 #include "net/http/http_stream_factory.h"
 #include "net/quic/chromium/quic_utils_chromium.h"
-#include "net/quic/core/quic_packets.h"
-#include "net/spdy/core/spdy_protocol.h"
+#include "net/third_party/quic/core/quic_packets.h"
+#include "net/third_party/spdy/core/spdy_protocol.h"
 
 namespace {
 
@@ -80,9 +80,9 @@ void ConfigureTCPFastOpenParams(const base::CommandLine& command_line,
   }
 }
 
-net::SettingsMap GetHttp2Settings(
+spdy::SettingsMap GetHttp2Settings(
     const VariationParameters& http2_trial_params) {
-  net::SettingsMap http2_settings;
+  spdy::SettingsMap http2_settings;
 
   const std::string settings_string =
       GetVariationParam(http2_trial_params, "http2_settings");
@@ -100,7 +100,7 @@ net::SettingsMap GetHttp2Settings(
     uint32_t value;
     if (!base::StringToUint(key_value.second, &value))
       continue;
-    http2_settings[static_cast<net::SpdyKnownSettingsId>(key)] = value;
+    http2_settings[static_cast<spdy::SpdyKnownSettingsId>(key)] = value;
   }
 
   return http2_settings;
@@ -263,27 +263,6 @@ bool ShouldQuicHeadersIncludeH2StreamDependencies(
       "true");
 }
 
-bool ShouldQuicConnectUsingDefaultNetwork(
-    const VariationParameters& quic_trial_params) {
-  return base::LowerCaseEqualsASCII(
-      GetVariationParam(quic_trial_params, "connect_using_default_network"),
-      "true");
-}
-
-bool ShouldQuicMigrateSessionsOnNetworkChange(
-    const VariationParameters& quic_trial_params) {
-  return base::LowerCaseEqualsASCII(
-      GetVariationParam(quic_trial_params,
-                        "migrate_sessions_on_network_change"),
-      "true");
-}
-
-bool ShouldQuicMigrateSessionsEarly(
-    const VariationParameters& quic_trial_params) {
-  return base::LowerCaseEqualsASCII(
-      GetVariationParam(quic_trial_params, "migrate_sessions_early"), "true");
-}
-
 bool ShouldQuicMigrateSessionsOnNetworkChangeV2(
     const VariationParameters& quic_trial_params) {
   return base::LowerCaseEqualsASCII(
@@ -419,12 +398,6 @@ void ConfigureQuicParams(base::StringPiece quic_trial_group,
         ShouldQuicEstimateInitialRtt(quic_trial_params);
     params->quic_headers_include_h2_stream_dependency =
         ShouldQuicHeadersIncludeH2StreamDependencies(quic_trial_params);
-    params->quic_connect_using_default_network =
-        ShouldQuicConnectUsingDefaultNetwork(quic_trial_params);
-    params->quic_migrate_sessions_on_network_change =
-        ShouldQuicMigrateSessionsOnNetworkChange(quic_trial_params);
-    params->quic_migrate_sessions_early =
-        ShouldQuicMigrateSessionsEarly(quic_trial_params);
     params->quic_migrate_sessions_on_network_change_v2 =
         ShouldQuicMigrateSessionsOnNetworkChangeV2(quic_trial_params);
     params->quic_migrate_sessions_early_v2 =
@@ -584,6 +557,8 @@ void ParseCommandLineAndFieldTrials(const base::CommandLine& command_line,
 
   params->enable_token_binding =
       base::FeatureList::IsEnabled(features::kTokenBinding);
+  params->enable_channel_id =
+      base::FeatureList::IsEnabled(features::kChannelID);
 }
 
 net::URLRequestContextBuilder::HttpCacheParams::Type ChooseCacheType(

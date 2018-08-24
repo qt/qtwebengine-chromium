@@ -99,6 +99,10 @@ const GPUInfo::GPUDevice& GPUInfo::active_gpu() const {
   return gpu;
 }
 
+bool GPUInfo::IsInitialized() const {
+  return gpu.vendor_id != 0 || !gl_vendor.empty();
+}
+
 void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
   struct GPUInfoKnownFields {
     base::TimeDelta initialization_time;
@@ -134,6 +138,8 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     DxDiagNode dx_diagnostics;
     bool supports_dx12;
     bool supports_vulkan;
+    uint32_t d3d12_feature_level;
+    uint32_t vulkan_version;
 #endif
 
     VideoDecodeAcceleratorCapabilities video_decode_accelerator_capabilities;
@@ -195,6 +201,8 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
 #if defined(OS_WIN)
   enumerator->AddBool("supportsDX12", supports_dx12);
   enumerator->AddBool("supportsVulkan", supports_vulkan);
+  enumerator->AddInt("d3dFeatureLevel", d3d12_feature_level);
+  enumerator->AddInt("vulkanVersion", vulkan_version);
 #endif
   enumerator->AddInt("videoDecodeAcceleratorFlags",
                      video_decode_accelerator_capabilities.flags);

@@ -5,9 +5,9 @@
 #include "third_party/blink/renderer/platform/scroll/scroll_animator_compositor_coordinator.h"
 
 #include <memory>
+
 #include "cc/animation/scroll_offset_animation_curve.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_compositor_support.h"
 #include "third_party/blink/renderer/platform/animation/compositor_animation.h"
 #include "third_party/blink/renderer/platform/animation/compositor_animation_host.h"
 #include "third_party/blink/renderer/platform/animation/compositor_animation_timeline.h"
@@ -250,7 +250,7 @@ CompositorElementId ScrollAnimatorCompositorCoordinator::GetScrollElementId()
     return GetScrollableArea()->GetCompositorElementId();
 
   GraphicsLayer* layer = GetScrollableArea()->LayerForScrolling();
-  return layer ? layer->PlatformLayer()->GetElementId() : CompositorElementId();
+  return layer ? layer->CcLayer()->element_id() : CompositorElementId();
 }
 
 void ScrollAnimatorCompositorCoordinator::UpdateImplOnlyCompositorAnimations() {

@@ -18,6 +18,7 @@
 #include "mojo/edk/embedder/platform_channel_pair.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "sandbox/win/src/sandbox_types.h"
+#include "services/service_manager/embedder/result_codes.h"
 #include "services/service_manager/sandbox/win/sandbox_win.h"
 
 namespace content {
@@ -27,12 +28,12 @@ void ChildProcessLauncherHelper::BeforeLaunchOnClientThread() {
   DCHECK_CURRENTLY_ON(client_thread_id_);
 }
 
-mojo::edk::ScopedPlatformHandle
+mojo::edk::ScopedInternalPlatformHandle
 ChildProcessLauncherHelper::PrepareMojoPipeHandlesOnClientThread() {
   DCHECK_CURRENTLY_ON(client_thread_id_);
 
   if (!delegate_->ShouldLaunchElevated())
-    return mojo::edk::ScopedPlatformHandle();
+    return mojo::edk::ScopedInternalPlatformHandle();
 
   mojo::edk::NamedPlatformChannelPair named_pair;
   named_pair.PrepareToPassClientHandleToChildProcess(command_line());
@@ -89,11 +90,13 @@ void ChildProcessLauncherHelper::AfterLaunchOnLauncherThread(
   DCHECK(CurrentlyOnProcessLauncherTaskRunner());
 }
 
-base::TerminationStatus ChildProcessLauncherHelper::GetTerminationStatus(
+ChildProcessTerminationInfo ChildProcessLauncherHelper::GetTerminationInfo(
     const ChildProcessLauncherHelper::Process& process,
-    bool known_dead,
-    int* exit_code) {
-  return base::GetTerminationStatus(process.process.Handle(), exit_code);
+    bool known_dead) {
+  ChildProcessTerminationInfo info;
+  info.status =
+      base::GetTerminationStatus(process.process.Handle(), &info.exit_code);
+  return info;
 }
 
 // static
@@ -107,7 +110,7 @@ void ChildProcessLauncherHelper::ForceNormalProcessTerminationSync(
   DCHECK(CurrentlyOnProcessLauncherTaskRunner());
   // Client has gone away, so just kill the process.  Using exit code 0 means
   // that UMA won't treat this as a crash.
-  process.process.Terminate(RESULT_CODE_NORMAL_EXIT, false);
+  process.process.Terminate(service_manager::RESULT_CODE_NORMAL_EXIT, false);
 }
 
 void ChildProcessLauncherHelper::SetProcessPriorityOnLauncherThread(

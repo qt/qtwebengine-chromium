@@ -17,6 +17,7 @@
 #include "base/observer_list.h"
 #include "base/optional.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
+#include "components/viz/host/client_frame_sink_video_capturer.h"
 #include "components/viz/host/hit_test/hit_test_query.h"
 #include "components/viz/host/host_frame_sink_client.h"
 #include "components/viz/host/viz_host_export.h"
@@ -114,9 +115,15 @@ class VIZ_HOST_EXPORT HostFrameSinkManager
                                  mojom::CompositorFrameSinkRequest request,
                                  mojom::CompositorFrameSinkClientPtr client);
 
-  // Registers frame sink hierarchy. Both parent and child FrameSinkIds must be
-  // registered before calling. A frame sink can have multiple parents.
-  void RegisterFrameSinkHierarchy(const FrameSinkId& parent_frame_sink_id,
+  // Registers FrameSink hierarchy. It's expected that the parent will embed
+  // the child. If |parent_frame_sink_id| is registered then it will be added as
+  // a parent of |child_frame_sink_id| and the function will return true. If
+  // |parent_frame_sink_id| is not registered then the function will return
+  // false.
+  //
+  // |child_frame_sink_id| must be registered before calling. A frame sink
+  // can have multiple parents.
+  bool RegisterFrameSinkHierarchy(const FrameSinkId& parent_frame_sink_id,
                                   const FrameSinkId& child_frame_sink_id);
 
   // Unregisters FrameSink hierarchy. Client must have registered frame sink
@@ -134,8 +141,14 @@ class VIZ_HOST_EXPORT HostFrameSinkManager
   // Asks viz to send updates regarding video activity to |observer|.
   void AddVideoDetectorObserver(mojom::VideoDetectorObserverPtr observer);
 
-  // Creates a FrameSinkVideoCapturer instance.
+  // Creates a FrameSinkVideoCapturer instance in viz.
   void CreateVideoCapturer(mojom::FrameSinkVideoCapturerRequest request);
+
+  // Creates a FrameSinkVideoCapturer instance in viz and returns a
+  // ClientFrameSinkVideoCapturer that's connected to it. Clients should prefer
+  // this version because ClientFrameSinkVideoCapturer is resilient to viz
+  // crashes.
+  std::unique_ptr<ClientFrameSinkVideoCapturer> CreateVideoCapturer();
 
   // Marks the given SurfaceIds for destruction.
   void EvictSurfaces(const std::vector<SurfaceId>& surface_ids);
@@ -228,13 +241,7 @@ class VIZ_HOST_EXPORT HostFrameSinkManager
   void OnFirstSurfaceActivation(const SurfaceInfo& surface_info) override;
   void OnAggregatedHitTestRegionListUpdated(
       const FrameSinkId& frame_sink_id,
-      mojo::ScopedSharedBufferHandle active_handle,
-      uint32_t active_handle_size,
-      mojo::ScopedSharedBufferHandle idle_handle,
-      uint32_t idle_handle_sizes) override;
-  void SwitchActiveAggregatedHitTestRegionList(
-      const FrameSinkId& frame_sink_id,
-      uint8_t active_handle_index) override;
+      const std::vector<AggregatedHitTestRegion>& hit_test_data) override;
 
   // This will point to |frame_sink_manager_ptr_| if using Mojo or
   // |frame_sink_manager_impl_| if directly connected. Use this to make function

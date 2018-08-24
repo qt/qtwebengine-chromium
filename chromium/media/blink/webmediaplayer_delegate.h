@@ -5,13 +5,21 @@
 #ifndef MEDIA_BLINK_WEBMEDIAPLAYER_DELEGATE_H_
 #define MEDIA_BLINK_WEBMEDIAPLAYER_DELEGATE_H_
 
+#include "third_party/blink/public/platform/web_media_player.h"
+
 namespace blink {
-class WebMediaPlayer;
 enum class WebFullscreenVideoStatus;
-}
+class WebMediaPlayer;
+}  // namespace blink
+
 namespace gfx {
 class Size;
-}
+}  // namespace gfx
+
+namespace viz {
+class SurfaceId;
+}  // namespace viz
+
 namespace media {
 
 enum class MediaContentType;
@@ -64,6 +72,10 @@ class WebMediaPlayerDelegate {
     // Called to set as the persistent video. A persistent video should hide its
     // controls and go fullscreen.
     virtual void OnBecamePersistentVideo(bool value) = 0;
+
+    // Called when Picture-in-Picture mode is terminated from the
+    // Picture-in-Picture window.
+    virtual void OnPictureInPictureModeEnded() = 0;
   };
 
   // Returns true if the host frame is hidden or closed.
@@ -100,11 +112,28 @@ class WebMediaPlayerDelegate {
   // Notify that the muted status of the media player has changed.
   virtual void DidPlayerMutedStatusChange(int delegate_id, bool muted) = 0;
 
-  // Notify that the source media player of Picture-in-Picture has changed.
-  virtual void DidPictureInPictureSourceChange(int delegate_id) = 0;
+  // Notify that the source media player has entered Picture-in-Picture mode.
+  virtual void DidPictureInPictureModeStart(
+      int delegate_id,
+      const viz::SurfaceId&,
+      const gfx::Size&,
+      blink::WebMediaPlayer::PipWindowOpenedCallback) = 0;
 
   // Notify that the source media player has exited Picture-in-Picture mode.
-  virtual void DidPictureInPictureModeEnd(int delegate_id) = 0;
+  virtual void DidPictureInPictureModeEnd(int delegate_id,
+                                          base::OnceClosure) = 0;
+
+  // Notify that the media player in Picture-in-Picture had a change of surface.
+  virtual void DidPictureInPictureSurfaceChange(int delegate_id,
+                                                const viz::SurfaceId&,
+                                                const gfx::Size&) = 0;
+
+  // Registers a callback associated with a player that will be called when
+  // receiving a notification from the browser process that the
+  // Picture-in-Picture associated to this player has been resized.
+  virtual void RegisterPictureInPictureWindowResizeCallback(
+      int player_id,
+      blink::WebMediaPlayer::PipWindowResizedCallback) = 0;
 
   // Notify that playback is stopped. This will drop wake locks and remove any
   // external controls.

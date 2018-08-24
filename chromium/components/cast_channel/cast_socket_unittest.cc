@@ -9,12 +9,12 @@
 #include <utility>
 #include <vector>
 
+#include "base/callback_helpers.h"
 #include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
@@ -97,7 +97,7 @@ CastMessage CreateTestMessage() {
 
 base::FilePath GetTestCertsDirectory() {
   base::FilePath path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &path);
+  base::PathService::Get(base::DIR_SOURCE_ROOT, &path);
   path = path.Append(FILE_PATH_LITERAL("components"));
   path = path.Append(FILE_PATH_LITERAL("test"));
   path = path.Append(FILE_PATH_LITERAL("data"));
@@ -112,13 +112,12 @@ class MockTCPSocket : public net::MockTCPClientSocket {
     do_nothing_ = do_nothing;
   }
 
-  int Connect(const net::CompletionCallback& callback) override {
+  int Connect(net::CompletionOnceCallback callback) override {
     if (do_nothing_) {
       // Stall the I/O event loop.
       return net::ERR_IO_PENDING;
     }
-
-    return net::MockTCPClientSocket::Connect(callback);
+    return net::MockTCPClientSocket::Connect(std::move(callback));
   }
 
  private:
@@ -257,13 +256,12 @@ class MockTestCastSocket : public TestCastSocketBase {
   // may be live at a time.
   std::unique_ptr<net::TransportClientSocket> CreateTcpSocket() override {
     if (tcp_unresponsive_) {
-      socket_data_provider_ = std::make_unique<net::StaticSocketDataProvider>(
-          nullptr, 0, nullptr, 0);
+      socket_data_provider_ = std::make_unique<net::StaticSocketDataProvider>();
       return std::unique_ptr<net::TransportClientSocket>(
           new MockTCPSocket(true, socket_data_provider_.get()));
     } else {
-      socket_data_provider_ = std::make_unique<net::StaticSocketDataProvider>(
-          reads_.data(), reads_.size(), writes_.data(), writes_.size());
+      socket_data_provider_ =
+          std::make_unique<net::StaticSocketDataProvider>(reads_, writes_);
       socket_data_provider_->set_connect_data(*tcp_connect_data_);
       return std::unique_ptr<net::TransportClientSocket>(
           new MockTCPSocket(false, socket_data_provider_.get()));
@@ -359,7 +357,7 @@ class MockCastSocketTest : public CastSocketTestBase {
   MockCastSocketTest() {}
 
   void TearDown() override {
-    if (socket_.get()) {
+    if (socket_) {
       EXPECT_CALL(handler_, OnCloseComplete(net::OK));
       socket_->Close(base::Bind(&CompleteHandler::OnCloseComplete,
                                 base::Unretained(&handler_)));
@@ -398,7 +396,7 @@ class SslCastSocketTest : public CastSocketTestBase {
   SslCastSocketTest() {}
 
   void TearDown() override {
-    if (socket_.get()) {
+    if (socket_) {
       EXPECT_CALL(handler_, OnCloseComplete(net::OK));
       socket_->Close(base::Bind(&CompleteHandler::OnCloseComplete,
                                 base::Unretained(&handler_)));

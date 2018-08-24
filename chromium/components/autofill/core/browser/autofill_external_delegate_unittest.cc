@@ -12,8 +12,10 @@
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/histogram_tester.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/user_action_tester.h"
 #include "build/build_config.h"
+#include "components/autofill/core/browser/autofill_experiments.h"
 #include "components/autofill/core/browser/autofill_external_delegate.h"
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/autofill_metrics.h"
@@ -51,7 +53,7 @@ class MockAutofillDriver : public TestAutofillDriver {
   // Mock methods to enable testability.
   MOCK_METHOD1(RendererShouldAcceptDataListSuggestion,
                void(const base::string16&));
-  MOCK_METHOD0(RendererShouldClearFilledForm, void());
+  MOCK_METHOD0(RendererShouldClearFilledSection, void());
   MOCK_METHOD0(RendererShouldClearPreviewedForm, void());
   MOCK_METHOD1(RendererShouldFillFieldWithValue, void(const base::string16&));
   MOCK_METHOD1(RendererShouldPreviewFieldWithValue,
@@ -92,7 +94,12 @@ class MockAutofillManager : public AutofillManager {
       // Force to use the constructor designated for unit test, but we don't
       // really need personal_data in this test so we pass a NULL pointer.
       : AutofillManager(driver, client, nullptr) {}
-  virtual ~MockAutofillManager() {}
+  ~MockAutofillManager() override {}
+
+  PopupType GetPopupType(const FormData& form,
+                         const FormFieldData& field) override {
+    return PopupType::kPersonalInformation;
+  }
 
   MOCK_METHOD2(ShouldShowScanCreditCard,
                bool(const FormData& form, const FormFieldData& field));
@@ -495,13 +502,11 @@ TEST_F(AutofillExternalDelegateUnitTest,
   // This should call ShowAutofillPopup.
   std::vector<Suggestion> suggestions;
   suggestions.push_back(Suggestion());
-  suggestions[0].frontend_id = POPUP_ITEM_ID_HTTP_NOT_SECURE_WARNING_MESSAGE;
-  suggestions.push_back(Suggestion());
-  suggestions[1].frontend_id =
+  suggestions[0].frontend_id =
       POPUP_ITEM_ID_INSECURE_CONTEXT_PAYMENT_DISABLED_MESSAGE;
   suggestions.push_back(Suggestion());
-  suggestions[2].value = ASCIIToUTF16("Rick");
-  suggestions[2].frontend_id = POPUP_ITEM_ID_AUTOCOMPLETE_ENTRY;
+  suggestions[1].value = ASCIIToUTF16("Rick");
+  suggestions[1].frontend_id = POPUP_ITEM_ID_AUTOCOMPLETE_ENTRY;
   external_delegate_->OnSuggestionsReturned(kQueryId, suggestions);
 }
 
@@ -586,7 +591,7 @@ TEST_F(AutofillExternalDelegateUnitTest,
 // the user accepted the suggestion to clear the form.
 TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateClearForm) {
   EXPECT_CALL(autofill_client_, HideAutofillPopup());
-  EXPECT_CALL(*autofill_driver_, RendererShouldClearFilledForm());
+  EXPECT_CALL(*autofill_driver_, RendererShouldClearFilledSection());
 
   external_delegate_->DidAcceptSuggestion(base::string16(),
                                           POPUP_ITEM_ID_CLEAR_FORM,
@@ -673,17 +678,6 @@ TEST_F(AutofillExternalDelegateUnitTest, SigninPromoMenuItem) {
   EXPECT_CALL(autofill_client_, HideAutofillPopup());
   external_delegate_->DidAcceptSuggestion(
       base::string16(), POPUP_ITEM_ID_CREDIT_CARD_SIGNIN_PROMO, 0);
-}
-
-// Test that autofill client will open the security indicator help center url
-// after the user accepted the http warning message suggestion item.
-TEST_F(AutofillExternalDelegateUnitTest, HttpWarningMessageItem) {
-  EXPECT_CALL(
-      autofill_client_,
-      ExecuteCommand(autofill::POPUP_ITEM_ID_HTTP_NOT_SECURE_WARNING_MESSAGE));
-  EXPECT_CALL(autofill_client_, HideAutofillPopup());
-  external_delegate_->DidAcceptSuggestion(
-      base::string16(), POPUP_ITEM_ID_HTTP_NOT_SECURE_WARNING_MESSAGE, 0);
 }
 
 MATCHER_P(CreditCardMatches, card, "") {
@@ -793,5 +787,46 @@ TEST_F(AutofillExternalDelegateUnitTest, ShouldUseNewSettingName) {
   // This should call ShowAutofillPopup.
   external_delegate_->OnSuggestionsReturned(kQueryId, autofill_item);
 }
+
+#if !defined(OS_ANDROID)
+// Test that the delegate includes a separator between the content rows and the
+// footer, if and only if the kAutofillExpandedPopupViews feature is disabled.
+TEST_F(AutofillExternalDelegateUnitTest, IncludeFooterSeparatorForOldUIOnly) {
+  // The guts of the test. This will be run once with the feature enabled,
+  // expecting not to find a separator, and a second time with the feature
+  // disabled, expecting to find a separator.
+  auto tester = [this](bool enabled, auto element_ids) {
+    base::test::ScopedFeatureList scoped_feature_list;
+
+    if (enabled) {
+      scoped_feature_list.InitAndEnableFeature(
+          autofill::kAutofillExpandedPopupViews);
+    } else {
+      scoped_feature_list.InitAndDisableFeature(
+          autofill::kAutofillExpandedPopupViews);
+    }
+
+    IssueOnQuery(kQueryId);
+
+    EXPECT_CALL(
+        autofill_client_,
+        ShowAutofillPopup(_, _, SuggestionVectorIdsAre(element_ids), _));
+
+    std::vector<Suggestion> autofill_item;
+    autofill_item.push_back(Suggestion());
+    autofill_item[0].frontend_id = kAutofillProfileId;
+    external_delegate_->OnSuggestionsReturned(kQueryId, autofill_item);
+  };
+
+  tester(false,
+         testing::ElementsAre(
+             kAutofillProfileId, static_cast<int>(POPUP_ITEM_ID_SEPARATOR),
+             static_cast<int>(POPUP_ITEM_ID_AUTOFILL_OPTIONS)));
+
+  tester(true, testing::ElementsAre(
+                   kAutofillProfileId,
+                   static_cast<int>(POPUP_ITEM_ID_AUTOFILL_OPTIONS)));
+}
+#endif  // !defined(OS_ANDROID)
 
 }  // namespace autofill

@@ -11,7 +11,6 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/task_scheduler/post_task.h"
@@ -19,7 +18,6 @@
 #include "net/base/net_errors.h"
 #include "net/base/network_delegate_impl.h"
 #include "net/cert/cert_verifier.h"
-#include "net/cert/ct_known_logs.h"
 #include "net/cert/ct_log_verifier.h"
 #include "net/cert/ct_policy_enforcer.h"
 #include "net/cert/ct_verifier.h"
@@ -489,15 +487,14 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
   if (ct_verifier_) {
     storage->set_cert_transparency_verifier(std::move(ct_verifier_));
   } else {
-    std::unique_ptr<MultiLogCTVerifier> ct_verifier =
-        std::make_unique<MultiLogCTVerifier>();
-    ct_verifier->AddLogs(ct::CreateLogVerifiersForKnownLogs());
-    storage->set_cert_transparency_verifier(std::move(ct_verifier));
+    storage->set_cert_transparency_verifier(
+        std::make_unique<MultiLogCTVerifier>());
   }
   if (ct_policy_enforcer_) {
     storage->set_ct_policy_enforcer(std::move(ct_policy_enforcer_));
   } else {
-    storage->set_ct_policy_enforcer(std::make_unique<CTPolicyEnforcer>());
+    storage->set_ct_policy_enforcer(
+        std::make_unique<DefaultCTPolicyEnforcer>());
   }
 
   if (throttling_enabled_) {

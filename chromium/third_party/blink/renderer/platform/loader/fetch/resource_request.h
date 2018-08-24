@@ -29,11 +29,14 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_LOADER_FETCH_RESOURCE_REQUEST_H_
 
 #include <memory>
+#include "base/optional.h"
 #include "services/network/public/mojom/cors.mojom-blink.h"
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
 #include "services/network/public/mojom/request_context_frame_type.mojom-shared.h"
 #include "third_party/blink/public/mojom/net/ip_address_space.mojom-blink.h"
 #include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
+#include "third_party/blink/public/platform/resource_request_blocked_reason.h"
+#include "third_party/blink/public/platform/web_content_security_policy_struct.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_load_priority.h"
 #include "third_party/blink/renderer/platform/network/encoded_form_data.h"
@@ -43,21 +46,9 @@
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/referrer.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 
 namespace blink {
-
-enum class ResourceRequestBlockedReason {
-  kCSP,
-  kMixedContent,
-  kOrigin,
-  kInspector,
-  kSubresourceFilter,
-  kOther,
-  kContentType,
-  kNone
-};
 
 enum InputToLoadPerfMetricReportPolicy : uint8_t {
   kNoReport,    // Don't report metrics for this ResourceRequest.
@@ -283,6 +274,21 @@ class PLATFORM_EXPORT ResourceRequest final {
     fetch_request_mode_ = mode;
   }
 
+  // A resource request's fetch_importance_mode_ is a developer-set priority
+  // hint that differs from priority_. It is used in
+  // ResourceFetcher::ComputeLoadPriority to possibly influence the resolved
+  // priority of a resource request.
+  // This member exists both here and in FetchParameters, as opposed just in
+  // the latter because the fetch() API creates a ResourceRequest object long
+  // before its associaed FetchParameters, so this makes it easier to
+  // communicate an importance value down to the lower-level fetching code.
+  mojom::FetchImportanceMode GetFetchImportanceMode() const {
+    return fetch_importance_mode_;
+  }
+  void SetFetchImportanceMode(mojom::FetchImportanceMode mode) {
+    fetch_importance_mode_ = mode;
+  }
+
   network::mojom::FetchCredentialsMode GetFetchCredentialsMode() const {
     return fetch_credentials_mode_;
   }
@@ -350,15 +356,15 @@ class PLATFORM_EXPORT ResourceRequest final {
   void SetRedirectStatus(RedirectStatus status) { redirect_status_ = status; }
   RedirectStatus GetRedirectStatus() const { return redirect_status_; }
 
-  void SetSuggestedFilename(const WTF::Optional<String>& suggested_filename) {
+  void SetSuggestedFilename(const base::Optional<String>& suggested_filename) {
     suggested_filename_ = suggested_filename;
   }
-  const WTF::Optional<String>& GetSuggestedFilename() const {
+  const base::Optional<String>& GetSuggestedFilename() const {
     return suggested_filename_;
   }
 
-  void SetNavigationStartTime(double);
-  double NavigationStartTime() const { return navigation_start_; }
+  void SetNavigationStartTime(TimeTicks);
+  TimeTicks NavigationStartTime() const { return navigation_start_; }
 
   void SetIsSameDocumentNavigation(bool is_same_document) {
     is_same_document_navigation_ = is_same_document;
@@ -367,6 +373,13 @@ class PLATFORM_EXPORT ResourceRequest final {
 
   void SetIsAdResource() { is_ad_resource_ = true; }
   bool IsAdResource() const { return is_ad_resource_; }
+
+  void SetInitiatorCSP(const WebContentSecurityPolicyList& initiator_csp) {
+    initiator_csp_ = initiator_csp;
+  }
+  const WebContentSecurityPolicyList& GetInitiatorCSP() const {
+    return initiator_csp_;
+  }
 
  private:
   using SharableExtraData =
@@ -412,6 +425,7 @@ class PLATFORM_EXPORT ResourceRequest final {
   WebURLRequest::RequestContext request_context_;
   network::mojom::RequestContextFrameType frame_type_;
   network::mojom::FetchRequestMode fetch_request_mode_;
+  mojom::FetchImportanceMode fetch_importance_mode_;
   network::mojom::FetchCredentialsMode fetch_credentials_mode_;
   network::mojom::FetchRedirectMode fetch_redirect_mode_;
   String fetch_integrity_;
@@ -425,15 +439,16 @@ class PLATFORM_EXPORT ResourceRequest final {
   bool is_same_document_navigation_;
   InputToLoadPerfMetricReportPolicy input_perf_metric_report_policy_;
   RedirectStatus redirect_status_;
-  WTF::Optional<String> suggested_filename_;
+  base::Optional<String> suggested_filename_;
 
   mutable CacheControlHeader cache_control_header_cache_;
 
   static double default_timeout_interval_;
 
-  double navigation_start_ = 0;
+  TimeTicks navigation_start_;
 
   bool is_ad_resource_ = false;
+  WebContentSecurityPolicyList initiator_csp_;
 };
 
 // This class is needed to copy a ResourceRequest across threads, because it
@@ -477,6 +492,7 @@ struct CrossThreadResourceRequestData {
   WebURLRequest::RequestContext request_context_;
   network::mojom::RequestContextFrameType frame_type_;
   network::mojom::FetchRequestMode fetch_request_mode_;
+  mojom::FetchImportanceMode fetch_importance_mode_;
   network::mojom::FetchCredentialsMode fetch_credentials_mode_;
   network::mojom::FetchRedirectMode fetch_redirect_mode_;
   String fetch_integrity_;
@@ -491,6 +507,7 @@ struct CrossThreadResourceRequestData {
   ResourceRequest::RedirectStatus redirect_status_;
   base::Optional<String> suggested_filename_;
   bool is_ad_resource_;
+  WebContentSecurityPolicyList navigation_csp_;
 };
 
 }  // namespace blink

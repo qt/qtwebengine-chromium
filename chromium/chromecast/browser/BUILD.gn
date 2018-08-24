@@ -17,6 +17,10 @@ cast_source_set("browser") {
   sources = [
     "application_media_capabilities.cc",
     "application_media_capabilities.h",
+    "bluetooth/cast_bluetooth_chooser.cc",
+    "bluetooth/cast_bluetooth_chooser.h",
+    "cast_back_gesture_dispatcher.cc",
+    "cast_back_gesture_dispatcher.h",
     "cast_browser_context.cc",
     "cast_browser_context.h",
     "cast_browser_main_parts.cc",
@@ -25,7 +29,6 @@ cast_source_set("browser") {
     "cast_browser_process.h",
     "cast_content_browser_client.cc",
     "cast_content_browser_client.h",
-    "cast_content_window.h",
     "cast_download_manager_delegate.cc",
     "cast_download_manager_delegate.h",
     "cast_http_user_agent_settings.cc",
@@ -38,6 +41,8 @@ cast_source_set("browser") {
     "cast_net_log.h",
     "cast_network_delegate.cc",
     "cast_network_delegate.h",
+    "cast_network_request_interceptor.cc",
+    "cast_network_request_interceptor.h",
     "cast_permission_manager.cc",
     "cast_permission_manager.h",
     "cast_quota_permission_context.cc",
@@ -46,8 +51,6 @@ cast_source_set("browser") {
     "cast_resource_dispatcher_host_delegate.h",
     "cast_web_contents_manager.cc",
     "cast_web_contents_manager.h",
-    "cast_web_view.cc",
-    "cast_web_view.h",
     "cast_web_view_default.cc",
     "cast_web_view_default.h",
     "cast_web_view_factory.cc",
@@ -56,6 +59,8 @@ cast_source_set("browser") {
     "devtools/cast_devtools_manager_delegate.h",
     "devtools/remote_debugging_server.cc",
     "devtools/remote_debugging_server.h",
+    "lru_renderer_cache.cc",
+    "lru_renderer_cache.h",
     "media/media_caps_impl.cc",
     "media/media_caps_impl.h",
     "media/supported_codec_finder.cc",
@@ -70,10 +75,20 @@ cast_source_set("browser") {
     "network_context_manager.h",
     "pref_service_helper.cc",
     "pref_service_helper.h",
+    "renderer_config.cc",
+    "renderer_config.h",
     "renderer_prelauncher.cc",
     "renderer_prelauncher.h",
     "service/cast_service_simple.cc",
     "service/cast_service_simple.h",
+    "tts/tts_controller.h",
+    "tts/tts_controller_impl.cc",
+    "tts/tts_controller_impl.h",
+    "tts/tts_message_filter.cc",
+    "tts/tts_message_filter.h",
+    "tts/tts_platform.cc",
+    "tts/tts_platform.h",
+    "tts/tts_platform_stub.cc",
     "url_request_context_factory.cc",
     "url_request_context_factory.h",
   ]
@@ -82,10 +97,14 @@ cast_source_set("browser") {
     sources += [
       "cast_browser_main_parts_simple.cc",
       "cast_content_browser_client_simple.cc",
-      "cast_network_delegate_simple.cc",
+      "cast_network_request_interceptor_simple.cc",
       "pref_service_helper_simple.cc",
     ]
   }
+
+  public_deps = [
+    ":public",
+  ]
 
   deps = [
     "//base",
@@ -99,10 +118,10 @@ cast_source_set("browser") {
     "//chromecast/base:cast_sys_info",
     "//chromecast/base:cast_version",
     "//chromecast/browser:resources",
+    "//chromecast/browser/bluetooth/public/mojom",
     "//chromecast/common",
-    "//chromecast/common:interfaces",
     "//chromecast/common/media",
-    "//chromecast/common/media:interfaces",
+    "//chromecast/common/mojom",
     "//chromecast/graphics",
     "//chromecast/media",
     "//chromecast/media:libcast_media",
@@ -215,16 +234,40 @@ cast_source_set("browser") {
     sources += [
       "cast_extension_host.cc",
       "cast_extension_host.h",
+      "cast_extension_message_filter.cc",
+      "cast_extension_message_filter.h",
       "cast_web_view_extension.cc",
       "cast_web_view_extension.h",
       "extension_request_protocol_handler.cc",
       "extension_request_protocol_handler.h",
+      "extensions/api/accessibility_private/accessibility_extension_api.cc",
+      "extensions/api/accessibility_private/accessibility_extension_api.h",
+      "extensions/api/automation_internal/automation_event_router.cc",
+      "extensions/api/automation_internal/automation_event_router.h",
+      "extensions/api/automation_internal/automation_internal_api.cc",
+      "extensions/api/automation_internal/automation_internal_api.h",
       "extensions/api/bookmarks/bookmarks_api.cc",
       "extensions/api/bookmarks/bookmarks_api.h",
+      "extensions/api/braille_display_private/braille_display_private_api.cc",
+      "extensions/api/braille_display_private/braille_display_private_api.h",
       "extensions/api/history/history_api.cc",
       "extensions/api/history/history_api.h",
+      "extensions/api/i18n/i18n_api.cc",
+      "extensions/api/i18n/i18n_api.h",
       "extensions/api/identity/identity_api.cc",
       "extensions/api/identity/identity_api.h",
+      "extensions/api/module/module.cc",
+      "extensions/api/module/module.h",
+      "extensions/api/notifications/notifications_api.cc",
+      "extensions/api/notifications/notifications_api.h",
+      "extensions/api/tts/tts_engine_extension_api.cc",
+      "extensions/api/tts/tts_engine_extension_api.h",
+      "extensions/api/tts/tts_engine_extension_observer.cc",
+      "extensions/api/tts/tts_engine_extension_observer.h",
+      "extensions/api/tts/tts_extension_api.cc",
+      "extensions/api/tts/tts_extension_api.h",
+      "extensions/api/tts/tts_extension_api_constants.cc",
+      "extensions/api/tts/tts_extension_api_constants.h",
       "extensions/cast_display_info_provider.cc",
       "extensions/cast_display_info_provider.h",
       "extensions/cast_extension_host_delegate.cc",
@@ -243,6 +286,18 @@ cast_source_set("browser") {
       "extensions/cast_prefs.h",
       "extensions/stub_storage_monitor.cc",
     ]
+    if (use_aura) {
+      sources += [
+        "cast_web_view_extension.h",
+        "cast_web_view_extension.h",
+        "ui/aura/accessibility/automation_manager_aura.cc",
+        "ui/aura/accessibility/automation_manager_aura.h",
+        "ui/aura/accessibility/ax_root_obj_wrapper.cc",
+        "ui/aura/accessibility/ax_root_obj_wrapper.h",
+        "ui/aura/accessibility/ax_tree_source_aura.cc",
+        "ui/aura/accessibility/ax_tree_source_aura.h",
+      ]
+    }
 
     deps += [
       "//chromecast/common/extensions_api:api_registration_bundle_generator_registration",
@@ -257,16 +312,40 @@ cast_source_set("browser") {
       "//extensions/common",
       "//extensions/common/api",
       "//google_apis:google_apis",
+      "//ui/views:views",
     ]
   }
 
   configs += [ "//media/audio:platform_config" ]
 }
 
+# Lightweight target for Cast interfaces that wrap //content/public/browser.
+# This target should only include interfaces which are required for unit tests.
+cast_source_set("public") {
+  sources = [
+    "cast_content_window.h",
+    "cast_web_view.cc",
+    "cast_web_view.h",
+  ]
+
+  # Need to expose this so that internal public_configs are propagated.
+  public_deps = [
+    "//content/public/browser",
+  ]
+
+  deps = [
+    "//base",
+    "//chromecast/graphics",
+    "//content",
+    "//ui/events",
+    "//url",
+  ]
+}
+
 # This target generates an "overlay" interface spec, allowing the Cast build to
 # declare specific behavior and requirements for the "content_browser" service.
 # This is accomplished by generating a JSON file, which is packed into
-# cast_shell.pak, and loaded at runtime. This can be used to host addtional
+# cast_shell.pak, and loaded at runtime. This can be used to host additional
 # interfaces in "content_browser".
 #
 # NOTE: Do not add packaged_services here! packaged_services should instead be
@@ -278,6 +357,15 @@ service_manifest("cast_content_browser_manifest_overlay") {
   if (chromecast_branding != "public") {
     overlays = [ "//chromecast/internal/shell/browser:cast_content_browser_internal_manifest_overlay" ]
   }
+}
+
+# This target generates an "overlay" interface spec, allowing the Cast build to
+# declare specific behavior and requirements for the "content_renderer" service.
+# This is accomplished by generating a JSON file, which is packed into
+# cast_shell.pak, and loaded at runtime. This can be used to host additional
+# interfaces in "content_renderer".
+service_manifest("cast_content_renderer_manifest_overlay") {
+  source = "cast_content_renderer_manifest_overlay.json"
 }
 
 # This target is for packaged services that will run in the main (browser)
@@ -317,6 +405,7 @@ grit("resources") {
   deps = [
     ":cast_content_browser_manifest_overlay",
     ":cast_content_packaged_services_manifest_overlay",
+    ":cast_content_renderer_manifest_overlay",
   ]
 }
 
@@ -335,6 +424,7 @@ cast_source_set("test_support") {
   deps = [
     "//base",
     "//chromecast/base",
+    "//components/prefs:test_support",
     "//content/public/browser",
     "//content/public/common",
     "//testing/gtest",
@@ -344,6 +434,7 @@ cast_source_set("test_support") {
 cast_source_set("browsertests") {
   testonly = true
   sources = [
+    "cast_back_gesture_dispatcher_test.cc",
     "cast_media_blocker_browsertest.cc",
     "renderer_prelauncher_test.cc",
     "test/cast_features_browsertest.cc",
@@ -367,10 +458,14 @@ cast_source_set("unittests") {
   testonly = true
 
   sources = [
+    "bluetooth/cast_bluetooth_chooser_unittest.cc",
     "cast_media_blocker_unittest.cc",
+    "cast_network_delegate_unittest.cc",
     "cast_touch_device_manager_unittest.cc",
     "devtools/cast_devtools_manager_delegate_unittest.cc",
+    "lru_renderer_cache_test.cc",
     "network_context_manager_unittest.cc",
+    "renderer_config_unittest.cc",
   ]
 
   deps = [

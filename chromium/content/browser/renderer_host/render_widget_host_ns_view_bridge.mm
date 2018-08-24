@@ -13,9 +13,11 @@
 #import "content/browser/renderer_host/render_widget_host_view_cocoa.h"
 #include "content/common/cursors/webcursor.h"
 #import "skia/ext/skia_utils_mac.h"
+#include "ui/accelerated_widget_mac/display_ca_layer_tree.h"
 #import "ui/base/cocoa/animation_utils.h"
 #include "ui/display/display_observer.h"
 #include "ui/display/screen.h"
+#include "ui/events/keycodes/dom/dom_code.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
 
 namespace content {
@@ -36,11 +38,14 @@ class RenderWidgetHostViewNSViewBridgeLocal
 
   void InitAsPopup(const gfx::Rect& content_rect,
                    blink::WebPopupType popup_type) override;
+  void DisableDisplay() override;
   void MakeFirstResponder() override;
   void SetBounds(const gfx::Rect& rect) override;
+  void SetCALayerParams(const gfx::CALayerParams& ca_layer_params) override;
   void SetBackgroundColor(SkColor color) override;
   void SetVisible(bool visible) override;
   void SetTooltipText(const base::string16& display_text) override;
+  void SetTextInputType(ui::TextInputType text_input_type) override;
   void SetTextSelection(const base::string16& text,
                         size_t offset,
                         const gfx::Range& range) override;
@@ -53,6 +58,8 @@ class RenderWidgetHostViewNSViewBridgeLocal
   void ShowDictionaryOverlay(
       const mac::AttributedStringCoder::EncodedString& encoded_string,
       gfx::Point baseline_point) override;
+  void LockKeyboard(base::Optional<base::flat_set<ui::DomCode>> codes) override;
+  void UnlockKeyboard() override;
 
  private:
   bool IsPopup() const {
@@ -68,12 +75,18 @@ class RenderWidgetHostViewNSViewBridgeLocal
   // The NSView used for input and display.
   base::scoped_nsobject<RenderWidgetHostViewCocoa> cocoa_view_;
 
+  // Once set, all calls to set the background color or CALayer content will
+  // be ignored.
+  bool display_disabled_ = false;
+
   // The window used for popup widgets, and its helper.
   std::unique_ptr<PopupWindowMac> popup_window_;
   blink::WebPopupType popup_type_ = blink::kWebPopupTypeNone;
 
-  // The background CoreAnimation layer which is hosted by |cocoa_view_|.
+  // The background CALayer which is hosted by |cocoa_view_|, and is used as
+  // the root of |display_ca_layer_tree_|.
   base::scoped_nsobject<CALayer> background_layer_;
+  std::unique_ptr<ui::DisplayCALayerTree> display_ca_layer_tree_;
 
   // Cached copy of the tooltip text, to avoid redundant calls.
   base::string16 tooltip_text_;
@@ -88,6 +101,8 @@ RenderWidgetHostViewNSViewBridgeLocal::RenderWidgetHostViewNSViewBridgeLocal(
   cocoa_view_.reset([[RenderWidgetHostViewCocoa alloc] initWithClient:client]);
 
   background_layer_.reset([[CALayer alloc] init]);
+  display_ca_layer_tree_ =
+      std::make_unique<ui::DisplayCALayerTree>(background_layer_.get());
   [cocoa_view_ setLayer:background_layer_];
   [cocoa_view_ setWantsLayer:YES];
 }
@@ -122,6 +137,14 @@ void RenderWidgetHostViewNSViewBridgeLocal::InitAsPopup(
 
 void RenderWidgetHostViewNSViewBridgeLocal::MakeFirstResponder() {
   [[cocoa_view_ window] makeFirstResponder:cocoa_view_];
+}
+
+void RenderWidgetHostViewNSViewBridgeLocal::DisableDisplay() {
+  if (display_disabled_)
+    return;
+  SetBackgroundColor(SK_ColorTRANSPARENT);
+  display_ca_layer_tree_.reset();
+  display_disabled_ = true;
 }
 
 void RenderWidgetHostViewNSViewBridgeLocal::SetBounds(const gfx::Rect& rect) {
@@ -165,7 +188,16 @@ void RenderWidgetHostViewNSViewBridgeLocal::SetBounds(const gfx::Rect& rect) {
   }
 }
 
+void RenderWidgetHostViewNSViewBridgeLocal::SetCALayerParams(
+    const gfx::CALayerParams& ca_layer_params) {
+  if (display_disabled_)
+    return;
+  display_ca_layer_tree_->UpdateCALayerTree(ca_layer_params);
+}
+
 void RenderWidgetHostViewNSViewBridgeLocal::SetBackgroundColor(SkColor color) {
+  if (display_disabled_)
+    return;
   ScopedCAActionDisabler disabler;
   base::ScopedCFTypeRef<CGColorRef> cg_color(
       skia::CGColorCreateFromSkColor(color));
@@ -209,6 +241,11 @@ void RenderWidgetHostViewNSViewBridgeLocal::SetCompositionRangeInfo(
 
 void RenderWidgetHostViewNSViewBridgeLocal::CancelComposition() {
   [cocoa_view_ cancelComposition];
+}
+
+void RenderWidgetHostViewNSViewBridgeLocal::SetTextInputType(
+    ui::TextInputType text_input_type) {
+  [cocoa_view_ setTextInputType:text_input_type];
 }
 
 void RenderWidgetHostViewNSViewBridgeLocal::SetTextSelection(
@@ -273,6 +310,15 @@ void RenderWidgetHostViewNSViewBridgeLocal::ShowDictionaryOverlay(
   };
   [cocoa_view_ showDefinitionForAttributedString:string
                                          atPoint:flipped_baseline_point];
+}
+
+void RenderWidgetHostViewNSViewBridgeLocal::LockKeyboard(
+    base::Optional<base::flat_set<ui::DomCode>> dom_codes) {
+  [cocoa_view_ lockKeyboard:std::move(dom_codes)];
+}
+
+void RenderWidgetHostViewNSViewBridgeLocal::UnlockKeyboard() {
+  [cocoa_view_ unlockKeyboard];
 }
 
 }  // namespace

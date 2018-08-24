@@ -58,6 +58,7 @@
 #include "third_party/blink/renderer/core/css/font_face.h"
 #include "third_party/blink/renderer/core/css/media_query_evaluator.h"
 #include "third_party/blink/renderer/core/css/page_rule_collector.h"
+#include "third_party/blink/renderer/core/css/part_names.h"
 #include "third_party/blink/renderer/core/css/properties/css_property.h"
 #include "third_party/blink/renderer/core/css/resolver/animated_style_builder.h"
 #include "third_party/blink/renderer/core/css/resolver/css_variable_resolver.h"
@@ -76,6 +77,7 @@
 #include "third_party/blink/renderer/core/dom/first_letter_pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/node_computed_style.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
+#include "third_party/blink/renderer/core/dom/space_split_string.h"
 #include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
@@ -91,7 +93,10 @@
 #include "third_party/blink/renderer/core/style_property_shorthand.h"
 #include "third_party/blink/renderer/core/svg/svg_element.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
+#include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
+#include "third_party/blink/renderer/platform/wtf/text/atomic_string_hash.h"
 
 namespace blink {
 
@@ -186,6 +191,9 @@ static inline ScopedStyleResolver* ScopedResolverFor(const Element& element) {
   return tree_scope->GetScopedStyleResolver();
 }
 
+// Matches :host and :host-context rules if the element is a shadow host.
+// It matches rules from the ShadowHostRules of the ScopedStyleResolver
+// of the attached shadow root.
 static void MatchHostRules(const Element& element,
                            ElementRuleCollector& collector) {
   ShadowRoot* shadow_root = element.GetShadowRoot();
@@ -200,6 +208,10 @@ static void MatchHostRules(const Element& element,
   }
 }
 
+// Matches `::slotted` selectors. It matches rules in the element's slot's
+// scope. If that slot is itself slotted it will match rules in the slot's
+// slot's scope and so on. The result is that it considers a chain of scopes
+// descending from the element's own scope.
 static void MatchSlottedRules(const Element& element,
                               ElementRuleCollector& collector) {
   HTMLSlotElement* slot = element.AssignedSlot();
@@ -220,6 +232,8 @@ static void MatchSlottedRules(const Element& element,
   }
 }
 
+// Matches rules from the element's scope. The selectors may cross shadow
+// boundaries during matching, like for :host-context.
 static void MatchElementScopeRules(const Element& element,
                                    ScopedStyleResolver* element_scope_resolver,
                                    ElementRuleCollector& collector) {
@@ -246,24 +260,39 @@ void StyleResolver::MatchPseudoPartRules(const Element& element,
   if (!RuntimeEnabledFeatures::CSSPartPseudoElementEnabled())
     return;
 
-  if (!element.HasPartName())
+  const SpaceSplitString* part_names = element.PartNames();
+  if (!part_names)
     return;
 
-  TreeScope& tree_scope = element.GetTreeScope();
-  if (tree_scope == GetDocument().GetTreeScope())
+  PartNames current_names(*part_names);
+
+  // ::part selectors in the shadow host's scope and above can match this
+  // element.
+  Element* host = element.OwnerShadowHost();
+  if (!host)
     return;
 
-  TreeScope* parent_tree_scope = &tree_scope;
-  // TODO(b/805271): We can terminate early if we pass through a host with no
-  // exported parts. Requires implementing partmap.
-  while ((parent_tree_scope = parent_tree_scope->ParentTreeScope())) {
-    if (ScopedStyleResolver* resolver =
-            parent_tree_scope->GetScopedStyleResolver()) {
+  while (current_names.size()) {
+    TreeScope& tree_scope = host->GetTreeScope();
+    if (ScopedStyleResolver* resolver = tree_scope.GetScopedStyleResolver()) {
       collector.ClearMatchedRules();
-      resolver->CollectMatchingPartPseudoRules(collector);
+      resolver->CollectMatchingPartPseudoRules(collector, current_names);
       collector.SortAndTransferMatchedRules();
       collector.FinishAddingAuthorRulesForTreeScope();
     }
+
+    // We have reached the top-level document.
+    if (!(host = host->OwnerShadowHost()))
+      return;
+
+    // After the direct host of the element, if the host doesn't forward any
+    // parts using partmap= then the element is unreachable from any scope above
+    // and we can stop.
+    const NamesMap* part_map = host->PartNamesMap();
+    if (!part_map)
+      return;
+
+    current_names.PushMap(*part_map);
   }
 }
 
@@ -771,7 +800,7 @@ scoped_refptr<AnimatableValue> StyleResolver::CreateAnimatableValueSnapshot(
     StyleBuilder::ApplyProperty(property, state, *value);
     state.GetFontBuilder().CreateFont(
         state.GetDocument().GetStyleEngine().GetFontSelector(),
-        state.MutableStyleRef());
+        state.StyleRef());
   }
   return CSSAnimatableValueFactory::Create(property, *state.Style());
 }
@@ -1007,6 +1036,7 @@ scoped_refptr<ComputedStyle> StyleResolver::InitialStyleForElement(
                                                            : EOrder::kLogical);
   initial_style->SetZoom(frame && !document.Printing() ? frame->PageZoomFactor()
                                                        : 1);
+  initial_style->SetEffectiveZoom(initial_style->Zoom());
 
   FontDescription document_font_description =
       initial_style->GetFontDescription();
@@ -1032,8 +1062,7 @@ scoped_refptr<ComputedStyle> StyleResolver::StyleForText(Text* text_node) {
 
 void StyleResolver::UpdateFont(StyleResolverState& state) {
   state.GetFontBuilder().CreateFont(
-      GetDocument().GetStyleEngine().GetFontSelector(),
-      state.MutableStyleRef());
+      GetDocument().GetStyleEngine().GetFontSelector(), state.StyleRef());
   state.SetConversionFontSizes(CSSToLengthConversionData::FontSizes(
       state.Style(), state.RootElementStyle()));
   state.SetConversionZoom(state.Style()->EffectiveZoom());
@@ -1151,7 +1180,8 @@ void StyleResolver::ApplyAnimatedCustomProperty(
       ActiveInterpolationsForCustomProperty(state, property);
   const Interpolation& interpolation = *interpolations.front();
   if (interpolation.IsInvalidatableInterpolation()) {
-    CSSInterpolationTypesMap map(state.GetDocument().GetPropertyRegistry());
+    CSSInterpolationTypesMap map(state.GetDocument().GetPropertyRegistry(),
+                                 state.GetDocument());
     CSSInterpolationEnvironment environment(map, state, &variable_resolver);
     InvalidatableInterpolation::ApplyStack(interpolations, environment);
   } else {
@@ -1265,7 +1295,8 @@ void StyleResolver::ApplyAnimatedStandardProperties(
       continue;
     const Interpolation& interpolation = *entry.value.front();
     if (interpolation.IsInvalidatableInterpolation()) {
-      CSSInterpolationTypesMap map(state.GetDocument().GetPropertyRegistry());
+      CSSInterpolationTypesMap map(state.GetDocument().GetPropertyRegistry(),
+                                   state.GetDocument());
       CSSInterpolationEnvironment environment(map, state, nullptr);
       InvalidatableInterpolation::ApplyStack(entry.value, environment);
     } else {

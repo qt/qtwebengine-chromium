@@ -255,24 +255,6 @@ CompositorAnimations::CheckCanStartEffectOnCompositor(
         "animations");
   }
 
-  if (RuntimeEnabledFeatures::
-          TurnOff2DAndOpacityCompositorAnimationsEnabled()) {
-    LayoutObject* layout_object = target_element.GetLayoutObject();
-    if (layout_object && layout_object->PaintingLayer()) {
-      CompositingReasons compositing_reasons =
-          layout_object->PaintingLayer()->GetCompositingReasons();
-      bool has_other_compositing_reasons =
-          compositing_reasons != CompositingReason::kNone;
-      // If we are already compositing the element for other reasons, then not
-      // starting the animation on the compositor will not save memory and will
-      // have worse performance.
-      if (!has_other_compositing_reasons) {
-        return FailureCode::AcceleratableAnimNotAccelerated(
-            "Acceleratable animation not accelerated due to an experiment");
-      }
-    }
-  }
-
   return FailureCode::None();
 }
 
@@ -379,7 +361,7 @@ void CompositorAnimations::CancelIncompatibleAnimationsOnCompositor(
 void CompositorAnimations::StartAnimationOnCompositor(
     const Element& element,
     int group,
-    WTF::Optional<double> start_time,
+    base::Optional<double> start_time,
     double time_offset,
     const Timing& timing,
     const Animation* animation,
@@ -410,7 +392,7 @@ void CompositorAnimations::StartAnimationOnCompositor(
 
 void CompositorAnimations::CancelAnimationOnCompositor(
     const Element& element,
-    const Animation& animation,
+    CompositorAnimation* compositor_animation,
     int id) {
   if (!CheckCanStartElementOnCompositor(element).Ok()) {
     // When an element is being detached, we cancel any associated
@@ -420,8 +402,6 @@ void CompositorAnimations::CancelAnimationOnCompositor(
     // compositing update.
     return;
   }
-  CompositorAnimation* compositor_animation =
-      animation.GetCompositorAnimation();
   if (compositor_animation)
     compositor_animation->RemoveKeyframeModel(id);
 }
@@ -464,9 +444,7 @@ void CompositorAnimations::AttachCompositedLayers(
         !layer->GetCompositedLayerMapping()->MainGraphicsLayer())
       return;
 
-    if (!layer->GetCompositedLayerMapping()
-             ->MainGraphicsLayer()
-             ->PlatformLayer())
+    if (!layer->GetCompositedLayerMapping()->MainGraphicsLayer()->CcLayer())
       return;
   }
 
@@ -573,7 +551,7 @@ void AddKeyframesToCurve(PlatformAnimationCurveType& curve,
 void CompositorAnimations::GetAnimationOnCompositor(
     const Timing& timing,
     int group,
-    WTF::Optional<double> start_time,
+    base::Optional<double> start_time,
     double time_offset,
     const KeyframeEffectModelBase& effect,
     Vector<std::unique_ptr<CompositorKeyframeModel>>& keyframe_models,

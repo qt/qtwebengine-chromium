@@ -59,6 +59,7 @@
 #include "ui/base/webui/web_ui_util.h"
 
 #if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/quick_unlock/pin_backend.h"
 #include "components/signin/core/browser/signin_manager_base.h"
 #else
 #include "chrome/browser/ui/user_manager.h"
@@ -224,10 +225,6 @@ void PeopleHandler::RegisterMessages() {
       base::BindRepeating(&PeopleHandler::HandleSetDatatypes,
                           base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
-      "SyncSetupSetSyncEverything",
-      base::BindRepeating(&PeopleHandler::HandleSetSyncEverything,
-                          base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
       "SyncSetupSetEncryption",
       base::BindRepeating(&PeopleHandler::HandleSetEncryption,
                           base::Unretained(this)));
@@ -247,6 +244,10 @@ void PeopleHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "AttemptUserExit",
       base::BindRepeating(&PeopleHandler::HandleAttemptUserExit,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "RequestPinLoginState",
+      base::BindRepeating(&PeopleHandler::HandleRequestPinLoginState,
                           base::Unretained(this)));
 #else
   web_ui()->RegisterMessageCallback(
@@ -367,6 +368,12 @@ void PeopleHandler::DisplayGaiaLoginInNewTabOrWindow(
 }
 #endif
 
+#if defined(OS_CHROMEOS)
+void PeopleHandler::OnPinLoginAvailable(bool is_available) {
+  FireWebUIListener("pin-login-available-changed", base::Value(is_available));
+}
+#endif
+
 void PeopleHandler::DisplaySpinner() {
   configuring_sync_ = true;
 
@@ -459,30 +466,6 @@ void PeopleHandler::HandleSetDatatypes(const base::ListValue* args) {
   ProfileMetrics::LogProfileSyncInfo(ProfileMetrics::SYNC_CUSTOMIZE);
   if (!configuration.sync_everything)
     ProfileMetrics::LogProfileSyncInfo(ProfileMetrics::SYNC_CHOOSE);
-}
-
-// This function is different from HandleSetDatatypes, in that it only sets
-// the syncAllDatatypes without overriding other prefs' on-disk values.
-void PeopleHandler::HandleSetSyncEverything(const base::ListValue* args) {
-  DCHECK(!sync_startup_tracker_);
-
-  CHECK_EQ(2U, args->GetSize());
-  const base::Value& callback_id = args->GetList()[0];
-  bool sync_everything = args->GetList()[1].GetBool();
-
-  ProfileSyncService* service = GetSyncService();
-  // If the sync engine has shutdown for some reason, just close the sync
-  // dialog.
-  if (!service || !service->IsEngineInitialized()) {
-    CloseSyncSetup();
-    ResolveJavascriptCallback(callback_id, base::Value(kDonePageStatus));
-    return;
-  }
-
-  service->OnUserChangedSyncEverythingOnly(sync_everything);
-  ResolveJavascriptCallback(callback_id, base::Value(kConfigurePageStatus));
-
-  ProfileMetrics::LogProfileSyncInfo(ProfileMetrics::SYNC_CUSTOMIZE);
 }
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
@@ -638,6 +621,9 @@ void PeopleHandler::HandleShowSetupUI(const base::ListValue* args) {
     if (service && !sync_blocker_)
       sync_blocker_ = service->GetSetupInProgressHandle();
 
+    // Preemptively mark login UI as active, because the user could potentially
+    // sign-in directly from this UI without triggering handleShowSetupUI again.
+    GetLoginUIService()->SetLoginUI(this);
     FireWebUIListener("sync-prefs-changed", base::DictionaryValue());
     return;
   }
@@ -701,6 +687,13 @@ void PeopleHandler::HandleShowSetupUI(const base::ListValue* args) {
 void PeopleHandler::HandleAttemptUserExit(const base::ListValue* args) {
   DVLOG(1) << "Signing out the user to fix a sync error.";
   chrome::AttemptUserExit();
+}
+
+void PeopleHandler::HandleRequestPinLoginState(const base::ListValue* args) {
+  AllowJavascript();
+  chromeos::quick_unlock::PinBackend::GetInstance()->HasLoginSupport(
+      base::BindOnce(&PeopleHandler::OnPinLoginAvailable,
+                     weak_factory_.GetWeakPtr()));
 }
 #endif
 

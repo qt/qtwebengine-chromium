@@ -6,14 +6,17 @@
 #define CONTENT_BROWSER_DEVTOOLS_PROTOCOL_NETWORK_HANDLER_H_
 
 #include <memory>
+#include <vector>
 
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "base/optional.h"
 #include "content/browser/devtools/devtools_url_loader_interceptor.h"
 #include "content/browser/devtools/protocol/devtools_domain_handler.h"
 #include "content/browser/devtools/protocol/network.h"
+#include "mojo/public/cpp/system/data_pipe.h"
 #include "net/base/net_errors.h"
 #include "net/cookies/canonical_cookie.h"
 #include "services/network/public/mojom/network_service.mojom.h"
@@ -25,6 +28,7 @@ class UnguessableToken;
 namespace net {
 class HttpRequestHeaders;
 class URLRequest;
+class SSLInfo;
 }  // namespace net
 
 namespace network {
@@ -36,21 +40,24 @@ struct URLLoaderCompletionStatus;
 namespace content {
 class BrowserContext;
 class DevToolsAgentHostImpl;
+class DevToolsIOContext;
 class RenderFrameHostImpl;
 class InterceptionHandle;
 class NavigationHandle;
 class NavigationRequest;
 class NavigationThrottle;
+class SignedExchangeHeader;
 class StoragePartition;
 struct GlobalRequestID;
 struct InterceptedRequestInfo;
 
 namespace protocol {
+class BackgroundSyncRestorer;
 
 class NetworkHandler : public DevToolsDomainHandler,
                        public Network::Backend {
  public:
-  explicit NetworkHandler(const std::string& host_id);
+  NetworkHandler(const std::string& host_id, DevToolsIOContext* io_context);
   ~NetworkHandler() override;
 
   static std::vector<NetworkHandler*> ForAgentHost(DevToolsAgentHostImpl* host);
@@ -124,10 +131,15 @@ class NetworkHandler : public DevToolsDomainHandler,
       const String& interception_id,
       std::unique_ptr<GetResponseBodyForInterceptionCallback> callback)
       override;
+  void TakeResponseBodyForInterceptionAsStream(
+      const String& interception_id,
+      std::unique_ptr<TakeResponseBodyForInterceptionAsStreamCallback> callback)
+      override;
 
   bool MaybeCreateProxyForInterception(
       const base::UnguessableToken& frame_token,
       int process_id,
+      bool is_download,
       network::mojom::URLLoaderFactoryRequest* target_factory_request);
 
   void ApplyOverrides(net::HttpRequestHeaders* headers,
@@ -137,7 +149,8 @@ class NetworkHandler : public DevToolsDomainHandler,
   void RequestSent(const std::string& request_id,
                    const std::string& loader_id,
                    const network::ResourceRequest& request,
-                   const char* initiator_type);
+                   const char* initiator_type,
+                   const base::Optional<GURL>& initiator_url);
   void ResponseReceived(const std::string& request_id,
                         const std::string& loader_id,
                         const GURL& url,
@@ -149,7 +162,13 @@ class NetworkHandler : public DevToolsDomainHandler,
       const char* resource_type,
       const network::URLLoaderCompletionStatus& completion_status);
 
-  void NavigationFailed(NavigationRequest* navigation_request);
+  void OnSignedExchangeReceived(
+      base::Optional<const base::UnguessableToken> devtools_navigation_token,
+      const GURL& outer_request_url,
+      const network::ResourceResponseHead& outer_response,
+      const base::Optional<SignedExchangeHeader>& header,
+      const base::Optional<net::SSLInfo>& ssl_info,
+      const std::vector<std::string>& error_messages);
 
   bool enabled() const { return enabled_; }
 
@@ -172,6 +191,15 @@ class NetworkHandler : public DevToolsDomainHandler,
   void RequestIntercepted(std::unique_ptr<InterceptedRequestInfo> request_info);
   void SetNetworkConditions(network::mojom::NetworkConditionsPtr conditions);
 
+  void OnResponseBodyPipeTaken(
+      std::unique_ptr<TakeResponseBodyForInterceptionAsStreamCallback> callback,
+      Response response,
+      mojo::ScopedDataPipeConsumerHandle pipe,
+      const std::string& mime_type);
+
+  const std::string host_id_;
+  DevToolsIOContext* const io_context_;
+
   std::unique_ptr<Network::Frontend> frontend_;
   BrowserContext* browser_context_;
   StoragePartition* storage_partition_;
@@ -179,11 +207,11 @@ class NetworkHandler : public DevToolsDomainHandler,
   bool enabled_;
   std::string user_agent_;
   std::vector<std::pair<std::string, std::string>> extra_headers_;
-  std::string host_id_;
   std::unique_ptr<InterceptionHandle> interception_handle_;
   std::unique_ptr<DevToolsURLLoaderInterceptor> url_loader_interceptor_;
   bool bypass_service_worker_;
   bool cache_disabled_;
+  std::unique_ptr<BackgroundSyncRestorer> background_sync_restorer_;
   base::WeakPtrFactory<NetworkHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkHandler);

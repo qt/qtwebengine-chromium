@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/webui/chromeos/login/arc_terms_of_service_screen_handler.h"
 
+#include "base/command_line.h"
 #include "base/i18n/timezone.h"
 #include "chrome/browser/chromeos/arc/arc_support_host.h"
 #include "chrome/browser/chromeos/arc/arc_util.h"
@@ -117,11 +118,7 @@ void ArcTermsOfServiceScreenHandler::DeclareLocalizedValues(
       IDS_ARC_OPT_IN_LEARN_MORE_BACKUP_AND_RESTORE);
   builder->Add("arcLearnMorePaiService", IDS_ARC_OPT_IN_LEARN_MORE_PAI_SERVICE);
   builder->Add("arcOverlayClose", IDS_ARC_OOBE_TERMS_POPUP_HELP_CLOSE_BUTTON);
-}
-
-void ArcTermsOfServiceScreenHandler::SendArcManagedStatus(Profile* profile) {
-  CallJS("setArcManaged",
-         arc::IsArcPlayStoreEnabledPreferenceManagedForProfile(profile));
+  builder->Add("arcOverlayLoading", IDS_ARC_POPUP_HELP_LOADING);
 }
 
 void ArcTermsOfServiceScreenHandler::OnMetricsModeChanged(bool enabled,
@@ -221,13 +218,21 @@ void ArcTermsOfServiceScreenHandler::DoShow() {
   // ARC is enabled (prefs::kArcEnabled = true) on showing Terms of Service. If
   // user accepts ToS then prefs::kArcEnabled is left activated. If user skips
   // ToS then prefs::kArcEnabled is automatically reset in ArcSessionManager.
-  profile->GetPrefs()->SetBoolean(arc::prefs::kArcEnabled, true);
+  arc::SetArcPlayStoreEnabledForProfile(profile, true);
+
+  // Hide the Skip button if the ToS screen can not be skipped during OOBE.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          chromeos::switches::kEnableArcOobeOptinNoSkip)) {
+    CallJS("hideSkipButton");
+  }
 
   action_taken_ = false;
 
   ShowScreen(kScreenId);
 
-  SendArcManagedStatus(profile);
+  arc_managed_ = arc::IsArcPlayStoreEnabledPreferenceManagedForProfile(profile);
+  CallJS("setArcManaged", arc_managed_);
+
   MaybeLoadPlayStoreToS(true);
   StartNetworkAndTimeZoneObserving();
 
@@ -243,9 +248,61 @@ bool ArcTermsOfServiceScreenHandler::NeedDispatchEventOnAction() {
   return true;
 }
 
-void ArcTermsOfServiceScreenHandler::HandleSkip() {
+void ArcTermsOfServiceScreenHandler::RecordConsents(
+    const std::string& tos_content,
+    bool record_tos_content,
+    bool tos_accepted,
+    bool record_backup_consent,
+    bool backup_accepted,
+    bool record_location_consent,
+    bool location_accepted) {
+  Profile* profile = ProfileManager::GetActiveUserProfile();
+  consent_auditor::ConsentAuditor* consent_auditor =
+      ConsentAuditorFactory::GetForProfile(profile);
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfile(profile);
+  DCHECK(signin_manager->IsAuthenticated());
+  const std::string account_id = signin_manager->GetAuthenticatedAccountId();
+
+  // TODO(jhorwich): Replace this approach when passing |is_managed| boolean is
+  // supported by the underlying consent protos.
+  const std::vector<int> consent_ids = ArcSupportHost::ComputePlayToSConsentIds(
+      record_tos_content ? tos_content : "");
+
+  consent_auditor->RecordGaiaConsent(
+      account_id, consent_auditor::Feature::PLAY_STORE, consent_ids,
+      IDS_ARC_OOBE_TERMS_BUTTON_ACCEPT,
+      tos_accepted ? consent_auditor::ConsentStatus::GIVEN
+                   : consent_auditor::ConsentStatus::NOT_GIVEN);
+
+  if (record_backup_consent) {
+    consent_auditor->RecordGaiaConsent(
+        account_id, consent_auditor::Feature::BACKUP_AND_RESTORE,
+        {IDS_ARC_OPT_IN_DIALOG_BACKUP_RESTORE},
+        IDS_ARC_OOBE_TERMS_BUTTON_ACCEPT,
+        backup_accepted ? consent_auditor::ConsentStatus::GIVEN
+                        : consent_auditor::ConsentStatus::NOT_GIVEN);
+  }
+
+  if (record_location_consent) {
+    consent_auditor->RecordGaiaConsent(
+        account_id, consent_auditor::Feature::GOOGLE_LOCATION_SERVICE,
+        {IDS_ARC_OPT_IN_LOCATION_SETTING}, IDS_ARC_OOBE_TERMS_BUTTON_ACCEPT,
+        location_accepted ? consent_auditor::ConsentStatus::GIVEN
+                          : consent_auditor::ConsentStatus::NOT_GIVEN);
+  }
+}
+
+void ArcTermsOfServiceScreenHandler::HandleSkip(
+    const std::string& tos_content) {
   if (!NeedDispatchEventOnAction())
     return;
+
+  // Record consents as not accepted for consents that are under user control
+  // when the user skips ARC setup.
+  RecordConsents(tos_content, !arc_managed_, /*tos_accepted=*/false,
+                 !backup_restore_managed_, /*backup_accepted=*/false,
+                 !location_services_managed_, /*location_accepted=*/false);
 
   for (auto& observer : observer_list_)
     observer.OnSkip();
@@ -260,36 +317,11 @@ void ArcTermsOfServiceScreenHandler::HandleAccept(
   pref_handler_->EnableBackupRestore(enable_backup_restore);
   pref_handler_->EnableLocationService(enable_location_services);
 
-  Profile* profile = ProfileManager::GetActiveUserProfile();
-  consent_auditor::ConsentAuditor* consent_auditor =
-      ConsentAuditorFactory::GetForProfile(profile);
-  SigninManagerBase* signin_manager =
-      SigninManagerFactory::GetForProfile(profile);
-  DCHECK(signin_manager->IsAuthenticated());
-  std::string account_id = signin_manager->GetAuthenticatedAccountId();
-
-  // Record acceptance of Play ToS.
-  consent_auditor->RecordGaiaConsent(
-      account_id, consent_auditor::Feature::PLAY_STORE,
-      ArcSupportHost::ComputePlayToSConsentIds(tos_content),
-      IDS_ARC_OOBE_TERMS_BUTTON_ACCEPT, consent_auditor::ConsentStatus::GIVEN);
-
-  // If the user - not policy - chose Backup and Restore, record consent.
-  if (enable_backup_restore && !backup_restore_managed_) {
-    consent_auditor->RecordGaiaConsent(
-        account_id, consent_auditor::Feature::BACKUP_AND_RESTORE,
-        {IDS_ARC_OPT_IN_DIALOG_BACKUP_RESTORE},
-        IDS_ARC_OOBE_TERMS_BUTTON_ACCEPT,
-        consent_auditor::ConsentStatus::GIVEN);
-  }
-
-  // If the user - not policy - chose Location Services, record consent.
-  if (enable_location_services && !location_services_managed_) {
-    consent_auditor->RecordGaiaConsent(
-        account_id, consent_auditor::Feature::GOOGLE_LOCATION_SERVICE,
-        {IDS_ARC_OPT_IN_LOCATION_SETTING}, IDS_ARC_OOBE_TERMS_BUTTON_ACCEPT,
-        consent_auditor::ConsentStatus::GIVEN);
-  }
+  // Record consents as accepted or not accepted as appropriate for consents
+  // that are under user control when the user completes ARC setup.
+  RecordConsents(tos_content, !arc_managed_, /*tos_accepted=*/true,
+                 !backup_restore_managed_, enable_backup_restore,
+                 !location_services_managed_, enable_location_services);
 
   for (auto& observer : observer_list_)
     observer.OnAccept();

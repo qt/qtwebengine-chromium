@@ -241,6 +241,10 @@
   in linux format.">
     Export Linux
   </message>
+  <message name="IDS_EXPORT_POLICIES_MAC" desc="Button that exports the current session policy
+  in mac format (.plist).">
+    Export MacOS
+  </message>
   <message name="IDS_POLICY_TOOL_EDIT" desc="Label for the button to change policy value in current session.">
     Edit
   </message>
@@ -258,6 +262,9 @@
   </message>
   <message name="IDS_POLICY_TOOL_SESSION_NAME_PLACEHOLDER" desc="Placeholder for the input field that lets the user change policy management sessions.">
     Session name
+  </message>
+  <message name="IDS_POLICY_TOOL_INVALID_TYPE" desc="The text displayed in the status column when the value type doesn't match the actual policy type.">
+    The policy type is invalid.
   </message>
   <message name="IDS_POLICY_TOOL_SAVING_DISABLED" desc="A message that is shown to the user when there is some problem that prevents saving the session to disk.">
     There was a problem accessing the session files. Saving to disk is currently disabled. Please reload the page to try again.
@@ -316,6 +323,9 @@
   </message>
   <message name="IDS_POLICY_LABEL_USERNAME" desc="Label for the username in the user policy status box.">
     User:
+  </message>
+  <message name="IDS_POLICY_LABEL_GAIA_ID" desc="Label for the user GAIA ID in the user policy status box.">
+    Gaia ID:
   </message>
   <message name="IDS_POLICY_LABEL_CLIENT_ID" desc="Label for the client IDs in the policy status boxes.">
     Client ID:

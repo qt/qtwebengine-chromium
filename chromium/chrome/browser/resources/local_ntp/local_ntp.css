@@ -3,6 +3,10 @@
  * found in the LICENSE file. */
 
 html {
+  /* Material Design constants */
+  --md-tile-height: 104px;
+  --md-tile-margin: 8px;
+
   /* This will be overridden based on the viewport width, see below. */
   --column-count: 2;
 
@@ -288,6 +292,14 @@ body.alternate-logo #logo-non-white {
   transition: box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.md #fakebox {
+  background-color: rgb(241, 243, 244);
+  border-radius: 22px;
+  box-shadow: none;
+  margin: 0 auto;
+  max-width: 560px;
+}
+
 .non-google-page #fakebox-container {
   display: none;
 }
@@ -295,6 +307,11 @@ body.alternate-logo #logo-non-white {
 #fakebox:hover,
 body.fakebox-focused #fakebox {
   box-shadow: 0 3px 8px 0 rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.md #fakebox:hover,
+body.md.fakebox-focused #fakebox {
+  box-shadow: none;
 }
 
 #fakebox > input {
@@ -309,10 +326,18 @@ body.fakebox-focused #fakebox {
   width: 100%;
 }
 
+.md #fakebox > input {
+  padding-left: 20px;
+}
+
 html[dir=rtl] #fakebox > input {
   padding-left: 0;
   padding-right: 8px;
   right: 0;
+}
+
+.md html[dir=rtl] #fakebox > input {
+  padding-right: 20px;
 }
 
 #fakebox-text {
@@ -333,6 +358,14 @@ html[dir=rtl] #fakebox > input {
   white-space: nowrap;
 }
 
+.md #fakebox-text {
+  color: rgb(128, 134, 139);
+  font-family: 'Roboto', arial, sans-serif;
+  font-size: 14px;
+  left: 0;
+  padding-left: 20px;
+}
+
 html[dir=rtl] #fakebox-text {
   left: auto;
   right: 13px;
@@ -348,9 +381,17 @@ html[dir=rtl] #fakebox-text {
   width: 1px;
 }
 
+.md #fakebox-cursor {
+  left: 20px;
+}
+
 html[dir=rtl] #fakebox-cursor {
   left: auto;
   right: 13px;
+}
+
+.md html[dir=rtl] #fakebox-cursor {
+  right: 20px;
 }
 
 #fakebox-microphone {
@@ -363,6 +404,12 @@ html[dir=rtl] #fakebox-cursor {
   right: 0;
   top: 0;
   width: 41px;
+}
+
+.md #fakebox-microphone {
+  background-size: 16px 16px;
+  margin-right: 12px;
+  width: 28px;
 }
 
 html[dir=rtl] #fakebox-microphone {
@@ -399,6 +446,10 @@ body.fakebox-focused #fakebox-cursor {
   user-select: none;
 }
 
+.md-icons #most-visited {
+  margin-top: 30px;
+}
+
 /* Non-Google pages have no Fakebox, so don't need top margin. */
 .non-google-page #most-visited {
   margin-top: 0;
@@ -413,6 +464,13 @@ body.fakebox-focused #fakebox-cursor {
   position: relative;
   text-align: -webkit-auto;
   width: var(--content-width);
+}
+
+.md-icons #mv-tiles {
+  /* Two rows of tiles of 104px each, 8px of spacing after each row, and 10px of
+   * margin on top and bottom. If you change this, also change the corresponding
+   * values in most_visited_single.css. */
+  height: calc(2*(var(--md-tile-height) + var(--md-tile-margin)) + 2*10px);
 }
 
 #mv-notice-x {
@@ -446,6 +504,29 @@ html[dir=rtl] #mv-notice-x {
   background-color: rgb(66,133,244);
 }
 
+.md-icons #mv-notice-x {
+  display: none;
+}
+
+#mv-notice-container {
+  width: 100%;
+}
+
+.md-icons #mv-notice-container {
+  bottom: -50px;
+  margin-bottom: 16px;
+  position: fixed;
+  transition: bottom 400ms;
+}
+
+.md-icons #mv-notice-container.float-up {
+  bottom: 0;
+}
+
+.md-icons #mv-notice-container.mv-notice-hide {
+  display: none;
+}
+
 /* The notification shown when a tile is blacklisted. */
 #mv-notice {
   font-size: 12px;
@@ -454,12 +535,32 @@ html[dir=rtl] #mv-notice-x {
   padding: 10px 0;
 }
 
+.md-icons #mv-notice {
+  background-color: white;
+  border: 1px solid rgb(218, 220, 224);
+  /* Necessary for a "pill" shape. Using 50% creates an oval. */
+  border-radius: 500px;
+  font-family: 'Roboto';
+  font-weight: normal;
+  height: 32px;
+  margin: 0 auto;
+  padding: 0;
+  width: fit-content;
+}
+
 #mv-notice span {
   cursor: default;
   display: inline-block;
   height: 16px;
   line-height: 16px;
   vertical-align: top;
+}
+
+.md-icons #mv-notice span {
+  color: rgb(95,99,104);
+  height: auto;
+  line-height: 32px;
+  vertical-align: unset;
 }
 
 /* Links in the notification. */
@@ -471,13 +572,32 @@ html[dir=rtl] #mv-notice-x {
   padding: 0 4px;
 }
 
+.md-icons #mv-notice-links span {
+  -webkit-margin-start: 0;
+  /* Necessary for a "pill" shape. Using 50% creates an oval. */
+  border-radius: 500px;
+  color: rgb(26,115,232);
+  padding: 0 16px;
+}
+
 #mv-notice-links span:hover,
 #mv-notice-links span:focus {
   text-decoration: underline;
 }
 
+.md-icons #mv-notice-links span:hover,
+.md-icons #mv-notice-links span:active {
+  background-color: rgba(26,115,232, 0.1);
+  text-decoration: none;
+  transition: background-color 200ms;
+}
+
 #mv-msg {
   color: var(--text-color);
+}
+
+.md-icons #mv-msg {
+  padding: 0 16px;
 }
 
 .default-theme.dark #mv-msg {
@@ -535,3 +655,88 @@ html[dir=rtl] #attribution,
 #one-google.hidden {
   opacity: 0;
 }
+
+.ripple-container {
+  height: 0;
+  left: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  width: 0;
+  z-index: 100;
+}
+
+.ripple-effect {
+  background-color: rgba(26, 115, 232, 0.1);
+  border-radius: 50%;
+  height: 1px;
+  pointer-events: none;
+  transition: width, height, margin, background-color 400ms 250ms;
+  transition-duration: 400ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  width: 1px;
+}
+
+/* The box containing the slider */
+.switch {
+  background-color: #fff;
+  border-radius: 8px;
+  display: inline-block;
+  height: 12px;
+  left: 3px;
+  position: absolute;
+  top: 2px;
+  transition: background-color linear 80ms;
+  width: 28px;
+  z-index: 0;
+}
+
+/* Hide default checkbox */
+.switch input {
+  display: none;
+}
+
+/* Rounded background element for the toggle */
+.toggle {
+  background-color: #ccc;
+  border-radius: 34px;
+  bottom: 0;
+  cursor: pointer;
+  display: block;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+  transition: transform linear 80ms, background-color linear 80ms;
+}
+
+.toggle::before {
+  background-color: #fff;
+  border-radius: 50%;
+  bottom: -2px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4);
+  content: '';
+  display: block;
+  height: 16px;
+  left: -6px;
+  position: absolute;
+  transition: transform linear 80ms, background-color linear 80ms;
+  width: 16px;
+}
+
+input:checked + .toggle {
+  background-color: rgba(26, 115, 232, .5);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4);
+}
+
+input:focus + .toggle {
+  box-shadow: 0 0 1px rgb(33, 150, 243);
+}
+
+input:checked + .toggle::before {
+  -webkit-transform: translateX(26px);
+  background-color: rgb(26, 115, 232);
+  transform: translateX(26px);
+}
+

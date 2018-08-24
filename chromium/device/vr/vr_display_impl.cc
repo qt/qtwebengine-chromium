@@ -9,71 +9,29 @@
 #include "base/bind.h"
 #include "device/vr/vr_device_base.h"
 
+namespace {
+constexpr int kMaxImageHeightOrWidth = 8000;
+}  // namespace
+
 namespace device {
 
 VRDisplayImpl::VRDisplayImpl(VRDevice* device,
                              mojom::VRServiceClient* service_client,
                              mojom::VRDisplayInfoPtr display_info,
                              mojom::VRDisplayHostPtr display_host,
+                             mojom::VRDisplayClientRequest client_request,
                              bool in_focused_frame)
     : binding_(this),
       device_(static_cast<VRDeviceBase*>(device)),
       in_focused_frame_(in_focused_frame) {
-  device_->AddDisplay(this);
   mojom::VRMagicWindowProviderPtr magic_window_provider;
   binding_.Bind(mojo::MakeRequest(&magic_window_provider));
   service_client->OnDisplayConnected(
       std::move(magic_window_provider), std::move(display_host),
-      mojo::MakeRequest(&client_), std::move(display_info));
+      std::move(client_request), std::move(display_info));
 }
 
-VRDisplayImpl::~VRDisplayImpl() {
-  device_->RemoveDisplay(this);
-}
-
-void VRDisplayImpl::OnChanged(mojom::VRDisplayInfoPtr vr_device_info) {
-  client_->OnChanged(std::move(vr_device_info));
-}
-
-void VRDisplayImpl::OnExitPresent() {
-  client_->OnExitPresent();
-}
-
-void VRDisplayImpl::OnBlur() {
-  client_->OnBlur();
-}
-
-void VRDisplayImpl::OnFocus() {
-  client_->OnFocus();
-}
-
-void VRDisplayImpl::OnActivate(mojom::VRDisplayEventReason reason,
-                               base::Callback<void(bool)> on_handled) {
-  client_->OnActivate(reason, std::move(on_handled));
-}
-
-void VRDisplayImpl::OnDeactivate(mojom::VRDisplayEventReason reason) {
-  client_->OnDeactivate(reason);
-}
-
-void VRDisplayImpl::RequestPresent(
-    mojom::VRSubmitFrameClientPtr submit_client,
-    mojom::VRPresentationProviderRequest request,
-    mojom::VRRequestPresentOptionsPtr present_options,
-    mojom::VRDisplayHost::RequestPresentCallback callback) {
-  if (!device_->IsAccessAllowed(this) || !InFocusedFrame()) {
-    std::move(callback).Run(false, nullptr);
-    return;
-  }
-
-  device_->RequestPresent(this, std::move(submit_client), std::move(request),
-                          std::move(present_options), std::move(callback));
-}
-
-void VRDisplayImpl::ExitPresent() {
-  if (device_->CheckPresentingDisplay(this))
-    device_->ExitPresent();
-}
+VRDisplayImpl::~VRDisplayImpl() = default;
 
 // Gets a pose for magic window sessions.
 void VRDisplayImpl::GetPose(GetPoseCallback callback) {
@@ -82,6 +40,29 @@ void VRDisplayImpl::GetPose(GetPoseCallback callback) {
     return;
   }
   device_->GetMagicWindowPose(std::move(callback));
+}
+
+// Gets frame image data for AR magic window sessions.
+void VRDisplayImpl::GetFrameData(const gfx::Size& frame_size,
+                                 display::Display::Rotation rotation,
+                                 GetFrameDataCallback callback) {
+  if (!device_->IsAccessAllowed(this)) {
+    std::move(callback).Run(nullptr);
+    return;
+  }
+
+  // Check for a valid frame size.
+  // While Mojo should handle negative values, we also do not want to allow 0.
+  // TODO(https://crbug.com/841062): Reconsider how we check the sizes.
+  if (frame_size.width() <= 0 || frame_size.height() <= 0 ||
+      frame_size.width() > kMaxImageHeightOrWidth ||
+      frame_size.height() > kMaxImageHeightOrWidth) {
+    DLOG(ERROR) << "Invalid frame size passed to GetFrameData().";
+    std::move(callback).Run(nullptr);
+    return;
+  }
+
+  device_->GetMagicWindowFrameData(frame_size, rotation, std::move(callback));
 }
 
 void VRDisplayImpl::SetListeningForActivate(bool listening) {

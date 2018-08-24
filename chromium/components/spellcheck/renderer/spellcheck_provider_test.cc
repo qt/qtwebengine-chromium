@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_current.h"
 #include "base/run_loop.h"
 #include "components/spellcheck/common/spellcheck.mojom.h"
 #include "components/spellcheck/common/spellcheck_result.h"
@@ -43,13 +44,15 @@ TestingSpellCheckProvider::TestingSpellCheckProvider(
 
 TestingSpellCheckProvider::~TestingSpellCheckProvider() {
   binding_.Close();
+  // dictionary_update_observer_ must be released before deleting spellcheck_.
+  ResetDictionaryUpdateObserverForTesting();
   delete spellcheck_;
 }
 
 void TestingSpellCheckProvider::RequestTextChecking(
     const base::string16& text,
     blink::WebTextCheckingCompletion* completion) {
-  if (!loop_ && !base::MessageLoop::current())
+  if (!loop_ && !base::MessageLoopCurrent::Get())
     loop_ = std::make_unique<base::MessageLoop>();
   if (!binding_.is_bound()) {
     spellcheck::mojom::SpellCheckHostPtr host_proxy;

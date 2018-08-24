@@ -24,9 +24,9 @@ class RTCSessionDescriptionRequestPromiseImpl final
 
   // RTCSessionDescriptionRequest
   void RequestSucceeded(const WebRTCSessionDescription&) override;
-  void RequestFailed(const String& error) override;
+  void RequestFailed(const webrtc::RTCError& error) override;
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   RTCSessionDescriptionRequestPromiseImpl(RTCPeerConnection*,

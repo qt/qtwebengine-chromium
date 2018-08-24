@@ -5,15 +5,13 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_PAINT_CLIP_PAINT_PROPERTY_NODE_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_PAINT_CLIP_PAINT_PROPERTY_NODE_H_
 
+#include "base/optional.h"
 #include "third_party/blink/renderer/platform/geometry/float_rounded_rect.h"
 #include "third_party/blink/renderer/platform/graphics/paint/geometry_mapper_clip_cache.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_property_node.h"
 #include "third_party/blink/renderer/platform/graphics/paint/transform_paint_property_node.h"
 #include "third_party/blink/renderer/platform/graphics/path.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
-#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
-
-#include <iosfwd>
 
 namespace blink {
 
@@ -28,103 +26,98 @@ class GeometryMapperClipCache;
 class PLATFORM_EXPORT ClipPaintPropertyNode
     : public PaintPropertyNode<ClipPaintPropertyNode> {
  public:
-  // This node is really a sentinel, and does not represent a real clip
-  // space.
+  // To make it less verbose and more readable to construct and update a node,
+  // a struct with default values is used to represent the state.
+  struct State {
+    scoped_refptr<const TransformPaintPropertyNode> local_transform_space;
+    FloatRoundedRect clip_rect;
+    base::Optional<FloatRoundedRect> clip_rect_excluding_overlay_scrollbars;
+    scoped_refptr<const RefCountedPath> clip_path;
+    CompositingReasons direct_compositing_reasons = CompositingReason::kNone;
+
+    // Returns true if the states are equal, ignoring the clip rect excluding
+    // overlay scrollbars which is only used for hit testing.
+    bool EqualIgnoringHitTestRects(const State& o) const {
+      return local_transform_space == o.local_transform_space &&
+             clip_rect == o.clip_rect &&
+             clip_path == o.clip_path &&
+             direct_compositing_reasons == o.direct_compositing_reasons;
+    }
+
+    bool operator==(const State& o) const {
+      if (!EqualIgnoringHitTestRects(o))
+        return false;
+      return clip_rect_excluding_overlay_scrollbars ==
+             o.clip_rect_excluding_overlay_scrollbars;
+    }
+  };
+
+  // This node is really a sentinel, and does not represent a real clip space.
   static ClipPaintPropertyNode* Root();
 
   static scoped_refptr<ClipPaintPropertyNode> Create(
       scoped_refptr<const ClipPaintPropertyNode> parent,
-      scoped_refptr<const TransformPaintPropertyNode> local_transform_space,
-      const FloatRoundedRect& clip_rect,
-      const FloatRoundedRect* clip_rect_excluding_overlay_scrollbars = nullptr,
-      scoped_refptr<const RefCountedPath> clip_path = nullptr,
-      CompositingReasons direct_compositing_reasons =
-          CompositingReason::kNone) {
-    return base::AdoptRef(new ClipPaintPropertyNode(
-        std::move(parent), std::move(local_transform_space), clip_rect,
-        clip_rect_excluding_overlay_scrollbars
-            ? *clip_rect_excluding_overlay_scrollbars
-            : clip_rect,
-        std::move(clip_path), direct_compositing_reasons));
+      State&& state) {
+    return base::AdoptRef(
+        new ClipPaintPropertyNode(std::move(parent), std::move(state)));
   }
 
-  bool Update(
-      scoped_refptr<const ClipPaintPropertyNode> parent,
-      scoped_refptr<const TransformPaintPropertyNode> local_transform_space,
-      const FloatRoundedRect& clip_rect,
-      const FloatRoundedRect* clip_rect_excluding_overlay_scrollbars = nullptr,
-      scoped_refptr<const RefCountedPath> clip_path = nullptr) {
-    bool parent_changed = PaintPropertyNode::Update(std::move(parent));
-
-    if (local_transform_space == local_transform_space_ &&
-        clip_rect == clip_rect_ &&
-        (!clip_rect_excluding_overlay_scrollbars ||
-         *clip_rect_excluding_overlay_scrollbars ==
-             clip_rect_excluding_overlay_scrollbars_) &&
-        clip_path == clip_path_)
+  bool Update(scoped_refptr<const ClipPaintPropertyNode> parent,
+              State&& state) {
+    bool parent_changed = SetParent(parent);
+    if (state == state_)
       return parent_changed;
 
     SetChanged();
-    local_transform_space_ = std::move(local_transform_space);
-    clip_rect_ = clip_rect;
-    clip_rect_excluding_overlay_scrollbars_ =
-        clip_rect_excluding_overlay_scrollbars
-            ? *clip_rect_excluding_overlay_scrollbars
-            : clip_rect;
-    clip_path_ = std::move(clip_path);
+    state_ = std::move(state);
     return true;
   }
 
-  const TransformPaintPropertyNode* LocalTransformSpace() const {
-    return local_transform_space_.get();
-  }
-  const FloatRoundedRect& ClipRect() const { return clip_rect_; }
-  const FloatRoundedRect& ClipRectExcludingOverlayScrollbars() const {
-    return clip_rect_excluding_overlay_scrollbars_;
+  bool EqualIgnoringHitTestRects(
+      scoped_refptr<const ClipPaintPropertyNode> parent,
+      const State& state) const {
+    return parent == Parent() && state_.EqualIgnoringHitTestRects(state);
   }
 
-  const RefCountedPath* ClipPath() const { return clip_path_.get(); }
+  const TransformPaintPropertyNode* LocalTransformSpace() const {
+    return state_.local_transform_space.get();
+  }
+  const FloatRoundedRect& ClipRect() const { return state_.clip_rect; }
+  const FloatRoundedRect& ClipRectExcludingOverlayScrollbars() const {
+    return state_.clip_rect_excluding_overlay_scrollbars
+               ? *state_.clip_rect_excluding_overlay_scrollbars
+               : state_.clip_rect;
+  }
+
+  const RefCountedPath* ClipPath() const { return state_.clip_path.get(); }
+
+  bool HasDirectCompositingReasons() const {
+    return state_.direct_compositing_reasons != CompositingReason::kNone;
+  }
 
 #if DCHECK_IS_ON()
   // The clone function is used by FindPropertiesNeedingUpdate.h for recording
   // a clip node before it has been updated, to later detect changes.
   scoped_refptr<ClipPaintPropertyNode> Clone() const {
-    return base::AdoptRef(new ClipPaintPropertyNode(
-        Parent(), local_transform_space_, clip_rect_, clip_rect_, clip_path_,
-        direct_compositing_reasons_));
+    return base::AdoptRef(new ClipPaintPropertyNode(Parent(), State(state_)));
   }
 
   // The equality operator is used by FindPropertiesNeedingUpdate.h for checking
   // if a clip node has changed.
   bool operator==(const ClipPaintPropertyNode& o) const {
-    return Parent() == o.Parent() &&
-           local_transform_space_ == o.local_transform_space_ &&
-           clip_rect_ == o.clip_rect_ && clip_path_ == o.clip_path_ &&
-           direct_compositing_reasons_ == o.direct_compositing_reasons_;
+    return Parent() == o.Parent() && state_ == o.state_;
   }
 #endif
 
   std::unique_ptr<JSONObject> ToJSON() const;
 
-  bool HasDirectCompositingReasons() const {
-    return direct_compositing_reasons_ != CompositingReason::kNone;
-  }
+  // Returns memory usage of the clip cache of this node plus ancestors.
+  size_t CacheMemoryUsageInBytes() const;
 
  private:
-  ClipPaintPropertyNode(
-      scoped_refptr<const ClipPaintPropertyNode> parent,
-      scoped_refptr<const TransformPaintPropertyNode> local_transform_space,
-      const FloatRoundedRect& clip_rect,
-      const FloatRoundedRect& clip_rect_excluding_overlay_scrollbars,
-      scoped_refptr<const RefCountedPath> clip_path,
-      CompositingReasons direct_compositing_reasons)
-      : PaintPropertyNode(std::move(parent)),
-        local_transform_space_(std::move(local_transform_space)),
-        clip_rect_(clip_rect),
-        clip_rect_excluding_overlay_scrollbars_(
-            clip_rect_excluding_overlay_scrollbars),
-        clip_path_(clip_path),
-        direct_compositing_reasons_(direct_compositing_reasons) {}
+  ClipPaintPropertyNode(scoped_refptr<const ClipPaintPropertyNode> parent,
+                        State&& state)
+      : PaintPropertyNode(std::move(parent)), state_(std::move(state)) {}
 
   // For access to GetClipCache();
   friend class GeometryMapper;
@@ -140,12 +133,7 @@ class PLATFORM_EXPORT ClipPaintPropertyNode
     return *geometry_mapper_clip_cache_.get();
   }
 
-  scoped_refptr<const TransformPaintPropertyNode> local_transform_space_;
-  FloatRoundedRect clip_rect_;
-  FloatRoundedRect clip_rect_excluding_overlay_scrollbars_;
-  scoped_refptr<const RefCountedPath> clip_path_;
-  CompositingReasons direct_compositing_reasons_;
-
+  State state_;
   std::unique_ptr<GeometryMapperClipCache> geometry_mapper_clip_cache_;
 };
 

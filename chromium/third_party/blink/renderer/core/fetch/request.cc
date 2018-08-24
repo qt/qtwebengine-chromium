@@ -273,7 +273,7 @@ Request* Request::CreateRequestWithRequestOrString(
   if (ParseCredentialsMode(init.Credentials(), &credentials_mode)) {
     request->SetCredentials(credentials_mode);
   } else if (!input_request) {
-    request->SetCredentials(network::mojom::FetchCredentialsMode::kOmit);
+    request->SetCredentials(network::mojom::FetchCredentialsMode::kSameOrigin);
   }
 
   // "If |init|'s cache member is present, set |request|'s cache mode to it."
@@ -561,6 +561,7 @@ String Request::destination() const {
     case WebURLRequest::kRequestContextPing:
     case WebURLRequest::kRequestContextXMLHttpRequest:
     case WebURLRequest::kRequestContextSubresource:
+    case WebURLRequest::kRequestContextPrefetch:
       return "";
     case WebURLRequest::kRequestContextCSPReport:
       return "report";
@@ -601,7 +602,6 @@ String Request::destination() const {
     case WebURLRequest::kRequestContextImport:
     case WebURLRequest::kRequestContextInternal:
     case WebURLRequest::kRequestContextPlugin:
-    case WebURLRequest::kRequestContextPrefetch:
     case WebURLRequest::kRequestContextServiceWorker:
       return "unknown";
   }

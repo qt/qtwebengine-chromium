@@ -13,7 +13,6 @@
 
 #include "base/bind.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/values.h"
@@ -114,11 +113,11 @@ SSOAccessTokenFetcher::~SSOAccessTokenFetcher() {
 }
 
 void SSOAccessTokenFetcher::Start(const std::string& client_id,
-                                  const std::string& client_secret,
+                                  const std::string& client_secret_unused,
                                   const std::vector<std::string>& scopes) {
   std::set<std::string> scopes_set(scopes.begin(), scopes.end());
   provider_->GetAccessToken(
-      account_.gaia, client_id, client_secret, scopes_set,
+      account_.gaia, client_id, scopes_set,
       base::Bind(&SSOAccessTokenFetcher::OnAccessTokenResponse,
                  weak_factory_.GetWeakPtr()));
 }

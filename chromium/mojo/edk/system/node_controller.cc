@@ -13,7 +13,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_current.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/process/process_handle.h"
 #include "base/rand_util.h"
@@ -103,8 +103,8 @@ ports::ScopedEvent DeserializeEventMessage(
 // Used by NodeController to watch for shutdown. Since no IO can happen once
 // the IO thread is killed, the NodeController can cleanly drop all its peers
 // at that time.
-class ThreadDestructionObserver :
-    public base::MessageLoop::DestructionObserver {
+class ThreadDestructionObserver
+    : public base::MessageLoopCurrent::DestructionObserver {
  public:
   static void Create(scoped_refptr<base::TaskRunner> task_runner,
                      const base::Closure& callback) {
@@ -120,14 +120,14 @@ class ThreadDestructionObserver :
  private:
   explicit ThreadDestructionObserver(const base::Closure& callback)
       : callback_(callback) {
-    base::MessageLoop::current()->AddDestructionObserver(this);
+    base::MessageLoopCurrent::Get()->AddDestructionObserver(this);
   }
 
   ~ThreadDestructionObserver() override {
-    base::MessageLoop::current()->RemoveDestructionObserver(this);
+    base::MessageLoopCurrent::Get()->RemoveDestructionObserver(this);
   }
 
-  // base::MessageLoop::DestructionObserver:
+  // base::MessageLoopCurrent::DestructionObserver:
   void WillDestroyCurrentMessageLoop() override {
     callback_.Run();
     delete this;
@@ -185,22 +185,12 @@ void NodeController::SendBrokerClientInvitation(
     }
   }
 
-#if defined(OS_WIN)
-  // On Windows, we need to duplicate the process handle because we have no
-  // control over its lifetime and it may become invalid by the time the posted
-  // task runs.
-  HANDLE dup_handle = INVALID_HANDLE_VALUE;
-  BOOL ok = ::DuplicateHandle(base::GetCurrentProcessHandle(), target_process,
-                              base::GetCurrentProcessHandle(), &dup_handle, 0,
-                              FALSE, DUPLICATE_SAME_ACCESS);
-  DPCHECK(ok);
-  target_process = dup_handle;
-#endif
-
+  ScopedProcessHandle scoped_target_process =
+      ScopedProcessHandle::CloneFrom(target_process);
   io_task_runner_->PostTask(
       FROM_HERE,
       base::BindOnce(&NodeController::SendBrokerClientInvitationOnIOThread,
-                     base::Unretained(this), target_process,
+                     base::Unretained(this), std::move(scoped_target_process),
                      std::move(connection_params), temporary_node_name,
                      process_error_callback));
 }
@@ -213,7 +203,8 @@ void NodeController::AcceptBrokerClientInvitation(
   // synchronously as the first message from the broker.
   base::ElapsedTimer timer;
   broker_.reset(new Broker(connection_params.TakeChannelHandle()));
-  ScopedPlatformHandle platform_handle = broker_->GetInviterPlatformHandle();
+  ScopedInternalPlatformHandle platform_handle =
+      broker_->GetInviterInternalPlatformHandle();
 
   if (!platform_handle.is_valid()) {
     // Most likely the inviter's side of the channel has already been closed and
@@ -303,15 +294,15 @@ int NodeController::MergeLocalPorts(const ports::PortRef& port0,
   return node_->MergeLocalPorts(port0, port1);
 }
 
-scoped_refptr<PlatformSharedBuffer> NodeController::CreateSharedBuffer(
+base::WritableSharedMemoryRegion NodeController::CreateSharedBuffer(
     size_t num_bytes) {
 #if !defined(OS_MACOSX) && !defined(OS_NACL_SFI) && !defined(OS_FUCHSIA)
   // Shared buffer creation failure is fatal, so always use the broker when we
   // have one; unless of course the embedder forces us not to.
   if (!GetConfiguration().force_direct_shared_memory_allocation && broker_)
-    return broker_->GetSharedBuffer(num_bytes);
+    return broker_->GetWritableSharedMemoryRegion(num_bytes);
 #endif
-  return PlatformSharedBuffer::Create(num_bytes);
+  return base::WritableSharedMemoryRegion::Create(num_bytes);
 }
 
 void NodeController::RequestShutdown(const base::Closure& callback) {
@@ -332,7 +323,7 @@ void NodeController::NotifyBadMessageFrom(const ports::NodeName& source_node,
 }
 
 void NodeController::SendBrokerClientInvitationOnIOThread(
-    base::ProcessHandle target_process,
+    ScopedProcessHandle target_process,
     ConnectionParams connection_params,
     ports::NodeName temporary_node_name,
     const ProcessErrorCallback& process_error_callback) {
@@ -340,11 +331,11 @@ void NodeController::SendBrokerClientInvitationOnIOThread(
 
 #if !defined(OS_MACOSX) && !defined(OS_NACL) && !defined(OS_FUCHSIA)
   PlatformChannelPair node_channel;
-  ScopedPlatformHandle server_handle = node_channel.PassServerHandle();
+  ScopedInternalPlatformHandle server_handle = node_channel.PassServerHandle();
   // BrokerHost owns itself.
-  BrokerHost* broker_host =
-      new BrokerHost(target_process, connection_params.TakeChannelHandle(),
-                     process_error_callback);
+  BrokerHost* broker_host = new BrokerHost(
+      target_process.get(), connection_params.TakeChannelHandle(),
+      process_error_callback);
   bool channel_ok = broker_host->SendChannel(node_channel.PassClientHandle());
 
 #if defined(OS_WIN)
@@ -378,7 +369,7 @@ void NodeController::SendBrokerClientInvitationOnIOThread(
   pending_invitations_.insert(std::make_pair(temporary_node_name, channel));
 
   channel->SetRemoteNodeName(temporary_node_name);
-  channel->SetRemoteProcessHandle(target_process);
+  channel->SetRemoteProcessHandle(std::move(target_process));
   channel->Start();
 
   channel->AcceptInvitee(name_, temporary_node_name);
@@ -796,7 +787,7 @@ void NodeController::OnAcceptInvitation(const ports::NodeName& from_node,
   scoped_refptr<NodeChannel> broker = GetBrokerChannel();
   if (broker) {
     // Inform the broker of this new client.
-    broker->AddBrokerClient(invitee_name, channel->CopyRemoteProcessHandle());
+    broker->AddBrokerClient(invitee_name, channel->CloneRemoteProcessHandle());
   } else {
     // If we have no broker, either we need to wait for one, or we *are* the
     // broker.
@@ -808,7 +799,7 @@ void NodeController::OnAcceptInvitation(const ports::NodeName& from_node,
 
     if (!inviter) {
       // Yes, we're the broker. We can initialize the client directly.
-      channel->AcceptBrokerClient(name_, ScopedPlatformHandle());
+      channel->AcceptBrokerClient(name_, ScopedInternalPlatformHandle());
     } else {
       // We aren't the broker, so wait for a broker connection.
       base::AutoLock lock(broker_lock_);
@@ -820,11 +811,8 @@ void NodeController::OnAcceptInvitation(const ports::NodeName& from_node,
 void NodeController::OnAddBrokerClient(const ports::NodeName& from_node,
                                        const ports::NodeName& client_name,
                                        base::ProcessHandle process_handle) {
-#if defined(OS_WIN)
-  // Scoped handle to avoid leaks on error.
-  ScopedPlatformHandle scoped_process_handle =
-      ScopedPlatformHandle(PlatformHandle(process_handle));
-#endif
+  ScopedProcessHandle scoped_process_handle(process_handle);
+
   scoped_refptr<NodeChannel> sender = GetPeerChannel(from_node);
   if (!sender) {
     DLOG(ERROR) << "Ignoring AddBrokerClient from unknown sender.";
@@ -851,10 +839,8 @@ void NodeController::OnAddBrokerClient(const ports::NodeName& from_node,
     DLOG(ERROR) << "Broker rejecting client with invalid process handle.";
     return;
   }
-  client->SetRemoteProcessHandle(scoped_process_handle.release().handle);
-#else
-  client->SetRemoteProcessHandle(process_handle);
 #endif
+  client->SetRemoteProcessHandle(std::move(scoped_process_handle));
 
   AddPeer(client_name, client, true /* start_channel */);
 
@@ -864,9 +850,10 @@ void NodeController::OnAddBrokerClient(const ports::NodeName& from_node,
   sender->BrokerClientAdded(client_name, broker_channel.PassClientHandle());
 }
 
-void NodeController::OnBrokerClientAdded(const ports::NodeName& from_node,
-                                         const ports::NodeName& client_name,
-                                         ScopedPlatformHandle broker_channel) {
+void NodeController::OnBrokerClientAdded(
+    const ports::NodeName& from_node,
+    const ports::NodeName& client_name,
+    ScopedInternalPlatformHandle broker_channel) {
   scoped_refptr<NodeChannel> client = GetPeerChannel(client_name);
   if (!client) {
     DLOG(ERROR) << "BrokerClientAdded for unknown client " << client_name;
@@ -884,9 +871,10 @@ void NodeController::OnBrokerClientAdded(const ports::NodeName& from_node,
   client->AcceptBrokerClient(from_node, std::move(broker_channel));
 }
 
-void NodeController::OnAcceptBrokerClient(const ports::NodeName& from_node,
-                                          const ports::NodeName& broker_name,
-                                          ScopedPlatformHandle broker_channel) {
+void NodeController::OnAcceptBrokerClient(
+    const ports::NodeName& from_node,
+    const ports::NodeName& broker_name,
+    ScopedInternalPlatformHandle broker_channel) {
   DCHECK(!GetConfiguration().is_broker_process);
 
   // This node should already have an inviter in bootstrap mode.
@@ -941,9 +929,13 @@ void NodeController::OnAcceptBrokerClient(const ports::NodeName& from_node,
   while (!pending_broker_clients.empty()) {
     const ports::NodeName& invitee_name = pending_broker_clients.front();
     auto it = pending_invitations_.find(invitee_name);
-    DCHECK(it != pending_invitations_.end());
-    broker->AddBrokerClient(invitee_name,
-                            it->second->CopyRemoteProcessHandle());
+    // If for any reason we don't have a pending invitation for the invitee,
+    // there's nothing left to do: we've already swapped the relevant state into
+    // the stack.
+    if (it != pending_invitations_.end()) {
+      broker->AddBrokerClient(invitee_name,
+                              it->second->CloneRemoteProcessHandle());
+    }
     pending_broker_clients.pop();
   }
 
@@ -992,6 +984,11 @@ void NodeController::OnRequestPortMerge(
   {
     base::AutoLock lock(reserved_ports_lock_);
     auto it = reserved_ports_.find(from_node);
+    // TODO(https://crbug.com/822034): We should send a notification back to the
+    // requestor so they can clean up their dangling port in this failure case.
+    // This requires changes to the internal protocol, which can't be made yet.
+    // Until this is done, pipes from |MojoExtractMessagePipeFromInvitation()|
+    // will never break if the given name was invalid.
     if (it == reserved_ports_.end()) {
       DVLOG(1) << "Ignoring port merge request from node " << from_node << ". "
                << "No ports reserved for that node.";
@@ -1031,7 +1028,7 @@ void NodeController::OnRequestIntroduction(const ports::NodeName& from_node,
   scoped_refptr<NodeChannel> new_friend = GetPeerChannel(name);
   if (!new_friend) {
     // We don't know who they're talking about!
-    requestor->Introduce(name, ScopedPlatformHandle());
+    requestor->Introduce(name, ScopedInternalPlatformHandle());
   } else {
     PlatformChannelPair new_channel;
     requestor->Introduce(name, new_channel.PassServerHandle());
@@ -1041,7 +1038,7 @@ void NodeController::OnRequestIntroduction(const ports::NodeName& from_node,
 
 void NodeController::OnIntroduce(const ports::NodeName& from_node,
                                  const ports::NodeName& name,
-                                 ScopedPlatformHandle channel_handle) {
+                                 ScopedInternalPlatformHandle channel_handle) {
   DCHECK(io_task_runner_->RunsTasksInCurrentSequence());
 
   if (!channel_handle.is_valid()) {
@@ -1118,7 +1115,7 @@ void NodeController::OnRelayEventMessage(const ports::NodeName& from_node,
   // Note that we explicitly mark the handles as being owned by the sending
   // process before rewriting them, in order to accommodate RewriteHandles'
   // internal sanity checks.
-  std::vector<ScopedPlatformHandle> handles = message->TakeHandles();
+  std::vector<ScopedInternalPlatformHandle> handles = message->TakeHandles();
   for (auto& handle : handles)
     handle.get().owning_process = from_process;
   if (!Channel::Message::RewriteHandles(
@@ -1127,12 +1124,12 @@ void NodeController::OnRelayEventMessage(const ports::NodeName& from_node,
   }
   message->SetHandles(std::move(handles));
 #else
-  std::vector<ScopedPlatformHandle> handles = message->TakeHandles();
+  std::vector<ScopedInternalPlatformHandle> handles = message->TakeHandles();
   for (auto& handle : handles) {
-    if (handle.get().type == PlatformHandle::Type::MACH_NAME) {
+    if (handle.get().type == InternalPlatformHandle::Type::MACH_NAME) {
       MachPortRelay* relay = GetMachPortRelay();
       if (!relay) {
-        handle.get().type = PlatformHandle::Type::MACH;
+        handle.get().type = InternalPlatformHandle::Type::MACH;
         handle.get().port = MACH_PORT_NULL;
         DLOG(ERROR) << "Receiving Mach ports without a port relay from "
                     << from_node << ".";

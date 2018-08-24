@@ -163,8 +163,10 @@ class PersonalDataManager : public KeyedService,
   // Resets the card for |guid| to the masked state.
   void ResetFullServerCard(const std::string& guid);
 
-  // Resets all unmasked cards to the masked state.
-  void ResetFullServerCards();
+  // Resets all unmasked cards to the masked state if |is_dry_run| is false.
+  // Only records the number of cards that would have been remasked if
+  // |is_dry_run| is true.
+  void ResetFullServerCards(bool is_dry_run = false);
 
   // Deletes all server profiles and cards (both masked and unmasked).
   void ClearAllServerData();
@@ -213,6 +215,12 @@ class PersonalDataManager : public KeyedService,
   // |profiles|. The relative ordering of |profiles| is maintained.
   static void RemoveProfilesNotUsedSinceTimestamp(
       base::Time min_last_used,
+      std::vector<AutofillProfile*>* profiles);
+
+  // Remove profiles that whose |type| field is flagged as invalid, if Chrome
+  // is configured to not make suggestions based on invalid data.
+  static void MaybeRemoveInvalidSuggestions(
+      const AutofillType& type,
       std::vector<AutofillProfile*>* profiles);
 
   // Loads profiles that can suggest data for |type|. |field_contents| is the
@@ -326,9 +334,6 @@ class PersonalDataManager : public KeyedService,
                            DedupeProfiles_GuidsMergeMap);
   FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest,
                            UpdateCardsBillingAddressReference);
-  FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest, ApplyProfileUseDatesFix);
-  FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest,
-                           ApplyProfileUseDatesFix_NotAppliedTwice);
   FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest,
                            ApplyDedupingRoutine_CardsBillingAddressIdUpdated);
   FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest,
@@ -375,6 +380,10 @@ class PersonalDataManager : public KeyedService,
                            GetCreditCardSuggestions_CreditCardAutofillDisabled);
   FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest,
                            GetCreditCardSuggestions_NoCardsLoadedIfDisabled);
+  FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest,
+                           ClearProfileNonSettingsOrigins);
+  FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest,
+                           ClearCreditCardNonSettingsOrigins);
 
   friend class autofill::AutofillInteractiveTest;
   friend class autofill::PersonalDataManagerFactory;
@@ -448,6 +457,11 @@ class PersonalDataManager : public KeyedService,
   // this class and must outlive |this|.
   void SetPrefService(PrefService* pref_service);
 
+  // Clears the value of the origin field of the autofill profiles or cards that
+  // were not created from the settings page.
+  void ClearProfileNonSettingsOrigins();
+  void ClearCreditCardNonSettingsOrigins();
+
   void set_database(scoped_refptr<AutofillWebDataService> database) {
     database_ = database;
   }
@@ -504,9 +518,9 @@ class PersonalDataManager : public KeyedService,
   // upgrade. The card will need to be local and disused, to be deletable.
   bool IsCreditCardDeletable(CreditCard* card);
 
-  // Runs the Autofill use date fix routine if it's never been done. Returns
-  // whether the routine was run.
-  void ApplyProfileUseDatesFix();
+  // Runs the routine that removes the orphan rows in the autofill tables if
+  // it's never been done.
+  void RemoveOrphanAutofillTableRows();
 
   // Applies the deduping routine once per major version if the feature is
   // enabled. Calls DedupeProfiles with the content of |web_profiles_| as a
@@ -586,15 +600,21 @@ class PersonalDataManager : public KeyedService,
   // If the AutofillCreateDataForTest feature is enabled, this helper creates
   // autofill address data that would otherwise be difficult to create
   // manually using the UI.
-  void CreateTestAddresses();
+  void MaybeCreateTestAddresses();
 
   // If the AutofillCreateDataForTest feature is enabled, this helper creates
   // autofill credit card data that would otherwise be difficult to create
   // manually using the UI.
-  void CreateTestCreditCards();
+  void MaybeCreateTestCreditCards();
 
   // Whether the server cards are enabled and should be suggested to the user.
   bool ShouldSuggestServerCards() const;
+
+  // Applies various fixes and cleanups on autofill addresses.
+  void ApplyAddressFixesAndCleanups();
+
+  // Applies various fixes and cleanups on autofill credit cards.
+  void ApplyCardFixesAndCleanups();
 
   const std::string app_locale_;
 

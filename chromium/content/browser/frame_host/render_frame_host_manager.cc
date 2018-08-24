@@ -225,17 +225,22 @@ void RenderFrameHostManager::OnBeforeUnloadACK(
 
 void RenderFrameHostManager::DidNavigateFrame(
     RenderFrameHostImpl* render_frame_host,
-    bool was_caused_by_user_gesture) {
-  CommitPendingIfNecessary(render_frame_host, was_caused_by_user_gesture);
+    bool was_caused_by_user_gesture,
+    bool is_same_document_navigation) {
+  CommitPendingIfNecessary(render_frame_host, was_caused_by_user_gesture,
+                           is_same_document_navigation);
 
   // Make sure any dynamic changes to this frame's sandbox flags and feature
-  // policy that were made prior to navigation take effect.
-  CommitPendingFramePolicy();
+  // policy that were made prior to navigation take effect.  This should only
+  // happen for cross-document navigations.
+  if (!is_same_document_navigation)
+    CommitPendingFramePolicy();
 }
 
 void RenderFrameHostManager::CommitPendingIfNecessary(
     RenderFrameHostImpl* render_frame_host,
-    bool was_caused_by_user_gesture) {
+    bool was_caused_by_user_gesture,
+    bool is_same_document_navigation) {
   if (!speculative_render_frame_host_) {
     // There's no speculative RenderFrameHost so it must be that the current
     // renderer process completed a navigation.
@@ -267,11 +272,15 @@ void RenderFrameHostManager::CommitPendingIfNecessary(
     if (render_frame_host_->pending_web_ui())
       CommitPendingWebUI();
 
-    // A navigation in the original page has taken place. Cancel the speculative
-    // one. Only do it for user gesture originated navigations to prevent page
-    // doing any shenanigans to prevent user from navigating.  See
-    // https://code.google.com/p/chromium/issues/detail?id=75195
-    if (was_caused_by_user_gesture) {
+    // A navigation in the original process has taken place.  This should
+    // cancel the ongoing cross-process navigation if the commit is
+    // cross-document and has a user gesture (since the user might have clicked
+    // on a new link while waiting for a slow navigation), but it should not
+    // cancel it for same-document navigations (which might happen as
+    // bookkeeping) or when there is no user gesture (which might abusively try
+    // to prevent the user from leaving).  See https://crbug.com/825677 and
+    // https://crbug.com/75195 for examples.
+    if (!is_same_document_navigation && was_caused_by_user_gesture) {
       frame_tree_node_->ResetNavigationRequest(false, true);
       CleanUpNavigation();
     }
@@ -514,12 +523,9 @@ RenderFrameHostImpl* RenderFrameHostManager::GetFrameHostForNavigation(
       // already updated its state properly, and doesn't need to be notified.
       if (speculative_render_frame_host_->GetNavigationHandle() &&
           request.from_begin_navigation()) {
-        DCHECK(!speculative_render_frame_host_->GetNavigationHandle()
-                    ->IsDownload());
         frame_tree_node_->navigator()->DiscardPendingEntryIfNeeded(
             speculative_render_frame_host_->GetNavigationHandle()
-                ->pending_nav_entry_id(),
-            false /* is_download */);
+                ->pending_nav_entry_id());
       }
       DiscardUnusedFrame(UnsetSpeculativeRenderFrameHost());
     }
@@ -556,12 +562,9 @@ RenderFrameHostImpl* RenderFrameHostManager::GetFrameHostForNavigation(
       if (speculative_render_frame_host_ &&
           speculative_render_frame_host_->GetNavigationHandle() &&
           request.from_begin_navigation()) {
-        DCHECK(!speculative_render_frame_host_->GetNavigationHandle()
-                    ->IsDownload());
         frame_tree_node_->navigator()->DiscardPendingEntryIfNeeded(
             speculative_render_frame_host_->GetNavigationHandle()
-                ->pending_nav_entry_id(),
-            false /* is_download */);
+                ->pending_nav_entry_id());
       }
 
       // If a previous speculative RenderFrameHost didn't exist or if its
@@ -965,6 +968,7 @@ RenderFrameHostManager::GetSiteInstanceForNavigation(
     SiteInstance* dest_instance,
     SiteInstance* candidate_instance,
     ui::PageTransition transition,
+    bool is_failure,
     bool dest_is_restore,
     bool dest_is_view_source_mode,
     bool was_server_redirect) {
@@ -1024,7 +1028,7 @@ RenderFrameHostManager::GetSiteInstanceForNavigation(
   if (ShouldTransitionCrossSite() || force_swap) {
     new_instance_descriptor = DetermineSiteInstanceForURL(
         dest_url, source_instance, current_instance, dest_instance, transition,
-        dest_is_restore, dest_is_view_source_mode, force_swap,
+        is_failure, dest_is_restore, dest_is_view_source_mode, force_swap,
         was_server_redirect);
   }
 
@@ -1100,6 +1104,7 @@ RenderFrameHostManager::DetermineSiteInstanceForURL(
     SiteInstance* current_instance,
     SiteInstance* dest_instance,
     ui::PageTransition transition,
+    bool is_failure,
     bool dest_is_restore,
     bool dest_is_view_source_mode,
     bool force_browsing_instance_swap,
@@ -1126,20 +1131,16 @@ RenderFrameHostManager::DetermineSiteInstanceForURL(
     return SiteInstanceDescriptor(browser_context, dest_url,
                                   SiteInstanceRelation::UNRELATED);
 
-  // (UGLY) HEURISTIC, process-per-site only:
-  //
-  // If this navigation is generated, then it probably corresponds to a search
-  // query.  Given that search results typically lead to users navigating to
-  // other sites, we don't really want to use the search engine hostname to
-  // determine the site instance for this navigation.
-  //
-  // NOTE: This can be removed once we have a way to transition between
-  //       RenderViews in response to a link click.
-  //
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kProcessPerSite) &&
-      ui::PageTransitionCoreTypeIs(transition, ui::PAGE_TRANSITION_GENERATED)) {
-    return SiteInstanceDescriptor(current_instance_impl);
+  // If error page navigations should be isolated, ensure a dedicated
+  // SiteInstance is used for them.
+  if (is_failure && SiteIsolationPolicy::IsErrorPageIsolationEnabled(
+                        frame_tree_node_->IsMainFrame())) {
+    // Keep the error page in the same BrowsingInstance, such that in the case
+    // of transient network errors, a subsequent successful load of the same
+    // document will not result in broken scripting relationships between
+    // windows.
+    return SiteInstanceDescriptor(browser_context, GURL(kUnreachableWebDataURL),
+                                  SiteInstanceRelation::RELATED);
   }
 
   if (!frame_tree_node_->IsMainFrame()) {
@@ -1918,13 +1919,16 @@ RenderFrameHostManager::GetSiteInstanceForNavigationRequest(
     // marked as renderer-initiated are created by receiving a BeginNavigation
     // IPC, and will then proceed in the same renderer. In site-per-process
     // mode, it is possible for renderer-intiated navigations to be allowed to
-    // go cross-process. Check it first.
+    // go cross-process. Main frame navigations resulting in an error are also
+    // expected to change process. Check it first.
     bool can_renderer_initiate_transfer =
-        render_frame_host_->IsRenderFrameLive() &&
-        IsURLHandledByNetworkStack(request.common_params().url) &&
-        IsRendererTransferNeededForNavigation(render_frame_host_.get(),
-                                              request.common_params().url);
-
+        (request.state() == NavigationRequest::FAILED &&
+         SiteIsolationPolicy::IsErrorPageIsolationEnabled(
+             true /* in_main_frame */)) ||
+        (render_frame_host_->IsRenderFrameLive() &&
+         IsURLHandledByNetworkStack(request.common_params().url) &&
+         IsRendererTransferNeededForNavigation(render_frame_host_.get(),
+                                               request.common_params().url));
     no_renderer_swap_allowed |=
         request.from_begin_navigation() && !can_renderer_initiate_transfer;
   } else {
@@ -1951,6 +1955,7 @@ RenderFrameHostManager::GetSiteInstanceForNavigationRequest(
       request.common_params().url, request.source_site_instance(),
       request.dest_site_instance(), candidate_site_instance,
       request.common_params().transition,
+      request.state() == NavigationRequest::FAILED,
       request.restore_type() != RestoreType::NONE, request.is_view_source(),
       was_server_redirect);
 

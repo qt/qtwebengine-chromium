@@ -38,8 +38,10 @@ class AnimationEvent final : public Event {
   static AnimationEvent* Create() { return new AnimationEvent; }
   static AnimationEvent* Create(const AtomicString& type,
                                 const String& animation_name,
-                                double elapsed_time) {
-    return new AnimationEvent(type, animation_name, elapsed_time);
+                                double elapsed_time,
+                                const String& pseudo_element) {
+    return new AnimationEvent(type, animation_name, elapsed_time,
+                              pseudo_element);
   }
   static AnimationEvent* Create(const AtomicString& type,
                                 const AnimationEventInit& initializer) {
@@ -50,20 +52,23 @@ class AnimationEvent final : public Event {
 
   const String& animationName() const;
   double elapsedTime() const;
+  const String& pseudoElement() const;
 
   const AtomicString& InterfaceName() const override;
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   AnimationEvent();
   AnimationEvent(const AtomicString& type,
                  const String& animation_name,
-                 double elapsed_time);
+                 double elapsed_time,
+                 const String& pseudo_element);
   AnimationEvent(const AtomicString&, const AnimationEventInit&);
 
   String animation_name_;
   double elapsed_time_;
+  String pseudo_element_;
 };
 
 }  // namespace blink

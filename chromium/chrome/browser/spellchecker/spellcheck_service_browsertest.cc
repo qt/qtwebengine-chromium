@@ -36,6 +36,7 @@
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_utils.h"
+#include "mojo/public/cpp/bindings/binding.h"
 
 using content::BrowserContext;
 using content::RenderProcessHost;
@@ -430,7 +431,7 @@ IN_PROC_BROWSER_TEST_F(SpellcheckServiceBrowserTest, DeleteCorruptedBDICT) {
 
   // Write the corrupted BDICT data to create a corrupted BDICT file.
   base::FilePath dict_dir;
-  ASSERT_TRUE(PathService::Get(chrome::DIR_APP_DICTIONARIES, &dict_dir));
+  ASSERT_TRUE(base::PathService::Get(chrome::DIR_APP_DICTIONARIES, &dict_dir));
   base::FilePath bdict_path =
       spellcheck::GetVersionedFileName("en-US", dict_dir);
 

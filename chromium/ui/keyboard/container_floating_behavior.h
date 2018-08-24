@@ -41,7 +41,7 @@ class KEYBOARD_EXPORT ContainerFloatingBehavior : public ContainerBehavior {
       aura::Window* window,
       ui::ScopedLayerAnimationSettings* animation_settings) override;
   void InitializeShowAnimationStartingState(aura::Window* container) override;
-  const gfx::Rect AdjustSetBoundsRequest(
+  gfx::Rect AdjustSetBoundsRequest(
       const gfx::Rect& display_bounds,
       const gfx::Rect& requested_bounds_in_screen_coords) override;
   bool IsOverscrollAllowed() const override;
@@ -55,8 +55,9 @@ class KEYBOARD_EXPORT ContainerFloatingBehavior : public ContainerBehavior {
                           const gfx::Rect& display_bounds) override;
   ContainerType GetType() const override;
   bool TextBlurHidesKeyboard() const override;
-  bool BoundsObscureUsableRegion() const override;
-  bool BoundsAffectWorkspaceLayout() const override;
+  gfx::Rect GetOccludedBounds(
+      const gfx::Rect& visual_bounds_in_screen) const override;
+  bool OccludedBoundsAffectWorkspaceLayout() const override;
   bool SetDraggableArea(const gfx::Rect& rect) override;
 
   // Calculate the position of the keyboard for when it is being shown.
@@ -82,7 +83,7 @@ class KEYBOARD_EXPORT ContainerFloatingBehavior : public ContainerBehavior {
 
   // Current state of a cursor drag to move the keyboard, if one exists.
   // Otherwise nullptr.
-  std::unique_ptr<DragDescriptor> drag_descriptor_ = nullptr;
+  std::unique_ptr<const DragDescriptor> drag_descriptor_ = nullptr;
 
   gfx::Rect draggable_area_ = gfx::Rect();
 };

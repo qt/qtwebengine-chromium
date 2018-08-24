@@ -14,8 +14,8 @@ from xml.etree import ElementTree
 
 import util.build_utils as build_utils
 
-_SOURCE_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.dirname(__file__)))))
+_SOURCE_ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
 # Import jinja2 from third_party/jinja2
 sys.path.insert(1, os.path.join(_SOURCE_ROOT, 'third_party'))
 from jinja2 import Template # pylint: disable=F0401
@@ -28,6 +28,22 @@ EMPTY_ANDROID_MANIFEST_PATH = os.path.join(
 # Represents a line from a R.txt file.
 _TextSymbolEntry = collections.namedtuple('RTextEntry',
     ('java_type', 'resource_type', 'name', 'value'))
+
+
+def CreateResourceInfoFile(files_to_zip, zip_path):
+  """Given a mapping of archive paths to their source, write an info file.
+
+  The info file contains lines of '{archive_path},{source_path}' for ease of
+  parsing. Assumes that there is no comma in the file names.
+
+  Args:
+    files_to_zip: Dict mapping path in the zip archive to original source.
+    zip_path: Path where the zip file ends up, this is where the info file goes.
+  """
+  info_file_path = zip_path + '.info'
+  with open(info_file_path, 'w') as info_file:
+    for archive_path, source_path in files_to_zip.iteritems():
+      info_file.write('{},{}\n'.format(archive_path, source_path))
 
 
 def _ParseTextSymbolsFile(path, fix_package_ids=False):
@@ -416,7 +432,7 @@ def ResourceArgsParser():
 
   build_utils.AddDepfileOption(output_opts)
 
-  input_opts.add_argument('--android-sdk-jar', required=True,
+  input_opts.add_argument('--android-sdk-jars', required=True,
                         help='Path to the android.jar file.')
 
   input_opts.add_argument('--aapt-path', required=True,
@@ -452,6 +468,8 @@ def HandleCommonOptions(options):
     options: the result of parse_args() on the parser returned by
         ResourceArgsParser(). This function updates a few common fields.
   """
+  options.android_sdk_jars = build_utils.ParseGnList(options.android_sdk_jars)
+
   options.dependencies_res_zips = (
       build_utils.ParseGnList(options.dependencies_res_zips))
 

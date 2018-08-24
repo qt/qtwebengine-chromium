@@ -11,6 +11,7 @@
 #include "base/unguessable_token.h"
 #include "content/browser/devtools/protocol/network.h"
 #include "content/public/common/resource_type.h"
+#include "mojo/public/cpp/system/data_pipe.h"
 #include "net/base/net_errors.h"
 
 namespace content {
@@ -24,6 +25,7 @@ struct InterceptedRequestInfo {
   base::UnguessableToken frame_id;
   ResourceType resource_type;
   bool is_navigation;
+  protocol::Maybe<bool> is_download;
   protocol::Maybe<protocol::Object> redirect_headers;
   protocol::Maybe<int> redirect_status_code;
   protocol::Maybe<protocol::String> redirect_url;
@@ -43,6 +45,10 @@ class DevToolsNetworkInterceptor {
       protocol::Network::Backend::ContinueInterceptedRequestCallback;
   using GetResponseBodyForInterceptionCallback =
       protocol::Network::Backend::GetResponseBodyForInterceptionCallback;
+  using TakeResponseBodyPipeCallback =
+      base::OnceCallback<void(protocol::Response,
+                              mojo::ScopedDataPipeConsumerHandle,
+                              const std::string& mime_type)>;
 
   struct Modifications {
     Modifications();

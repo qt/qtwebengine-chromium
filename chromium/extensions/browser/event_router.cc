@@ -11,7 +11,6 @@
 
 #include "base/atomic_sequence_num.h"
 #include "base/bind.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
 #include "base/values.h"
@@ -273,9 +272,9 @@ void EventRouter::OnListenerRemoved(const EventListener* listener) {
     observer->second->OnListenerRemoved(details);
 }
 
-void EventRouter::RenderProcessExited(content::RenderProcessHost* host,
-                                      base::TerminationStatus status,
-                                      int exit_code) {
+void EventRouter::RenderProcessExited(
+    content::RenderProcessHost* host,
+    const content::ChildProcessTerminationInfo& info) {
   listeners_.RemoveListenersForProcess(host);
   observed_process_set_.erase(host);
   host->RemoveObserver(this);

@@ -10,7 +10,6 @@
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
-#include "third_party/blink/renderer/core/loader/empty_clients.h"
 #include "third_party/blink/renderer/core/page/scoped_page_pauser.h"
 #include "third_party/blink/renderer/core/page/validation_message_client.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
@@ -65,9 +64,7 @@ class HTMLFormControlElementTest : public PageTestBase {
 };
 
 void HTMLFormControlElementTest::SetUp() {
-  Page::PageClients page_clients;
-  FillWithEmptyClients(page_clients);
-  SetupPageWithClients(&page_clients);
+  PageTestBase::SetUp();
   GetDocument().SetMimeType("text/html");
 }
 
@@ -148,6 +145,17 @@ TEST_F(HTMLFormControlElementTest, DoNotUpdateLayoutDuringDOMMutation) {
   select->appendChild(optgroup);
   EXPECT_EQ(start_operation_count, validation_client->OperationCount())
       << "DOM mutation should not handle validation message UI in it.";
+}
+
+TEST_F(HTMLFormControlElementTest, UniqueRendererFormControlId) {
+  SetHtmlInnerHTML("<body><input id=input1><input id=input2></body>");
+  auto* form_control1 = ToHTMLFormControlElement(GetElementById("input1"));
+  unsigned first_id = form_control1->UniqueRendererFormControlId();
+  auto* form_control2 = ToHTMLFormControlElement(GetElementById("input2"));
+  EXPECT_EQ(first_id + 1, form_control2->UniqueRendererFormControlId());
+  SetHtmlInnerHTML("<body><select id=select1></body>");
+  auto* form_control3 = ToHTMLFormControlElement(GetElementById("select1"));
+  EXPECT_EQ(first_id + 2, form_control3->UniqueRendererFormControlId());
 }
 
 }  // namespace blink

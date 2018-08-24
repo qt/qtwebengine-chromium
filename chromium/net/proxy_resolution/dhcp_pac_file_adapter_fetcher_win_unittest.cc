@@ -7,6 +7,7 @@
 #include "base/run_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task_scheduler/post_task.h"
+#include "base/test/scoped_task_environment.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/timer/elapsed_timer.h"
@@ -56,7 +57,7 @@ class MockDhcpPacFileAdapterFetcher : public DhcpPacFileAdapterFetcher {
     fetcher_ = NULL;
   }
 
-  PacFileFetcher* ImplCreateScriptFetcher() override {
+  std::unique_ptr<PacFileFetcher> ImplCreateScriptFetcher() override {
     // We don't maintain ownership of the fetcher, it is transferred to
     // the caller.
     fetcher_ = new MockPacFileFetcher();
@@ -65,7 +66,7 @@ class MockDhcpPacFileAdapterFetcher : public DhcpPacFileAdapterFetcher {
           FROM_HERE, base::TimeDelta::FromMilliseconds(fetcher_delay_ms_), this,
           &MockDhcpPacFileAdapterFetcher::OnFetcherTimer);
     }
-    return fetcher_;
+    return base::WrapUnique(fetcher_);
   }
 
   class DelayingDhcpQuery : public DhcpQuery {
@@ -173,6 +174,8 @@ class FetcherClient {
 };
 
 TEST(DhcpPacFileAdapterFetcher, NormalCaseURLNotInDhcp) {
+  base::test::ScopedTaskEnvironment scoped_task_environment;
+
   FetcherClient client;
   client.fetcher_->configured_url_ = "";
   client.RunTest();
@@ -183,6 +186,8 @@ TEST(DhcpPacFileAdapterFetcher, NormalCaseURLNotInDhcp) {
 }
 
 TEST(DhcpPacFileAdapterFetcher, NormalCaseURLInDhcp) {
+  base::test::ScopedTaskEnvironment scoped_task_environment;
+
   FetcherClient client;
   client.RunTest();
   client.WaitForResult(OK);
@@ -193,6 +198,8 @@ TEST(DhcpPacFileAdapterFetcher, NormalCaseURLInDhcp) {
 }
 
 TEST(DhcpPacFileAdapterFetcher, TimeoutDuringDhcp) {
+  base::test::ScopedTaskEnvironment scoped_task_environment;
+
   // Does a Fetch() with a long enough delay on accessing DHCP that the
   // fetcher should time out.  This is to test a case manual testing found,
   // where under certain circumstances (e.g. adapter enabled for DHCP and
@@ -217,6 +224,8 @@ TEST(DhcpPacFileAdapterFetcher, TimeoutDuringDhcp) {
 }
 
 TEST(DhcpPacFileAdapterFetcher, CancelWhileDhcp) {
+  base::test::ScopedTaskEnvironment scoped_task_environment;
+
   FetcherClient client;
   client.RunTest();
   client.fetcher_->Cancel();
@@ -230,6 +239,8 @@ TEST(DhcpPacFileAdapterFetcher, CancelWhileDhcp) {
 }
 
 TEST(DhcpPacFileAdapterFetcher, CancelWhileFetcher) {
+  base::test::ScopedTaskEnvironment scoped_task_environment;
+
   FetcherClient client;
   // This causes the mock fetcher not to pretend the
   // fetcher finishes after a timeout.
@@ -252,6 +263,8 @@ TEST(DhcpPacFileAdapterFetcher, CancelWhileFetcher) {
 }
 
 TEST(DhcpPacFileAdapterFetcher, CancelAtCompletion) {
+  base::test::ScopedTaskEnvironment scoped_task_environment;
+
   FetcherClient client;
   client.RunTest();
   client.WaitForResult(OK);
@@ -276,15 +289,16 @@ class MockDhcpRealFetchPacFileAdapterFetcher
         url_request_context_(context) {}
 
   // Returns a real PAC file fetcher.
-  PacFileFetcher* ImplCreateScriptFetcher() override {
-    PacFileFetcher* fetcher = new PacFileFetcherImpl(url_request_context_);
-    return fetcher;
+  std::unique_ptr<PacFileFetcher> ImplCreateScriptFetcher() override {
+    return PacFileFetcherImpl::Create(url_request_context_);
   }
 
   URLRequestContext* url_request_context_;
 };
 
 TEST(DhcpPacFileAdapterFetcher, MockDhcpRealFetch) {
+  base::test::ScopedTaskEnvironment scoped_task_environment;
+
   EmbeddedTestServer test_server;
   test_server.ServeFilesFromSourceDirectory(
       "net/data/pac_file_fetcher_unittest");
@@ -313,6 +327,8 @@ TEST(DhcpPacFileAdapterFetcher, MockDhcpRealFetch) {
 #define BASE_URL "http://corpserver/proxy.pac"
 
 TEST(DhcpPacFileAdapterFetcher, SanitizeDhcpApiString) {
+  base::test::ScopedTaskEnvironment scoped_task_environment;
+
   const size_t kBaseUrlLen = strlen(BASE_URL);
 
   // Default case.

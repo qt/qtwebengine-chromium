@@ -175,8 +175,7 @@ TEST_F(ServiceWorkerPaymentInstrumentTest, InstrumentInfo) {
   EXPECT_TRUE(GetInstrument()->IsExactlyMatchingMerchantRequest());
 
   EXPECT_EQ(base::UTF16ToUTF8(GetInstrument()->GetLabel()), "bobpay");
-  EXPECT_EQ(base::UTF16ToUTF8(GetInstrument()->GetSublabel()),
-            "https://bobpay.com/");
+  EXPECT_EQ(base::UTF16ToUTF8(GetInstrument()->GetSublabel()), "bobpay.com");
   EXPECT_NE(GetInstrument()->icon_image_skia(), nullptr);
 }
 
@@ -188,7 +187,7 @@ TEST_F(ServiceWorkerPaymentInstrumentTest, CreatePaymentRequestEventData) {
   mojom::PaymentRequestEventDataPtr event_data =
       CreatePaymentRequestEventData();
 
-  EXPECT_EQ(event_data->top_level_origin.spec(), "https://testmerchant.com/");
+  EXPECT_EQ(event_data->top_origin.spec(), "https://testmerchant.com/");
   EXPECT_EQ(event_data->payment_request_origin.spec(),
             "https://testmerchant.com/bobpay");
 
@@ -228,7 +227,7 @@ TEST_F(ServiceWorkerPaymentInstrumentTest, CreateCanMakePaymentEvent) {
   event_data = CreateCanMakePaymentEventData();
   EXPECT_FALSE(event_data.is_null());
 
-  EXPECT_EQ(event_data->top_level_origin.spec(), "https://testmerchant.com/");
+  EXPECT_EQ(event_data->top_origin.spec(), "https://testmerchant.com/");
   EXPECT_EQ(event_data->payment_request_origin.spec(),
             "https://testmerchant.com/bobpay");
 

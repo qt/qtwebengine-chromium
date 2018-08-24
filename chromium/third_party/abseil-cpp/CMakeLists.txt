@@ -13,11 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-cmake_minimum_required(VERSION 2.8.12)
-project(absl)
 
-# enable ctest
-include(CTest)
+# We require 3.0 for modern, target-based CMake.  We require 3.1 for the use of
+# CXX_STANDARD in our targets.
+cmake_minimum_required(VERSION 3.1)
+project(absl)
 
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/CMake)
 
@@ -56,7 +56,6 @@ list(APPEND ABSL_COMMON_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR})
 
 # -std=X
 set(CMAKE_CXX_FLAGS "${ABSL_STD_CXX_FLAG} ${CMAKE_CXX_FLAGS}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_WARNING_VLA} ${CMAKE_CXX_FLAGS} ")
 
 # -fexceptions
 set(ABSL_EXCEPTIONS_FLAG "${CMAKE_CXX_EXCEPTIONS}")
@@ -65,18 +64,25 @@ set(ABSL_EXCEPTIONS_FLAG "${CMAKE_CXX_EXCEPTIONS}")
 ## pthread
 find_package(Threads REQUIRED)
 
-if(NOT ABSL_CCTZ_TARGET)
-  set(ABSL_CCTZ_TARGET cctz)
-endif()
+option(ABSL_USE_GOOGLETEST_HEAD
+  "If ON, abseil will download HEAD from googletest at config time." OFF)
 
-# commented: used only for standalone test
-# Don't remove these or else CMake CI will break
-#add_subdirectory(cctz)
-#add_subdirectory(googletest)
-check_target(${ABSL_CCTZ_TARGET})
+option(ABSL_RUN_TESTS "If ON, Abseil tests will be run." OFF)
+
+if(${ABSL_RUN_TESTS})
+  # enable CTest.  This will set BUILD_TESTING to ON unless otherwise specified
+  # on the command line
+  include(CTest)
+  enable_testing()
+endif()
 
 ## check targets
 if(BUILD_TESTING)
+
+  if(${ABSL_USE_GOOGLETEST_HEAD})
+    include(CMake/DownloadGTest.cmake)
+  endif()
+
   check_target(gtest)
   check_target(gtest_main)
   check_target(gmock)

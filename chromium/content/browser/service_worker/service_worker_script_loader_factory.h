@@ -8,30 +8,38 @@
 #include "base/macros.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 
+namespace network {
+class SharedURLLoaderFactory;
+}  // namespace network
+
 namespace content {
 
 class ServiceWorkerContextCore;
 class ServiceWorkerProviderHost;
-class URLLoaderFactoryGetter;
 
 // S13nServiceWorker:
-// Created per one running service worker for loading its scripts (only during
-// installation, eventually). This is kept alive while
-// ServiceWorkerNetworkProvider in the renderer process is alive.
+// Created per one running service worker for loading its scripts. This is kept
+// alive while ServiceWorkerNetworkProvider in the renderer process is alive.
 //
 // This factory handles requests for the scripts of a new (installing)
 // service worker. For installed workers, service worker script streaming
-// (ServiceWorkerInstalledScriptsSender) is used instead.
+// (ServiceWorkerInstalledScriptsSender) is typically used instead. However,
+// this factory can still be used when an installed worker imports a
+// non-installed script (https://crbug.com/719052).
 //
 // This factory creates either a ServiceWorkerNewScriptLoader or a
 // ServiceWorkerInstalledScriptLoader to load a script.
 class ServiceWorkerScriptLoaderFactory
     : public network::mojom::URLLoaderFactory {
  public:
+  // |loader_factory| is used to load scripts. Typically
+  // a new script will be loaded from the NetworkService. However,
+  // |loader_factory| may internally contain non-NetworkService
+  // factories used for non-http(s) URLs, e.g., a chrome-extension:// URL.
   ServiceWorkerScriptLoaderFactory(
       base::WeakPtr<ServiceWorkerContextCore> context,
       base::WeakPtr<ServiceWorkerProviderHost> provider_host,
-      scoped_refptr<URLLoaderFactoryGetter> loader_factory_getter);
+      scoped_refptr<network::SharedURLLoaderFactory> loader_factory);
   ~ServiceWorkerScriptLoaderFactory() override;
 
   // network::mojom::URLLoaderFactory:
@@ -51,7 +59,7 @@ class ServiceWorkerScriptLoaderFactory
 
   base::WeakPtr<ServiceWorkerContextCore> context_;
   base::WeakPtr<ServiceWorkerProviderHost> provider_host_;
-  scoped_refptr<URLLoaderFactoryGetter> loader_factory_getter_;
+  scoped_refptr<network::SharedURLLoaderFactory> loader_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerScriptLoaderFactory);
 };

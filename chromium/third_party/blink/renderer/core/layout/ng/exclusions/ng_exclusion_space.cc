@@ -101,10 +101,18 @@ bool Intersects(const NGLayoutOpportunity& opportunity,
 bool Intersects(const NGExclusionSpace::NGShelf& shelf,
                 const NGBfcOffset& offset,
                 const LayoutUnit inline_size) {
-  return (shelf.line_right == LayoutUnit::Max() ||
-          shelf.line_right >= offset.line_offset) &&
-         (shelf.line_left == LayoutUnit::Min() ||
-          shelf.line_left <= offset.line_offset + inline_size);
+  if (shelf.line_right >= offset.line_offset &&
+      shelf.line_left <= offset.line_offset + inline_size)
+    return true;
+  // Negative available space creates a zero-width opportunity at the inline-end
+  // of the shelf. Consider such shelf intersects.
+  // TODO(kojii): This is correct to find layout opportunities for zero-width
+  // in-flow inline or block objects (e.g., <br>,) but not correct for
+  // zero-width floats.
+  if (UNLIKELY(shelf.line_left > offset.line_offset ||
+               shelf.line_right < offset.line_offset + inline_size))
+    return true;
+  return false;
 }
 
 // Creates a new layout opportunity. The given layout opportunity *must*
@@ -122,7 +130,8 @@ NGLayoutOpportunity CreateLayoutOpportunity(const NGLayoutOpportunity& other,
       std::min(other.rect.LineEndOffset(), offset.line_offset + inline_size),
       other.rect.BlockEndOffset());
 
-  return NGLayoutOpportunity(NGBfcRect(start_offset, end_offset));
+  return NGLayoutOpportunity(NGBfcRect(start_offset, end_offset),
+                             other.shape_exclusions);
 }
 
 // Creates a new layout opportunity. The given shelf *must* intersect with the
@@ -136,11 +145,18 @@ NGLayoutOpportunity CreateLayoutOpportunity(
   NGBfcOffset start_offset(std::max(shelf.line_left, offset.line_offset),
                            std::max(shelf.block_offset, offset.block_offset));
 
+  // Max with |start_offset.line_offset| in case the shelf has a negative
+  // inline-size.
   NGBfcOffset end_offset(
-      std::min(shelf.line_right, offset.line_offset + inline_size),
+      std::max(std::min(shelf.line_right, offset.line_offset + inline_size),
+               start_offset.line_offset),
       LayoutUnit::Max());
 
-  return NGLayoutOpportunity(NGBfcRect(start_offset, end_offset));
+  return NGLayoutOpportunity(
+      NGBfcRect(start_offset, end_offset),
+      shelf.has_shape_exclusions
+          ? base::AdoptRef(new NGShapeExclusions(*shelf.shape_exclusions))
+          : nullptr);
 }
 
 }  // namespace
@@ -148,9 +164,7 @@ NGLayoutOpportunity CreateLayoutOpportunity(
 NGExclusionSpace::NGExclusionSpace()
     : last_float_block_start_(LayoutUnit::Min()),
       left_float_clear_offset_(LayoutUnit::Min()),
-      right_float_clear_offset_(LayoutUnit::Min()),
-      has_left_float_(false),
-      has_right_float_(false) {
+      right_float_clear_offset_(LayoutUnit::Min()) {
   // The exclusion space must always have at least one shelf, at -Infinity.
   shelves_.push_back(NGShelf(/* block_offset */ LayoutUnit::Min()));
 }
@@ -163,11 +177,9 @@ void NGExclusionSpace::Add(scoped_refptr<const NGExclusion> exclusion) {
 
   // Update the members used for clearance calculations.
   if (exclusion->type == EFloat::kLeft) {
-    has_left_float_ = true;
     left_float_clear_offset_ =
         std::max(left_float_clear_offset_, exclusion->rect.BlockEndOffset());
   } else if (exclusion->type == EFloat::kRight) {
-    has_right_float_ = true;
     right_float_clear_offset_ =
         std::max(right_float_clear_offset_, exclusion->rect.BlockEndOffset());
   }
@@ -266,10 +278,14 @@ void NGExclusionSpace::Add(scoped_refptr<const NGExclusion> exclusion) {
 
         // Insert a closed-off layout opportunity if needed.
         if (has_solid_edges && is_overlapping) {
-          NGLayoutOpportunity opportunity(NGBfcRect(
-              /* start_offset */ {shelf.line_left, shelf.block_offset},
-              /* end_offset */ {shelf.line_right,
-                                exclusion->rect.BlockStartOffset()}));
+          NGLayoutOpportunity opportunity(
+              NGBfcRect(
+                  /* start_offset */ {shelf.line_left, shelf.block_offset},
+                  /* end_offset */ {shelf.line_right,
+                                    exclusion->rect.BlockStartOffset()}),
+              shelf.has_shape_exclusions ? base::AdoptRef(new NGShapeExclusions(
+                                               *shelf.shape_exclusions))
+                                         : nullptr);
 
           InsertOpportunity(opportunity, &opportunities_);
         }
@@ -322,6 +338,7 @@ void NGExclusionSpace::Add(scoped_refptr<const NGExclusion> exclusion) {
             shelf.line_left = exclusion->rect.LineEndOffset();
             shelf.line_left_edges.push_back(exclusion);
           }
+          shelf.shape_exclusions->line_left_shapes.push_back(exclusion);
         } else {
           DCHECK_EQ(exclusion->type, EFloat::kRight);
           if (exclusion->rect.LineStartOffset() <= shelf.line_right) {
@@ -331,7 +348,19 @@ void NGExclusionSpace::Add(scoped_refptr<const NGExclusion> exclusion) {
             shelf.line_right = exclusion->rect.LineStartOffset();
             shelf.line_right_edges.push_back(exclusion);
           }
+          shelf.shape_exclusions->line_right_shapes.push_back(exclusion);
         }
+
+        // We collect all exclusions in shape_exclusions (even if they don't
+        // have any shape data associated with them - normal floats need to be
+        // included in the shape line algorithm). We use this bool to track
+        // if the shape exclusions should be copied to the resulting layout
+        // opportunity.
+        if (exclusion->shape_data)
+          shelf.has_shape_exclusions = true;
+
+        // Just in case the shelf has a negative inline-size.
+        shelf.line_right = std::max(shelf.line_left, shelf.line_right);
 
         // We can end up in a situation where a shelf is the same as the
         // previous one. For example:
@@ -351,12 +380,7 @@ void NGExclusionSpace::Add(scoped_refptr<const NGExclusion> exclusion) {
         bool is_same_as_previous =
             (i > 0) && shelf.line_left == shelves_[i - 1].line_left &&
             shelf.line_right == shelves_[i - 1].line_right;
-
-        // The shelf also may now be non-existent. Note that zero inline size is
-        // allowed, since subsequent zero-size content may still fit there.
-        bool shelf_disappearing = shelf.line_right < shelf.line_left;
-
-        if (is_same_as_previous || shelf_disappearing) {
+        if (is_same_as_previous) {
           shelves_.EraseAt(i);
           removed_shelf = true;
         }
@@ -440,11 +464,11 @@ Vector<NGLayoutOpportunity> NGExclusionSpace::AllLayoutOpportunities(
     const LayoutUnit available_inline_size) const {
   Vector<NGLayoutOpportunity> opportunities;
 
-  auto shelves_it = shelves_.begin();
-  auto opps_it = opportunities_.begin();
+  auto* shelves_it = shelves_.begin();
+  auto* opps_it = opportunities_.begin();
 
-  const auto shelves_end = shelves_.end();
-  const auto opps_end = opportunities_.end();
+  auto* const shelves_end = shelves_.end();
+  auto* const opps_end = opportunities_.end();
 
   while (shelves_it != shelves_end || opps_it != opps_end) {
     // We should never exhaust the opportunities list before the shelves list,

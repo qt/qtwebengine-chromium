@@ -13,6 +13,7 @@
 #include "build/build_config.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/printing/print_job_worker.h"
+#include "chrome/browser/printing/printer_query.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/common/child_process_host.h"
@@ -25,43 +26,48 @@ namespace {
 
 class TestPrintJobWorker : public PrintJobWorker {
  public:
-  explicit TestPrintJobWorker(PrintJobWorkerOwner* owner)
+  explicit TestPrintJobWorker(PrinterQuery* query)
       : PrintJobWorker(content::ChildProcessHost::kInvalidUniqueID,
                        content::ChildProcessHost::kInvalidUniqueID,
-                       owner) {}
-  friend class TestOwner;
+                       query) {}
+  friend class TestQuery;
 };
 
-class TestOwner : public PrintJobWorkerOwner {
+class TestQuery : public PrinterQuery {
  public:
-  TestOwner() {}
+  TestQuery()
+      : PrinterQuery(content::ChildProcessHost::kInvalidUniqueID,
+                     content::ChildProcessHost::kInvalidUniqueID) {}
 
   void GetSettingsDone(const PrintSettings& new_settings,
                        PrintingContext::Result result) override {
-    EXPECT_FALSE(true);
+    FAIL();
   }
 
-  std::unique_ptr<PrintJobWorker> DetachWorker(
-      PrintJobWorkerOwner* new_owner) override {
+  std::unique_ptr<PrintJobWorker> DetachWorker() override {
+    {
+      // Do an actual detach to keep the parent class happy.
+      auto real_worker = PrinterQuery::DetachWorker();
+    }
+
     // We're screwing up here since we're calling worker from the main thread.
     // That's fine for testing. It is actually simulating PrinterQuery behavior.
-    auto worker = std::make_unique<TestPrintJobWorker>(new_owner);
+    auto worker = std::make_unique<TestPrintJobWorker>(this);
     EXPECT_TRUE(worker->Start());
     worker->printing_context()->UseDefaultSettings();
     settings_ = worker->printing_context()->settings();
+
     return std::move(worker);
   }
 
   const PrintSettings& settings() const override { return settings_; }
 
-  int cookie() const override { return 42; }
-
  private:
-  ~TestOwner() override {}
+  ~TestQuery() override {}
 
   PrintSettings settings_;
 
-  DISALLOW_COPY_AND_ASSIGN(TestOwner);
+  DISALLOW_COPY_AND_ASSIGN(TestQuery);
 };
 
 class TestPrintJob : public PrintJob {
@@ -97,8 +103,8 @@ TEST(PrintJobTest, SimplePrint) {
   volatile bool check = false;
   scoped_refptr<PrintJob> job(new TestPrintJob(&check));
   EXPECT_TRUE(job->RunsTasksInCurrentSequence());
-  scoped_refptr<TestOwner> owner(new TestOwner);
-  job->Initialize(owner.get(), base::string16(), 1);
+  scoped_refptr<TestQuery> query = base::MakeRefCounted<TestQuery>();
+  job->Initialize(query.get(), base::string16(), 1);
   job->Stop();
   while (job->document()) {
     base::RunLoop().RunUntilIdle();

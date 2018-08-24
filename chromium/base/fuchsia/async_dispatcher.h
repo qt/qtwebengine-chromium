@@ -5,7 +5,6 @@
 #ifndef BASE_FUCHSIA_ASYNC_DISPATCHER_H_
 #define BASE_FUCHSIA_ASYNC_DISPATCHER_H_
 
-#include <lib/async/default.h>
 #include <lib/async/dispatcher.h>
 
 #include "base/containers/linked_list.h"
@@ -18,7 +17,7 @@ namespace base {
 
 // Implementation of dispatcher for Fuchsia's async library. It's necessary to
 // run Fuchsia's library on chromium threads.
-class AsyncDispatcher : public async_t {
+class BASE_EXPORT AsyncDispatcher : public async_t {
  public:
   AsyncDispatcher();
   ~AsyncDispatcher();
@@ -70,6 +69,8 @@ class AsyncDispatcher : public async_t {
   ScopedZxHandle stop_event_;
 
   LinkedList<WaitState> wait_list_;
+
+  async_ops_t ops_storage_;
 
   // |lock_| must be held when accessing |task_list_|.
   base::Lock lock_;

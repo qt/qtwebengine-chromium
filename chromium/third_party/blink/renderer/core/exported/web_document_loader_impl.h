@@ -85,7 +85,6 @@ class CORE_EXPORT WebDocumentLoaderImpl final : public DocumentLoader,
   void SetSourceLocation(const WebSourceLocation&) override;
   void ResetSourceLocation() override;
   void SetUserActivated() override;
-  bool GetIsAdSubframe() const override;
   void BlockParser() override;
   void ResumeParser() override;
   bool IsArchive() const override;
@@ -93,7 +92,7 @@ class CORE_EXPORT WebDocumentLoaderImpl final : public DocumentLoader,
 
   static WebNavigationType ToWebNavigationType(NavigationType);
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   WebDocumentLoaderImpl(

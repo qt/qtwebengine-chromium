@@ -25,6 +25,7 @@
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/background_fetch/background_fetch_context.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
+#include "content/browser/cookie_store/cookie_store_context.h"
 #include "content/browser/devtools/devtools_url_request_interceptor.h"
 #include "content/browser/fileapi/browser_file_system_helper.h"
 #include "content/browser/loader/prefetch_url_loader_service.h"
@@ -37,17 +38,18 @@
 #include "content/browser/streams/stream_registry.h"
 #include "content/browser/streams/stream_url_request_job.h"
 #include "content/browser/webui/url_data_manager_backend.h"
+#include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/common/origin_trial_policy.h"
 #include "content/public/common/url_constants.h"
 #include "crypto/sha2.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "services/network/public/cpp/features.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/blob/blob_url_request_job_factory.h"
 #include "storage/browser/fileapi/file_system_url_request_job_factory.h"
@@ -434,6 +436,18 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
       browser_context_->CreateMediaRequestContext() :
       browser_context_->CreateMediaRequestContextForStoragePartition(
           partition->GetPath(), in_memory));
+  partition->GetCookieStoreContext()->ListenToCookieChanges(
+      partition->GetNetworkContext(), base::DoNothing());
+
+  if (!base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+    // This needs to happen after SetURLRequestContext() since we need this
+    // code path only for non-NetworkService cases where NetworkContext needs to
+    // be initialized using |url_request_context_|, which is initialized by
+    // SetURLRequestContext().
+    DCHECK(partition->url_loader_factory_getter());
+    DCHECK(partition->url_request_context_);
+    partition->url_loader_factory_getter()->HandleFactoryRequests();
+  }
 
   PostCreateInitialization(partition, in_memory);
 

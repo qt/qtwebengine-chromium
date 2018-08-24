@@ -59,7 +59,7 @@ void ThreadedMessagingProxyBase::Trace(blink::Visitor* visitor) {
 
 void ThreadedMessagingProxyBase::InitializeWorkerThread(
     std::unique_ptr<GlobalScopeCreationParams> global_scope_creation_params,
-    const WTF::Optional<WorkerBackingThreadStartupData>& thread_startup_data) {
+    const base::Optional<WorkerBackingThreadStartupData>& thread_startup_data) {
   DCHECK(IsParentContextThread());
 
   KURL script_url = global_scope_creation_params->script_url.Copy();
@@ -76,9 +76,13 @@ void ThreadedMessagingProxyBase::InitializeWorkerThread(
           GetExecutionContext()->Fetcher()->Context().ApplicationCacheHostID());
       web_worker_fetch_context->SetIsOnSubframe(web_frame != web_frame->Top());
     }
+  } else if (execution_context_->IsWorkerGlobalScope()) {
+    web_worker_fetch_context =
+        static_cast<WorkerFetchContext&>(
+            ToWorkerGlobalScope(execution_context_)->Fetcher()->Context())
+            .GetWebWorkerFetchContext()
+            ->CloneForNestedWorker();
   }
-  // TODO(japhet): Add a way to clone a WebWorkerFetchContext between worker
-  // threads for nested workers.
 
   if (web_worker_fetch_context) {
     web_worker_fetch_context->SetTerminateSyncLoadEvent(

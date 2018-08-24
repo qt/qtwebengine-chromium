@@ -13,6 +13,10 @@
 #include "third_party/blink/renderer/platform/heap/self_keep_alive.h"
 #include "third_party/blink/renderer/platform/wtf/compiler.h"
 
+namespace cc {
+class Layer;
+}
+
 namespace blink {
 
 class FrameOwner;
@@ -56,10 +60,10 @@ class CORE_EXPORT WebRemoteFrameImpl final
                                     const ParsedFeaturePolicy&,
                                     WebRemoteFrameClient*,
                                     WebFrame* opener) override;
-  void SetWebLayer(WebLayer*) override;
+  void SetCcLayer(cc::Layer*, bool prevent_contents_opaque_changes) override;
   void SetReplicatedOrigin(
       const WebSecurityOrigin&,
-      bool is_potentially_trustworthy_unique_origin) override;
+      bool is_potentially_trustworthy_opaque_origin) override;
   void SetReplicatedSandboxFlags(WebSandboxFlags) override;
   void SetReplicatedName(const WebString&) override;
   void SetReplicatedFeaturePolicyHeader(
@@ -81,6 +85,8 @@ class CORE_EXPORT WebRemoteFrameImpl final
   void SetHasReceivedUserGesture() override;
   void ScrollRectToVisible(const WebRect&,
                            const WebScrollIntoViewParams&) override;
+  void BubbleLogicalScroll(WebScrollDirection direction,
+                           WebScrollGranularity granularity) override;
   void IntrinsicSizingInfoChanged(const WebIntrinsicSizingInfo&) override;
   void SetHasReceivedUserGestureBeforeNavigation(bool value) override;
   v8::Local<v8::Object> GlobalProxy() const override;
@@ -101,6 +107,7 @@ class CORE_EXPORT WebRemoteFrameImpl final
   WebRemoteFrameImpl(WebTreeScopeType, WebRemoteFrameClient*);
 
   void SetCoreFrame(RemoteFrame*);
+  void ApplyReplicatedFeaturePolicyHeader();
 
   // Inherited from WebFrame, but intentionally hidden: it never makes sense
   // to call these on a WebRemoteFrameImpl.
@@ -113,6 +120,8 @@ class CORE_EXPORT WebRemoteFrameImpl final
   // TODO(dcheng): Inline this field directly rather than going through Member.
   Member<RemoteFrameClientImpl> frame_client_;
   Member<RemoteFrame> frame_;
+
+  ParsedFeaturePolicy feature_policy_header_;
 
   // Oilpan: WebRemoteFrameImpl must remain alive until close() is called.
   // Accomplish that by keeping a self-referential Persistent<>. It is

@@ -48,6 +48,11 @@ Notification* FakeMessageCenter::FindVisibleNotificationById(
   return nullptr;
 }
 
+NotificationList::Notifications FakeMessageCenter::FindNotificationsByAppId(
+    const std::string& app_id) {
+  return NotificationList::Notifications();
+}
+
 const NotificationList::Notifications&
 FakeMessageCenter::GetVisibleNotifications() {
   return empty_notifications_;
@@ -122,6 +127,14 @@ void FakeMessageCenter::SetVisibility(Visibility visible) {
 
 bool FakeMessageCenter::IsMessageCenterVisible() const {
   return false;
+}
+
+void FakeMessageCenter::SetHasMessageCenterView(bool has_message_center_view) {
+  has_message_center_view_ = has_message_center_view;
+}
+
+bool FakeMessageCenter::HasMessageCenterView() const {
+  return has_message_center_view_;
 }
 
 void FakeMessageCenter::RestartPopupTimers() {}

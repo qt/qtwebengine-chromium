@@ -55,6 +55,64 @@ void TestSerialize(const ByteVector& expected, const T& value) {
   EXPECT_EQ(expected, buffer);
 }
 
+ByteVector CreatePatchElement() {
+  return {
+      // PatchElementHeader
+      0x01, 0, 0, 0,       // old_offset
+      0x51, 0, 0, 0,       // old_length
+      0x03, 0, 0, 0,       // new_offset
+      0x13, 0, 0, 0,       // new_length
+      'P', 'x', '8', '6',  // exe_type = EXE_TYPE_WIN32_X86
+      // EquivalenceSource
+      1, 0, 0, 0,  // src_skip size
+      0x10,        // src_skip content
+      1, 0, 0, 0,  // dst_skip size
+      0x00,        // dst_skip content
+      1, 0, 0, 0,  // copy_count size
+      0x12,        // copy_count content
+      // ExtraDataSource
+      1, 0, 0, 0,  // extra_data size
+      0x13,        // extra_data content
+      // RawDeltaSource
+      1, 0, 0, 0,  // raw_delta_skip size
+      0x14,        // raw_delta_skip content
+      1, 0, 0, 0,  // raw_delta_diff size
+      0x15,        // raw_delta_diff content
+      // ReferenceDeltaSource
+      1, 0, 0, 0,  // reference_delta size
+      0x16,        // reference_delta content
+      // PatchElementReader
+      2, 0, 0, 0,  // pool count
+      0,           // pool_tag
+      1, 0, 0, 0,  // extra_targets size
+      0x17,        // extra_targets content
+      2,           // pool_tag
+      1, 0, 0, 0,  // extra_targets size
+      0x18,        // extra_targets content
+  };
+}
+
+ByteVector CreateElementMatch() {
+  return {
+      // PatchElementHeader
+      0x01, 0,   0,   0,    // old_offset
+      0x02, 0,   0,   0,    // old_length
+      0x03, 0,   0,   0,    // new_offset
+      0x04, 0,   0,   0,    // new_length
+      'D',  'E', 'X', ' ',  // exe_type = kExeTypeDex
+  };
+}
+
+// Helper to mutate test |data| (e.g., from CreatePatchElement()) at |idx| from
+// |from_val| (as sanity check) to |to_val|.
+void ModifyByte(size_t idx,
+                uint8_t from_val,
+                uint8_t to_val,
+                std::vector<uint8_t>* data) {
+  ASSERT_EQ(from_val, (*data)[idx]);
+  (*data)[idx] = to_val;
+}
+
 }  // namespace
 
 bool operator==(const ByteVector& a, ConstBufferView b) {
@@ -62,13 +120,7 @@ bool operator==(const ByteVector& a, ConstBufferView b) {
 }
 
 TEST(PatchTest, ParseSerializeElementMatch) {
-  ByteVector data = {
-      0x01, 0, 0, 0,  // old_offset
-      0x03, 0, 0, 0,  // new_offset
-      0x02, 0, 0, 0,  // old_length
-      0x04, 0, 0, 0,  // new_length
-      7,    0, 0, 0,  // kExeTypeDex
-  };
+  ByteVector data = CreateElementMatch();
   BufferSource buffer_source(data.data(), data.size());
   ElementMatch element_match = {};
   EXPECT_TRUE(patch::ParseElementMatch(&buffer_source, &element_match));
@@ -93,6 +145,38 @@ TEST(PatchTest, ParseElementMatchTooSmall) {
   BufferSource buffer_source(data.data(), data.size());
   ElementMatch element_match = {};
   EXPECT_FALSE(patch::ParseElementMatch(&buffer_source, &element_match));
+}
+
+TEST(PatchTest, ParseElementMatchNoLength) {
+  // Set old_length to 0 to trigger an error.
+  {
+    ByteVector data = CreateElementMatch();
+    // old_length := 0.
+    ModifyByte(offsetof(PatchElementHeader, old_length), 0x02, 0x00, &data);
+    BufferSource buffer_source(data.data(), data.size());
+    ElementMatch element_match = {};
+    EXPECT_FALSE(patch::ParseElementMatch(&buffer_source, &element_match));
+  }
+  // Set new_length to 0 to trigger an error.
+  {
+    ByteVector data = CreateElementMatch();
+    // new_length := 0.
+    ModifyByte(offsetof(PatchElementHeader, new_length), 0x04, 0x00, &data);
+    BufferSource buffer_source(data.data(), data.size());
+    ElementMatch element_match = {};
+    EXPECT_FALSE(patch::ParseElementMatch(&buffer_source, &element_match));
+  }
+  // Set both new_length and old_length to 0 to trigger an error.
+  {
+    ByteVector data = CreateElementMatch();
+    // old_length := 0.
+    ModifyByte(offsetof(PatchElementHeader, old_length), 0x02, 0x00, &data);
+    // new_length := 0.
+    ModifyByte(offsetof(PatchElementHeader, new_length), 0x04, 0x00, &data);
+    BufferSource buffer_source(data.data(), data.size());
+    ElementMatch element_match = {};
+    EXPECT_FALSE(patch::ParseElementMatch(&buffer_source, &element_match));
+  }
 }
 
 TEST(PatchTest, ParseSerializeElementMatchExeMismatch) {
@@ -167,6 +251,7 @@ TEST(PatchTest, SerializeBufferTooSmall) {
 
 TEST(EquivalenceSinkSourceTest, Empty) {
   ByteVector data = {
+      // EquivalenceSource
       0, 0, 0, 0,  // src_skip size
       0, 0, 0, 0,  // dst_skip size
       0, 0, 0, 0,  // copy_count size
@@ -182,6 +267,7 @@ TEST(EquivalenceSinkSourceTest, Empty) {
 
 TEST(EquivalenceSourceSinkTest, Normal) {
   ByteVector data = {
+      // EquivalenceSource
       2, 0, 0, 0,  // src_skip size
       6, 7,        // src_skip content
       2, 0, 0, 0,  // dst_skip size
@@ -216,6 +302,7 @@ TEST(EquivalenceSourceSinkTest, Normal) {
 
 TEST(ExtraDataSourceSinkTest, Empty) {
   ByteVector data = {
+      // ExtraDataSource
       0, 0, 0, 0,  // extra_data size
   };
   ExtraDataSource extra_data_source = TestInitialize<ExtraDataSource>(&data);
@@ -228,6 +315,7 @@ TEST(ExtraDataSourceSinkTest, Empty) {
 
 TEST(ExtraDataSourceSinkTest, Normal) {
   ByteVector data = {
+      // ExtraDataSource
       5, 0, 0, 0,     // extra_data size
       1, 2, 3, 4, 5,  // extra_data content
   };
@@ -261,6 +349,7 @@ TEST(ExtraDataSourceSinkTest, Normal) {
 
 TEST(RawDeltaSourceSinkTest, Empty) {
   ByteVector data = {
+      // RawDeltaSource
       0, 0, 0, 0,  // raw_delta_skip size
       0, 0, 0, 0,  // raw_delta_diff size
   };
@@ -274,6 +363,7 @@ TEST(RawDeltaSourceSinkTest, Empty) {
 
 TEST(RawDeltaSinkSourceSinkTest, Normal) {
   ByteVector data = {
+      // RawDeltaSource
       3,  0,  0,   0,  // raw_delta_skip size
       1,  3,  0,       // raw_delta_skip content
       3,  0,  0,   0,  // raw_delta_diff size
@@ -310,8 +400,22 @@ TEST(RawDeltaSinkSourceSinkTest, Normal) {
   TestSerialize(data, raw_delta_sink);
 }
 
+TEST(RawDeltaSourceSinkTest, InvalidContent) {
+  ByteVector data = {
+      // RawDeltaSource
+      2, 0, 0, 0,  // raw_delta_skip size
+      1, 3,        // raw_delta_skip content
+      2, 0, 0, 0,  // raw_delta_diff size
+      0, 4,        // raw_delta_diff content
+  };
+  RawDeltaSource raw_delta_source = TestInitialize<RawDeltaSource>(&data);
+  EXPECT_FALSE(raw_delta_source.GetNext());
+  EXPECT_FALSE(raw_delta_source.Done());
+}
+
 TEST(ReferenceDeltaSourceSinkTest, Empty) {
   ByteVector data = {
+      // ReferenceDeltaSource
       0, 0, 0, 0,  // reference_delta size
   };
   ReferenceDeltaSource reference_delta_source =
@@ -325,6 +429,7 @@ TEST(ReferenceDeltaSourceSinkTest, Empty) {
 
 TEST(ReferenceDeltaSourceSinkTest, Normal) {
   ByteVector data = {
+      // ReferenceDeltaSource
       2,  0,  0, 0,  // reference_delta size
       84, 47,        // reference_delta content
   };
@@ -353,6 +458,7 @@ TEST(ReferenceDeltaSourceSinkTest, Normal) {
 
 TEST(TargetSourceSinkTest, Empty) {
   ByteVector data = {
+      // TargetSource
       0, 0, 0, 0,  // extra_targets size
   };
   TargetSource target_source = TestInitialize<TargetSource>(&data);
@@ -365,6 +471,7 @@ TEST(TargetSourceSinkTest, Empty) {
 
 TEST(TargetSourceSinkTest, Normal) {
   ByteVector data = {
+      // TargetSource
       2, 0, 0, 0,  // extra_targets size
       3, 1,        // extra_targets content
   };
@@ -391,39 +498,7 @@ TEST(TargetSourceSinkTest, Normal) {
 }
 
 TEST(PatchElementTest, Normal) {
-  ByteVector data = {
-      0x01, 0, 0, 0,  // old_offset
-      0x03, 0, 0, 0,  // new_offset
-      0x02, 0, 0, 0,  // old_length
-      0x04, 0, 0, 0,  // new_length
-      1,    0, 0, 0,  // EXE_TYPE_WIN32_X86
-
-      1,    0, 0, 0,  // src_skip size
-      0x10,           // src_skip content
-      1,    0, 0, 0,  // dst_skip size
-      0x11,           // dst_skip content
-      1,    0, 0, 0,  // copy_count size
-      0x12,           // copy_count content
-
-      1,    0, 0, 0,  // extra_data size
-      0x13,           // extra_data content
-
-      1,    0, 0, 0,  // raw_delta_skip size
-      0x14,           // raw_delta_skip content
-      1,    0, 0, 0,  // raw_delta_diff size
-      0x15,           // raw_delta_diff content
-
-      1,    0, 0, 0,  // reference_delta size
-      0x16,           // reference_delta content
-
-      2,    0, 0, 0,  // pool count
-      0,              // pool_tag
-      1,    0, 0, 0,  // extra_targets size
-      0x17,           // extra_targets content
-      2,              // pool_tag
-      1,    0, 0, 0,  // extra_targets size
-      0x18,           // extra_targets content
-  };
+  ByteVector data = CreatePatchElement();
 
   PatchElementReader patch_element_reader =
       TestInitialize<PatchElementReader>(&data);
@@ -433,14 +508,14 @@ TEST(PatchElementTest, Normal) {
   EXPECT_EQ(kExeTypeWin32X86, element_match.old_element.exe_type);
   EXPECT_EQ(kExeTypeWin32X86, element_match.new_element.exe_type);
   EXPECT_EQ(0x1U, element_match.old_element.offset);
-  EXPECT_EQ(0x2U, element_match.old_element.size);
+  EXPECT_EQ(0x51U, element_match.old_element.size);
   EXPECT_EQ(0x3U, element_match.new_element.offset);
-  EXPECT_EQ(0x4U, element_match.new_element.size);
+  EXPECT_EQ(0x13U, element_match.new_element.size);
 
   EquivalenceSource equivalence_source =
       patch_element_reader.GetEquivalenceSource();
   EXPECT_EQ(ByteVector({0x10}), equivalence_source.src_skip());
-  EXPECT_EQ(ByteVector({0x11}), equivalence_source.dst_skip());
+  EXPECT_EQ(ByteVector({0x00}), equivalence_source.dst_skip());
   EXPECT_EQ(ByteVector({0x12}), equivalence_source.copy_count());
 
   ExtraDataSource extra_data_source = patch_element_reader.GetExtraDataSource();
@@ -467,7 +542,7 @@ TEST(PatchElementTest, Normal) {
   PatchElementWriter patch_element_writer(element_match);
 
   patch_element_writer.SetEquivalenceSink(
-      EquivalenceSink({0x10}, {0x11}, {0x12}));
+      EquivalenceSink({0x10}, {0x00}, {0x12}));
   patch_element_writer.SetExtraDataSink(ExtraDataSink({0x13}));
   patch_element_writer.SetRawDeltaSink(RawDeltaSink({0x14}, {0x15}));
   patch_element_writer.SetReferenceDeltaSink(ReferenceDeltaSink({0x16}));
@@ -476,29 +551,72 @@ TEST(PatchElementTest, Normal) {
   TestSerialize(data, patch_element_writer);
 }
 
+TEST(PatchElementTest, BadEquivalence) {
+  // If the "old" element is too small then the test should fail.
+  {
+    ByteVector data = CreatePatchElement();
+    // old_length := 0x4 (too small).
+    ModifyByte(offsetof(PatchElementHeader, old_length), 0x51, 0x04, &data);
+    TestInvalidInitialize<PatchElementReader>(&data);
+  }
+
+  // If the "new" element is too small then the test should fail.
+  {
+    ByteVector data = CreatePatchElement();
+    // new_length := 0x5 (too small).
+    ModifyByte(offsetof(PatchElementHeader, new_length), 0x13, 0x05, &data);
+    TestInvalidInitialize<PatchElementReader>(&data);
+  }
+}
+
+TEST(PatchElementTest, WrongExtraData) {
+  // Make "new" too large so insufficient extra data exists to cover the image.
+  {
+    ByteVector data = CreatePatchElement();
+    // new_length := 0x14 (too large).
+    ModifyByte(offsetof(PatchElementHeader, new_length), 0x13, 0x14, &data);
+    TestInvalidInitialize<PatchElementReader>(&data);
+  }
+  // Make "new" too small so there is too much extra data.
+  {
+    ByteVector data = CreatePatchElement();
+    // new_length := 0x12 (too small).
+    ModifyByte(offsetof(PatchElementHeader, new_length), 0x13, 0x12, &data);
+    TestInvalidInitialize<PatchElementReader>(&data);
+  }
+}
+
 TEST(EnsemblePatchTest, RawPatch) {
   ByteVector data = {
+      // PatchHeader
       0x5A, 0x75, 0x63, 0x00,  // magic
       0x10, 0x32, 0x54, 0x76,  // old_size
       0x00, 0x11, 0x22, 0x33,  // old_crc
-      0x98, 0xBA, 0xDC, 0xFE,  // new_size
+      0x01, 0, 0, 0,           // new_size
       0x44, 0x55, 0x66, 0x77,  // new_crc
 
-      1,    0,    0,    0,  // number of element
+      1, 0, 0, 0,  // number of element
 
-      0x01, 0,    0,    0,     // old_offset
-      0x00, 0,    0,    0,     // new_offset
-      0x02, 0,    0,    0,     // old_length
-      0x98, 0xBA, 0xDC, 0xFE,  // new_length
-      1,    0,    0,    0,     // EXE_TYPE_WIN32_X86
-      0,    0,    0,    0,     // src_skip size
-      0,    0,    0,    0,     // dst_skip size
-      0,    0,    0,    0,     // copy_count size
-      0,    0,    0,    0,     // extra_data size
-      0,    0,    0,    0,     // raw_delta_skip size
-      0,    0,    0,    0,     // raw_delta_diff size
-      0,    0,    0,    0,     // reference_delta size
-      0,    0,    0,    0,     // pool count
+      // PatchElementHeader
+      0x01, 0, 0, 0,       // old_offset
+      0x02, 0, 0, 0,       // old_length
+      0x00, 0, 0, 0,       // new_offset
+      0x01, 0, 0, 0,       // new_length
+      'P', 'x', '8', '6',  // exe_type = EXE_TYPE_WIN32_X86
+      // EquivalenceSource
+      0, 0, 0, 0,  // src_skip size
+      0, 0, 0, 0,  // dst_skip size
+      0, 0, 0, 0,  // copy_count size
+      // ExtraDataSource
+      0x01, 0, 0, 0,  // extra_data size
+      0x04,           // extra_data content
+      // RawDeltaSource
+      0, 0, 0, 0,  // raw_delta_skip size
+      0, 0, 0, 0,  // raw_delta_diff size
+      // ReferenceDeltaSource
+      0, 0, 0, 0,  // reference_delta size
+      // PatchElementReader
+      0, 0, 0, 0,  // pool count
   };
 
   EnsemblePatchReader ensemble_patch_reader =
@@ -508,7 +626,7 @@ TEST(EnsemblePatchTest, RawPatch) {
   EXPECT_EQ(PatchHeader::kMagic, header.magic);
   EXPECT_EQ(0x76543210U, header.old_size);
   EXPECT_EQ(0x33221100U, header.old_crc);
-  EXPECT_EQ(0xFEDCBA98U, header.new_size);
+  EXPECT_EQ(0x01U, header.new_size);
   EXPECT_EQ(0x77665544U, header.new_crc);
 
   const std::vector<PatchElementReader>& elements =
@@ -518,7 +636,7 @@ TEST(EnsemblePatchTest, RawPatch) {
   EnsemblePatchWriter ensemble_patch_writer(header);
   PatchElementWriter patch_element_writer(elements[0].element_match());
   patch_element_writer.SetEquivalenceSink({});
-  patch_element_writer.SetExtraDataSink({});
+  patch_element_writer.SetExtraDataSink(ExtraDataSink({0x04}));
   patch_element_writer.SetRawDeltaSink({});
   patch_element_writer.SetReferenceDeltaSink({});
   ensemble_patch_writer.AddElement(std::move(patch_element_writer));
@@ -528,27 +646,35 @@ TEST(EnsemblePatchTest, RawPatch) {
 
 TEST(EnsemblePatchTest, CheckFile) {
   ByteVector data = {
+      // PatchHeader
       0x5A, 0x75, 0x63, 0x00,  // magic
       0x05, 0x00, 0x00, 0x00,  // old_size
       0xDF, 0x13, 0xE4, 0x10,  // old_crc
       0x03, 0x00, 0x00, 0x00,  // new_size
       0xDC, 0xF7, 0x00, 0x40,  // new_crc
 
-      1,    0,    0,    0,  // number of element
+      1, 0, 0, 0,  // number of element
 
-      0x01, 0,    0,    0,  // old_offset
-      0x00, 0,    0,    0,  // new_offset
-      0x02, 0,    0,    0,  // old_length
-      0x03, 0,    0,    0,  // new_length
-      1,    0,    0,    0,  // EXE_TYPE_WIN32_X86
-      0,    0,    0,    0,  // src_skip size
-      0,    0,    0,    0,  // dst_skip size
-      0,    0,    0,    0,  // copy_count size
-      0,    0,    0,    0,  // extra_data size
-      0,    0,    0,    0,  // raw_delta_skip size
-      0,    0,    0,    0,  // raw_delta_diff size
-      0,    0,    0,    0,  // reference_delta size
-      0,    0,    0,    0,  // pool count
+      // PatchElementHeader
+      0x01, 0, 0, 0,       // old_offset
+      0x02, 0, 0, 0,       // old_length
+      0x00, 0, 0, 0,       // new_offset
+      0x03, 0, 0, 0,       // new_length
+      'P', 'x', '8', '6',  // exe_type = EXE_TYPE_WIN32_X86
+      // EquivalenceSource
+      0, 0, 0, 0,  // src_skip size
+      0, 0, 0, 0,  // dst_skip size
+      0, 0, 0, 0,  // copy_count size
+      // ExtraDataSource
+      0x03, 0, 0, 0,  // extra_data size
+      'A', 'B', 'C',  // extra_data content
+      // RawDeltaSource
+      0, 0, 0, 0,  // raw_delta_skip size
+      0, 0, 0, 0,  // raw_delta_diff size
+      // ReferenceDeltaSource
+      0, 0, 0, 0,  // reference_delta size
+      // PatchElementReader
+      0, 0, 0, 0,  // pool count
   };
 
   EnsemblePatchReader ensemble_patch_reader =
@@ -568,27 +694,34 @@ TEST(EnsemblePatchTest, CheckFile) {
 
 TEST(EnsemblePatchTest, InvalidMagic) {
   ByteVector data = {
+      // PatchHeader
       0x42, 0x42, 0x42, 0x00,  // magic
       0x10, 0x32, 0x54, 0x76,  // old_size
       0x00, 0x11, 0x22, 0x33,  // old_crc
       0x03, 0x00, 0x00, 0x00,  // new_size
       0x44, 0x55, 0x66, 0x77,  // new_crc
 
-      1,    0,    0,    0,  // number of element
+      1, 0, 0, 0,  // number of element
 
-      0x01, 0,    0,    0,  // old_offset
-      0x00, 0,    0,    0,  // new_offset
-      0x02, 0,    0,    0,  // old_length
-      0x03, 0,    0,    0,  // new_length
-      1,    0,    0,    0,  // EXE_TYPE_WIN32_X86
-      0,    0,    0,    0,  // src_skip size
-      0,    0,    0,    0,  // dst_skip size
-      0,    0,    0,    0,  // copy_count size
-      0,    0,    0,    0,  // extra_data size
-      0,    0,    0,    0,  // raw_delta_skip size
-      0,    0,    0,    0,  // raw_delta_diff size
-      0,    0,    0,    0,  // reference_delta size
-      0,    0,    0,    0,  // pool count
+      // PatchElementHeader
+      0x01, 0, 0, 0,       // old_offset
+      0x02, 0, 0, 0,       // old_length
+      0x00, 0, 0, 0,       // new_offset
+      0x03, 0, 0, 0,       // new_length
+      'P', 'x', '8', '6',  // exe_type = EXE_TYPE_WIN32_X86
+      // EquivalenceSource
+      0, 0, 0, 0,  // src_skip size
+      0, 0, 0, 0,  // dst_skip size
+      0, 0, 0, 0,  // copy_count size
+      // ExtraDataSource
+      0, 0, 0, 0,  // extra_data size
+      // RawDeltaSource
+      0, 0, 0, 0,  // raw_delta_skip size
+      0, 0, 0, 0,  // raw_delta_diff size
+      // ReferenceDeltaSource
+      0, 0, 0, 0,  // reference_delta size
+      // PatchElementReader
+      0, 0, 0, 0,  // pool count
   };
 
   TestInvalidInitialize<EnsemblePatchReader>(&data);

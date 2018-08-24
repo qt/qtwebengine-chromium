@@ -322,6 +322,12 @@ void ArcImeService::OnCursorRectChangedWithSurroundingText(
     input_method->OnCaretBoundsChanged(this);
 }
 
+void ArcImeService::RequestHideIme() {
+  auto* keyboard_controller = keyboard::KeyboardController::GetInstance();
+  if (keyboard_controller)
+    keyboard_controller->MaybeHideKeyboard();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Overridden from keyboard::KeyboardControllerObserver
 void ArcImeService::OnKeyboardAppearanceChanged(
@@ -478,6 +484,13 @@ bool ArcImeService::HasCompositionText() const {
   return has_composition_text_;
 }
 
+ui::TextInputClient::FocusReason ArcImeService::GetFocusReason() const {
+  // TODO(https://crbug.com/824604): Determine how the current input client got
+  // focused.
+  NOTIMPLEMENTED_LOG_ONCE();
+  return ui::TextInputClient::FOCUS_REASON_OTHER;
+}
+
 bool ArcImeService::GetCompositionTextRange(gfx::Range* range) const {
   return false;
 }
@@ -504,6 +517,12 @@ const std::string& ArcImeService::GetClientSourceInfo() const {
   // TODO(yhanada): Implement this method. crbug.com/752657
   NOTIMPLEMENTED_LOG_ONCE();
   return base::EmptyString();
+}
+
+bool ArcImeService::ShouldDoLearning() {
+  // TODO(https://crbug.com/311180): Implement this method.
+  NOTIMPLEMENTED_LOG_ONCE();
+  return true;
 }
 
 // static

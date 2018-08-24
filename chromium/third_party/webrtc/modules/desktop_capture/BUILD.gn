@@ -126,8 +126,6 @@ if (rtc_include_tests) {
       "screen_drawer.cc",
       "screen_drawer.h",
       "screen_drawer_linux.cc",
-      "screen_drawer_lock_posix.cc",
-      "screen_drawer_lock_posix.h",
       "screen_drawer_mac.cc",
       "screen_drawer_win.cc",
     ]
@@ -138,6 +136,13 @@ if (rtc_include_tests) {
       "../../rtc_base:rtc_base_approved",
       "../../system_wrappers",
     ]
+
+    if (is_posix || is_fuchsia) {
+      sources += [
+        "screen_drawer_lock_posix.cc",
+        "screen_drawer_lock_posix.h",
+      ]
+    }
   }
 
   source_set("desktop_capture_mock") {
@@ -177,6 +182,10 @@ if (is_mac) {
       "mac/desktop_configuration.mm",
       "mac/desktop_frame_cgimage.h",
       "mac/desktop_frame_cgimage.mm",
+      "mac/desktop_frame_iosurface.h",
+      "mac/desktop_frame_iosurface.mm",
+      "mac/desktop_frame_provider.h",
+      "mac/desktop_frame_provider.mm",
       "mac/screen_capturer_mac.h",
       "mac/screen_capturer_mac.mm",
       "mouse_cursor_monitor_mac.mm",
@@ -191,11 +200,13 @@ if (is_mac) {
       "../../rtc_base:checks",
       "../../rtc_base:rtc_base",
       "../../rtc_base:rtc_base_approved",
+      "../../rtc_base/synchronization:rw_lock_wrapper",
       "../../sdk:common_objc",
     ]
     libs = [
       "AppKit.framework",
       "IOKit.framework",
+      "IOSurface.framework",
     ]
   }
 }

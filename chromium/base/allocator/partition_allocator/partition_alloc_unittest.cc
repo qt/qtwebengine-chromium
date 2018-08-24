@@ -27,6 +27,12 @@
 
 #if !defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
 
+// Because there is so much deep inspection of the internal objects,
+// explicitly annotating the namespaces for commonly expected objects makes the
+// code unreadable. Prefer using directives instead.
+using base::internal::PartitionBucket;
+using base::internal::PartitionPage;
+
 namespace {
 
 constexpr size_t kTestMaxAllocation = base::kSystemPageSize;
@@ -83,6 +89,14 @@ bool ClearAddressSpaceLimit() {
 }  // namespace
 
 namespace base {
+
+// NOTE: Though this test actually excercises interfaces inside the ::base
+// namespace, the unittest is inside the ::base::internal spaces because a
+// portion of the test expectations require inspecting objects and behavior
+// in the ::base::internal namespace. An alternate formulation would be to
+// explicitly add using statements for each inspected type but this felt more
+// readable.
+namespace internal {
 
 const size_t kTestAllocSize = 16;
 #if !DCHECK_IS_ON()
@@ -168,7 +182,7 @@ class PartitionAllocTest : public testing::Test {
     }
   }
 
-  void DoReturnNullTest(size_t allocSize) {
+  void DoReturnNullTest(size_t allocSize, bool use_realloc) {
     // TODO(crbug.com/678782): Where necessary and possible, disable the
     // platform's OOM-killing behavior. OOM-killing makes this test flaky on
     // low-memory devices.
@@ -188,9 +202,17 @@ class PartitionAllocTest : public testing::Test {
     int i;
 
     for (i = 0; i < numAllocations; ++i) {
-      ptrs[i] = PartitionAllocGenericFlags(generic_allocator.root(),
-                                           PartitionAllocReturnNull, allocSize,
-                                           type_name);
+      if (use_realloc) {
+        ptrs[i] = PartitionAllocGenericFlags(
+            generic_allocator.root(), PartitionAllocReturnNull, 1, type_name);
+        ptrs[i] = PartitionReallocGenericFlags(generic_allocator.root(),
+                                               PartitionAllocReturnNull,
+                                               ptrs[i], allocSize, type_name);
+      } else {
+        ptrs[i] = PartitionAllocGenericFlags(generic_allocator.root(),
+                                             PartitionAllocReturnNull,
+                                             allocSize, type_name);
+      }
       if (!i)
         EXPECT_TRUE(ptrs[0]);
       if (!ptrs[i]) {
@@ -1288,14 +1310,26 @@ class PartitionAllocReturnNullTest : public PartitionAllocTest {};
 // sufficient unreserved virtual memory around for the later one(s).
 TEST_F(PartitionAllocReturnNullTest, RepeatedReturnNullDirect) {
   // A direct-mapped allocation size.
-  DoReturnNullTest(32 * 1024 * 1024);
+  DoReturnNullTest(32 * 1024 * 1024, false);
 }
 
 // Test "return null" with a 512 kB block size.
 TEST_F(PartitionAllocReturnNullTest, RepeatedReturnNull) {
   // A single-slot but non-direct-mapped allocation size.
-  DoReturnNullTest(512 * 1024);
+  DoReturnNullTest(512 * 1024, false);
 }
+
+// Repeating the above tests using Realloc instead of Alloc.
+class PartitionReallocReturnNullTest : public PartitionAllocTest {};
+
+TEST_F(PartitionReallocReturnNullTest, RepeatedReturnNullDirect) {
+  DoReturnNullTest(32 * 1024 * 1024, true);
+}
+
+TEST_F(PartitionReallocReturnNullTest, RepeatedReturnNull) {
+  DoReturnNullTest(512 * 1024, true);
+}
+
 #endif  // !defined(ARCH_CPU_64_BITS) || (defined(OS_POSIX) &&
         // !(defined(OS_FUCHSIA) || defined(OS_MACOSX) || defined(OS_ANDROID)))
 
@@ -2089,6 +2123,7 @@ TEST_F(PartitionAllocTest, SmallReallocDoesNotMoveTrailingCookie) {
   generic_allocator.root()->Free(ptr);
 }
 
+}  // namespace internal
 }  // namespace base
 
 #endif  // !defined(MEMORY_TOOL_REPLACES_ALLOCATOR)

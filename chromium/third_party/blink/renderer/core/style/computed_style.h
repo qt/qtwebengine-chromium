@@ -297,10 +297,6 @@ class ComputedStyle : public ComputedStyleBase,
   ComputedStyle* AddCachedPseudoStyle(scoped_refptr<ComputedStyle>);
   void RemoveCachedPseudoStyle(PseudoId);
 
-  const PseudoStyleCache* CachedPseudoStyles() const {
-    return cached_pseudo_styles_.get();
-  }
-
   /**
    * ComputedStyle properties
    *
@@ -799,8 +795,6 @@ class ComputedStyle : public ComputedStyleBase,
     SetZIndexInternal(0);
   }
 
-  // zoom
-  bool SetZoom(float);
   bool SetEffectiveZoom(float);
 
   // -webkit-clip-path
@@ -921,6 +915,10 @@ class ComputedStyle : public ComputedStyleBase,
 
   // font-stretch
   FontSelectionValue GetFontStretch() const;
+
+  // Child is aligned to the parent by matching the parent’s dominant baseline
+  // to the same baseline in the child.
+  FontBaseline GetFontBaseline() const;
 
   // -webkit-locale
   const AtomicString& Locale() const {
@@ -1325,6 +1323,9 @@ class ComputedStyle : public ComputedStyleBase,
   // text-indent utility functions.
   bool ShouldUseTextIndent(bool is_first_line,
                            bool is_after_forced_break) const;
+
+  // text-transform utility functions.
+  void ApplyTextTransform(String*, UChar previous_character = ' ') const;
 
   // Line-height utility functions.
   const Length& SpecifiedLineHeight() const;
@@ -1745,7 +1746,7 @@ class ComputedStyle : public ComputedStyleBase,
   bool IsFloating() const { return Floating() != EFloat::kNone; }
 
   // Mix-blend-mode utility functions.
-  bool HasBlendMode() const { return BlendMode() != WebBlendMode::kNormal; }
+  bool HasBlendMode() const { return GetBlendMode() != BlendMode::kNormal; }
 
   // Motion utility functions.
   bool HasOffset() const {
@@ -1940,11 +1941,6 @@ class ComputedStyle : public ComputedStyleBase,
 
   // Animation utility functions.
   bool ShouldCompositeForCurrentAnimations() const {
-    if (RuntimeEnabledFeatures::
-            TurnOff2DAndOpacityCompositorAnimationsEnabled()) {
-      return (HasCurrentTransformAnimation() && Has3DTransform()) ||
-             HasCurrentFilterAnimation() || HasCurrentBackdropFilterAnimation();
-    }
     return HasCurrentOpacityAnimation() || HasCurrentTransformAnimation() ||
            HasCurrentFilterAnimation() || HasCurrentBackdropFilterAnimation();
   }
@@ -2083,7 +2079,6 @@ class ComputedStyle : public ComputedStyleBase,
   bool HasAnyPublicPseudoStyles() const;
   bool HasPseudoStyle(PseudoId) const;
   void SetHasPseudoStyle(PseudoId);
-  bool HasUniquePseudoStyle() const;
   bool HasPseudoElementStyle() const;
 
   // Note: CanContainAbsolutePositionObjects should return true if
@@ -2092,8 +2087,11 @@ class ComputedStyle : public ComputedStyleBase,
   bool CanContainAbsolutePositionObjects() const {
     return GetPosition() != EPosition::kStatic;
   }
-  bool CanContainFixedPositionObjects() const {
-    return HasTransformRelatedProperty() || ContainsPaint();
+  bool CanContainFixedPositionObjects(bool is_document_element) const {
+    return HasTransformRelatedProperty() || ContainsPaint() ||
+           // Filter establishes containing block for non-document elements:
+           // https://drafts.fxtf.org/filter-effects-1/#FilterProperty
+           (!is_document_element && HasFilter());
   }
 
   // Whitespace utility functions.
@@ -2546,14 +2544,6 @@ class ComputedStyle : public ComputedStyleBase,
       ComputedStyleTest,
       UpdatePropertySpecificDifferencesCompositingReasonsUsedStylePreserve3D);
 };
-
-inline bool ComputedStyle::SetZoom(float f) {
-  if (Zoom() == f)
-    return false;
-  SetZoomInternal(f);
-  SetEffectiveZoom(EffectiveZoom() * Zoom());
-  return true;
-}
 
 inline bool ComputedStyle::SetEffectiveZoom(float f) {
   // Clamp the effective zoom value to a smaller (but hopeful still large

@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_TESTING_SIM_SIM_COMPOSITOR_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_TESTING_SIM_SIM_COMPOSITOR_H_
 
+#include "base/time/time.h"
 #include "third_party/blink/public/platform/web_layer_tree_view.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_canvas.h"
 
@@ -24,7 +25,7 @@ class WebViewImpl;
 class SimCompositor final : public WebLayerTreeView {
  public:
   explicit SimCompositor();
-  ~SimCompositor();
+  ~SimCompositor() override;
 
   void SetWebView(WebViewImpl&);
 
@@ -33,6 +34,7 @@ class SimCompositor final : public WebLayerTreeView {
   // If time is not specified a 60Hz frame rate time progression is used.
   // Returns all drawing commands that were issued during painting the frame
   // (including cached ones).
+  // TODO(dcheng): This should take a base::TimeDelta.
   SimCanvas::Commands BeginFrame(double time_delta_in_seconds = 0.016);
 
   // Similar to BeginFrame() but doesn't require NeedsBeginFrame(). This is
@@ -45,11 +47,11 @@ class SimCompositor final : public WebLayerTreeView {
 
   bool HasSelection() const { return has_selection_; }
 
-  void SetBackgroundColor(WebColor background_color) override {
+  void SetBackgroundColor(SkColor background_color) override {
     background_color_ = background_color;
   }
 
-  WebColor background_color() { return background_color_; }
+  SkColor background_color() { return background_color_; }
 
  private:
   void SetNeedsBeginFrame() override;
@@ -61,8 +63,8 @@ class SimCompositor final : public WebLayerTreeView {
   bool defer_commits_;
   bool has_selection_;
   WebViewImpl* web_view_;
-  double last_frame_time_monotonic_;
-  WebColor background_color_;
+  base::TimeTicks last_frame_time_;
+  SkColor background_color_;
 };
 
 }  // namespace blink

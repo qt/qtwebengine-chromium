@@ -30,6 +30,10 @@ namespace media {
 class AudioSystem;
 }
 
+namespace service_manager {
+class Connector;
+}
+
 namespace content {
 
 class MediaDevicesPermissionChecker;
@@ -81,11 +85,9 @@ class CONTENT_EXPORT MediaDevicesManager
   // types and reports the results to |callback|. The enumeration results are
   // translated for use by the renderer process and frame identified with
   // |render_process_id| and |render_frame_id|, based on the frame origin's
-  // permissions, an internal media-device salt, and the given
-  // |group_id_salt_base|.
+  // permissions, an internal media-device salts.
   void EnumerateDevices(int render_process_id,
                         int render_frame_id,
-                        const std::string& group_id_salt_base,
                         const BoolDeviceTypes& requested_types,
                         bool request_video_input_capabilities,
                         EnumerateDevicesCallback callback);
@@ -93,7 +95,6 @@ class CONTENT_EXPORT MediaDevicesManager
   uint32_t SubscribeDeviceChangeNotifications(
       int render_process_id,
       int render_frame_id,
-      const std::string& group_id_salt_base,
       const BoolDeviceTypes& subscribe_types,
       blink::mojom::MediaDevicesListenerPtr listener);
   void UnsubscribeDeviceChangeNotifications(uint32_t subscription_id);
@@ -146,7 +147,6 @@ class CONTENT_EXPORT MediaDevicesManager
   struct SubscriptionRequest {
     SubscriptionRequest(int render_process_id,
                         int render_frame_id,
-                        const std::string& group_id_salt_base,
                         const BoolDeviceTypes& subscribe_types,
                         blink::mojom::MediaDevicesListenerPtr listener);
     SubscriptionRequest(SubscriptionRequest&&);
@@ -156,7 +156,6 @@ class CONTENT_EXPORT MediaDevicesManager
 
     int render_process_id;
     int render_frame_id;
-    std::string group_id_salt_base;
     BoolDeviceTypes subscribe_types;
     blink::mojom::MediaDevicesListenerPtr listener;
   };
@@ -179,26 +178,21 @@ class CONTENT_EXPORT MediaDevicesManager
   void CheckPermissionsForEnumerateDevices(
       int render_process_id,
       int render_frame_id,
-      const std::string& group_id_salt_base,
       const BoolDeviceTypes& requested_types,
       bool request_video_input_capabilities,
       EnumerateDevicesCallback callback,
-      const std::pair<std::string, url::Origin>& salt_and_origin);
+      MediaDeviceSaltAndOrigin salt_and_origin);
   void OnPermissionsCheckDone(
-      const std::string& group_id_salt_base,
       const MediaDevicesManager::BoolDeviceTypes& requested_types,
       bool request_video_input_capabilities,
       EnumerateDevicesCallback callback,
-      const std::string& device_id_salt,
-      const url::Origin& security_origin,
+      MediaDeviceSaltAndOrigin salt_and_origin,
       const MediaDevicesManager::BoolDeviceTypes& has_permissions);
   void OnDevicesEnumerated(
-      const std::string& group_id_salt_base,
       const MediaDevicesManager::BoolDeviceTypes& requested_types,
       bool request_video_input_capabilities,
       EnumerateDevicesCallback callback,
-      const std::string& device_id_salt,
-      const url::Origin& security_origin,
+      const MediaDeviceSaltAndOrigin& salt_and_origin,
       const MediaDevicesManager::BoolDeviceTypes& has_permissions,
       const MediaDeviceEnumeration& enumeration);
 
@@ -222,28 +216,29 @@ class CONTENT_EXPORT MediaDevicesManager
   void DevicesEnumerated(MediaDeviceType type,
                          const MediaDeviceInfoArray& snapshot);
   void UpdateSnapshot(MediaDeviceType type,
-                      const MediaDeviceInfoArray& new_snapshot);
+                      const MediaDeviceInfoArray& new_snapshot,
+                      bool ignore_group_id = true);
   void ProcessRequests();
   bool IsEnumerationRequestReady(const EnumerationRequest& request_info);
 
   // Helpers to handle device-change notification.
   void HandleDevicesChanged(MediaDeviceType type);
+  void StopRemovedDevices(MediaDeviceType type,
+                          const MediaDeviceInfoArray& new_snapshot);
   void NotifyMediaStreamManager(MediaDeviceType type,
                                 const MediaDeviceInfoArray& new_snapshot);
   void NotifyDeviceChangeSubscribers(MediaDeviceType type,
                                      const MediaDeviceInfoArray& snapshot);
-  void CheckPermissionForDeviceChange(
-      uint32_t subscription_id,
-      int render_process_id,
-      int render_frame_id,
-      MediaDeviceType type,
-      const MediaDeviceInfoArray& device_infos,
-      const std::pair<std::string, url::Origin>& salt_and_origin);
+  void CheckPermissionForDeviceChange(uint32_t subscription_id,
+                                      int render_process_id,
+                                      int render_frame_id,
+                                      MediaDeviceType type,
+                                      const MediaDeviceInfoArray& device_infos,
+                                      MediaDeviceSaltAndOrigin salt_and_origin);
   void NotifyDeviceChange(uint32_t subscription_id,
                           MediaDeviceType type,
                           const MediaDeviceInfoArray& device_infos,
-                          std::string device_id_salt,
-                          const url::Origin& security_origin,
+                          const MediaDeviceSaltAndOrigin& salt_and_origin,
                           bool has_permission);
 
 #if defined(OS_MACOSX)
@@ -274,6 +269,11 @@ class CONTENT_EXPORT MediaDevicesManager
 
   // Callback used to obtain the current device ID salt and security origin.
   MediaDeviceSaltAndOriginCallback salt_and_origin_callback_;
+
+  std::unique_ptr<service_manager::Connector> connector_;
+
+  class AudioServiceDeviceListener;
+  std::unique_ptr<AudioServiceDeviceListener> audio_service_device_listener_;
 
   base::WeakPtrFactory<MediaDevicesManager> weak_factory_;
 

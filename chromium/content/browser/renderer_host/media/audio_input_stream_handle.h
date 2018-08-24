@@ -33,12 +33,16 @@ class CONTENT_EXPORT AudioInputStreamHandle {
 
   ~AudioInputStreamHandle();
 
+  const base::UnguessableToken& id() const { return stream_id_; }
+  void SetOutputDeviceForAec(const std::string& raw_output_device_id);
+
  private:
   void OnCreated(media::mojom::AudioDataPipePtr, bool initially_muted);
 
   void CallDeleter();
 
   SEQUENCE_CHECKER(sequence_checker_);
+  const base::UnguessableToken stream_id_;
   DeleterCallback deleter_callback_;
   mojom::RendererAudioInputStreamFactoryClientPtr client_;
   media::mojom::AudioInputStreamPtr stream_ptr_;

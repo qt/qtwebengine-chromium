@@ -203,14 +203,14 @@ class AutofillMetrics {
     // The prompt was dismissed because the user clicked a legal message link.
     SAVE_CARD_PROMPT_DISMISS_CLICK_LEGAL_MESSAGE,
 
-    // The following _CVC_FIX_FLOW_ metrics are independent of the ones above.
-    // For instance, accepting the CVC fix flow will trigger both
+    // The following _CVC_FIX_FLOW_ metrics are independent of the ones above,
+    // and were relevant when the CVC fix flow was active M62-M64. During that
+    // time, for instance, accepting the CVC fix flow would trigger both
     // SAVE_CARD_PROMPT_CVC_FIX_FLOW_END_ACCEPTED as well as
-    // SAVE_CARD_PROMPT_END_ACCEPTED.  They are split apart in order to track
+    // SAVE_CARD_PROMPT_END_ACCEPTED.  They were split apart in order to track
     // acceptance/abandonment rates of the multi-stage dialog user experience.
-
-    // SAVE_CARD_PROMPT_CVC_FIX_FLOW_END_DENIED is an impossible state because
-    // the CVC fix flow uses a close button instead of a cancel button.
+    // (SAVE_CARD_PROMPT_CVC_FIX_FLOW_END_DENIED was an impossible state because
+    // the CVC fix flow uses a close button instead of a cancel button.)
 
     // The prompt moved to a second stage that requested CVC from the user.
     SAVE_CARD_PROMPT_CVC_FIX_FLOW_SHOWN,
@@ -496,6 +496,16 @@ class AutofillMetrics {
     FORM_EVENT_SUBMIT_WITHOUT_SELECTING_SUGGESTIONS_WRONG_SIZE_CARD,
     FORM_EVENT_SUBMIT_WITHOUT_SELECTING_SUGGESTIONS_FAIL_LUHN_CHECK_CARD,
 
+    // The form was changed dynamically.
+    FORM_EVENT_DID_SEE_DYNAMIC_FORM,
+    // The form was changed dynamically and was fillable.
+    FORM_EVENT_DID_SEE_FILLABLE_DYNAMIC_FORM,
+    // There was a dynamic change of the form and it got re-filled
+    // automatically.
+    FORM_EVENT_DID_DYNAMIC_REFILL,
+    // The form dynamically changed another time after the refill.
+    FORM_EVENT_DYNAMIC_CHANGE_AFTER_REFILL,
+
     NUM_FORM_EVENTS,
   };
 
@@ -665,13 +675,16 @@ class AutofillMetrics {
     void OnFormsParsed(const GURL& url);
     void LogInteractedWithForm(bool is_for_credit_card,
                                size_t local_record_type_count,
-                               size_t server_record_type_count);
-    void LogSuggestionsShown(const AutofillField& field,
+                               size_t server_record_type_count,
+                               FormSignature form_signature);
+    void LogSuggestionsShown(const FormStructure& form,
+                             const AutofillField& field,
                              const base::TimeTicks& form_parsed_timestamp);
     void LogSelectedMaskedServerCard(
         const base::TimeTicks& form_parsed_timestamp);
     void LogDidFillSuggestion(int record_type,
-                              const base::TimeTicks& form_parsed_timestamp);
+                              const FormStructure& form,
+                              const AutofillField& field);
     void LogTextFieldDidChange(const AutofillField& field,
                                const base::TimeTicks& form_parsed_timestamp);
     void LogFieldFillStatus(const FormStructure& form,
@@ -687,7 +700,8 @@ class AutofillMetrics {
     void LogFormSubmitted(bool is_for_credit_card,
                           const std::set<FormType>& form_types,
                           AutofillFormSubmittedState state,
-                          const base::TimeTicks& form_parsed_timestamp);
+                          const base::TimeTicks& form_parsed_timestamp,
+                          FormSignature form_signature);
 
     // We initialize |url_| with the form's URL when we log the first form
     // interaction. Later, we may update |url_| with the |source_url()| for the
@@ -926,6 +940,7 @@ class AutofillMetrics {
       bool is_for_credit_card,
       const std::set<FormType>& form_types,
       const base::TimeTicks& form_parsed_timestamp,
+      FormSignature form_signature,
       FormInteractionsUkmLogger* form_interactions_ukm_logger);
 
   // This should be called when determining the heuristic types for a form's
@@ -969,7 +984,12 @@ class AutofillMetrics {
                                         const GURL& url,
                                         bool is_for_credit_card,
                                         std::set<FormType> form_types,
-                                        int developer_engagement_metrics);
+                                        int developer_engagement_metrics,
+                                        FormSignature form_signature);
+
+  // Log the number of hidden or presentational 'select' fields that were
+  // autofilled to support synthetic fields.
+  static void LogHiddenOrPresentationalSelectFieldsFilled();
 
   // Logs the the |ukm_entry_name| with the specified |url| and the specified
   // |metrics|. Returns whether the ukm was sucessfully logged.
@@ -1000,11 +1020,12 @@ class AutofillMetrics {
       is_context_secure_ = is_context_secure;
     }
 
-    void OnDidInteractWithAutofillableForm();
+    void OnDidInteractWithAutofillableForm(FormSignature form_signature);
 
     void OnDidPollSuggestions(const FormFieldData& field);
 
-    void OnDidShowSuggestions(const AutofillField& field,
+    void OnDidShowSuggestions(const FormStructure& form,
+                              const AutofillField& field,
                               const base::TimeTicks& form_parsed_timestamp);
 
     void OnDidSelectMaskedServerCardSuggestion(
@@ -1013,10 +1034,12 @@ class AutofillMetrics {
     // In case of masked cards, caller must make sure this gets called before
     // the card is upgraded to a full card.
     void OnDidFillSuggestion(const CreditCard& credit_card,
-                             const base::TimeTicks& form_parsed_timestamp);
+                             const FormStructure& form,
+                             const AutofillField& field);
 
     void OnDidFillSuggestion(const AutofillProfile& profile,
-                             const base::TimeTicks& form_parsed_timestamp);
+                             const FormStructure& form,
+                             const AutofillField& field);
 
     void OnWillSubmitForm();
 
@@ -1024,6 +1047,14 @@ class AutofillMetrics {
                          const CardNumberStatus card_number_status);
 
     void SetBankNameAvailable();
+
+    void OnDidSeeDynamicForm();
+
+    void OnDidSeeFillableDynamicForm();
+
+    void OnDidRefill();
+
+    void OnSubsequentRefillAttempt();
 
    private:
     void Log(FormEvent event) const;

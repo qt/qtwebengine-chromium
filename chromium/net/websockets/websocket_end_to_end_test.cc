@@ -27,10 +27,12 @@
 #include "build/build_config.h"
 #include "net/base/auth.h"
 #include "net/base/proxy_delegate.h"
+#include "net/http/http_request_headers.h"
 #include "net/proxy_resolution/proxy_resolution_service.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "net/test/test_data_directory.h"
+#include "net/test/test_with_scoped_task_environment.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/url_request_test_util.h"
 #include "net/websockets/websocket_channel.h"
@@ -215,7 +217,7 @@ class TestProxyDelegateWithProxyInfo : public ProxyDelegate {
   DISALLOW_COPY_AND_ASSIGN(TestProxyDelegateWithProxyInfo);
 };
 
-class WebSocketEndToEndTest : public ::testing::Test {
+class WebSocketEndToEndTest : public TestWithScopedTaskEnvironment {
  protected:
   WebSocketEndToEndTest()
       : event_interface_(),
@@ -245,7 +247,7 @@ class WebSocketEndToEndTest : public ::testing::Test {
     channel_ = std::make_unique<WebSocketChannel>(
         base::WrapUnique(event_interface_), &context_);
     channel_->SendAddChannelRequest(GURL(socket_url), sub_protocols_, origin,
-                                    site_for_cookies, "");
+                                    site_for_cookies, HttpRequestHeaders());
     event_interface_->WaitForResponse();
     return !event_interface_->failed();
   }

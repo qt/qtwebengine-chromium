@@ -36,6 +36,7 @@ SiteInstanceImpl::SiteInstanceImpl(BrowsingInstance* browsing_instance)
       active_frame_count_(0),
       browsing_instance_(browsing_instance),
       process_(nullptr),
+      can_associate_with_spare_process_(true),
       has_site_(false),
       process_reuse_policy_(ProcessReusePolicy::DEFAULT),
       is_for_service_worker_(false) {
@@ -152,6 +153,14 @@ RenderProcessHost* SiteInstanceImpl::GetProcess() {
   DCHECK(process_);
 
   return process_;
+}
+
+bool SiteInstanceImpl::CanAssociateWithSpareProcess() {
+  return can_associate_with_spare_process_;
+}
+
+void SiteInstanceImpl::PreventAssociationWithSpareProcess() {
+  can_associate_with_spare_process_ = false;
 }
 
 void SiteInstanceImpl::SetSite(const GURL& url) {
@@ -468,6 +477,12 @@ bool SiteInstanceImpl::DoesSiteRequireDedicatedProcess(
   if (SiteIsolationPolicy::UseDedicatedProcessesForAllSites())
     return true;
 
+  // Error pages in main frames do require isolation, however since this is
+  // missing the context whether this is for a main frame or not, that part
+  // is enforced in RenderFrameHostManager.
+  if (url.SchemeIs(kChromeErrorScheme))
+    return true;
+
   // Always require a dedicated process for isolated origins.
   GURL site_url = GetSiteForURL(browser_context, url);
   auto* policy = ChildProcessSecurityPolicyImpl::GetInstance();
@@ -536,9 +551,9 @@ void SiteInstanceImpl::RenderProcessWillExit(RenderProcessHost* host) {
     observer.RenderProcessGone(this);
 }
 
-void SiteInstanceImpl::RenderProcessExited(RenderProcessHost* host,
-                                           base::TerminationStatus status,
-                                           int exit_code) {
+void SiteInstanceImpl::RenderProcessExited(
+    RenderProcessHost* host,
+    const ChildProcessTerminationInfo& info) {
   for (auto& observer : observers_)
     observer.RenderProcessGone(this);
 }

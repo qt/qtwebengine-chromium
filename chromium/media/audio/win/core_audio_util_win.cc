@@ -405,11 +405,6 @@ HRESULT GetPreferredAudioParametersInternal(IAudioClient* client,
   // Preferred sample rate.
   int sample_rate = mix_format.Format.nSamplesPerSec;
 
-  // TODO(henrika): possibly use format.Format.wBitsPerSample here instead.
-  // We use a hard-coded value of 16 bits per sample today even if most audio
-  // engines does the actual mixing in 32 bits per sample.
-  int bits_per_sample = 16;
-
   // We are using the native device period to derive the smallest possible
   // buffer size in shared mode. Note that the actual endpoint buffer will be
   // larger than this size but it will be possible to fill it up in two calls.
@@ -420,8 +415,7 @@ HRESULT GetPreferredAudioParametersInternal(IAudioClient* client,
       0.5);
 
   AudioParameters audio_params(AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                               channel_layout, sample_rate, bits_per_sample,
-                               frames_per_buffer);
+                               channel_layout, sample_rate, frames_per_buffer);
   *params = audio_params;
   DVLOG(1) << params->AsHumanReadableString();
 
@@ -793,8 +787,7 @@ HRESULT CoreAudioUtil::GetPreferredAudioParameters(const std::string& device_id,
   // need to do the same thing?
   if (params->channels() != 1) {
     params->Reset(params->format(), CHANNEL_LAYOUT_STEREO,
-                  params->sample_rate(), params->bits_per_sample(),
-                  params->frames_per_buffer());
+                  params->sample_rate(), params->frames_per_buffer());
   }
 
   return hr;
@@ -981,6 +974,73 @@ bool CoreAudioUtil::GetDxDiagDetails(std::string* driver_name,
   }
 
   return true;
+}
+
+HRESULT CoreAudioUtil::GetDeviceCollectionIndex(const std::string& device_id,
+                                                EDataFlow data_flow,
+                                                WORD* index) {
+  ComPtr<IMMDeviceEnumerator> enumerator = CreateDeviceEnumerator();
+  if (!enumerator.Get()) {
+    DLOG(ERROR) << "Failed to create device enumerator.";
+    return E_FAIL;
+  }
+
+  ComPtr<IMMDeviceCollection> device_collection;
+  HRESULT hr = enumerator->EnumAudioEndpoints(data_flow, DEVICE_STATE_ACTIVE,
+                                              &device_collection);
+  if (FAILED(hr)) {
+    DLOG(ERROR) << "Failed to get device collection.";
+    return hr;
+  }
+
+  UINT number_of_devices = 0;
+  hr = device_collection->GetCount(&number_of_devices);
+  if (FAILED(hr)) {
+    DLOG(ERROR) << "Failed to get device collection count.";
+    return hr;
+  }
+
+  ComPtr<IMMDevice> device;
+  for (WORD i = 0; i < number_of_devices; ++i) {
+    hr = device_collection->Item(i, &device);
+    if (FAILED(hr)) {
+      DLOG(WARNING) << "Failed to get device.";
+      continue;
+    }
+    ScopedCoMem<WCHAR> current_device_id;
+    hr = device->GetId(&current_device_id);
+    if (FAILED(hr)) {
+      DLOG(WARNING) << "Failed to get device id.";
+      continue;
+    }
+    if (base::UTF16ToUTF8(current_device_id.get()) == device_id) {
+      *index = i;
+      return S_OK;
+    }
+  }
+
+  DVLOG(1) << "No matching device found.";
+  return S_FALSE;
+}
+
+HRESULT CoreAudioUtil::SetBoolProperty(IPropertyStore* property_store,
+                                       REFPROPERTYKEY key,
+                                       VARIANT_BOOL value) {
+  base::win::ScopedPropVariant pv;
+  PROPVARIANT* pv_ptr = pv.Receive();
+  pv_ptr->vt = VT_BOOL;
+  pv_ptr->boolVal = value;
+  return property_store->SetValue(key, pv.get());
+}
+
+HRESULT CoreAudioUtil::SetVtI4Property(IPropertyStore* property_store,
+                                       REFPROPERTYKEY key,
+                                       LONG value) {
+  base::win::ScopedPropVariant pv;
+  PROPVARIANT* pv_ptr = pv.Receive();
+  pv_ptr->vt = VT_I4;
+  pv_ptr->lVal = value;
+  return property_store->SetValue(key, pv.get());
 }
 
 }  // namespace media

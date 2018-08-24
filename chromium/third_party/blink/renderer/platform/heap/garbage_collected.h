@@ -58,8 +58,6 @@ struct TraceWrapperDescriptor {
   STACK_ALLOCATED();
   void* base_object_payload;
   TraceWrappersCallback trace_wrappers_callback;
-  MissedWriteBarrierCallback missed_write_barrier_callback;
-  NameCallback name_callback;
 };
 
 // The GarbageCollectedMixin interface and helper macro
@@ -115,7 +113,7 @@ class PLATFORM_EXPORT GarbageCollectedMixin {
     return {BlinkGC::kNotFullyConstructedObject, nullptr, false};
   }
   virtual TraceWrapperDescriptor GetTraceWrapperDescriptor() const {
-    return {BlinkGC::kNotFullyConstructedObject, nullptr, nullptr, nullptr};
+    return {BlinkGC::kNotFullyConstructedObject, nullptr};
   }
 };
 
@@ -136,9 +134,7 @@ class PLATFORM_EXPORT GarbageCollectedMixin {
                                                                              \
   TraceWrapperDescriptor GetTraceWrapperDescriptor() const override {        \
     return {const_cast<TYPE*>(static_cast<const TYPE*>(this)),               \
-            TraceTrait<TYPE>::TraceWrappers,                                 \
-            ScriptWrappableVisitor::MissedWriteBarrier<TYPE>,                \
-            ScriptWrappableVisitor::NameCallback<TYPE>};                     \
+            TraceTrait<TYPE>::TraceWrappers};                                \
   }                                                                          \
                                                                              \
  private:

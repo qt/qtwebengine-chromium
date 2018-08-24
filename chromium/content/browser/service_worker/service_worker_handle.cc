@@ -11,6 +11,7 @@
 #include "content/browser/service_worker/service_worker_type_converters.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/common/service_worker/service_worker_utils.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/common/browser_side_navigation_policy.h"
 
 namespace content {
@@ -87,6 +88,9 @@ bool SetSourceClientInfo(
   return true;
 }
 
+// The output |event| must be sent over Mojo immediately after this function
+// returns. See ServiceWorkerHandle::CreateCompleteObjectInfoToSend() for
+// details.
 bool SetSourceServiceWorkerInfo(scoped_refptr<ServiceWorkerVersion> worker,
                                 base::WeakPtr<ServiceWorkerProviderHost>
                                     source_service_worker_provider_host,
@@ -98,9 +102,16 @@ bool SetSourceServiceWorkerInfo(scoped_refptr<ServiceWorkerVersion> worker,
 
   DCHECK_EQ(blink::mojom::ServiceWorkerProviderType::kForServiceWorker,
             source_service_worker_provider_host->provider_type());
-  blink::mojom::ServiceWorkerObjectInfoPtr source_worker_info =
+  blink::mojom::ServiceWorkerObjectInfoPtr source_worker_info;
+  base::WeakPtr<ServiceWorkerHandle> service_worker_handle =
       worker->provider_host()->GetOrCreateServiceWorkerHandle(
           source_service_worker_provider_host->running_hosted_version());
+  if (service_worker_handle) {
+    // CreateCompleteObjectInfoToSend() is safe because |source_worker_info|
+    // will be sent immediately by the caller of this function.
+    source_worker_info =
+        service_worker_handle->CreateCompleteObjectInfoToSend();
+  }
 
   (*event)->source_info_for_service_worker = std::move(source_worker_info);
   // Hide the service worker url if the service worker has a unique origin.
@@ -159,7 +170,6 @@ ServiceWorkerHandle::ServiceWorkerHandle(
       provider_host_(provider_host),
       provider_origin_(url::Origin::Create(provider_host->document_url())),
       provider_id_(provider_host->provider_id()),
-      handle_id_(context->GetNewServiceWorkerHandleId()),
       version_(std::move(version)),
       weak_ptr_factory_(this) {
   DCHECK(context_ && provider_host_ && version_);
@@ -170,26 +180,60 @@ ServiceWorkerHandle::ServiceWorkerHandle(
 }
 
 ServiceWorkerHandle::~ServiceWorkerHandle() {
+  // TODO(crbug.com/838410): These CHECKs are temporary debugging for the linked
+  // bug.
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  CHECK(!in_dtor_);
+  in_dtor_ = true;
+
   version_->RemoveListener(this);
 }
 
 void ServiceWorkerHandle::OnVersionStateChanged(ServiceWorkerVersion* version) {
   DCHECK(version);
-  provider_host_->SendServiceWorkerStateChangedMessage(
-      handle_id_,
-      mojo::ConvertTo<blink::mojom::ServiceWorkerState>(version->status()));
+  blink::mojom::ServiceWorkerState state =
+      mojo::ConvertTo<blink::mojom::ServiceWorkerState>(version->status());
+  remote_objects_.ForAllPtrs(
+      [state](blink::mojom::ServiceWorkerObject* remote_object) {
+        remote_object->StateChanged(state);
+      });
 }
 
 blink::mojom::ServiceWorkerObjectInfoPtr
-ServiceWorkerHandle::CreateObjectInfo() {
+ServiceWorkerHandle::CreateCompleteObjectInfoToSend() {
+  auto info = CreateIncompleteObjectInfo();
+  blink::mojom::ServiceWorkerObjectAssociatedPtr remote_object;
+  info->request = mojo::MakeRequest(&remote_object);
+  remote_objects_.AddPtr(std::move(remote_object));
+  return info;
+}
+
+blink::mojom::ServiceWorkerObjectInfoPtr
+ServiceWorkerHandle::CreateIncompleteObjectInfo() {
   auto info = blink::mojom::ServiceWorkerObjectInfo::New();
-  info->handle_id = handle_id_;
   info->url = version_->script_url();
   info->state =
       mojo::ConvertTo<blink::mojom::ServiceWorkerState>(version_->status());
   info->version_id = version_->version_id();
   bindings_.AddBinding(this, mojo::MakeRequest(&info->host_ptr_info));
   return info;
+}
+
+void ServiceWorkerHandle::AddRemoteObjectPtrAndUpdateState(
+    blink::mojom::ServiceWorkerObjectAssociatedPtrInfo remote_object_ptr_info,
+    blink::mojom::ServiceWorkerState sent_state) {
+  DCHECK(remote_object_ptr_info.is_valid());
+  blink::mojom::ServiceWorkerObjectAssociatedPtr remote_object;
+  remote_object.Bind(std::move(remote_object_ptr_info));
+  auto state =
+      mojo::ConvertTo<blink::mojom::ServiceWorkerState>(version_->status());
+  if (sent_state != state)
+    remote_object->StateChanged(state);
+  remote_objects_.AddPtr(std::move(remote_object));
+}
+
+base::WeakPtr<ServiceWorkerHandle> ServiceWorkerHandle::AsWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
 }
 
 void ServiceWorkerHandle::PostMessageToServiceWorker(
@@ -246,10 +290,6 @@ void ServiceWorkerHandle::DispatchExtendableMessageEvent(
       break;
   }
   NOTREACHED() << provider_host_->provider_type();
-}
-
-base::WeakPtr<ServiceWorkerHandle> ServiceWorkerHandle::AsWeakPtr() {
-  return weak_ptr_factory_.GetWeakPtr();
 }
 
 void ServiceWorkerHandle::OnConnectionError() {

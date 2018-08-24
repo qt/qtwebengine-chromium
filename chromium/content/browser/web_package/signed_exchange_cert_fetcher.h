@@ -12,8 +12,8 @@
 #include "base/callback_helpers.h"
 #include "base/memory/weak_ptr.h"
 #include "base/optional.h"
+#include "base/unguessable_token.h"
 #include "content/browser/web_package/signed_exchange_certificate_chain.h"
-#include "content/browser/web_package/signed_exchange_utils.h"
 #include "content/common/content_export.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
 #include "url/origin.h"
@@ -28,6 +28,7 @@ class SimpleWatcher;
 
 namespace content {
 
+class SignedExchangeDevToolsProxy;
 class ThrottlingURLLoader;
 class URLLoaderThrottle;
 
@@ -51,8 +52,9 @@ class CONTENT_EXPORT SignedExchangeCertFetcher
       const GURL& cert_url,
       url::Origin request_initiator,
       bool force_fetch,
+      SignedExchangeVersion version,
       CertificateCallback callback,
-      const signed_exchange_utils::LogCallback& error_message_callback);
+      SignedExchangeDevToolsProxy* devtools_proxy);
 
   ~SignedExchangeCertFetcher() override;
 
@@ -72,8 +74,9 @@ class CONTENT_EXPORT SignedExchangeCertFetcher
       const GURL& cert_url,
       url::Origin request_initiator,
       bool force_fetch,
+      SignedExchangeVersion version,
       CertificateCallback callback,
-      const signed_exchange_utils::LogCallback& error_message_callback);
+      SignedExchangeDevToolsProxy* devtools_proxy);
   void Start();
   void Abort();
   void OnHandleReady(MojoResult result);
@@ -98,13 +101,17 @@ class CONTENT_EXPORT SignedExchangeCertFetcher
   scoped_refptr<network::SharedURLLoaderFactory> shared_url_loader_factory_;
   std::vector<std::unique_ptr<URLLoaderThrottle>> throttles_;
   std::unique_ptr<network::ResourceRequest> resource_request_;
+  const SignedExchangeVersion version_;
   CertificateCallback callback_;
-  signed_exchange_utils::LogCallback error_message_callback_;
 
   std::unique_ptr<ThrottlingURLLoader> url_loader_;
   mojo::ScopedDataPipeConsumerHandle body_;
   std::unique_ptr<mojo::SimpleWatcher> handle_watcher_;
   std::string body_string_;
+
+  // This is owned by SignedExchangeHandler which is the owner of |this|.
+  SignedExchangeDevToolsProxy* devtools_proxy_;
+  base::Optional<base::UnguessableToken> cert_request_id_;
 
   DISALLOW_COPY_AND_ASSIGN(SignedExchangeCertFetcher);
 };

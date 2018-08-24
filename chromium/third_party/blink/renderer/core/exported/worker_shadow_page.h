@@ -35,7 +35,7 @@ class CORE_EXPORT WorkerShadowPage : public WebFrameClient {
  public:
   class CORE_EXPORT Client : public WebDevToolsAgentImpl::WorkerClient {
    public:
-    virtual ~Client() = default;
+    ~Client() override = default;
 
     // Called when the shadow page is requested to create an application cache
     // host.
@@ -68,6 +68,11 @@ class CORE_EXPORT WorkerShadowPage : public WebFrameClient {
   void DidFinishDocumentLoad() override;
   std::unique_ptr<blink::WebURLLoaderFactory> CreateURLLoaderFactory() override;
   base::UnguessableToken GetDevToolsFrameToken() override;
+
+  // TODO(nhiroki): Remove this once the off-main-thread WebSocket is enabled by
+  // default (https://crbug.com/825740).
+  std::unique_ptr<WebSocketHandshakeThrottle> CreateWebSocketHandshakeThrottle()
+      override;
 
   Document* GetDocument() { return main_frame_->GetFrame()->GetDocument(); }
   WebSettings* GetSettings() { return web_view_->GetSettings(); }

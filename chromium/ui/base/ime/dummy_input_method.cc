@@ -81,6 +81,10 @@ bool DummyInputMethod::IsCandidatePopupOpen() const {
   return false;
 }
 
+bool DummyInputMethod::GetClientShouldDoLearning() {
+  return false;
+}
+
 void DummyInputMethod::ShowImeIfNeeded() {
 }
 
@@ -88,6 +92,11 @@ void DummyInputMethod::AddObserver(InputMethodObserver* observer) {
 }
 
 void DummyInputMethod::RemoveObserver(InputMethodObserver* observer) {
+}
+
+InputMethodKeyboardController*
+DummyInputMethod::GetInputMethodKeyboardController() {
+  return nullptr;
 }
 
 const std::vector<std::unique_ptr<KeyEvent>>&

@@ -28,7 +28,7 @@ struct EchoCanceller3Config {
     size_t delay_headroom_blocks = 2;
     size_t hysteresis_limit_1_blocks = 1;
     size_t hysteresis_limit_2_blocks = 1;
-    size_t skew_hysteresis_blocks = 1;
+    size_t skew_hysteresis_blocks = 3;
   } delay;
 
   struct Filter {
@@ -65,7 +65,8 @@ struct EchoCanceller3Config {
     float lf = 1.f;
     float mf = 1.f;
     float hf = 1.f;
-    float default_len = 0.f;
+    float default_len = 0.88f;
+    bool reverb_based_on_render = true;
     bool echo_can_saturate = true;
     bool bounded_erl = false;
   } ep_strength;
@@ -97,11 +98,13 @@ struct EchoCanceller3Config {
     float audibility_threshold_lf = 10;
     float audibility_threshold_mf = 10;
     float audibility_threshold_hf = 10;
+    bool use_stationary_properties = true;
   } echo_audibility;
 
   struct RenderLevels {
     float active_render_limit = 100.f;
     float poor_excitation_render_limit = 150.f;
+    float poor_excitation_render_limit_ds8 = 20.f;
   } render_levels;
 
   struct GainUpdates {

@@ -6,6 +6,8 @@
 
 #include <type_traits>
 
+#include "ash/public/interfaces/constants.mojom.h"
+#include "ash/public/interfaces/event_rewriter_controller.mojom.h"
 #include "ash/shell.h"
 #include "base/bind.h"
 #include "base/strings/utf_string_conversions.h"
@@ -13,7 +15,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
-#include "chrome/browser/chromeos/events/keyboard_driven_event_rewriter.h"
 #include "chrome/browser/chromeos/login/enrollment/auto_enrollment_controller.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/lock/screen_locker.h"
@@ -42,7 +43,9 @@
 #include "components/prefs/pref_service.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/version_info/version_info.h"
+#include "content/public/common/service_manager_connection.h"
 #include "google_apis/google_api_keys.h"
+#include "services/service_manager/public/cpp/connector.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/display/display.h"
 #include "ui/display/manager/display_manager.h"
@@ -194,6 +197,7 @@ void CoreOobeHandler::RegisterMessages() {
               &CoreOobeHandler::HandleSetOobeBootstrappingSlave);
   AddRawCallback("getPrimaryDisplayNameForTesting",
                  &CoreOobeHandler::HandleGetPrimaryDisplayNameForTesting);
+  AddCallback("setupDemoMode", &CoreOobeHandler::HandleSetupDemoMode);
 }
 
 void CoreOobeHandler::ShowSignInError(
@@ -302,11 +306,14 @@ void CoreOobeHandler::HandleUpdateCurrentScreen(
     const std::string& screen_name) {
   const OobeScreen screen = GetOobeScreenFromName(screen_name);
   oobe_ui_->CurrentScreenChanged(screen);
-  // TODO(mash): Support EventRewriterController; see crbug.com/647781
-  if (!ash_util::IsRunningInMash()) {
-    KeyboardDrivenEventRewriter::GetInstance()->SetArrowToTabRewritingEnabled(
-        screen == OobeScreen::SCREEN_OOBE_EULA);
-  }
+
+  content::ServiceManagerConnection* connection =
+      content::ServiceManagerConnection::GetForProcess();
+  ash::mojom::EventRewriterControllerPtr event_rewriter_controller_ptr;
+  connection->GetConnector()->BindInterface(ash::mojom::kServiceName,
+                                            &event_rewriter_controller_ptr);
+  event_rewriter_controller_ptr->SetArrowToTabRewritingEnabled(
+      screen == OobeScreen::SCREEN_OOBE_EULA);
 }
 
 void CoreOobeHandler::HandleEnableHighContrast(bool enabled) {
@@ -381,12 +388,13 @@ void CoreOobeHandler::HandleToggleResetScreen() {
           ->IsEnterpriseManaged()) {
     // Powerwash is only available if allowed by the admin specifically for the
     // purpose of installing a TPM firmware update.
-    tpm_firmware_update::ShouldOfferUpdateViaPowerwash(
-        base::BindOnce([](bool offer_update) {
-          if (offer_update) {
+    tpm_firmware_update::GetAvailableUpdateModes(
+        base::BindOnce([](const std::set<tpm_firmware_update::Mode>& modes) {
+          if (modes.count(tpm_firmware_update::Mode::kPowerwash) > 0) {
             // Force the TPM firmware update option to be enabled.
-            g_browser_process->local_state()->SetBoolean(
-                prefs::kFactoryResetTPMFirmwareUpdateRequested, true);
+            g_browser_process->local_state()->SetInteger(
+                prefs::kFactoryResetTPMFirmwareUpdateMode,
+                static_cast<int>(tpm_firmware_update::Mode::kPowerwash));
             LaunchResetScreen();
           }
         }),
@@ -400,7 +408,8 @@ void CoreOobeHandler::HandleToggleResetScreen() {
   // effect of dropping the FRE requirement if it was previously in effect.
   const AutoEnrollmentController::FRERequirement requirement =
       AutoEnrollmentController::GetFRERequirement();
-  if (requirement != AutoEnrollmentController::EXPLICITLY_REQUIRED) {
+  if (requirement !=
+      AutoEnrollmentController::FRERequirement::kExplicitlyRequired) {
     LaunchResetScreen();
   }
 }
@@ -422,6 +431,10 @@ void CoreOobeHandler::ShowOobeUI(bool show) {
 void CoreOobeHandler::UpdateShutdownAndRebootVisibility(
     bool reboot_on_shutdown) {
   CallJSOrDefer("showShutdown", !reboot_on_shutdown);
+}
+
+void CoreOobeHandler::SetLoginUserCount(int user_count) {
+  CallJSOrDefer("setLoginUserCount", user_count);
 }
 
 void CoreOobeHandler::UpdateA11yState() {
@@ -573,6 +586,19 @@ void CoreOobeHandler::HandleGetPrimaryDisplayNameForTesting(
 
   AllowJavascript();
   ResolveJavascriptCallback(*callback_id, base::Value(display_name));
+}
+
+void CoreOobeHandler::HandleSetupDemoMode() {
+  const bool is_demo_mode_enabled =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          chromeos::switches::kEnableDemoMode);
+  if (!is_demo_mode_enabled)
+    return;
+
+  WizardController* wizard_controller = WizardController::default_controller();
+  if (wizard_controller && !wizard_controller->login_screen_started()) {
+    wizard_controller->AdvanceToScreen(OobeScreen::SCREEN_OOBE_DEMO_SETUP);
+  }
 }
 
 void CoreOobeHandler::InitDemoModeDetection() {

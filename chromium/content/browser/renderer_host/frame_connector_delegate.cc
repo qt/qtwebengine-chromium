@@ -7,7 +7,7 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_child_frame.h"
 #include "content/common/content_switches_internal.h"
-#include "content/common/frame_resize_params.h"
+#include "content/common/frame_visual_properties.h"
 
 namespace content {
 
@@ -25,11 +25,12 @@ FrameConnectorDelegate::GetRootRenderWidgetHostView() {
   return nullptr;
 }
 
-void FrameConnectorDelegate::UpdateResizeParams(
+void FrameConnectorDelegate::SynchronizeVisualProperties(
     const viz::SurfaceId& surface_id,
-    const FrameResizeParams& resize_params) {
+    const FrameVisualProperties& resize_params) {
   screen_info_ = resize_params.screen_info;
   local_surface_id_ = surface_id.local_surface_id();
+  capture_sequence_number_ = resize_params.capture_sequence_number;
 
   SetScreenSpaceRect(resize_params.screen_space_rect);
   SetLocalFrameSize(resize_params.local_frame_size);
@@ -47,13 +48,7 @@ void FrameConnectorDelegate::UpdateResizeParams(
                                     resize_params.min_size_for_auto_resize,
                                     resize_params.max_size_for_auto_resize);
 
-  if (render_widget_host->auto_resize_enabled()) {
-    render_widget_host->DidAllocateLocalSurfaceIdForAutoResize(
-        resize_params.auto_resize_sequence_number);
-    return;
-  }
-
-  render_widget_host->WasResized();
+  render_widget_host->SynchronizeVisualProperties();
 }
 
 gfx::PointF FrameConnectorDelegate::TransformPointToRootCoordSpace(
@@ -62,7 +57,7 @@ gfx::PointF FrameConnectorDelegate::TransformPointToRootCoordSpace(
   return gfx::PointF();
 }
 
-bool FrameConnectorDelegate::TransformPointToLocalCoordSpace(
+bool FrameConnectorDelegate::TransformPointToLocalCoordSpaceLegacy(
     const gfx::PointF& point,
     const viz::SurfaceId& original_surface,
     const viz::SurfaceId& local_surface_id,
@@ -74,7 +69,8 @@ bool FrameConnectorDelegate::TransformPointToCoordSpaceForView(
     const gfx::PointF& point,
     RenderWidgetHostViewBase* target_view,
     const viz::SurfaceId& local_surface_id,
-    gfx::PointF* transformed_point) {
+    gfx::PointF* transformed_point,
+    viz::EventSource source) {
   return false;
 }
 
@@ -93,6 +89,10 @@ void FrameConnectorDelegate::DisableAutoResize() {}
 
 bool FrameConnectorDelegate::IsInert() const {
   return false;
+}
+
+cc::TouchAction FrameConnectorDelegate::InheritedEffectiveTouchAction() const {
+  return cc::TouchAction::kTouchActionAuto;
 }
 
 bool FrameConnectorDelegate::IsHidden() const {

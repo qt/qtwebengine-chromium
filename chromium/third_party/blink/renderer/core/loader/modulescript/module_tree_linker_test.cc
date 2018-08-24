@@ -7,6 +7,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/scheduler/web_main_thread_scheduler.h"
+#include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_module.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
@@ -198,10 +199,9 @@ TEST_F(ModuleTreeLinkerTest, FetchTreeNoDeps) {
   ModuleTreeLinkerRegistry* registry = ModuleTreeLinkerRegistry::Create();
 
   KURL url("http://example.com/root.js");
-  ModuleScriptFetchRequest module_request(url, kReferrerPolicyDefault,
-                                          ScriptFetchOptions());
   TestModuleTreeClient* client = new TestModuleTreeClient;
-  registry->Fetch(module_request, GetModulator(), client);
+  registry->Fetch(url, NullURL(), WebURLRequest::kRequestContextScript,
+                  ScriptFetchOptions(), GetModulator(), client);
 
   EXPECT_FALSE(client->WasNotifyFinished())
       << "ModuleTreeLinker should always finish asynchronously.";
@@ -219,10 +219,9 @@ TEST_F(ModuleTreeLinkerTest, FetchTreeInstantiationFailure) {
   ModuleTreeLinkerRegistry* registry = ModuleTreeLinkerRegistry::Create();
 
   KURL url("http://example.com/root.js");
-  ModuleScriptFetchRequest module_request(url, kReferrerPolicyDefault,
-                                          ScriptFetchOptions());
   TestModuleTreeClient* client = new TestModuleTreeClient;
-  registry->Fetch(module_request, GetModulator(), client);
+  registry->Fetch(url, NullURL(), WebURLRequest::kRequestContextScript,
+                  ScriptFetchOptions(), GetModulator(), client);
 
   EXPECT_FALSE(client->WasNotifyFinished())
       << "ModuleTreeLinker should always finish asynchronously.";
@@ -244,10 +243,9 @@ TEST_F(ModuleTreeLinkerTest, FetchTreeWithSingleDependency) {
   ModuleTreeLinkerRegistry* registry = ModuleTreeLinkerRegistry::Create();
 
   KURL url("http://example.com/root.js");
-  ModuleScriptFetchRequest module_request(url, kReferrerPolicyDefault,
-                                          ScriptFetchOptions());
   TestModuleTreeClient* client = new TestModuleTreeClient;
-  registry->Fetch(module_request, GetModulator(), client);
+  registry->Fetch(url, NullURL(), WebURLRequest::kRequestContextScript,
+                  ScriptFetchOptions(), GetModulator(), client);
 
   EXPECT_FALSE(client->WasNotifyFinished())
       << "ModuleTreeLinker should always finish asynchronously.";
@@ -270,10 +268,9 @@ TEST_F(ModuleTreeLinkerTest, FetchTreeWith3Deps) {
   ModuleTreeLinkerRegistry* registry = ModuleTreeLinkerRegistry::Create();
 
   KURL url("http://example.com/root.js");
-  ModuleScriptFetchRequest module_request(url, kReferrerPolicyDefault,
-                                          ScriptFetchOptions());
   TestModuleTreeClient* client = new TestModuleTreeClient;
-  registry->Fetch(module_request, GetModulator(), client);
+  registry->Fetch(url, NullURL(), WebURLRequest::kRequestContextScript,
+                  ScriptFetchOptions(), GetModulator(), client);
 
   EXPECT_FALSE(client->WasNotifyFinished())
       << "ModuleTreeLinker should always finish asynchronously.";
@@ -309,10 +306,9 @@ TEST_F(ModuleTreeLinkerTest, FetchTreeWith3Deps1Fail) {
   ModuleTreeLinkerRegistry* registry = ModuleTreeLinkerRegistry::Create();
 
   KURL url("http://example.com/root.js");
-  ModuleScriptFetchRequest module_request(url, kReferrerPolicyDefault,
-                                          ScriptFetchOptions());
   TestModuleTreeClient* client = new TestModuleTreeClient;
-  registry->Fetch(module_request, GetModulator(), client);
+  registry->Fetch(url, NullURL(), WebURLRequest::kRequestContextScript,
+                  ScriptFetchOptions(), GetModulator(), client);
 
   EXPECT_FALSE(client->WasNotifyFinished())
       << "ModuleTreeLinker should always finish asynchronously.";
@@ -367,10 +363,9 @@ TEST_F(ModuleTreeLinkerTest, FetchDependencyTree) {
   ModuleTreeLinkerRegistry* registry = ModuleTreeLinkerRegistry::Create();
 
   KURL url("http://example.com/depth1.js");
-  ModuleScriptFetchRequest module_request(url, kReferrerPolicyDefault,
-                                          ScriptFetchOptions());
   TestModuleTreeClient* client = new TestModuleTreeClient;
-  registry->Fetch(module_request, GetModulator(), client);
+  registry->Fetch(url, NullURL(), WebURLRequest::kRequestContextScript,
+                  ScriptFetchOptions(), GetModulator(), client);
 
   EXPECT_FALSE(client->WasNotifyFinished())
       << "ModuleTreeLinker should always finish asynchronously.";
@@ -392,10 +387,9 @@ TEST_F(ModuleTreeLinkerTest, FetchDependencyOfCyclicGraph) {
   ModuleTreeLinkerRegistry* registry = ModuleTreeLinkerRegistry::Create();
 
   KURL url("http://example.com/a.js");
-  ModuleScriptFetchRequest module_request(url, kReferrerPolicyDefault,
-                                          ScriptFetchOptions());
   TestModuleTreeClient* client = new TestModuleTreeClient;
-  registry->Fetch(module_request, GetModulator(), client);
+  registry->Fetch(url, NullURL(), WebURLRequest::kRequestContextScript,
+                  ScriptFetchOptions(), GetModulator(), client);
 
   EXPECT_FALSE(client->WasNotifyFinished())
       << "ModuleTreeLinker should always finish asynchronously.";

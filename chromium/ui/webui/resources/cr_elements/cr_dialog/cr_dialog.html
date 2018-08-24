@@ -12,7 +12,7 @@
       dialog {
         --scroll-border: 1px solid var(--paper-grey-300);
         border: 0;
-        border-radius: 2px;
+        border-radius: 8px;
         bottom: 50%;
         box-shadow: 0 0 16px rgba(0, 0, 0, 0.12),
                     0 16px 16px rgba(0, 0, 0, 0.24);
@@ -49,16 +49,30 @@
         top: 0;
       }
 
+      /**
+       * When using mixins, avoid using padding shorthand. Using both the
+       * shorthand and top/bottom/start/end can lead to style override issues.
+       * This is only noticable when the |optimize_webui=true| build arguement
+       * is used.
+       *
+       * See https://crbug.com/846254 and associated CL for more information.
+       */
       :host ::slotted([slot=body]) {
-        padding: 12px 16px;
+        -webkit-padding-end: 20px;
+        -webkit-padding-start: 20px;
+        padding-bottom: 0;
+        padding-top: 0;
         @apply --cr-dialog-body;
       }
 
       :host ::slotted([slot=title]) {
+        -webkit-padding-end: 20px;
+        -webkit-padding-start: 20px;
         flex: 1;
         font-size: calc(15 / 13 * 100%);
         line-height: 1;
-        padding: 16px 16px;
+        padding-bottom: 16px;
+        padding-top: 16px;
         @apply --cr-dialog-title;
       }
 
@@ -66,6 +80,7 @@
         display: flex;
         justify-content: flex-end;
         padding: 16px;
+        @apply --cr-dialog-button-container;
       }
 
       :host ::slotted([slot=footer]) {
@@ -81,9 +96,10 @@
         border-bottom: 1px solid transparent;
         border-top: 1px solid transparent;
 
+        box-sizing: border-box;
         display: flex;
         flex-direction: column;
-        min-height: 60px; /* Minimum reasonably usable height. */
+        min-height: 1.375rem; /* Minimum reasonably usable height. */
         overflow: auto;
 
         @apply --cr-dialog-body-container;
@@ -100,7 +116,7 @@
       .top-container {
         align-items: flex-start;
         display: flex;
-        min-height: var(--cr-dialog-top-container-min-height, 47px);
+        min-height: var(--cr-dialog-top-container-min-height, 31px);
       }
 
       .title-container {
@@ -128,6 +144,10 @@
       #closeContainer:active {
         @apply --cr-dialog-close-image-active;
       }
+
+      #closeContainer paper-ripple {
+        @apply --cr-dialog-close-ripple;
+      }
     </style>
     <dialog id="dialog">
       <!-- This wrapper is necessary, such that the "pulse" animation is not
@@ -138,7 +158,7 @@
             <slot name="title"></slot>
           </div>
           <paper-icon-button-light id="closeContainer" class="icon-clear"
-              hidden$="[[noCancel]]">
+              hidden$="[[!showCloseButton]]">
             <button id="close" aria-label$="[[closeText]]"
                 on-tap="cancel" on-keypress="onCloseKeypress_">
             </button>

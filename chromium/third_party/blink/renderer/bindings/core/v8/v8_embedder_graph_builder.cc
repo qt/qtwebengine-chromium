@@ -110,7 +110,7 @@ void V8EmbedderGraphBuilder::VisitPersistentHandle(
   EmbedderNode* graph_node = GraphNode(
       traceable, traceable->NameInHeapSnapshot(), wrapper, dom_tree_state);
   const TraceWrapperDescriptor& wrapper_descriptor =
-      WrapperDescriptorFor<ScriptWrappable>(traceable);
+      TraceWrapperDescriptorFor<ScriptWrappable>(traceable);
   WorklistItem item = ToWorklistItem(graph_node, wrapper_descriptor);
   switch (graph_node->GetDomTreeState()) {
     case DomTreeState::kAttached:
@@ -126,7 +126,7 @@ void V8EmbedderGraphBuilder::VisitPersistentHandle(
 }
 
 void V8EmbedderGraphBuilder::Visit(
-    const TraceWrapperV8Reference<v8::Value>& traced_wrapper) const {
+    const TraceWrapperV8Reference<v8::Value>& traced_wrapper) {
   const v8::PersistentBase<v8::Value>* value = &traced_wrapper.Get();
   // Add an edge from the current parent to the V8 object.
   v8::Local<v8::Value> v8_value = v8::Local<v8::Value>::New(isolate_, *value);
@@ -135,20 +135,24 @@ void V8EmbedderGraphBuilder::Visit(
   }
 }
 
-void V8EmbedderGraphBuilder::Visit(
-    const TraceWrapperDescriptor& wrapper_descriptor) const {
+void V8EmbedderGraphBuilder::Visit(void* object,
+                                   TraceWrapperDescriptor wrapper_descriptor) {
   // Add an edge from the current parent to this object.
   // Also push the object to the worklist in order to process its members.
   const void* traceable = wrapper_descriptor.base_object_payload;
+  const char* name =
+      GCInfoTable::Get()
+          .GCInfoFromIndex(
+              HeapObjectHeader::FromPayload(traceable)->GcInfoIndex())
+          ->name_(traceable);
   EmbedderNode* graph_node =
-      GraphNode(traceable, wrapper_descriptor.name_callback(traceable), nullptr,
-                current_parent_->GetDomTreeState());
+      GraphNode(traceable, name, nullptr, current_parent_->GetDomTreeState());
   graph_->AddEdge(current_parent_, graph_node);
   PushToWorklist(ToWorklistItem(graph_node, wrapper_descriptor));
 }
 
 void V8EmbedderGraphBuilder::Visit(DOMWrapperMap<ScriptWrappable>* wrapper_map,
-                                   const ScriptWrappable* key) const {
+                                   const ScriptWrappable* key) {
   // Add an edge from the current parent to the V8 object.
   v8::Local<v8::Value> v8_value =
       wrapper_map->NewLocal(isolate_, const_cast<ScriptWrappable*>(key));
@@ -173,7 +177,7 @@ V8EmbedderGraphBuilder::EmbedderNode* V8EmbedderGraphBuilder::GraphNode(
   }
   // Ownership of the new node is transferred to the graph_.
   // graph_node_.at(tracable) is valid for all BuildEmbedderGraph execution.
-  auto raw_node = new EmbedderNode(name, wrapper, dom_tree_state);
+  auto* raw_node = new EmbedderNode(name, wrapper, dom_tree_state);
   EmbedderNode* node = static_cast<EmbedderNode*>(
       graph_->AddNode(std::unique_ptr<Graph::Node>(raw_node)));
   graph_node_.insert(traceable, node);

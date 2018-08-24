@@ -12,20 +12,17 @@
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_pageobjectlist.h"
+#include "core/fpdfapi/render/cpdf_transparency.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/unowned_ptr.h"
 
-class PauseIndicatorIface;
-class CPDF_Dictionary;
-class CPDF_Stream;
-class CPDF_Document;
 class CPDF_ContentParser;
-
-#define PDFTRANS_GROUP 0x0100
-#define PDFTRANS_ISOLATED 0x0200
-#define PDFTRANS_KNOCKOUT 0x0400
+class CPDF_Dictionary;
+class CPDF_Document;
+class CPDF_Stream;
+class PauseIndicatorIface;
 
 // These structs are used to keep track of resources that have already been
 // generated in the page object holder.
@@ -52,7 +49,14 @@ class CPDF_PageObjectHolder {
   void ContinueParse(PauseIndicatorIface* pPause);
   bool IsParsed() const { return m_ParseState == CONTENT_PARSED; }
 
-  CPDF_PageObjectList* GetPageObjectList() { return &m_PageObjectList; }
+  const CPDF_Document* GetDocument() const { return m_pDocument.Get(); }
+  CPDF_Document* GetDocument() { return m_pDocument.Get(); }
+
+  // TODO(thestig): Can this return nullptr? If not, audit callers and simplify
+  // the ones that assume it can.
+  const CPDF_Dictionary* GetFormDict() const { return m_pFormDict.Get(); }
+  CPDF_Dictionary* GetFormDict() { return m_pFormDict.Get(); }
+
   const CPDF_PageObjectList* GetPageObjectList() const {
     return &m_PageObjectList;
   }
@@ -61,9 +65,12 @@ class CPDF_PageObjectHolder {
   CPDF_PageObject* GetPageObjectByIndex(size_t index) const;
   void AppendPageObject(std::unique_ptr<CPDF_PageObject> pPageObj);
   bool RemovePageObject(CPDF_PageObject* pPageObj);
+  bool ErasePageObjectAtIndex(size_t index);
 
   const CFX_Matrix& GetLastCTM() const { return m_LastCTM; }
+  const CFX_FloatRect& GetBBox() const { return m_BBox; }
 
+  const CPDF_Transparency& GetTransparency() const { return m_Transparency; }
   bool BackgroundAlphaNeeded() const { return m_bBackgroundAlphaNeeded; }
   void SetBackgroundAlphaNeeded(bool needed) {
     m_bBackgroundAlphaNeeded = needed;
@@ -77,24 +84,25 @@ class CPDF_PageObjectHolder {
   void Transform(const CFX_Matrix& matrix);
   CFX_FloatRect CalcBoundingBox() const;
 
-  const UnownedPtr<CPDF_Dictionary> m_pFormDict;
+  // TODO(thestig): Move |m_pFormStream| into CPDF_Form.
   UnownedPtr<CPDF_Stream> m_pFormStream;
-  UnownedPtr<CPDF_Document> m_pDocument;
   UnownedPtr<CPDF_Dictionary> m_pPageResources;
   UnownedPtr<CPDF_Dictionary> m_pResources;
   std::map<GraphicsData, ByteString> m_GraphicsMap;
   std::map<FontData, ByteString> m_FontsMap;
-  CFX_FloatRect m_BBox;
-  int m_iTransparency;
 
  protected:
   enum ParseState { CONTENT_NOT_PARSED, CONTENT_PARSING, CONTENT_PARSED };
 
   void LoadTransInfo();
 
-  bool m_bBackgroundAlphaNeeded;
+  const UnownedPtr<CPDF_Dictionary> m_pFormDict;
+  UnownedPtr<CPDF_Document> m_pDocument;
+  CFX_FloatRect m_BBox;
+  CPDF_Transparency m_Transparency;
+  bool m_bBackgroundAlphaNeeded = false;
   std::vector<CFX_FloatRect> m_MaskBoundingBoxes;
-  ParseState m_ParseState;
+  ParseState m_ParseState = CONTENT_NOT_PARSED;
   std::unique_ptr<CPDF_ContentParser> m_pParser;
   CPDF_PageObjectList m_PageObjectList;
   CFX_Matrix m_LastCTM;

@@ -51,7 +51,7 @@ class CORE_EXPORT PerformanceEntry : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
-  virtual ~PerformanceEntry();
+  ~PerformanceEntry() override;
 
   enum EntryType : PerformanceEntryType {
     kInvalid = 0,
@@ -63,7 +63,9 @@ class CORE_EXPORT PerformanceEntry : public ScriptWrappable {
     kResource = 1 << 5,
     kLongTask = 1 << 6,
     kTaskAttribution = 1 << 7,
-    kPaint = 1 << 8
+    kPaint = 1 << 8,
+    kEvent = 1 << 9,
+    kFirstInput = 1 << 10,
   };
 
   String name() const;
@@ -101,11 +103,13 @@ class CORE_EXPORT PerformanceEntry : public ScriptWrappable {
                    double finish_time);
   virtual void BuildJSONValue(V8ObjectBuilder&) const;
 
+  // Protected and not const because PerformanceEventTiming needs to modify it.
+  double duration_;
+
  private:
   const String name_;
   const String entry_type_;
   const double start_time_;
-  const double duration_;
   const PerformanceEntryType entry_type_enum_;
   const int index_;
 };

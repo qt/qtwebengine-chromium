@@ -30,13 +30,13 @@
 #include <memory>
 
 #include "base/macros.h"
+#include "base/optional.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/blink/public/platform/modules/remoteplayback/web_remote_playback_availability.h"
 #include "third_party/blink/public/platform/modules/remoteplayback/web_remote_playback_client.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_connection_type.h"
 #include "third_party/blink/public/platform/web_graphics_context_3d_provider.h"
-#include "third_party/blink/public/platform/web_layer.h"
 #include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
 #include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_function.h"
@@ -78,13 +78,13 @@
 #include "third_party/blink/renderer/core/editing/spellcheck/idle_spell_check_callback.h"
 #include "third_party/blink/renderer/core/editing/spellcheck/spell_check_requester.h"
 #include "third_party/blink/renderer/core/editing/spellcheck/spell_checker.h"
-#include "third_party/blink/renderer/core/frame/PerformanceMonitor.h"
 #include "third_party/blink/renderer/core/frame/event_handler_registry.h"
 #include "third_party/blink/renderer/core/frame/frame_console.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
+#include "third_party/blink/renderer/core/frame/performance_monitor.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/visual_viewport.h"
 #include "third_party/blink/renderer/core/geometry/dom_point.h"
@@ -165,7 +165,6 @@
 #include "third_party/blink/renderer/platform/testing/url_test_helpers.h"
 #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
 #include "third_party/blink/renderer/platform/wtf/dtoa.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_buffer.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_encoding_registry.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
@@ -190,7 +189,7 @@ class UseCounterObserverImpl final : public UseCounter::Observer {
     return true;
   }
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     UseCounter::Observer::Trace(visitor);
     visitor->Trace(resolver_);
   }
@@ -203,7 +202,7 @@ class UseCounterObserverImpl final : public UseCounter::Observer {
 
 }  // namespace
 
-static WTF::Optional<DocumentMarker::MarkerType> MarkerTypeFrom(
+static base::Optional<DocumentMarker::MarkerType> MarkerTypeFrom(
     const String& marker_type) {
   if (DeprecatedEqualIgnoringCase(marker_type, "Spelling"))
     return DocumentMarker::kSpelling;
@@ -217,16 +216,16 @@ static WTF::Optional<DocumentMarker::MarkerType> MarkerTypeFrom(
     return DocumentMarker::kActiveSuggestion;
   if (DeprecatedEqualIgnoringCase(marker_type, "Suggestion"))
     return DocumentMarker::kSuggestion;
-  return WTF::nullopt;
+  return base::nullopt;
 }
 
-static WTF::Optional<DocumentMarker::MarkerTypes> MarkerTypesFrom(
+static base::Optional<DocumentMarker::MarkerTypes> MarkerTypesFrom(
     const String& marker_type) {
   if (marker_type.IsEmpty() || DeprecatedEqualIgnoringCase(marker_type, "all"))
     return DocumentMarker::AllMarkers();
-  WTF::Optional<DocumentMarker::MarkerType> type = MarkerTypeFrom(marker_type);
+  base::Optional<DocumentMarker::MarkerType> type = MarkerTypeFrom(marker_type);
   if (!type)
-    return WTF::nullopt;
+    return base::nullopt;
   return DocumentMarker::MarkerTypes(type.value());
 }
 
@@ -894,7 +893,7 @@ void Internals::setMarker(Document* document,
     return;
   }
 
-  WTF::Optional<DocumentMarker::MarkerType> type = MarkerTypeFrom(marker_type);
+  base::Optional<DocumentMarker::MarkerType> type = MarkerTypeFrom(marker_type);
   if (!type) {
     exception_state.ThrowDOMException(
         kSyntaxError,
@@ -922,7 +921,7 @@ unsigned Internals::markerCountForNode(Node* node,
                                        const String& marker_type,
                                        ExceptionState& exception_state) {
   DCHECK(node);
-  WTF::Optional<DocumentMarker::MarkerTypes> marker_types =
+  base::Optional<DocumentMarker::MarkerTypes> marker_types =
       MarkerTypesFrom(marker_type);
   if (!marker_types) {
     exception_state.ThrowDOMException(
@@ -959,7 +958,7 @@ DocumentMarker* Internals::MarkerAt(Node* node,
                                     unsigned index,
                                     ExceptionState& exception_state) {
   DCHECK(node);
-  WTF::Optional<DocumentMarker::MarkerTypes> marker_types =
+  base::Optional<DocumentMarker::MarkerTypes> marker_types =
       MarkerTypesFrom(marker_type);
   if (!marker_types) {
     exception_state.ThrowDOMException(
@@ -1019,13 +1018,13 @@ unsigned Internals::markerUnderlineColorForNode(
   return ToStyleableMarker(marker)->UnderlineColor().Rgb();
 }
 
-static WTF::Optional<TextMatchMarker::MatchStatus> MatchStatusFrom(
+static base::Optional<TextMatchMarker::MatchStatus> MatchStatusFrom(
     const String& match_status) {
   if (EqualIgnoringASCIICase(match_status, "kActive"))
     return TextMatchMarker::MatchStatus::kActive;
   if (EqualIgnoringASCIICase(match_status, "kInactive"))
     return TextMatchMarker::MatchStatus::kInactive;
-  return WTF::nullopt;
+  return base::nullopt;
 }
 
 void Internals::addTextMatchMarker(const Range* range,
@@ -1035,7 +1034,7 @@ void Internals::addTextMatchMarker(const Range* range,
   if (!range->OwnerDocument().View())
     return;
 
-  WTF::Optional<TextMatchMarker::MatchStatus> match_status_enum =
+  base::Optional<TextMatchMarker::MatchStatus> match_status_enum =
       MatchStatusFrom(match_status);
   if (!match_status_enum) {
     exception_state.ThrowDOMException(
@@ -1064,7 +1063,7 @@ static bool ParseColor(const String& value,
   return true;
 }
 
-static WTF::Optional<ImeTextSpanThickness> ThicknessFrom(
+static base::Optional<ImeTextSpanThickness> ThicknessFrom(
     const String& thickness) {
   if (EqualIgnoringASCIICase(thickness, "none"))
     return ImeTextSpanThickness::kNone;
@@ -1072,7 +1071,7 @@ static WTF::Optional<ImeTextSpanThickness> ThicknessFrom(
     return ImeTextSpanThickness::kThin;
   if (EqualIgnoringASCIICase(thickness, "thick"))
     return ImeTextSpanThickness::kThick;
-  return WTF::nullopt;
+  return base::nullopt;
 }
 
 namespace {
@@ -1089,7 +1088,7 @@ void addStyleableMarkerHelper(
   DCHECK(range);
   range->OwnerDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
 
-  WTF::Optional<ImeTextSpanThickness> thickness =
+  base::Optional<ImeTextSpanThickness> thickness =
       ThicknessFrom(thickness_value);
   if (!thickness) {
     exception_state.ThrowDOMException(
@@ -1634,7 +1633,7 @@ String Internals::idleTimeSpellCheckerState(Document* document,
                                             ->GetSpellChecker()
                                             .GetIdleSpellCheckCallback()
                                             .GetState();
-  const auto& it = std::begin(kTexts) + static_cast<size_t>(state);
+  auto* const* const it = std::begin(kTexts) + static_cast<size_t>(state);
   DCHECK_GE(it, std::begin(kTexts)) << "Unknown state value";
   DCHECK_LT(it, std::end(kTexts)) << "Unknown state value";
   return *it;
@@ -1688,7 +1687,7 @@ static unsigned EventHandlerCount(
   if (!document.GetPage())
     return 0;
   EventHandlerRegistry* registry =
-      &document.GetPage()->GetEventHandlerRegistry();
+      &document.GetFrame()->GetEventHandlerRegistry();
   unsigned count = 0;
   const EventTargetSet* targets = registry->EventHandlerTargets(handler_class);
   if (targets) {
@@ -1851,7 +1850,7 @@ static PaintLayer* FindLayerForGraphicsLayer(PaintLayer* search_root,
 // of rects returned by an SkRegion (which have been split apart for sorting
 // purposes). No attempt is made to do this efficiently (eg. by relying on the
 // sort criteria of SkRegion).
-static void MergeRects(WebVector<blink::WebRect>& rects) {
+static void MergeRects(Vector<IntRect>& rects) {
   for (size_t i = 0; i < rects.size(); ++i) {
     if (rects[i].IsEmpty())
       continue;
@@ -1862,27 +1861,28 @@ static void MergeRects(WebVector<blink::WebRect>& rects) {
         if (rects[j].IsEmpty())
           continue;
         // Try to merge rects[j] into rects[i] along the 4 possible edges.
-        if (rects[i].y == rects[j].y && rects[i].height == rects[j].height) {
-          if (rects[i].x + rects[i].width == rects[j].x) {
-            rects[i].width += rects[j].width;
-            rects[j] = blink::WebRect();
+        if (rects[i].Y() == rects[j].Y() &&
+            rects[i].Height() == rects[j].Height()) {
+          if (rects[i].X() + rects[i].Width() == rects[j].X()) {
+            rects[i].Expand(rects[j].Width(), 0);
+            rects[j] = IntRect();
             updated = true;
-          } else if (rects[i].x == rects[j].x + rects[j].width) {
-            rects[i].x = rects[j].x;
-            rects[i].width += rects[j].width;
-            rects[j] = blink::WebRect();
+          } else if (rects[i].X() == rects[j].X() + rects[j].Width()) {
+            rects[i].SetX(rects[j].X());
+            rects[i].Expand(rects[j].Width(), 0);
+            rects[j] = IntRect();
             updated = true;
           }
-        } else if (rects[i].x == rects[j].x &&
-                   rects[i].width == rects[j].width) {
-          if (rects[i].y + rects[i].height == rects[j].y) {
-            rects[i].height += rects[j].height;
-            rects[j] = blink::WebRect();
+        } else if (rects[i].X() == rects[j].X() &&
+                   rects[i].Width() == rects[j].Width()) {
+          if (rects[i].Y() + rects[i].Height() == rects[j].Y()) {
+            rects[i].Expand(0, rects[j].Height());
+            rects[j] = IntRect();
             updated = true;
-          } else if (rects[i].y == rects[j].y + rects[j].height) {
-            rects[i].y = rects[j].y;
-            rects[i].height += rects[j].height;
-            rects[j] = blink::WebRect();
+          } else if (rects[i].Y() == rects[j].Y() + rects[j].Height()) {
+            rects[i].SetY(rects[j].Y());
+            rects[i].Expand(0, rects[j].Height());
+            rects[j] = IntRect();
             updated = true;
           }
         }
@@ -1894,9 +1894,13 @@ static void MergeRects(WebVector<blink::WebRect>& rects) {
 static void AccumulateLayerRectList(PaintLayerCompositor* compositor,
                                     GraphicsLayer* graphics_layer,
                                     LayerRectList* rects) {
-  WebVector<blink::WebRect> layer_rects =
-      graphics_layer->PlatformLayer()->TouchEventHandlerRegion();
-  if (!layer_rects.empty()) {
+  const cc::TouchActionRegion& touch_action_region =
+      graphics_layer->CcLayer()->touch_action_region();
+  if (!touch_action_region.region().IsEmpty()) {
+    Vector<IntRect> layer_rects;
+    for (const gfx::Rect& rect : touch_action_region.region()) {
+      layer_rects.push_back(IntRect(rect));
+    }
     MergeRects(layer_rects);
     String layer_type;
     IntSize layer_offset;
@@ -2479,15 +2483,6 @@ void Internals::mediaPlayerPlayingRemotelyChanged(
     media_element->DisconnectedFromRemoteDevice();
 }
 
-void Internals::setMediaElementNetworkState(HTMLMediaElement* media_element,
-                                            int state) {
-  DCHECK(media_element);
-  DCHECK(state >= WebMediaPlayer::NetworkState::kNetworkStateEmpty);
-  DCHECK(state <= WebMediaPlayer::NetworkState::kNetworkStateDecodeError);
-  media_element->SetNetworkState(
-      static_cast<WebMediaPlayer::NetworkState>(state));
-}
-
 void Internals::setPersistent(HTMLVideoElement* video_element,
                               bool persistent) {
   DCHECK(video_element);
@@ -2505,7 +2500,7 @@ void Internals::forceStaleStateForMediaElement(HTMLMediaElement* media_element,
     return;
   }
 
-  if (auto wmp = media_element->GetWebMediaPlayer()) {
+  if (auto* wmp = media_element->GetWebMediaPlayer()) {
     wmp->ForceStaleStateForTesting(
         static_cast<WebMediaPlayer::ReadyState>(target_state));
   }
@@ -2513,7 +2508,7 @@ void Internals::forceStaleStateForMediaElement(HTMLMediaElement* media_element,
 
 bool Internals::isMediaElementSuspended(HTMLMediaElement* media_element) {
   DCHECK(media_element);
-  if (auto wmp = media_element->GetWebMediaPlayer())
+  if (auto* wmp = media_element->GetWebMediaPlayer())
     return wmp->IsSuspendedForTesting();
   return false;
 }
@@ -2836,9 +2831,8 @@ DOMArrayBuffer* Internals::serializeObject(
 
 scoped_refptr<SerializedScriptValue> Internals::deserializeBuffer(
     DOMArrayBuffer* buffer) const {
-  String value(static_cast<const UChar*>(buffer->Data()),
-               buffer->ByteLength() / sizeof(UChar));
-  return SerializedScriptValue::Create(value);
+  return SerializedScriptValue::Create(static_cast<const char*>(buffer->Data()),
+                                       buffer->ByteLength());
 }
 
 DOMArrayBuffer* Internals::serializeWithInlineWasm(ScriptValue value) const {
@@ -2858,14 +2852,11 @@ DOMArrayBuffer* Internals::serializeWithInlineWasm(ScriptValue value) const {
 ScriptValue Internals::deserializeBufferContainingWasm(
     ScriptState* state,
     DOMArrayBuffer* buffer) const {
-  String value(static_cast<const UChar*>(buffer->Data()),
-               buffer->ByteLength() / sizeof(UChar));
   DummyExceptionStateForTesting exception_state;
   SerializedScriptValue::DeserializeOptions options;
   options.read_wasm_from_stream = true;
-  return ScriptValue::From(state,
-                           SerializedScriptValue::Create(value)->Deserialize(
-                               state->GetIsolate(), options));
+  return ScriptValue::From(state, deserializeBuffer(buffer)->Deserialize(
+                                      state->GetIsolate(), options));
 }
 
 void Internals::forceReload(bool bypass_cache) {

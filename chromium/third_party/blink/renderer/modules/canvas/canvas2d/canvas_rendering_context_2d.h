@@ -42,8 +42,8 @@
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
-namespace blink {
-class WebLayer;
+namespace cc {
+class Layer;
 }
 
 namespace blink {
@@ -193,10 +193,10 @@ class MODULES_EXPORT CanvasRenderingContext2D final
 
   void WillDrawImage(CanvasImageSource*) const final;
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  protected:
-  virtual void NeedsFinalizeFrame() {
+  void NeedsFinalizeFrame() override {
     CanvasRenderingContext::NeedsFinalizeFrame();
   }
 
@@ -248,9 +248,9 @@ class MODULES_EXPORT CanvasRenderingContext2D final
   void SetIsHidden(bool) override;
   void Stop() final;
 
-  virtual bool IsTransformInvertible() const;
+  bool IsTransformInvertible() const override;
 
-  WebLayer* PlatformLayer() const override;
+  cc::Layer* CcLayer() const override;
   bool IsCanvas2DBufferValid() const override;
 
   Member<HitRegionManager> hit_region_manager_;

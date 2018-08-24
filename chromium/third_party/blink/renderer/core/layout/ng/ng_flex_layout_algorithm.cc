@@ -4,16 +4,13 @@
 
 #include "third_party/blink/renderer/core/layout/ng/ng_flex_layout_algorithm.h"
 
-#include <algorithm>
+#include <memory>
 #include "third_party/blink/renderer/core/layout/flexible_box_algorithm.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
-#include "third_party/blink/renderer/core/layout/ng/inline/ng_baseline.h"
-#include "third_party/blink/renderer/core/layout/ng/ng_block_layout_algorithm.h"
-#include "third_party/blink/renderer/core/layout/ng/ng_box_fragment.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_block_break_token.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_constraint_space.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_constraint_space_builder.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_length_utils.h"
-#include "third_party/blink/renderer/core/layout/ng/ng_out_of_flow_layout_part.h"
-#include "third_party/blink/renderer/core/layout/ng/ng_physical_box_fragment.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
@@ -30,7 +27,7 @@ scoped_refptr<NGLayoutResult> NGFlexLayoutAlgorithm::Layout() {
       << "Don't support that yet";
 
   LayoutUnit container_logical_width = ComputeInlineSizeForFragment(
-      ConstraintSpace(), Style(), /* MinMaxSize */ WTF::nullopt);
+      ConstraintSpace(), Style(), /* MinMaxSize */ base::nullopt);
 
   Vector<FlexItem> flex_items;
   for (NGLayoutInputNode child = Node().FirstChild(); child;
@@ -39,11 +36,15 @@ scoped_refptr<NGLayoutResult> NGFlexLayoutAlgorithm::Layout() {
       continue;
     // Assume row flexbox with no orthogonal items, which lets us just use
     // MinMaxSize for flex base size. An orthogonal item would need full layout.
+    // TODO(layout-ng): Now that ComputeMinMaxSize takes a writing mode, this
+    // should be easy to fix by just passing an appropriate constraint space to
+    // ComputeMinMaxSize.
     DCHECK(IsParallelWritingMode(Node().Style().GetWritingMode(),
                                  child.Style().GetWritingMode()))
         << "Orthogonal items aren't supported yet.";
     MinMaxSizeInput zero_input;
-    MinMaxSize min_max_sizes = child.ComputeMinMaxSize(zero_input);
+    MinMaxSize min_max_sizes =
+        child.ComputeMinMaxSize(ConstraintSpace().GetWritingMode(), zero_input);
 
     LayoutUnit flex_base_content_size;
     if (child.Style().FlexBasis().IsAuto() && child.Style().Width().IsAuto()) {
@@ -124,19 +125,13 @@ scoped_refptr<NGLayoutResult> NGFlexLayoutAlgorithm::Layout() {
           {flex_item.desired_location.X(), flex_item.desired_location.Y()});
     }
   }
-  // TODO(dgrogan): This line is only needed because we erroneously tell the
-  // parent block layout algorithm that the flexbox doesn't create a new BFC, so
-  // a DCHECK is triggered. Remove this line after adding a LayoutNGFlexibleBox
-  // class and returning it from LayoutObject::CreateLayoutObject().
-  container_builder_.SetExclusionSpace(
-      std::make_unique<NGExclusionSpace>(ConstraintSpace().ExclusionSpace()));
   return container_builder_.ToBoxFragment();
 }
 
-Optional<MinMaxSize> NGFlexLayoutAlgorithm::ComputeMinMaxSize(
+base::Optional<MinMaxSize> NGFlexLayoutAlgorithm::ComputeMinMaxSize(
     const MinMaxSizeInput& input) const {
   // TODO(dgrogan): Implement this.
-  return WTF::nullopt;
+  return base::nullopt;
 }
 
 }  // namespace blink

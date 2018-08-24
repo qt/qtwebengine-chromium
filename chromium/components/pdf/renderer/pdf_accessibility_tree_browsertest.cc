@@ -83,7 +83,7 @@ class PdfAccessibilityTreeTest : public content::RenderViewTest {
     content::RenderViewTest::SetUp();
 
     base::FilePath pak_dir;
-    PathService::Get(base::DIR_MODULE, &pak_dir);
+    base::PathService::Get(base::DIR_MODULE, &pak_dir);
     base::FilePath pak_file =
         pak_dir.Append(FILE_PATH_LITERAL("components_tests_resources.pak"));
     ui::ResourceBundle::GetSharedInstance().AddDataPackFromPath(
@@ -92,6 +92,10 @@ class PdfAccessibilityTreeTest : public content::RenderViewTest {
     viewport_info_.zoom = 1.0;
     viewport_info_.scroll = {0, 0};
     viewport_info_.offset = {0, 0};
+    viewport_info_.selection_start_page_index = 0;
+    viewport_info_.selection_start_char_index = 0;
+    viewport_info_.selection_end_page_index = 0;
+    viewport_info_.selection_end_char_index = 0;
     doc_info_.page_count = 1;
     page_info_.page_index = 0;
     page_info_.text_run_count = 0;

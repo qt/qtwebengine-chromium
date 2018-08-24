@@ -28,6 +28,7 @@ namespace internal {
 class InputMethodDelegate;
 }  // namespace internal
 
+class InputMethodKeyboardController;
 class InputMethodObserver;
 class KeyEvent;
 class TextInputClient;
@@ -157,6 +158,10 @@ class InputMethod {
   // of IME popups is not supported.
   virtual bool IsCandidatePopupOpen() const = 0;
 
+  // Check whether text entered into the focused text input client should be
+  // used to improve typing suggestions for the user.
+  virtual bool GetClientShouldDoLearning() = 0;
+
   // Displays an on screen keyboard if enabled.
   virtual void ShowImeIfNeeded() = 0;
 
@@ -166,6 +171,9 @@ class InputMethod {
 
   // Set screen bounds of a on-screen keyboard.
   virtual void SetOnScreenKeyboardBounds(const gfx::Rect& new_bounds) {}
+
+  // Return the keyboard controller; used only on Windows.
+  virtual InputMethodKeyboardController* GetInputMethodKeyboardController() = 0;
 
  protected:
   friend class extensions::InputImeApiTest;

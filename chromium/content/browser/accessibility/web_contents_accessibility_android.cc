@@ -551,6 +551,7 @@ bool WebContentsAccessibilityAndroid::OnHoverEvent(
       root_manager_) {
     gfx::PointF point =
         IsUseZoomForDSFEnabled() ? event.GetPointPix() : event.GetPoint();
+    point.Scale(1 / page_scale_);
     root_manager_->HitTest(gfx::ToFlooredPoint(point));
   }
   return true;
@@ -1042,15 +1043,25 @@ jboolean WebContentsAccessibilityAndroid::PreviousAtGranularity(
   return false;
 }
 
-void WebContentsAccessibilityAndroid::SetAccessibilityFocus(
+void WebContentsAccessibilityAndroid::MoveAccessibilityFocus(
     JNIEnv* env,
     const JavaParamRef<jobject>& obj,
-    jint unique_id) {
+    jint old_unique_id,
+    jint new_unique_id) {
+  BrowserAccessibilityAndroid* old_node = GetAXFromUniqueID(old_unique_id);
+  if (old_node)
+    old_node->manager()->ClearAccessibilityFocus(*old_node);
+
+  BrowserAccessibilityAndroid* node = GetAXFromUniqueID(new_unique_id);
+  if (!node)
+    return;
+  node->manager()->SetAccessibilityFocus(*node);
+
   // When Android sets accessibility focus to a node, we load inline text
   // boxes for that node so that subsequent requests for character bounding
-  // boxes will succeed.
-  BrowserAccessibilityAndroid* node = GetAXFromUniqueID(unique_id);
-  if (node)
+  // boxes will succeed. However, don't do that for the root of the tree,
+  // as that will result in loading inline text boxes for the whole tree.
+  if (node != node->manager()->GetRoot())
     node->manager()->LoadInlineTextBoxes(*node);
 }
 
@@ -1196,7 +1207,8 @@ BrowserAccessibilityAndroid* WebContentsAccessibilityAndroid::GetAXFromUniqueID(
       BrowserAccessibilityAndroid::GetFromUniqueId(unique_id));
 }
 
-void WebContentsAccessibilityAndroid::UpdateFrameInfo() {
+void WebContentsAccessibilityAndroid::UpdateFrameInfo(float page_scale) {
+  page_scale_ = page_scale;
   if (frame_info_initialized_)
     return;
 

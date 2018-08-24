@@ -32,6 +32,8 @@
 #include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/editing/ephemeral_range.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
+#include "third_party/blink/renderer/core/editing/inline_box_position.h"
+#include "third_party/blink/renderer/core/editing/inline_box_traversal.h"
 #include "third_party/blink/renderer/core/editing/iterators/text_iterator.h"
 #include "third_party/blink/renderer/core/editing/text_affinity.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -53,11 +55,13 @@
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_offset_mapping.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_physical_text_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/layout_ng_block_flow.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_physical_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/text_autosizer.h"
+#include "third_party/blink/renderer/core/paint/ng/ng_paint_fragment.h"
 #include "third_party/blink/renderer/platform/fonts/character_range.h"
 #include "third_party/blink/renderer/platform/geometry/float_quad.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/text/bidi_resolver.h"
 #include "third_party/blink/renderer/platform/text/character.h"
 #include "third_party/blink/renderer/platform/text/hyphenation.h"
@@ -69,7 +73,7 @@
 namespace blink {
 
 struct SameSizeAsLayoutText : public LayoutObject {
-  uint32_t bitfields : 11;
+  uint32_t bitfields : 12;
   float widths[4];
   String text;
   void* pointers[2];
@@ -111,55 +115,11 @@ class SecureTextTimer final : public TimerBase {
   int last_typed_character_offset_;
 };
 
-static void MakeCapitalized(String* string, UChar previous) {
-  if (string->IsNull())
-    return;
-
-  unsigned length = string->length();
-  const StringImpl& input = *string->Impl();
-
-  CHECK_LT(length, std::numeric_limits<unsigned>::max());
-  StringBuffer<UChar> string_with_previous(length + 1);
-  string_with_previous[0] =
-      previous == kNoBreakSpaceCharacter ? kSpaceCharacter : previous;
-  for (unsigned i = 1; i < length + 1; i++) {
-    // Replace &nbsp with a real space since ICU no longer treats &nbsp as a
-    // word separator.
-    if (input[i - 1] == kNoBreakSpaceCharacter)
-      string_with_previous[i] = kSpaceCharacter;
-    else
-      string_with_previous[i] = input[i - 1];
-  }
-
-  TextBreakIterator* boundary =
-      WordBreakIterator(string_with_previous.Characters(), length + 1);
-  if (!boundary)
-    return;
-
-  StringBuilder result;
-  result.ReserveCapacity(length);
-
-  int32_t end_of_word;
-  int32_t start_of_word = boundary->first();
-  for (end_of_word = boundary->next(); end_of_word != kTextBreakDone;
-       start_of_word = end_of_word, end_of_word = boundary->next()) {
-    if (start_of_word) {  // Ignore first char of previous string
-      result.Append(
-          input[start_of_word - 1] == kNoBreakSpaceCharacter
-              ? kNoBreakSpaceCharacter
-              : WTF::Unicode::ToTitleCase(string_with_previous[start_of_word]));
-    }
-    for (int i = start_of_word + 1; i < end_of_word; i++)
-      result.Append(input[i - 1]);
-  }
-
-  *string = result.ToString();
-}
-
 LayoutText::LayoutText(Node* node, scoped_refptr<StringImpl> str)
     : LayoutObject(node),
       has_tab_(false),
       lines_dirty_(false),
+      valid_ng_items_(false),
       contains_reversed_text_(false),
       known_to_have_no_overflow_and_no_fallback_fonts_(false),
       contains_only_whitespace_or_nbsp_(
@@ -219,6 +179,10 @@ void LayoutText::StyleDidChange(StyleDifference diff,
   TextAutosizer* text_autosizer = GetDocument().GetTextAutosizer();
   if (!old_style && text_autosizer)
     text_autosizer->Record(this);
+
+  // TODO(layout-dev): This is only really needed for style changes that affect
+  // how text is rendered. Font, text-decoration, etc.
+  valid_ng_items_ = false;
 }
 
 void LayoutText::RemoveAndDestroyTextBoxes() {
@@ -245,6 +209,7 @@ void LayoutText::WillBeDestroyed() {
 
   RemoveAndDestroyTextBoxes();
   LayoutObject::WillBeDestroyed();
+  valid_ng_items_ = false;
 }
 
 void LayoutText::ExtractTextBox(InlineTextBox* box) {
@@ -263,7 +228,7 @@ void LayoutText::DeleteTextBoxes() {
   text_boxes_.DeleteLineBoxes();
 }
 
-Optional<FloatPoint> LayoutText::GetUpperLeftCorner() const {
+base::Optional<FloatPoint> LayoutText::GetUpperLeftCorner() const {
   DCHECK(!IsBR());
   if (HasLegacyTextBoxes()) {
     if (StyleRef().IsHorizontalWritingMode()) {
@@ -284,7 +249,7 @@ Optional<FloatPoint> LayoutText::GetUpperLeftCorner() const {
     return FloatPoint(line_box->InlineOffsetToContainerBox().left.ToFloat(),
                       LinesBoundingBox().Y());
   }
-  return WTF::nullopt;
+  return base::nullopt;
 }
 
 bool LayoutText::HasTextBoxes() const {
@@ -580,13 +545,15 @@ FloatRect LayoutText::LocalBoundingBoxRectForAccessibility() const {
   return result;
 }
 
+namespace {
+
 enum ShouldAffinityBeDownstream {
   kAlwaysDownstream,
   kAlwaysUpstream,
   kUpstreamIfPositionIsNotAtStart
 };
 
-static bool LineDirectionPointFitsInBox(
+bool LineDirectionPointFitsInBox(
     int point_line_direction,
     InlineTextBox* box,
     ShouldAffinityBeDownstream& should_affinity_be_downstream) {
@@ -626,7 +593,7 @@ static bool LineDirectionPointFitsInBox(
   return false;
 }
 
-static PositionWithAffinity CreatePositionWithAffinityForBox(
+PositionWithAffinity CreatePositionWithAffinityForBox(
     const InlineBox* box,
     int offset,
     ShouldAffinityBeDownstream should_affinity_be_downstream) {
@@ -652,7 +619,7 @@ static PositionWithAffinity CreatePositionWithAffinityForBox(
       offset + text_start_offset, affinity);
 }
 
-static PositionWithAffinity
+PositionWithAffinity
 CreatePositionWithAffinityForBoxAfterAdjustingOffsetForBiDi(
     const InlineTextBox* box,
     int offset,
@@ -660,93 +627,23 @@ CreatePositionWithAffinityForBoxAfterAdjustingOffsetForBiDi(
   DCHECK(box);
   DCHECK_GE(offset, 0);
 
+  // TODO(layout-dev): Stop passing out-of-range |offset|.
+  if (static_cast<unsigned>(offset) > box->Len())
+    offset = box->Len();
+
   if (offset && static_cast<unsigned>(offset) < box->Len()) {
     return CreatePositionWithAffinityForBox(box, box->Start() + offset,
                                             should_affinity_be_downstream);
   }
 
-  bool position_is_at_start_of_box = !offset;
-  if (position_is_at_start_of_box == box->IsLeftToRightDirection()) {
-    // offset is on the left edge
-
-    const InlineBox* prev_box = box->PrevLeafChildIgnoringLineBreak();
-    if ((prev_box && prev_box->BidiLevel() == box->BidiLevel()) ||
-        box->GetLineLayoutItem().ContainingBlock().Style()->Direction() ==
-            box->Direction()) {  // FIXME: left on 12CBA
-      return CreatePositionWithAffinityForBox(box, box->CaretLeftmostOffset(),
-                                              should_affinity_be_downstream);
-    }
-
-    if (prev_box && prev_box->BidiLevel() > box->BidiLevel()) {
-      // e.g. left of B in aDC12BAb
-      const InlineBox* leftmost_box;
-      do {
-        leftmost_box = prev_box;
-        prev_box = leftmost_box->PrevLeafChildIgnoringLineBreak();
-      } while (prev_box && prev_box->BidiLevel() > box->BidiLevel());
-      return CreatePositionWithAffinityForBox(
-          leftmost_box, leftmost_box->CaretRightmostOffset(),
-          should_affinity_be_downstream);
-    }
-
-    if (!prev_box || prev_box->BidiLevel() < box->BidiLevel()) {
-      // e.g. left of D in aDC12BAb
-      const InlineBox* rightmost_box;
-      const InlineBox* next_box = box;
-      do {
-        rightmost_box = next_box;
-        next_box = rightmost_box->NextLeafChildIgnoringLineBreak();
-      } while (next_box && next_box->BidiLevel() >= box->BidiLevel());
-      return CreatePositionWithAffinityForBox(
-          rightmost_box,
-          box->IsLeftToRightDirection() ? rightmost_box->CaretMaxOffset()
-                                        : rightmost_box->CaretMinOffset(),
-          should_affinity_be_downstream);
-    }
-
-    return CreatePositionWithAffinityForBox(box, box->CaretRightmostOffset(),
-                                            should_affinity_be_downstream);
-  }
-
-  const InlineBox* next_box = box->NextLeafChildIgnoringLineBreak();
-  if ((next_box && next_box->BidiLevel() == box->BidiLevel()) ||
-      box->GetLineLayoutItem().ContainingBlock().Style()->Direction() ==
-          box->Direction()) {
-    return CreatePositionWithAffinityForBox(box, box->CaretRightmostOffset(),
-                                            should_affinity_be_downstream);
-  }
-
-  // offset is on the right edge
-  if (next_box && next_box->BidiLevel() > box->BidiLevel()) {
-    // e.g. right of C in aDC12BAb
-    const InlineBox* rightmost_box;
-    do {
-      rightmost_box = next_box;
-      next_box = rightmost_box->NextLeafChildIgnoringLineBreak();
-    } while (next_box && next_box->BidiLevel() > box->BidiLevel());
-    return CreatePositionWithAffinityForBox(
-        rightmost_box, rightmost_box->CaretLeftmostOffset(),
-        should_affinity_be_downstream);
-  }
-
-  if (!next_box || next_box->BidiLevel() < box->BidiLevel()) {
-    // e.g. right of A in aDC12BAb
-    const InlineBox* leftmost_box;
-    const InlineBox* prev_box = box;
-    do {
-      leftmost_box = prev_box;
-      prev_box = leftmost_box->PrevLeafChildIgnoringLineBreak();
-    } while (prev_box && prev_box->BidiLevel() >= box->BidiLevel());
-    return CreatePositionWithAffinityForBox(
-        leftmost_box,
-        box->IsLeftToRightDirection() ? leftmost_box->CaretMinOffset()
-                                      : leftmost_box->CaretMaxOffset(),
-        should_affinity_be_downstream);
-  }
-
-  return CreatePositionWithAffinityForBox(box, box->CaretLeftmostOffset(),
+  const InlineBoxPosition adjusted = BidiAdjustment::AdjustForHitTest(
+      InlineBoxPosition(box, box->Start() + offset));
+  return CreatePositionWithAffinityForBox(adjusted.inline_box,
+                                          adjusted.offset_in_box,
                                           should_affinity_be_downstream);
 }
+
+}  // namespace
 
 PositionWithAffinity LayoutText::PositionForPoint(
     const LayoutPoint& point) const {
@@ -1646,6 +1543,12 @@ void LayoutText::SetTextWithOffset(scoped_refptr<StringImpl> text,
 
   lines_dirty_ = dirtied_lines;
   SetText(std::move(text), force || dirtied_lines);
+
+  // TODO(layout-dev): Invalidation is currently all or nothing in LayoutNG,
+  // this is probably fine for NGInlineItem reuse as recreating the individual
+  // items is relatively cheap. If partial relayout performance improvement are
+  // needed partial re-shapes are likely to be sufficient. Revisit as needed.
+  valid_ng_items_ = false;
 }
 
 void LayoutText::TransformText() {
@@ -1693,37 +1596,16 @@ void LayoutText::AddLayerHitTestRects(
   // Text nodes aren't event targets, so don't descend any further.
 }
 
-void ApplyTextTransform(const ComputedStyle* style,
-                        String& text,
-                        UChar previous_character) {
-  if (!style)
-    return;
-
-  switch (style->TextTransform()) {
-    case ETextTransform::kNone:
-      break;
-    case ETextTransform::kCapitalize:
-      MakeCapitalized(&text, previous_character);
-      break;
-    case ETextTransform::kUppercase:
-      text = text.UpperUnicode(style->Locale());
-      break;
-    case ETextTransform::kLowercase:
-      text = text.LowerUnicode(style->Locale());
-      break;
-  }
-}
-
 void LayoutText::SetTextInternal(scoped_refptr<StringImpl> text) {
   DCHECK(text);
   text_ = String(std::move(text));
 
-  if (Style()) {
-    ApplyTextTransform(Style(), text_, PreviousCharacter());
+  if (const ComputedStyle* style = Style()) {
+    style->ApplyTextTransform(&text_, PreviousCharacter());
 
     // We use the same characters here as for list markers.
     // See the listMarkerText function in LayoutListMarker.cpp.
-    switch (Style()->TextSecurity()) {
+    switch (style->TextSecurity()) {
       case ETextSecurity::kNone:
         break;
       case ETextSecurity::kCircle:
@@ -1789,6 +1671,8 @@ void LayoutText::SetText(scoped_refptr<StringImpl> text, bool force) {
   TextAutosizer* text_autosizer = GetDocument().GetTextAutosizer();
   if (text_autosizer)
     text_autosizer->Record(this);
+
+  valid_ng_items_ = false;
 }
 
 void LayoutText::DirtyOrDeleteLineBoxesIfNeeded(bool full_layout) {
@@ -1797,12 +1681,14 @@ void LayoutText::DirtyOrDeleteLineBoxesIfNeeded(bool full_layout) {
   else if (!lines_dirty_)
     DirtyLineBoxes();
   lines_dirty_ = false;
+  valid_ng_items_ = false;
 }
 
 void LayoutText::DirtyLineBoxes() {
   for (InlineTextBox* box : TextBoxes())
     box->DirtyLineBoxes();
   lines_dirty_ = false;
+  valid_ng_items_ = false;
 }
 
 InlineTextBox* LayoutText::CreateTextBox(int start, unsigned short length) {
@@ -2006,6 +1892,23 @@ LayoutRect LayoutText::LocalSelectionRect() const {
   if (!cb)
     return LayoutRect();
 
+  const FrameSelection& frame_selection = GetFrame()->Selection();
+  const auto fragments = NGPaintFragment::InlineFragmentsFor(this);
+  if (fragments.IsInLayoutNGInlineFormattingContext()) {
+    LayoutRect rect;
+    for (const NGPaintFragment* fragment : fragments) {
+      const LayoutSelectionStatus status =
+          frame_selection.ComputeLayoutSelectionStatus(*fragment);
+      if (status.start == status.end)
+        continue;
+      NGPhysicalOffsetRect fragment_rect =
+          fragment->ComputeLocalSelectionRect(status);
+      fragment_rect.offset += fragment->InlineOffsetToContainerBox();
+      rect.Unite(fragment_rect.ToLayoutRect());
+    }
+    return rect;
+  }
+
   // Now calculate startPos and endPos for painting selection.
   // We include a selection while endPos > 0
   unsigned start_pos, end_pos;
@@ -2014,7 +1917,6 @@ LayoutRect LayoutText::LocalSelectionRect() const {
     start_pos = 0;
     end_pos = TextLength();
   } else {
-    const FrameSelection& frame_selection = GetFrame()->Selection();
     if (GetSelectionState() == SelectionState::kStart) {
       // TODO(yoichio): value_or is used to prevent use uininitialized value
       // on release. It should be value() after LayoutSelection brushup.
@@ -2030,12 +1932,8 @@ LayoutRect LayoutText::LocalSelectionRect() const {
     }
   }
 
-  // TODO(yoichio): The following DCHECK should pass, but fails 14 tests.
-  // DCHECK_LE(start_pos, end_pos);
+  DCHECK_LE(start_pos, end_pos);
   LayoutRect rect;
-  if (start_pos >= end_pos)
-    return rect;
-
   for (InlineTextBox* box : TextBoxes()) {
     rect.Unite(box->LocalSelectionRect(start_pos, end_pos));
     rect.Unite(LayoutRect(EllipsisRectForBox(box, start_pos, end_pos)));
@@ -2053,52 +1951,39 @@ const NGOffsetMapping* LayoutText::GetNGOffsetMapping() const {
 Position LayoutText::PositionForCaretOffset(unsigned offset) const {
   // ::first-letter handling should be done by LayoutTextFragment override.
   DCHECK(!IsTextFragment());
+  // BR handling should be done by LayoutBR override.
+  DCHECK(!IsBR());
   // WBR handling should be done by LayoutWordBreak override.
   DCHECK(!IsWordBreak());
   DCHECK_LE(offset, TextLength());
   const Node* node = GetNode();
   if (!node)
     return Position();
-  if (node->IsTextNode()) {
-    // TODO(layout-dev): Support offset change due to text-transform.
-    return Position(node, offset);
-  }
-  // TODO(xiaochengh): This should be done in LayoutBR override.
-  if (IsBR()) {
-    DCHECK(IsHTMLBRElement(node));
-    DCHECK_LE(offset, 1u);
-    return offset ? Position::AfterNode(*node) : Position::BeforeNode(*node);
-  }
-  NOTREACHED();
-  return Position();
+  DCHECK(node->IsTextNode());
+  // TODO(layout-dev): Support offset change due to text-transform.
+  return Position(node, offset);
 }
 
-Optional<unsigned> LayoutText::CaretOffsetForPosition(
+base::Optional<unsigned> LayoutText::CaretOffsetForPosition(
     const Position& position) const {
   // ::first-letter handling should be done by LayoutTextFragment override.
   DCHECK(!IsTextFragment());
+  // BR handling should be done by LayoutBR override.
+  DCHECK(!IsBR());
   // WBR handling should be done by LayoutWordBreak override.
   DCHECK(!IsWordBreak());
   if (position.IsNull() || position.AnchorNode() != GetNode())
-    return WTF::nullopt;
-  if (GetNode()->IsTextNode()) {
-    if (position.IsBeforeAnchor())
-      return 0;
-    // TODO(layout-dev): Support offset change due to text-transform.
-    if (position.IsAfterAnchor())
-      return TextLength();
-    DCHECK(position.IsOffsetInAnchor()) << position;
-    DCHECK_LE(position.OffsetInContainerNode(), static_cast<int>(TextLength()))
-        << position;
-    return position.OffsetInContainerNode();
-  }
-  // TODO(xiaochengh): This should be done by LayoutBR override.
-  if (IsBR()) {
-    DCHECK(position.IsBeforeAnchor() || position.IsAfterAnchor()) << position;
-    return position.IsBeforeAnchor() ? 0 : 1;
-  }
-  NOTREACHED();
-  return WTF::nullopt;
+    return base::nullopt;
+  DCHECK(GetNode()->IsTextNode());
+  if (position.IsBeforeAnchor())
+    return 0;
+  // TODO(layout-dev): Support offset change due to text-transform.
+  if (position.IsAfterAnchor())
+    return TextLength();
+  DCHECK(position.IsOffsetInAnchor()) << position;
+  DCHECK_LE(position.OffsetInContainerNode(), static_cast<int>(TextLength()))
+      << position;
+  return position.OffsetInContainerNode();
 }
 
 int LayoutText::CaretMinOffset() const {
@@ -2108,7 +1993,7 @@ int LayoutText::CaretMinOffset() const {
     const Position first_position = PositionForCaretOffset(0);
     if (first_position.IsNull())
       return 0;
-    Optional<unsigned> candidate = CaretOffsetForPosition(
+    base::Optional<unsigned> candidate = CaretOffsetForPosition(
         mapping->StartOfNextNonCollapsedContent(first_position));
     // Align with the legacy behavior that 0 is returned if the entire node
     // contains only collapsed whitespaces.
@@ -2132,7 +2017,7 @@ int LayoutText::CaretMaxOffset() const {
     const Position last_position = PositionForCaretOffset(TextLength());
     if (last_position.IsNull())
       return TextLength();
-    Optional<unsigned> candidate = CaretOffsetForPosition(
+    base::Optional<unsigned> candidate = CaretOffsetForPosition(
         mapping->EndOfLastNonCollapsedContent(last_position));
     // Align with the legacy behavior that |TextLenght()| is returned if the
     // entire node contains only collapsed whitespaces.
@@ -2159,8 +2044,9 @@ unsigned LayoutText::ResolvedTextLength() const {
       return 0;
     }
     DCHECK(end_position.IsNotNull()) << start_position;
-    Optional<unsigned> start = mapping->GetTextContentOffset(start_position);
-    Optional<unsigned> end = mapping->GetTextContentOffset(end_position);
+    base::Optional<unsigned> start =
+        mapping->GetTextContentOffset(start_position);
+    base::Optional<unsigned> end = mapping->GetTextContentOffset(end_position);
     if (!start.has_value() || !end.has_value()) {
       DCHECK(!start.has_value()) << this;
       DCHECK(!end.has_value()) << this;
@@ -2334,9 +2220,6 @@ scoped_refptr<AbstractInlineTextBox> LayoutText::FirstAbstractInlineTextBox() {
 
 void LayoutText::InvalidateDisplayItemClients(
     PaintInvalidationReason invalidation_reason) const {
-  // TODO(yoichio): Cover other PaintInvalidateionReasons.
-  DCHECK(invalidation_reason != PaintInvalidationReason::kSelection ||
-         !EnclosingNGBlockFlow());
   ObjectPaintInvalidator paint_invalidator(*this);
 
   if (RuntimeEnabledFeatures::LayoutNGEnabled()) {

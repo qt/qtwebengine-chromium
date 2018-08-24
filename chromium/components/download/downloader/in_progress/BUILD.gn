@@ -9,13 +9,21 @@ if (is_android) {
 
 source_set("in_progress") {
   sources = [
+    "download_db_entry.cc",
+    "download_db_entry.h",
     "download_entry.cc",
     "download_entry.h",
+    "download_info.cc",
+    "download_info.h",
     "in_progress_cache.h",
     "in_progress_cache_impl.cc",
     "in_progress_cache_impl.h",
     "in_progress_conversions.cc",
     "in_progress_conversions.h",
+    "in_progress_info.cc",
+    "in_progress_info.h",
+    "ukm_info.cc",
+    "ukm_info.h",
   ]
 
   deps = [
@@ -23,6 +31,7 @@ source_set("in_progress") {
     "//components/download/downloader/in_progress/proto",
     "//net",
     "//services/metrics/public/cpp:metrics_cpp",
+    "//services/network/public/mojom",
   ]
 }
 

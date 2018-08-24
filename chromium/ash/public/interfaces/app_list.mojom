@@ -7,13 +7,13 @@ module ash.mojom;
 import "ash/public/interfaces/menu.mojom";
 import "components/sync/mojo/syncer.mojom";
 import "mojo/public/mojom/base/string16.mojom";
+import "mojo/public/mojom/base/unguessable_token.mojom";
 import "ui/gfx/geometry/mojo/geometry.mojom";
 import "ui/gfx/image/mojo/image.mojom";
 import "ui/gfx/range/mojo/range.mojom";
 
-// A structure holding the common information of AppListItem and
-// ChromeAppListItem, which is sent between ash and chrome representing
-// an app list item.
+// A structure holding the common information which is sent between ash and,
+// chrome representing an app list item.
 // This structure should be kept as small as possible so that minimum data
 // is sent via mojo calls when an item is moved or reparented.
 struct AppListItemMetadata {
@@ -25,6 +25,54 @@ struct AppListItemMetadata {
   syncer.mojom.StringOrdinal position; // The position of the item.
   bool is_folder;     // Whether this item is a folder.
   gfx.mojom.ImageSkia? icon;  // The icon of this item.
+};
+
+// A structure holding the common information which is sent from chrome to ash,
+// representing a search result.
+// This structure should be kept as small as possible so that ash can get and
+// render search results as early as possible.
+struct SearchResultMetadata {
+  string id;                  // The id of the result.
+  mojo_base.mojom.String16 title;    // The title of the result, e.g. an app's
+                                     // name, an autocomplete query, etc.
+  mojo_base.mojom.String16 details;  // A detail string of this result.
+  array<SearchResultTag> title_tags;    // How the title matches the query. See
+                                        // the SearchResultTag section for
+                                        // more details.
+  array<SearchResultTag> details_tags;  // How the details match the query. See
+                                        // the SearchResultTag section for
+                                        // more details.
+  array<SearchResultAction> actions;    // Actions that can be performed on this
+                                        // result. See the SearchResultAction
+                                        // section for more details.
+  float rating = -1.0;        // The average rating score of the app
+                              // corresponding to this result, ranged from 0 to
+                              // 5. It's negative if there's no rating for the
+                              // result.
+  mojo_base.mojom.String16 formatted_price;  // A formatted price string, e.g.
+                                             // "$7.09", "HK$3.94", etc.
+  SearchResultType result_type;              // The type of this result.
+  SearchResultDisplayType display_type = kList;
+                                             // How this result is displayed.
+  double display_score;       // A score to determine the result display order.
+  bool is_omnibox_search;     // Whether this result is searched from Omnibox.
+  bool is_installing;         // Whether this result is installing.
+  mojo_base.mojom.UnguessableToken? answer_card_contents_token;
+                              // A token used to render answer card, which is
+                              // empty before initialized. It's illegal to pass
+                              // an empty UnguessableToken across processes. So
+                              // we use a null value when it's empty here.
+  gfx.mojom.Size? answer_card_size;  // Preferred size of answer card. It is
+                                     // unset for non-answer-card results. For
+                                     // answer card results, it is set when
+                                     // the answer card WebContents finishes
+                                     // loading and its renderer notifies it
+                                     // about a new contents size.
+  gfx.mojom.ImageSkia? icon;  // The icon of this result.
+  gfx.mojom.ImageSkia? badge_icon;  // The badge icon of this result that
+                                    // indicates its type, e.g. installable from
+                                    // PlayStore, installable from WebStore,
+                                    // etc.
 };
 
 // All possible states of the app list.
@@ -53,10 +101,15 @@ enum SearchResultDisplayType {
 
 // Type of the search result, which is set in Chrome.
 enum SearchResultType {
-  kInstalledApp,  // Installed apps.
-  kPlayStoreApp,  // Uninstalled apps from playstore.
-  kInstantApp,    // Instant apps.
-  kInternalApp,   // Chrome OS apps.
+  kInstalledApp,    // Installed apps.
+  kPlayStoreApp,    // Installable apps from PlayStore.
+  kInstantApp,      // Instant apps.
+  kInternalApp,     // Chrome OS apps.
+  kWebStoreApp,     // Installable apps from WebStore.
+  kWebStoreSearch,  // A search query in WebStore.
+  kOmnibox,         // Results from Omninbox.
+  kLauncher,        // Results from launcher search (currently only from Files).
+  kAnswerCard,      // WebContents based answer card.
   // Add new values here.
 };
 
@@ -75,7 +128,7 @@ struct SearchResultTag {
 struct SearchResultActionImageLabel {
   gfx.mojom.ImageSkia base_image;
   gfx.mojom.ImageSkia hover_image;
-  gfx.mojom.ImageSkia pressed_Image;
+  gfx.mojom.ImageSkia pressed_image;
 };
 union SearchResultActionLabel {
   SearchResultActionImageLabel image_label;
@@ -173,6 +226,8 @@ interface AppListController {
   SetSearchHintText(mojo_base.mojom.String16 hint_text);
   // Sets the text for the search box's Textfield and the voice search flag.
   UpdateSearchBox(mojo_base.mojom.String16 text, bool initiated_by_user);
+  // Publishes search results to Ash to render them.
+  PublishSearchResults(array<SearchResultMetadata> results);
   // Update the whole model, usually when profile changes happen in Chrome.
   SetModelData(array<AppListItemMetadata> apps,
                bool is_search_engine_google);
@@ -218,6 +273,13 @@ interface AppListController {
       => (AppListItemMetadata? oem_folder);
 
   //////////////////////////////////////////////////////////////////////////////
+  // Interfaces for ChromeSearchReult:
+  SetSearchResultMetadata(SearchResultMetadata metadata);
+  SetSearchResultIsInstalling(string result_id, bool is_installing);
+  SetSearchResultPercentDownloaded(string result_id, int32 percent_downloaded);
+  NotifySearchResultItemInstalled(string result_id);
+
+  //////////////////////////////////////////////////////////////////////////////
   // Interfaces for views:
   // Dismisses the app list.
   DismissAppList();
@@ -254,6 +316,16 @@ interface AppListClient {
   InvokeSearchResultAction(string result_id,
                            int32 action_index,
                            int32 event_flags);
+  // Returns the context menu model for the search result with |result_id|, or
+  // an empty array if there is currently no menu for the result.
+  GetSearchResultContextMenuModel(string result_id) => (array<MenuItem> items);
+  // Invoked when a context menu item of a search result is clicked.
+  // |result_id|: the clicked search result's id.
+  // |command_id|: the clicked menu item's command id.
+  // |event_flags|: flags from the event which triggered this command.
+  SearchResultContextMenuItemSelected(string result_id,
+                                      int32 command_id,
+                                      int32 event_flags);
 
   //////////////////////////////////////////////////////////////////////////////
   // Interfaces on the app list UI:
@@ -270,13 +342,13 @@ interface AppListClient {
   // Interfaces on app list items:
   // Activates (opens) the item with |id|.
   ActivateItem(string id, int32 event_flags);
-  // Returns the context menu model for the item with |id|, or NULL if there is
-  // currently no menu for the item (e.g. during install).
+  // Returns the context menu model for the item with |id|, or an empty array if
+  // there is currently no menu for the item (e.g. during install).
   GetContextMenuModel(string id) => (array<MenuItem> items);
   // Invoked when a context menu item of an app list item is clicked.
   // |id|: the clicked AppListItem's id.
   // |command_id|: the clicked menu item's command id.
-  // |event_flags|: flags from the event which issued this command.
+  // |event_flags|: flags from the event which triggered this command.
   ContextMenuItemSelected(string id, int32 command_id, int32 event_flags);
   // Invoked when a folder is created in Ash (e.g. merge items into a folder).
   OnFolderCreated(AppListItemMetadata folder);

@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/single_thread_task_runner.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_cache_options.h"
 #include "third_party/blink/renderer/core/inspector/console_message_storage.h"
 #include "third_party/blink/renderer/core/inspector/thread_debugger.h"
 #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
+#include "third_party/blink/renderer/core/script/script.h"
 #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
 #include "third_party/blink/renderer/core/workers/global_scope_creation_params.h"
 #include "third_party/blink/renderer/core/workers/threaded_worklet_global_scope.h"
@@ -182,7 +184,7 @@ class ThreadedWorkletMessagingProxyForTest
     std::unique_ptr<WorkerSettings> worker_settings = nullptr;
     InitializeWorkerThread(
         std::make_unique<GlobalScopeCreationParams>(
-            document->Url(), document->UserAgent(),
+            document->Url(), ScriptType::kModule, document->UserAgent(),
             document->GetContentSecurityPolicy()->Headers().get(),
             document->GetReferrerPolicy(), document->GetSecurityOrigin(),
             document->IsSecureContext(), worker_clients,
@@ -191,7 +193,7 @@ class ThreadedWorkletMessagingProxyForTest
             base::UnguessableToken::Create(), std::move(worker_settings),
             kV8CacheOptionsDefault,
             new WorkletModuleResponsesMap(document->Fetcher())),
-        WTF::nullopt);
+        base::nullopt);
   }
 
  private:

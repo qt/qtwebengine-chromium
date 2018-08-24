@@ -1,11 +1,10 @@
 <link rel="import" href="chrome://resources/cr_elements/shared_style_css.html">
-<link rel="import" href="chrome://resources/html/md_select_css.html">
 
  <!-- Common styles for network elements. -->
 
 <dom-module id="network-shared">
   <template>
-    <style include="cr-shared-style md-select">
+    <style include="cr-shared-style">
       :root {
         /* Margin for the show/hide password icon */
         --network-control-margin: 40px;
@@ -64,12 +63,21 @@
 
       paper-input-container {
         --paper-input-container-input: {
+          color: var(--paper-grey-600);
           font-size: inherit;
           font-weight: 400;
         };
         --paper-input-container-input-color: var(--secondary-text-color);
-        margin-bottom: 0;
-        margin-top: -9px;
+        margin-bottom: -12px;
+        margin-top: -10px;
+        width: 250px;
+      }
+
+      iron-input input {
+        @apply --paper-input-container-shared-input-style;
+        @apply --cr-secondary-text;
+        font-size: inherit;
+        line-height: inherit;
       }
     </style>
   </template>

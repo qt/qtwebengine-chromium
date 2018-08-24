@@ -24,6 +24,7 @@
 
 #include "google/protobuf/io/zero_copy_stream_impl_lite.h"
 #include "perfetto/base/logging.h"
+#include "perfetto/base/utils.h"
 
 #include "src/ipc/wire_protocol.pb.h"
 
@@ -31,7 +32,6 @@ namespace perfetto {
 namespace ipc {
 
 namespace {
-constexpr size_t kPageSize = 4096;
 
 // The header is just the number of bytes of the Frame protobuf message.
 constexpr size_t kHeaderSize = sizeof(uint32_t);
@@ -39,8 +39,8 @@ constexpr size_t kHeaderSize = sizeof(uint32_t);
 
 BufferedFrameDeserializer::BufferedFrameDeserializer(size_t max_capacity)
     : capacity_(max_capacity) {
-  PERFETTO_CHECK(max_capacity % kPageSize == 0);
-  PERFETTO_CHECK(max_capacity > kPageSize);
+  PERFETTO_CHECK(max_capacity % base::kPageSize == 0);
+  PERFETTO_CHECK(max_capacity > base::kPageSize);
 }
 
 BufferedFrameDeserializer::~BufferedFrameDeserializer() = default;
@@ -54,11 +54,10 @@ BufferedFrameDeserializer::BeginReceive() {
     PERFETTO_DCHECK(size_ == 0);
     buf_ = base::PageAllocator::Allocate(capacity_);
 
-    // Surely we are going to use at least the first page. There is very little
-    // point in madvising that as well and immedately after telling the kernel
-    // that we want it back (via recv()).
-    int res = madvise(buf() + kPageSize, capacity_ - kPageSize, MADV_DONTNEED);
-    PERFETTO_DCHECK(res == 0);
+    // Surely we are going to use at least the first page, but we may not need
+    // the rest for a bit.
+    base::PageAllocator::AdviseDontNeed(buf() + base::kPageSize,
+                                        capacity_ - base::kPageSize);
   }
 
   PERFETTO_CHECK(capacity_ > size_);
@@ -141,15 +140,14 @@ bool BufferedFrameDeserializer::EndReceive(size_t recv_size) {
     // If we just finished decoding a large frame that used more than one page,
     // release the extra memory in the buffer. Large frames should be quite
     // rare.
-    if (consumed_size > kPageSize) {
-      size_t size_rounded_up = (size_ / kPageSize + 1) * kPageSize;
+    if (consumed_size > base::kPageSize) {
+      size_t size_rounded_up = (size_ / base::kPageSize + 1) * base::kPageSize;
       if (size_rounded_up < capacity_) {
         char* madvise_begin = buf() + size_rounded_up;
         const size_t madvise_size = capacity_ - size_rounded_up;
         PERFETTO_CHECK(madvise_begin > buf() + size_);
         PERFETTO_CHECK(madvise_begin + madvise_size <= buf() + capacity_);
-        int res = madvise(madvise_begin, madvise_size, MADV_DONTNEED);
-        PERFETTO_DCHECK(res == 0);
+        base::PageAllocator::AdviseDontNeed(madvise_begin, madvise_size);
       }
     }
   }
@@ -183,6 +181,8 @@ std::string BufferedFrameDeserializer::Serialize(const Frame& frame) {
   frame.AppendToString(&buf);
   const uint32_t payload_size = static_cast<uint32_t>(buf.size() - kHeaderSize);
   PERFETTO_DCHECK(payload_size == static_cast<uint32_t>(frame.GetCachedSize()));
+  // Don't send messages larger than what the receiver can handle.
+  PERFETTO_DCHECK(kHeaderSize + payload_size <= kIPCBufferSize);
   char header[kHeaderSize];
   memcpy(header, base::AssumeLittleEndian(&payload_size), kHeaderSize);
   buf.replace(0, kHeaderSize, header, kHeaderSize);

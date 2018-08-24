@@ -324,8 +324,8 @@ void LayoutTable::UpdateLogicalWidth() {
     LayoutUnit available_content_logical_width =
         (container_width_in_inline_direction - margin_total)
             .ClampNegativeToZero();
-    if (!cb->IsLayoutNGMixin() && ShrinkToAvoidFloats() &&
-        cb->IsLayoutBlockFlow() && ToLayoutBlockFlow(cb)->ContainsFloats() &&
+    if (ShrinkToAvoidFloats() && cb->IsLayoutBlockFlow() &&
+        ToLayoutBlockFlow(cb)->ContainsFloats() &&
         !has_perpendicular_containing_block)
       available_content_logical_width = ShrinkLogicalWidthToAvoidFloats(
           margin_start, margin_end, ToLayoutBlockFlow(cb));
@@ -1518,8 +1518,10 @@ bool LayoutTable::NodeAtPoint(HitTestResult& result,
   LayoutPoint adjusted_location = accumulated_offset + Location();
 
   // Check kids first.
-  if (!HasOverflowClip() ||
-      location_in_container.Intersects(OverflowClipRect(adjusted_location))) {
+  bool skip_children = (result.GetHitTestRequest().GetStopNode() == this);
+  if (!skip_children &&
+      (!HasOverflowClip() ||
+       location_in_container.Intersects(OverflowClipRect(adjusted_location)))) {
     for (LayoutObject* child = LastChild(); child;
          child = child->PreviousSibling()) {
       if (child->IsBox() && !ToLayoutBox(child)->HasSelfPaintingLayer() &&

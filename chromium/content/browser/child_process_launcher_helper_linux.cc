@@ -9,26 +9,26 @@
 #include "content/browser/child_process_launcher_helper.h"
 #include "content/browser/child_process_launcher_helper_posix.h"
 #include "content/browser/sandbox_host_linux.h"
-#include "content/browser/zygote_host/zygote_communication_linux.h"
-#include "content/browser/zygote_host/zygote_host_impl_linux.h"
 #include "content/public/browser/child_process_launcher_utils.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/common/common_sandbox_support_linux.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
-#include "content/public/common/zygote_handle.h"
 #include "gpu/config/gpu_switches.h"
 #include "services/service_manager/sandbox/linux/sandbox_linux.h"
+#include "services/service_manager/zygote/common/common_sandbox_support_linux.h"
+#include "services/service_manager/zygote/common/zygote_handle.h"
+#include "services/service_manager/zygote/host/zygote_communication_linux.h"
+#include "services/service_manager/zygote/host/zygote_host_impl_linux.h"
 
 namespace content {
 namespace internal {
 
-mojo::edk::ScopedPlatformHandle
+mojo::edk::ScopedInternalPlatformHandle
 ChildProcessLauncherHelper::PrepareMojoPipeHandlesOnClientThread() {
   DCHECK_CURRENTLY_ON(client_thread_id_);
-  return mojo::edk::ScopedPlatformHandle();
+  return mojo::edk::ScopedInternalPlatformHandle();
 }
 
 void ChildProcessLauncherHelper::BeforeLaunchOnClientThread() {
@@ -55,7 +55,8 @@ bool ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
        base::CommandLine::ForCurrentProcess()->HasSwitch(
            switches::kEnableOOPRasterization))) {
     const int sandbox_fd = SandboxHostLinux::GetInstance()->GetChildSocket();
-    options->fds_to_remap.push_back(std::make_pair(sandbox_fd, GetSandboxFD()));
+    options->fds_to_remap.push_back(
+        std::make_pair(sandbox_fd, service_manager::GetSandboxFD()));
   }
 
   options->environ = delegate_->GetEnvironment();
@@ -71,7 +72,7 @@ ChildProcessLauncherHelper::LaunchProcessOnLauncherThread(
     int* launch_result) {
   *is_synchronous_launch = true;
 
-  ZygoteHandle zygote_handle =
+  service_manager::ZygoteHandle zygote_handle =
       base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoZygote)
           ? nullptr
           : delegate_->GetZygote();
@@ -92,7 +93,7 @@ ChildProcessLauncherHelper::LaunchProcessOnLauncherThread(
       // chrome::kLowestRendererOomScore in chrome/chrome_constants.h, but
       // that's not something we can include here.)
       const int kLowestRendererOomScore = 300;
-      ZygoteHostImpl::GetInstance()->AdjustRendererOOMScore(
+      service_manager::ZygoteHostImpl::GetInstance()->AdjustRendererOOMScore(
           handle, kLowestRendererOomScore);
     }
 #endif
@@ -115,19 +116,21 @@ void ChildProcessLauncherHelper::AfterLaunchOnLauncherThread(
     const base::LaunchOptions& options) {
 }
 
-base::TerminationStatus ChildProcessLauncherHelper::GetTerminationStatus(
+ChildProcessTerminationInfo ChildProcessLauncherHelper::GetTerminationInfo(
     const ChildProcessLauncherHelper::Process& process,
-    bool known_dead,
-    int* exit_code) {
+    bool known_dead) {
+  ChildProcessTerminationInfo info;
   if (process.zygote) {
-    return process.zygote->GetTerminationStatus(
-        process.process.Handle(), known_dead, exit_code);
+    info.status = process.zygote->GetTerminationStatus(
+        process.process.Handle(), known_dead, &info.exit_code);
+  } else if (known_dead) {
+    info.status = base::GetKnownDeadTerminationStatus(process.process.Handle(),
+                                                      &info.exit_code);
+  } else {
+    info.status =
+        base::GetTerminationStatus(process.process.Handle(), &info.exit_code);
   }
-  if (known_dead) {
-    return base::GetKnownDeadTerminationStatus(
-        process.process.Handle(), exit_code);
-  }
-  return base::GetTerminationStatus(process.process.Handle(), exit_code);
+  return info;
 }
 
 // static
@@ -142,7 +145,7 @@ bool ChildProcessLauncherHelper::TerminateProcess(const base::Process& process,
 void ChildProcessLauncherHelper::ForceNormalProcessTerminationSync(
     ChildProcessLauncherHelper::Process process) {
   DCHECK(CurrentlyOnProcessLauncherTaskRunner());
-  process.process.Terminate(RESULT_CODE_NORMAL_EXIT, false);
+  process.process.Terminate(service_manager::RESULT_CODE_NORMAL_EXIT, false);
   // On POSIX, we must additionally reap the child.
   if (process.zygote) {
     // If the renderer was created via a zygote, we have to proxy the reaping

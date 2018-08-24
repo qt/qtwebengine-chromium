@@ -19,7 +19,6 @@
 #include "third_party/blink/renderer/modules/webgl/ext_texture_filter_anisotropic.h"
 #include "third_party/blink/renderer/modules/webgl/oes_texture_float_linear.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_compressed_texture_astc.h"
-#include "third_party/blink/renderer/modules/webgl/webgl_compressed_texture_atc.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_compressed_texture_etc.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_compressed_texture_etc1.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_compressed_texture_pvrtc.h"
@@ -29,7 +28,6 @@
 #include "third_party/blink/renderer/modules/webgl/webgl_context_event.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_debug_shaders.h"
-#include "third_party/blink/renderer/modules/webgl/webgl_get_buffer_sub_data_async.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_lose_context.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/drawing_buffer.h"
 
@@ -124,7 +122,6 @@ void WebGL2RenderingContext::RegisterContextExtensions() {
       ext_texture_filter_anisotropic_);
   RegisterExtension<OESTextureFloatLinear>(oes_texture_float_linear_);
   RegisterExtension<WebGLCompressedTextureASTC>(webgl_compressed_texture_astc_);
-  RegisterExtension<WebGLCompressedTextureATC>(webgl_compressed_texture_atc_);
   RegisterExtension<WebGLCompressedTextureETC>(webgl_compressed_texture_etc_);
   RegisterExtension<WebGLCompressedTextureETC1>(webgl_compressed_texture_etc1_);
   RegisterExtension<WebGLCompressedTexturePVRTC>(
@@ -134,8 +131,6 @@ void WebGL2RenderingContext::RegisterContextExtensions() {
       webgl_compressed_texture_s3tc_srgb_);
   RegisterExtension<WebGLDebugRendererInfo>(webgl_debug_renderer_info_);
   RegisterExtension<WebGLDebugShaders>(webgl_debug_shaders_);
-  RegisterExtension<WebGLGetBufferSubDataAsync>(
-      webgl_get_buffer_sub_data_async_, kDraftExtension);
   RegisterExtension<WebGLLoseContext>(webgl_lose_context_);
 }
 
@@ -145,7 +140,6 @@ void WebGL2RenderingContext::Trace(blink::Visitor* visitor) {
   visitor->Trace(ext_texture_filter_anisotropic_);
   visitor->Trace(oes_texture_float_linear_);
   visitor->Trace(webgl_compressed_texture_astc_);
-  visitor->Trace(webgl_compressed_texture_atc_);
   visitor->Trace(webgl_compressed_texture_etc_);
   visitor->Trace(webgl_compressed_texture_etc1_);
   visitor->Trace(webgl_compressed_texture_pvrtc_);
@@ -153,15 +147,8 @@ void WebGL2RenderingContext::Trace(blink::Visitor* visitor) {
   visitor->Trace(webgl_compressed_texture_s3tc_srgb_);
   visitor->Trace(webgl_debug_renderer_info_);
   visitor->Trace(webgl_debug_shaders_);
-  visitor->Trace(webgl_get_buffer_sub_data_async_);
   visitor->Trace(webgl_lose_context_);
   WebGL2RenderingContextBase::Trace(visitor);
-}
-
-void WebGL2RenderingContext::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
-  // Extensions are managed by WebGL2RenderingContextBase.
-  WebGL2RenderingContextBase::TraceWrappers(visitor);
 }
 
 }  // namespace blink

@@ -12,9 +12,6 @@
 #include "cc/paint/display_item_list.h"
 #include "cc/trees/layer_tree_host.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_compositor_support.h"
-#include "third_party/blink/public/platform/web_layer.h"
-#include "third_party/blink/public/platform/web_layer_scroll_client.h"
 #include "third_party/blink/renderer/platform/graphics/compositing/content_layer_client_impl.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/paint/clip_paint_property_node.h"
@@ -22,6 +19,7 @@
 #include "third_party/blink/renderer/platform/graphics/paint/foreign_layer_display_item.h"
 #include "third_party/blink/renderer/platform/graphics/paint/geometry_mapper.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_artifact.h"
+#include "third_party/blink/renderer/platform/graphics/paint/paint_chunk_subset.h"
 #include "third_party/blink/renderer/platform/graphics/paint/property_tree_state.h"
 #include "third_party/blink/renderer/platform/graphics/paint/raster_invalidation_tracking.h"
 #include "third_party/blink/renderer/platform/graphics/paint/scroll_hit_test_display_item.h"
@@ -39,16 +37,24 @@ namespace blink {
 // http://crbug.com/692842#c4.
 static int g_s_property_tree_sequence_number = 1;
 
-PaintArtifactCompositor::PaintArtifactCompositor(WebLayerScrollClient& client)
-    : scroll_client_(client), tracks_raster_invalidations_(false) {
-  if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+PaintArtifactCompositor::PaintArtifactCompositor(
+    base::RepeatingCallback<void(const gfx::ScrollOffset&,
+                                 const cc::ElementId&)> scroll_callback)
+    : scroll_callback_(std::move(scroll_callback)),
+      tracks_raster_invalidations_(false) {
+  if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled() &&
+      !RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled())
     return;
   root_layer_ = cc::Layer::Create();
-  web_layer_ = Platform::Current()->CompositorSupport()->CreateLayerFromCCLayer(
-      root_layer_.get());
 }
 
 PaintArtifactCompositor::~PaintArtifactCompositor() {
+  // TODO(crbug.com/836897, crbug.com/836912):
+  // In BlinkGenPropertyTrees mode, some of the layers passed from Blink core
+  // have pre-filled element ID. Need to figure out what is the best place to
+  // setup them.
+  if (RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled())
+    return;
   for (auto child : root_layer_->children())
     DCHECK(!child->element_id());
 }
@@ -118,8 +124,11 @@ static scoped_refptr<cc::Layer> ForeignLayerForPaintChunk(
   layer_offset = gfx::Vector2dF(foreign_layer_display_item.Location().X(),
                                 foreign_layer_display_item.Location().Y());
   scoped_refptr<cc::Layer> layer = foreign_layer_display_item.GetLayer();
-  layer->SetBounds(foreign_layer_display_item.Bounds());
-  layer->SetIsDrawable(true);
+  DCHECK(layer->bounds() ==
+         static_cast<gfx::Size>(foreign_layer_display_item.Bounds()))
+      << "\n  layer bounds: " << layer->bounds().ToString()
+      << "\n  display item bounds: " << foreign_layer_display_item.Bounds();
+  DCHECK(layer->DrawsContent());
   return layer;
 }
 
@@ -192,13 +201,11 @@ PaintArtifactCompositor::ScrollHitTestLayerForPendingLayer(
   auto bounds = scroll_node.ContainerRect().Size();
   // Mark the layer as scrollable.
   // TODO(pdr): When SPV2 launches this parameter for bounds will not be needed.
-  scroll_layer->SetScrollable(bounds);
+  scroll_layer->SetScrollable(static_cast<gfx::Size>(bounds));
   // Set the layer's bounds equal to the container because the scroll layer
   // does not scroll.
-  scroll_layer->SetBounds(bounds);
-  scroll_layer->set_did_scroll_callback(
-      base::BindRepeating(&blink::WebLayerScrollClient::DidScroll,
-                          base::Unretained(&scroll_client_)));
+  scroll_layer->SetBounds(static_cast<gfx::Size>(bounds));
+  scroll_layer->set_did_scroll_callback(scroll_callback_);
   return scroll_layer;
 }
 
@@ -256,11 +263,18 @@ PaintArtifactCompositor::CompositedLayerForPendingLayer(
   layer_offset = cc_combined_bounds.OffsetFromOrigin();
 
   auto cc_layer = content_layer_client->UpdateCcPictureLayer(
-      paint_artifact.GetDisplayItemList(), cc_combined_bounds, paint_chunks,
+      paint_artifact, paint_chunks, cc_combined_bounds,
       pending_layer.property_tree_state);
   new_content_layer_clients.push_back(std::move(content_layer_client));
   if (extra_data_for_testing_enabled_)
     extra_data_for_testing_->content_layers.push_back(cc_layer);
+
+  // Set properties that foreign layers would normally control for themselves
+  // here to avoid changing foreign layers. This includes things set by
+  // GraphicsLayer on the ContentsLayer() or by video clients etc.
+  cc_layer->SetContentsOpaque(pending_layer.rect_known_to_be_opaque.Contains(
+      FloatRect(EnclosingIntRect(pending_layer.bounds))));
+
   return cc_layer;
 }
 
@@ -271,16 +285,13 @@ PaintArtifactCompositor::PendingLayer::PendingLayer(
     : bounds(first_paint_chunk.bounds),
       rect_known_to_be_opaque(
           first_paint_chunk.known_to_be_opaque ? bounds : FloatRect()),
-      backface_hidden(first_paint_chunk.properties.backface_hidden),
-      property_tree_state(first_paint_chunk.properties.property_tree_state
-                              .GetPropertyTreeState()),
+      property_tree_state(first_paint_chunk.properties.GetPropertyTreeState()),
       requires_own_layer(chunk_requires_own_layer) {
   paint_chunk_indices.push_back(chunk_index);
 }
 
 void PaintArtifactCompositor::PendingLayer::Merge(const PendingLayer& guest) {
   DCHECK(!requires_own_layer && !guest.requires_own_layer);
-  DCHECK_EQ(backface_hidden, guest.backface_hidden);
 
   paint_chunk_indices.AppendVector(guest.paint_chunk_indices);
   FloatClipRect guest_bounds_in_home(guest.bounds);
@@ -298,8 +309,6 @@ static bool CanUpcastTo(const PropertyTreeState& guest,
 bool PaintArtifactCompositor::PendingLayer::CanMerge(
     const PendingLayer& guest) const {
   if (requires_own_layer || guest.requires_own_layer)
-    return false;
-  if (backface_hidden != guest.backface_hidden)
     return false;
   if (property_tree_state.Effect() != guest.property_tree_state.Effect())
     return false;
@@ -334,19 +343,32 @@ static bool IsNonCompositingAncestorOf(
   return true;
 }
 
+static bool IsBackfaceHidden(const TransformPaintPropertyNode* node) {
+  while (node && node->GetBackfaceVisibility() ==
+                     TransformPaintPropertyNode::BackfaceVisibility::kInherited)
+    node = node->Parent();
+  return node && node->GetBackfaceVisibility() ==
+                     TransformPaintPropertyNode::BackfaceVisibility::kHidden;
+}
+
 // Determines whether drawings based on the 'guest' state can be painted into
 // a layer with the 'home' state. A number of criteria need to be met:
 // 1. The guest effect must be a descendant of the home effect. However this
 //    check is enforced by the layerization recursion. Here we assume the guest
 //    has already been upcasted to the same effect.
-// 2. The guest clip must be a descendant of the home clip.
-// 3. The local space of each clip and effect node on the ancestor chain must
+// 2. The guest transform and the home transform have compatible backface
+//    visibility.
+// 3. The guest clip must be a descendant of the home clip.
+// 4. The local space of each clip and effect node on the ancestor chain must
 //    be within compositing boundary of the home transform space.
-// 4. The guest transform space must be within compositing boundary of the home
+// 5. The guest transform space must be within compositing boundary of the home
 //    transform space.
 static bool CanUpcastTo(const PropertyTreeState& guest,
                         const PropertyTreeState& home) {
   DCHECK_EQ(home.Effect(), guest.Effect());
+
+  if (IsBackfaceHidden(home.Transform()) != IsBackfaceHidden(guest.Transform()))
+    return false;
 
   for (const ClipPaintPropertyNode* current_clip = guest.Clip();
        current_clip != home.Clip(); current_clip = current_clip->Parent()) {
@@ -418,8 +440,7 @@ bool PaintArtifactCompositor::CanDecompositeEffect(
 static bool EffectGroupContainsChunk(
     const EffectPaintPropertyNode& group_effect,
     const PaintChunk& chunk) {
-  const EffectPaintPropertyNode* effect =
-      chunk.properties.property_tree_state.Effect();
+  const auto* effect = chunk.properties.Effect();
   return effect == &group_effect ||
          StrictChildOfAlongPath(&group_effect, effect);
 }
@@ -482,8 +503,7 @@ void PaintArtifactCompositor::LayerizeGroup(
     // A. The next chunk belongs to the current group but no subgroup.
     // B. The next chunk does not belong to the current group.
     // C. The next chunk belongs to some subgroup of the current group.
-    const EffectPaintPropertyNode* chunk_effect =
-        chunk_it->properties.property_tree_state.Effect();
+    const auto* chunk_effect = chunk_it->properties.Effect();
     if (chunk_effect == &current_group) {
       // Case A: The next chunk belongs to the current group but no subgroup.
       const auto& last_display_item =
@@ -771,10 +791,10 @@ void PaintArtifactCompositor::Update(
     layer->SetScrollTreeIndex(scroll_id);
     layer->SetClipTreeIndex(clip_id);
     layer->SetEffectTreeIndex(effect_id);
-    layer->SetContentsOpaque(pending_layer.rect_known_to_be_opaque.Contains(
-        FloatRect(EnclosingIntRect(pending_layer.bounds))));
-    layer->SetDoubleSided(!pending_layer.backface_hidden);
-    layer->SetShouldCheckBackfaceVisibility(pending_layer.backface_hidden);
+    bool backface_hidden =
+        IsBackfaceHidden(pending_layer.property_tree_state.Transform());
+    layer->SetDoubleSided(!backface_hidden);
+    layer->SetShouldCheckBackfaceVisibility(backface_hidden);
   }
   property_tree_manager.Finalize();
   content_layer_clients_.swap(new_content_layer_clients);
@@ -799,10 +819,6 @@ void PaintArtifactCompositor::Update(
 
   g_s_property_tree_sequence_number++;
 
-  // Clear paint property change flags that are for this update only.
-  for (const auto& chunk : paint_artifact.PaintChunks())
-    chunk.properties.property_tree_state.ClearChangedToRoot();
-
 #if DCHECK_IS_ON()
   if (VLOG_IS_ON(2)) {
     static String s_previous_output;
@@ -818,17 +834,10 @@ void PaintArtifactCompositor::Update(
 #endif
 }
 
-std::unique_ptr<WebLayer>
-PaintArtifactCompositor::ExtraDataForTesting::ContentWebLayerAt(
-    unsigned index) {
-  return Platform::Current()->CompositorSupport()->CreateLayerFromCCLayer(
-      content_layers[index].get());
-}
-std::unique_ptr<WebLayer>
+cc::Layer*
 PaintArtifactCompositor::ExtraDataForTesting::ScrollHitTestWebLayerAt(
     unsigned index) {
-  return Platform::Current()->CompositorSupport()->CreateLayerFromCCLayer(
-      scroll_hit_test_layers[index].get());
+  return scroll_hit_test_layers[index].get();
 }
 
 #if DCHECK_IS_ON()

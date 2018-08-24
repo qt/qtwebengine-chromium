@@ -40,6 +40,7 @@ Polymer({
 
   behaviors: [
     I18nBehavior,
+    ListPropertyUpdateBehavior,
     settings.GlobalScrollTargetBehavior,
     WebUIListenerBehavior,
   ],
@@ -102,6 +103,11 @@ Polymer({
         this, currentRoute);
     if (currentRoute == settings.routes.SITE_SETTINGS_SITE_DATA) {
       this.isLoading_ = true;
+      // Needed to fix iron-list rendering issue. The list will not render
+      // correctly until a scroll occurs.
+      // See https://crbug.com/853906.
+      const ironList = /** @type {!IronListElement} */ (this.$$('iron-list'));
+      ironList.scrollToIndex(0);
       this.browserProxy_.reloadCookies().then(this.updateSiteList_.bind(this));
     }
   },
@@ -145,8 +151,8 @@ Polymer({
    */
   updateSiteList_: function() {
     this.isLoading_ = true;
-    this.browserProxy_.getDisplayList(this.filter).then((listInfo) => {
-      this.sites = listInfo.items;
+    this.browserProxy_.getDisplayList(this.filter).then(listInfo => {
+      this.updateList('sites', item => item.site, listInfo.items);
       this.isLoading_ = false;
       this.fire('site-data-list-complete');
     });

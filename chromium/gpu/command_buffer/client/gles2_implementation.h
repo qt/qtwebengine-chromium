@@ -104,16 +104,27 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface,
 
   // ContextSupport implementation.
   void SetAggressivelyFreeResources(bool aggressively_free_resources) override;
-  void Swap() override;
-  void SwapWithBounds(const std::vector<gfx::Rect>& rects) override;
-  void PartialSwapBuffers(const gfx::Rect& sub_buffer) override;
-  void CommitOverlayPlanes() override;
+  void Swap(uint32_t flags,
+            SwapCompletedCallback complete_callback,
+            PresentationCallback presentation_callback) override;
+  void SwapWithBounds(const std::vector<gfx::Rect>& rects,
+                      uint32_t flags,
+                      SwapCompletedCallback swap_completed,
+                      PresentationCallback presentation_callback) override;
+  void PartialSwapBuffers(const gfx::Rect& sub_buffer,
+                          uint32_t flags,
+                          SwapCompletedCallback swap_completed,
+                          PresentationCallback presentation_callback) override;
+  void CommitOverlayPlanes(uint32_t flags,
+                           SwapCompletedCallback swap_completed,
+                           PresentationCallback presentation_callback) override;
   void ScheduleOverlayPlane(int plane_z_order,
                             gfx::OverlayTransform plane_transform,
                             unsigned overlay_texture_id,
                             const gfx::Rect& display_bounds,
                             const gfx::RectF& uv_rect,
-                            bool enable_blend) override;
+                            bool enable_blend,
+                            unsigned gpu_fence_id) override;
   uint64_t ShareGroupTracingGUID() const override;
   void SetErrorMessageCallback(
       base::RepeatingCallback<void(const char*, int32_t)> callback) override;
@@ -123,7 +134,13 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface,
       uint32_t texture_id) override;
   bool ThreadsafeDiscardableTextureIsDeletedForTracing(
       uint32_t texture_id) override;
-
+  void* MapTransferCacheEntry(size_t serialized_size) override;
+  void UnmapAndCreateTransferCacheEntry(uint32_t type, uint32_t id) override;
+  bool ThreadsafeLockTransferCacheEntry(uint32_t type, uint32_t id) override;
+  void UnlockTransferCacheEntries(
+      const std::vector<std::pair<uint32_t, uint32_t>>& entries) override;
+  void DeleteTransferCacheEntry(uint32_t type, uint32_t id) override;
+  unsigned int GetTransferBufferFreeSize() const override;
   void GetProgramInfoCHROMIUMHelper(GLuint program,
                                     std::vector<int8_t>* result);
   GLint GetAttribLocationHelper(GLuint program, const char* name);
@@ -191,19 +208,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface,
                   const char* function_name,
                   const char* msg) override;
 
-  // ClientTransferCache::Client implementation.
-  void IssueCreateTransferCacheEntry(GLuint entry_type,
-                                     GLuint entry_id,
-                                     GLuint handle_shm_id,
-                                     GLuint handle_shm_offset,
-                                     GLuint data_shm_id,
-                                     GLuint data_shm_offset,
-                                     GLuint data_size) override;
-  void IssueDeleteTransferCacheEntry(GLuint entry_type,
-                                     GLuint entry_id) override;
-  void IssueUnlockTransferCacheEntry(GLuint entry_type,
-                                     GLuint entry_id) override;
-  CommandBuffer* command_buffer() const override;
+  CommandBuffer* command_buffer() const;
 
  private:
   friend class GLES2ImplementationTest;
@@ -339,6 +344,10 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface,
   void OnGpuControlLostContext() final;
   void OnGpuControlLostContextMaybeReentrant() final;
   void OnGpuControlErrorMessage(const char* message, int32_t id) final;
+  void OnGpuControlSwapBuffersCompleted(
+      const SwapBuffersCompleteParams& params) final;
+  void OnSwapBufferPresented(uint64_t swap_id,
+                             const gfx::PresentationFeedback& feedback) final;
 
   bool IsChromiumFramebufferMultisampleAvailable();
 
@@ -593,6 +602,9 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface,
 
   PixelStoreParams GetUnpackParameters(Dimension dimension);
 
+  uint64_t PrepareNextSwapId(SwapCompletedCallback complete_callback,
+                             PresentationCallback present_callback);
+
   GLES2Util util_;
   GLES2CmdHelper* helper_;
   std::string last_error_;
@@ -721,6 +733,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface,
 
   std::unique_ptr<BufferTracker> buffer_tracker_;
 
+  base::Optional<ScopedMappedMemoryPtr> font_mapped_buffer_;
   base::Optional<ScopedTransferBufferPtr> raster_mapped_buffer_;
 
   base::Callback<void(const char*, int32_t)> error_message_callback_;
@@ -740,6 +753,13 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface,
   // Populated if cached_extension_string_ != nullptr. These point to
   // gl_strings, valid forever.
   std::vector<const char*> cached_extensions_;
+
+  // The next swap ID to send.
+  uint64_t swap_id_ = 0;
+  // A map of swap IDs to callbacks to run when that ID completes.
+  base::flat_map<uint64_t, SwapCompletedCallback> pending_swap_callbacks_;
+  base::flat_map<uint64_t, PresentationCallback>
+      pending_presentation_callbacks_;
 
   base::WeakPtrFactory<GLES2Implementation> weak_ptr_factory_;
 

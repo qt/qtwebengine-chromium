@@ -197,7 +197,7 @@ TEST_F(RenderViewHostTest, DragEnteredFileURLsStillBlocked) {
 
 TEST_F(RenderViewHostTest, MessageWithBadHistoryItemFiles) {
   base::FilePath file_path;
-  EXPECT_TRUE(PathService::Get(base::DIR_TEMP, &file_path));
+  EXPECT_TRUE(base::PathService::Get(base::DIR_TEMP, &file_path));
   file_path = file_path.AppendASCII("foo");
   EXPECT_EQ(0, process()->bad_msg_count());
   test_rvh()->TestOnUpdateStateWithFile(file_path);
@@ -221,7 +221,7 @@ void SetBadFilePath(const GURL& url,
 TEST_F(RenderViewHostTest, NavigationWithBadHistoryItemFiles) {
   GURL url("http://www.google.com");
   base::FilePath file_path;
-  EXPECT_TRUE(PathService::Get(base::DIR_TEMP, &file_path));
+  EXPECT_TRUE(base::PathService::Get(base::DIR_TEMP, &file_path));
   file_path = file_path.AppendASCII("bar");
   auto set_bad_file_path_callback = base::Bind(SetBadFilePath, url, file_path);
 
@@ -280,13 +280,15 @@ class TestSaveImageFromDataURL : public RenderFrameMessageFilter {
 
  protected:
   ~TestSaveImageFromDataURL() override {}
-  void DownloadUrl(int render_view_id,
-                   int render_frame_id,
-                   const GURL& url,
-                   const Referrer& referrer,
-                   const url::Origin& initiator,
-                   const base::string16& suggested_name,
-                   const bool use_prompt) const override {
+  void DownloadUrl(
+      int render_view_id,
+      int render_frame_id,
+      const GURL& url,
+      const Referrer& referrer,
+      const url::Origin& initiator,
+      const base::string16& suggested_name,
+      const bool use_prompt,
+      blink::mojom::BlobURLTokenPtrInfo blob_url_token) const override {
     url_string_ = url.spec();
     is_downloaded_ = true;
   }

@@ -37,7 +37,7 @@ namespace sw
 	private:
 		const VertexShader *const shader;
 
-		RegisterArray<4096> r;   // Temporary registers
+		RegisterArray<NUM_TEMPORARY_REGISTERS> r;   // Temporary registers
 		Vector4f a0;
 		Array<Int, 4> aL;
 		Vector4f p0;
@@ -70,8 +70,9 @@ namespace sw
 		Vector4f fetchRegister(const Src &src, unsigned int offset = 0);
 		Vector4f readConstant(const Src &src, unsigned int offset = 0);
 		RValue<Pointer<Byte>> uniformAddress(int bufferIndex, unsigned int index);
-		RValue<Pointer<Byte>> uniformAddress(int bufferIndex, unsigned int index, Int& offset);
-		Int relativeAddress(const Shader::Parameter &var, int bufferIndex = -1);
+		RValue<Pointer<Byte>> uniformAddress(int bufferIndex, unsigned int index, Int &offset);
+		Int relativeAddress(const Shader::Relative &rel, int bufferIndex = -1);
+		Int4 dynamicAddress(const Shader::Relative &rel);
 		Int4 enableMask(const Shader::Instruction *instruction);
 
 		void M3X2(Vector4f &dst, Vector4f &src0, Src &src1);

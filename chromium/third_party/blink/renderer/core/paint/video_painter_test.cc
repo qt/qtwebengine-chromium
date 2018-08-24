@@ -4,9 +4,8 @@
 
 #include "third_party/blink/renderer/core/paint/video_painter.h"
 
+#include "cc/layers/layer.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_compositor_support.h"
-#include "third_party/blink/public/platform/web_layer.h"
 #include "third_party/blink/public/platform/web_size.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/paint/paint_controller_paint_test.h"
@@ -24,7 +23,7 @@ class StubWebMediaPlayer : public EmptyWebMediaPlayer {
  public:
   StubWebMediaPlayer(WebMediaPlayerClient* client) : client_(client) {}
 
-  const WebLayer* GetWebLayer() { return web_layer_.get(); }
+  const cc::Layer* GetCcLayer() { return layer_.get(); }
 
   // WebMediaPlayer
   void Load(LoadType, const WebMediaPlayerSource&, CORSMode) override {
@@ -32,15 +31,16 @@ class StubWebMediaPlayer : public EmptyWebMediaPlayer {
     client_->NetworkStateChanged();
     ready_state_ = kReadyStateHaveEnoughData;
     client_->ReadyStateChanged();
-    web_layer_ = Platform::Current()->CompositorSupport()->CreateLayer();
-    client_->SetWebLayer(web_layer_.get());
+    layer_ = cc::Layer::Create();
+    layer_->SetIsDrawable(true);
+    client_->SetCcLayer(layer_.get());
   }
   NetworkState GetNetworkState() const override { return network_state_; }
   ReadyState GetReadyState() const override { return ready_state_; }
 
  private:
   WebMediaPlayerClient* client_;
-  std::unique_ptr<WebLayer> web_layer_;
+  scoped_refptr<cc::Layer> layer_;
   NetworkState network_state_ = kNetworkStateEmpty;
   ReadyState ready_state_ = kReadyStateHaveNothing;
 };
@@ -71,7 +71,7 @@ class VideoPainterTestForSPv2 : private ScopedSlimmingPaintV2ForTest,
     GetDocument().SetURL(KURL(NullURL(), "https://example.com/"));
   }
 
-  bool HasLayerAttached(const WebLayer& layer) {
+  bool HasLayerAttached(const cc::Layer& layer) {
     return chrome_client_->HasLayer(layer);
   }
 
@@ -95,10 +95,10 @@ TEST_F(VideoPainterTestForSPv2, VideoLayerAppearsInLayerTree) {
       ToHTMLMediaElement(GetDocument().body()->firstChild());
   StubWebMediaPlayer* player =
       static_cast<StubWebMediaPlayer*>(element->GetWebMediaPlayer());
-  const WebLayer* layer = player->GetWebLayer();
+  const cc::Layer* layer = player->GetCcLayer();
   ASSERT_TRUE(layer);
   EXPECT_TRUE(HasLayerAttached(*layer));
-  EXPECT_EQ(WebSize(300, 200), layer->Bounds());
+  EXPECT_EQ(gfx::Size(300, 200), layer->bounds());
 }
 
 }  // namespace

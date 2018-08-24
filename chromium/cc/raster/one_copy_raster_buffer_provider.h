@@ -8,10 +8,15 @@
 #include <stdint.h>
 
 #include "base/macros.h"
+#include "base/sequenced_task_runner.h"
 #include "cc/raster/raster_buffer_provider.h"
 #include "cc/raster/staging_buffer_pool.h"
 #include "cc/resources/layer_tree_resource_provider.h"
 #include "gpu/command_buffer/common/sync_token.h"
+
+namespace gpu {
+class GpuMemoryBufferManager;
+}
 
 namespace viz {
 class ContextProvider;
@@ -28,12 +33,12 @@ class CC_EXPORT OneCopyRasterBufferProvider : public RasterBufferProvider {
       scoped_refptr<base::SequencedTaskRunner> task_runner,
       viz::ContextProvider* compositor_context_provider,
       viz::RasterContextProvider* worker_context_provider,
-      LayerTreeResourceProvider* resource_provider,
+      gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
       int max_copy_texture_chromium_size,
       bool use_partial_raster,
       bool use_gpu_memory_buffer_resources,
       int max_staging_buffer_usage_in_bytes,
-      viz::ResourceFormat preferred_tile_format);
+      viz::ResourceFormat tile_format);
   ~OneCopyRasterBufferProvider() override;
 
   // Overridden from RasterBufferProvider:
@@ -42,9 +47,9 @@ class CC_EXPORT OneCopyRasterBufferProvider : public RasterBufferProvider {
       uint64_t resource_content_id,
       uint64_t previous_content_id) override;
   void Flush() override;
-  viz::ResourceFormat GetResourceFormat(bool must_support_alpha) const override;
-  bool IsResourceSwizzleRequired(bool must_support_alpha) const override;
-  bool IsResourcePremultiplied(bool must_support_alpha) const override;
+  viz::ResourceFormat GetResourceFormat() const override;
+  bool IsResourceSwizzleRequired() const override;
+  bool IsResourcePremultiplied() const override;
   bool CanPartialRasterIntoProvidedResource() const override;
   bool IsResourceReadyToDraw(
       const ResourcePool::InUsePoolResource& resource) const override;
@@ -78,7 +83,7 @@ class CC_EXPORT OneCopyRasterBufferProvider : public RasterBufferProvider {
   class RasterBufferImpl : public RasterBuffer {
    public:
     RasterBufferImpl(OneCopyRasterBufferProvider* client,
-                     LayerTreeResourceProvider* resource_provider,
+                     gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
                      const ResourcePool::InUsePoolResource& in_use_resource,
                      OneCopyGpuBacking* backing,
                      uint64_t previous_content_id);
@@ -142,7 +147,7 @@ class CC_EXPORT OneCopyRasterBufferProvider : public RasterBufferProvider {
 
   viz::ContextProvider* const compositor_context_provider_;
   viz::RasterContextProvider* const worker_context_provider_;
-  LayerTreeResourceProvider* const resource_provider_;
+  gpu::GpuMemoryBufferManager* const gpu_memory_buffer_manager_;
   const int max_bytes_per_copy_operation_;
   const bool use_partial_raster_;
   const bool use_gpu_memory_buffer_resources_;
@@ -150,7 +155,7 @@ class CC_EXPORT OneCopyRasterBufferProvider : public RasterBufferProvider {
   // Context lock must be acquired when accessing this member.
   int bytes_scheduled_since_last_flush_;
 
-  const viz::ResourceFormat preferred_tile_format_;
+  const viz::ResourceFormat tile_format_;
   StagingBufferPool staging_pool_;
 
   DISALLOW_COPY_AND_ASSIGN(OneCopyRasterBufferProvider);

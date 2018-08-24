@@ -13,7 +13,6 @@
 #include "components/viz/common/resources/resource_fence.h"
 #include "components/viz/common/resources/resource_format.h"
 #include "components/viz/common/resources/resource_id.h"
-#include "components/viz/common/resources/resource_texture_hint.h"
 #include "components/viz/common/resources/resource_type.h"
 #include "components/viz/common/viz_common_export.h"
 #include "gpu/command_buffer/common/mailbox.h"
@@ -36,7 +35,6 @@ namespace internal {
 // for client and service libraries and should not be used directly from
 // external client code.
 struct VIZ_COMMON_EXPORT Resource {
-  enum Origin { INTERNAL, DELEGATED };
   enum SynchronizationState {
     // The LOCALLY_USED state is the state each resource defaults to when
     // constructed or modified or read. This state indicates that the
@@ -66,11 +64,8 @@ struct VIZ_COMMON_EXPORT Resource {
     // external resource for others to wait on.
     SYNCHRONIZED,
   };
-  enum MipmapState { INVALID, GENERATE, VALID };
 
   Resource(const gfx::Size& size,
-           Origin origin,
-           ResourceTextureHint hint,
            ResourceType type,
            ResourceFormat format,
            const gfx::ColorSpace& color_space);
@@ -103,21 +98,12 @@ struct VIZ_COMMON_EXPORT Resource {
   // SyncToken waited on in order to be synchronized for use.
   bool ShouldWaitSyncToken() const;
   int8_t* GetSyncTokenData();
-  void SetGenerateMipmap();
 
   // Bitfield flags. ======
-  // When true, the resource is currently being written to. Used to prevent
-  // misuse while the resource is being modified.
-  bool locked_for_write : 1;
   // When true, the resource is currently being used externally.
   bool locked_for_external_use : 1;
-  // When true the resource can not be used and must only be deleted. This is
-  // passed along to the |release_callback|.
-  bool lost : 1;
   // When the resource should be deleted until it is actually reaped.
   bool marked_for_deletion : 1;
-  // When false, the resource backing hasn't been allocated yet.
-  bool allocated : 1;
   // Tracks if a gpu fence needs to be used for reading a GpuMemoryBuffer-
   // backed or texture-backed resource.
   bool read_lock_fences_enabled : 1;
@@ -159,7 +145,6 @@ struct VIZ_COMMON_EXPORT Resource {
   // of the resource.
   int lock_for_read_count = 0;
   int imported_count = 0;
-  int exported_count = 0;
   // A fence used for accessing a GpuMemoryBuffer-backed or texture-backed
   // resource for reading, that ensures any writing done to the resource has
   // been completed. This is implemented and used to implement transferring
@@ -168,10 +153,6 @@ struct VIZ_COMMON_EXPORT Resource {
   scoped_refptr<ResourceFence> read_lock_fence;
   // Size of the resource in pixels.
   gfx::Size size;
-  // Where the resource was originally allocated. Either internally by the
-  // ResourceProvider instance, or in a client and given to the ResourceProvider
-  // via IPC.
-  Origin origin = INTERNAL;
   // The texture target for GpuMemoryBuffer- and texture-backed resources.
   GLenum target = GL_TEXTURE_2D;
   // The min/mag filter of the resource when it was given to/created by the
@@ -184,16 +165,8 @@ struct VIZ_COMMON_EXPORT Resource {
   GLenum filter = GL_LINEAR;
   // The current min filter for GpuMemoryBuffer- and texture-backed resources.
   GLenum min_filter = GL_LINEAR;
-  // The GL image id for GpuMemoryBuffer-backed resources.
-  GLuint image_id = 0;
-  // A hint for texture-backed resources about how the resource will be used,
-  // that dictates how it should be allocated/used.
-  ResourceTextureHint hint = ResourceTextureHint::kDefault;
   // The type of backing for the resource (such as gpu vs software).
   ResourceType type = ResourceType::kBitmap;
-  // GpuMemoryBuffer resource allocation needs to know how the resource will
-  // be used.
-  gfx::BufferUsage usage = gfx::BufferUsage::GPU_READ_CPU_READ_WRITE;
   // This is the the actual format of the underlying GpuMemoryBuffer, if any,
   // and might not correspond to ResourceFormat. This format is needed to
   // allocate the GpuMemoryBuffer and scanout the buffer as a hardware overlay.
@@ -212,13 +185,9 @@ struct VIZ_COMMON_EXPORT Resource {
   SharedBitmap* shared_bitmap = nullptr;
   // Ownership of |shared_bitmap| for when it is created internally.
   std::unique_ptr<SharedBitmap> owned_shared_bitmap;
-  // The GpuMemoryBuffer ownership for GpuMemoryBuffer-backed resources.
-  std::unique_ptr<gfx::GpuMemoryBuffer> gpu_memory_buffer;
   // The color space for all resource types, to control how the resource should
   // be drawn to output device.
   gfx::ColorSpace color_space;
-  // Used to track generating mipmaps for texture-backed resources.
-  MipmapState mipmap_state = INVALID;
 
  private:
   // Tracks if a sync token needs to be waited on before using the resource.

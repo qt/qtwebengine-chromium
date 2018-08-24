@@ -392,7 +392,8 @@ network::mojom::CORSPreflightPolicy WebURLRequest::GetCORSPreflightPolicy()
   return resource_request_->CORSPreflightPolicy();
 }
 
-void WebURLRequest::SetNavigationStartTime(double navigation_start_seconds) {
+void WebURLRequest::SetNavigationStartTime(
+    base::TimeTicks navigation_start_seconds) {
   resource_request_->SetNavigationStartTime(navigation_start_seconds);
 }
 
@@ -421,6 +422,10 @@ base::Optional<WebString> WebURLRequest::GetSuggestedFilename() const {
 
 bool WebURLRequest::IsAdResource() const {
   return resource_request_->IsAdResource();
+}
+
+const WebContentSecurityPolicyList& WebURLRequest::GetNavigationCSP() const {
+  return resource_request_->GetInitiatorCSP();
 }
 
 const ResourceRequest& WebURLRequest::ToResourceRequest() const {

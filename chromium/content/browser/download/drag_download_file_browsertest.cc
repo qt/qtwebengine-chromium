@@ -6,8 +6,8 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
+#include "base/run_loop.h"
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/download/drag_download_file.h"
 #include "content/browser/download/drag_download_util.h"
@@ -41,7 +41,7 @@ class MockDownloadFileObserver : public ui::DownloadFileObserver {
   MOCK_METHOD0(OnDownloadAborted, void());
 
  private:
-  virtual ~MockDownloadFileObserver() {}
+  ~MockDownloadFileObserver() override {}
 
   DISALLOW_COPY_AND_ASSIGN(MockDownloadFileObserver);
 };
@@ -54,7 +54,7 @@ class DragDownloadFileTest : public ContentBrowserTest {
   void Succeed() {
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
-        base::MessageLoopForUI::current()->QuitWhenIdleClosure());
+        base::RunLoop::QuitCurrentWhenIdleClosureDeprecated());
   }
 
   void FailFast() {
@@ -70,7 +70,7 @@ class DragDownloadFileTest : public ContentBrowserTest {
             ->GetDownloadManagerDelegate());
     delegate->SetDownloadBehaviorForTesting(downloads_directory());
     base::FilePath test_data_dir;
-    ASSERT_TRUE(PathService::Get(content::DIR_TEST_DATA, &test_data_dir));
+    ASSERT_TRUE(base::PathService::Get(content::DIR_TEST_DATA, &test_data_dir));
     embedded_test_server()->ServeFilesFromDirectory(test_data_dir);
     ASSERT_TRUE(embedded_test_server()->Start());
   }

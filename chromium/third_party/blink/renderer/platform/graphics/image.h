@@ -47,6 +47,7 @@
 class SkMatrix;
 
 namespace cc {
+class ImageDecodeCache;
 class PaintCanvas;
 class PaintFlags;
 }  // namespace cc
@@ -74,6 +75,8 @@ class PLATFORM_EXPORT Image : public ThreadSafeRefCounted<Image> {
 
  public:
   virtual ~Image();
+
+  static cc::ImageDecodeCache& SharedCCDecodeCache();
 
   static scoped_refptr<Image> LoadPlatformResource(const char* name);
   static bool SupportsType(const String&);
@@ -235,9 +238,6 @@ class PLATFORM_EXPORT Image : public ThreadSafeRefCounted<Image> {
   static FloatRect ComputeSubsetForTile(const FloatRect& tile,
                                         const FloatRect& dest,
                                         const FloatSize& image_size);
-
-  enum class ImageType { kImg, kSvg, kCss };
-  static void RecordCheckerableImageUMA(Image&, ImageType);
 
   virtual sk_sp<PaintRecord> PaintRecordForContainer(
       const KURL& url,

@@ -48,17 +48,18 @@ class AndroidPlatformKeySystemProperties : public KeySystemProperties {
       case EmeInitDataType::WEBM:
         return (supported_codecs_ & media::EME_CODEC_WEBM_ALL) != 0;
       case EmeInitDataType::CENC:
-#if BUILDFLAG(USE_PROPRIETARY_CODECS)
         return (supported_codecs_ & media::EME_CODEC_MP4_ALL) != 0;
-#else
-        return false;
-#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
       case EmeInitDataType::KEYIDS:
       case EmeInitDataType::UNKNOWN:
         return false;
     }
     NOTREACHED();
     return false;
+  }
+
+  bool IsEncryptionSchemeSupported(
+      media::EncryptionMode encryption_scheme) const override {
+    return encryption_scheme == media::EncryptionMode::kCenc;
   }
 
   SupportedCodecs GetSupportedCodecs() const override {
@@ -112,8 +113,8 @@ SupportedKeySystemResponse QueryKeySystemSupport(
 
 void AddAndroidWidevine(
     std::vector<std::unique_ptr<KeySystemProperties>>* concrete_key_systems) {
-  SupportedKeySystemResponse response = QueryKeySystemSupport(
-      kWidevineKeySystem);
+  SupportedKeySystemResponse response =
+      QueryKeySystemSupport(kWidevineKeySystem);
 
   // Since we do not control the implementation of the MediaDrm API on Android,
   // we assume that it can and will make use of persistence no matter whether
@@ -126,7 +127,14 @@ void AddAndroidWidevine(
 
   if (response.non_secure_codecs != media::EME_CODEC_NONE) {
     DVLOG(3) << __func__ << " Widevine supported.";
+
+    // TODO(crbug.com/813845): Determine 'cbcs' support, which may vary by
+    // Android version.
+    base::flat_set<media::EncryptionMode> supported_encryption_schemes = {
+        media::EncryptionMode::kCenc};
+
     concrete_key_systems->emplace_back(new WidevineKeySystemProperties(
+        supported_encryption_schemes,          // Encryption schemes.
         response.non_secure_codecs,            // Regular codecs.
         response.secure_codecs,                // Hardware-secure codecs.
         Robustness::HW_SECURE_CRYPTO,          // Max audio robustness.

@@ -29,11 +29,11 @@ buildflag_header("media_buildflags") {
     "ENABLE_LIBRARY_CDMS=$enable_library_cdms",
     "ENABLE_LIBVPX=$media_use_libvpx",
     "ENABLE_MSE_MPEG2TS_STREAM_PARSER=$enable_mse_mpeg2ts_stream_parser",
+    "ENABLE_MPEG_H_AUDIO_DEMUXING=$enable_mpeg_h_audio_demuxing",
     "ENABLE_RUNTIME_MEDIA_RENDERER_SELECTION=$enable_runtime_media_renderer_selection",
     "ENABLE_CDM_STORAGE_ID=$enable_cdm_storage_id",
     "ENABLE_MEDIA_REMOTING=$enable_media_remoting",
     "ENABLE_MEDIA_REMOTING_RPC=$enable_media_remoting_rpc",
-    "ENABLE_WEBRTC=$enable_webrtc",
     "USE_PROPRIETARY_CODECS=$proprietary_codecs",
   ]
 }
@@ -124,6 +124,7 @@ source_set("test_support") {
     "//media/base/android:test_support",
     "//media/filters:test_support",
     "//media/formats:test_support",
+    "//media/gpu:test_support",
     "//media/video:test_support",
   ]
 }
@@ -173,9 +174,8 @@ test("media_unittests") {
     deps += [ "//media/remoting:media_remoting_tests" ]
   }
 
-  if (proprietary_codecs) {
-    configs += [ "//third_party/opus:opus_config" ]
-  }
+  # The test needs OPUS_FIXED_POINT conditional define.
+  configs += [ "//third_party/opus:opus_config" ]
 }
 
 test("media_perftests") {
@@ -202,12 +202,11 @@ test("media_perftests") {
 
   data = [
     "test/data/",
+  ]
 
+  data_deps = [
     # Needed for isolate script to execute.
-    "//testing/scripts/common.py",
-    "//testing/xvfb.py",
-    "//testing/scripts/run_gtest_perf_test.py",
-    "//tools/perf/generate_legacy_perf_dashboard_json.py",
+    "//testing:run_perf_test",
   ]
 }
 
@@ -248,6 +247,8 @@ component("shared_memory_support") {
     "base/channel_layout.h",
     "base/limits.h",
     "base/media_shmem_export.h",
+    "base/sample_format.cc",
+    "base/sample_format.h",
     "base/vector_math.cc",
     "base/vector_math.h",
     "base/vector_math_testing.h",
@@ -349,6 +350,28 @@ fuzzer_test("media_webm_muxer_fuzzer") {
     ":media",
     "//base",
     "//third_party/libwebm",
+  ]
+}
+
+fuzzer_test("cbcs_decryptor_fuzzer") {
+  sources = [
+    "cdm/cbcs_decryptor_fuzzer.cc",
+  ]
+  deps = [
+    ":media",
+    "//base",
+    "//crypto",
+  ]
+}
+
+fuzzer_test("cenc_decryptor_fuzzer") {
+  sources = [
+    "cdm/cenc_decryptor_fuzzer.cc",
+  ]
+  deps = [
+    ":media",
+    "//base",
+    "//crypto",
   ]
 }
 

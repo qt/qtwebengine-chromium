@@ -8,7 +8,6 @@
 
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "gpu/config/gpu_info.h"
@@ -51,7 +50,8 @@ class GpuServiceTest : public testing::Test {
     ASSERT_TRUE(io_thread_.Start());
     gpu_service_ = std::make_unique<GpuServiceImpl>(
         gpu::GPUInfo(), nullptr /* watchdog_thread */, io_thread_.task_runner(),
-        gpu::GpuFeatureInfo(), gpu::GpuPreferences());
+        gpu::GpuFeatureInfo(), gpu::GpuPreferences(), gpu::GPUInfo(),
+        gpu::GpuFeatureInfo());
   }
 
   void TearDown() override {

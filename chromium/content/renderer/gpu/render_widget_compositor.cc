@@ -34,7 +34,6 @@
 #include "cc/base/region.h"
 #include "cc/base/switches.h"
 #include "cc/benchmarks/micro_benchmark.h"
-#include "cc/blink/web_layer_impl.h"
 #include "cc/debug/layer_tree_debug_state.h"
 #include "cc/input/layer_selection_bound.h"
 #include "cc/layers/layer.h"
@@ -61,15 +60,12 @@
 #include "content/public/common/use_zoom_for_dsf_policy.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/gpu/render_widget_compositor_delegate.h"
-#include "content/renderer/input/input_handler_manager.h"
 #include "content/renderer/render_frame_metadata_observer_impl.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "media/base/media_switches.h"
 #include "services/ui/public/cpp/gpu/context_provider_command_buffer.h"
 #include "third_party/blink/public/platform/scheduler/web_main_thread_scheduler.h"
-#include "third_party/blink/public/platform/web_composite_and_readback_async_callback.h"
-#include "third_party/blink/public/platform/web_layout_and_paint_async_callback.h"
 #include "third_party/blink/public/platform/web_runtime_features.h"
 #include "third_party/blink/public/platform/web_size.h"
 #include "third_party/blink/public/web/blink.h"
@@ -89,33 +85,19 @@ namespace cc {
 class Layer;
 }
 
-using blink::WebFloatPoint;
-using blink::WebRect;
-using blink::WebSelection;
-using blink::WebSize;
-using blink::WebBrowserControlsState;
-using blink::WebLayerTreeView;
-using blink::WebOverscrollBehavior;
-
 namespace content {
 namespace {
 
 const base::Feature kUnpremultiplyAndDitherLowBitDepthTiles = {
     "UnpremultiplyAndDitherLowBitDepthTiles", base::FEATURE_ENABLED_BY_DEFAULT};
 
-using ReportTimeCallback =
-    base::Callback<void(WebLayerTreeView::SwapResult, double)>;
-
-double MonotonicallyIncreasingTime() {
-  return static_cast<double>(base::TimeTicks::Now().ToInternalValue()) /
-         base::Time::kMicrosecondsPerSecond;
-}
+using ReportTimeCallback = blink::WebLayerTreeView::ReportTimeCallback;
 
 class ReportTimeSwapPromise : public cc::SwapPromise {
  public:
   ReportTimeSwapPromise(
       ReportTimeCallback callback,
-      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner);
   ~ReportTimeSwapPromise() override;
 
   void DidActivate() override {}
@@ -135,38 +117,37 @@ class ReportTimeSwapPromise : public cc::SwapPromise {
 
 ReportTimeSwapPromise::ReportTimeSwapPromise(
     ReportTimeCallback callback,
-    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner)
-    : callback_(callback), task_runner_(task_runner) {}
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner)
+    : callback_(std::move(callback)), task_runner_(std::move(task_runner)) {}
 
 ReportTimeSwapPromise::~ReportTimeSwapPromise() {}
 
 void ReportTimeSwapPromise::DidSwap() {
   task_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(callback_, WebLayerTreeView::SwapResult::kDidSwap,
-                     MonotonicallyIncreasingTime()));
+      FROM_HERE, base::BindOnce(std::move(callback_),
+                                blink::WebLayerTreeView::SwapResult::kDidSwap,
+                                base::TimeTicks::Now()));
 }
 
 cc::SwapPromise::DidNotSwapAction ReportTimeSwapPromise::DidNotSwap(
     cc::SwapPromise::DidNotSwapReason reason) {
-  WebLayerTreeView::SwapResult result;
+  blink::WebLayerTreeView::SwapResult result;
   switch (reason) {
     case cc::SwapPromise::DidNotSwapReason::SWAP_FAILS:
-      result = WebLayerTreeView::SwapResult::kDidNotSwapSwapFails;
+      result = blink::WebLayerTreeView::SwapResult::kDidNotSwapSwapFails;
       break;
     case cc::SwapPromise::DidNotSwapReason::COMMIT_FAILS:
-      result = WebLayerTreeView::SwapResult::kDidNotSwapCommitFails;
+      result = blink::WebLayerTreeView::SwapResult::kDidNotSwapCommitFails;
       break;
     case cc::SwapPromise::DidNotSwapReason::COMMIT_NO_UPDATE:
-      result = WebLayerTreeView::SwapResult::kDidNotSwapCommitNoUpdate;
+      result = blink::WebLayerTreeView::SwapResult::kDidNotSwapCommitNoUpdate;
       break;
     case cc::SwapPromise::DidNotSwapReason::ACTIVATION_FAILS:
-      result = WebLayerTreeView::SwapResult::kDidNotSwapActivationFails;
+      result = blink::WebLayerTreeView::SwapResult::kDidNotSwapActivationFails;
       break;
   }
-  task_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(callback_, result, MonotonicallyIncreasingTime()));
+  task_runner_->PostTask(FROM_HERE, base::BindOnce(std::move(callback_), result,
+                                                   base::TimeTicks::Now()));
   return cc::SwapPromise::DidNotSwapAction::BREAK_PROMISE;
 }
 
@@ -217,7 +198,8 @@ cc::LayerSelectionBound ConvertFromWebSelectionBound(
   return cc_bound;
 }
 
-cc::LayerSelection ConvertFromWebSelection(const WebSelection& web_selection) {
+cc::LayerSelection ConvertFromWebSelection(
+    const blink::WebSelection& web_selection) {
   if (web_selection.IsNone())
     return cc::LayerSelection();
   cc::LayerSelection cc_selection;
@@ -267,7 +249,7 @@ static_assert(int(blink::kWebBrowserControlsShown) == int(cc::SHOWN),
               "mismatching enums: SHOWN");
 
 static cc::BrowserControlsState ConvertBrowserControlsState(
-    WebBrowserControlsState state) {
+    blink::WebBrowserControlsState state) {
   return static_cast<cc::BrowserControlsState>(state);
 }
 
@@ -290,7 +272,6 @@ RenderWidgetCompositor::RenderWidgetCompositor(
       threaded_(!!compositor_deps_->GetCompositorImplThreadTaskRunner()),
       never_visible_(false),
       is_for_oopif_(false),
-      layout_and_paint_async_callback_(nullptr),
       weak_factory_(this) {}
 
 void RenderWidgetCompositor::Initialize(
@@ -367,8 +348,11 @@ cc::LayerTreeSettings RenderWidgetCompositor::GenerateLayerTreeSettings(
   settings.main_frame_before_activation_enabled =
       cmd.HasSwitch(cc::switches::kEnableMainFrameBeforeActivation);
 
+  // Checkerimaging is not supported for synchronous single-threaded mode, which
+  // is what the renderer uses if its not threaded.
   settings.enable_checker_imaging =
-      cmd.HasSwitch(cc::switches::kEnableCheckerImaging);
+      !cmd.HasSwitch(cc::switches::kDisableCheckerImaging) && is_threaded;
+
 #if defined(OS_ANDROID)
   // We can use a more aggressive limit on Android since decodes tend to take
   // longer on these devices.
@@ -456,6 +440,7 @@ cc::LayerTreeSettings RenderWidgetCompositor::GenerateLayerTreeSettings(
       cmd.HasSwitch(cc::switches::kEnableGpuBenchmarking));
   settings.enable_surface_synchronization =
       features::IsSurfaceSynchronizationEnabled();
+  settings.build_hit_test_data = features::IsVizHitTestingSurfaceLayerEnabled();
 
   if (cmd.HasSwitch(cc::switches::kSlowDownRasterScaleFactor)) {
     const int kMinSlowDownScaleFactor = 0;
@@ -550,7 +535,7 @@ cc::LayerTreeSettings RenderWidgetCompositor::GenerateLayerTreeSettings(
     if (!cmd.HasSwitch(switches::kDisableRGBA4444Textures) &&
         base::SysInfo::AmountOfPhysicalMemoryMB() <= 512 &&
         !using_synchronous_compositor) {
-      settings.preferred_tile_format = viz::RGBA_4444;
+      settings.use_rgba_4444 = viz::RGBA_4444;
 
       // If we are going to unpremultiply and dither these tiles, we need to
       // allocate an additional RGBA_8888 intermediate for each tile
@@ -572,11 +557,7 @@ cc::LayerTreeSettings RenderWidgetCompositor::GenerateLayerTreeSettings(
 
   if (cmd.HasSwitch(switches::kEnableRGBA4444Textures) &&
       !cmd.HasSwitch(switches::kDisableRGBA4444Textures)) {
-    settings.preferred_tile_format = viz::RGBA_4444;
-  }
-
-  if (cmd.HasSwitch(cc::switches::kEnableTileCompression)) {
-    settings.preferred_tile_format = viz::ETC1;
+    settings.use_rgba_4444 = true;
   }
 
   settings.max_staging_buffer_usage_in_bytes = 32 * 1024 * 1024;  // 32MB
@@ -787,6 +768,14 @@ void RenderWidgetCompositor::SetViewportSizeAndScale(
       device_viewport_size, device_scale_factor, local_surface_id);
 }
 
+void RenderWidgetCompositor::RequestNewLocalSurfaceId() {
+  layer_tree_host_->RequestNewLocalSurfaceId();
+}
+
+bool RenderWidgetCompositor::HasNewLocalSurfaceIdRequest() const {
+  return layer_tree_host_->new_local_surface_id_request_for_testing();
+}
+
 void RenderWidgetCompositor::SetViewportVisibleRect(
     const gfx::Rect& visible_rect) {
   layer_tree_host_->SetViewportVisibleRect(visible_rect);
@@ -796,29 +785,28 @@ viz::FrameSinkId RenderWidgetCompositor::GetFrameSinkId() {
   return frame_sink_id_;
 }
 
-void RenderWidgetCompositor::SetRootLayer(const blink::WebLayer& layer) {
-  layer_tree_host_->SetRootLayer(
-      static_cast<const cc_blink::WebLayerImpl*>(&layer)->layer());
+void RenderWidgetCompositor::SetRootLayer(scoped_refptr<cc::Layer> layer) {
+  layer_tree_host_->SetRootLayer(std::move(layer));
 }
 
 void RenderWidgetCompositor::ClearRootLayer() {
-  layer_tree_host_->SetRootLayer(scoped_refptr<cc::Layer>());
+  layer_tree_host_->SetRootLayer(nullptr);
 }
 
 cc::AnimationHost* RenderWidgetCompositor::CompositorAnimationHost() {
   return animation_host_.get();
 }
 
-WebSize RenderWidgetCompositor::GetViewportSize() const {
+blink::WebSize RenderWidgetCompositor::GetViewportSize() const {
   return layer_tree_host_->device_viewport_size();
 }
 
-WebFloatPoint RenderWidgetCompositor::adjustEventPointForPinchZoom(
-    const WebFloatPoint& point) const {
+blink::WebFloatPoint RenderWidgetCompositor::adjustEventPointForPinchZoom(
+    const blink::WebFloatPoint& point) const {
   return point;
 }
 
-void RenderWidgetCompositor::SetBackgroundColor(blink::WebColor color) {
+void RenderWidgetCompositor::SetBackgroundColor(SkColor color) {
   layer_tree_host_->set_background_color(color);
 }
 
@@ -876,34 +864,21 @@ void RenderWidgetCompositor::RegisterViewportLayers(
   // like overscroll elasticity may still be nullptr until VisualViewport
   // registers its layers.
   if (layers.overscroll_elasticity) {
-    viewport_layers.overscroll_elasticity =
-        static_cast<const cc_blink::WebLayerImpl*>(layers.overscroll_elasticity)
-            ->layer();
+    viewport_layers.overscroll_elasticity = layers.overscroll_elasticity;
   }
-  viewport_layers.page_scale =
-      static_cast<const cc_blink::WebLayerImpl*>(layers.page_scale)->layer();
+  viewport_layers.page_scale = layers.page_scale;
   if (layers.inner_viewport_container) {
-    viewport_layers.inner_viewport_container =
-        static_cast<const cc_blink::WebLayerImpl*>(
-            layers.inner_viewport_container)
-            ->layer();
+    viewport_layers.inner_viewport_container = layers.inner_viewport_container;
   }
   if (layers.outer_viewport_container) {
-    viewport_layers.outer_viewport_container =
-        static_cast<const cc_blink::WebLayerImpl*>(
-            layers.outer_viewport_container)
-            ->layer();
+    viewport_layers.outer_viewport_container = layers.outer_viewport_container;
   }
-  viewport_layers.inner_viewport_scroll =
-      static_cast<const cc_blink::WebLayerImpl*>(layers.inner_viewport_scroll)
-          ->layer();
+  viewport_layers.inner_viewport_scroll = layers.inner_viewport_scroll;
   // TODO(bokan): This check can probably be removed now, but it looks
   // like overscroll elasticity may still be nullptr until VisualViewport
   // registers its layers.
   if (layers.outer_viewport_scroll) {
-    viewport_layers.outer_viewport_scroll =
-        static_cast<const cc_blink::WebLayerImpl*>(layers.outer_viewport_scroll)
-            ->layer();
+    viewport_layers.outer_viewport_scroll = layers.outer_viewport_scroll;
   }
   layer_tree_host_->RegisterViewportLayers(viewport_layers);
 }
@@ -990,10 +965,9 @@ bool RenderWidgetCompositor::CompositeIsSynchronous() const {
   return false;
 }
 
-void RenderWidgetCompositor::LayoutAndPaintAsync(
-    blink::WebLayoutAndPaintAsyncCallback* callback) {
-  DCHECK(!layout_and_paint_async_callback_);
-  layout_and_paint_async_callback_ = callback;
+void RenderWidgetCompositor::LayoutAndPaintAsync(base::OnceClosure callback) {
+  DCHECK(layout_and_paint_async_callback_.is_null());
+  layout_and_paint_async_callback_ = std::move(callback);
 
   if (CompositeIsSynchronous()) {
     // The LayoutAndPaintAsyncCallback is invoked in WillCommit, which is
@@ -1018,32 +992,27 @@ void RenderWidgetCompositor::SetLayerTreeFrameSink(
 }
 
 void RenderWidgetCompositor::InvokeLayoutAndPaintCallback() {
-  if (!layout_and_paint_async_callback_)
-    return;
-  layout_and_paint_async_callback_->DidLayoutAndPaint();
-  layout_and_paint_async_callback_ = nullptr;
+  if (!layout_and_paint_async_callback_.is_null())
+    std::move(layout_and_paint_async_callback_).Run();
 }
 
 void RenderWidgetCompositor::CompositeAndReadbackAsync(
-    blink::WebCompositeAndReadbackAsyncCallback* callback) {
-  DCHECK(!layout_and_paint_async_callback_);
+    base::OnceCallback<void(const SkBitmap&)> callback) {
+  DCHECK(layout_and_paint_async_callback_.is_null());
   scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner =
       layer_tree_host_->GetTaskRunnerProvider()->MainThreadTaskRunner();
   std::unique_ptr<viz::CopyOutputRequest> request =
       std::make_unique<viz::CopyOutputRequest>(
           viz::CopyOutputRequest::ResultFormat::RGBA_BITMAP,
           base::BindOnce(
-              [](blink::WebCompositeAndReadbackAsyncCallback* callback,
+              [](base::OnceCallback<void(const SkBitmap&)> callback,
                  scoped_refptr<base::SingleThreadTaskRunner> task_runner,
                  std::unique_ptr<viz::CopyOutputResult> result) {
                 task_runner->PostTask(
                     FROM_HERE,
-                    base::BindOnce(
-                        &blink::WebCompositeAndReadbackAsyncCallback::
-                            DidCompositeAndReadback,
-                        base::Unretained(callback), result->AsSkBitmap()));
+                    base::BindOnce(std::move(callback), result->AsSkBitmap()));
               },
-              callback, std::move(main_thread_task_runner)));
+              std::move(callback), std::move(main_thread_task_runner)));
   auto swap_promise =
       delegate_->RequestCopyOfOutputForLayoutTest(std::move(request));
 
@@ -1073,6 +1042,10 @@ void RenderWidgetCompositor::SynchronouslyCompositeNoRasterForTesting() {
   SynchronouslyComposite(false /* raster */, nullptr /* swap_promise */);
 }
 
+void RenderWidgetCompositor::CompositeWithRasterForTesting() {
+  SynchronouslyComposite(true /* raster */, nullptr /* swap_promise */);
+}
+
 void RenderWidgetCompositor::SynchronouslyComposite(
     bool raster,
     std::unique_ptr<cc::SwapPromise> swap_promise) {
@@ -1084,8 +1057,7 @@ void RenderWidgetCompositor::SynchronouslyComposite(
     // LayoutTests can use a nested message loop to pump frames while inside a
     // frame, but the compositor does not support this. In this case, we only
     // run blink's lifecycle updates.
-    delegate_->BeginMainFrame(
-        (base::TimeTicks::Now() - base::TimeTicks()).InSecondsF());
+    delegate_->BeginMainFrame(base::TimeTicks::Now());
     delegate_->UpdateVisualState(
         cc::LayerTreeHostClient::VisualStateUpdate::kAll);
     return;
@@ -1142,8 +1114,8 @@ void RenderWidgetCompositor::SetShowScrollBottleneckRects(bool show) {
 }
 
 void RenderWidgetCompositor::UpdateBrowserControlsState(
-    WebBrowserControlsState constraints,
-    WebBrowserControlsState current,
+    blink::WebBrowserControlsState constraints,
+    blink::WebBrowserControlsState current,
     bool animate) {
   layer_tree_host_->UpdateBrowserControlsState(
       ConvertBrowserControlsState(constraints),
@@ -1161,7 +1133,7 @@ void RenderWidgetCompositor::SetBrowserControlsShownRatio(float ratio) {
 }
 
 void RenderWidgetCompositor::RequestDecode(
-    const PaintImage& image,
+    const cc::PaintImage& image,
     base::OnceCallback<void(bool)> callback) {
   layer_tree_host_->QueueImageDecode(image, std::move(callback));
 
@@ -1180,7 +1152,7 @@ void RenderWidgetCompositor::RequestDecode(
 }
 
 void RenderWidgetCompositor::SetOverscrollBehavior(
-    const WebOverscrollBehavior& behavior) {
+    const cc::OverscrollBehavior& behavior) {
   layer_tree_host_->SetOverscrollBehavior(behavior);
 }
 
@@ -1192,8 +1164,7 @@ void RenderWidgetCompositor::DidBeginMainFrame() {}
 
 void RenderWidgetCompositor::BeginMainFrame(const viz::BeginFrameArgs& args) {
   compositor_deps_->GetWebMainThreadScheduler()->WillBeginFrame(args);
-  double frame_time_sec = (args.frame_time - base::TimeTicks()).InSecondsF();
-  delegate_->BeginMainFrame(frame_time_sec);
+  delegate_->BeginMainFrame(args.frame_time);
 }
 
 void RenderWidgetCompositor::BeginMainFrameNotExpectedSoon() {

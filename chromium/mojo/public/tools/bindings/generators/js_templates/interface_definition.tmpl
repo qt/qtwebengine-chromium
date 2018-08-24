@@ -215,7 +215,7 @@ params.{{parameter.name}}{% if not loop.last %}, {% endif -%}
   }
 
   var {{interface.name}} = {
-    name: '{{module.mojom_namespace|replace(".","::")}}::{{interface.mojom_name}}',
+    name: '{{module.mojom_namespace}}.{{interface.mojom_name}}',
     kVersion: {{interface.version}},
     ptrClass: {{interface.name}}Ptr,
     proxyClass: {{interface.name}}Proxy,
@@ -225,6 +225,18 @@ params.{{parameter.name}}{% if not loop.last %}, {% endif -%}
     validateResponse: validate{{interface.name}}Response,
 {%- else %}
     validateResponse: null,
+{%- endif %}
+{%- if generate_fuzzing %}
+    mojomId: '{{module.path}}',
+    fuzzMethods: {
+      {%- for method in interface.methods %}
+      {%-   set interface_method_id =
+                interface.mojom_name ~ "_" ~ method.mojom_name %}
+      {{ method.name }}: {
+        params: {{interface_method_id}}_Params,
+      },
+      {%- endfor %}
+    },
 {%- endif %}
   };
 {#--- Interface Constants #}

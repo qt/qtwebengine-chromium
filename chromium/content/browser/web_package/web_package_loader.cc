@@ -6,12 +6,15 @@
 
 #include <memory>
 
+#include "base/callback.h"
 #include "base/feature_list.h"
 #include "base/strings/stringprintf.h"
 #include "content/browser/loader/data_pipe_to_source_stream.h"
 #include "content/browser/loader/source_stream_to_data_pipe.h"
 #include "content/browser/web_package/signed_exchange_cert_fetcher_factory.h"
+#include "content/browser/web_package/signed_exchange_devtools_proxy.h"
 #include "content/browser/web_package/signed_exchange_handler.h"
+#include "content/browser/web_package/signed_exchange_utils.h"
 #include "content/public/common/content_features.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/http/http_util.h"
@@ -75,32 +78,33 @@ class WebPackageLoader::ResponseTimingInfo {
 };
 
 WebPackageLoader::WebPackageLoader(
-    const network::ResourceResponseHead& original_response,
+    const network::ResourceResponseHead& outer_response,
     network::mojom::URLLoaderClientPtr forwarding_client,
     network::mojom::URLLoaderClientEndpointsPtr endpoints,
     url::Origin request_initiator,
     uint32_t url_loader_options,
-    int frame_tree_node_id,
+    std::unique_ptr<SignedExchangeDevToolsProxy> devtools_proxy,
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     URLLoaderThrottlesGetter url_loader_throttles_getter,
     scoped_refptr<net::URLRequestContextGetter> request_context_getter)
-    : original_response_timing_info_(
-          std::make_unique<ResponseTimingInfo>(original_response)),
+    : outer_response_timing_info_(
+          std::make_unique<ResponseTimingInfo>(outer_response)),
+      outer_response_(outer_response),
       forwarding_client_(std::move(forwarding_client)),
       url_loader_client_binding_(this),
       request_initiator_(request_initiator),
       url_loader_options_(url_loader_options),
-      frame_tree_node_id_(frame_tree_node_id),
+      devtools_proxy_(std::move(devtools_proxy)),
       url_loader_factory_(std::move(url_loader_factory)),
       url_loader_throttles_getter_(std::move(url_loader_throttles_getter)),
       request_context_getter_(std::move(request_context_getter)),
       weak_factory_(this) {
-  DCHECK(base::FeatureList::IsEnabled(features::kSignedHTTPExchange));
+  DCHECK(signed_exchange_utils::IsSignedExchangeHandlingEnabled());
 
   // Can't use HttpResponseHeaders::GetMimeType() because SignedExchangeHandler
   // checks "v=" parameter.
-  original_response.headers->EnumerateHeader(nullptr, "content-type",
-                                             &content_type_);
+  outer_response.headers->EnumerateHeader(nullptr, "content-type",
+                                          &content_type_);
 
   url_loader_.Bind(std::move(endpoints->url_loader));
 
@@ -185,13 +189,14 @@ void WebPackageLoader::OnStartLoadingResponseBody(
       base::BindOnce(&WebPackageLoader::OnHTTPExchangeFound,
                      weak_factory_.GetWeakPtr()),
       std::move(cert_fetcher_factory), std::move(request_context_getter_),
-      frame_tree_node_id_);
+      std::move(devtools_proxy_));
 }
 
 void WebPackageLoader::OnComplete(
     const network::URLLoaderCompletionStatus& status) {}
 
-void WebPackageLoader::FollowRedirect() {
+void WebPackageLoader::FollowRedirect(
+    const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
   NOTREACHED();
 }
 
@@ -239,10 +244,10 @@ void WebPackageLoader::OnHTTPExchangeFound(
   }
 
   // TODO(https://crbug.com/803774): Handle no-GET request_method as a error.
-  DCHECK(original_response_timing_info_);
+  DCHECK(outer_response_timing_info_);
   forwarding_client_->OnReceiveRedirect(
       CreateRedirectInfo(request_url),
-      std::move(original_response_timing_info_)->CreateRedirectResponseHead());
+      std::move(outer_response_timing_info_)->CreateRedirectResponseHead());
   forwarding_client_.reset();
 
   const base::Optional<net::SSLInfo>& ssl_info = resource_response.ssl_info;

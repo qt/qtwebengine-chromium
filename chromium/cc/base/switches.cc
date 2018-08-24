@@ -24,10 +24,8 @@ const char kDisableMainFrameBeforeActivation[] =
 const char kEnableMainFrameBeforeActivation[] =
     "enable-main-frame-before-activation";
 
-// Enables defering image decodes to the image decode service.
-const char kEnableCheckerImaging[] = "enable-checker-imaging";
-
-// Disabled defering image decodes to the image decode service.
+// Disabled defering all image decodes to the image decode service, ignoring
+// DecodingMode preferences specified on PaintImage.
 const char kDisableCheckerImaging[] = "disable-checker-imaging";
 
 // Percentage of the browser controls need to be hidden before they will auto
@@ -42,9 +40,6 @@ const char kBrowserControlsShowThreshold[] = "top-controls-show-threshold";
 // Give a scale factor to cause raster to take that many times longer to
 // complete, such as --slow-down-raster-scale-factor=25.
 const char kSlowDownRasterScaleFactor[] = "slow-down-raster-scale-factor";
-
-// Compress tile textures for GPUs supporting it.
-const char kEnableTileCompression[] = "enable-tile-compression";
 
 // Checks damage early and aborts the frame if no damage, so that clients like
 // Android WebView don't invalidate unnecessarily.

@@ -199,13 +199,9 @@ TurnPort::TurnPort(rtc::Thread* thread,
                    int server_priority,
                    const std::string& origin,
                    webrtc::TurnCustomizer* customizer)
-    : Port(thread,
-           RELAY_PORT_TYPE,
-           factory,
-           network,
-           username,
-           password),
+    : Port(thread, RELAY_PORT_TYPE, factory, network, username, password),
       server_address_(server_address),
+      tls_cert_verifier_(nullptr),
       credentials_(credentials),
       socket_(socket),
       resolver_(NULL),
@@ -233,7 +229,8 @@ TurnPort::TurnPort(rtc::Thread* thread,
                    const std::string& origin,
                    const std::vector<std::string>& tls_alpn_protocols,
                    const std::vector<std::string>& tls_elliptic_curves,
-                   webrtc::TurnCustomizer* customizer)
+                   webrtc::TurnCustomizer* customizer,
+                   rtc::SSLCertificateVerifier* tls_cert_verifier)
     : Port(thread,
            RELAY_PORT_TYPE,
            factory,
@@ -245,6 +242,7 @@ TurnPort::TurnPort(rtc::Thread* thread,
       server_address_(server_address),
       tls_alpn_protocols_(tls_alpn_protocols),
       tls_elliptic_curves_(tls_elliptic_curves),
+      tls_cert_verifier_(tls_cert_verifier),
       credentials_(credentials),
       socket_(NULL),
       resolver_(NULL),
@@ -374,6 +372,7 @@ bool TurnPort::CreateTurnClientSocket() {
     tcp_options.opts = opts;
     tcp_options.tls_alpn_protocols = tls_alpn_protocols_;
     tcp_options.tls_elliptic_curves = tls_elliptic_curves_;
+    tcp_options.tls_cert_verifier = tls_cert_verifier_;
     socket_ = socket_factory()->CreateClientTcpSocket(
         rtc::SocketAddress(Network()->GetBestIP(), 0), server_address_.address,
         proxy(), user_agent(), tcp_options);
@@ -595,7 +594,9 @@ int TurnPort::SendTo(const void* data, size_t size,
   }
 
   // Send the actual contents to the server using the usual mechanism.
-  int sent = entry->Send(data, size, payload, options);
+  rtc::PacketOptions modified_options(options);
+  CopyPortInformationToPacketInfo(&modified_options.info_signaled_after_sent);
+  int sent = entry->Send(data, size, payload, modified_options);
   if (sent <= 0) {
     return SOCKET_ERROR;
   }
@@ -795,6 +796,8 @@ void TurnPort::OnSendStunPacket(const void* data, size_t size,
                                 StunRequest* request) {
   RTC_DCHECK(connected());
   rtc::PacketOptions options(DefaultDscpValue());
+  options.info_signaled_after_sent.packet_type = rtc::PacketType::kTurnMessage;
+  CopyPortInformationToPacketInfo(&options.info_signaled_after_sent);
   if (Send(data, size, options) < 0) {
     RTC_LOG(LS_ERROR) << ToString()
                       << ": Failed to send TURN message, error: "
@@ -1717,7 +1720,10 @@ int TurnEntry::Send(const void* data, size_t size, bool payload,
     buf.WriteUInt16(static_cast<uint16_t>(size));
     buf.WriteBytes(reinterpret_cast<const char*>(data), size);
   }
-  return port_->Send(buf.Data(), buf.Length(), options);
+  rtc::PacketOptions modified_options(options);
+  modified_options.info_signaled_after_sent.turn_overhead_bytes =
+      buf.Length() - size;
+  return port_->Send(buf.Data(), buf.Length(), modified_options);
 }
 
 void TurnEntry::OnCreatePermissionSuccess() {

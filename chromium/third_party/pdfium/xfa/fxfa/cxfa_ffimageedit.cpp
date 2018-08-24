@@ -89,11 +89,8 @@ void CXFA_FFImageEdit::RenderWidget(CXFA_Graphics* pGS,
       iAspect = image->GetAspect();
   }
 
-  int32_t iImageXDpi = 0;
-  int32_t iImageYDpi = 0;
-  m_pNode->GetImageEditDpi(iImageXDpi, iImageYDpi);
-  XFA_DrawImage(pGS, rtImage, mtRotate, pDIBitmap, iAspect, iImageXDpi,
-                iImageYDpi, iHorzAlign, iVertAlign);
+  XFA_DrawImage(pGS, rtImage, mtRotate, pDIBitmap, iAspect,
+                m_pNode->GetImageEditDpi(), iHorzAlign, iVertAlign);
 }
 
 bool CXFA_FFImageEdit::AcceptsFocusOnButtonDown(uint32_t dwFlags,

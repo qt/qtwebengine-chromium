@@ -70,7 +70,7 @@ void CPDFSDK_XFAWidgetHandler::OnDraw(CPDFSDK_PageView* pPageView,
 void CPDFSDK_XFAWidgetHandler::OnLoad(CPDFSDK_Annot* pAnnot) {}
 
 void CPDFSDK_XFAWidgetHandler::ReleaseAnnot(CPDFSDK_Annot* pAnnot) {
-  CPDFSDK_XFAWidget* pWidget = reinterpret_cast<CPDFSDK_XFAWidget*>(pAnnot);
+  CPDFSDK_XFAWidget* pWidget = static_cast<CPDFSDK_XFAWidget*>(pAnnot);
   CPDFSDK_InterForm* pInterForm = pWidget->GetInterForm();
   pInterForm->RemoveXFAMap(pWidget->GetXFAWidget());
 
@@ -100,6 +100,14 @@ CFX_FloatRect CPDFSDK_XFAWidgetHandler::GetViewBBox(CPDFSDK_PageView* pPageView,
   return rcWidget;
 }
 
+WideString CPDFSDK_XFAWidgetHandler::GetText(CPDFSDK_Annot* pAnnot) {
+  if (!pAnnot)
+    return WideString();
+
+  CXFA_FFWidgetHandler* pWidgetHandler = GetXFAWidgetHandler(pAnnot);
+  return pWidgetHandler->GetText(pAnnot->GetXFAWidget());
+}
+
 WideString CPDFSDK_XFAWidgetHandler::GetSelectedText(CPDFSDK_Annot* pAnnot) {
   if (!pAnnot)
     return WideString();
@@ -115,6 +123,34 @@ void CPDFSDK_XFAWidgetHandler::ReplaceSelection(CPDFSDK_Annot* pAnnot,
 
   CXFA_FFWidgetHandler* pWidgetHandler = GetXFAWidgetHandler(pAnnot);
   return pWidgetHandler->PasteText(pAnnot->GetXFAWidget(), text);
+}
+
+bool CPDFSDK_XFAWidgetHandler::CanUndo(CPDFSDK_Annot* pAnnot) {
+  if (!pAnnot)
+    return false;
+  CXFA_FFWidgetHandler* pWidgetHandler = GetXFAWidgetHandler(pAnnot);
+  return pWidgetHandler->CanUndo(pAnnot->GetXFAWidget());
+}
+
+bool CPDFSDK_XFAWidgetHandler::CanRedo(CPDFSDK_Annot* pAnnot) {
+  if (!pAnnot)
+    return false;
+  CXFA_FFWidgetHandler* pWidgetHandler = GetXFAWidgetHandler(pAnnot);
+  return pWidgetHandler->CanRedo(pAnnot->GetXFAWidget());
+}
+
+bool CPDFSDK_XFAWidgetHandler::Undo(CPDFSDK_Annot* pAnnot) {
+  if (!pAnnot)
+    return false;
+  CXFA_FFWidgetHandler* pWidgetHandler = GetXFAWidgetHandler(pAnnot);
+  return pWidgetHandler->Undo(pAnnot->GetXFAWidget());
+}
+
+bool CPDFSDK_XFAWidgetHandler::Redo(CPDFSDK_Annot* pAnnot) {
+  if (!pAnnot)
+    return false;
+  CXFA_FFWidgetHandler* pWidgetHandler = GetXFAWidgetHandler(pAnnot);
+  return pWidgetHandler->Redo(pAnnot->GetXFAWidget());
 }
 
 bool CPDFSDK_XFAWidgetHandler::HitTest(CPDFSDK_PageView* pPageView,

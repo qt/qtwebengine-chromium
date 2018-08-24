@@ -193,12 +193,32 @@ CFX_FloatRect CPDFSDK_BAAnnotHandler::GetViewBBox(CPDFSDK_PageView* pPageView,
   return pAnnot->GetRect();
 }
 
+WideString CPDFSDK_BAAnnotHandler::GetText(CPDFSDK_Annot* pAnnot) {
+  return WideString();
+}
+
 WideString CPDFSDK_BAAnnotHandler::GetSelectedText(CPDFSDK_Annot* pAnnot) {
   return WideString();
 }
 
 void CPDFSDK_BAAnnotHandler::ReplaceSelection(CPDFSDK_Annot* pAnnot,
                                               const WideString& text) {}
+
+bool CPDFSDK_BAAnnotHandler::CanUndo(CPDFSDK_Annot* pAnnot) {
+  return false;
+}
+
+bool CPDFSDK_BAAnnotHandler::CanRedo(CPDFSDK_Annot* pAnnot) {
+  return false;
+}
+
+bool CPDFSDK_BAAnnotHandler::Undo(CPDFSDK_Annot* pAnnot) {
+  return false;
+}
+
+bool CPDFSDK_BAAnnotHandler::Redo(CPDFSDK_Annot* pAnnot) {
+  return false;
+}
 
 bool CPDFSDK_BAAnnotHandler::HitTest(CPDFSDK_PageView* pPageView,
                                      CPDFSDK_Annot* pAnnot,

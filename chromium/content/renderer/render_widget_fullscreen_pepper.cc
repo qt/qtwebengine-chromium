@@ -9,7 +9,6 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "build/build_config.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
@@ -22,7 +21,6 @@
 #include "third_party/blink/public/platform/web_canvas.h"
 #include "third_party/blink/public/platform/web_cursor_info.h"
 #include "third_party/blink/public/platform/web_gesture_event.h"
-#include "third_party/blink/public/platform/web_layer.h"
 #include "third_party/blink/public/platform/web_mouse_wheel_event.h"
 #include "third_party/blink/public/platform/web_size.h"
 #include "third_party/blink/public/web/web_widget.h"
@@ -98,7 +96,7 @@ WebMouseEvent WebMouseEventFromGestureEvent(const WebGestureEvent& gesture) {
 
   WebMouseEvent mouse(type,
                       gesture.GetModifiers() | WebInputEvent::kLeftButtonDown,
-                      gesture.TimeStampSeconds());
+                      gesture.TimeStamp());
   mouse.button = WebMouseEvent::Button::kLeft;
   mouse.click_count = (mouse.GetType() == WebInputEvent::kMouseDown ||
                        mouse.GetType() == WebInputEvent::kMouseUp);
@@ -178,7 +176,7 @@ class PepperWidget : public WebWidget {
         case WebInputEvent::kGestureTap: {
           WebMouseEvent mouse(WebInputEvent::kMouseMove,
                               gesture_event->GetModifiers(),
-                              gesture_event->TimeStampSeconds());
+                              gesture_event->TimeStamp());
           mouse.SetPositionInWidget(gesture_event->PositionInWidget().x,
                                     gesture_event->PositionInWidget().y);
           mouse.SetPositionInScreen(gesture_event->PositionInScreen().x,
@@ -333,7 +331,8 @@ void RenderWidgetFullscreenPepper::PepperDidChangeCursor(
   DidChangeCursor(cursor);
 }
 
-void RenderWidgetFullscreenPepper::SetLayer(blink::WebLayer* layer) {
+// TODO(danakj): These should be a scoped_refptr<cc::Layer>.
+void RenderWidgetFullscreenPepper::SetLayer(cc::Layer* layer) {
   layer_ = layer;
   if (!layer_) {
     if (compositor_)
@@ -343,8 +342,8 @@ void RenderWidgetFullscreenPepper::SetLayer(blink::WebLayer* layer) {
   if (!compositor())
     InitializeLayerTreeView();
   UpdateLayerBounds();
-  layer_->SetDrawsContent(true);
-  compositor_->SetRootLayer(*layer_);
+  layer_->SetIsDrawable(true);
+  compositor_->SetRootLayer(layer_);
 }
 
 bool RenderWidgetFullscreenPepper::OnMessageReceived(const IPC::Message& msg) {
@@ -379,8 +378,9 @@ void RenderWidgetFullscreenPepper::Close() {
   RenderWidget::Close();
 }
 
-void RenderWidgetFullscreenPepper::OnResize(const ResizeParams& params) {
-  RenderWidget::OnResize(params);
+void RenderWidgetFullscreenPepper::OnSynchronizeVisualProperties(
+    const VisualProperties& visual_properties) {
+  RenderWidget::OnSynchronizeVisualProperties(visual_properties);
   UpdateLayerBounds();
 }
 

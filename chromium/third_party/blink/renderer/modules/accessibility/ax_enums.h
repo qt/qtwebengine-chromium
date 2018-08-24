@@ -43,6 +43,50 @@ enum AccessibilityRole {
   kDialogRole,
   kDirectoryRole,
   kDisclosureTriangleRole,  // No mapping to ARIA role.
+  kDocAbstractRole,
+  kDocAcknowledgmentsRole,
+  kDocAfterwordRole,
+  kDocAppendixRole,
+  // --------------------------------------------------------------
+  // DPub Roles:
+  // https://www.w3.org/TR/dpub-aam-1.0/#mapping_role_table
+  kDocBackLinkRole,
+  kDocBiblioEntryRole,
+  kDocBibliographyRole,
+  kDocBiblioRefRole,
+  kDocChapterRole,
+  kDocColophonRole,
+  kDocConclusionRole,
+  kDocCoverRole,
+  kDocCreditRole,
+  kDocCreditsRole,
+  kDocDedicationRole,
+  kDocEndnoteRole,
+  kDocEndnotesRole,
+  kDocEpigraphRole,
+  kDocEpilogueRole,
+  kDocErrataRole,
+  kDocExampleRole,
+  kDocFootnoteRole,
+  kDocForewordRole,
+  kDocGlossaryRole,
+  kDocGlossRefRole,
+  kDocIndexRole,
+  kDocIntroductionRole,
+  kDocNoteRefRole,
+  kDocNoticeRole,
+  kDocPageBreakRole,
+  kDocPageListRole,
+  kDocPartRole,
+  kDocPrefaceRole,
+  kDocPrologueRole,
+  kDocPullquoteRole,
+  kDocQnaRole,
+  kDocSubtitleRole,
+  kDocTipRole,
+  kDocTocRole,
+  // End DPub roles.
+  // --------------------------------------------------------------
   kDocumentRole,
   kEmbeddedObjectRole,  // No mapping to ARIA role.
   kFeedRole,
@@ -51,6 +95,14 @@ enum AccessibilityRole {
   kFooterRole,
   kFormRole,
   kGenericContainerRole,  // No role was defined for this container
+  // --------------------------------------------------------------
+  // ARIA Graphics module roles:
+  // https://rawgit.com/w3c/graphics-aam/master/#mapping_role_table
+  kGraphicsDocumentRole,
+  kGraphicsObjectRole,
+  kGraphicsSymbolRole,
+  // End ARIA Graphics module roles.
+  // --------------------------------------------------------------
   kGridRole,
   kGroupRole,
   kHeadingRole,
@@ -108,7 +160,6 @@ enum AccessibilityRole {
   kSearchBoxRole,
   kSliderRole,
   kSliderThumbRole,     // No mapping to ARIA role.
-  kSpinButtonPartRole,  // No mapping to ARIA role.
   kSpinButtonRole,
   kSplitterRole,
   kStaticTextRole,  // No mapping to ARIA role.
@@ -186,6 +237,12 @@ enum AccessibilityTextDirection {
   kAccessibilityTextDirectionBTT
 };
 
+enum AXTextPosition {
+  kAXTextPositionNone = 0,
+  kAXTextPositionSubscript,
+  kAXTextPositionSuperscript
+};
+
 enum SortDirection {
   kSortDirectionUndefined = 0,
   kSortDirectionNone,
@@ -215,6 +272,16 @@ enum AriaCurrentState {
   kAriaCurrentStateLocation,
   kAriaCurrentStateDate,
   kAriaCurrentStateTime
+};
+
+enum AXHasPopup {
+  kAXHasPopupFalse = 0,
+  kAXHasPopupTrue,
+  kAXHasPopupMenu,
+  kAXHasPopupListbox,
+  kAXHasPopupTree,
+  kAXHasPopupGrid,
+  kAXHasPopupDialog
 };
 
 enum InvalidState {

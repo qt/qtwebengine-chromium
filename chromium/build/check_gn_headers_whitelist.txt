@@ -19,7 +19,6 @@ ash/shell.h
 ash/system/devicetype_utils.h
 ash/wm/system_modal_container_event_filter_delegate.h
 cc/base/ring_buffer.h
-cc/blink/web_blend_mode.h
 cc/cc_export.h
 cc/input/browser_controls_state.h
 cc/input/event_listener_properties.h
@@ -186,7 +185,6 @@ media/formats/mpeg/adts_stream_parser.h
 media/formats/mpeg/mpeg1_audio_stream_parser.h
 media/formats/mpeg/mpeg_audio_stream_parser_base.h
 media/gpu/media_gpu_export.h
-mojo/common/mojo_common_export.h
 mojo/edk/system/broker_messages.h
 mojo/edk/system/system_impl_export.h
 mojo/public/cpp/bindings/strong_associated_binding_set.h
@@ -240,7 +238,6 @@ services/service_manager/public/c/main.h
 services/ui/ws/ids.h
 skia/ext/convolver_mips_dspr2.h
 skia/ext/skia_commit_hash.h
-skia/ext/texture_handle.h
 testing/gmock_mutant.h
 third_party/blink/renderer/bindings/modules/v8/serialization/WebCryptoSubTags.h
 third_party/blink/renderer/core/animation/CSSInterpolationEnvironment.h

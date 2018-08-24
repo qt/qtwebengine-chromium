@@ -30,7 +30,6 @@
 #include "build/build_config.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/config/gpu_feature_info.h"
-#include "skia/ext/texture_handle.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
@@ -70,7 +69,6 @@
 #include "third_party/blink/renderer/modules/webgl/webgl_active_info.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_buffer.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_compressed_texture_astc.h"
-#include "third_party/blink/renderer/modules/webgl/webgl_compressed_texture_atc.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_compressed_texture_etc.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_compressed_texture_etc1.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_compressed_texture_pvrtc.h"
@@ -129,23 +127,33 @@ unsigned CurrentMaxGLContexts() {
 }
 
 using WebGLRenderingContextBaseSet =
-    PersistentHeapHashSet<WeakMember<WebGLRenderingContextBase>>;
+    HeapHashSet<WeakMember<WebGLRenderingContextBase>>;
 WebGLRenderingContextBaseSet& ActiveContexts() {
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<WebGLRenderingContextBaseSet>,
-                                  active_contexts, ());
-  if (!active_contexts.IsSet())
-    active_contexts->RegisterAsStaticReference();
-  return *active_contexts;
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      ThreadSpecific<Persistent<WebGLRenderingContextBaseSet>>, active_contexts,
+      ());
+  Persistent<WebGLRenderingContextBaseSet>& active_contexts_persistent =
+      *active_contexts;
+  if (!active_contexts_persistent) {
+    active_contexts_persistent = new WebGLRenderingContextBaseSet();
+    active_contexts_persistent.RegisterAsStaticReference();
+  }
+  return *active_contexts_persistent;
 }
 
 using WebGLRenderingContextBaseMap =
-    PersistentHeapHashMap<WeakMember<WebGLRenderingContextBase>, int>;
+    HeapHashMap<WeakMember<WebGLRenderingContextBase>, int>;
 WebGLRenderingContextBaseMap& ForciblyEvictedContexts() {
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<WebGLRenderingContextBaseMap>,
-                                  forcibly_evicted_contexts, ());
-  if (!forcibly_evicted_contexts.IsSet())
-    forcibly_evicted_contexts->RegisterAsStaticReference();
-  return *forcibly_evicted_contexts;
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      ThreadSpecific<Persistent<WebGLRenderingContextBaseMap>>,
+      forcibly_evicted_contexts, ());
+  Persistent<WebGLRenderingContextBaseMap>&
+      forcibly_evicted_contexts_persistent = *forcibly_evicted_contexts;
+  if (!forcibly_evicted_contexts_persistent) {
+    forcibly_evicted_contexts_persistent = new WebGLRenderingContextBaseMap();
+    forcibly_evicted_contexts_persistent.RegisterAsStaticReference();
+  }
+  return *forcibly_evicted_contexts_persistent;
 }
 
 }  // namespace
@@ -598,7 +606,7 @@ static void CreateContextProviderOnMainThread(
       !Platform::Current()->IsGpuCompositingDisabled();
   creation_info->created_context_provider =
       Platform::Current()->CreateOffscreenGraphicsContext3DProvider(
-          creation_info->context_attributes, creation_info->url, nullptr,
+          creation_info->context_attributes, creation_info->url,
           creation_info->gl_info);
   waitable_event->Signal();
 }
@@ -657,7 +665,7 @@ WebGLRenderingContextBase::CreateContextProviderInternal(
     *using_gpu_compositing = !Platform::Current()->IsGpuCompositingDisabled();
     context_provider =
         Platform::Current()->CreateOffscreenGraphicsContext3DProvider(
-            context_attributes, url, nullptr, &gl_info);
+            context_attributes, url, &gl_info);
   } else {
     context_provider = CreateContextProviderOnWorkerThread(
         context_attributes, &gl_info, using_gpu_compositing, url);
@@ -723,30 +731,26 @@ ImageBitmap* WebGLRenderingContextBase::TransferToImageBitmapBase(
   UseCounter::Count(ExecutionContext::From(script_state), feature);
   if (!GetDrawingBuffer())
     return nullptr;
-  return ImageBitmap::Create(
-      GetDrawingBuffer()->TransferToStaticBitmapImage(nullptr));
+  std::unique_ptr<viz::SingleReleaseCallback> image_release_callback;
+  scoped_refptr<StaticBitmapImage> image =
+      GetDrawingBuffer()->TransferToStaticBitmapImage(&image_release_callback);
+  GetDrawingBuffer()->SwapPreviousFrameCallback(
+      std::move(image_release_callback));
+
+  return ImageBitmap::Create(image);
 }
 
-ScriptPromise WebGLRenderingContextBase::commit(
-    ScriptState* script_state,
-    ExceptionState& exception_state) {
-  WebFeature feature = WebFeature::kOffscreenCanvasCommitWebGL;
-  UseCounter::Count(ExecutionContext::From(script_state), feature);
+void WebGLRenderingContextBase::commit() {
   int width = GetDrawingBuffer()->Size().Width();
   int height = GetDrawingBuffer()->Size().Height();
-  if (!GetDrawingBuffer()) {
-    return Host()->Commit(nullptr, SkIRect::MakeWH(width, height), script_state,
-                          exception_state);
-  }
 
-  // TODO(crbug.com/809227): passing in nullptr for the release_callback, so the
-  // texture won't be recycled.  This could potentially impact performance as
-  // creating framebuffers can be expensive.
-  scoped_refptr<StaticBitmapImage> image = GetStaticBitmapImage(nullptr);
+  std::unique_ptr<viz::SingleReleaseCallback> image_release_callback;
+  scoped_refptr<StaticBitmapImage> image =
+      GetStaticBitmapImage(&image_release_callback);
+  GetDrawingBuffer()->SwapPreviousFrameCallback(
+      std::move(image_release_callback));
 
-  return Host()->Commit(
-      std::move(image), SkIRect::MakeWH(width, height),
-      script_state, exception_state);
+  Host()->Commit(std::move(image), SkIRect::MakeWH(width, height));
 }
 
 scoped_refptr<StaticBitmapImage>
@@ -1007,6 +1011,8 @@ WebGLRenderingContextBase::WebGLRenderingContextBase(
       version_(version) {
   DCHECK(context_provider);
 
+  Host()->RegisterContextToDispatch(this);
+
   // TODO(offenwanger) Make sure this is being created on a compatible adapter.
   compatible_xr_device_ =
       static_cast<XRDevice*>(requested_attributes.compatible_xr_device.Get());
@@ -1039,9 +1045,9 @@ WebGLRenderingContextBase::WebGLRenderingContextBase(
     disabled_extensions_.insert(entry);
   }
 
-#define ADD_VALUES_TO_SET(set, values)                    \
-  for (size_t i = 0; i < WTF_ARRAY_LENGTH(values); ++i) { \
-    set.insert(values[i]);                                \
+#define ADD_VALUES_TO_SET(set, values)             \
+  for (size_t i = 0; i < arraysize(values); ++i) { \
+    set.insert(values[i]);                         \
   }
 
   ADD_VALUES_TO_SET(supported_internal_formats_, kSupportedFormatsES2);
@@ -1328,6 +1334,12 @@ void WebGLRenderingContextBase::MarkContextChanged(
     return;
   }
 
+  if (Host()->IsOffscreenCanvas()) {
+    marked_canvas_dirty_ = true;
+    DidDraw();
+    return;
+  }
+
   if (!canvas())
     return;
 
@@ -1342,6 +1354,32 @@ void WebGLRenderingContextBase::MarkContextChanged(
     IntSize canvas_size = ClampedCanvasSize();
     DidDraw(SkIRect::MakeXYWH(0, 0, canvas_size.Width(), canvas_size.Height()));
   }
+}
+
+void WebGLRenderingContextBase::DidDraw(const SkIRect& dirty_rect) {
+  MarkContextChanged(kCanvasChanged);
+  CanvasRenderingContext::DidDraw(dirty_rect);
+}
+
+void WebGLRenderingContextBase::DidDraw() {
+  MarkContextChanged(kCanvasChanged);
+  CanvasRenderingContext::DidDraw();
+}
+
+void WebGLRenderingContextBase::PushFrame() {
+  if (!marked_canvas_dirty_)
+    return;
+
+  marked_canvas_dirty_ = false;
+  int width = GetDrawingBuffer()->Size().Width();
+  int height = GetDrawingBuffer()->Size().Height();
+
+  std::unique_ptr<viz::SingleReleaseCallback> image_release_callback;
+  scoped_refptr<StaticBitmapImage> image =
+      GetStaticBitmapImage(&image_release_callback);
+  GetDrawingBuffer()->SwapPreviousFrameCallback(
+      std::move(image_release_callback));
+  return Host()->PushFrame(std::move(image), SkIRect::MakeWH(width, height));
 }
 
 void WebGLRenderingContextBase::FinalizeFrame() {
@@ -1366,7 +1404,7 @@ WebGLRenderingContextBase::ClearIfComposited(GLbitfield mask) {
   if (buffers_needing_clearing == 0 || (mask && framebuffer_binding_))
     return kSkipped;
 
-  Optional<WebGLContextAttributes> context_attributes;
+  base::Optional<WebGLContextAttributes> context_attributes;
   getContextAttributes(context_attributes);
   if (!context_attributes) {
     // Unlikely, but context was lost.
@@ -1494,6 +1532,9 @@ bool WebGLRenderingContextBase::PaintRenderingResultsToCanvas(
   marked_canvas_dirty_ = false;
 
   if (!canvas()->GetOrCreateCanvasResourceProviderForWebGL())
+    return false;
+
+  if (!canvas()->GetOrCreateCanvasResourceProviderForWebGL()->IsAccelerated())
     return false;
 
   ScopedTexture2DRestorer restorer(this);
@@ -2713,10 +2754,10 @@ WebGLActiveInfo* WebGLRenderingContextBase::getActiveUniform(
   return WebGLActiveInfo::Create(name_impl->Substring(0, length), type, size);
 }
 
-Optional<HeapVector<Member<WebGLShader>>>
+base::Optional<HeapVector<Member<WebGLShader>>>
 WebGLRenderingContextBase::getAttachedShaders(WebGLProgram* program) {
   if (isContextLost() || !ValidateWebGLObject("getAttachedShaders", program))
-    return WTF::nullopt;
+    return base::nullopt;
 
   HeapVector<Member<WebGLShader>> shader_objects;
   const GLenum kShaderType[] = {GL_VERTEX_SHADER, GL_FRAGMENT_SHADER};
@@ -2787,7 +2828,7 @@ ScriptValue WebGLRenderingContextBase::getBufferParameter(
 }
 
 void WebGLRenderingContextBase::getContextAttributes(
-    Optional<WebGLContextAttributes>& result) {
+    base::Optional<WebGLContextAttributes>& result) {
   if (isContextLost())
     return;
   result = ToWebGLContextAttributes(CreationAttributes());
@@ -3430,9 +3471,10 @@ String WebGLRenderingContextBase::getShaderSource(WebGLShader* shader) {
   return EnsureNotNull(shader->Source());
 }
 
-Optional<Vector<String>> WebGLRenderingContextBase::getSupportedExtensions() {
+base::Optional<Vector<String>>
+WebGLRenderingContextBase::getSupportedExtensions() {
   if (isContextLost())
-    return WTF::nullopt;
+    return base::nullopt;
 
   Vector<String> result;
 
@@ -4868,10 +4910,6 @@ void WebGLRenderingContextBase::TexImageHelperImageData(
         adjusted_source_image_rect.Height(), format, type, bytes);
   } else {
     GLint upload_height = adjusted_source_image_rect.Height();
-    if (unpack_image_height) {
-      // GL_UNPACK_IMAGE_HEIGHT overrides the passed-in height.
-      upload_height = unpack_image_height;
-    }
     if (function_id == kTexImage3D) {
       ContextGL()->TexImage3D(target, level, internalformat,
                               adjusted_source_image_rect.Width(), upload_height,
@@ -6415,8 +6453,8 @@ uint32_t WebGLRenderingContextBase::NumberOfContextLosses() const {
   return context_group_->NumberOfContextLosses();
 }
 
-WebLayer* WebGLRenderingContextBase::PlatformLayer() const {
-  return isContextLost() ? nullptr : GetDrawingBuffer()->PlatformLayer();
+cc::Layer* WebGLRenderingContextBase::CcLayer() const {
+  return isContextLost() ? nullptr : GetDrawingBuffer()->CcLayer();
 }
 
 void WebGLRenderingContextBase::SetFilterQuality(
@@ -7181,18 +7219,6 @@ bool WebGLRenderingContextBase::ValidateCompressedTexFormat(
   return true;
 }
 
-bool WebGLRenderingContextBase::ValidateStencilSettings(
-    const char* function_name) {
-  if (stencil_mask_ != stencil_mask_back_ ||
-      stencil_func_ref_ != stencil_func_ref_back_ ||
-      stencil_func_mask_ != stencil_func_mask_back_) {
-    SynthesizeGLError(GL_INVALID_OPERATION, function_name,
-                      "front and back stencils settings do not match");
-    return false;
-  }
-  return true;
-}
-
 bool WebGLRenderingContextBase::ValidateStencilOrDepthFunc(
     const char* function_name,
     GLenum func) {
@@ -7510,9 +7536,6 @@ bool WebGLRenderingContextBase::ValidateDrawArrays(const char* function_name) {
   if (isContextLost())
     return false;
 
-  if (!ValidateStencilSettings(function_name))
-    return false;
-
   if (!ValidateRenderingState(function_name)) {
     return false;
   }
@@ -7531,9 +7554,6 @@ bool WebGLRenderingContextBase::ValidateDrawElements(const char* function_name,
                                                      GLenum type,
                                                      long long offset) {
   if (isContextLost())
-    return false;
-
-  if (!ValidateStencilSettings(function_name))
     return false;
 
   if (type == GL_UNSIGNED_INT && !IsWebGL2OrHigher() &&
@@ -7600,7 +7620,7 @@ void WebGLRenderingContextBase::MaybeRestoreContext(TimerBase*) {
   // ensure its resources were freed.
   DCHECK(!GetDrawingBuffer());
 
-  auto execution_context = Host()->GetTopExecutionContext();
+  auto* execution_context = Host()->GetTopExecutionContext();
   Platform::ContextAttributes attributes = ToPlatformContextAttributes(
       CreationAttributes(), Version(),
       SupportOwnOffscreenSurface(execution_context));
@@ -7615,7 +7635,7 @@ void WebGLRenderingContextBase::MaybeRestoreContext(TimerBase*) {
     using_gpu_compositing = !Platform::Current()->IsGpuCompositingDisabled();
     context_provider =
         Platform::Current()->CreateOffscreenGraphicsContext3DProvider(
-            attributes, url, nullptr, &gl_info);
+            attributes, url, &gl_info);
   } else {
     context_provider = CreateContextProviderOnWorkerThread(
         attributes, &gl_info, &using_gpu_compositing, url);
@@ -7757,7 +7777,7 @@ void WebGLRenderingContextBase::ApplyStencilTest() {
   if (framebuffer_binding_) {
     have_stencil_buffer = framebuffer_binding_->HasStencilBuffer();
   } else {
-    Optional<WebGLContextAttributes> attributes;
+    base::Optional<WebGLContextAttributes> attributes;
     getContextAttributes(attributes);
     have_stencil_buffer = attributes && attributes->stencil();
   }
@@ -7871,7 +7891,7 @@ void WebGLRenderingContextBase::Trace(blink::Visitor* visitor) {
 }
 
 void WebGLRenderingContextBase::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+    ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(context_group_);
   visitor->TraceWrappers(bound_array_buffer_);
   visitor->TraceWrappers(renderbuffer_binding_);
@@ -7899,7 +7919,7 @@ int WebGLRenderingContextBase::ExternallyAllocatedBufferCountPerPixel() {
   int buffer_count = 1;
   buffer_count *= 2;  // WebGL's front and back color buffers.
   int samples = GetDrawingBuffer() ? GetDrawingBuffer()->SampleCount() : 0;
-  Optional<WebGLContextAttributes> attribs;
+  base::Optional<WebGLContextAttributes> attribs;
   getContextAttributes(attribs);
   if (attribs) {
     // Handle memory from WebGL multisample and depth/stencil buffers.

@@ -29,67 +29,7 @@
 import os.path
 import re
 
-
-# Acronyms are kept as all caps.
-ACRONYMS = [
-    '2D',
-    '2G',
-    '3D',
-    '3G',
-    'API',
-    'CORS',
-    'CSP',
-    'CSS',
-    'CSSOM',
-    'DNS',
-    'DOM',
-    'FE',
-    'FTP',
-    'GL',
-    'HTML',
-    'IDB',
-    'IFrame',
-    'JS',
-    'NFC',
-    'NG',
-    'OM',
-    'RFC',
-    'RTCRtp',
-    'SMIL',
-    'SVG',
-    'UI',
-    'URL',
-    'USB',
-    'VR',
-    'VTT',
-    'WOFF',
-    'XML',
-    'XSLT',
-    'XSS',
-    'YUV',
-]
-
-
-def lower_first(name):
-    """Return name with first letter or initial acronym lowercased.
-
-    E.g., 'SetURL' becomes 'setURL', but 'URLFoo' becomes 'urlFoo'.
-    """
-    for acronym in ACRONYMS:
-        if name.startswith(acronym):
-            return name.replace(acronym, acronym.lower(), 1)
-    return name[0].lower() + name[1:]
-
-
-def upper_first(name):
-    """Return name with first letter or initial acronym uppercased.
-       The acronym must have a capital letter following it to be considered.
-    """
-    for acronym in ACRONYMS:
-        if name.startswith(acronym.lower()):
-            if len(name) == len(acronym) or name[len(acronym)].isupper():
-                return name.replace(acronym.lower(), acronym, 1)
-    return upper_first_letter(name)
+from blinkbuild.name_style_converter import tokenize_name
 
 
 def lower_first_letter(name):
@@ -146,17 +86,11 @@ def enum_for_css_property_alias(property_name):
 # API below instead.
 
 
-def split_name(name):
-    """Splits a name in some format to a list of words"""
-    return re.findall('|'.join(ACRONYMS) + r'|(?:[A-Z][a-z]*)|[a-z]+|(?:\d+[a-z]*)',
-                      upper_first_letter(name))
-
-
 def join_names(*names):
     """Given a list of names, join them into a single space-separated name."""
     result = []
     for name in names:
-        result.extend(split_name(name))
+        result.extend(tokenize_name(name))
     return ' '.join(result)
 
 
@@ -170,7 +104,8 @@ def naming_style(f):
         names = name_or_names if isinstance(name_or_names, list) else [name_or_names]
         words = []
         for name in names:
-            words.extend(split_name(name))
+            if name:
+                words.extend(tokenize_name(name))
         return f(words)
     return inner
 

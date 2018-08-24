@@ -11,6 +11,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
+#include "build/build_config.h"
 #include "net/base/escape.h"
 #include "net/base/filename_util_internal.h"
 #include "net/base/net_string_util.h"
@@ -49,7 +50,7 @@ GURL FilePathToFileURL(const base::FilePath& path) {
   base::ReplaceSubstringsAfterOffset(
       &url_string, 0, FILE_PATH_LITERAL("?"), FILE_PATH_LITERAL("%3F"));
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
   base::ReplaceSubstringsAfterOffset(
       &url_string, 0, FILE_PATH_LITERAL("\\"), FILE_PATH_LITERAL("%5C"));
 #endif
@@ -165,16 +166,16 @@ bool IsReservedNameOnWindows(const base::FilePath::StringType& filename) {
       "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9", "clock$"};
 #if defined(OS_WIN)
   std::string filename_lower = base::ToLowerASCII(base::WideToUTF8(filename));
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   std::string filename_lower = base::ToLowerASCII(filename);
 #endif
 
-  for (size_t i = 0; i < arraysize(known_devices); ++i) {
+  for (const char* const device : known_devices) {
     // Exact match.
-    if (filename_lower == known_devices[i])
+    if (filename_lower == device)
       return true;
     // Starts with "DEVICE.".
-    if (base::StartsWith(filename_lower, std::string(known_devices[i]) + ".",
+    if (base::StartsWith(filename_lower, std::string(device) + ".",
                          base::CompareCase::SENSITIVE)) {
       return true;
     }
@@ -187,8 +188,8 @@ bool IsReservedNameOnWindows(const base::FilePath::StringType& filename) {
       "thumbs.db",
   };
 
-  for (size_t i = 0; i < arraysize(magic_names); ++i) {
-    if (filename_lower == magic_names[i])
+  for (const char* const magic_name : magic_names) {
+    if (filename_lower == magic_name)
       return true;
   }
 

@@ -60,9 +60,7 @@ import os.path
 import re
 import sys
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..',
-                             'third_party', 'blink', 'tools'))
-from blinkpy.common.name_style_converter import NameStyleConverter
+from blinkbuild.name_style_converter import NameStyleConverter
 
 
 def _json5_load(lines):
@@ -162,6 +160,7 @@ class Json5File(object):
         entry = copy.deepcopy(self._defaults)
         if type(item) is not dict:
             entry["name"] = item
+            entry["tokenized_name"] = NameStyleConverter(entry["name"])
             return entry
         if "name" not in item:
             raise Exception("Missing name in item: %s" % item)
@@ -170,6 +169,7 @@ class Json5File(object):
             return entry
         assert "name" not in self.parameters, "The parameter 'name' is reserved, use a different name."
         entry["name"] = item.pop("name")
+        entry["tokenized_name"] = NameStyleConverter(entry["name"])
         # Validate parameters if it's specified.
         for key, value in item.items():
             if key not in self.parameters:
@@ -201,14 +201,18 @@ class Json5File(object):
             raise Exception("Unknown value: '%s'\nValid values: %s, \
                 Please change your value to a valid value" % (value, valid_values))
 
+    def merge_from(self, doc):
+        self._process(doc)
+
 
 class Writer(object):
     # Subclasses should override.
     class_name = None
     default_metadata = None
     default_parameters = None
+    snake_case_source_files = False
 
-    def __init__(self, json5_files):
+    def __init__(self, json5_files, output_dir):
         self._input_files = copy.copy(json5_files)
         self._outputs = {}  # file_name -> generator
         self.gperf_path = None
@@ -216,6 +220,11 @@ class Writer(object):
             self.json5_file = Json5File.load_from_files(json5_files,
                                                         self.default_metadata,
                                                         self.default_parameters)
+        match = re.search(r'\bgen[\\/]', output_dir)
+        if match:
+            self._relative_output_dir = output_dir[match.end():].replace(os.path.sep, '/') + '/'
+        else:
+            self._relative_output_dir = ''
 
     def _write_file_if_changed(self, output_dir, contents, file_name):
         path = os.path.join(output_dir, file_name)
@@ -245,6 +254,9 @@ class Writer(object):
         # Use NameStyleConverter instead of name_utilities for consistency.
         return NameStyleConverter(name).to_snake_case()
 
+    def make_header_guard(self, path):
+        return re.sub(r'[-/.]', '_', path).upper() + '_'
+
 
 class Maker(object):
     def __init__(self, writer_class):
@@ -263,6 +275,6 @@ class Maker(object):
         if args.developer_dir:
             os.environ["DEVELOPER_DIR"] = args.developer_dir
 
-        writer = self._writer_class(args.files)
+        writer = self._writer_class(args.files, args.output_dir)
         writer.set_gperf_path(args.gperf)
         writer.write_files(args.output_dir)

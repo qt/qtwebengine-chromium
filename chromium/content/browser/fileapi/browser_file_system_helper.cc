@@ -5,6 +5,7 @@
 #include "content/browser/fileapi/browser_file_system_helper.h"
 
 #include <stddef.h>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -62,11 +63,8 @@ FileSystemOptions CreateBrowserFileSystemOptions(bool is_incognito) {
           switches::kAllowFileAccessFromFiles)) {
     additional_allowed_schemes.push_back(url::kFileScheme);
   }
-  leveldb::Env* env_override = nullptr;
-  if (is_incognito)
-    env_override = leveldb_chrome::NewMemEnv(leveldb::Env::Default());
-  return FileSystemOptions(profile_mode, additional_allowed_schemes,
-                           env_override);
+  return FileSystemOptions(profile_mode, is_incognito,
+                           additional_allowed_schemes);
 }
 
 }  // namespace
@@ -98,13 +96,11 @@ scoped_refptr<storage::FileSystemContext> CreateFileSystemContext(
           std::move(additional_backends), url_request_auto_mount_handlers,
           profile_path, CreateBrowserFileSystemOptions(is_incognito));
 
-  std::vector<storage::FileSystemType> types;
-  file_system_context->GetFileSystemTypes(&types);
-  for (size_t i = 0; i < types.size(); ++i) {
+  for (const storage::FileSystemType& type :
+       file_system_context->GetFileSystemTypes()) {
     ChildProcessSecurityPolicyImpl::GetInstance()
         ->RegisterFileSystemPermissionPolicy(
-            types[i],
-            storage::FileSystemContext::GetPermissionPolicy(types[i]));
+            type, storage::FileSystemContext::GetPermissionPolicy(type));
   }
 
   return file_system_context;

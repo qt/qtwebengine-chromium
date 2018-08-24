@@ -13,6 +13,7 @@
 #include "content/browser/compositor/gpu_vsync_begin_frame_source.h"
 #include "gpu/vulkan/buildflags.h"
 #include "ui/gfx/swap_result.h"
+#include "ui/latency/latency_tracker.h"
 
 namespace viz {
 class CompositorOverlayCandidateValidator;
@@ -37,10 +38,8 @@ class ReflectorTexture;
 // Adapts a WebGraphicsContext3DCommandBufferImpl into a
 // viz::OutputSurface that also handles vsync parameter updates
 // arriving from the GPU process.
-class GpuBrowserCompositorOutputSurface
-    : public BrowserCompositorOutputSurface,
-      public GpuVSyncControl,
-      public viz::OutputSurface::LatencyInfoCache::Client {
+class GpuBrowserCompositorOutputSurface : public BrowserCompositorOutputSurface,
+                                          public GpuVSyncControl {
  public:
   GpuBrowserCompositorOutputSurface(
       scoped_refptr<ui::ContextProviderCommandBuffer> context,
@@ -52,13 +51,11 @@ class GpuBrowserCompositorOutputSurface
 
   // Called when a swap completion is sent from the GPU process.
   virtual void OnGpuSwapBuffersCompleted(
+      std::vector<ui::LatencyInfo> latency_info,
       const gpu::SwapBuffersCompleteParams& params);
 
   // BrowserCompositorOutputSurface implementation.
   void OnReflectorChanged() override;
-#if defined(OS_MACOSX)
-  void SetSurfaceSuspendedForRecycle(bool suspended) override;
-#endif
 
   // viz::OutputSurface implementation.
   void BindToClient(viz::OutputSurfaceClient* client) override;
@@ -75,8 +72,8 @@ class GpuBrowserCompositorOutputSurface
   bool IsDisplayedAsOverlayPlane() const override;
   unsigned GetOverlayTextureId() const override;
   gfx::BufferFormat GetOverlayBufferFormat() const override;
+  unsigned UpdateGpuFence() override;
 
-  bool SurfaceIsSuspendForRecycle() const override;
   void SetDrawRectangle(const gfx::Rect& rect) override;
 
   // GpuVSyncControl implementation.
@@ -85,13 +82,10 @@ class GpuBrowserCompositorOutputSurface
   gpu::VulkanSurface* GetVulkanSurface() override;
 #endif
 
-  // OutputSurface::LatencyInfoCache::Client implementation.
-  void LatencyInfoCompleted(
-      const std::vector<ui::LatencyInfo>& latency_info) override;
-
  protected:
-  void OnPresentation(uint64_t swap_id,
-                      const gfx::PresentationFeedback& feedback);
+  void OnPresentation(const gfx::PresentationFeedback& feedback);
+  void OnUpdateVSyncParameters(base::TimeTicks timebase,
+                               base::TimeDelta interval);
   gpu::CommandBufferProxyImpl* GetCommandBufferProxy();
 
   viz::OutputSurfaceClient* client_ = nullptr;
@@ -101,9 +95,11 @@ class GpuBrowserCompositorOutputSurface
   // True if the draw rectangle has been set at all since the last resize.
   bool has_set_draw_rectangle_since_last_resize_ = false;
   gfx::Size size_;
-  LatencyInfoCache latency_info_cache_;
+  ui::LatencyTracker latency_tracker_;
 
  private:
+  base::WeakPtrFactory<GpuBrowserCompositorOutputSurface> weak_ptr_factory_;
+
   DISALLOW_COPY_AND_ASSIGN(GpuBrowserCompositorOutputSurface);
 };
 

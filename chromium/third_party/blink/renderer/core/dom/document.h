@@ -184,7 +184,7 @@ class Touch;
 class TouchList;
 class TransformSource;
 class TreeWalker;
-class V8NodeFilterCondition;
+class V8NodeFilter;
 class VisitedLinkState;
 class WebMouseEvent;
 struct AnnotatedRegionValue;
@@ -247,6 +247,10 @@ enum class SecureContextState { kUnknown, kNonSecure, kSecure };
 
 using DocumentClassFlags = unsigned char;
 
+// A document (https://dom.spec.whatwg.org/#concept-document) is the root node
+// of a tree of DOM nodes, generally resulting from the parsing of an markup
+// (typically, HTML) resource. It provides both the content to be displayed to
+// the user in a frame and an execution context for JavaScript code.
 class CORE_EXPORT Document : public ContainerNode,
                              public TreeScope,
                              public SecurityContext,
@@ -510,10 +514,10 @@ class CORE_EXPORT Document : public ContainerNode,
 
   NodeIterator* createNodeIterator(Node* root,
                                    unsigned what_to_show,
-                                   V8NodeFilterCondition*);
+                                   V8NodeFilter*);
   TreeWalker* createTreeWalker(Node* root,
                                unsigned what_to_show,
-                               V8NodeFilterCondition*);
+                               V8NodeFilter*);
 
   // Special support for editing
   Text* CreateEditingTextNode(const String&);
@@ -624,6 +628,8 @@ class CORE_EXPORT Document : public ContainerNode,
                                  bool& did_allow_navigation);
   void DispatchUnloadEvents();
 
+  void DispatchFreezeEvent();
+
   enum PageDismissalType {
     kNoDismissal,
     kBeforeUnloadDismissal,
@@ -730,6 +736,8 @@ class CORE_EXPORT Document : public ContainerNode,
   void SetReadyState(DocumentReadyState);
   bool IsLoadCompleted() const;
 
+  bool IsFreezingInProgress() const { return is_freezing_in_progress_; };
+
   enum ParsingState { kParsing, kInDOMContentLoaded, kFinishedParsing };
   void SetParsingState(ParsingState);
   bool Parsing() const { return parsing_state_ == kParsing; }
@@ -747,14 +755,6 @@ class CORE_EXPORT Document : public ContainerNode,
   MouseEventWithHitTestResults PerformMouseEventHitTest(const HitTestRequest&,
                                                         const LayoutPoint&,
                                                         const WebMouseEvent&);
-
-  /* Newly proposed CSS3 mechanism for selecting alternate
-       stylesheets using the DOM. May be subject to change as
-       spec matures. - dwh
-    */
-  String preferredStylesheetSet() const;
-  String selectedStylesheetSet() const;
-  void setSelectedStylesheetSet(const String&);
 
   bool SetFocusedElement(Element*, const FocusParams&);
   void ClearFocusedElement();
@@ -1162,24 +1162,14 @@ class CORE_EXPORT Document : public ContainerNode,
   // This calls checkCompleted() sync and thus can cause JavaScript execution.
   void DecrementLoadEventDelayCountAndCheckLoadEvent();
 
-  Touch* createTouch(DOMWindow*,
-                     EventTarget*,
-                     int identifier,
-                     double page_x,
-                     double page_y,
-                     double screen_x,
-                     double screen_y,
-                     double radius_x,
-                     double radius_y,
-                     float rotation_angle,
-                     float force) const;
   TouchList* createTouchList(HeapVector<Member<Touch>>&) const;
 
   const DocumentTiming& GetTiming() const { return document_timing_; }
 
   int RequestAnimationFrame(FrameRequestCallbackCollection::FrameCallback*);
   void CancelAnimationFrame(int id);
-  void ServiceScriptedAnimations(double monotonic_animation_start_time);
+  void ServiceScriptedAnimations(
+      base::TimeTicks monotonic_animation_start_time);
 
   int RequestIdleCallback(ScriptedIdleTaskController::IdleTask*,
                           const IdleRequestOptions&);
@@ -1297,9 +1287,9 @@ class CORE_EXPORT Document : public ContainerNode,
 
   void UpdateActiveStyle();
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
-  virtual void TraceWrappers(const ScriptWrappableVisitor*) const;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
   AtomicString ConvertLocalName(const AtomicString&);
 
@@ -1422,6 +1412,12 @@ class CORE_EXPORT Document : public ContainerNode,
 
   SlotAssignmentEngine& GetSlotAssignmentEngine();
 
+#if DCHECK_IS_ON()
+  bool IsSlotAssignmentRecalcForbidden() {
+    return slot_assignment_recalc_forbidden_recursion_depth_ > 0;
+  }
+#endif
+
  protected:
   Document(const DocumentInit&, DocumentClassFlags = kDefaultDocumentClass);
 
@@ -1440,6 +1436,8 @@ class CORE_EXPORT Document : public ContainerNode,
   friend class IgnoreDestructiveWriteCountIncrementer;
   friend class ThrowOnDynamicMarkupInsertionCountIncrementer;
   friend class NthIndexCache;
+  FRIEND_TEST_ALL_PREFIXES(FrameFetchContextSubresourceFilterTest,
+                           DuringOnFreeze);
   class NetworkStateObserver;
 
   bool IsDocumentFragment() const =
@@ -1515,7 +1513,7 @@ class CORE_EXPORT Document : public ContainerNode,
   void ClearFocusedElementTimerFired(TimerBase*);
 
   bool HaveScriptBlockingStylesheetsLoaded() const;
-  bool HaveRenderBlockingStylesheetsLoaded() const;
+  bool HaveRenderBlockingResourcesLoaded() const;
   void StyleResolverMayHaveChanged();
 
   void SetHoverElement(Element*);
@@ -1548,6 +1546,15 @@ class CORE_EXPORT Document : public ContainerNode,
   // that any changes to the declared policy are relayed to the embedder through
   // the LocalFrameClient.
   void ApplyFeaturePolicy(const ParsedFeaturePolicy& declared_policy);
+
+  // Returns true if use of |method_name| for markup insertion is allowed by
+  // feature policy; otherwise returns false and throws a DOM exception.
+  bool AllowedToUseDynamicMarkUpInsertion(const char* method_name,
+                                          ExceptionState&);
+
+  void SetFreezingInProgress(bool is_freezing_in_progress) {
+    is_freezing_in_progress_ = is_freezing_in_progress;
+  };
 
   DocumentLifecycle lifecycle_;
 
@@ -1667,6 +1674,8 @@ class CORE_EXPORT Document : public ContainerNode,
   bool was_discarded_;
 
   LoadEventProgress load_event_progress_;
+
+  bool is_freezing_in_progress_;
 
   double start_time_;
 
@@ -1810,6 +1819,10 @@ class CORE_EXPORT Document : public ContainerNode,
   // the document to recorde UKM.
   std::unique_ptr<ukm::UkmRecorder> ukm_recorder_;
   int64_t ukm_source_id_;
+
+#if DCHECK_IS_ON()
+  unsigned slot_assignment_recalc_forbidden_recursion_depth_;
+#endif
 
   bool needs_to_record_ukm_outlive_time_;
 

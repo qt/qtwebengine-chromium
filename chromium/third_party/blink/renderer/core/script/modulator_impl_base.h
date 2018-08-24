@@ -28,14 +28,14 @@ class ScriptState;
 // components together.
 class ModulatorImplBase : public Modulator {
  public:
-  virtual ~ModulatorImplBase();
-  void Trace(blink::Visitor*);
-  virtual void TraceWrappers(const ScriptWrappableVisitor*) const;
-
-  ExecutionContext* GetExecutionContext() const;
+  ~ModulatorImplBase() override;
+  void Trace(blink::Visitor*) override;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
  protected:
   explicit ModulatorImplBase(scoped_refptr<ScriptState>);
+
+  ExecutionContext* GetExecutionContext() const;
 
   ScriptState* GetScriptState() override { return script_state_.get(); }
 
@@ -51,9 +51,14 @@ class ModulatorImplBase : public Modulator {
   ReferrerPolicy GetReferrerPolicy() override;
   const SecurityOrigin* GetSecurityOriginForFetch() override;
 
-  void FetchTree(const ModuleScriptFetchRequest&, ModuleTreeClient*) override;
-  void FetchDescendantsForInlineScript(ModuleScript*,
-                                       ModuleTreeClient*) override;
+  void FetchTree(const KURL&,
+                 WebURLRequest::RequestContext destination,
+                 const ScriptFetchOptions&,
+                 ModuleTreeClient*) override;
+  void FetchDescendantsForInlineScript(
+      ModuleScript*,
+      WebURLRequest::RequestContext destination,
+      ModuleTreeClient*) override;
   void FetchSingle(const ModuleScriptFetchRequest&,
                    ModuleGraphLevel,
                    SingleModuleClient*) override;

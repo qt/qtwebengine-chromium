@@ -77,12 +77,12 @@ static_library("arc") {
     "//chromeos",
     "//chromeos:login_manager_proto",
     "//chromeos:power_manager_proto",
+    "//components/account_id",
     "//components/exo",
     "//components/google/core/browser",
     "//components/onc",
     "//components/prefs",
     "//components/session_manager/core",
-    "//components/signin/core/account_id",
     "//components/timers",
     "//components/url_formatter",
     "//components/user_manager",
@@ -118,7 +118,23 @@ static_library("prefs") {
   defines = [ "ARC_IMPLEMENTATION" ]
 
   deps = [
+    ":arc_base_enums",
     "//components/prefs",
+  ]
+}
+
+static_library("arc_base_enums") {
+  sources = [
+    "arc_instance_mode.cc",
+    "arc_instance_mode.h",
+    "arc_stop_reason.cc",
+    "arc_stop_reason.h",
+    "arc_supervision_transition.cc",
+    "arc_supervision_transition.h",
+  ]
+
+  deps = [
+    "//base",
   ]
 }
 
@@ -135,8 +151,6 @@ static_library("arc_base") {
     "arc_data_remover.h",
     "arc_features.cc",
     "arc_features.h",
-    "arc_instance_mode.cc",
-    "arc_instance_mode.h",
     "arc_service_manager.cc",
     "arc_service_manager.h",
     "arc_session.cc",
@@ -145,14 +159,8 @@ static_library("arc_base") {
     "arc_session_impl.h",
     "arc_session_runner.cc",
     "arc_session_runner.h",
-    "arc_stop_reason.cc",
-    "arc_stop_reason.h",
     "arc_util.cc",
     "arc_util.h",
-    "connection_holder.h",
-    "connection_notifier.cc",
-    "connection_notifier.h",
-    "connection_observer.h",
   ]
 
   deps = [
@@ -160,24 +168,55 @@ static_library("arc_base") {
     "//base",
     "//chromeos",
     "//chromeos:login_manager_proto",
+    "//components/account_id",
     "//components/keyed_service/content",
     "//components/prefs",
-    "//components/signin/core/account_id",
     "//components/user_manager",
+    "//content/public/common",
     "//mojo/edk",
     "//ui/aura",
   ]
 
   public_deps = [
+    ":arc_base_enums",
+    ":connection_holder",
     ":prefs",
     "//components/arc/common",
+  ]
+}
+
+source_set("connection_holder") {
+  sources = [
+    "connection_holder.h",
+    "connection_notifier.cc",
+    "connection_notifier.h",
+    "connection_observer.h",
+    "mojo_channel.h",
+  ]
+
+  deps = [
+    "//base",
+    "//mojo/public/cpp/bindings",
+  ]
+}
+
+static_library("notification_test_support") {
+  testonly = true
+  sources = [
+    "test/connection_holder_util.h",
+    "test/fake_notifications_instance.cc",
+    "test/fake_notifications_instance.h",
+  ]
+
+  public_deps = [
+    ":connection_holder",
+    "//components/arc/common:notifications",
   ]
 }
 
 static_library("arc_test_support") {
   testonly = true
   sources = [
-    "test/connection_holder_util.h",
     "test/fake_accessibility_helper_instance.cc",
     "test/fake_accessibility_helper_instance.h",
     "test/fake_app_instance.cc",
@@ -194,8 +233,6 @@ static_library("arc_test_support") {
     "test/fake_file_system_instance.h",
     "test/fake_intent_helper_instance.cc",
     "test/fake_intent_helper_instance.h",
-    "test/fake_notifications_instance.cc",
-    "test/fake_notifications_instance.h",
     "test/fake_policy_instance.cc",
     "test/fake_policy_instance.h",
     "test/fake_power_instance.cc",
@@ -214,6 +251,7 @@ static_library("arc_test_support") {
 
   public_deps = [
     ":arc",
+    ":notification_test_support",
   ]
 
   deps = [
@@ -257,9 +295,9 @@ source_set("unit_tests") {
     "//chromeos",
     "//chromeos:power_manager_proto",
     "//chromeos:test_support_without_gmock",
+    "//components/account_id",
     "//components/keyed_service/content",
     "//components/prefs:test_support",
-    "//components/signin/core/account_id",
     "//components/user_manager",
     "//components/user_manager:test_support",
     "//content/public/common",

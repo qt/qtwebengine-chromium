@@ -4,9 +4,12 @@
 
 #include "services/ui/public/cpp/gpu/gpu.h"
 
+#include <memory>
+#include <string>
+#include <utility>
+
 #include "base/debug/stack_trace.h"
 #include "base/memory/ptr_util.h"
-#include "base/message_loop/message_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
@@ -292,13 +295,12 @@ scoped_refptr<viz::ContextProvider> Gpu::CreateContextProvider(
   attributes.sample_buffers = 0;
   attributes.bind_generates_resource = false;
   attributes.lose_context_when_out_of_memory = true;
-  ContextProviderCommandBuffer* shared_context_provider = nullptr;
   return base::MakeRefCounted<ContextProviderCommandBuffer>(
       std::move(gpu_channel), GetGpuMemoryBufferManager(), stream_id,
       stream_priority, gpu::kNullSurfaceHandle,
       GURL("chrome://gpu/MusContextFactory"), automatic_flushes,
       support_locking, support_grcontext, gpu::SharedMemoryLimits(), attributes,
-      shared_context_provider, command_buffer_metrics::MUS_CLIENT_CONTEXT);
+      command_buffer_metrics::MUS_CLIENT_CONTEXT);
 }
 
 void Gpu::CreateJpegDecodeAccelerator(

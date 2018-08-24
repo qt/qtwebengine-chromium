@@ -447,7 +447,7 @@ Polymer({
    */
   onKnownNetworksTap_: function() {
     assert(this.deviceState.Type == CrOnc.Type.WI_FI);
-    this.fire('show-known-networks', {Type: this.deviceState.Type});
+    this.fire('show-known-networks', {type: this.deviceState.Type});
   },
 
   /**
@@ -455,14 +455,12 @@ Polymer({
    * @param {!Event} event
    * @private
    */
-  onDeviceEnabledTap_: function(event) {
+  onDeviceEnabledChange_: function(event) {
     assert(this.deviceState);
     this.fire('device-enabled-toggled', {
       enabled: !this.deviceIsEnabled_(this.deviceState),
       type: this.deviceState.Type
     });
-    // Make sure this does not propagate to onDetailsTap_.
-    event.stopPropagation();
   },
 
   /**

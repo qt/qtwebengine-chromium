@@ -4,30 +4,35 @@
 
 #include "third_party/blink/renderer/platform/graphics/gpu/image_layer_bridge.h"
 
+#include "cc/layers/texture_layer.h"
+#include "cc/resources/cross_thread_shared_bitmap.h"
 #include "components/viz/common/quads/shared_bitmap.h"
+#include "components/viz/common/resources/bitmap_allocation.h"
 #include "components/viz/common/resources/transferable_resource.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_compositor_support.h"
-#include "third_party/blink/public/platform/web_external_texture_layer.h"
 #include "third_party/blink/public/platform/web_graphics_context_3d_provider.h"
 #include "third_party/blink/renderer/platform/graphics/accelerated_static_bitmap_image.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_color_params.h"
 #include "third_party/blink/renderer/platform/graphics/color_behavior.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
+#include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace blink {
 
 ImageLayerBridge::ImageLayerBridge(OpacityMode opacity_mode)
     : opacity_mode_(opacity_mode) {
-  layer_ = Platform::Current()->CompositorSupport()->CreateExternalTextureLayer(
-      this);
-  GraphicsLayer::RegisterContentsLayer(layer_->Layer());
+  layer_ = cc::TextureLayer::CreateForMailbox(this);
+  layer_->SetIsDrawable(true);
   layer_->SetNearestNeighbor(filter_quality_ == kNone_SkFilterQuality);
   if (opacity_mode_ == kOpaque) {
-    layer_->SetOpaque(true);
+    layer_->SetContentsOpaque(true);
     layer_->SetBlendBackgroundColor(false);
   }
+  GraphicsLayer::RegisterContentsLayer(layer_.get());
 }
 
 ImageLayerBridge::~ImageLayerBridge() {
@@ -42,7 +47,7 @@ void ImageLayerBridge::SetImage(scoped_refptr<StaticBitmapImage> image) {
   image_ = std::move(image);
   if (image_) {
     if (opacity_mode_ == kNonOpaque) {
-      layer_->SetOpaque(image_->CurrentFrameKnownToBeOpaque());
+      layer_->SetContentsOpaque(image_->CurrentFrameKnownToBeOpaque());
       layer_->SetBlendBackgroundColor(!image_->CurrentFrameKnownToBeOpaque());
     }
   }
@@ -53,26 +58,25 @@ void ImageLayerBridge::SetImage(scoped_refptr<StaticBitmapImage> image) {
     // m_image->EnsureMailbox() call of
     // ImageLayerBridge::PrepareTransferableResource. To prevent a potential
     // memory leak we must flush the GrContext here.
-    image_->PaintImageForCurrentFrame().GetSkImage()->getTextureHandle(
+    image_->PaintImageForCurrentFrame().GetSkImage()->getBackendTexture(
         true);  // GrContext flush.
   }
   has_presented_since_last_set_image_ = false;
 }
 
-void ImageLayerBridge::SetUV(const FloatPoint left_top,
-                             const FloatPoint right_bottom) {
+void ImageLayerBridge::SetUV(const FloatPoint& left_top,
+                             const FloatPoint& right_bottom) {
   if (disposed_)
     return;
 
-  layer_->SetUV(WebFloatPoint(left_top.X(), left_top.Y()),
-                WebFloatPoint(right_bottom.X(), right_bottom.Y()));
+  layer_->SetUV(left_top, right_bottom);
 }
 
 void ImageLayerBridge::Dispose() {
   if (layer_) {
-    GraphicsLayer::UnregisterContentsLayer(layer_->Layer());
+    GraphicsLayer::UnregisterContentsLayer(layer_.get());
     layer_->ClearTexture();
-    layer_.reset();
+    layer_ = nullptr;
   }
   image_ = nullptr;
   disposed_ = true;
@@ -129,58 +133,76 @@ bool ImageLayerBridge::PrepareTransferableResource(
                   WrapWeakPersistent(this), std::move(image_for_compositor));
     *out_release_callback = viz::SingleReleaseCallback::Create(std::move(func));
   } else {
-    std::unique_ptr<viz::SharedBitmap> bitmap =
-        CreateOrRecycleBitmap(image_for_compositor->Size());
-    if (!bitmap)
-      return false;
-
     sk_sp<SkImage> sk_image =
         image_for_compositor->PaintImageForCurrentFrame().GetSkImage();
     if (!sk_image)
       return false;
 
-    SkImageInfo dst_info =
-        SkImageInfo::MakeN32Premul(image_for_compositor->width(), 1);
-    dst_info = dst_info.makeColorSpace(sk_image->refColorSpace());
-    size_t row_bytes = image_for_compositor->width() * 4;
+    const gfx::Size size(image_for_compositor->width(),
+                         image_for_compositor->height());
+    viz::ResourceFormat resource_format = viz::RGBA_8888;
+    if (sk_image->colorType() == SkColorType::kRGBA_F16_SkColorType)
+      resource_format = viz::RGBA_F16;
+    RegisteredBitmap registered =
+        CreateOrRecycleBitmap(size, resource_format, bitmap_registrar);
 
-    // Copy from SkImage into |bitmap|, while flipping the Y axis.
-    for (int row = 0; row < image_for_compositor->height(); row++) {
-      if (!sk_image->readPixels(dst_info, bitmap->pixels(), row_bytes, 0, 0))
-        return false;
-    }
+    SkImageInfo dst_info =
+        SkImageInfo::Make(size.width(), size.height(), sk_image->colorType(),
+                          kPremul_SkAlphaType, sk_image->refColorSpace());
+    void* pixels = registered.bitmap->shared_memory()->memory();
+
+    // Copy from SkImage into SharedMemory owned by |registered|.
+    if (!sk_image->readPixels(dst_info, pixels, dst_info.minRowBytes(), 0, 0))
+      return false;
 
     *out_resource = viz::TransferableResource::MakeSoftware(
-        bitmap->id(), bitmap->sequence_number(),
-        gfx::Size(image_for_compositor->width(),
-                  image_for_compositor->height()),
-        viz::RGBA_8888);
+        registered.bitmap->id(), size, resource_format);
+    if (RuntimeEnabledFeatures::CanvasColorManagementEnabled()) {
+      out_resource->color_space =
+          SkColorSpaceToGfxColorSpace(sk_image->refColorSpace());
+    }
     auto func = WTF::Bind(&ImageLayerBridge::ResourceReleasedSoftware,
-                          WrapWeakPersistent(this), std::move(bitmap),
-                          image_for_compositor->Size());
+                          WrapWeakPersistent(this), std::move(registered));
     *out_release_callback = viz::SingleReleaseCallback::Create(std::move(func));
   }
-
-  // TODO(junov): Figure out how to get the color space info.
-  // out_resource->color_space = ...;
 
   return true;
 }
 
-std::unique_ptr<viz::SharedBitmap> ImageLayerBridge::CreateOrRecycleBitmap(
-    const IntSize& size) {
-  auto it = std::remove_if(
+ImageLayerBridge::RegisteredBitmap ImageLayerBridge::CreateOrRecycleBitmap(
+    const gfx::Size& size,
+    viz::ResourceFormat format,
+    cc::SharedBitmapIdRegistrar* bitmap_registrar) {
+  auto* it = std::remove_if(
       recycled_bitmaps_.begin(), recycled_bitmaps_.end(),
-      [&size](const RecycledBitmap& bitmap) { return bitmap.size != size; });
+      [&size, &format](const RegisteredBitmap& registered) {
+        unsigned src_bytes_per_pixel =
+            (registered.bitmap->format() == viz::RGBA_8888) ? 4 : 8;
+        unsigned target_bytes_per_pixel = (format == viz::RGBA_8888) ? 4 : 8;
+        return (registered.bitmap->size().GetArea() * src_bytes_per_pixel !=
+                size.GetArea() * target_bytes_per_pixel);
+      });
   recycled_bitmaps_.Shrink(it - recycled_bitmaps_.begin());
 
   if (!recycled_bitmaps_.IsEmpty()) {
-    RecycledBitmap recycled = std::move(recycled_bitmaps_.back());
+    RegisteredBitmap registered = std::move(recycled_bitmaps_.back());
     recycled_bitmaps_.pop_back();
-    DCHECK(recycled.size == size);
-    return std::move(recycled.bitmap);
+    DCHECK(registered.bitmap->size() == size);
+    return registered;
   }
-  return Platform::Current()->AllocateSharedBitmap(size, viz::RGBA_8888);
+
+  // There are no bitmaps to recycle so allocate a new one.
+  viz::SharedBitmapId id = viz::SharedBitmap::GenerateId();
+  std::unique_ptr<base::SharedMemory> shm =
+      viz::bitmap_allocation::AllocateMappedBitmap(size, format);
+
+  RegisteredBitmap registered;
+  registered.bitmap = base::MakeRefCounted<cc::CrossThreadSharedBitmap>(
+      id, std::move(shm), size, format);
+  registered.registration =
+      bitmap_registrar->RegisterSharedBitmapId(id, registered.bitmap);
+
+  return registered;
 }
 
 void ImageLayerBridge::ResourceReleasedGpu(
@@ -199,19 +221,22 @@ void ImageLayerBridge::ResourceReleasedGpu(
 }
 
 void ImageLayerBridge::ResourceReleasedSoftware(
-    std::unique_ptr<viz::SharedBitmap> bitmap,
-    const IntSize& size,
+    RegisteredBitmap registered,
     const gpu::SyncToken& sync_token,
     bool lost_resource) {
   DCHECK(!sync_token.HasData());  // No sync tokens for software resources.
-  if (!disposed_ && !lost_resource) {
-    RecycledBitmap recycled = {std::move(bitmap), size};
-    recycled_bitmaps_.push_back(std::move(recycled));
-  }
+  if (!disposed_ && !lost_resource)
+    recycled_bitmaps_.push_back(std::move(registered));
 }
 
-WebLayer* ImageLayerBridge::PlatformLayer() const {
-  return layer_->Layer();
+cc::Layer* ImageLayerBridge::CcLayer() const {
+  return layer_.get();
 }
+
+ImageLayerBridge::RegisteredBitmap::RegisteredBitmap() = default;
+ImageLayerBridge::RegisteredBitmap::RegisteredBitmap(RegisteredBitmap&& other) =
+    default;
+ImageLayerBridge::RegisteredBitmap& ImageLayerBridge::RegisteredBitmap::
+operator=(RegisteredBitmap&& other) = default;
 
 }  // namespace blink

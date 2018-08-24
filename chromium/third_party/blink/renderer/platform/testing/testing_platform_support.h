@@ -36,7 +36,6 @@
 
 #include "base/macros.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_compositor_support.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
@@ -45,58 +44,22 @@ namespace base {
 class TestDiscardableMemoryAllocator;
 }
 
-namespace cc_blink {
-class WebCompositorSupportImpl;
-}  // namespace cc_blink
-
 namespace blink {
-class WebCompositorSupport;
 class WebThread;
-
-class TestingCompositorSupport : public WebCompositorSupport {
-  std::unique_ptr<WebLayer> CreateLayer() override;
-  std::unique_ptr<WebLayer> CreateLayerFromCCLayer(cc::Layer*) override;
-  std::unique_ptr<WebContentLayer> CreateContentLayer(
-      WebContentLayerClient*) override;
-  std::unique_ptr<WebExternalTextureLayer> CreateExternalTextureLayer(
-      cc::TextureLayerClient*) override;
-  std::unique_ptr<WebImageLayer> CreateImageLayer() override;
-  std::unique_ptr<WebScrollbarLayer> CreateScrollbarLayer(
-      std::unique_ptr<WebScrollbar>,
-      WebScrollbarThemePainter,
-      std::unique_ptr<WebScrollbarThemeGeometry>) override;
-  std::unique_ptr<WebScrollbarLayer> CreateOverlayScrollbarLayer(
-      std::unique_ptr<WebScrollbar>,
-      WebScrollbarThemePainter,
-      std::unique_ptr<WebScrollbarThemeGeometry>) override;
-  std::unique_ptr<WebScrollbarLayer> CreateSolidColorScrollbarLayer(
-      WebScrollbar::Orientation,
-      int thumb_thickness,
-      int track_start,
-      bool is_left_side_vertical_scrollbar) override;
-};
 
 // A base class to override Platform methods for testing.  You can override the
 // behavior by subclassing TestingPlatformSupport or using
 // ScopedTestingPlatformSupport (see below).
 class TestingPlatformSupport : public Platform {
  public:
-  struct Config {
-    WebCompositorSupport* compositor_support = nullptr;
-  };
-
   TestingPlatformSupport();
-  explicit TestingPlatformSupport(const Config&);
 
   ~TestingPlatformSupport() override;
 
   // Platform:
   WebString DefaultLocale() override;
-  WebCompositorSupport* CompositorSupport() override;
   WebThread* CurrentThread() override;
   WebBlobRegistry* GetBlobRegistry() override;
-  WebClipboard* Clipboard() override;
-  WebFileUtilities* GetFileUtilities() override;
   WebIDBFactory* IdbFactory() override;
   WebURLLoaderMockFactory* GetURLLoaderMockFactory() override;
   std::unique_ptr<blink::WebURLLoaderFactory> CreateDefaultURLLoaderFactory()
@@ -109,7 +72,6 @@ class TestingPlatformSupport : public Platform {
  protected:
   class TestingInterfaceProvider;
 
-  const Config config_;
   Platform* const old_platform_;
   std::unique_ptr<TestingInterfaceProvider> interface_provider_;
 
@@ -182,8 +144,6 @@ class ScopedUnittestsEnvironmentSetup final {
   std::unique_ptr<DummyPlatform> dummy_platform_;
   std::unique_ptr<DummyRendererResourceCoordinator>
       dummy_renderer_resource_coordinator_;
-  std::unique_ptr<cc_blink::WebCompositorSupportImpl> compositor_support_;
-  TestingPlatformSupport::Config testing_platform_config_;
   std::unique_ptr<TestingPlatformSupport> testing_platform_support_;
 };
 

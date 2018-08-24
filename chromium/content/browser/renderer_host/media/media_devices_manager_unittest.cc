@@ -46,10 +46,11 @@ const int kNumCalls = 3;
 
 const auto kIgnoreLogMessageCB = base::BindRepeating([](const std::string&) {});
 
-std::pair<std::string, url::Origin> GetSaltAndOrigin(int /* process_id */,
-                                                     int /* frame_id */) {
-  return std::make_pair(std::string("fake_media_device_salt"),
-                        url::Origin::Create(GURL("https://test.com")));
+MediaDeviceSaltAndOrigin GetSaltAndOrigin(int /* process_id */,
+                                          int /* frame_id */) {
+  return MediaDeviceSaltAndOrigin(
+      "fake_media_device_salt", "fake_group_id_salt",
+      url::Origin::Create(GURL("https://test.com")));
 }
 
 // This class mocks the audio manager and overrides some methods to ensure that
@@ -90,13 +91,13 @@ class MockAudioManager : public media::FakeAudioManager {
 
   media::AudioParameters GetDefaultOutputStreamParameters() override {
     return media::AudioParameters(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                                  media::CHANNEL_LAYOUT_STEREO, 48000, 16, 128);
+                                  media::CHANNEL_LAYOUT_STEREO, 48000, 128);
   }
 
   media::AudioParameters GetOutputStreamParameters(
       const std::string& device_id) override {
     return media::AudioParameters(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                                  media::CHANNEL_LAYOUT_STEREO, 48000, 16, 128);
+                                  media::CHANNEL_LAYOUT_STEREO, 48000, 128);
   }
 
   void SetNumAudioOutputDevices(size_t num_devices) {
@@ -148,6 +149,15 @@ class MockMediaDevicesListener : public blink::mojom::MediaDevicesListener {
   mojo::BindingSet<blink::mojom::MediaDevicesListener> bindings_;
 };
 
+void VerifyDeviceAndGroupID(const std::vector<MediaDeviceInfoArray>& array) {
+  for (const auto& device_infos : array) {
+    for (const auto& device_info : device_infos) {
+      EXPECT_FALSE(device_info.device_id.empty());
+      EXPECT_FALSE(device_info.group_id.empty());
+    }
+  }
+}
+
 }  // namespace
 
 class MediaDevicesManagerTest : public ::testing::Test {
@@ -161,6 +171,12 @@ class MediaDevicesManagerTest : public ::testing::Test {
 
   void EnumerateCallback(base::RunLoop* run_loop,
                          const MediaDeviceEnumeration& result) {
+    for (int i = 0; i < NUM_MEDIA_DEVICE_TYPES; ++i) {
+      for (const auto& device_info : result[i]) {
+        EXPECT_FALSE(device_info.device_id.empty());
+        EXPECT_FALSE(device_info.group_id.empty());
+      }
+    }
     MockCallback(result);
     run_loop->Quit();
   }
@@ -522,9 +538,7 @@ TEST_F(MediaDevicesManagerTest, SubscribeDeviceChanges) {
   audio_input_devices_to_subscribe[MEDIA_DEVICE_TYPE_AUDIO_INPUT] = true;
   uint32_t audio_input_subscription_id =
       media_devices_manager_->SubscribeDeviceChangeNotifications(
-          kRenderProcessId, kRenderFrameId,
-          std::string("fake_group_id_salt_base"),
-          audio_input_devices_to_subscribe,
+          kRenderProcessId, kRenderFrameId, audio_input_devices_to_subscribe,
           listener_audio_input.CreateInterfacePtrAndBind());
 
   MockMediaDevicesListener listener_video_input;
@@ -532,9 +546,7 @@ TEST_F(MediaDevicesManagerTest, SubscribeDeviceChanges) {
   video_input_devices_to_subscribe[MEDIA_DEVICE_TYPE_VIDEO_INPUT] = true;
   uint32_t video_input_subscription_id =
       media_devices_manager_->SubscribeDeviceChangeNotifications(
-          kRenderProcessId, kRenderFrameId,
-          std::string("fake_group_id_salt_base"),
-          video_input_devices_to_subscribe,
+          kRenderProcessId, kRenderFrameId, video_input_devices_to_subscribe,
           listener_video_input.CreateInterfacePtrAndBind());
 
   MockMediaDevicesListener listener_audio_output;
@@ -542,9 +554,7 @@ TEST_F(MediaDevicesManagerTest, SubscribeDeviceChanges) {
   audio_output_devices_to_subscribe[MEDIA_DEVICE_TYPE_AUDIO_OUTPUT] = true;
   uint32_t audio_output_subscription_id =
       media_devices_manager_->SubscribeDeviceChangeNotifications(
-          kRenderProcessId, kRenderFrameId,
-          std::string("fake_group_id_salt_base"),
-          audio_output_devices_to_subscribe,
+          kRenderProcessId, kRenderFrameId, audio_output_devices_to_subscribe,
           listener_audio_output.CreateInterfacePtrAndBind());
 
   MockMediaDevicesListener listener_all;
@@ -553,8 +563,8 @@ TEST_F(MediaDevicesManagerTest, SubscribeDeviceChanges) {
   all_devices_to_subscribe[MEDIA_DEVICE_TYPE_VIDEO_INPUT] = true;
   all_devices_to_subscribe[MEDIA_DEVICE_TYPE_AUDIO_OUTPUT] = true;
   media_devices_manager_->SubscribeDeviceChangeNotifications(
-      kRenderProcessId, kRenderFrameId, std::string("fake_group_id_salt_base"),
-      all_devices_to_subscribe, listener_all.CreateInterfacePtrAndBind());
+      kRenderProcessId, kRenderFrameId, all_devices_to_subscribe,
+      listener_all.CreateInterfacePtrAndBind());
 
   MediaDeviceInfoArray notification_audio_input;
   MediaDeviceInfoArray notification_video_input;
@@ -602,6 +612,10 @@ TEST_F(MediaDevicesManagerTest, SubscribeDeviceChanges) {
   EXPECT_EQ(num_audio_input_devices, notification_all_audio_input.size());
   EXPECT_EQ(num_video_input_devices, notification_all_video_input.size());
   EXPECT_EQ(num_audio_output_devices, notification_all_audio_output.size());
+  VerifyDeviceAndGroupID(
+      {notification_audio_input, notification_video_input,
+       notification_audio_output, notification_all_audio_input,
+       notification_all_video_input, notification_all_audio_output});
 
   media_devices_manager_->UnsubscribeDeviceChangeNotifications(
       audio_input_subscription_id);
@@ -626,6 +640,9 @@ TEST_F(MediaDevicesManagerTest, SubscribeDeviceChanges) {
   EXPECT_EQ(num_audio_input_devices, notification_all_audio_input.size());
   EXPECT_EQ(num_video_input_devices, notification_all_video_input.size());
   EXPECT_EQ(num_audio_output_devices, notification_all_audio_output.size());
+  VerifyDeviceAndGroupID({notification_all_audio_input,
+                          notification_all_video_input,
+                          notification_all_audio_output});
 }
 
 TEST_F(MediaDevicesManagerTest, GuessVideoGroupID) {

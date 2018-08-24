@@ -27,7 +27,7 @@ namespace webrtc {
 class FineAudioBuffer;
 class AudioDeviceBuffer;
 
-namespace android_adm {
+namespace jni {
 
 // Implements low-latency 16-bit mono PCM audio input support for Android
 // using the C based AAudio API.
@@ -66,7 +66,6 @@ class AAudioRecorder : public AudioInput,
   bool IsAcousticEchoCancelerSupported() const override;
   bool IsNoiseSuppressorSupported() const override;
   int EnableBuiltInAEC(bool enable) override;
-  int EnableBuiltInAGC(bool enable) override;
   int EnableBuiltInNS(bool enable) override;
 
  protected:
@@ -127,7 +126,7 @@ class AAudioRecorder : public AudioInput,
   bool first_data_callback_ = true;
 };
 
-}  // namespace android_adm
+}  // namespace jni
 
 }  // namespace webrtc
 

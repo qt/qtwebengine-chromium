@@ -29,12 +29,11 @@
 #include <utility>
 
 #include "base/memory/ptr_util.h"
+#include "cc/layers/layer.h"
+#include "cc/layers/picture_layer.h"
+#include "cc/paint/display_item_list.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_compositor_support.h"
-#include "third_party/blink/public/platform/web_content_layer.h"
-#include "third_party/blink/public/platform/web_display_item_list.h"
 #include "third_party/blink/public/platform/web_float_point.h"
-#include "third_party/blink/public/platform/web_layer.h"
 #include "third_party/blink/public/platform/web_rect.h"
 #include "third_party/blink/public/platform/web_size.h"
 #include "third_party/blink/public/web/blink.h"
@@ -65,6 +64,8 @@
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "third_party/skia/include/core/SkMatrix44.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/size_f.h"
 
 namespace blink {
 
@@ -85,13 +86,10 @@ LinkHighlightImpl::LinkHighlightImpl(Node* node, WebViewImpl* owning_web_view)
       unique_id_(NewUniqueObjectId()) {
   DCHECK(node_);
   DCHECK(owning_web_view);
-  WebCompositorSupport* compositor_support =
-      Platform::Current()->CompositorSupport();
-  DCHECK(compositor_support);
-  content_layer_ = compositor_support->CreateContentLayer(this);
-  clip_layer_ = compositor_support->CreateLayer();
-  clip_layer_->SetTransformOrigin(WebFloatPoint3D());
-  clip_layer_->AddChild(content_layer_->Layer());
+  content_layer_ = cc::PictureLayer::Create(this);
+  clip_layer_ = cc::Layer::Create();
+  clip_layer_->SetTransformOrigin(FloatPoint3D());
+  clip_layer_->AddChild(content_layer_);
 
   compositor_animation_ = CompositorAnimation::Create();
   DCHECK(compositor_animation_);
@@ -102,9 +100,9 @@ LinkHighlightImpl::LinkHighlightImpl(Node* node, WebViewImpl* owning_web_view)
   CompositorElementId element_id =
       CompositorElementIdFromUniqueObjectId(unique_id_);
   compositor_animation_->AttachElement(element_id);
-  content_layer_->Layer()->SetDrawsContent(true);
-  content_layer_->Layer()->SetOpacity(1);
-  content_layer_->Layer()->SetElementId(element_id);
+  content_layer_->SetIsDrawable(true);
+  content_layer_->SetOpacity(1);
+  content_layer_->SetElementId(element_id);
   geometry_needs_update_ = true;
 }
 
@@ -120,11 +118,11 @@ LinkHighlightImpl::~LinkHighlightImpl() {
   ReleaseResources();
 }
 
-WebContentLayer* LinkHighlightImpl::ContentLayer() {
+cc::PictureLayer* LinkHighlightImpl::ContentLayer() {
   return content_layer_.get();
 }
 
-WebLayer* LinkHighlightImpl::ClipLayer() {
+cc::Layer* LinkHighlightImpl::ClipLayer() {
   return clip_layer_.get();
 }
 
@@ -146,7 +144,7 @@ void LinkHighlightImpl::AttachLinkHighlightToCompositingLayer(
   if (!new_graphics_layer)
     return;
 
-  clip_layer_->SetTransform(SkMatrix44(SkMatrix44::kIdentity_Constructor));
+  clip_layer_->SetTransform(gfx::Transform());
 
   if (current_graphics_layer_ != new_graphics_layer) {
     if (current_graphics_layer_)
@@ -258,24 +256,27 @@ bool LinkHighlightImpl::ComputeHighlightLayerPathAndPosition(
   bool path_has_changed = !(new_path == path_);
   if (path_has_changed) {
     path_ = new_path;
-    content_layer_->Layer()->SetBounds(EnclosingIntRect(bounding_rect).Size());
+    content_layer_->SetBounds(
+        static_cast<gfx::Size>(EnclosingIntRect(bounding_rect).Size()));
   }
 
-  content_layer_->Layer()->SetPosition(bounding_rect.Location());
+  content_layer_->SetPosition(bounding_rect.Location());
 
   return path_has_changed;
 }
 
 gfx::Rect LinkHighlightImpl::PaintableRegion() {
-  return gfx::Rect(0, 0, ContentLayer()->Layer()->Bounds().width,
-                   ContentLayer()->Layer()->Bounds().height);
+  return gfx::Rect(content_layer_->bounds());
 }
 
-void LinkHighlightImpl::PaintContents(
-    WebDisplayItemList* web_display_item_list,
-    WebContentLayerClient::PaintingControlSetting painting_control) {
-  if (!node_ || !node_->GetLayoutObject())
-    return;
+scoped_refptr<cc::DisplayItemList>
+LinkHighlightImpl::PaintContentsToDisplayList(
+    PaintingControlSetting painting_control) {
+  auto display_list = base::MakeRefCounted<cc::DisplayItemList>();
+  if (!node_ || !node_->GetLayoutObject()) {
+    display_list->Finalize();
+    return display_list;
+  }
 
   PaintRecorder recorder;
   gfx::Rect record_bounds = PaintableRegion();
@@ -288,10 +289,12 @@ void LinkHighlightImpl::PaintContents(
   flags.setColor(node_->GetLayoutObject()->Style()->TapHighlightColor().Rgb());
   canvas->drawPath(path_.GetSkPath(), flags);
 
-  web_display_item_list->AppendDrawingItem(
-      WebRect(record_bounds.x(), record_bounds.y(), record_bounds.width(),
-              record_bounds.height()),
-      recorder.finishRecordingAsPicture());
+  display_list->StartPaint();
+  display_list->push<cc::DrawRecordOp>(recorder.finishRecordingAsPicture());
+  display_list->EndPaintOfUnpaired(record_bounds);
+
+  display_list->Finalize();
+  return display_list;
 }
 
 void LinkHighlightImpl::StartHighlightAnimationIfNeeded() {
@@ -304,7 +307,7 @@ void LinkHighlightImpl::StartHighlightAnimationIfNeeded() {
   const float kFadeDuration = 0.1f;
   const float kMinPreFadeDuration = 0.1f;
 
-  content_layer_->Layer()->SetOpacity(kStartOpacity);
+  content_layer_->SetOpacity(kStartOpacity);
 
   std::unique_ptr<CompositorFloatAnimationCurve> curve =
       CompositorFloatAnimationCurve::Create();
@@ -333,7 +336,7 @@ void LinkHighlightImpl::StartHighlightAnimationIfNeeded() {
       CompositorKeyframeModel::Create(*curve, CompositorTargetProperty::OPACITY,
                                       0, 0);
 
-  content_layer_->Layer()->SetDrawsContent(true);
+  content_layer_->SetIsDrawable(true);
   compositor_animation_->AddKeyframeModel(std::move(keyframe_model));
 
   Invalidate();
@@ -378,14 +381,13 @@ void LinkHighlightImpl::UpdateGeometry() {
       // We only need to invalidate the layer if the highlight size has changed,
       // otherwise we can just re-position the layer without needing to
       // repaint.
-      content_layer_->Layer()->Invalidate();
+      content_layer_->SetNeedsDisplay();
 
       if (current_graphics_layer_) {
+        gfx::Rect rect = gfx::ToEnclosingRect(
+            gfx::RectF(Layer()->position(), gfx::SizeF(Layer()->bounds())));
         current_graphics_layer_->TrackRasterInvalidation(
-            LinkHighlightDisplayItemClientForTracking(),
-            EnclosingIntRect(
-                FloatRect(Layer()->GetPosition().x, Layer()->GetPosition().y,
-                          Layer()->Bounds().width, Layer()->Bounds().height)),
+            LinkHighlightDisplayItemClientForTracking(), IntRect(rect),
             PaintInvalidationReason::kFull);
       }
     }
@@ -406,7 +408,7 @@ void LinkHighlightImpl::Invalidate() {
   geometry_needs_update_ = true;
 }
 
-WebLayer* LinkHighlightImpl::Layer() {
+cc::Layer* LinkHighlightImpl::Layer() {
   return ClipLayer();
 }
 

@@ -65,7 +65,6 @@ Layer::Inputs::Inputs(int layer_id)
       has_will_change_transform_hint(false),
       trilinear_filtering(false),
       hide_layer_and_subtree(false),
-      client_rawptr(nullptr),
       overscroll_behavior(OverscrollBehavior::kOverscrollBehaviorTypeAuto) {}
 
 Layer::Inputs::~Inputs() = default;
@@ -887,12 +886,15 @@ void Layer::AddMainThreadScrollingReasons(
     uint32_t main_thread_scrolling_reasons) {
   DCHECK(IsPropertyChangeAllowed());
   DCHECK(main_thread_scrolling_reasons);
+  // Layer should only see non-transient scrolling reasons. Transient scrolling
+  // reasons are computed per hit test.
+  DCHECK(MainThreadScrollingReason::MainThreadCanSetScrollReasons(
+      main_thread_scrolling_reasons));
   uint32_t new_reasons =
       inputs_.main_thread_scrolling_reasons | main_thread_scrolling_reasons;
   if (inputs_.main_thread_scrolling_reasons == new_reasons)
     return;
   inputs_.main_thread_scrolling_reasons = new_reasons;
-  didUpdateMainThreadScrollingReasons();
   SetPropertyTreesNeedRebuild();
   SetNeedsCommit();
 }
@@ -906,7 +908,6 @@ void Layer::ClearMainThreadScrollingReasons(
   if (new_reasons == inputs_.main_thread_scrolling_reasons)
     return;
   inputs_.main_thread_scrolling_reasons = new_reasons;
-  didUpdateMainThreadScrollingReasons();
   SetPropertyTreesNeedRebuild();
   SetNeedsCommit();
 }
@@ -1164,9 +1165,7 @@ void Layer::SetStickyPositionConstraint(
 
 void Layer::SetLayerClient(base::WeakPtr<LayerClient> client) {
   inputs_.client = std::move(client);
-  // Both binds the weak_ptr to the main thread and stores a rawptr for access
-  // during commit.
-  inputs_.client_rawptr = client.get();
+  inputs_.debug_info = nullptr;
 }
 
 bool Layer::IsSnapped() {
@@ -1185,14 +1184,7 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->SetBackgroundColor(inputs_.background_color);
   layer->SetSafeOpaqueBackgroundColor(safe_opaque_background_color_);
   layer->SetBounds(inputs_.bounds);
-
-#if defined(NDEBUG)
-  if (frame_viewer_instrumentation::IsTracingLayerTreeSnapshots())
-    layer->SetDebugInfo(TakeDebugInfo());
-#else
-  layer->SetDebugInfo(TakeDebugInfo());
-#endif
-
+  layer->SetDebugInfo(std::move(inputs_.debug_info));
   layer->SetTransformTreeIndex(transform_tree_index());
   layer->SetEffectTreeIndex(effect_tree_index());
   layer->SetClipTreeIndex(clip_tree_index());
@@ -1321,24 +1313,10 @@ bool Layer::HasNonAAPaint() const {
   return false;
 }
 
-std::unique_ptr<base::trace_event::ConvertableToTraceFormat>
-Layer::TakeDebugInfo() {
-  // TakeDebugInfo is called from the compositor thread while the main thread is
-  // blocked so we use the raw client pointer as we can't check whether the
-  // reference is safe on the weak pointer.
-  // TODO(flackr): Remove client_rawptr and figure out if we can take the debug
-  // info from the main thread and store it on inputs before doing the commit or
-  // make a WeakPtr which understands the commit and allows checked access from
-  // the compositor thread. https://crbug.com/826455
-  if (inputs_.client_rawptr)
-    return inputs_.client_rawptr->TakeDebugInfo(this);
-  else
-    return nullptr;
-}
-
-void Layer::didUpdateMainThreadScrollingReasons() {
+void Layer::UpdateDebugInfo() {
+  DCHECK(frame_viewer_instrumentation::IsTracingLayerTreeSnapshots());
   if (inputs_.client)
-    inputs_.client->didUpdateMainThreadScrollingReasons();
+    inputs_.debug_info = inputs_.client->TakeDebugInfo(this);
 }
 
 void Layer::SetSubtreePropertyChanged() {
@@ -1357,7 +1335,7 @@ void Layer::SetMayContainVideo(bool yes) {
 
 void Layer::SetScrollbarsHiddenFromImplSide(bool hidden) {
   if (inputs_.client)
-    inputs_.client->didChangeScrollbarsHiddenIfOverlay(hidden);
+    inputs_.client->DidChangeScrollbarsHiddenIfOverlay(hidden);
 }
 
 // On<Property>Animated is called due to an ongoing accelerated animation.

@@ -25,11 +25,11 @@
 
 #include <memory>
 #include "base/gtest_prod_util.h"
+#include "base/optional.h"
 #include "third_party/blink/public/platform/blame_context.h"
 #include "third_party/blink/public/platform/web_drag_operation.h"
 #include "third_party/blink/public/platform/web_event_listener_properties.h"
 #include "third_party/blink/public/platform/web_focus_type.h"
-#include "third_party/blink/public/platform/web_overscroll_behavior.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/animation_worklet_proxy_client.h"
 #include "third_party/blink/renderer/core/dom/ax_object_cache.h"
@@ -46,10 +46,14 @@
 #include "third_party/blink/renderer/platform/scroll/scroll_types.h"
 #include "third_party/blink/renderer/platform/text/text_direction.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 
 // To avoid conflicts with the CreateWindow macro from the Windows SDK...
 #undef CreateWindow
+
+namespace cc {
+class Layer;
+struct OverscrollBehavior;
+}
 
 namespace blink {
 
@@ -62,6 +66,7 @@ class Element;
 class FileChooser;
 class FloatPoint;
 class Frame;
+class FullscreenOptions;
 class GraphicsLayer;
 class HTMLFormControlElement;
 class HTMLInputElement;
@@ -70,6 +75,7 @@ class HitTestResult;
 class IntRect;
 class KeyboardEvent;
 class LocalFrame;
+class LocalFrameView;
 class Node;
 class Page;
 class PagePopup;
@@ -77,7 +83,6 @@ class PagePopupClient;
 class PopupOpeningObserver;
 class WebDragData;
 class WebImage;
-class WebLayer;
 class WebLayerTreeView;
 class WebViewImpl;
 
@@ -93,6 +98,15 @@ struct WebWindowFeatures;
 class CORE_EXPORT ChromeClient : public PlatformChromeClient {
  public:
   virtual void ChromeDestroyed() = 0;
+
+  // Requests the host invalidate the contents.
+  virtual void InvalidateRect(const IntRect& update_rect) = 0;
+
+  // Converts the rect from the viewport coordinates to screen coordinates.
+  virtual IntRect ViewportToScreen(const IntRect&,
+                                   const LocalFrameView*) const = 0;
+
+  virtual void ScheduleAnimation(const LocalFrameView*) = 0;
 
   // The specified rectangle is adjusted for the minimum window size and the
   // screen, then setWindowRect with the adjusted rectangle is called.
@@ -141,7 +155,7 @@ class CORE_EXPORT ChromeClient : public PlatformChromeClient {
                              const FloatSize& accumulated_overscroll,
                              const FloatPoint& position_in_viewport,
                              const FloatSize& velocity_in_viewport,
-                             const WebOverscrollBehavior&) = 0;
+                             const cc::OverscrollBehavior&) = 0;
 
   virtual bool ShouldReportDetailedMessageForSource(LocalFrame&,
                                                     const String& source) = 0;
@@ -189,8 +203,8 @@ class CORE_EXPORT ChromeClient : public PlatformChromeClient {
   virtual void SetCursorForPlugin(const WebCursorInfo&, LocalFrame*) = 0;
 
   // Returns a custom visible content rect if a viewport override is active.
-  virtual WTF::Optional<IntRect> VisibleContentRectForPainting() const {
-    return WTF::nullopt;
+  virtual base::Optional<IntRect> VisibleContentRectForPainting() const {
+    return base::nullopt;
   }
 
   virtual void DispatchViewportPropertiesDidChange(
@@ -240,17 +254,18 @@ class CORE_EXPORT ChromeClient : public PlatformChromeClient {
   virtual void AttachRootGraphicsLayer(GraphicsLayer*,
                                        LocalFrame* local_root) = 0;
 
-  // Pass nullptr as the WebLayer to detach the root layer.
-  // This sets the WebLayer for the LocalFrame's WebWidget, if it has
+  // Pass nullptr as the cc::Layer to detach the root layer.
+  // This sets the cc::Layer for the LocalFrame's WebWidget, if it has
   // one. Otherwise it sets it for the WebViewImpl.
-  virtual void AttachRootLayer(WebLayer*, LocalFrame* local_root) = 0;
+  virtual void AttachRootLayer(scoped_refptr<cc::Layer>,
+                               LocalFrame* local_root) = 0;
 
   virtual void AttachCompositorAnimationTimeline(CompositorAnimationTimeline*,
                                                  LocalFrame* local_root) {}
   virtual void DetachCompositorAnimationTimeline(CompositorAnimationTimeline*,
                                                  LocalFrame* local_root) {}
 
-  virtual void EnterFullscreen(LocalFrame&) {}
+  virtual void EnterFullscreen(LocalFrame&, const FullscreenOptions&) {}
   virtual void ExitFullscreen(LocalFrame&) {}
   virtual void FullscreenElementChanged(Element* old_element,
                                         Element* new_element) {}
@@ -327,7 +342,7 @@ class CORE_EXPORT ChromeClient : public PlatformChromeClient {
 
   virtual void DidUpdateBrowserControls() const {}
 
-  virtual void SetOverscrollBehavior(const WebOverscrollBehavior&) {}
+  virtual void SetOverscrollBehavior(const cc::OverscrollBehavior&) {}
 
   virtual void RegisterPopupOpeningObserver(PopupOpeningObserver*) = 0;
   virtual void UnregisterPopupOpeningObserver(PopupOpeningObserver*) = 0;
@@ -345,7 +360,7 @@ class CORE_EXPORT ChromeClient : public PlatformChromeClient {
     std::move(callback).Run(false);
   }
 
-  void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  protected:
   ~ChromeClient() override = default;

@@ -42,6 +42,9 @@ const bool PlatformStyle::kTextfieldUsesDragCursorWhenDraggable = false;
 const bool PlatformStyle::kTreeViewSelectionPaintsEntireRow = true;
 const bool PlatformStyle::kShouldElideBookmarksInBookmarksBar = true;
 const bool PlatformStyle::kUseRipples = false;
+const float PlatformStyle::kFocusHaloThickness = 4.f;
+const float PlatformStyle::kFocusHaloInset = -2.f;
+const bool PlatformStyle::kPreferFocusRings = true;
 
 const Button::NotifyAction PlatformStyle::kMenuNotifyActivationAction =
     Button::NOTIFY_ON_PRESS;

@@ -4,6 +4,9 @@
 
 #include "net/dns/address_sorter_posix.h"
 
+#include <memory>
+#include <string>
+
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/macros.h"
@@ -39,13 +42,13 @@ class TestUDPClientSocket : public DatagramClientSocket {
 
   ~TestUDPClientSocket() override = default;
 
-  int Read(IOBuffer*, int, const CompletionCallback&) override {
+  int Read(IOBuffer*, int, CompletionOnceCallback) override {
     NOTIMPLEMENTED();
     return OK;
   }
   int Write(IOBuffer*,
             int,
-            const CompletionCallback&,
+            CompletionOnceCallback,
             const NetworkTrafficAnnotationTag& traffic_annotation) override {
     NOTIMPLEMENTED();
     return OK;
@@ -69,14 +72,14 @@ class TestUDPClientSocket : public DatagramClientSocket {
   int WriteAsync(
       const char* buffer,
       size_t buf_len,
-      const CompletionCallback& callback,
+      CompletionOnceCallback callback,
       const NetworkTrafficAnnotationTag& traffic_annotation) override {
     NOTIMPLEMENTED();
     return OK;
   }
   int WriteAsync(
       DatagramBuffers buffers,
-      const CompletionCallback& callback,
+      CompletionOnceCallback callback,
       const NetworkTrafficAnnotationTag& traffic_annotation) override {
     NOTIMPLEMENTED();
     return OK;
@@ -159,6 +162,19 @@ class TestSocketFactory : public ClientSocketFactory {
     NOTIMPLEMENTED();
     return std::unique_ptr<SSLClientSocket>();
   }
+  std::unique_ptr<ProxyClientSocket> CreateProxyClientSocket(
+      std::unique_ptr<ClientSocketHandle> transport_socket,
+      const std::string& user_agent,
+      const HostPortPair& endpoint,
+      HttpAuthController* http_auth_controller,
+      bool tunnel,
+      bool using_spdy,
+      NextProto negotiated_protocol,
+      bool is_https_proxy,
+      const NetworkTrafficAnnotationTag& traffic_annotation) override {
+    NOTIMPLEMENTED();
+    return nullptr;
+  }
   void ClearSSLSessionCache() override { NOTIMPLEMENTED(); }
 
   void AddMapping(const IPAddress& dst, const IPAddress& src) {
@@ -172,13 +188,13 @@ class TestSocketFactory : public ClientSocketFactory {
 };
 
 void OnSortComplete(AddressList* result_buf,
-                    const CompletionCallback& callback,
+                    CompletionOnceCallback callback,
                     bool success,
                     const AddressList& result) {
   EXPECT_TRUE(success);
   if (success)
     *result_buf = result;
-  callback.Run(OK);
+  std::move(callback).Run(OK);
 }
 
 }  // namespace

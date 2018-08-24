@@ -9,6 +9,7 @@
 
 #include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
@@ -399,14 +400,23 @@ class NetworkChangeNotifier::NetworkState {
     *config = dns_config_;
   }
 
-  void SetDnsConfig(const DnsConfig& dns_config) {
+  bool SetDnsConfig(const DnsConfig& dns_config) {
     base::AutoLock lock(lock_);
     dns_config_ = dns_config;
+    bool was_set = set_;
+    set_ = true;
+    return was_set;
+  }
+
+  void ClearDnsConfigForTesting() {
+    base::AutoLock lock(lock_);
+    set_ = false;
   }
 
  private:
   mutable base::Lock lock_;
   DnsConfig dns_config_;
+  bool set_ = false;
 };
 
 NetworkChangeNotifier::NetworkChangeCalculatorParams::
@@ -709,7 +719,7 @@ const char* NetworkChangeNotifier::ConnectionTypeToString(
     "CONNECTION_NONE",
     "CONNECTION_BLUETOOTH"
   };
-  static_assert(arraysize(kConnectionTypeNames) ==
+  static_assert(base::size(kConnectionTypeNames) ==
                     NetworkChangeNotifier::CONNECTION_LAST + 1,
                 "ConnectionType name count should match");
   if (type < CONNECTION_UNKNOWN || type > CONNECTION_LAST) {
@@ -1130,22 +1140,17 @@ void NetworkChangeNotifier::NotifyObserversOfSpecificNetworkChange(
 void NetworkChangeNotifier::SetDnsConfig(const DnsConfig& config) {
   if (!g_network_change_notifier)
     return;
-  g_network_change_notifier->network_state_->SetDnsConfig(config);
-  NotifyObserversOfDNSChange();
+  if (g_network_change_notifier->network_state_->SetDnsConfig(config)) {
+    NotifyObserversOfDNSChange();
+  } else {
+    NotifyObserversOfInitialDNSConfigRead();
+  }
 }
 
-// static
-void NetworkChangeNotifier::SetInitialDnsConfig(const DnsConfig& config) {
+void NetworkChangeNotifier::ClearDnsConfigForTesting() {
   if (!g_network_change_notifier)
     return;
-#if DCHECK_IS_ON()
-  // Verify we've never received a valid DnsConfig previously.
-  DnsConfig old_config;
-  g_network_change_notifier->network_state_->GetDnsConfig(&old_config);
-  DCHECK(!old_config.IsValid());
-#endif
-  g_network_change_notifier->network_state_->SetDnsConfig(config);
-  NotifyObserversOfInitialDNSConfigRead();
+  g_network_change_notifier->network_state_->ClearDnsConfigForTesting();
 }
 
 void NetworkChangeNotifier::NotifyObserversOfIPAddressChangeImpl() {

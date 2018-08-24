@@ -137,7 +137,7 @@ void CFWL_CheckBox::Layout() {
                     m_rtCaption.height);
 
   CalcTextRect(L"Check box", m_pProperties->m_pThemeProvider, m_dwTTOStyles,
-               m_iTTOAlign, rtFocus);
+               m_iTTOAlign, &rtFocus);
 
   m_rtFocus = CFX_RectF(m_rtCaption.TopLeft(),
                         std::max(m_rtCaption.width, rtFocus.width),
@@ -179,21 +179,6 @@ void CFWL_CheckBox::NextStates() {
   if (m_pProperties->m_dwStyleExes & FWL_STYLEEXT_CKB_RadioButton) {
     if ((m_pProperties->m_dwStates & FWL_STATE_CKB_CheckMask) ==
         FWL_STATE_CKB_Unchecked) {
-      CFWL_WidgetMgr* pWidgetMgr = GetOwnerApp()->GetWidgetMgr();
-      if (!pWidgetMgr->IsFormDisabled()) {
-        std::vector<CFWL_Widget*> radioarr =
-            pWidgetMgr->GetSameGroupRadioButton(this);
-        for (auto* pWidget : radioarr) {
-          CFWL_CheckBox* pCheckBox = static_cast<CFWL_CheckBox*>(pWidget);
-          if (pCheckBox != this &&
-              pCheckBox->GetStates() & FWL_STATE_CKB_Checked) {
-            pCheckBox->SetCheckState(0);
-            m_pWidgetMgr->RepaintWidget(
-                pCheckBox, CFX_RectF(0, 0, pCheckBox->GetWidgetRect().Size()));
-            break;
-          }
-        }
-      }
       m_pProperties->m_dwStates |= FWL_STATE_CKB_Checked;
     }
   } else {
@@ -282,8 +267,6 @@ void CFWL_CheckBox::OnFocusChanged(bool bSet) {
 void CFWL_CheckBox::OnLButtonDown() {
   if (m_pProperties->m_dwStates & FWL_WGTSTATE_Disabled)
     return;
-  if ((m_pProperties->m_dwStates & FWL_WGTSTATE_Focused) == 0)
-    SetFocus(true);
 
   m_bBtnDown = true;
   m_pProperties->m_dwStates &= ~FWL_STATE_CKB_Hovered;

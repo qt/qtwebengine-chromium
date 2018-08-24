@@ -37,7 +37,7 @@ const char kWheelEventLatchingDataURL[] =
     "body {"
     " height: 10000px;"
     "}"
-    "#scrollableDiv {"
+    "%23scrollableDiv {"
     " position: absolute;"
     " left: 50px;"
     " top: 100px;"
@@ -46,7 +46,7 @@ const char kWheelEventLatchingDataURL[] =
     " overflow: scroll;"
     " background: red;"
     "}"
-    "#nestedDiv {"
+    "%23nestedDiv {"
     " width: 200px;"
     " height: 8000px;"
     " opacity: 0;"
@@ -118,7 +118,7 @@ class WheelScrollLatchingBrowserTest : public ContentBrowserTest {
     host->GetView()->SetSize(gfx::Size(600, 600));
 
     // The page is loaded in the renderer, wait for a new frame to arrive.
-    while (!host->ScheduleComposite())
+    while (!host->RequestRepaintForTesting())
       GiveItSomeTime();
   }
   int ExecuteScriptAndExtractInt(const std::string& script) {

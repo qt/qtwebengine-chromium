@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/core/editing/position_with_affinity.h"
 
+#include "third_party/blink/renderer/core/editing/text_affinity.h"
+
 namespace blink {
 
 template <typename Strategy>
@@ -15,6 +17,11 @@ PositionWithAffinityTemplate<Strategy>::PositionWithAffinityTemplate(
 template <typename Strategy>
 PositionWithAffinityTemplate<Strategy>::PositionWithAffinityTemplate()
     : affinity_(TextAffinity::kDownstream) {}
+
+template <typename Strategy>
+PositionWithAffinityTemplate<Strategy>::PositionWithAffinityTemplate(
+    const PositionTemplate<Strategy>& position)
+    : position_(position), affinity_(TextAffinity::kDownstream) {}
 
 template <typename Strategy>
 PositionWithAffinityTemplate<Strategy>::~PositionWithAffinityTemplate() =
@@ -31,6 +38,28 @@ bool PositionWithAffinityTemplate<Strategy>::operator==(
   if (IsNull())
     return other.IsNull();
   return affinity_ == other.affinity_ && position_ == other.position_;
+}
+
+PositionWithAffinity ToPositionInDOMTreeWithAffinity(
+    const PositionWithAffinity& position) {
+  return position;
+}
+
+PositionWithAffinity ToPositionInDOMTreeWithAffinity(
+    const PositionInFlatTreeWithAffinity& position) {
+  return PositionWithAffinity(ToPositionInDOMTree(position.GetPosition()),
+                              position.Affinity());
+}
+
+PositionInFlatTreeWithAffinity ToPositionInFlatTreeWithAffinity(
+    const PositionWithAffinity& position) {
+  return PositionInFlatTreeWithAffinity(
+      ToPositionInFlatTree(position.GetPosition()), position.Affinity());
+}
+
+PositionInFlatTreeWithAffinity ToPositionInFlatTreeWithAffinity(
+    const PositionInFlatTreeWithAffinity& position) {
+  return position;
 }
 
 template class CORE_TEMPLATE_EXPORT

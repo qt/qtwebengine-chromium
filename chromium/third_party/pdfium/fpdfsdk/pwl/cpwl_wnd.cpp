@@ -355,11 +355,31 @@ PWL_IMPLEMENT_MOUSE_METHOD(OnRButtonUp)
 PWL_IMPLEMENT_MOUSE_METHOD(OnMouseMove)
 #undef PWL_IMPLEMENT_MOUSE_METHOD
 
+WideString CPWL_Wnd::GetText() {
+  return WideString();
+}
+
 WideString CPWL_Wnd::GetSelectedText() {
   return WideString();
 }
 
 void CPWL_Wnd::ReplaceSelection(const WideString& text) {}
+
+bool CPWL_Wnd::CanUndo() {
+  return false;
+}
+
+bool CPWL_Wnd::CanRedo() {
+  return false;
+}
+
+bool CPWL_Wnd::Undo() {
+  return false;
+}
+
+bool CPWL_Wnd::Redo() {
+  return false;
+}
 
 bool CPWL_Wnd::OnMouseWheel(short zDelta,
                             const CFX_PointF& point,

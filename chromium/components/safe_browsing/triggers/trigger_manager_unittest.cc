@@ -28,7 +28,7 @@ namespace safe_browsing {
 // Mock ThreatDetails class that makes FinishCollection a no-op.
 class MockThreatDetails : public ThreatDetails {
  public:
-  MockThreatDetails() : ThreatDetails() {}
+  MockThreatDetails() {}
   MOCK_METHOD2(FinishCollection, void(bool did_proceed, int num_visits));
 
  private:
@@ -46,6 +46,7 @@ class MockThreatDetailsFactory : public ThreatDetailsFactory {
       const security_interstitials::UnsafeResource& unsafe_resource,
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       history::HistoryService* history_service,
+      ReferrerChainProvider* referrer_chain_provider,
       bool trim_to_ad_tags,
       ThreatDetailsDoneCallback done_callback) override {
     MockThreatDetails* threat_details = new MockThreatDetails();
@@ -55,12 +56,13 @@ class MockThreatDetailsFactory : public ThreatDetailsFactory {
 
 class MockTriggerThrottler : public TriggerThrottler {
  public:
+  MockTriggerThrottler() : TriggerThrottler(nullptr) {}
   MOCK_CONST_METHOD1(TriggerCanFire, bool(TriggerType trigger_type));
 };
 
 class TriggerManagerTest : public ::testing::Test {
  public:
-  TriggerManagerTest() : trigger_manager_(/*ui_manager=*/nullptr) {}
+  TriggerManagerTest() : trigger_manager_(nullptr, nullptr, nullptr) {}
   ~TriggerManagerTest() override {}
 
   void SetUp() override {

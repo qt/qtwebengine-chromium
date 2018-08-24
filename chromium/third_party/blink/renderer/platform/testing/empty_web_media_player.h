@@ -22,12 +22,13 @@ class EmptyWebMediaPlayer : public WebMediaPlayer {
   void Seek(double seconds) override {}
   void SetRate(double) override {}
   void SetVolume(double) override {}
-  void EnterPictureInPicture() override {}
-  void ExitPictureInPicture() override {}
+  void EnterPictureInPicture(PipWindowOpenedCallback) override {}
+  void ExitPictureInPicture(PipWindowClosedCallback) override {}
+  void RegisterPictureInPictureWindowResizeCallback(
+      PipWindowResizedCallback) override {}
   WebTimeRanges Buffered() const override;
   WebTimeRanges Seekable() const override;
   void SetSinkId(const WebString& sink_id,
-                 const WebSecurityOrigin&,
                  WebSetSinkIdCallbacks*) override {}
   bool HasVideo() const override { return false; }
   bool HasAudio() const override { return false; }

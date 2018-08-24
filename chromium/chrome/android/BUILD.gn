@@ -201,7 +201,6 @@ android_library("chrome_java") {
     "$google_play_services_package:google_play_services_cast_java",
     "$google_play_services_package:google_play_services_gcm_java",
     "$google_play_services_package:google_play_services_iid_java",
-    "$google_play_services_package:google_play_services_nearby_java",
     "$google_play_services_package:google_play_services_tasks_java",
     "//base:base_java",
     "//chrome/android/third_party/compositor_animator:compositor_animator_java",
@@ -311,6 +310,7 @@ android_library("chrome_java") {
     "//components/browsing_data/core:browsing_data_utils_java",
     "//components/browsing_data/core:clear_browsing_data_tab_java",
     "//components/consent_auditor:consent_auditor_java",
+    "//components/data_reduction_proxy/core/browser:data_reduction_proxy_savings_cleared_enum_java",
     "//components/favicon_base:favicon_base_enums_java",
     "//components/dom_distiller/core:distiller_type_java",
     "//components/infobars/core:infobar_enums_java",
@@ -369,6 +369,7 @@ action("chrome_android_java_google_api_keys_srcjar") {
 
 java_cpp_enum("chrome_android_java_enums_srcjar") {
   sources = [
+    "//chrome/browser/android/digital_asset_links/digital_asset_links_handler.h",
     "//chrome/browser/android/feedback/connectivity_checker.cc",
     "//chrome/browser/android/policy/policy_auditor.cc",
     "//chrome/browser/android/shortcut_info.h",
@@ -392,6 +393,7 @@ java_cpp_enum("chrome_vr_android_java_enums_srcjar") {
     "//chrome/browser/android/vr/vr_shell_delegate.h",
     "//chrome/browser/vr/metrics/session_metrics_helper.h",
     "//chrome/browser/vr/text_edit_action.h",
+    "//chrome/browser/vr/ui_test_input.h",
     "//chrome/browser/vr/ui_unsupported_mode.h",
   ]
 }
@@ -527,6 +529,7 @@ android_library("chrome_test_java") {
     "//chrome/android/webapk/libs/client:client_java",
     "//chrome/android/webapk/libs/common:common_java",
     "//chrome/test/android:chrome_java_test_support",
+    "//chrome/test/android/test_trusted_web_activity:test_trusted_web_activity_java",
     "//components/autofill/android:autofill_java",
     "//components/background_task_scheduler:background_task_scheduler_java",
     "//components/background_task_scheduler:background_task_scheduler_javatests",
@@ -648,6 +651,7 @@ if (enable_vr) {
       "javatests/src/org/chromium/chrome/browser/vr_shell/rules/VrTestRule.java",
       "javatests/src/org/chromium/chrome/browser/vr_shell/rules/WebappActivityVrTestRule.java",
       "javatests/src/org/chromium/chrome/browser/vr_shell/util/HeadTrackingUtils.java",
+      "javatests/src/org/chromium/chrome/browser/vr_shell/util/NativeUiUtils.java",
       "javatests/src/org/chromium/chrome/browser/vr_shell/util/NfcSimUtils.java",
       "javatests/src/org/chromium/chrome/browser/vr_shell/util/TransitionUtils.java",
       "javatests/src/org/chromium/chrome/browser/vr_shell/util/VrInfoBarUtils.java",
@@ -769,9 +773,11 @@ android_assets("chrome_public_pak_assets") {
 # This target is separate from chrome_public_pak_assets because it does not
 # disable compression.
 android_assets("chrome_public_locale_pak_assets") {
-  sources = []
+  renaming_sources = []
+  renaming_destinations = []
   foreach(_locale, locales - android_chrome_omitted_locales) {
-    sources += [ "$root_out_dir/locales/$_locale.pak" ]
+    renaming_sources += [ "$root_out_dir/locales/$_locale.pak" ]
+    renaming_destinations += [ "locales/$_locale.pak" ]
   }
   treat_as_locale_paks = true
 
@@ -815,14 +821,6 @@ template("chrome_shared_library") {
       "//chrome:chrome_android_core",
     ]
 
-    if (enable_vr) {
-      # Ensure libgvr static library appears before gcc library in linking order.
-      # See https://crbug.com/704305 for details.
-      libs = [
-        "//third_party/gvr-android-sdk/libgvr_shim_static_${current_cpu}.a",
-      ]
-    }
-
     if (use_order_profiling) {
       deps += [ "//tools/cygprofile" ]
     }
@@ -856,15 +854,12 @@ chrome_shared_library("libchromefortest") {
   sources = [
     "../app/android/chrome_main_delegate_android_initializer.cc",
     "../browser/android/chrome_entry_point_for_test.cc",
-    "../browser/profiling_host/profiling_test_driver.cc",
-    "../browser/profiling_host/profiling_test_driver.h",
-    "../browser/profiling_host/test_android_shim.cc",
-    "../browser/profiling_host/test_android_shim.h",
   ]
   deps = [
     ":chrome_jni_for_test_registration($default_toolchain)",
     "//base/test:test_support",
-    "//chrome/browser/profiling_host:jni_headers",
+    "//components/heap_profiling:test_support",
+    "//content/public/test/android:content_native_test_support",
   ]
 }
 
@@ -988,9 +983,12 @@ if (current_toolchain == default_toolchain) {
   # This target is separate from monochrome_pak_assets because it does not
   # disable compression.
   android_assets("monochrome_locale_pak_assets") {
-    sources = []
+    renaming_sources = []
+    renaming_destinations = []
     foreach(_locale, locales - android_chrome_omitted_locales) {
-      sources += [ "$target_gen_dir/monochrome_paks/locales/$_locale.pak" ]
+      renaming_sources +=
+          [ "$target_gen_dir/monochrome_paks/locales/$_locale.pak" ]
+      renaming_destinations += [ "locales/$_locale.pak" ]
     }
     treat_as_locale_paks = true
 
@@ -1030,16 +1028,9 @@ if (!android_64bit_target_cpu ||
     ]
     deps = [
       "//android_webview:common",
+      "//build/config:exe_and_shlib_deps",
       "//chrome:chrome_android_core",
     ]
-
-    if (enable_vr) {
-      # Ensure libgvr static library appears before gcc library in linking order.
-      # See https://crbug.com/704305 for details.
-      libs = [
-        "//third_party/gvr-android-sdk/libgvr_shim_static_${current_cpu}.a",
-      ]
-    }
 
     configs -= [ "//build/config/android:hide_all_but_jni_onload" ]
     configs += [ "//build/config/android:hide_all_but_jni" ]
@@ -1082,12 +1073,6 @@ shared_library("chrome_sync_shell") {
     "//components/sync",
     "//components/sync:test_support_fake_server_android",
   ]
-  if (enable_vr) {
-    # Ensure libgvr static library appears before gcc library in linking order.
-    # See https://crbug.com/704305 for details.
-    libs =
-        [ "//third_party/gvr-android-sdk/libgvr_shim_static_${current_cpu}.a" ]
-  }
   if (chromium_linker_supported && use_lld) {
     configs += [ "//build/config/android:lld_pack_relocations" ]
   }
@@ -1140,8 +1125,10 @@ chrome_public_apk_tmpl_shared("chrome_public_apk_for_test") {
     shared_library_for_unwind_asset = "chromefortest"
   }
   deps = [
-    "//chrome/browser/profiling_host:profiling_host_java_test_support",
+    "//components/heap_profiling:heap_profiling_java_test_support",
+    "//content/public/test/android:content_java_test_support",
   ]
+  deps += android_extra_test_deps
 }
 
 chrome_public_apk_tmpl_shared("chrome_modern_public_apk") {
@@ -1272,7 +1259,7 @@ instrumentation_test_apk("chrome_public_test_apk") {
 
   additional_apks = [
     "//chrome/android/webapk/libs/runtime_library/javatests/apk_with_webapk_service:apk_with_webapk_service",
-    "//chrome/android/webapk/shell_apk:webapk",
+    "//chrome/android/webapk/shell_apk:http_webapk",
     "//chrome/android/webapk/shell_apk/javatests/dex_optimizer:dex_optimizer_apk",
     "//chrome/test/android/chrome_public_test_support:chrome_public_test_support_apk",
     "//net/android:net_test_support_apk",
@@ -1300,6 +1287,7 @@ if (enable_vr) {
     deps = [
       ":chrome_test_vr_java",
     ]
+    deps += android_extra_test_deps
     additional_apks = [ "//net/android:net_test_support_apk" ]
     proguard_enabled = !is_java_debug
     if (proguard_enabled && !enable_proguard_obfuscation) {
@@ -1307,6 +1295,11 @@ if (enable_vr) {
       proguard_config_exclusions =
           [ "//base/android/proguard/disable_chromium_obfuscation.flags" ]
     }
+
+    # The test APK contains code from both the APK under test and the
+    # test APK when proguard is enabled. That causes this APK to exceed
+    # the dex limit.
+    enable_multidex = proguard_enabled
   }
 
   android_apk("vr_nfc_simulator_apk") {
@@ -1368,12 +1361,18 @@ instrumentation_test_apk("chrome_sync_shell_test_apk") {
     "//third_party/junit",
     "//ui/android:ui_java",
   ]
+  deps += android_extra_test_deps
   proguard_enabled = !is_java_debug
   if (proguard_enabled && !enable_proguard_obfuscation) {
     proguard_configs = [ "//base/android/proguard/enable_obfuscation.flags" ]
     proguard_config_exclusions =
         [ "//base/android/proguard/disable_chromium_obfuscation.flags" ]
   }
+
+  # The test APK contains code from both the APK under test and the
+  # test APK when proguard is enabled. That causes this APK to exceed
+  # the dex limit.
+  enable_multidex = proguard_enabled
 }
 
 if (defined(expected_static_initializer_count)) {

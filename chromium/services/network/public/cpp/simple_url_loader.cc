@@ -687,7 +687,7 @@ class SaveToFileBodyHandler : public BodyHandler {
     // destructor.
     FileWriter::Destroy(std::move(file_writer_));
 
-    std::move(download_to_file_complete_callback_).Run(path_);
+    std::move(download_to_file_complete_callback_).Run(std::move(path_));
   }
 
   void PrepareToRetry(base::OnceClosure retry_callback) override {
@@ -1365,7 +1365,7 @@ void SimpleURLLoaderImpl::OnReceiveRedirect(
   }
 
   final_url_ = redirect_info.new_url;
-  url_loader_->FollowRedirect();
+  url_loader_->FollowRedirect(base::nullopt);
 }
 
 void SimpleURLLoaderImpl::OnDataDownloaded(int64_t data_length,

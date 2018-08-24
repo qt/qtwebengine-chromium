@@ -29,7 +29,8 @@ class CORE_EXPORT PaintTiming final
   USING_GARBAGE_COLLECTED_MIXIN(PaintTiming);
   friend class FirstMeaningfulPaintDetector;
   using ReportTimeCallback =
-      WTF::CrossThreadFunction<void(WebLayerTreeView::SwapResult, double)>;
+      WTF::CrossThreadFunction<void(WebLayerTreeView::SwapResult,
+                                    base::TimeTicks)>;
 
  public:
   static const char kSupplementName[];
@@ -102,7 +103,7 @@ class CORE_EXPORT PaintTiming final
   void RegisterNotifySwapTime(PaintEvent, ReportTimeCallback);
   void ReportSwapTime(PaintEvent,
                       WebLayerTreeView::SwapResult,
-                      double timestamp);
+                      base::TimeTicks timestamp);
 
   void ReportSwapResultHistogram(const WebLayerTreeView::SwapResult);
 
@@ -138,8 +139,6 @@ class CORE_EXPORT PaintTiming final
   void RegisterNotifySwapTime(PaintEvent);
   void ReportUserInputHistogram(
       FirstMeaningfulPaintDetector::HadUserInput had_input);
-  void ReportSwapTimeDeltaHistogram(TimeTicks timestamp,
-                                    TimeTicks swap_timestamp);
 
   TimeTicks FirstPaintRendered() const { return first_paint_; }
 

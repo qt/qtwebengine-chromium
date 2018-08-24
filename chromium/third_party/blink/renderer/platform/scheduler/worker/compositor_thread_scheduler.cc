@@ -11,7 +11,9 @@
 #include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/platform/scheduler/base/task_queue.h"
+#include "third_party/blink/renderer/platform/scheduler/child/task_queue_with_task_type.h"
 #include "third_party/blink/renderer/platform/scheduler/common/scheduler_helper.h"
 
 namespace blink {
@@ -19,11 +21,16 @@ namespace scheduler {
 
 CompositorThreadScheduler::CompositorThreadScheduler(
     base::Thread* thread,
-    std::unique_ptr<TaskQueueManager> task_queue_manager)
-    : NonMainThreadScheduler(
-          std::make_unique<WorkerSchedulerHelper>(std::move(task_queue_manager),
-                                                  this)),
-      thread_(thread) {}
+    std::unique_ptr<base::sequence_manager::TaskQueueManager>
+        task_queue_manager)
+    : NonMainThreadScheduler(std::make_unique<NonMainThreadSchedulerHelper>(
+          std::move(task_queue_manager),
+          this,
+          TaskType::kCompositorThreadTaskQueueDefault)),
+      thread_(thread),
+      default_task_runner_(TaskQueueWithTaskType::Create(
+          DefaultTaskQueue(),
+          TaskType::kCompositorThreadTaskQueueDefault)) {}
 
 CompositorThreadScheduler::~CompositorThreadScheduler() = default;
 
@@ -31,11 +38,11 @@ scoped_refptr<WorkerTaskQueue> CompositorThreadScheduler::DefaultTaskQueue() {
   return helper_->DefaultWorkerTaskQueue();
 }
 
-void CompositorThreadScheduler::Init() {}
+void CompositorThreadScheduler::InitImpl() {}
 
 void CompositorThreadScheduler::OnTaskCompleted(
     WorkerTaskQueue* worker_task_queue,
-    const TaskQueue::Task& task,
+    const base::sequence_manager::TaskQueue::Task& task,
     base::TimeTicks start,
     base::TimeTicks end,
     base::Optional<base::TimeDelta> thread_time) {
@@ -45,7 +52,7 @@ void CompositorThreadScheduler::OnTaskCompleted(
 
 scoped_refptr<base::SingleThreadTaskRunner>
 CompositorThreadScheduler::DefaultTaskRunner() {
-  return DefaultTaskQueue();
+  return default_task_runner_;
 }
 
 scoped_refptr<scheduler::SingleThreadIdleTaskRunner>

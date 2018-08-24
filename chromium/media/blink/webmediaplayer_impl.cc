@@ -28,12 +28,12 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
-#include "cc/blink/web_layer_impl.h"
 #include "cc/layers/video_layer.h"
 #include "components/viz/common/gpu/context_provider.h"
 #include "media/audio/null_audio_sink.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/cdm_context.h"
+#include "media/base/encryption_scheme.h"
 #include "media/base/limits.h"
 #include "media/base/media_content_type.h"
 #include "media/base/media_log.h"
@@ -94,9 +94,8 @@ namespace {
 
 void SetSinkIdOnMediaThread(scoped_refptr<WebAudioSourceProviderImpl> sink,
                             const std::string& device_id,
-                            const url::Origin& security_origin,
                             const OutputDeviceStatusCB& callback) {
-  sink->SwitchOutputDevice(device_id, security_origin, callback);
+  sink->SwitchOutputDevice(device_id, callback);
 }
 
 bool IsBackgroundedSuspendEnabled() {
@@ -169,6 +168,21 @@ blink::WebLocalizedString::Name GetSwitchToLocalMessage(
   return blink::WebLocalizedString::kMediaRemotingStopNoText;
 }
 
+// These values are persisted to UMA. Entries should not be renumbered and
+// numeric values should never be reused.
+// TODO(crbug.com/825041): This should use EncryptionMode when kUnencrypted
+// removed.
+enum class EncryptionSchemeUMA { kCenc = 0, kCbcs = 1, kCount };
+
+EncryptionSchemeUMA DetermineEncryptionSchemeUMAValue(
+    const EncryptionScheme& encryption_scheme) {
+  if (encryption_scheme.mode() == EncryptionScheme::CIPHER_MODE_AES_CBC)
+    return EncryptionSchemeUMA::kCbcs;
+
+  DCHECK_EQ(encryption_scheme.mode(), EncryptionScheme::CIPHER_MODE_AES_CTR);
+  return EncryptionSchemeUMA::kCenc;
+}
+
 }  // namespace
 
 class BufferedDataSourceHostImpl;
@@ -235,9 +249,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       surface_layer_for_video_enabled_(params->use_surface_layer_for_video()),
       request_routing_token_cb_(params->request_routing_token_cb()),
       overlay_routing_token_(OverlayInfo::RoutingToken()),
-      media_metrics_provider_(params->take_metrics_provider()),
-      pip_surface_info_cb_(params->pip_surface_info_cb()),
-      exit_pip_cb_(params->exit_pip_cb()) {
+      media_metrics_provider_(params->take_metrics_provider()) {
   DVLOG(1) << __func__;
   DCHECK(!adjust_allocated_memory_cb_.is_null());
   DCHECK(renderer_factory_selector_);
@@ -286,7 +298,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
     observer_->SetClient(this);
 
   memory_usage_reporting_timer_.SetTaskRunner(
-      frame_->GetTaskRunner(blink::TaskType::kUnthrottled));
+      frame_->GetTaskRunner(blink::TaskType::kInternalMedia));
 }
 
 WebMediaPlayerImpl::~WebMediaPlayerImpl() {
@@ -314,15 +326,19 @@ WebMediaPlayerImpl::~WebMediaPlayerImpl() {
     adjust_allocated_memory_cb_.Run(-last_reported_memory_usage_);
 
   // Destruct compositor resources in the proper order.
-  client_->SetWebLayer(nullptr);
+  client_->SetCcLayer(nullptr);
 
   client_->MediaRemotingStopped(
       blink::WebLocalizedString::kMediaRemotingStopNoText);
 
-  ExitPictureInPicture();
+  // If running in Picture-in-Picture but not in auto-pip, notify the player.
+  if (client_->DisplayType() ==
+          WebMediaPlayer::DisplayType::kPictureInPicture &&
+      !client_->IsInAutoPIP())
+    ExitPictureInPicture(base::DoNothing());
 
-  if (!surface_layer_for_video_enabled_ && video_weblayer_) {
-    static_cast<cc::VideoLayer*>(video_weblayer_->layer())->StopUsingProvider();
+  if (!surface_layer_for_video_enabled_ && video_layer_) {
+    video_layer_->StopUsingProvider();
   }
 
   vfc_task_runner_->DeleteSoon(FROM_HERE, std::move(compositor_));
@@ -384,16 +400,15 @@ void WebMediaPlayerImpl::Load(LoadType load_type,
 
 void WebMediaPlayerImpl::OnWebLayerUpdated() {}
 
-void WebMediaPlayerImpl::RegisterContentsLayer(blink::WebLayer* web_layer) {
+void WebMediaPlayerImpl::RegisterContentsLayer(cc::Layer* layer) {
   DCHECK(bridge_);
-  bridge_->GetWebLayer()->CcLayer()->SetContentsOpaque(opaque_);
-  bridge_->GetWebLayer()->SetContentsOpaqueIsFixed(true);
-  client_->SetWebLayer(web_layer);
+  bridge_->GetCcLayer()->SetContentsOpaque(opaque_);
+  client_->SetCcLayer(layer);
 }
 
-void WebMediaPlayerImpl::UnregisterContentsLayer(blink::WebLayer* web_layer) {
-  // |client_| will unregister its WebLayer if given a nullptr.
-  client_->SetWebLayer(nullptr);
+void WebMediaPlayerImpl::UnregisterContentsLayer(cc::Layer* layer) {
+  // |client_| will unregister its cc::Layer if given a nullptr.
+  client_->SetCcLayer(nullptr);
 }
 
 void WebMediaPlayerImpl::OnSurfaceIdUpdated(viz::SurfaceId surface_id) {
@@ -401,8 +416,15 @@ void WebMediaPlayerImpl::OnSurfaceIdUpdated(viz::SurfaceId surface_id) {
 
   // TODO(726619): Handle the behavior when Picture-in-Picture mode is
   // disabled.
-  if (client_ && client_->IsInPictureInPictureMode())
-    pip_surface_info_cb_.Run(pip_surface_id_, pipeline_metadata_.natural_size);
+  // The viz::SurfaceId may be updated when the video begins playback or when
+  // the size of the video changes.
+  if (client_ &&
+      client_->DisplayType() ==
+          WebMediaPlayer::DisplayType::kPictureInPicture &&
+      !client_->IsInAutoPIP()) {
+    delegate_->DidPictureInPictureSurfaceChange(
+        delegate_id_, surface_id, pipeline_metadata_.natural_size);
+  }
 }
 
 bool WebMediaPlayerImpl::SupportsOverlayFullscreenVideo() {
@@ -776,44 +798,42 @@ void WebMediaPlayerImpl::SetVolume(double volume) {
   UpdatePlayState();
 }
 
-void WebMediaPlayerImpl::EnterPictureInPicture() {
-  if (!pip_surface_id_.is_valid())
-    return;
+void WebMediaPlayerImpl::EnterPictureInPicture(
+    blink::WebMediaPlayer::PipWindowOpenedCallback callback) {
+  DCHECK(pip_surface_id_.is_valid());
 
-  pip_surface_info_cb_.Run(pip_surface_id_, pipeline_metadata_.natural_size);
-
-  // Updates the MediaWebContentsObserver with |delegate_id_| to track which
-  // media player is in Picture-in-Picture mode.
-  delegate_->DidPictureInPictureSourceChange(delegate_id_);
-
-  if (client_)
-    client_->PictureInPictureStarted();
+  // Notifies the browser process that the player should now be in
+  // Picture-in-Picture mode.
+  delegate_->DidPictureInPictureModeStart(delegate_id_, pip_surface_id_,
+                                          pipeline_metadata_.natural_size,
+                                          std::move(callback));
 }
 
-void WebMediaPlayerImpl::ExitPictureInPicture() {
-  // TODO(apacible): Handle ending PiP from a user gesture. This currently
-  // handles ending Picture-in-Picture mode from the source.
-  // https://crbug.com/823172.
+void WebMediaPlayerImpl::ExitPictureInPicture(
+    blink::WebMediaPlayer::PipWindowClosedCallback callback) {
+  DCHECK(pip_surface_id_.is_valid());
 
-  // Do not clear |pip_surface_id_| in case we enter Picture-in-Picture mode
-  // again.
-  if (!pip_surface_id_.is_valid())
-    return;
+  // Notifies the browser process that Picture-in-Picture has ended. It will
+  // clear out the states and close the window.
+  delegate_->DidPictureInPictureModeEnd(delegate_id_, std::move(callback));
 
-  // Signals that Picture-in-Picture has ended.
-  exit_pip_cb_.Run();
+  // Internal cleanups.
+  OnPictureInPictureModeEnded();
+}
 
-  // Updates the MediaWebContentsObserver with |delegate_id_| to clear the
-  // tracked media player that is in Picture-in-Picture mode.
-  delegate_->DidPictureInPictureModeEnd(delegate_id_);
+void WebMediaPlayerImpl::RegisterPictureInPictureWindowResizeCallback(
+    blink::WebMediaPlayer::PipWindowResizedCallback callback) {
+  DCHECK(pip_surface_id_.is_valid());
+  DCHECK(client_->DisplayType() ==
+             WebMediaPlayer::DisplayType::kPictureInPicture &&
+         !client_->IsInAutoPIP());
 
-  if (client_)
-    client_->PictureInPictureStopped();
+  delegate_->RegisterPictureInPictureWindowResizeCallback(delegate_id_,
+                                                          std::move(callback));
 }
 
 void WebMediaPlayerImpl::SetSinkId(
     const blink::WebString& sink_id,
-    const blink::WebSecurityOrigin& security_origin,
     blink::WebSetSinkIdCallbacks* web_callback) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
   DVLOG(1) << __func__;
@@ -821,10 +841,8 @@ void WebMediaPlayerImpl::SetSinkId(
   media::OutputDeviceStatusCB callback =
       media::ConvertToOutputDeviceStatusCB(web_callback);
   media_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&SetSinkIdOnMediaThread, audio_source_provider_,
-                 sink_id.Utf8(), static_cast<url::Origin>(security_origin),
-                 callback));
+      FROM_HERE, base::Bind(&SetSinkIdOnMediaThread, audio_source_provider_,
+                            sink_id.Utf8(), callback));
 }
 
 STATIC_ASSERT_ENUM(WebMediaPlayer::kPreloadNone, MultibufferDataSource::NONE);
@@ -1596,7 +1614,15 @@ void WebMediaPlayerImpl::OnMetadata(PipelineMetadata metadata) {
                             metadata.video_decoder_config.video_rotation(),
                             VIDEO_ROTATION_MAX + 1);
 
+  if (HasAudio()) {
+    RecordEncryptionScheme("Audio",
+                           metadata.audio_decoder_config.encryption_scheme());
+  }
+
   if (HasVideo()) {
+    RecordEncryptionScheme("Video",
+                           metadata.video_decoder_config.encryption_scheme());
+
     if (overlay_enabled_) {
       // SurfaceView doesn't support rotated video, so transition back if
       // the video is now rotated.  If |always_enable_overlays_|, we keep the
@@ -1610,20 +1636,21 @@ void WebMediaPlayerImpl::OnMetadata(PipelineMetadata metadata) {
     }
 
     if (!surface_layer_for_video_enabled_) {
-      DCHECK(!video_weblayer_);
-      video_weblayer_.reset(new cc_blink::WebLayerImpl(cc::VideoLayer::Create(
+      DCHECK(!video_layer_);
+      video_layer_ = cc::VideoLayer::Create(
           compositor_.get(),
-          pipeline_metadata_.video_decoder_config.video_rotation())));
-      video_weblayer_->layer()->SetContentsOpaque(opaque_);
-      video_weblayer_->SetContentsOpaqueIsFixed(true);
-      client_->SetWebLayer(video_weblayer_.get());
+          pipeline_metadata_.video_decoder_config.video_rotation());
+      video_layer_->SetContentsOpaque(opaque_);
+      client_->SetCcLayer(video_layer_.get());
     } else {
       vfc_task_runner_->PostTask(
           FROM_HERE,
           base::BindOnce(
               &VideoFrameCompositor::EnableSubmission,
               base::Unretained(compositor_.get()), bridge_->GetFrameSinkId(),
-              pipeline_metadata_.video_decoder_config.video_rotation()));
+              pipeline_metadata_.video_decoder_config.video_rotation(),
+              BindToCurrentLoop(base::BindRepeating(
+                  &WebMediaPlayerImpl::OnFrameSinkDestroyed, AsWeakPtr()))));
     }
   }
 
@@ -1637,6 +1664,10 @@ void WebMediaPlayerImpl::OnMetadata(PipelineMetadata metadata) {
   CreateVideoDecodeStatsReporter();
 
   UpdatePlayState();
+}
+
+void WebMediaPlayerImpl::OnFrameSinkDestroyed() {
+  bridge_->ClearSurfaceId();
 }
 
 void WebMediaPlayerImpl::OnBufferingStateChange(BufferingState state) {
@@ -1669,7 +1700,7 @@ void WebMediaPlayerImpl::CreateVideoDecodeStatsReporter() {
       base::Bind(&WebMediaPlayerImpl::GetPipelineStatistics,
                  base::Unretained(this)),
       pipeline_metadata_.video_decoder_config,
-      frame_->GetTaskRunner(blink::TaskType::kUnthrottled)));
+      frame_->GetTaskRunner(blink::TaskType::kInternalMedia)));
 
   if (delegate_->IsFrameHidden())
     video_decode_stats_reporter_->OnHidden();
@@ -1753,7 +1784,7 @@ void WebMediaPlayerImpl::OnBufferingStateChangeInternal(
 
     // Let the DataSource know we have enough data. It may use this information
     // to release unused network connections.
-    if (data_source_)
+    if (data_source_ && !client_->CouldPlayIfEnoughData())
       data_source_->OnBufferingHaveEnough(false);
 
     // Blink expects a timeChanged() in response to a seek().
@@ -1875,13 +1906,11 @@ void WebMediaPlayerImpl::OnVideoOpacityChange(bool opaque) {
   DCHECK_NE(ready_state_, WebMediaPlayer::kReadyStateHaveNothing);
 
   opaque_ = opaque;
-  // Modify content opaqueness of cc::Layer directly so that
-  // SetContentsOpaqueIsFixed is ignored.
   if (!surface_layer_for_video_enabled_) {
-    if (video_weblayer_)
-      video_weblayer_->layer()->SetContentsOpaque(opaque_);
-  } else if (bridge_->GetWebLayer()) {
-    bridge_->GetWebLayer()->CcLayer()->SetContentsOpaque(opaque_);
+    if (video_layer_)
+      video_layer_->SetContentsOpaque(opaque_);
+  } else if (bridge_->GetCcLayer()) {
+    bridge_->GetCcLayer()->SetContentsOpaque(opaque_);
   }
 }
 
@@ -2069,6 +2098,17 @@ void WebMediaPlayerImpl::OnBecamePersistentVideo(bool value) {
   client_->OnBecamePersistentVideo(value);
 }
 
+void WebMediaPlayerImpl::OnPictureInPictureModeEnded() {
+  // This should never be called if |pip_surface_id_| is invalid. This is either
+  // called from the Picture-in-Picture window side by a user gesture to end
+  // Picture-in-Picture mode, or in ExitPictureInPicture(), which already checks
+  // for validity.
+  DCHECK(pip_surface_id_.is_valid());
+
+  if (client_)
+    client_->PictureInPictureStopped();
+}
+
 void WebMediaPlayerImpl::ScheduleRestart() {
   // TODO(watk): All restart logic should be moved into PipelineController.
   if (pipeline_controller_.IsPipelineRunning() &&
@@ -2113,6 +2153,29 @@ void WebMediaPlayerImpl::OnRemotePlaybackEnded() {
   client_->TimeChanged();
 }
 
+void WebMediaPlayerImpl::FlingingStarted() {
+  DCHECK(main_task_runner_->BelongsToCurrentThread());
+  DCHECK(!disable_pipeline_auto_suspend_);
+  disable_pipeline_auto_suspend_ = true;
+
+  // Capabilities reporting should only be performed for local playbacks.
+  video_decode_stats_reporter_.reset();
+
+  // Requests to restart media pipeline. A flinging renderer will be created via
+  // the |renderer_factory_selector_|.
+  ScheduleRestart();
+}
+
+void WebMediaPlayerImpl::FlingingStopped() {
+  DCHECK(main_task_runner_->BelongsToCurrentThread());
+  DCHECK(disable_pipeline_auto_suspend_);
+  disable_pipeline_auto_suspend_ = false;
+
+  CreateVideoDecodeStatsReporter();
+
+  ScheduleRestart();
+}
+
 void WebMediaPlayerImpl::OnDisconnectedFromRemoteDevice(double t) {
   DoSeek(base::TimeDelta::FromSecondsD(t), false);
 
@@ -2143,15 +2206,15 @@ void WebMediaPlayerImpl::SuspendForRemote() {
 
 gfx::Size WebMediaPlayerImpl::GetCanvasSize() const {
   if (!surface_layer_for_video_enabled_) {
-    if (!video_weblayer_)
+    if (!video_layer_)
       return pipeline_metadata_.natural_size;
 
-    return video_weblayer_->Bounds();
+    return video_layer_->bounds();
   }
-  if (!bridge_->GetWebLayer())
+  if (!bridge_->GetCcLayer())
     return pipeline_metadata_.natural_size;
 
-  return bridge_->GetWebLayer()->Bounds();
+  return bridge_->GetCcLayer()->bounds();
 }
 
 void WebMediaPlayerImpl::SetDeviceScaleFactor(float scale_factor) {
@@ -2799,12 +2862,12 @@ void WebMediaPlayerImpl::CreateWatchTimeReporter() {
           pipeline_metadata_.audio_decoder_config.codec(),
           pipeline_metadata_.video_decoder_config.codec(),
           pipeline_metadata_.has_audio, pipeline_metadata_.has_video, false,
-          !!chunk_demuxer_, is_encrypted_, embedded_media_experience_enabled_,
-          pipeline_metadata_.natural_size),
+          false, !!chunk_demuxer_, is_encrypted_,
+          embedded_media_experience_enabled_, pipeline_metadata_.natural_size),
       base::BindRepeating(&WebMediaPlayerImpl::GetCurrentTimeInternal,
                           base::Unretained(this)),
       media_metrics_provider_.get(),
-      frame_->GetTaskRunner(blink::TaskType::kUnthrottled)));
+      frame_->GetTaskRunner(blink::TaskType::kInternalMedia)));
   watch_time_reporter_->OnVolumeChange(volume_);
 
   if (delegate_->IsFrameHidden())
@@ -2907,6 +2970,10 @@ bool WebMediaPlayerImpl::ShouldDisableVideoWhenHidden() const {
 
 bool WebMediaPlayerImpl::IsBackgroundOptimizationCandidate() const {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
+
+  // Don't optimize Picture-in-Picture players.
+  if (client_->DisplayType() == WebMediaPlayer::DisplayType::kPictureInPicture)
+    return false;
 
 #if defined(OS_ANDROID)  // WMPI_CAST
   // Don't optimize players being Cast.
@@ -3046,6 +3113,7 @@ void WebMediaPlayerImpl::ReportTimeFromForegroundToFirstFrame(
 void WebMediaPlayerImpl::SwitchToRemoteRenderer(
     const std::string& remote_device_friendly_name) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
+  DCHECK(!disable_pipeline_auto_suspend_);
   disable_pipeline_auto_suspend_ = true;
 
   // Capabilities reporting should only be performed for local playbacks.
@@ -3063,6 +3131,7 @@ void WebMediaPlayerImpl::SwitchToRemoteRenderer(
 void WebMediaPlayerImpl::SwitchToLocalRenderer(
     MediaObserverClient::ReasonToSwitchToLocal reason) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
+  DCHECK(disable_pipeline_auto_suspend_);
   disable_pipeline_auto_suspend_ = false;
 
   // Capabilities reporting may resume now that playback is local.
@@ -3138,6 +3207,21 @@ void WebMediaPlayerImpl::RecordTimingUMA(const std::string& key,
     base::UmaHistogramMediumTimes(key + ".SRC", elapsed);
   if (is_encrypted_)
     base::UmaHistogramMediumTimes(key + ".EME", elapsed);
+}
+
+void WebMediaPlayerImpl::RecordEncryptionScheme(
+    const std::string& stream_name,
+    const EncryptionScheme& encryption_scheme) {
+  DCHECK(stream_name == "Audio" || stream_name == "Video");
+
+  // If the stream is not encrypted, don't record it.
+  if (encryption_scheme.mode() == EncryptionScheme::CIPHER_MODE_UNENCRYPTED)
+    return;
+
+  base::UmaHistogramEnumeration(
+      "Media.EME.EncryptionScheme.Initial." + stream_name,
+      DetermineEncryptionSchemeUMAValue(encryption_scheme),
+      EncryptionSchemeUMA::kCount);
 }
 
 }  // namespace media

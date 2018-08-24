@@ -66,14 +66,15 @@ class MockThreadableLoaderClient : public ThreadableLoaderClient {
                void(unsigned long,
                     const ResourceResponse&,
                     WebDataConsumerHandle*));
-  void DidReceiveResponse(unsigned long identifier,
-                          const ResourceResponse& response,
-                          std::unique_ptr<WebDataConsumerHandle> handle) {
+  void DidReceiveResponse(
+      unsigned long identifier,
+      const ResourceResponse& response,
+      std::unique_ptr<WebDataConsumerHandle> handle) override {
     DidReceiveResponseMock(identifier, response, handle.get());
   }
   MOCK_METHOD2(DidReceiveData, void(const char*, unsigned));
   MOCK_METHOD2(DidReceiveCachedMetadata, void(const char*, int));
-  MOCK_METHOD2(DidFinishLoading, void(unsigned long, double));
+  MOCK_METHOD1(DidFinishLoading, void(unsigned long));
   MOCK_METHOD1(DidFail, void(const ResourceError&));
   MOCK_METHOD0(DidFailRedirectCheck, void());
   MOCK_METHOD1(DidReceiveResourceTiming, void(const ResourceTimingInfo&));
@@ -617,7 +618,7 @@ TEST_P(ThreadableLoaderTest, DidFinishLoading) {
   // it's used to connect DocumentThreadableLoader to WorkerThreadableLoader,
   // not to ThreadableLoaderClient.
   EXPECT_CALL(*Client(), DidReceiveResourceTiming(_));
-  EXPECT_CALL(*Client(), DidFinishLoading(_, _));
+  EXPECT_CALL(*Client(), DidFinishLoading(_));
 
   StartLoader(SuccessURL());
   CallCheckpoint(2);
@@ -634,7 +635,7 @@ TEST_P(ThreadableLoaderTest, CancelInDidFinishLoading) {
   EXPECT_CALL(*Client(), DidReceiveResponseMock(_, _, _));
   EXPECT_CALL(*Client(), DidReceiveData(_, _));
   EXPECT_CALL(*Client(), DidReceiveResourceTiming(_));
-  EXPECT_CALL(*Client(), DidFinishLoading(_, _))
+  EXPECT_CALL(*Client(), DidFinishLoading(_))
       .WillOnce(InvokeWithoutArgs(this, &ThreadableLoaderTest::CancelLoader));
 
   StartLoader(SuccessURL());
@@ -652,7 +653,7 @@ TEST_P(ThreadableLoaderTest, ClearInDidFinishLoading) {
   EXPECT_CALL(*Client(), DidReceiveResponseMock(_, _, _));
   EXPECT_CALL(*Client(), DidReceiveData(_, _));
   EXPECT_CALL(*Client(), DidReceiveResourceTiming(_));
-  EXPECT_CALL(*Client(), DidFinishLoading(_, _))
+  EXPECT_CALL(*Client(), DidFinishLoading(_))
       .WillOnce(InvokeWithoutArgs(this, &ThreadableLoaderTest::ClearLoader));
 
   StartLoader(SuccessURL());
@@ -786,7 +787,7 @@ TEST_P(ThreadableLoaderTest, RedirectDidFinishLoading) {
   EXPECT_CALL(*Client(), DidReceiveResponseMock(_, _, _));
   EXPECT_CALL(*Client(), DidReceiveData(StrEq("fox"), 4));
   EXPECT_CALL(*Client(), DidReceiveResourceTiming(_));
-  EXPECT_CALL(*Client(), DidFinishLoading(_, _));
+  EXPECT_CALL(*Client(), DidFinishLoading(_));
 
   StartLoader(RedirectURL());
   CallCheckpoint(2);
@@ -803,7 +804,7 @@ TEST_P(ThreadableLoaderTest, CancelInRedirectDidFinishLoading) {
   EXPECT_CALL(*Client(), DidReceiveResponseMock(_, _, _));
   EXPECT_CALL(*Client(), DidReceiveData(StrEq("fox"), 4));
   EXPECT_CALL(*Client(), DidReceiveResourceTiming(_));
-  EXPECT_CALL(*Client(), DidFinishLoading(_, _))
+  EXPECT_CALL(*Client(), DidFinishLoading(_))
       .WillOnce(InvokeWithoutArgs(this, &ThreadableLoaderTest::CancelLoader));
 
   StartLoader(RedirectURL());
@@ -821,7 +822,7 @@ TEST_P(ThreadableLoaderTest, ClearInRedirectDidFinishLoading) {
   EXPECT_CALL(*Client(), DidReceiveResponseMock(_, _, _));
   EXPECT_CALL(*Client(), DidReceiveData(StrEq("fox"), 4));
   EXPECT_CALL(*Client(), DidReceiveResourceTiming(_));
-  EXPECT_CALL(*Client(), DidFinishLoading(_, _))
+  EXPECT_CALL(*Client(), DidFinishLoading(_))
       .WillOnce(InvokeWithoutArgs(this, &ThreadableLoaderTest::ClearLoader));
 
   StartLoader(RedirectURL());

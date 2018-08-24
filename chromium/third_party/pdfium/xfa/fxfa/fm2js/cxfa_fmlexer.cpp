@@ -133,13 +133,13 @@ CXFA_FMLexer::CXFA_FMLexer(const WideStringView& wsFormCalc)
       m_end(m_cursor + wsFormCalc.GetLength()),
       m_lexer_error(false) {}
 
-CXFA_FMLexer::~CXFA_FMLexer() {}
+CXFA_FMLexer::~CXFA_FMLexer() = default;
 
 CXFA_FMToken CXFA_FMLexer::NextToken() {
   if (m_lexer_error)
     return CXFA_FMToken();
 
-  while (m_cursor < m_end && *m_cursor) {
+  while (!IsComplete() && *m_cursor) {
     if (!IsFormCalcCharacter(*m_cursor)) {
       RaiseError();
       return CXFA_FMToken();
@@ -303,10 +303,12 @@ CXFA_FMToken CXFA_FMLexer::NextToken() {
 
 CXFA_FMToken CXFA_FMLexer::AdvanceForNumber() {
   // This will set end to the character after the end of the number.
-  wchar_t* end = nullptr;
+  int32_t used_length = 0;
   if (m_cursor)
-    wcstod(const_cast<wchar_t*>(m_cursor), &end);
-  if (!end || FXSYS_iswalpha(*end)) {
+    FXSYS_wcstof(const_cast<wchar_t*>(m_cursor), -1, &used_length);
+
+  const wchar_t* end = m_cursor + used_length;
+  if (used_length == 0 || !end || FXSYS_iswalpha(*end)) {
     RaiseError();
     return CXFA_FMToken();
   }
@@ -323,7 +325,7 @@ CXFA_FMToken CXFA_FMLexer::AdvanceForString() {
 
   const wchar_t* start = m_cursor;
   ++m_cursor;
-  while (m_cursor < m_end && *m_cursor) {
+  while (!IsComplete() && *m_cursor) {
     if (!IsFormCalcCharacter(*m_cursor))
       break;
 
@@ -357,7 +359,7 @@ CXFA_FMToken CXFA_FMLexer::AdvanceForString() {
 CXFA_FMToken CXFA_FMLexer::AdvanceForIdentifier() {
   const wchar_t* start = m_cursor;
   ++m_cursor;
-  while (m_cursor < m_end && *m_cursor) {
+  while (!IsComplete() && *m_cursor) {
     if (!IsFormCalcCharacter(*m_cursor)) {
       RaiseError();
       return CXFA_FMToken();
@@ -377,7 +379,7 @@ CXFA_FMToken CXFA_FMLexer::AdvanceForIdentifier() {
 
 void CXFA_FMLexer::AdvanceForComment() {
   m_cursor++;
-  while (m_cursor < m_end && *m_cursor) {
+  while (!IsComplete() && *m_cursor) {
     if (!IsFormCalcCharacter(*m_cursor)) {
       RaiseError();
       return;

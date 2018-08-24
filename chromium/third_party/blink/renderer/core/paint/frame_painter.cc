@@ -6,7 +6,7 @@
 
 #include "third_party/blink/renderer/core/editing/markers/document_marker_controller.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/layout/layout_scrollbar_part.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/page/page.h"
@@ -22,7 +22,6 @@
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
 #include "third_party/blink/renderer/platform/graphics/paint/clip_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
-#include "third_party/blink/renderer/platform/graphics/paint/scoped_paint_chunk_properties.h"
 #include "third_party/blink/renderer/platform/loader/fetch/memory_cache.h"
 #include "third_party/blink/renderer/platform/scroll/scrollbar_theme.h"
 
@@ -40,22 +39,13 @@ void FramePainter::Paint(GraphicsContext& context,
 
   IntRect document_dirty_rect;
   IntPoint frame_view_location(GetFrameView().Location());
-  IntRect visible_area_without_scrollbars(
-      frame_view_location, GetFrameView().VisibleContentRect().Size());
+  IntRect visible_area_without_scrollbars(frame_view_location,
+                                          GetFrameView().VisibleContentSize());
   IntPoint content_offset =
       -frame_view_location + GetFrameView().ScrollOffsetInt();
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled() &&
-      !RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-    auto content_cull_rect = rect;
-    content_cull_rect.UpdateForScrollingContents(
-        visible_area_without_scrollbars,
-        AffineTransform().Translate(-content_offset.X(), -content_offset.Y()));
-    document_dirty_rect = content_cull_rect.rect_;
-  } else {
-    document_dirty_rect = rect.rect_;
-    document_dirty_rect.Intersect(visible_area_without_scrollbars);
-    document_dirty_rect.MoveBy(content_offset);
-  }
+  document_dirty_rect = rect.rect_;
+  document_dirty_rect.Intersect(visible_area_without_scrollbars);
+  document_dirty_rect.MoveBy(content_offset);
 
   bool should_paint_contents = !document_dirty_rect.IsEmpty();
   bool should_paint_scrollbars = !GetFrameView().ScrollbarsSuppressed() &&
@@ -65,19 +55,6 @@ void FramePainter::Paint(GraphicsContext& context,
     return;
 
   if (should_paint_contents) {
-    // TODO(pdr): Creating frame paint properties here will not be needed once
-    // settings()->rootLayerScrolls() is enabled.
-    Optional<ScopedPaintChunkProperties> scoped_paint_chunk_properties;
-    if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
-        !RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-      const auto* contents_state =
-          frame_view_->TotalPropertyTreeStateForContents();
-      DCHECK(contents_state);
-      scoped_paint_chunk_properties.emplace(
-          context.GetPaintController(), *contents_state,
-          *GetFrameView().GetLayoutView(), DisplayItem::kUninitializedType);
-    }
-
     TransformRecorder transform_recorder(
         context, *GetFrameView().GetLayoutView(),
         AffineTransform::Translation(
@@ -88,38 +65,6 @@ void FramePainter::Paint(GraphicsContext& context,
                                DisplayItem::kClipFrameToVisibleContentRect,
                                GetFrameView().VisibleContentRect());
     PaintContents(context, global_paint_flags, document_dirty_rect);
-  }
-
-  if (should_paint_scrollbars) {
-    DCHECK(!RuntimeEnabledFeatures::RootLayerScrollingEnabled());
-    IntRect scroll_view_dirty_rect = rect.rect_;
-    IntRect visible_area_with_scrollbars(
-        frame_view_location,
-        GetFrameView().VisibleContentRect(kIncludeScrollbars).Size());
-    scroll_view_dirty_rect.Intersect(visible_area_with_scrollbars);
-    scroll_view_dirty_rect.MoveBy(-frame_view_location);
-
-    Optional<ScopedPaintChunkProperties> scoped_paint_chunk_properties;
-    if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
-        !RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-      scoped_paint_chunk_properties.emplace(
-          context.GetPaintController(),
-          GetFrameView().PreContentClipProperties(),
-          *GetFrameView().GetLayoutView(),
-          DisplayItem::kScrollOverflowControls);
-    }
-
-    TransformRecorder transform_recorder(
-        context, *GetFrameView().GetLayoutView(),
-        AffineTransform::Translation(frame_view_location.X(),
-                                     frame_view_location.Y()));
-
-    ClipRecorder recorder(
-        context, *GetFrameView().GetLayoutView(),
-        DisplayItem::kClipFrameScrollbars,
-        IntRect(IntPoint(), visible_area_with_scrollbars.Size()));
-
-    PaintScrollbars(context, scroll_view_dirty_rect);
   }
 }
 

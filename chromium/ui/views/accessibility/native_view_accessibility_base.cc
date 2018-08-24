@@ -291,8 +291,9 @@ void NativeViewAccessibilityBase::OnAutofillShown() {
 }
 
 void NativeViewAccessibilityBase::OnAutofillHidden() {
-  DCHECK(fake_focus_view_id_ == GetUniqueId().Get())
-      << "Cannot clear fake focus on an object that did not have fake focus.";
+  DCHECK(fake_focus_view_id_) << "No autofill fake focus set.";
+  DCHECK_EQ(fake_focus_view_id_, GetUniqueId().Get())
+      << "Cannot clear autofill fake focus on an object that did not have it.";
   fake_focus_view_id_ = 0;
   ui::AXPlatformNode::OnAutofillHidden();
 }
@@ -320,6 +321,37 @@ int NativeViewAccessibilityBase::GetIndexInParent() const {
 gfx::AcceleratedWidget
 NativeViewAccessibilityBase::GetTargetForNativeAccessibilityEvent() {
   return gfx::kNullAcceleratedWidget;
+}
+
+int NativeViewAccessibilityBase::GetTableRowCount() const {
+  return 0;
+}
+
+int NativeViewAccessibilityBase::GetTableColCount() const {
+  return 0;
+}
+
+std::vector<int32_t> NativeViewAccessibilityBase::GetColHeaderNodeIds(
+    int32_t col_index) const {
+  return std::vector<int32_t>();
+}
+
+std::vector<int32_t> NativeViewAccessibilityBase::GetRowHeaderNodeIds(
+    int32_t row_index) const {
+  return std::vector<int32_t>();
+}
+
+int32_t NativeViewAccessibilityBase::GetCellId(int32_t row_index,
+                                               int32_t col_index) const {
+  return 0;
+}
+
+int32_t NativeViewAccessibilityBase::CellIdToIndex(int32_t cell_id) const {
+  return -1;
+}
+
+int32_t NativeViewAccessibilityBase::CellIndexToId(int32_t cell_index) const {
+  return 0;
 }
 
 bool NativeViewAccessibilityBase::AccessibilityPerformAction(

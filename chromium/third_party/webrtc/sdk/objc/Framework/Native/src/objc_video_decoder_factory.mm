@@ -50,13 +50,10 @@ class ObjCVideoDecoder : public VideoDecoder {
 
   int32_t Decode(const EncodedImage &input_image,
                  bool missing_frames,
-                 const RTPFragmentationHeader *fragmentation,
                  const CodecSpecificInfo *codec_specific_info = NULL,
                  int64_t render_time_ms = -1) {
     RTCEncodedImage *encodedImage =
         [[RTCEncodedImage alloc] initWithNativeEncodedImage:input_image];
-    RTCRtpFragmentationHeader *header =
-        [[RTCRtpFragmentationHeader alloc] initWithNativeFragmentationHeader:fragmentation];
 
     // webrtc::CodecSpecificInfo only handles a hard coded list of codecs
     id<RTCCodecSpecificInfo> rtcCodecSpecificInfo = nil;
@@ -71,7 +68,6 @@ class ObjCVideoDecoder : public VideoDecoder {
 
     return [decoder_ decode:encodedImage
               missingFrames:missing_frames
-        fragmentationHeader:header
           codecSpecificInfo:rtcCodecSpecificInfo
                renderTimeMs:render_time_ms];
   }
@@ -137,24 +133,6 @@ std::vector<SdpVideoFormat> ObjCVideoDecoderFactory::GetSupportedFormats() const
   }
 
   return supported_formats;
-}
-
-// WebRtcVideoDecoderFactory
-
-VideoDecoder *ObjCVideoDecoderFactory::CreateVideoDecoderWithParams(
-    const cricket::VideoCodec &codec, cricket::VideoDecoderParams params) {
-  return CreateVideoDecoder(SdpVideoFormat(codec.name, codec.params)).release();
-}
-
-VideoDecoder *ObjCVideoDecoderFactory::CreateVideoDecoder(VideoCodecType type) {
-  // This is implemented to avoid hiding an overloaded virtual function
-  RTC_NOTREACHED();
-  return nullptr;
-}
-
-void ObjCVideoDecoderFactory::DestroyVideoDecoder(VideoDecoder *decoder) {
-  delete decoder;
-  decoder = nullptr;
 }
 
 }  // namespace webrtc

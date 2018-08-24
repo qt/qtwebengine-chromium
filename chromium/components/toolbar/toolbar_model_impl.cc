@@ -16,13 +16,10 @@
 #include "components/toolbar/buildflags.h"
 #include "components/toolbar/toolbar_field_trial.h"
 #include "components/toolbar/toolbar_model_delegate.h"
-#include "components/url_formatter/elide_url.h"
-#include "components/url_formatter/url_formatter.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/cert/x509_certificate.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/material_design/material_design_controller.h"
 #include "ui/gfx/text_elider.h"
 #include "ui/gfx/vector_icon_types.h"
 
@@ -42,15 +39,31 @@ ToolbarModelImpl::~ToolbarModelImpl() {
 
 // ToolbarModelImpl Implementation.
 base::string16 ToolbarModelImpl::GetFormattedFullURL() const {
+  return GetFormattedURL(url_formatter::kFormatUrlOmitDefaults);
+}
+
+base::string16 ToolbarModelImpl::GetURLForDisplay() const {
+  url_formatter::FormatUrlTypes format_types =
+#if defined(OS_IOS)
+      url_formatter::kFormatUrlTrimAfterHost |
+#endif
+      url_formatter::kFormatUrlOmitDefaults |
+      url_formatter::kFormatUrlOmitHTTPS |
+      url_formatter::kFormatUrlOmitTrivialSubdomains;
+  return GetFormattedURL(format_types);
+}
+
+base::string16 ToolbarModelImpl::GetFormattedURL(
+    url_formatter::FormatUrlTypes format_types) const {
   GURL url(GetURL());
   // Note that we can't unescape spaces here, because if the user copies this
   // and pastes it into another program, that program may think the URL ends at
   // the space.
   const base::string16 formatted_text =
       delegate_->FormattedStringWithEquivalentMeaning(
-          url, url_formatter::FormatUrl(
-                   url, url_formatter::kFormatUrlOmitDefaults,
-                   net::UnescapeRule::NORMAL, nullptr, nullptr, nullptr));
+          url,
+          url_formatter::FormatUrl(url, format_types, net::UnescapeRule::NORMAL,
+                                   nullptr, nullptr, nullptr));
 
   // Truncating the URL breaks editing and then pressing enter, but hopefully
   // people won't try to do much with such enormous URLs anyway. If this becomes
@@ -58,19 +71,6 @@ base::string16 ToolbarModelImpl::GetFormattedFullURL() const {
   // visible URL" where editing affects and reloads the "real underlying URL",
   // but this seems very tricky for little gain.
   return gfx::TruncateString(formatted_text, max_url_display_chars_,
-                             gfx::CHARACTER_BREAK);
-}
-
-base::string16 ToolbarModelImpl::GetURLForDisplay() const {
-  url_formatter::FormatUrlTypes format_types =
-      url_formatter::kFormatUrlOmitDefaults |
-      url_formatter::kFormatUrlOmitHTTPS |
-      url_formatter::kFormatUrlOmitTrivialSubdomains;
-  base::string16 result = url_formatter::FormatUrl(GetURL(), format_types,
-                                                   net::UnescapeRule::NORMAL,
-                                                   nullptr, nullptr, nullptr);
-
-  return gfx::TruncateString(result, max_url_display_chars_,
                              gfx::CHARACTER_BREAK);
 }
 
@@ -89,9 +89,6 @@ security_state::SecurityLevel ToolbarModelImpl::GetSecurityLevel(
 
 const gfx::VectorIcon& ToolbarModelImpl::GetVectorIcon() const {
 #if (!defined(OS_ANDROID) || BUILDFLAG(ENABLE_VR)) && !defined(OS_IOS)
-  const bool is_touch_ui =
-      ui::MaterialDesignController::IsTouchOptimizedUiEnabled();
-
   auto* const icon_override = delegate_->GetVectorIconOverride();
   if (icon_override)
     return *icon_override;
@@ -102,16 +99,14 @@ const gfx::VectorIcon& ToolbarModelImpl::GetVectorIcon() const {
   switch (GetSecurityLevel(false)) {
     case security_state::NONE:
     case security_state::HTTP_SHOW_WARNING:
-      return is_touch_ui ? toolbar::kHttp20Icon : toolbar::kHttpIcon;
+      return toolbar::kHttpIcon;
     case security_state::EV_SECURE:
     case security_state::SECURE:
-      return is_touch_ui ? toolbar::kHttpsValid20Icon
-                         : toolbar::kHttpsValidIcon;
+      return toolbar::kHttpsValidIcon;
     case security_state::SECURE_WITH_POLICY_INSTALLED_CERT:
       return vector_icons::kBusinessIcon;
     case security_state::DANGEROUS:
-      return is_touch_ui ? toolbar::kHttpsInvalid20Icon
-                         : toolbar::kHttpsInvalidIcon;
+      return toolbar::kHttpsInvalidIcon;
     case security_state::SECURITY_LEVEL_COUNT:
       NOTREACHED();
       return toolbar::kHttpIcon;

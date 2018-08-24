@@ -48,9 +48,10 @@ LayerFilteringTransport::LayerFilteringTransport(
     uint8_t vp9_video_payload_type,
     int selected_tl,
     int selected_sl,
+    const std::map<uint8_t, MediaType>& payload_type_map,
     uint32_t ssrc_to_filter_min,
     uint32_t ssrc_to_filter_max)
-    : DirectTransport(task_queue, std::move(pipe), send_call),
+    : DirectTransport(task_queue, std::move(pipe), send_call, payload_type_map),
       vp8_video_payload_type_(vp8_video_payload_type),
       vp9_video_payload_type_(vp9_video_payload_type),
       selected_tl_(selected_tl),
@@ -84,8 +85,9 @@ LayerFilteringTransport::LayerFilteringTransport(
     uint8_t vp8_video_payload_type,
     uint8_t vp9_video_payload_type,
     int selected_tl,
-    int selected_sl)
-    : DirectTransport(task_queue, std::move(pipe), send_call),
+    int selected_sl,
+    const std::map<uint8_t, MediaType>& payload_type_map)
+    : DirectTransport(task_queue, std::move(pipe), send_call, payload_type_map),
       vp8_video_payload_type_(vp8_video_payload_type),
       vp9_video_payload_type_(vp9_video_payload_type),
       selected_tl_(selected_tl),
@@ -139,20 +141,38 @@ bool LayerFilteringTransport::SendRtp(const uint8_t* packet,
       const int spatial_idx = static_cast<int>(
           is_vp8 ? kNoSpatialIdx
                  : parsed_payload.type.Video.codecHeader.VP9.spatial_idx);
+      const bool non_ref_for_inter_layer_pred =
+          is_vp8 ? false
+                 : parsed_payload.type.Video.codecHeader.VP9
+                       .non_ref_for_inter_layer_pred;
       if (selected_sl_ >= 0 && spatial_idx == selected_sl_ &&
           parsed_payload.type.Video.codecHeader.VP9.end_of_frame) {
         // This layer is now the last in the superframe.
         set_marker_bit = true;
-      } else if ((selected_tl_ >= 0 && temporal_idx != kNoTemporalIdx &&
-                  temporal_idx > selected_tl_) ||
-                 (selected_sl_ >= 0 && spatial_idx != kNoSpatialIdx &&
-                  spatial_idx > selected_sl_)) {
-        // Truncate packet to a padding packet.
-        length = header.headerLength + 1;
-        temp_buffer[0] |= (1 << 5);  // P = 1.
-        temp_buffer[1] &= 0x7F;      // M = 0.
-        discarded_last_packet_ = true;
-        temp_buffer[header.headerLength] = 1;  // One byte of padding.
+      } else {
+        const bool higher_temporal_layer =
+            (selected_tl_ >= 0 && temporal_idx != kNoTemporalIdx &&
+             temporal_idx > selected_tl_);
+
+        const bool higher_spatial_layer =
+            (selected_sl_ >= 0 && spatial_idx != kNoSpatialIdx &&
+             spatial_idx > selected_sl_);
+
+        // Filter out non-reference lower spatial layers since they are not
+        // needed for decoding of target spatial layer.
+        const bool lower_non_ref_spatial_layer =
+            (selected_sl_ >= 0 && spatial_idx != kNoSpatialIdx &&
+             spatial_idx < selected_sl_ && non_ref_for_inter_layer_pred);
+
+        if (higher_temporal_layer || higher_spatial_layer ||
+            lower_non_ref_spatial_layer) {
+          // Truncate packet to a padding packet.
+          length = header.headerLength + 1;
+          temp_buffer[0] |= (1 << 5);  // P = 1.
+          temp_buffer[1] &= 0x7F;      // M = 0.
+          discarded_last_packet_ = true;
+          temp_buffer[header.headerLength] = 1;  // One byte of padding.
+        }
       }
     } else {
       RTC_NOTREACHED() << "Parse error";

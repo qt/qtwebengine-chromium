@@ -193,9 +193,13 @@ void MimeHandlerViewGuest::CreateWebContents(
   WebContents::CreateParams params(browser_context(),
                                    guest_site_instance.get());
   params.guest_delegate = this;
-  auto* web_contents = WebContents::Create(params);
-  SetViewType(web_contents, VIEW_TYPE_EXTENSION_GUEST);
-  callback.Run(web_contents);
+  // TODO(erikchen): Fix ownership semantics for guest views.
+  // https://crbug.com/832879.
+  callback.Run(
+      WebContents::CreateWithSessionStorage(
+          params,
+          owner_web_contents()->GetController().GetSessionStorageNamespaceMap())
+          .release());
 
   registry_.AddInterface(
       base::Bind(&MimeHandlerServiceImpl::Create, stream_->GetWeakPtr()));
@@ -308,11 +312,13 @@ void MimeHandlerViewGuest::OnRenderFrameHostDeleted(int process_id,
   }
 }
 
-void MimeHandlerViewGuest::EnterFullscreenModeForTab(content::WebContents*,
-                                                     const GURL& origin) {
+void MimeHandlerViewGuest::EnterFullscreenModeForTab(
+    content::WebContents*,
+    const GURL& origin,
+    const blink::WebFullscreenOptions& options) {
   if (SetFullscreenState(true)) {
     embedder_web_contents()->GetDelegate()->EnterFullscreenModeForTab(
-        embedder_web_contents(), origin);
+        embedder_web_contents(), origin, options);
   }
 }
 

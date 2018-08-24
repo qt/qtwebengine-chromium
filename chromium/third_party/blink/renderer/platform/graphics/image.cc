@@ -27,6 +27,7 @@
 #include "third_party/blink/renderer/platform/graphics/image.h"
 
 #include "build/build_config.h"
+#include "cc/tiles/software_image_decode_cache.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_data.h"
 #include "third_party/blink/renderer/platform/geometry/float_point.h"
@@ -54,26 +55,6 @@
 #include <tuple>
 
 namespace blink {
-namespace {
-
-bool HasCheckerableDimensions(const IntSize& size) {
-  CheckedNumeric<size_t> checked_size = 4u;
-  checked_size *= size.Width();
-  checked_size *= size.Height();
-
-// The constants used here should remain consistent with the values used for
-// LayerTreeSettings in render_widget_compositor.cc.
-#if defined(OS_ANDROID)
-  static const size_t kMinImageSizeCheckered = 512 * 1024;
-#else
-  static const size_t kMinImageSizeCheckered = 1 * 1024 * 1024;
-#endif
-
-  return checked_size.ValueOrDefault(std::numeric_limits<size_t>::max()) >=
-         kMinImageSizeCheckered;
-}
-
-}  // namespace
 
 Image::Image(ImageObserver* observer, bool is_multipart)
     : image_observer_disabled_(false),
@@ -89,6 +70,18 @@ Image* Image::NullImage() {
   DCHECK(IsMainThread());
   DEFINE_STATIC_REF(Image, null_image, (BitmapImage::Create()));
   return null_image;
+}
+
+// static
+cc::ImageDecodeCache& Image::SharedCCDecodeCache() {
+  // This denotes the allocated locked memory budget for the cache used for
+  // book-keeping. The cache indicates when the total memory locked exceeds this
+  // budget in cc::DecodedDrawImage.
+  static const size_t kLockedMemoryLimitBytes = 64 * 1024 * 1024;
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(cc::SoftwareImageDecodeCache,
+                                  image_decode_cache,
+                                  (kN32_SkColorType, kLockedMemoryLimitBytes));
+  return image_decode_cache;
 }
 
 scoped_refptr<Image> Image::LoadPlatformResource(const char* name) {
@@ -408,13 +401,8 @@ FloatRect Image::ComputeTileContaining(const FloatPoint& point,
                                        const FloatSize& tile_spacing) {
   const FloatSize actual_tile_size(tile_size + tile_spacing);
   return FloatRect(
-      FloatPoint(
-          point.X() + fmodf(fmodf(-tile_phase.X(), actual_tile_size.Width()) -
-                                actual_tile_size.Width(),
-                            actual_tile_size.Width()),
-          point.Y() + fmodf(fmodf(-tile_phase.Y(), actual_tile_size.Height()) -
-                                actual_tile_size.Height(),
-                            actual_tile_size.Height())),
+      FloatPoint(point.X() + fmodf(-tile_phase.X(), actual_tile_size.Width()),
+                 point.Y() + fmodf(-tile_phase.Y(), actual_tile_size.Height())),
       tile_size);
 }
 
@@ -433,38 +421,6 @@ FloatRect Image::ComputeSubsetForTile(const FloatRect& tile,
   subset.SetHeight(dest.Height() / scale.Height());
 
   return subset;
-}
-
-// static
-void Image::RecordCheckerableImageUMA(Image& image, ImageType type) {
-  // This enum is used in UMA counting so should be treated as append only.
-  // Please keep it in sync with CheckerableImageType in enums.xml.
-  enum class CheckerableImageType {
-    kCheckerableImg = 0,
-    kCheckerableSvg = 1,
-    kCheckerableCss = 2,
-    kNotCheckerable = 3,
-    kCount = 4
-  };
-
-  CheckerableImageType checkerable_type = CheckerableImageType::kNotCheckerable;
-  if (image.IsSizeAvailable() && !image.MaybeAnimated() &&
-      HasCheckerableDimensions(image.Size())) {
-    switch (type) {
-      case ImageType::kImg:
-        checkerable_type = CheckerableImageType::kCheckerableImg;
-        break;
-      case ImageType::kSvg:
-        checkerable_type = CheckerableImageType::kCheckerableSvg;
-        break;
-      case ImageType::kCss:
-        checkerable_type = CheckerableImageType::kCheckerableCss;
-        break;
-    }
-  }
-
-  UMA_HISTOGRAM_ENUMERATION("Blink.CheckerableImageCount", checkerable_type,
-                            CheckerableImageType::kCount);
 }
 
 }  // namespace blink

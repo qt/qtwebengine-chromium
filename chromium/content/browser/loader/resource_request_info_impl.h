@@ -36,10 +36,6 @@ struct GlobalRoutingID;
 class ResourceRequestInfoImpl : public ResourceRequestInfo,
                                 public base::SupportsUserData::Data {
  public:
-  using TransferCallback =
-      base::Callback<void(network::mojom::URLLoaderRequest,
-                          network::mojom::URLLoaderClientPtr)>;
-
   // Returns the ResourceRequestInfoImpl associated with the given URLRequest.
   CONTENT_EXPORT static ResourceRequestInfoImpl* ForRequest(
       net::URLRequest* request);
@@ -58,7 +54,6 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
       bool is_main_frame,
       ResourceType resource_type,
       ui::PageTransition transition_type,
-      bool should_replace_current_entry,
       bool is_download,
       bool is_stream,
       bool allow_download,
@@ -71,11 +66,11 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
       bool is_prerendering,
       ResourceContext* context,
       bool report_raw_headers,
+      bool report_security_info,
       bool is_async,
       PreviewsState previews_state,
       const scoped_refptr<network::ResourceRequestBody> body,
-      bool initiated_in_secure_context,
-      const base::Optional<std::string>& suggested_filename);
+      bool initiated_in_secure_context);
   ~ResourceRequestInfoImpl() override;
 
   // ResourceRequestInfo implementation:
@@ -102,8 +97,13 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   // Returns a bitmask of potentially several Previews optimizations.
   PreviewsState GetPreviewsState() const override;
   bool ShouldReportRawHeaders() const;
+  bool ShouldReportSecurityInfo() const;
   NavigationUIData* GetNavigationUIData() const override;
   DevToolsStatus GetDevToolsStatus() const override;
+
+  base::Optional<blink::ResourceRequestBlockedReason>
+  GetResourceRequestBlockedReason() const override;
+
   base::StringPiece GetCustomCancelReason() const override;
 
   CONTENT_EXPORT void AssociateWithRequest(net::URLRequest* request);
@@ -118,24 +118,6 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
 
   ResourceRequesterInfo* requester_info() const {
     return requester_info_.get();
-  }
-
-  // Updates the data associated with this request after it is is transferred
-  // to a new renderer process.  Not all data will change during a transfer.
-  // We do not expect the ResourceContext to change during navigation, so that
-  // does not need to be updated.
-  void UpdateForTransfer(int route_id,
-                         int render_frame_id,
-                         int request_id,
-                         ResourceRequesterInfo* requester_info,
-                         network::mojom::URLLoaderRequest url_loader_request,
-                         network::mojom::URLLoaderClientPtr url_loader_client);
-
-  // Whether this request is part of a navigation that should replace the
-  // current session history entry. This state is shuffled up and down the stack
-  // for request transfers.
-  bool should_replace_current_entry() const {
-    return should_replace_current_entry_;
   }
 
   // DetachableResourceHandler for this request.  May be NULL.
@@ -198,19 +180,16 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
     navigation_ui_data_ = std::move(navigation_ui_data);
   }
 
-  void set_on_transfer(const TransferCallback& on_transfer) {
-    on_transfer_ = on_transfer;
-  }
-
   void set_devtools_status(DevToolsStatus devtools_status) {
     devtools_status_ = devtools_status;
   }
 
-  void SetBlobHandles(BlobHandles blob_handles);
-
-  const base::Optional<std::string>& suggested_filename() const {
-    return suggested_filename_;
+  void set_resource_request_blocked_reason(
+      base::Optional<blink::ResourceRequestBlockedReason> reason) {
+    resource_request_blocked_reason_ = reason;
   }
+
+  void SetBlobHandles(BlobHandles blob_handles);
 
   bool blocked_cross_site_document() const {
     return blocked_cross_site_document_;
@@ -244,7 +223,6 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   int request_id_;
   int render_frame_id_;
   bool is_main_frame_;
-  bool should_replace_current_entry_;
   bool is_download_;
   bool is_stream_;
   bool allow_download_;
@@ -261,23 +239,20 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   bool is_prerendering_;
   ResourceContext* context_;
   bool report_raw_headers_;
+  bool report_security_info_;
   bool is_async_;
   DevToolsStatus devtools_status_;
+  base::Optional<blink::ResourceRequestBlockedReason>
+      resource_request_blocked_reason_;
   PreviewsState previews_state_;
   scoped_refptr<network::ResourceRequestBody> body_;
   bool initiated_in_secure_context_;
   std::unique_ptr<NavigationUIData> navigation_ui_data_;
-  base::Optional<std::string> suggested_filename_;
   bool blocked_cross_site_document_;
   bool first_auth_attempt_;
 
   // Keeps upload body blobs alive for the duration of the request.
   BlobHandles blob_handles_;
-
-  // This callback is set by MojoAsyncResourceHandler to update its mojo binding
-  // and remote endpoint. This callback will be removed once PlzNavigate is
-  // shipped.
-  TransferCallback on_transfer_;
 
   std::string custom_cancel_reason_;
 

@@ -280,7 +280,8 @@ float DesktopWindowTreeHostMus::GetScaleFactor() const {
 }
 
 void DesktopWindowTreeHostMus::SetBoundsInDIP(const gfx::Rect& bounds_in_dip) {
-  SetBoundsInPixels(gfx::ConvertRectToPixel(GetScaleFactor(), bounds_in_dip));
+  SetBoundsInPixels(gfx::ConvertRectToPixel(GetScaleFactor(), bounds_in_dip),
+                    viz::LocalSurfaceId());
 }
 
 bool DesktopWindowTreeHostMus::ShouldSendClientAreaToServer() const {
@@ -512,7 +513,11 @@ void DesktopWindowTreeHostMus::GetWindowPlacement(
 }
 
 gfx::Rect DesktopWindowTreeHostMus::GetWindowBoundsInScreen() const {
-  return gfx::ConvertRectToDIP(GetScaleFactor(), GetBoundsInPixels());
+  gfx::Point display_origin = GetDisplay().bounds().origin();
+  gfx::Rect bounds_in_dip =
+      gfx::ConvertRectToDIP(GetScaleFactor(), GetBoundsInPixels());
+  bounds_in_dip.Offset(display_origin.x(), display_origin.y());
+  return bounds_in_dip;
 }
 
 gfx::Rect DesktopWindowTreeHostMus::GetClientAreaBoundsInScreen() const {
@@ -697,7 +702,9 @@ bool DesktopWindowTreeHostMus::ShouldWindowContentsBeTransparent() const {
   return false;
 }
 
-void DesktopWindowTreeHostMus::FrameTypeChanged() {}
+void DesktopWindowTreeHostMus::FrameTypeChanged() {
+  native_widget_delegate_->AsWidget()->ThemeChanged();
+}
 
 void DesktopWindowTreeHostMus::SetFullscreen(bool fullscreen) {
   if (IsFullscreen() == fullscreen)
@@ -824,7 +831,8 @@ void DesktopWindowTreeHostMus::HideImpl() {
 }
 
 void DesktopWindowTreeHostMus::SetBoundsInPixels(
-    const gfx::Rect& bounds_in_pixels) {
+    const gfx::Rect& bounds_in_pixels,
+    const viz::LocalSurfaceId& local_surface_id) {
   gfx::Rect final_bounds_in_pixels = bounds_in_pixels;
   if (GetBoundsInPixels().size() != bounds_in_pixels.size()) {
     gfx::Size size = bounds_in_pixels.size();
@@ -837,7 +845,8 @@ void DesktopWindowTreeHostMus::SetBoundsInPixels(
     final_bounds_in_pixels.set_size(size);
   }
   const gfx::Rect old_bounds_in_pixels = GetBoundsInPixels();
-  WindowTreeHostMus::SetBoundsInPixels(final_bounds_in_pixels);
+  WindowTreeHostMus::SetBoundsInPixels(final_bounds_in_pixels,
+                                       local_surface_id);
   if (old_bounds_in_pixels.size() != final_bounds_in_pixels.size()) {
     SendClientAreaToServer();
     SendHitTestMaskToServer();

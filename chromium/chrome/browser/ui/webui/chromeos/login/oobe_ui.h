@@ -50,6 +50,7 @@ class NetworkDropdownHandler;
 class NetworkStateInformer;
 class NetworkView;
 class OobeDisplayChooser;
+class RecommendAppsScreenView;
 class SigninScreenHandler;
 class SigninScreenHandlerDelegate;
 class SupervisedUserCreationScreenHandler;
@@ -111,6 +112,7 @@ class OobeUI : public content::WebUIController,
   TermsOfServiceScreenView* GetTermsOfServiceScreenView();
   SyncConsentScreenView* GetSyncConsentScreenView();
   ArcTermsOfServiceScreenView* GetArcTermsOfServiceScreenView();
+  RecommendAppsScreenView* GetRecommendAppsScreenView();
   UserImageView* GetUserImageView();
   ErrorScreen* GetErrorScreen();
   WrongHWIDScreenView* GetWrongHWIDScreenView();
@@ -187,6 +189,9 @@ class OobeUI : public content::WebUIController,
 
   // Re-evaluate OOBE display placement.
   void OnDisplayConfigurationChanged();
+
+  // Notify WebUI of the user count on the views login screen.
+  void SetLoginUserCount(int user_count);
 
  private:
   // Lookup a view by its statically registered OobeScreen.

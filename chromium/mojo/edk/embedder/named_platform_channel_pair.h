@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/strings/string16.h"
 #include "build/build_config.h"
@@ -34,6 +35,10 @@ class MOJO_SYSTEM_IMPL_EXPORT NamedPlatformChannelPair {
     // empty, a default security descriptor will be used. See
     // kDefaultSecurityDescriptor in named_platform_handle_utils_win.cc.
     base::string16 security_descriptor;
+#else
+    // On POSIX, every new NamedPlatformChannelPair creates a new server socket
+    // with a random name. This controls the directory where that happens.
+    base::FilePath socket_dir;
 #endif
   };
 
@@ -42,13 +47,13 @@ class MOJO_SYSTEM_IMPL_EXPORT NamedPlatformChannelPair {
 
   // Note: It is NOT acceptable to use this handle as a generic pipe channel. It
   // MUST be passed to OutgoingBrokerClientInvitation::Send() only.
-  ScopedPlatformHandle PassServerHandle();
+  ScopedInternalPlatformHandle PassServerHandle();
 
   // To be called in the child process, after the parent process called
   // |PrepareToPassClientHandleToChildProcess()| and launched the child (using
   // the provided data), to create a client handle connected to the server
   // handle (in the parent process).
-  static ScopedPlatformHandle PassClientHandleFromParentProcess(
+  static ScopedInternalPlatformHandle PassClientHandleFromParentProcess(
       const base::CommandLine& command_line);
 
   // Prepares to pass the client channel to a new child process, to be launched
@@ -62,7 +67,7 @@ class MOJO_SYSTEM_IMPL_EXPORT NamedPlatformChannelPair {
 
  private:
   NamedPlatformHandle pipe_handle_;
-  ScopedPlatformHandle server_handle_;
+  ScopedInternalPlatformHandle server_handle_;
 
   DISALLOW_COPY_AND_ASSIGN(NamedPlatformChannelPair);
 };

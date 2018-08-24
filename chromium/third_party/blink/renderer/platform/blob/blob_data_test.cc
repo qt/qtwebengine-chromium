@@ -51,7 +51,7 @@ struct ExpectedElement {
   static ExpectedElement LargeBytes(Vector<uint8_t> data) {
     uint64_t size = data.size();
     return ExpectedElement{DataElement::NewBytes(DataElementBytes::New(
-                               size, WTF::nullopt, nullptr)),
+                               size, base::nullopt, nullptr)),
                            String(), std::move(data)};
   }
 
@@ -89,7 +89,9 @@ class BlobDataHandleTest : public testing::Test {
     BlobDataHandle::SetBlobRegistryForTesting(blob_registry_ptr_.get());
   }
 
-  ~BlobDataHandleTest() { BlobDataHandle::SetBlobRegistryForTesting(nullptr); }
+  ~BlobDataHandleTest() override {
+    BlobDataHandle::SetBlobRegistryForTesting(nullptr);
+  }
 
   void SetUp() override {
     small_test_data_.resize(1024);

@@ -31,7 +31,7 @@ class ValidationMessageChromeClient : public EmptyChromeClient {
         anchor_view_(anchor_view),
         overlay_(overlay) {}
 
-  void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(main_chrome_client_);
     visitor->Trace(anchor_view_);
     EmptyChromeClient::Trace(visitor);
@@ -39,7 +39,7 @@ class ValidationMessageChromeClient : public EmptyChromeClient {
 
   void InvalidateRect(const IntRect&) override { overlay_.Update(); }
 
-  void ScheduleAnimation(const PlatformFrameView* frame_view) override {
+  void ScheduleAnimation(const LocalFrameView*) override {
     // Need to pass LocalFrameView for the anchor element because the Frame for
     // this overlay doesn't have an associated WebFrameWidget, which schedules
     // animation.
@@ -95,7 +95,7 @@ LocalFrameView& ValidationMessageOverlayDelegate::FrameView() const {
 void ValidationMessageOverlayDelegate::PaintPageOverlay(
     const PageOverlay& overlay,
     GraphicsContext& context,
-    const WebSize& view_size) const {
+    const IntSize& view_size) const {
   if (IsHiding() && !page_)
     return;
   const_cast<ValidationMessageOverlayDelegate*>(this)->UpdateFrameViewState(

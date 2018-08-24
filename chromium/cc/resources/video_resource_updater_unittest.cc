@@ -8,11 +8,12 @@
 #include <stdint.h>
 
 #include "base/bind.h"
-#include "cc/resources/resource_provider.h"
+#include "cc/resources/layer_tree_resource_provider.h"
 #include "cc/test/fake_layer_tree_frame_sink.h"
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_resource_provider.h"
 #include "components/viz/test/fake_output_surface.h"
+#include "components/viz/test/test_gles2_interface.h"
 #include "components/viz/test/test_web_graphics_context_3d.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "media/base/video_frame.h"
@@ -21,9 +22,9 @@
 namespace cc {
 namespace {
 
-class WebGraphicsContext3DUploadCounter : public viz::TestWebGraphicsContext3D {
+class UploadCounterGLES2Interface : public viz::TestGLES2Interface {
  public:
-  void texSubImage2D(GLenum target,
+  void TexSubImage2D(GLenum target,
                      GLint level,
                      GLint xoffset,
                      GLint yoffset,
@@ -35,26 +36,20 @@ class WebGraphicsContext3DUploadCounter : public viz::TestWebGraphicsContext3D {
     ++upload_count_;
   }
 
-  void texStorage2DEXT(GLenum target,
+  void TexStorage2DEXT(GLenum target,
                        GLint levels,
                        GLuint internalformat,
                        GLint width,
-                       GLint height) override {
+                       GLint height) override {}
+
+  void GenTextures(GLsizei n, GLuint* textures) override {
+    created_texture_count_ += n;
+    viz::TestGLES2Interface::GenTextures(n, textures);
   }
 
-  GLuint createTexture() override {
-    ++created_texture_count_;
-    return TestWebGraphicsContext3D::createTexture();
-  }
-
-  void deleteTexture(GLuint texture) override {
-    --created_texture_count_;
-    TestWebGraphicsContext3D::deleteTexture(texture);
-  }
-
-  void deleteTextures(GLsizei count, const GLuint* ids) override {
-    created_texture_count_ -= count;
-    TestWebGraphicsContext3D::deleteTextures(count, ids);
+  void DeleteTextures(GLsizei n, const GLuint* textures) override {
+    created_texture_count_ -= n;
+    viz::TestGLES2Interface::DeleteTextures(n, textures);
   }
 
   int UploadCount() { return upload_count_; }
@@ -71,13 +66,13 @@ class WebGraphicsContext3DUploadCounter : public viz::TestWebGraphicsContext3D {
 class VideoResourceUpdaterTest : public testing::Test {
  protected:
   VideoResourceUpdaterTest() {
-    std::unique_ptr<WebGraphicsContext3DUploadCounter> context3d(
-        new WebGraphicsContext3DUploadCounter());
+    std::unique_ptr<UploadCounterGLES2Interface> gl(
+        new UploadCounterGLES2Interface());
 
-    context3d_ = context3d.get();
-    context3d_->set_support_texture_storage(true);
+    gl_ = gl.get();
+    gl_->set_support_texture_storage(true);
 
-    context_provider_ = viz::TestContextProvider::Create(std::move(context3d));
+    context_provider_ = viz::TestContextProvider::Create(std::move(gl));
     context_provider_->BindToCurrentThread();
   }
 
@@ -87,17 +82,17 @@ class VideoResourceUpdaterTest : public testing::Test {
     layer_tree_frame_sink_software_ = FakeLayerTreeFrameSink::CreateSoftware();
     resource_provider3d_ =
         FakeResourceProvider::CreateLayerTreeResourceProvider(
-            context_provider_.get(), nullptr, nullptr, high_bit_for_testing_);
+            context_provider_.get());
     resource_provider_software_ =
-        FakeResourceProvider::CreateLayerTreeResourceProvider(
-            nullptr, nullptr, nullptr, high_bit_for_testing_);
+        FakeResourceProvider::CreateLayerTreeResourceProvider(nullptr);
   }
 
   std::unique_ptr<VideoResourceUpdater> CreateUpdaterForHardware(
       bool use_stream_video_draw_quad = false) {
     return std::make_unique<VideoResourceUpdater>(
         context_provider_.get(), nullptr, resource_provider3d_.get(),
-        use_stream_video_draw_quad, /*use_gpu_memory_buffer_resources=*/false);
+        use_stream_video_draw_quad, /*use_gpu_memory_buffer_resources=*/false,
+        /*use_r16_texture=*/use_r16_texture_, /*max_resource_size=*/10000);
   }
 
   std::unique_ptr<VideoResourceUpdater> CreateUpdaterForSoftware() {
@@ -105,15 +100,21 @@ class VideoResourceUpdaterTest : public testing::Test {
         nullptr, layer_tree_frame_sink_software_.get(),
         resource_provider_software_.get(),
         /*use_stream_video_draw_quad=*/false,
-        /*use_gpu_memory_buffer_resources=*/false);
+        /*use_gpu_memory_buffer_resources=*/false,
+        /*use_r16_texture=*/false,
+        /*max_resource_size=*/10000);
   }
 
-  scoped_refptr<media::VideoFrame> CreateTestYUVVideoFrame() {
-    const int kDimension = 10;
-    gfx::Size size(kDimension, kDimension);
-    static uint8_t y_data[kDimension * kDimension] = {0};
-    static uint8_t u_data[kDimension * kDimension / 2] = {0};
-    static uint8_t v_data[kDimension * kDimension / 2] = {0};
+  // Note that the number of pixels needed for |size| must be less than or equal
+  // to the number of pixels needed for size of 100x100.
+  scoped_refptr<media::VideoFrame> CreateTestYUVVideoFrame(
+      const gfx::Size& size = gfx::Size(10, 10)) {
+    constexpr int kMaxDimension = 100;
+    static uint8_t y_data[kMaxDimension * kMaxDimension] = {0};
+    static uint8_t u_data[kMaxDimension * kMaxDimension / 2] = {0};
+    static uint8_t v_data[kMaxDimension * kMaxDimension / 2] = {0};
+
+    CHECK_LE(size.width() * size.height(), kMaxDimension * kMaxDimension);
 
     scoped_refptr<media::VideoFrame> video_frame =
         media::VideoFrame::WrapExternalYuvData(
@@ -240,13 +241,13 @@ class VideoResourceUpdaterTest : public testing::Test {
 
   static const gpu::SyncToken kMailboxSyncToken;
 
-  WebGraphicsContext3DUploadCounter* context3d_;
+  UploadCounterGLES2Interface* gl_;
   scoped_refptr<viz::TestContextProvider> context_provider_;
   std::unique_ptr<FakeLayerTreeFrameSink> layer_tree_frame_sink_software_;
   std::unique_ptr<LayerTreeResourceProvider> resource_provider3d_;
   std::unique_ptr<LayerTreeResourceProvider> resource_provider_software_;
   gpu::SyncToken release_sync_token_;
-  bool high_bit_for_testing_ = false;
+  bool use_r16_texture_ = false;
 };
 
 const gpu::SyncToken VideoResourceUpdaterTest::kMailboxSyncToken =
@@ -275,7 +276,7 @@ TEST_F(VideoResourceUpdaterTest, HighBitFrameNoF16) {
 class VideoResourceUpdaterTestWithF16 : public VideoResourceUpdaterTest {
  public:
   VideoResourceUpdaterTestWithF16() : VideoResourceUpdaterTest() {
-    context3d_->set_support_texture_half_float_linear(true);
+    gl_->set_support_texture_half_float_linear(true);
   }
 };
 
@@ -301,8 +302,8 @@ TEST_F(VideoResourceUpdaterTestWithF16, HighBitFrame) {
 class VideoResourceUpdaterTestWithR16 : public VideoResourceUpdaterTest {
  public:
   VideoResourceUpdaterTestWithR16() : VideoResourceUpdaterTest() {
-    high_bit_for_testing_ = true;
-    context3d_->set_support_texture_norm16(true);
+    use_r16_texture_ = true;
+    gl_->set_support_texture_norm16(true);
   }
 };
 
@@ -361,14 +362,14 @@ TEST_F(VideoResourceUpdaterTest, ReuseResource) {
   video_frame->set_timestamp(base::TimeDelta::FromSeconds(1234));
 
   // Allocate the resources for a YUV video frame.
-  context3d_->ResetUploadCount();
+  gl_->ResetUploadCount();
   VideoFrameExternalResources resources =
       updater->CreateExternalResourcesFromVideoFrame(video_frame);
   EXPECT_EQ(VideoFrameResourceType::YUV, resources.type);
   EXPECT_EQ(3u, resources.resources.size());
   EXPECT_EQ(3u, resources.release_callbacks.size());
   // Expect exactly three texture uploads, one for each plane.
-  EXPECT_EQ(3, context3d_->UploadCount());
+  EXPECT_EQ(3, gl_->UploadCount());
 
   // Simulate the ResourceProvider releasing the resources back to the video
   // updater.
@@ -376,13 +377,13 @@ TEST_F(VideoResourceUpdaterTest, ReuseResource) {
     std::move(release_callback).Run(gpu::SyncToken(), false);
 
   // Allocate resources for the same frame.
-  context3d_->ResetUploadCount();
+  gl_->ResetUploadCount();
   resources = updater->CreateExternalResourcesFromVideoFrame(video_frame);
   EXPECT_EQ(VideoFrameResourceType::YUV, resources.type);
   EXPECT_EQ(3u, resources.resources.size());
   EXPECT_EQ(3u, resources.release_callbacks.size());
   // The data should be reused so expect no texture uploads.
-  EXPECT_EQ(0, context3d_->UploadCount());
+  EXPECT_EQ(0, gl_->UploadCount());
 }
 
 TEST_F(VideoResourceUpdaterTest, ReuseResourceNoDelete) {
@@ -391,23 +392,23 @@ TEST_F(VideoResourceUpdaterTest, ReuseResourceNoDelete) {
   video_frame->set_timestamp(base::TimeDelta::FromSeconds(1234));
 
   // Allocate the resources for a YUV video frame.
-  context3d_->ResetUploadCount();
+  gl_->ResetUploadCount();
   VideoFrameExternalResources resources =
       updater->CreateExternalResourcesFromVideoFrame(video_frame);
   EXPECT_EQ(VideoFrameResourceType::YUV, resources.type);
   EXPECT_EQ(3u, resources.resources.size());
   EXPECT_EQ(3u, resources.release_callbacks.size());
   // Expect exactly three texture uploads, one for each plane.
-  EXPECT_EQ(3, context3d_->UploadCount());
+  EXPECT_EQ(3, gl_->UploadCount());
 
   // Allocate resources for the same frame.
-  context3d_->ResetUploadCount();
+  gl_->ResetUploadCount();
   resources = updater->CreateExternalResourcesFromVideoFrame(video_frame);
   EXPECT_EQ(VideoFrameResourceType::YUV, resources.type);
   EXPECT_EQ(3u, resources.resources.size());
   EXPECT_EQ(3u, resources.release_callbacks.size());
   // The data should be reused so expect no texture uploads.
-  EXPECT_EQ(0, context3d_->UploadCount());
+  EXPECT_EQ(0, gl_->UploadCount());
 }
 
 TEST_F(VideoResourceUpdaterTest, SoftwareFrameSoftwareCompositor) {
@@ -473,6 +474,35 @@ TEST_F(VideoResourceUpdaterTest, ReuseResourceNoDeleteSoftwareCompositor) {
   EXPECT_EQ(layer_tree_frame_sink_software_->shared_bitmaps(), shared_bitmaps);
 }
 
+TEST_F(VideoResourceUpdaterTest, ChangeResourceSizeSoftwareCompositor) {
+  constexpr gfx::Size kSize1(10, 10);
+  constexpr gfx::Size kSize2(20, 20);
+
+  std::unique_ptr<VideoResourceUpdater> updater = CreateUpdaterForSoftware();
+
+  // Allocate the resources for a software video frame.
+  VideoFrameExternalResources resources =
+      updater->CreateExternalResourcesFromVideoFrame(
+          CreateTestYUVVideoFrame(kSize1));
+  // Expect exactly one allocated shared bitmap.
+  EXPECT_EQ(1u, layer_tree_frame_sink_software_->shared_bitmaps().size());
+  auto shared_bitmaps = layer_tree_frame_sink_software_->shared_bitmaps();
+
+  // Simulate the ResourceProvider releasing the resource back to the video
+  // updater.
+  std::move(resources.release_callbacks[0]).Run(gpu::SyncToken(), false);
+
+  // Allocate resources for the next frame with a different size.
+  resources = updater->CreateExternalResourcesFromVideoFrame(
+      CreateTestYUVVideoFrame(kSize2));
+
+  // The first resource was released, so it can be reused but it's the wrong
+  // size. We should expect the first shared bitmap to be deleted and a new
+  // shared bitmap to be allocated.
+  EXPECT_EQ(1u, layer_tree_frame_sink_software_->shared_bitmaps().size());
+  EXPECT_NE(layer_tree_frame_sink_software_->shared_bitmaps(), shared_bitmaps);
+}
+
 TEST_F(VideoResourceUpdaterTest, CreateForHardwarePlanes) {
   std::unique_ptr<VideoResourceUpdater> updater = CreateUpdaterForHardware();
 
@@ -511,7 +541,7 @@ TEST_F(VideoResourceUpdaterTest, CreateForHardwarePlanes_StreamTexture) {
   // Note that |use_stream_video_draw_quad| is true for this test.
   std::unique_ptr<VideoResourceUpdater> updater =
       CreateUpdaterForHardware(true);
-  context3d_->ResetTextureCreationCount();
+  gl_->ResetTextureCreationCount();
   scoped_refptr<media::VideoFrame> video_frame =
       CreateTestStreamTextureHardwareVideoFrame(false);
 
@@ -522,11 +552,11 @@ TEST_F(VideoResourceUpdaterTest, CreateForHardwarePlanes_StreamTexture) {
   EXPECT_EQ((GLenum)GL_TEXTURE_EXTERNAL_OES,
             resources.resources[0].mailbox_holder.texture_target);
   EXPECT_EQ(1u, resources.release_callbacks.size());
-  EXPECT_EQ(0, context3d_->TextureCreationCount());
+  EXPECT_EQ(0, gl_->TextureCreationCount());
 
   // A copied stream texture should return an RGBA resource in a new
   // GL_TEXTURE_2D texture.
-  context3d_->ResetTextureCreationCount();
+  gl_->ResetTextureCreationCount();
   video_frame = CreateTestStreamTextureHardwareVideoFrame(true);
   resources = updater->CreateExternalResourcesFromVideoFrame(video_frame);
   EXPECT_EQ(VideoFrameResourceType::RGBA_PREMULTIPLIED, resources.type);
@@ -534,12 +564,12 @@ TEST_F(VideoResourceUpdaterTest, CreateForHardwarePlanes_StreamTexture) {
   EXPECT_EQ((GLenum)GL_TEXTURE_2D,
             resources.resources[0].mailbox_holder.texture_target);
   EXPECT_EQ(1u, resources.release_callbacks.size());
-  EXPECT_EQ(1, context3d_->TextureCreationCount());
+  EXPECT_EQ(0, gl_->TextureCreationCount());
 }
 
 TEST_F(VideoResourceUpdaterTest, CreateForHardwarePlanes_TextureQuad) {
   std::unique_ptr<VideoResourceUpdater> updater = CreateUpdaterForHardware();
-  context3d_->ResetTextureCreationCount();
+  gl_->ResetTextureCreationCount();
   scoped_refptr<media::VideoFrame> video_frame =
       CreateTestStreamTextureHardwareVideoFrame(false);
 
@@ -550,7 +580,7 @@ TEST_F(VideoResourceUpdaterTest, CreateForHardwarePlanes_TextureQuad) {
   EXPECT_EQ((GLenum)GL_TEXTURE_EXTERNAL_OES,
             resources.resources[0].mailbox_holder.texture_target);
   EXPECT_EQ(1u, resources.release_callbacks.size());
-  EXPECT_EQ(0, context3d_->TextureCreationCount());
+  EXPECT_EQ(0, gl_->TextureCreationCount());
 }
 
 // Passthrough the sync token returned by the compositor if we don't have an
@@ -646,7 +676,7 @@ TEST_F(VideoResourceUpdaterTest, GenerateSyncTokenOnTextureCopy) {
 // of the underlying buffer, that is YUV_420_BIPLANAR.
 TEST_F(VideoResourceUpdaterTest, CreateForHardwarePlanes_SingleNV12) {
   std::unique_ptr<VideoResourceUpdater> updater = CreateUpdaterForHardware();
-  context3d_->ResetTextureCreationCount();
+  gl_->ResetTextureCreationCount();
   scoped_refptr<media::VideoFrame> video_frame = CreateTestHardwareVideoFrame(
       media::PIXEL_FORMAT_NV12, GL_TEXTURE_EXTERNAL_OES);
 
@@ -669,12 +699,12 @@ TEST_F(VideoResourceUpdaterTest, CreateForHardwarePlanes_SingleNV12) {
   EXPECT_EQ(gfx::BufferFormat::YUV_420_BIPLANAR,
             resources.resources[0].buffer_format);
 
-  EXPECT_EQ(0, context3d_->TextureCreationCount());
+  EXPECT_EQ(0, gl_->TextureCreationCount());
 }
 
 TEST_F(VideoResourceUpdaterTest, CreateForHardwarePlanes_DualNV12) {
   std::unique_ptr<VideoResourceUpdater> updater = CreateUpdaterForHardware();
-  context3d_->ResetTextureCreationCount();
+  gl_->ResetTextureCreationCount();
   scoped_refptr<media::VideoFrame> video_frame =
       CreateTestYuvHardwareVideoFrame(media::PIXEL_FORMAT_NV12, 2,
                                       GL_TEXTURE_EXTERNAL_OES);
@@ -697,8 +727,10 @@ TEST_F(VideoResourceUpdaterTest, CreateForHardwarePlanes_DualNV12) {
   EXPECT_EQ((GLenum)GL_TEXTURE_RECTANGLE_ARB,
             resources.resources[0].mailbox_holder.texture_target);
   EXPECT_EQ(gfx::BufferFormat::RGBA_8888, resources.resources[0].buffer_format);
-
-  EXPECT_EQ(0, context3d_->TextureCreationCount());
+  // When TestWebGraphicsContext3D is used, createAndConsumeTextureCHROMIUM will
+  // call createTexture. But this is incorrect, so when this is converted to
+  // TestGLES2Interface, GenTextures will not being called.
+  EXPECT_EQ(0, gl_->TextureCreationCount());
 }
 
 }  // namespace

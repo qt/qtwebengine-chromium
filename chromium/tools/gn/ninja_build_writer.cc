@@ -52,7 +52,7 @@ std::string GetSelfInvocationCommand(const BuildSettings* build_settings) {
       build_settings->build_dir().Resolve(build_settings->root_path());
 
   base::FilePath exe_path;
-  PathService::Get(base::FILE_EXE, &exe_path);
+  base::PathService::Get(base::FILE_EXE, &exe_path);
   if (build_path.IsAbsolute())
     exe_path = MakeAbsoluteFilePathRelativeIfPossible(build_path, exe_path);
 
@@ -317,7 +317,10 @@ void NinjaBuildWriter::WriteAllPools() {
               return pool_name(a) < pool_name(b);
             });
   for (const Pool* pool : sorted_pools) {
-    out_ << "pool " << pool_name(pool) << std::endl
+    std::string name = pool_name(pool);
+    if (name == "console")
+      continue;
+    out_ << "pool " << name << std::endl
          << "  depth = " << pool->depth() << std::endl
          << std::endl;
   }

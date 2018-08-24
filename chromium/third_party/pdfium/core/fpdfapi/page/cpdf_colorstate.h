@@ -7,6 +7,8 @@
 #ifndef CORE_FPDFAPI_PAGE_CPDF_COLORSTATE_H_
 #define CORE_FPDFAPI_PAGE_CPDF_COLORSTATE_H_
 
+#include <vector>
+
 #include "core/fpdfapi/page/cpdf_color.h"
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/shared_copy_on_write.h"
@@ -39,10 +41,11 @@ class CPDF_ColorState {
   CPDF_Color* GetMutableStrokeColor();
   bool HasStrokeColor() const;
 
-  void SetFillColor(CPDF_ColorSpace* pCS, float* pValue, uint32_t nValues);
-  void SetStrokeColor(CPDF_ColorSpace* pCS, float* pValue, uint32_t nValues);
-  void SetFillPattern(CPDF_Pattern* pattern, float* pValue, uint32_t nValues);
-  void SetStrokePattern(CPDF_Pattern* pattern, float* pValue, uint32_t nValues);
+  void SetFillColor(CPDF_ColorSpace* pCS, const std::vector<float>& values);
+  void SetStrokeColor(CPDF_ColorSpace* pCS, const std::vector<float>& values);
+  void SetFillPattern(CPDF_Pattern* pattern, const std::vector<float>& values);
+  void SetStrokePattern(CPDF_Pattern* pattern,
+                        const std::vector<float>& values);
 
   bool HasRef() const { return !!m_Ref; }
 
@@ -61,11 +64,14 @@ class CPDF_ColorState {
     CPDF_Color m_StrokeColor;
   };
 
-  void SetColor(CPDF_Color& color,
-                FX_COLORREF* colorref,
-                CPDF_ColorSpace* pCS,
-                float* pValue,
-                uint32_t nValues);
+  void SetColor(CPDF_ColorSpace* pCS,
+                const std::vector<float>& values,
+                CPDF_Color* color,
+                FX_COLORREF* colorref);
+  void SetPattern(CPDF_Pattern* pPattern,
+                  const std::vector<float>& values,
+                  CPDF_Color* color,
+                  FX_COLORREF* colorref);
 
   SharedCopyOnWrite<ColorData> m_Ref;
 };

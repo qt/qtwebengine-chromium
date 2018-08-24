@@ -19,15 +19,15 @@
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_source.h"
 #include "net/quic/chromium/quic_http_utils.h"
-#include "net/quic/core/quic_client_promised_info.h"
-#include "net/quic/core/quic_stream_sequencer.h"
-#include "net/quic/core/quic_utils.h"
-#include "net/quic/core/spdy_utils.h"
-#include "net/quic/platform/api/quic_string_piece.h"
-#include "net/spdy/chromium/spdy_http_utils.h"
-#include "net/spdy/core/spdy_frame_builder.h"
-#include "net/spdy/core/spdy_framer.h"
+#include "net/spdy/spdy_http_utils.h"
 #include "net/ssl/ssl_info.h"
+#include "net/third_party/quic/core/quic_client_promised_info.h"
+#include "net/third_party/quic/core/quic_stream_sequencer.h"
+#include "net/third_party/quic/core/quic_utils.h"
+#include "net/third_party/quic/core/spdy_utils.h"
+#include "net/third_party/quic/platform/api/quic_string_piece.h"
+#include "net/third_party/spdy/core/spdy_frame_builder.h"
+#include "net/third_party/spdy/core/spdy_framer.h"
 
 namespace net {
 
@@ -176,7 +176,8 @@ int QuicHttpStream::DoHandlePromiseComplete(int rv) {
 
   stream_ = quic_session()->ReleasePromisedStream();
 
-  SpdyPriority spdy_priority = ConvertRequestPriorityToQuicPriority(priority_);
+  spdy::SpdyPriority spdy_priority =
+      ConvertRequestPriorityToQuicPriority(priority_);
   stream_->SetPriority(spdy_priority);
 
   next_state_ = STATE_OPEN;
@@ -570,7 +571,7 @@ int QuicHttpStream::DoSetRequestPriority() {
   DCHECK(stream_);
   DCHECK(response_info_);
 
-  SpdyPriority priority = ConvertRequestPriorityToQuicPriority(priority_);
+  spdy::SpdyPriority priority = ConvertRequestPriorityToQuicPriority(priority_);
   stream_->SetPriority(priority);
   next_state_ = STATE_SEND_HEADERS;
   return OK;
@@ -591,7 +592,7 @@ int QuicHttpStream::DoSendHeaders() {
   if (rv > 0)
     headers_bytes_sent_ += rv;
 
-  request_headers_ = SpdyHeaderBlock();
+  request_headers_ = spdy::SpdyHeaderBlock();
   return rv;
 }
 
@@ -662,7 +663,8 @@ int QuicHttpStream::DoSendBodyComplete(int rv) {
   return OK;
 }
 
-int QuicHttpStream::ProcessResponseHeaders(const SpdyHeaderBlock& headers) {
+int QuicHttpStream::ProcessResponseHeaders(
+    const spdy::SpdyHeaderBlock& headers) {
   if (!SpdyHeadersToHttpResponse(headers, response_info_)) {
     DLOG(WARNING) << "Invalid headers";
     return ERR_QUIC_PROTOCOL_ERROR;

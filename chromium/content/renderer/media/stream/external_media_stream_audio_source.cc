@@ -21,7 +21,6 @@ ExternalMediaStreamAudioSource::ExternalMediaStreamAudioSource(
   MediaStreamAudioSource::SetFormat(media::AudioParameters(
       media::AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout,
       sample_rate,
-      16,  // Legacy parameter (data is always in 32-bit float format).
       frames_per_buffer));
 }
 
@@ -39,7 +38,7 @@ bool ExternalMediaStreamAudioSource::EnsureSourceIsStarted() {
           << (is_local_source() ? "local" : "remote")
           << " source with audio parameters={"
           << GetAudioParameters().AsHumanReadableString() << "}.";
-  source_->Initialize(GetAudioParameters(), this, -1);
+  source_->Initialize(GetAudioParameters(), this);
   source_->Start();
   was_started_ = true;
   return true;

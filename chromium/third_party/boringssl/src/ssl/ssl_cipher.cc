@@ -210,33 +210,6 @@ static const SSL_CIPHER kCiphers[] = {
      SSL_HANDSHAKE_MAC_DEFAULT,
     },
 
-
-    // TLS v1.2 ciphersuites
-
-    // Cipher 3C
-    {
-     TLS1_TXT_RSA_WITH_AES_128_SHA256,
-     "TLS_RSA_WITH_AES_128_CBC_SHA256",
-     TLS1_CK_RSA_WITH_AES_128_SHA256,
-     SSL_kRSA,
-     SSL_aRSA,
-     SSL_AES128,
-     SSL_SHA256,
-     SSL_HANDSHAKE_MAC_SHA256,
-    },
-
-    // Cipher 3D
-    {
-     TLS1_TXT_RSA_WITH_AES_256_SHA256,
-     "TLS_RSA_WITH_AES_256_CBC_SHA256",
-     TLS1_CK_RSA_WITH_AES_256_SHA256,
-     SSL_kRSA,
-     SSL_aRSA,
-     SSL_AES256,
-     SSL_SHA256,
-     SSL_HANDSHAKE_MAC_SHA256,
-    },
-
     // PSK cipher suites.
 
     // Cipher 8C
@@ -374,58 +347,6 @@ static const SSL_CIPHER kCiphers[] = {
      SSL_SHA1,
      SSL_HANDSHAKE_MAC_DEFAULT,
     },
-
-
-    // HMAC based TLS v1.2 ciphersuites from RFC5289
-
-    // Cipher C023
-    {
-     TLS1_TXT_ECDHE_ECDSA_WITH_AES_128_SHA256,
-     "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256",
-     TLS1_CK_ECDHE_ECDSA_WITH_AES_128_SHA256,
-     SSL_kECDHE,
-     SSL_aECDSA,
-     SSL_AES128,
-     SSL_SHA256,
-     SSL_HANDSHAKE_MAC_SHA256,
-    },
-
-    // Cipher C024
-    {
-     TLS1_TXT_ECDHE_ECDSA_WITH_AES_256_SHA384,
-     "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384",
-     TLS1_CK_ECDHE_ECDSA_WITH_AES_256_SHA384,
-     SSL_kECDHE,
-     SSL_aECDSA,
-     SSL_AES256,
-     SSL_SHA384,
-     SSL_HANDSHAKE_MAC_SHA384,
-    },
-
-    // Cipher C027
-    {
-     TLS1_TXT_ECDHE_RSA_WITH_AES_128_SHA256,
-     "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",
-     TLS1_CK_ECDHE_RSA_WITH_AES_128_SHA256,
-     SSL_kECDHE,
-     SSL_aRSA,
-     SSL_AES128,
-     SSL_SHA256,
-     SSL_HANDSHAKE_MAC_SHA256,
-    },
-
-    // Cipher C028
-    {
-     TLS1_TXT_ECDHE_RSA_WITH_AES_256_SHA384,
-     "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384",
-     TLS1_CK_ECDHE_RSA_WITH_AES_256_SHA384,
-     SSL_kECDHE,
-     SSL_aRSA,
-     SSL_AES256,
-     SSL_SHA384,
-     SSL_HANDSHAKE_MAC_SHA384,
-    },
-
 
     // GCM based TLS v1.2 ciphersuites from RFC5289
 
@@ -616,8 +537,6 @@ static const CIPHER_ALIAS kCipherAliases[] = {
     // MAC aliases
     {"SHA1", ~0u, ~0u, ~0u, SSL_SHA1, 0},
     {"SHA", ~0u, ~0u, ~0u, SSL_SHA1, 0},
-    {"SHA256", ~0u, ~0u, ~0u, SSL_SHA256, 0},
-    {"SHA384", ~0u, ~0u, ~0u, SSL_SHA384, 0},
 
     // Legacy protocol minimum version aliases. "TLSv1" is intentionally the
     // same as "SSLv3".
@@ -628,6 +547,11 @@ static const CIPHER_ALIAS kCipherAliases[] = {
     // Legacy strength classes.
     {"HIGH", ~0u, ~0u, ~0u, ~0u, 0},
     {"FIPS", ~0u, ~0u, ~0u, ~0u, 0},
+
+    // Temporary no-op aliases corresponding to removed SHA-2 legacy CBC
+    // ciphers. These should be removed after 2018-05-14.
+    {"SHA256", 0, 0, 0, 0, 0},
+    {"SHA384", 0, 0, 0, 0, 0},
 };
 
 static const size_t kCipherAliasesLen = OPENSSL_ARRAY_SIZE(kCipherAliases);
@@ -718,23 +642,6 @@ bool ssl_cipher_get_evp_aead(const EVP_AEAD **out_aead,
     }
 
     *out_mac_secret_len = SHA_DIGEST_LENGTH;
-  } else if (cipher->algorithm_mac == SSL_SHA256) {
-    if (cipher->algorithm_enc == SSL_AES128) {
-      *out_aead = EVP_aead_aes_128_cbc_sha256_tls();
-    } else if (cipher->algorithm_enc == SSL_AES256) {
-      *out_aead = EVP_aead_aes_256_cbc_sha256_tls();
-    } else {
-      return false;
-    }
-
-    *out_mac_secret_len = SHA256_DIGEST_LENGTH;
-  } else if (cipher->algorithm_mac == SSL_SHA384) {
-      if (cipher->algorithm_enc != SSL_AES256) {
-        return false;
-      }
-
-      *out_aead = EVP_aead_aes_256_cbc_sha384_tls();
-      *out_mac_secret_len = SHA384_DIGEST_LENGTH;
   } else {
     return false;
   }
@@ -811,9 +718,14 @@ static void ll_append_head(CIPHER_ORDER **head, CIPHER_ORDER *curr,
   *head = curr;
 }
 
-static void ssl_cipher_collect_ciphers(CIPHER_ORDER *co_list,
-                                       CIPHER_ORDER **head_p,
-                                       CIPHER_ORDER **tail_p) {
+static bool ssl_cipher_collect_ciphers(Array<CIPHER_ORDER> *out_co_list,
+                                       CIPHER_ORDER **out_head,
+                                       CIPHER_ORDER **out_tail) {
+  Array<CIPHER_ORDER> co_list;
+  if (!co_list.Init(kCiphersLen)) {
+    return false;
+  }
+
   size_t co_list_num = 0;
   for (const SSL_CIPHER &cipher : kCiphers) {
     // TLS 1.3 ciphers do not participate in this mechanism.
@@ -844,9 +756,35 @@ static void ssl_cipher_collect_ciphers(CIPHER_ORDER *co_list,
 
     co_list[co_list_num - 1].next = NULL;
 
-    *head_p = &co_list[0];
-    *tail_p = &co_list[co_list_num - 1];
+    *out_head = &co_list[0];
+    *out_tail = &co_list[co_list_num - 1];
+  } else {
+    *out_head = nullptr;
+    *out_tail = nullptr;
   }
+  *out_co_list = std::move(co_list);
+  return true;
+}
+
+SSLCipherPreferenceList::~SSLCipherPreferenceList() {
+  OPENSSL_free(in_group_flags);
+}
+
+bool SSLCipherPreferenceList::Init(UniquePtr<STACK_OF(SSL_CIPHER)> ciphers_arg,
+                                   Span<const bool> in_group_flags_arg) {
+  if (sk_SSL_CIPHER_num(ciphers_arg.get()) != in_group_flags_arg.size()) {
+    OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+    return false;
+  }
+
+  Array<bool> copy;
+  if (!copy.CopyFrom(in_group_flags_arg)) {
+    return false;
+  }
+  ciphers = std::move(ciphers_arg);
+  size_t unused_len;
+  copy.Release(&in_group_flags, &unused_len);
+  return true;
 }
 
 // ssl_cipher_apply_rule applies the rule type |rule| to ciphers matching its
@@ -1201,15 +1139,8 @@ static bool ssl_cipher_process_rulestr(const char *rule_str,
   return true;
 }
 
-bool ssl_create_cipher_list(
-    struct ssl_cipher_preference_list_st **out_cipher_list,
-    const char *rule_str, bool strict) {
-  STACK_OF(SSL_CIPHER) *cipherstack = NULL;
-  CIPHER_ORDER *co_list = NULL, *head = NULL, *tail = NULL, *curr;
-  uint8_t *in_group_flags = NULL;
-  unsigned int num_in_group_flags = 0;
-  struct ssl_cipher_preference_list_st *pref_list = NULL;
-
+bool ssl_create_cipher_list(SSLCipherPreferenceList **out_cipher_list,
+                            const char *rule_str, bool strict) {
   // Return with error if nothing to do.
   if (rule_str == NULL || out_cipher_list == NULL) {
     return false;
@@ -1218,13 +1149,11 @@ bool ssl_create_cipher_list(
   // Now we have to collect the available ciphers from the compiled in ciphers.
   // We cannot get more than the number compiled in, so it is used for
   // allocation.
-  co_list = (CIPHER_ORDER *)OPENSSL_malloc(sizeof(CIPHER_ORDER) * kCiphersLen);
-  if (co_list == NULL) {
-    OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
+  Array<CIPHER_ORDER> co_list;
+  CIPHER_ORDER *head = nullptr, *tail = nullptr;
+  if (!ssl_cipher_collect_ciphers(&co_list, &head, &tail)) {
     return false;
   }
-
-  ssl_cipher_collect_ciphers(co_list, &head, &tail);
 
   // Now arrange all ciphers by preference:
   // TODO(davidben): Compute this order once and copy it.
@@ -1285,7 +1214,7 @@ bool ssl_create_cipher_list(
   if (strncmp(rule_str, "DEFAULT", 7) == 0) {
     if (!ssl_cipher_process_rulestr(SSL_DEFAULT_CIPHER_LIST, &head, &tail,
                                     strict)) {
-      goto err;
+      return false;
     }
     rule_p += 7;
     if (*rule_p == ':') {
@@ -1295,75 +1224,52 @@ bool ssl_create_cipher_list(
 
   if (*rule_p != '\0' &&
       !ssl_cipher_process_rulestr(rule_p, &head, &tail, strict)) {
-    goto err;
+    return false;
   }
 
   // Allocate new "cipherstack" for the result, return with error
   // if we cannot get one.
-  cipherstack = sk_SSL_CIPHER_new_null();
-  if (cipherstack == NULL) {
-    goto err;
-  }
-
-  in_group_flags = (uint8_t *)OPENSSL_malloc(kCiphersLen);
-  if (!in_group_flags) {
-    goto err;
+  UniquePtr<STACK_OF(SSL_CIPHER)> cipherstack(sk_SSL_CIPHER_new_null());
+  Array<bool> in_group_flags;
+  if (cipherstack == nullptr ||
+      !in_group_flags.Init(kCiphersLen)) {
+    return false;
   }
 
   // The cipher selection for the list is done. The ciphers are added
   // to the resulting precedence to the STACK_OF(SSL_CIPHER).
-  for (curr = head; curr != NULL; curr = curr->next) {
+  size_t num_in_group_flags = 0;
+  for (CIPHER_ORDER *curr = head; curr != NULL; curr = curr->next) {
     if (curr->active) {
-      if (!sk_SSL_CIPHER_push(cipherstack, curr->cipher)) {
-        goto err;
+      if (!sk_SSL_CIPHER_push(cipherstack.get(), curr->cipher)) {
+        return false;
       }
       in_group_flags[num_in_group_flags++] = curr->in_group;
     }
   }
-  OPENSSL_free(co_list);  // Not needed any longer
-  co_list = NULL;
 
-  pref_list = (ssl_cipher_preference_list_st *)OPENSSL_malloc(
-      sizeof(struct ssl_cipher_preference_list_st));
-  if (!pref_list) {
-    goto err;
+  UniquePtr<SSLCipherPreferenceList> pref_list =
+      MakeUnique<SSLCipherPreferenceList>();
+  if (!pref_list ||
+      !pref_list->Init(
+          std::move(cipherstack),
+          MakeConstSpan(in_group_flags).subspan(0, num_in_group_flags))) {
+    return false;
   }
-  pref_list->ciphers = cipherstack;
-  pref_list->in_group_flags = NULL;
-  if (num_in_group_flags) {
-    pref_list->in_group_flags = (uint8_t *)OPENSSL_malloc(num_in_group_flags);
-    if (!pref_list->in_group_flags) {
-      goto err;
-    }
-    OPENSSL_memcpy(pref_list->in_group_flags, in_group_flags,
-                   num_in_group_flags);
+
+  if (*out_cipher_list) {
+    Delete(*out_cipher_list);
   }
-  OPENSSL_free(in_group_flags);
-  in_group_flags = NULL;
-  if (*out_cipher_list != NULL) {
-    ssl_cipher_preference_list_free(*out_cipher_list);
-  }
-  *out_cipher_list = pref_list;
-  pref_list = NULL;
+  *out_cipher_list = pref_list.release();
 
   // Configuring an empty cipher list is an error but still updates the
   // output.
-  if (sk_SSL_CIPHER_num((*out_cipher_list)->ciphers) == 0) {
+  if (sk_SSL_CIPHER_num((*out_cipher_list)->ciphers.get()) == 0) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_NO_CIPHER_MATCH);
     return false;
   }
 
   return true;
-
-err:
-  OPENSSL_free(co_list);
-  OPENSSL_free(in_group_flags);
-  sk_SSL_CIPHER_free(cipherstack);
-  if (pref_list) {
-    OPENSSL_free(pref_list->in_group_flags);
-  }
-  OPENSSL_free(pref_list);
-  return false;
 }
 
 uint16_t ssl_cipher_get_value(const SSL_CIPHER *cipher) {
@@ -1462,10 +1368,6 @@ int SSL_CIPHER_get_digest_nid(const SSL_CIPHER *cipher) {
       return NID_undef;
     case SSL_SHA1:
       return NID_sha1;
-    case SSL_SHA256:
-      return NID_sha256;
-    case SSL_SHA384:
-      return NID_sha384;
   }
   assert(0);
   return NID_undef;
@@ -1730,14 +1632,6 @@ const char *SSL_CIPHER_description(const SSL_CIPHER *cipher, char *buf,
   switch (alg_mac) {
     case SSL_SHA1:
       mac = "SHA1";
-      break;
-
-    case SSL_SHA256:
-      mac = "SHA256";
-      break;
-
-    case SSL_SHA384:
-      mac = "SHA384";
       break;
 
     case SSL_AEAD:

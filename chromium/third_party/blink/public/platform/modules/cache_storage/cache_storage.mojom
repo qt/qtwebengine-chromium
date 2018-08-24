@@ -43,8 +43,14 @@ enum OperationType {
 struct BatchOperation {
   OperationType operation_type;
   blink.mojom.FetchAPIRequest request;
-  blink.mojom.FetchAPIResponse response;
-  QueryParams match_params;
+
+  // If the |operation_type| is kPut, then the |response| must be defined, null
+  // otherwise.
+  blink.mojom.FetchAPIResponse? response;
+
+  // If the |operation_type| is kDelete, then the |match_params| must be
+  // defined, null otherwise.
+  QueryParams? match_params;
 };
 
 // Result of Open method. |status| is only set if there is a failure.
@@ -83,12 +89,12 @@ interface CacheStorageCache {
 
   // Returns all cached responses that match |request| according to options
   // specified on |query_params|.
-  MatchAll(blink.mojom.FetchAPIRequest request, QueryParams query_params)
+  MatchAll(blink.mojom.FetchAPIRequest? request, QueryParams query_params)
       => (MatchAllResult result);
 
   // Returns all keys (which are requests) of matching |request| and
   // |query_params|.
-  Keys(blink.mojom.FetchAPIRequest request, QueryParams query_params)
+  Keys(blink.mojom.FetchAPIRequest? request, QueryParams query_params)
       => (CacheKeysResult result);
 
   // Perform a batch of operations, used for PUT and DELETE operations.

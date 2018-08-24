@@ -115,38 +115,6 @@ class MediaInternalsVideoCaptureDeviceTest : public testing::Test,
   MediaInternals::UpdateCallback update_cb_;
 };
 
-// TODO(chfremer): Consider removing this. This test seem be
-// a duplicate implementation of the functionality under test.
-// https://crbug.com/630694
-#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX) || \
-    defined(OS_ANDROID)
-TEST_F(MediaInternalsVideoCaptureDeviceTest,
-       AllCaptureApiTypesHaveProperStringRepresentation) {
-  using VideoCaptureApi = media::VideoCaptureApi;
-  std::map<VideoCaptureApi, std::string> api_to_string_map;
-  api_to_string_map[VideoCaptureApi::LINUX_V4L2_SINGLE_PLANE] = "V4L2 SPLANE";
-  api_to_string_map[VideoCaptureApi::WIN_MEDIA_FOUNDATION] = "Media Foundation";
-  api_to_string_map[VideoCaptureApi::WIN_MEDIA_FOUNDATION_SENSOR] =
-      "Media Foundation Sensor Camera";
-  api_to_string_map[VideoCaptureApi::WIN_DIRECT_SHOW] = "Direct Show";
-  api_to_string_map[VideoCaptureApi::MACOSX_AVFOUNDATION] = "AV Foundation";
-  api_to_string_map[VideoCaptureApi::MACOSX_DECKLINK] = "DeckLink";
-  api_to_string_map[VideoCaptureApi::ANDROID_API1] = "Camera API1";
-  api_to_string_map[VideoCaptureApi::ANDROID_API2_LEGACY] =
-      "Camera API2 Legacy";
-  api_to_string_map[VideoCaptureApi::ANDROID_API2_FULL] = "Camera API2 Full";
-  api_to_string_map[VideoCaptureApi::ANDROID_API2_LIMITED] =
-      "Camera API2 Limited";
-  EXPECT_EQ(static_cast<size_t>(VideoCaptureApi::UNKNOWN),
-            api_to_string_map.size());
-  for (const auto& map_entry : api_to_string_map) {
-    media::VideoCaptureDeviceDescriptor descriptor;
-    descriptor.capture_api = map_entry.first;
-    EXPECT_EQ(map_entry.second, descriptor.GetCaptureApiTypeString());
-  }
-}
-#endif
-
 TEST_F(MediaInternalsVideoCaptureDeviceTest,
        VideoCaptureFormatStringIsInExpectedFormat) {
   // Since media internals will send video capture capabilities to JavaScript in
@@ -157,14 +125,11 @@ TEST_F(MediaInternalsVideoCaptureDeviceTest,
   const float kFrameRate = 30.0f;
   const gfx::Size kFrameSize(1280, 720);
   const media::VideoPixelFormat kPixelFormat = media::PIXEL_FORMAT_I420;
-  const media::VideoPixelStorage kPixelStorage = media::VideoPixelStorage::CPU;
   const media::VideoCaptureFormat capture_format(kFrameSize, kFrameRate,
-                                                 kPixelFormat, kPixelStorage);
+                                                 kPixelFormat);
   const std::string expected_string = base::StringPrintf(
-      "(%s)@%.3ffps, pixel format: %s, storage: %s",
-      kFrameSize.ToString().c_str(), kFrameRate,
-      media::VideoPixelFormatToString(kPixelFormat).c_str(),
-      media::VideoCaptureFormat::PixelStorageToString(kPixelStorage).c_str());
+      "(%s)@%.3ffps, pixel format: %s", kFrameSize.ToString().c_str(),
+      kFrameRate, media::VideoPixelFormatToString(kPixelFormat).c_str());
   EXPECT_EQ(expected_string,
             media::VideoCaptureFormat::ToString(capture_format));
 }
@@ -251,7 +216,7 @@ class MediaInternalsAudioLogTest
  private:
   static media::AudioParameters MakeAudioParams() {
     media::AudioParameters params(media::AudioParameters::AUDIO_PCM_LINEAR,
-                                  media::CHANNEL_LAYOUT_MONO, 48000, 16, 128);
+                                  media::CHANNEL_LAYOUT_MONO, 48000, 128);
     params.set_effects(media::AudioParameters::ECHO_CANCELLER |
                        media::AudioParameters::DUCKING);
     return params;

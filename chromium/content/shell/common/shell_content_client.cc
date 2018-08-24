@@ -37,7 +37,7 @@ std::string ShellContentClient::GetUserAgent() const {
 }
 
 base::string16 ShellContentClient::GetLocalizedString(int message_id) const {
-  if (switches::IsRunLayoutTestSwitchPresent()) {
+  if (switches::IsRunWebTestsSwitchPresent()) {
     switch (message_id) {
       case IDS_FORM_OTHER_DATE_LABEL:
         return base::ASCIIToUTF16("<<OtherDateLabel>>");
@@ -61,7 +61,7 @@ base::string16 ShellContentClient::GetLocalizedString(int message_id) const {
 base::StringPiece ShellContentClient::GetDataResource(
     int resource_id,
     ui::ScaleFactor scale_factor) const {
-  if (switches::IsRunLayoutTestSwitchPresent()) {
+  if (switches::IsRunWebTestsSwitchPresent()) {
     switch (resource_id) {
       case IDR_BROKENIMAGE:
 #if defined(OS_MACOSX)
@@ -87,7 +87,7 @@ gfx::Image& ShellContentClient::GetNativeImageNamed(int resource_id) const {
       resource_id);
 }
 
-OriginTrialPolicy* ShellContentClient::GetOriginTrialPolicy() {
+blink::OriginTrialPolicy* ShellContentClient::GetOriginTrialPolicy() {
   return &origin_trial_policy_;
 }
 

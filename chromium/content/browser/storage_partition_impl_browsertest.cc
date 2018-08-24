@@ -12,6 +12,8 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/shell/browser/shell.h"
+#include "content/shell/browser/shell_browser_context.h"
+#include "content/test/storage_partition_test_utils.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
 #include "net/http/http_response_headers.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -42,6 +44,12 @@ class StoragePartititionImplBrowsertest
   }
   ~StoragePartititionImplBrowsertest() override {}
 
+  GURL GetTestURL() const {
+    // Use '/echoheader' instead of '/echo' to avoid a disk_cache bug.
+    // See https://crbug.com/792255.
+    return embedded_test_server()->GetURL("/echoheader");
+  }
+
  private:
   base::test::ScopedFeatureList feature_list_;
 };
@@ -52,11 +60,16 @@ class StoragePartititionImplBrowsertest
 IN_PROC_BROWSER_TEST_P(StoragePartititionImplBrowsertest, NetworkContext) {
   ASSERT_TRUE(embedded_test_server()->Start());
 
+  network::mojom::URLLoaderFactoryParamsPtr params =
+      network::mojom::URLLoaderFactoryParams::New();
+  params->process_id = network::mojom::kBrowserProcessId;
+  params->is_corb_enabled = false;
   network::mojom::URLLoaderFactoryPtr loader_factory;
   BrowserContext::GetDefaultStoragePartition(
       shell()->web_contents()->GetBrowserContext())
       ->GetNetworkContext()
-      ->CreateURLLoaderFactory(mojo::MakeRequest(&loader_factory), 0);
+      ->CreateURLLoaderFactory(mojo::MakeRequest(&loader_factory),
+                               std::move(params));
 
   network::ResourceRequest request;
   network::TestURLLoaderClient client;
@@ -78,6 +91,71 @@ IN_PROC_BROWSER_TEST_P(StoragePartititionImplBrowsertest, NetworkContext) {
   ASSERT_TRUE(client.response_head().headers->GetNormalizedHeader(
       "foo", &foo_header_value));
   EXPECT_EQ("bar", foo_header_value);
+}
+
+// Make sure the factory info returned from
+// |StoragePartition::GetURLLoaderFactoryForBrowserProcessIOThread()| works.
+IN_PROC_BROWSER_TEST_P(StoragePartititionImplBrowsertest,
+                       GetURLLoaderFactoryForBrowserProcessIOThread) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  base::ScopedAllowBlockingForTesting allow_blocking;
+  auto shared_url_loader_factory_info =
+      BrowserContext::GetDefaultStoragePartition(
+          shell()->web_contents()->GetBrowserContext())
+          ->GetURLLoaderFactoryForBrowserProcessIOThread();
+
+  auto factory_owner = IOThreadSharedURLLoaderFactoryOwner::Create(
+      std::move(shared_url_loader_factory_info));
+
+  EXPECT_EQ(net::OK, factory_owner->LoadBasicRequestOnIOThread(GetTestURL()));
+}
+
+// Make sure the factory info returned from
+// |StoragePartition::GetURLLoaderFactoryForBrowserProcessIOThread()| doesn't
+// crash if it's called after the StoragePartition is deleted.
+IN_PROC_BROWSER_TEST_P(StoragePartititionImplBrowsertest,
+                       BrowserIOFactoryInfoAfterStoragePartitionGone) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  base::ScopedAllowBlockingForTesting allow_blocking;
+  std::unique_ptr<ShellBrowserContext> browser_context =
+      std::make_unique<ShellBrowserContext>(true, nullptr);
+  auto* partition =
+      BrowserContext::GetDefaultStoragePartition(browser_context.get());
+  auto shared_url_loader_factory_info =
+      partition->GetURLLoaderFactoryForBrowserProcessIOThread();
+
+  browser_context.reset();
+
+  auto factory_owner = IOThreadSharedURLLoaderFactoryOwner::Create(
+      std::move(shared_url_loader_factory_info));
+
+  EXPECT_EQ(net::ERR_FAILED,
+            factory_owner->LoadBasicRequestOnIOThread(GetTestURL()));
+}
+
+// Make sure the factory constructed from
+// |StoragePartition::GetURLLoaderFactoryForBrowserProcessIOThread()| doesn't
+// crash if it's called after the StoragePartition is deleted.
+IN_PROC_BROWSER_TEST_P(StoragePartititionImplBrowsertest,
+                       BrowserIOFactoryAfterStoragePartitionGone) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  base::ScopedAllowBlockingForTesting allow_blocking;
+  std::unique_ptr<ShellBrowserContext> browser_context =
+      std::make_unique<ShellBrowserContext>(true, nullptr);
+  auto* partition =
+      BrowserContext::GetDefaultStoragePartition(browser_context.get());
+  auto factory_owner = IOThreadSharedURLLoaderFactoryOwner::Create(
+      partition->GetURLLoaderFactoryForBrowserProcessIOThread());
+
+  EXPECT_EQ(net::OK, factory_owner->LoadBasicRequestOnIOThread(GetTestURL()));
+
+  browser_context.reset();
+
+  EXPECT_EQ(net::ERR_FAILED,
+            factory_owner->LoadBasicRequestOnIOThread(GetTestURL()));
 }
 
 // NetworkServiceState::kEnabled currently DCHECKs on Android, as Android isn't

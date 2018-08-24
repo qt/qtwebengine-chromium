@@ -31,7 +31,7 @@
 #ifndef THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_SCREEN_INFO_H_
 #define THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_SCREEN_INFO_H_
 
-#include "third_party/blink/public/platform/modules/screen_orientation/web_screen_orientation_type.h"
+#include "third_party/blink/public/common/screen_orientation/web_screen_orientation_type.h"
 #include "third_party/blink/public/platform/shape_properties.h"
 #include "third_party/blink/public/platform/web_rect.h"
 #include "ui/gfx/color_space.h"
@@ -80,6 +80,7 @@ struct WebScreenInfo {
 
   // This is the orientation angle of the displayed content in degrees.
   // It is the opposite of the physical rotation.
+  // TODO(crbug.com/840189): we should use an enum rather than a number here.
   uint16_t orientation_angle = 0;
 
   // This is the shape of display.

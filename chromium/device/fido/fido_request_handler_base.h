@@ -15,6 +15,7 @@
 #include "base/containers/flat_set.h"
 #include "base/macros.h"
 #include "base/strings/string_piece_forward.h"
+#include "device/fido/fido_device_authenticator.h"
 #include "device/fido/fido_discovery.h"
 #include "device/fido/fido_transport_protocol.h"
 
@@ -24,6 +25,7 @@ class Connector;
 
 namespace device {
 
+class FidoAuthenticator;
 class FidoDevice;
 class FidoTask;
 
@@ -35,7 +37,8 @@ class FidoTask;
 class COMPONENT_EXPORT(DEVICE_FIDO) FidoRequestHandlerBase
     : public FidoDiscovery::Observer {
  public:
-  using TaskMap = std::map<std::string, std::unique_ptr<FidoTask>, std::less<>>;
+  using AuthenticatorMap =
+      std::map<std::string, std::unique_ptr<FidoAuthenticator>, std::less<>>;
 
   FidoRequestHandlerBase(
       service_manager::Connector* connector,
@@ -55,9 +58,21 @@ class COMPONENT_EXPORT(DEVICE_FIDO) FidoRequestHandlerBase
   void CancelOngoingTasks(base::StringPiece exclude_device_id = nullptr);
 
  protected:
-  virtual std::unique_ptr<FidoTask> CreateTaskForNewDevice(FidoDevice*) = 0;
+  // Subclasses implement this method to dispatch their request onto the given
+  // FidoAuthenticator. The FidoAuthenticator is owned by this
+  // FidoRequestHandler and stored in active_authenticators().
+  virtual void DispatchRequest(FidoAuthenticator*) = 0;
 
-  TaskMap& ongoing_tasks() { return ongoing_tasks_; }
+  void Start();
+
+  // Testing seam to allow unit tests to inject a fake authenticator.
+  virtual std::unique_ptr<FidoDeviceAuthenticator>
+  CreateAuthenticatorFromDevice(FidoDevice* device);
+
+  AuthenticatorMap& active_authenticators() { return active_authenticators_; }
+  std::vector<std::unique_ptr<FidoDiscovery>>& discoveries() {
+    return discoveries_;
+  }
 
  private:
   // FidoDiscovery::Observer
@@ -65,8 +80,17 @@ class COMPONENT_EXPORT(DEVICE_FIDO) FidoRequestHandlerBase
   void DeviceAdded(FidoDiscovery* discovery, FidoDevice* device) final;
   void DeviceRemoved(FidoDiscovery* discovery, FidoDevice* device) final;
 
-  TaskMap ongoing_tasks_;
+  void AddAuthenticator(std::unique_ptr<FidoAuthenticator> authenticator);
+
+  void MaybeAddPlatformAuthenticator();
+
+  AuthenticatorMap active_authenticators_;
   std::vector<std::unique_ptr<FidoDiscovery>> discoveries_;
+
+  // If set to true at any point before calling Start(), the request handler
+  // will try to create a platform authenticator to handle the request
+  // (currently only TouchIdAuthenticator on macOS).
+  bool use_platform_authenticator_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(FidoRequestHandlerBase);
 };

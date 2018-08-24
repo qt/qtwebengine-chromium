@@ -14,6 +14,7 @@
 
 #include "modules/audio_processing/test/protobuf_utils.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/numerics/safe_conversions.h"
 
 namespace webrtc {
 namespace test {
@@ -462,6 +463,15 @@ void AecDumpBasedSimulator::HandleMessage(
       if (settings_.use_verbose_logging) {
         std::cout << " ns_level: " << level << std::endl;
       }
+    }
+
+    if (msg.has_pre_amplifier_enabled() || settings_.use_pre_amplifier) {
+      const bool enable = settings_.use_pre_amplifier
+                              ? *settings_.use_pre_amplifier
+                              : msg.pre_amplifier_enabled();
+      apm_config.pre_amplifier.enabled = enable;
+      apm_config.pre_amplifier.fixed_gain_factor =
+          settings_.pre_amplifier_gain_factor;
     }
 
     if (settings_.use_verbose_logging && msg.has_experiments_description() &&

@@ -47,7 +47,6 @@ class SuppressionGain {
 
  private:
   void LowerBandGain(bool stationary_with_low_power,
-                     const rtc::Optional<int>& narrow_peak_band,
                      const AecState& aec_state,
                      const std::array<float, kFftLengthBy2Plus1>& nearend,
                      const std::array<float, kFftLengthBy2Plus1>& echo,
@@ -70,6 +69,8 @@ class SuppressionGain {
     float average_power_ = 32768.f * 32768.f;
   };
 
+  static int instance_count_;
+  std::unique_ptr<ApmDataDumper> data_dumper_;
   const Aec3Optimization optimization_;
   const EchoCanceller3Config config_;
   const int state_change_duration_blocks_;
@@ -79,7 +80,6 @@ class SuppressionGain {
   std::array<float, kFftLengthBy2Plus1> gain_increase_;
   std::array<float, kFftLengthBy2Plus1> last_nearend_;
   std::array<float, kFftLengthBy2Plus1> last_echo_;
-
   LowNoiseRenderDetector low_render_detector_;
   bool initial_state_ = true;
   int initial_state_change_counter_ = 0;

@@ -26,12 +26,13 @@ class V8EmbedderGraphBuilder : public ScriptWrappableVisitor,
   void VisitPersistentHandle(v8::Persistent<v8::Value>*,
                              uint16_t class_id) override;
 
+  // Visitor overrides.
+  void Visit(const TraceWrapperV8Reference<v8::Value>&) final;
+  void Visit(void*, TraceWrapperDescriptor) final;
+  void Visit(DOMWrapperMap<ScriptWrappable>*, const ScriptWrappable*) final;
+
  protected:
-  // ScriptWrappableVisitor overrides.
-  void Visit(const TraceWrapperV8Reference<v8::Value>&) const final;
-  void Visit(const TraceWrapperDescriptor&) const final;
-  void Visit(DOMWrapperMap<ScriptWrappable>*,
-             const ScriptWrappable*) const final;
+  using Visitor::Visit;
 
  private:
   // Information about whether a node is attached to the main DOM tree
@@ -89,7 +90,7 @@ class V8EmbedderGraphBuilder : public ScriptWrappableVisitor,
     explicit EmbedderRootNode(const char* name)
         : EmbedderNode(name, nullptr, DomTreeState::kUnknown) {}
     // Graph::Node override.
-    bool IsRootNode() { return true; }
+    bool IsRootNode() override { return true; }
   };
 
   class ParentScope {

@@ -7,6 +7,7 @@
 
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/single_thread_task_runner.h"
 #include "third_party/blink/public/platform/scheduler/child/webthread_base.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 
@@ -20,7 +21,7 @@ class PLATFORM_EXPORT WebThreadImplForUtilityThread
   ~WebThreadImplForUtilityThread() override;
 
   // WebThread implementation.
-  WebScheduler* Scheduler() const override;
+  ThreadScheduler* Scheduler() const override;
   PlatformThreadId ThreadId() const override;
   scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() const override;
 

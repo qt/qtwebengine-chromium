@@ -17,19 +17,22 @@
 #include <fstream>
 #include <sstream>
 
-#include "ftrace_procfs.h"
 #include "gmock/gmock.h"
 #include "google/protobuf/text_format.h"
 #include "gtest/gtest.h"
+
+#include "perfetto/base/build_config.h"
 #include "perfetto/base/unix_task_runner.h"
+#include "perfetto/base/utils.h"
 #include "perfetto/ftrace_reader/ftrace_controller.h"
 #include "perfetto/protozero/scattered_stream_writer.h"
-#include "src/ftrace_reader/test/scattered_stream_delegate_for_testing.h"
+#include "src/ftrace_reader/ftrace_procfs.h"
+#include "src/protozero/scattered_stream_delegate_for_testing.h"
 
-#include "protos/ftrace/ftrace_event_bundle.pb.h"
-#include "protos/ftrace/ftrace_event_bundle.pbzero.h"
-#include "protos/ftrace/test_bundle_wrapper.pb.h"
-#include "protos/ftrace/test_bundle_wrapper.pbzero.h"
+#include "perfetto/trace/ftrace/ftrace_event_bundle.pb.h"
+#include "perfetto/trace/ftrace/ftrace_event_bundle.pbzero.h"
+#include "perfetto/trace/ftrace/test_bundle_wrapper.pb.h"
+#include "perfetto/trace/ftrace/test_bundle_wrapper.pbzero.h"
 
 using testing::HasSubstr;
 using testing::Not;
@@ -37,12 +40,10 @@ using testing::Not;
 namespace perfetto {
 namespace {
 
-const size_t kPageSize = 4096;
+constexpr char kTracingPath[] = "/sys/kernel/debug/tracing/";
 
-const char kTracingPath[] = "/sys/kernel/debug/tracing/";
-
-using BundleHandle =
-    protozero::ProtoZeroMessageHandle<protos::pbzero::FtraceEventBundle>;
+using FtraceBundleHandle =
+    protozero::MessageHandle<protos::pbzero::FtraceEventBundle>;
 
 class EndToEndIntegrationTest : public ::testing::Test,
                                 public FtraceSink::Delegate {
@@ -59,7 +60,7 @@ class EndToEndIntegrationTest : public ::testing::Test,
  protected:
   virtual void SetUp() {
     writer_delegate = std::unique_ptr<ScatteredStreamDelegateForTesting>(
-        new ScatteredStreamDelegateForTesting(kPageSize * 100));
+        new ScatteredStreamDelegateForTesting(base::kPageSize * 100));
     writer = std::unique_ptr<protozero::ScatteredStreamWriter>(
         new protozero::ScatteredStreamWriter(writer_delegate.get()));
     writer_delegate->set_writer(writer.get());
@@ -69,14 +70,16 @@ class EndToEndIntegrationTest : public ::testing::Test,
     message->set_before("--- Bundle wrapper before ---");
   }
 
-  virtual BundleHandle GetBundleForCpu(size_t cpu) {
+  virtual FtraceBundleHandle GetBundleForCpu(size_t cpu) {
     PERFETTO_CHECK(!currently_writing_);
     currently_writing_ = true;
     cpu_being_written_ = cpu;
-    return BundleHandle(message->add_bundle());
+    return FtraceBundleHandle(message->add_bundle());
   }
 
-  virtual void OnBundleComplete(size_t cpu, BundleHandle bundle) {
+  virtual void OnBundleComplete(size_t cpu,
+                                FtraceBundleHandle,
+                                const FtraceMetadata&) {
     PERFETTO_CHECK(currently_writing_);
     currently_writing_ = false;
     EXPECT_NE(cpu_being_written_, 9999ul);
@@ -99,14 +102,16 @@ class EndToEndIntegrationTest : public ::testing::Test,
 
 }  // namespace
 
-TEST_F(EndToEndIntegrationTest, SchedSwitchAndPrint) {
+TEST_F(EndToEndIntegrationTest, DISABLED_SchedSwitchAndPrint) {
   FtraceProcfs procfs(kTracingPath);
   procfs.ClearTrace();
   procfs.WriteTraceMarker("Hello, World!");
 
   // Create a sink listening for our favorite events:
   std::unique_ptr<FtraceController> ftrace = FtraceController::Create(runner());
-  FtraceConfig config(std::set<std::string>({"print", "sched_switch"}));
+  FtraceConfig config;
+  *config.add_ftrace_events() = "print";
+  *config.add_ftrace_events() = "sched_switch";
   std::unique_ptr<FtraceSink> sink = ftrace->CreateSink(config, this);
 
   // Let some events build up.
@@ -127,8 +132,42 @@ TEST_F(EndToEndIntegrationTest, SchedSwitchAndPrint) {
   EXPECT_THAT(output.after(), HasSubstr("after"));
 
   std::string output_as_text;
-  google::protobuf::TextFormat::PrintToString(output, &output_as_text);
+  // TODO(hjd): Use reflection print code.
   printf("%s\n", output_as_text.c_str());
 }
+
+#if PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
+TEST_F(EndToEndIntegrationTest, DISABLED_Atrace) {
+  FtraceProcfs procfs(kTracingPath);
+  procfs.ClearTrace();
+
+  // Create a sink listening for our favorite events:
+  std::unique_ptr<FtraceController> ftrace = FtraceController::Create(runner());
+  FtraceConfig config;
+  *config.add_ftrace_events() = "print";
+  *config.add_ftrace_events() = "sched_switch";
+  std::unique_ptr<FtraceSink> sink = ftrace->CreateSink(config, this);
+
+  // Let some events build up.
+  sleep(1);
+
+  // Start processing the tasks (OnBundleComplete will quit the task runner).
+  runner()->Run();
+
+  // Disable events.
+  sink.reset();
+
+  // Read the output into a full proto so we can use reflection.
+  protos::TestBundleWrapper output;
+  Finalize(&output);
+
+  // Check we can see the guards:
+  EXPECT_THAT(output.before(), HasSubstr("before"));
+  EXPECT_THAT(output.after(), HasSubstr("after"));
+
+  std::string output_as_text;
+  printf("%s\n", output_as_text.c_str());
+}
+#endif  // PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
 
 }  // namespace perfetto

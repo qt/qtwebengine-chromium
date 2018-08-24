@@ -29,10 +29,10 @@
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/ssl_client_socket_pool.h"
 #include "net/socket/transport_client_socket_pool.h"
-#include "net/spdy/chromium/spdy_proxy_client_socket.h"
-#include "net/spdy/chromium/spdy_session.h"
-#include "net/spdy/chromium/spdy_session_pool.h"
-#include "net/spdy/chromium/spdy_stream.h"
+#include "net/spdy/spdy_proxy_client_socket.h"
+#include "net/spdy/spdy_session.h"
+#include "net/spdy/spdy_session_pool.h"
+#include "net/spdy/spdy_stream.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "url/gurl.h"
 
@@ -330,13 +330,11 @@ void HttpProxyClientSocketPool::RequestSockets(
     const std::string& group_name,
     const void* params,
     int num_sockets,
-    const NetLogWithSource& net_log,
-    HttpRequestInfo::RequestMotivation motivation) {
+    const NetLogWithSource& net_log) {
   const scoped_refptr<HttpProxySocketParams>* casted_params =
       static_cast<const scoped_refptr<HttpProxySocketParams>*>(params);
 
-  base_.RequestSockets(group_name, *casted_params, num_sockets, net_log,
-                       motivation);
+  base_.RequestSockets(group_name, *casted_params, num_sockets, net_log);
 }
 
 void HttpProxyClientSocketPool::CancelRequest(

@@ -137,10 +137,7 @@ class HistoryBackendTestDelegate : public HistoryBackend::Delegate {
                         const RedirectList& redirects,
                         base::Time visit_time) override;
   void NotifyURLsModified(const URLRows& changed_urls) override;
-  void NotifyURLsDeleted(const DeletionTimeRange& time_range,
-                         bool expired,
-                         const URLRows& deleted_rows,
-                         const std::set<GURL>& favicon_urls) override;
+  void NotifyURLsDeleted(DeletionInfo deletion_info) override;
   void NotifyKeywordSearchTermUpdated(const URLRow& row,
                                       KeywordID keyword_id,
                                       const base::string16& term) override;
@@ -228,14 +225,10 @@ class HistoryBackendTestBase : public testing::Test {
     urls_modified_notifications_.push_back(changed_urls);
   }
 
-  void NotifyURLsDeleted(const DeletionTimeRange& time_range,
-                         bool expired,
-                         const URLRows& deleted_rows,
-                         const std::set<GURL>& favicon_urls) {
-    mem_backend_->OnURLsDeleted(nullptr, time_range.IsAllTime(), expired,
-                                deleted_rows, favicon_urls);
-    urls_deleted_notifications_.push_back(
-        std::make_pair(time_range.IsAllTime(), expired));
+  void NotifyURLsDeleted(DeletionInfo deletion_info) {
+    mem_backend_->OnURLsDeleted(nullptr, deletion_info);
+    urls_deleted_notifications_.push_back(std::make_pair(
+        deletion_info.IsAllHistory(), deletion_info.is_from_expiration()));
   }
 
   void NotifyKeywordSearchTermUpdated(const URLRow& row,
@@ -268,7 +261,7 @@ class HistoryBackendTestBase : public testing::Test {
   }
 
   void TearDown() override {
-    if (backend_.get())
+    if (backend_)
       backend_->Closing();
     backend_ = nullptr;
     mem_backend_.reset();
@@ -317,12 +310,8 @@ void HistoryBackendTestDelegate::NotifyURLsModified(
   test_->NotifyURLsModified(changed_urls);
 }
 
-void HistoryBackendTestDelegate::NotifyURLsDeleted(
-    const DeletionTimeRange& time_range,
-    bool expired,
-    const URLRows& deleted_rows,
-    const std::set<GURL>& favicon_urls) {
-  test_->NotifyURLsDeleted(time_range, expired, deleted_rows, favicon_urls);
+void HistoryBackendTestDelegate::NotifyURLsDeleted(DeletionInfo deletion_info) {
+  test_->NotifyURLsDeleted(std::move(deletion_info));
 }
 
 void HistoryBackendTestDelegate::NotifyKeywordSearchTermUpdated(
@@ -502,8 +491,7 @@ class InMemoryHistoryBackendTest : public HistoryBackendTestBase {
     if (row2) rows.push_back(*row2);
     if (row3) rows.push_back(*row3);
 
-    NotifyURLsDeleted(DeletionTimeRange::Invalid(), false, rows,
-                      std::set<GURL>());
+    NotifyURLsDeleted(DeletionInfo::ForUrls(rows, std::set<GURL>()));
   }
 
   size_t GetNumberOfMatchingSearchTerms(const int keyword_id,
@@ -2539,7 +2527,7 @@ TEST_F(HistoryBackendTest, FaviconChangedNotificationNewFavicon) {
     backend_->SetFavicons({page_url1}, IconType::kFavicon, icon_url1, bitmaps);
     ASSERT_EQ(1u, favicon_changed_notifications_page_urls().size());
     EXPECT_EQ(page_url1, favicon_changed_notifications_page_urls()[0]);
-    EXPECT_EQ(0u, favicon_changed_notifications_icon_urls().size());
+    EXPECT_EQ(1u, favicon_changed_notifications_icon_urls().size());
     ClearBroadcastedNotifications();
   }
 
@@ -2553,7 +2541,7 @@ TEST_F(HistoryBackendTest, FaviconChangedNotificationNewFavicon) {
                            bitmap_data, kSmallSize);
     ASSERT_EQ(1u, favicon_changed_notifications_page_urls().size());
     EXPECT_EQ(page_url2, favicon_changed_notifications_page_urls()[0]);
-    EXPECT_EQ(0u, favicon_changed_notifications_icon_urls().size());
+    EXPECT_EQ(1u, favicon_changed_notifications_icon_urls().size());
   }
 }
 
@@ -3870,6 +3858,28 @@ TEST_F(HistoryBackendTest, DatabaseError) {
   base::RunLoop().RunUntilIdle();
 }
 
+// Tests that calling DatabaseErrorCallback results in killing the database and
+// notifying the TypedURLSyncBridge at the same time so that no further
+// notification from the backend can lead to the bridge. (Regression test for
+// https://crbug.com/853395)
+TEST_F(HistoryBackendTest, DatabaseErrorSynchronouslyKillAndNotifyBridge) {
+  // Notify the backend that a database error occurred.
+  backend_->DatabaseErrorCallback(SQLITE_CORRUPT, nullptr);
+  // In-between (before the posted task finishes), we can again delete all
+  // history.
+  backend_->ExpireHistoryBetween(/*restrict_urls=*/std::set<GURL>(),
+                                 /*begin_time=*/base::Time(),
+                                 /*end_time=*/base::Time::Max());
+
+  // Run loop to let the posted task to kill the DB run.
+  base::RunLoop().RunUntilIdle();
+  // After DB is destroyed, we can again try to delete all history (with no
+  // effect but it should not crash).
+  backend_->ExpireHistoryBetween(/*restrict_urls=*/std::set<GURL>(),
+                                 /*begin_time=*/base::Time(),
+                                 /*end_time=*/base::Time::Max());
+}
+
 // Common implementation for the two tests below, given that the only difference
 // between them is the type of the notification sent out.
 void InMemoryHistoryBackendTest::TestAddingAndChangingURLRows(
@@ -3955,8 +3965,7 @@ TEST_F(InMemoryHistoryBackendTest, OnURLsDeletedEnMasse) {
   SimulateNotificationURLsModified(mem_backend_.get(), &row1, &row2, &row3);
 
   // Now notify the in-memory database that all history has been deleted.
-  mem_backend_->OnURLsDeleted(nullptr, true, false, URLRows(),
-                              std::set<GURL>());
+  mem_backend_->OnURLsDeleted(nullptr, history::DeletionInfo::ForAllHistory());
 
   // Expect that everything goes away.
   EXPECT_EQ(0, mem_backend_->db()->GetRowForURL(row1.url(), nullptr));

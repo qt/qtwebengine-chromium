@@ -90,13 +90,16 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (enableExperimentalWebPlatformFeatures)
     WebRuntimeFeatures::EnableExperimentalFeatures(true);
 
+  SetRuntimeFeatureDefaultsForPlatform();
+
+  // Begin individual features.
+  // Do not add individual features above this line.
+
   WebRuntimeFeatures::EnableOriginTrials(
       base::FeatureList::IsEnabled(features::kOriginTrials));
 
   if (!base::FeatureList::IsEnabled(features::kWebUsb))
     WebRuntimeFeatures::EnableWebUsb(false);
-
-  SetRuntimeFeatureDefaultsForPlatform();
 
   if (command_line.HasSwitch(switches::kDisableDatabases))
     WebRuntimeFeatures::EnableDatabase(false);
@@ -138,15 +141,12 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   }
 
 #if defined(OS_MACOSX)
-  bool enable_canvas_2d_image_chromium = command_line.HasSwitch(
-      switches::kEnableGpuMemoryBufferCompositorResources) &&
+  const bool enable_canvas_2d_image_chromium =
+      command_line.HasSwitch(
+          switches::kEnableGpuMemoryBufferCompositorResources) &&
       !command_line.HasSwitch(switches::kDisable2dCanvasImageChromium) &&
-      !command_line.HasSwitch(switches::kDisableGpu);
-
-  if (enable_canvas_2d_image_chromium) {
-    enable_canvas_2d_image_chromium =
-        base::FeatureList::IsEnabled(features::kCanvas2DImageChromium);
-  }
+      !command_line.HasSwitch(switches::kDisableGpu) &&
+      base::FeatureList::IsEnabled(features::kCanvas2DImageChromium);
 #else
   bool enable_canvas_2d_image_chromium = false;
 #endif
@@ -189,9 +189,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kReducedReferrerGranularity))
     WebRuntimeFeatures::EnableReducedReferrerGranularity(true);
 
-  WebRuntimeFeatures::EnableRootLayerScrolling(
-      base::FeatureList::IsEnabled(features::kRootLayerScrolling) ||
-      enableExperimentalWebPlatformFeatures);
+  WebRuntimeFeatures::EnableIntersectionObserverGeometryMapper(
+      base::FeatureList::IsEnabled(
+          features::kIntersectionObserverGeometryMapper));
 
   if (command_line.HasSwitch(switches::kDisablePermissionsAPI))
     WebRuntimeFeatures::EnablePermissionsAPI(false);
@@ -210,14 +210,17 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (base::FeatureList::IsEnabled(features::kWebXrGamepadSupport))
     WebRuntimeFeatures::EnableWebXRGamepadSupport(true);
 
+  if (base::FeatureList::IsEnabled(features::kWebXrHitTest))
+    WebRuntimeFeatures::EnableWebXRHitTest(true);
+
   if (command_line.HasSwitch(switches::kDisablePresentationAPI))
     WebRuntimeFeatures::EnablePresentationAPI(false);
 
   if (command_line.HasSwitch(switches::kDisableRemotePlaybackAPI))
     WebRuntimeFeatures::EnableRemotePlaybackAPI(false);
 
-  WebRuntimeFeatures::EnableScrollAnchoring(
-      base::FeatureList::IsEnabled(features::kScrollAnchoring) ||
+  WebRuntimeFeatures::EnableSecMetadata(
+      base::FeatureList::IsEnabled(features::kSecMetadata) ||
       enableExperimentalWebPlatformFeatures);
 
   WebRuntimeFeatures::EnableUserActivationV2(
@@ -231,6 +234,10 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
       base::FeatureList::IsEnabled(features::kSlimmingPaintV175) ||
           command_line.HasSwitch(switches::kEnableSlimmingPaintV175) ||
           enableExperimentalWebPlatformFeatures);
+
+  WebRuntimeFeatures::EnableFeatureFromString(
+      "BlinkGenPropertyTrees",
+      command_line.HasSwitch(switches::kEnableBlinkGenPropertyTrees));
 
   if (command_line.HasSwitch(switches::kEnableSlimmingPaintV2))
     WebRuntimeFeatures::EnableSlimmingPaintV2(true);
@@ -297,6 +304,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (base::FeatureList::IsEnabled(features::kGamepadExtensions))
     WebRuntimeFeatures::EnableGamepadExtensions(true);
 
+  if (base::FeatureList::IsEnabled(features::kGamepadVibration))
+    WebRuntimeFeatures::EnableGamepadVibration(true);
+
   if (base::FeatureList::IsEnabled(features::kCompositeOpaqueFixedPosition))
     WebRuntimeFeatures::EnableFeatureFromString("CompositeOpaqueFixedPosition",
                                                 true);
@@ -313,9 +323,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
       WebRuntimeFeatures::EnableGenericSensorExtraClasses(true);
   }
 
-  if (base::FeatureList::IsEnabled(features::kNotificationsWithMojo))
-    WebRuntimeFeatures::EnableNotificationsWithMojo(true);
-
   if (base::FeatureList::IsEnabled(network::features::kOutOfBlinkCORS))
     WebRuntimeFeatures::EnableOutOfBlinkCORS(true);
 
@@ -329,10 +336,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     WebRuntimeFeatures::EnableFeatureFromString("BlockCredentialedSubresources",
                                                 false);
   }
-
-  if (base::FeatureList::IsEnabled(
-          features::kTurnOff2DAndOpacityCompositorAnimations))
-    WebRuntimeFeatures::EnableTurnOff2DAndOpacityCompositorAnimations(true);
 
   if (base::FeatureList::IsEnabled(features::kRasterInducingScroll))
     WebRuntimeFeatures::EnableRasterInducingScroll(true);
@@ -362,10 +365,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   WebRuntimeFeatures::EnableResourceLoadScheduler(
       base::FeatureList::IsEnabled(features::kResourceLoadScheduler));
 
-  if (command_line.HasSwitch(
-          switches::kDisableOriginTrialControlledBlinkFeatures)) {
-    WebRuntimeFeatures::EnableOriginTrialControlledFeatures(false);
-  }
+  if (base::FeatureList::IsEnabled(features::kLayeredAPI))
+    WebRuntimeFeatures::EnableLayeredAPI(true);
 
   WebRuntimeFeatures::EnableLazyInitializeMediaControls(
       base::FeatureList::IsEnabled(features::kLazyInitializeMediaControls));
@@ -402,17 +403,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (base::FeatureList::IsEnabled(features::kLazyFrameLoading))
     WebRuntimeFeatures::EnableLazyFrameLoading(true);
 
-  // Enable explicitly enabled features, and then disable explicitly disabled
-  // ones.
-  for (const std::string& feature :
-       FeaturesFromSwitch(command_line, switches::kEnableBlinkFeatures)) {
-    WebRuntimeFeatures::EnableFeatureFromString(feature, true);
-  }
-  for (const std::string& feature :
-       FeaturesFromSwitch(command_line, switches::kDisableBlinkFeatures)) {
-    WebRuntimeFeatures::EnableFeatureFromString(feature, false);
-  }
-
   WebRuntimeFeatures::EnableV8ContextSnapshot(
       base::FeatureList::IsEnabled(features::kV8ContextSnapshot));
 
@@ -434,14 +424,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   WebRuntimeFeatures::EnablePictureInPicture(
       base::FeatureList::IsEnabled(media::kPictureInPicture));
 
-  WebRuntimeFeatures::EnableCodeCacheAfterExecute(
-      base::FeatureList::IsEnabled(features::kCodeCacheAfterExecute));
-
   WebRuntimeFeatures::EnableCacheInlineScriptCode(
       base::FeatureList::IsEnabled(features::kCacheInlineScriptCode));
-
-  if (base::FeatureList::IsEnabled(features::kUnifiedTouchAdjustment))
-    WebRuntimeFeatures::EnableUnifiedTouchAdjustment(true);
 
   // Make srcset on link rel=preload work with SignedHTTPExchange flag too.
   if (base::FeatureList::IsEnabled(features::kSignedHTTPExchange))
@@ -449,6 +433,38 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   WebRuntimeFeatures::EnableOffMainThreadWebSocket(
       base::FeatureList::IsEnabled(features::kOffMainThreadWebSocket));
+
+  if (base::FeatureList::IsEnabled(
+          features::kExperimentalProductivityFeatures)) {
+    WebRuntimeFeatures::EnableExperimentalProductivityFeatures(true);
+  }
+
+#if defined(OS_ANDROID)
+  if (base::FeatureList::IsEnabled(features::kDisplayCutoutAPI))
+    WebRuntimeFeatures::EnableDisplayCutoutViewportFit(true);
+#endif
+
+  // End individual features.
+  // Do not add individual features below this line.
+
+  if (command_line.HasSwitch(
+          switches::kDisableOriginTrialControlledBlinkFeatures)) {
+    WebRuntimeFeatures::EnableOriginTrialControlledFeatures(false);
+  }
+
+  WebRuntimeFeatures::EnableAutoplayIgnoresWebAudio(
+      base::FeatureList::IsEnabled(media::kAutoplayIgnoreWebAudio));
+
+  // Enable explicitly enabled features, and then disable explicitly disabled
+  // ones.
+  for (const std::string& feature :
+       FeaturesFromSwitch(command_line, switches::kEnableBlinkFeatures)) {
+    WebRuntimeFeatures::EnableFeatureFromString(feature, true);
+  }
+  for (const std::string& feature :
+       FeaturesFromSwitch(command_line, switches::kDisableBlinkFeatures)) {
+    WebRuntimeFeatures::EnableFeatureFromString(feature, false);
+  }
 };
 
 }  // namespace content

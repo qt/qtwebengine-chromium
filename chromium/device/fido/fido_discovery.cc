@@ -33,11 +33,21 @@ std::unique_ptr<FidoDiscovery> CreateFidoDiscoveryImpl(
 #endif  // !defined(OS_ANDROID)
     case FidoTransportProtocol::kBluetoothLowEnergy:
       return std::make_unique<FidoBleDiscovery>();
+    // FidoCaBleDiscovery is not constructed using FidoDiscovery factory
+    // function and instead constructed in FidoGetAssertionRequestHandler as it
+    // requires extensions passed on from the relying party.
+    case FidoTransportProtocol::kCloudAssistedBluetoothLowEnergy:
+      NOTREACHED()
+          << "Cable discovery is not constructed using factory method.";
+      return nullptr;
     case FidoTransportProtocol::kNearFieldCommunication:
       // TODO(https://crbug.com/825949): Add NFC support.
       return nullptr;
+    case FidoTransportProtocol::kInternal:
+      NOTREACHED() << "Internal authenticators should be handled separately.";
+      return nullptr;
   }
-  NOTREACHED();
+  NOTREACHED() << "Unhandled transport type";
   return nullptr;
 }
 
@@ -64,9 +74,10 @@ FidoDiscovery::~FidoDiscovery() = default;
 void FidoDiscovery::Start() {
   DCHECK_EQ(state_, State::kIdle);
   state_ = State::kStarting;
+  // TODO(hongjunchoi): Fix so that NotifiyStarted() is never called
+  // synchronously after StartInternal().
+  // See: https://crbug.com/823686
   StartInternal();
-  // StartInternal should never synchronously call NotifyStarted().
-  DCHECK_EQ(state_, State::kStarting);
 }
 
 void FidoDiscovery::NotifyDiscoveryStarted(bool success) {

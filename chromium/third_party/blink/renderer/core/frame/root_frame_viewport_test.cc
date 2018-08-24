@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/frame/root_frame_viewport.h"
 
+#include "base/single_thread_task_runner.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
@@ -11,7 +12,7 @@
 #include "third_party/blink/public/platform/web_thread.h"
 #include "third_party/blink/renderer/platform/geometry/double_rect.h"
 #include "third_party/blink/renderer/platform/geometry/layout_rect.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_alignment.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_types.h"
 #include "third_party/blink/renderer/platform/scroll/scrollable_area.h"
@@ -81,7 +82,7 @@ class ScrollableAreaStub : public GarbageCollectedFinalized<ScrollableAreaStub>,
     return scrollbar_theme_;
   }
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     ScrollableArea::Trace(visitor);
   }
 
@@ -149,9 +150,6 @@ class RootFrameViewStub : public ScrollableAreaStub {
   }
 
   LayoutRect DocumentToAbsolute(const LayoutRect& rect) const {
-    if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled())
-      return rect;
-
     LayoutRect ret = rect;
     ret.Move(LayoutSize(-GetScrollOffset()));
     return ret;
@@ -205,7 +203,7 @@ class RootFrameViewportTest : public testing::Test {
   RootFrameViewportTest() = default;
 
  protected:
-  virtual void SetUp() {}
+  void SetUp() override {}
 };
 
 // Tests that scrolling the viewport when the layout viewport is

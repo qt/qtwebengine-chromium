@@ -92,12 +92,11 @@ SDK.CPUProfileDataModel = class extends SDK.ProfileTreeModel {
     if (!profile.timeDeltas)
       return null;
     let lastTimeUsec = profile.startTime;
-    const timestamps = new Array(profile.timeDeltas.length + 1);
+    const timestamps = new Array(profile.timeDeltas.length);
     for (let i = 0; i < profile.timeDeltas.length; ++i) {
-      timestamps[i] = lastTimeUsec;
       lastTimeUsec += profile.timeDeltas[i];
+      timestamps[i] = lastTimeUsec;
     }
-    timestamps[profile.timeDeltas.length] = lastTimeUsec;
     return timestamps;
   }
 
@@ -275,7 +274,8 @@ SDK.CPUProfileDataModel = class extends SDK.ProfileTreeModel {
       prevNodeId = nodeId;
       nodeId = nextNodeId;
     }
-    Common.console.warn(ls`DevTools: CPU profile parser is fixing ${count} missing samples.`);
+    if (count)
+      Common.console.warn(ls`DevTools: CPU profile parser is fixing ${count} missing samples.`);
     /**
      * @param {!SDK.ProfileNode} node
      * @return {!SDK.ProfileNode}

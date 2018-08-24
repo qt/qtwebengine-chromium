@@ -44,25 +44,32 @@ class GPU_IPC_SERVICE_EXPORT GLES2CommandBufferStub
   const gles2::FeatureInfo* GetFeatureInfo() const override;
   const GpuPreferences& GetGpuPreferences() const override;
   void SetSnapshotRequestedCallback(const base::Closure& callback) override;
-  void UpdateVSyncParameters(base::TimeTicks timebase,
-                             base::TimeDelta interval) override;
-  void BufferPresented(uint64_t swap_id,
-                       const gfx::PresentationFeedback& feedback) override;
+  void BufferPresented(const gfx::PresentationFeedback& feedback) override;
 
   void AddFilter(IPC::MessageFilter* message_filter) override;
   int32_t GetRouteID() const override;
 
  private:
+  void OnTakeFrontBuffer(const Mailbox& mailbox) override;
+  void OnReturnFrontBuffer(const Mailbox& mailbox, bool is_lost) override;
+  void OnSwapBuffers(uint64_t swap_id, uint32_t flags) override;
+
   // Keep a more specifically typed reference to the decoder to avoid
   // unnecessary casts. Owned by parent class.
   gles2::GLES2Decoder* gles2_decoder_;
 
   base::Closure snapshot_requested_callback_;
 
-  base::WeakPtrFactory<GLES2CommandBufferStub> weak_ptr_factory_;
+  // Params pushed each time we call OnSwapBuffers, and popped when a buffer
+  // is presented or a swap completed.
+  struct SwapBufferParams {
+    uint64_t swap_id;
+    uint32_t flags;
+  };
+  base::circular_deque<SwapBufferParams> pending_presented_params_;
+  base::circular_deque<SwapBufferParams> pending_swap_completed_params_;
 
-  void OnTakeFrontBuffer(const Mailbox& mailbox) override;
-  void OnReturnFrontBuffer(const Mailbox& mailbox, bool is_lost) override;
+  base::WeakPtrFactory<GLES2CommandBufferStub> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GLES2CommandBufferStub);
 };

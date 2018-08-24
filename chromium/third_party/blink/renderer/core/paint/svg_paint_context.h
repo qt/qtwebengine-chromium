@@ -55,7 +55,10 @@ class SVGTransformContext : public TransformRecorder {
                       const AffineTransform& transform)
       : TransformRecorder(paint_info.context, object, transform) {
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      const auto* properties = object.FirstFragment().PaintProperties();
+      const auto* fragment = paint_info.FragmentToPaint(object);
+      if (!fragment)
+        return;
+      const auto* properties = fragment->PaintProperties();
       if (!properties)
         return;
 
@@ -81,7 +84,7 @@ class SVGTransformContext : public TransformRecorder {
   }
 
  private:
-  Optional<ScopedPaintChunkProperties> transform_property_scope_;
+  base::Optional<ScopedPaintChunkProperties> transform_property_scope_;
 };
 
 class SVGPaintContext {
@@ -137,9 +140,9 @@ class SVGPaintContext {
   LayoutSVGResourceFilter* filter_;
   LayoutSVGResourceMasker* masker_;
   std::unique_ptr<CompositingRecorder> compositing_recorder_;
-  Optional<ClipPathClipper> clip_path_clipper_;
+  base::Optional<ClipPathClipper> clip_path_clipper_;
   std::unique_ptr<SVGFilterRecordingContext> filter_recording_context_;
-  Optional<ScopedPaintChunkProperties> scoped_paint_chunk_properties_;
+  base::Optional<ScopedPaintChunkProperties> scoped_paint_chunk_properties_;
 #if DCHECK_IS_ON()
   bool apply_clip_mask_and_filter_if_necessary_called_ = false;
 #endif

@@ -49,14 +49,14 @@ class MODULES_EXPORT DynamicsCompressorHandler final : public AudioHandler {
       AudioParamHandler& attack,
       AudioParamHandler& release);
 
-  ~DynamicsCompressorHandler();
+  ~DynamicsCompressorHandler() override;
 
   // AudioHandler
   void Process(size_t frames_to_process) override;
   void ProcessOnlyAudioParams(size_t frames_to_process) override;
   void Initialize() override;
 
-  float ReductionValue() const { return reduction_; }
+  float ReductionValue() const { return NoBarrierLoad(&reduction_); }
 
   void SetChannelCount(unsigned long, ExceptionState&) final;
   void SetChannelCountMode(const String&, ExceptionState&) final;
@@ -92,7 +92,7 @@ class MODULES_EXPORT DynamicsCompressorNode final : public AudioNode {
   static DynamicsCompressorNode* Create(BaseAudioContext*,
                                         const DynamicsCompressorOptions&,
                                         ExceptionState&);
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
   AudioParam* threshold() const;
   AudioParam* knee() const;

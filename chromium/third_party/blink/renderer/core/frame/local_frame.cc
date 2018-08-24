@@ -53,22 +53,22 @@
 #include "third_party/blink/renderer/core/editing/spellcheck/spell_checker.h"
 #include "third_party/blink/renderer/core/editing/suggestion/text_suggestion_controller.h"
 #include "third_party/blink/renderer/core/exported/web_plugin_container_impl.h"
-#include "third_party/blink/renderer/core/frame/AdTracker.h"
-#include "third_party/blink/renderer/core/frame/PerformanceMonitor.h"
+#include "third_party/blink/renderer/core/frame/ad_tracker.h"
 #include "third_party/blink/renderer/core/frame/content_settings_client.h"
 #include "third_party/blink/renderer/core/frame/event_handler_registry.h"
 #include "third_party/blink/renderer/core/frame/frame_console.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
+#include "third_party/blink/renderer/core/frame/performance_monitor.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/html_frame_element_base.h"
 #include "third_party/blink/renderer/core/html/html_plugin_element.h"
 #include "third_party/blink/renderer/core/html/plugin_document.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/inspector/inspector_task_runner.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/layout/hit_test_result.h"
 #include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
@@ -86,6 +86,7 @@
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/svg/svg_document_extensions.h"
 #include "third_party/blink/renderer/platform/bindings/script_forbidden_scope.h"
+#include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
 #include "third_party/blink/renderer/platform/graphics/paint/clip_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_canvas.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_controller.h"
@@ -101,7 +102,6 @@
 #include "third_party/blink/renderer/platform/plugins/plugin_script_forbidden_scope.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
-#include "third_party/blink/renderer/platform/text/text_stream.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 
 namespace blink {
@@ -162,14 +162,14 @@ class EmptyFrameScheduler final : public FrameScheduler {
   void SetPaused(bool) override {}
   void SetCrossOrigin(bool) override {}
   bool IsCrossOrigin() const override { return false; }
-  void TraceUrlChange(const String& override) {}
+  void TraceUrlChange(const String& override) override {}
   FrameScheduler::FrameType GetFrameType() const override {
     return FrameScheduler::FrameType::kSubframe;
   }
   PageScheduler* GetPageScheduler() const override { return nullptr; }
   WebScopedVirtualTimePauser CreateWebScopedVirtualTimePauser(
       const String&,
-      WebScopedVirtualTimePauser::VirtualTaskDuration) {
+      WebScopedVirtualTimePauser::VirtualTaskDuration) override {
     return WebScopedVirtualTimePauser();
   }
   void DidStartProvisionalLoad(bool is_main_frame) override {}
@@ -267,6 +267,8 @@ LocalFrame::~LocalFrame() {
   // Verify that the LocalFrameView has been cleared as part of detaching
   // the frame owner.
   DCHECK(!view_);
+  if (is_ad_subframe_)
+    InstanceCounters::DecrementCounter(InstanceCounters::kAdSubframeCounter);
 }
 
 void LocalFrame::Trace(blink::Visitor* visitor) {
@@ -309,7 +311,7 @@ void LocalFrame::Navigate(Document& origin_document,
 }
 
 void LocalFrame::Navigate(const FrameLoadRequest& request) {
-  loader_.Load(request);
+  loader_.StartNavigation(request);
 }
 
 void LocalFrame::Reload(FrameLoadType load_type,
@@ -319,10 +321,10 @@ void LocalFrame::Reload(FrameLoadType load_type,
     if (!loader_.GetDocumentLoader()->GetHistoryItem())
       return;
     FrameLoadRequest request = FrameLoadRequest(
-        nullptr, loader_.ResourceRequestForReload(load_type, NullURL(),
-                                                  client_redirect_policy));
+        nullptr,
+        loader_.ResourceRequestForReload(load_type, client_redirect_policy));
     request.SetClientRedirect(client_redirect_policy);
-    loader_.Load(request, load_type);
+    loader_.StartNavigation(request, load_type);
   } else {
     DCHECK_EQ(kFrameLoadTypeReload, load_type);
     navigation_scheduler_->ScheduleReload();
@@ -330,8 +332,14 @@ void LocalFrame::Reload(FrameLoadType load_type,
 }
 
 void LocalFrame::Detach(FrameDetachType type) {
-  // Note that detach() can be re-entered, so it's not possible to
-  // DCHECK(isAttached()) here.
+  // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  // BEGIN RE-ENTRANCY SAFE BLOCK
+  // Starting here, the code must be safe against re-entrancy. Dispatching
+  // events, et cetera can run Javascript, which can reenter Detach().
+  // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  // Detach() can be re-entered, this can't simply DCHECK(IsAttached()).
+  DCHECK_NE(lifecycle_.GetState(), FrameLifecycle::kDetached);
   lifecycle_.AdvanceTo(FrameLifecycle::kDetaching);
 
   if (IsLocalRoot()) {
@@ -381,6 +389,14 @@ void LocalFrame::Detach(FrameDetachType type) {
   if (!Client())
     return;
 
+  // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  // END RE-ENTRANCY SAFE BLOCK
+  // Past this point, no script should be executed. If this method was
+  // re-entered, then check for a non-null Client() above should have already
+  // returned.
+  // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  DCHECK_NE(lifecycle_.GetState(), FrameLifecycle::kDetached);
+
   // TODO(crbug.com/729196): Trace why LocalFrameView::DetachFromLayout crashes.
   CHECK(!view_->IsAttached());
   Client()->WillBeDetached();
@@ -392,7 +408,7 @@ void LocalFrame::Detach(FrameDetachType type) {
   CHECK(!view_->IsAttached());
   SetView(nullptr);
 
-  page_->GetEventHandlerRegistry().DidRemoveAllEventHandlers(*DomWindow());
+  GetEventHandlerRegistry().DidRemoveAllEventHandlers(*DomWindow());
 
   DomWindow()->FrameDestroyed();
 
@@ -518,13 +534,13 @@ void LocalFrame::DidChangeVisibilityState() {
 void LocalFrame::DidFreeze() {
   DCHECK(RuntimeEnabledFeatures::PageLifecycleEnabled());
   if (GetDocument()) {
-    const double freeze_event_start = CurrentTimeTicksInSeconds();
-    GetDocument()->DispatchEvent(Event::Create(EventTypeNames::freeze));
-    const double freeze_event_end = CurrentTimeTicksInSeconds();
-    DEFINE_STATIC_LOCAL(
-        CustomCountHistogram, freeze_histogram,
-        ("DocumentEventTiming.FreezeDuration", 0, 10000000, 50));
-    freeze_histogram.Count((freeze_event_end - freeze_event_start) * 1000000.0);
+    GetDocument()->DispatchFreezeEvent();
+    // TODO(fmeawad): Move the following logic to the page once we have a
+    // PageResourceCoordinator in Blink. http://crbug.com/838415
+    if (auto* frame_resource_coordinator = GetFrameResourceCoordinator()) {
+      frame_resource_coordinator->SetLifecycleState(
+          resource_coordinator::mojom::LifecycleState::kFrozen);
+    }
   }
 }
 
@@ -538,6 +554,12 @@ void LocalFrame::DidResume() {
         CustomCountHistogram, resume_histogram,
         ("DocumentEventTiming.ResumeDuration", 0, 10000000, 50));
     resume_histogram.Count((resume_event_end - resume_event_start) * 1000000.0);
+    // TODO(fmeawad): Move the following logic to the page once we have a
+    // PageResourceCoordinator in Blink
+    if (auto* frame_resource_coordinator = GetFrameResourceCoordinator()) {
+      frame_resource_coordinator->SetLifecycleState(
+          resource_coordinator::mojom::LifecycleState::kRunning);
+    }
   }
 }
 
@@ -555,6 +577,31 @@ void LocalFrame::PropagateInertToChildFrames() {
     child->SetIsInert(is_inert_ ||
                       ToHTMLFrameOwnerElement(child->Owner())->IsInert());
   }
+}
+
+void LocalFrame::SetInheritedEffectiveTouchAction(TouchAction touch_action) {
+  if (inherited_effective_touch_action_ == touch_action)
+    return;
+  inherited_effective_touch_action_ = touch_action;
+  if (GetDocument()->documentElement()) {
+    GetDocument()->documentElement()->SetNeedsStyleRecalc(
+        kSubtreeStyleChange,
+        StyleChangeReasonForTracing::Create(
+            StyleChangeReason::kInheritedStyleChangeFromParentFrame));
+  }
+}
+
+bool LocalFrame::BubbleLogicalScrollFromChildFrame(
+    ScrollDirection direction,
+    ScrollGranularity granularity,
+    Frame* child) {
+  FrameOwner* owner = child->Owner();
+  DCHECK(owner);
+  DCHECK(owner->IsLocal());
+  HTMLFrameOwnerElement* owner_element = ToHTMLFrameOwnerElement(owner);
+
+  return GetEventHandler().BubblingScroll(direction, granularity,
+                                          owner_element);
 }
 
 LocalFrame& LocalFrame::LocalFrameRoot() const {
@@ -710,21 +757,6 @@ void LocalFrame::SetPageAndTextZoomFactors(float page_zoom_factor,
       return;
   }
 
-  if (page_zoom_factor_ != page_zoom_factor &&
-      !RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-    if (LocalFrameView* view = this->View()) {
-      // Update the scroll position when doing a full page zoom, so the content
-      // stays in relatively the same position.
-      ScrollableArea* scrollable_area = view->LayoutViewportScrollableArea();
-      ScrollOffset scroll_offset = scrollable_area->GetScrollOffset();
-      float percent_difference = (page_zoom_factor / page_zoom_factor_);
-      scrollable_area->SetScrollOffset(
-          ScrollOffset(scroll_offset.Width() * percent_difference,
-                       scroll_offset.Height() * percent_difference),
-          kProgrammaticScroll);
-    }
-  }
-
   page_zoom_factor_ = page_zoom_factor;
   text_zoom_factor_ = text_zoom_factor;
 
@@ -824,8 +856,14 @@ String LocalFrame::GetLayerTreeAsTextForTesting(unsigned flags) const {
   if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
     layers = View()->CompositedLayersAsJSON(static_cast<LayerTreeFlags>(flags));
   } else {
-    layers = ContentLayoutObject()->Compositor()->LayerTreeAsJSON(
-        static_cast<LayerTreeFlags>(flags));
+    if (const auto* root_layer =
+            ContentLayoutObject()->Compositor()->RootGraphicsLayer()) {
+      if (flags & kLayerTreeIncludesRootLayer && IsMainFrame()) {
+        while (root_layer->Parent())
+          root_layer = root_layer->Parent();
+      }
+      layers = root_layer->LayerTreeAsJSON(static_cast<LayerTreeFlags>(flags));
+    }
   }
 
   if (flags & kLayerTreeIncludesPaintInvalidations) {
@@ -888,16 +926,24 @@ inline LocalFrame::LocalFrame(LocalFrameClient* client,
     // inert state from a higher-level frame. If this is an OOPIF local root,
     // it will be updated later.
     UpdateInertIfPossible();
+    UpdateInheritedEffectiveTouchActionIfPossible();
     probe_sink_ = LocalFrameRoot().probe_sink_;
     ad_tracker_ = LocalFrameRoot().ad_tracker_;
     performance_monitor_ = LocalFrameRoot().performance_monitor_;
   }
   idleness_detector_ = new IdlenessDetector(this);
   inspector_task_runner_->InitIsolate(V8PerIsolateData::MainThreadIsolate());
+
+  if (ComputeIsAdSubFrame())
+    SetIsAdSubframe();
 }
 
 FrameScheduler* LocalFrame::GetFrameScheduler() {
   return frame_scheduler_.get();
+}
+
+EventHandlerRegistry& LocalFrame::GetEventHandlerRegistry() const {
+  return event_handler_->GetEventHandlerRegistry();
 }
 
 scoped_refptr<base::SingleThreadTaskRunner> LocalFrame::GetTaskRunner(
@@ -962,8 +1008,13 @@ bool LocalFrame::CanNavigate(const Frame& target_frame,
     // Frame-busting used to be generally allowed in most situations, but may
     // now blocked if the document initiating the navigation has never received
     // a user gesture and the navigation isn't same-origin with the target.
+    //
+    // TODO(csharrison,japhet): Consider not logging an error message if the
+    // user has allowed popups/redirects.
     if (!RuntimeEnabledFeatures::
-            FramebustingNeedsSameOriginOrUserGestureEnabled()) {
+            FramebustingNeedsSameOriginOrUserGestureEnabled() ||
+        Client()->GetContentSettingsClient().AllowPopupsAndRedirects(
+            false /* default_value */)) {
       String target_frame_description =
           target_frame.IsLocalFrame() ? "with URL '" +
                                             ToLocalFrame(target_frame)
@@ -1142,6 +1193,19 @@ bool LocalFrame::CanNavigateWithoutFramebusting(const Frame& target_frame,
   return false;
 }
 
+bool LocalFrame::ComputeIsAdSubFrame() const {
+  DCHECK(ad_tracker_);
+  Frame* parent = Tree().Parent();
+  if (!parent)
+    return false;
+
+  // If the parent frame is local, directly determine if it's an ad. If
+  // it's remote, then blink relies on the embedder to call SetIsAdFrame.
+  bool parent_is_ad =
+      parent->IsLocalFrame() && ToLocalFrame(parent)->IsAdSubframe();
+  return parent_is_ad || ad_tracker_->IsAdScriptInStack(GetDocument());
+}
+
 service_manager::InterfaceProvider& LocalFrame::GetInterfaceProvider() {
   DCHECK(Client());
   return *Client()->GetInterfaceProvider();
@@ -1165,7 +1229,7 @@ FrameResourceCoordinator* LocalFrame::GetFrameResourceCoordinator() {
   if (!BlinkResourceCoordinatorBase::IsEnabled())
     return nullptr;
   if (!frame_resource_coordinator_) {
-    auto local_frame_client = Client();
+    auto* local_frame_client = Client();
     if (!local_frame_client)
       return nullptr;
     frame_resource_coordinator_.reset(FrameResourceCoordinator::Create(

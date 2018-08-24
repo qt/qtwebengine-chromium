@@ -32,6 +32,7 @@
 #include <memory>
 
 #include "base/macros.h"
+#include "base/single_thread_task_runner.h"
 #include "third_party/blink/public/mojom/loader/prefetch_url_loader_service.mojom-blink.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/ax_object_cache.h"
@@ -44,7 +45,9 @@
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
 #include "third_party/blink/renderer/core/loader/interactive_detector.h"
 #include "third_party/blink/renderer/core/page/frame_tree.h"
+#include "third_party/blink/renderer/platform/graphics/touch_action.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
+#include "third_party/blink/renderer/platform/instance_counters.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_types.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
 
@@ -63,6 +66,7 @@ class Document;
 class Editor;
 class Element;
 class EventHandler;
+class EventHandlerRegistry;
 class FetchParameters;
 class FloatSize;
 class FrameConsole;
@@ -110,7 +114,7 @@ class CORE_EXPORT LocalFrame final : public Frame,
 
   // Frame overrides:
   ~LocalFrame() override;
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
   void Navigate(Document& origin_document,
                 const KURL&,
                 bool replace_current_item,
@@ -130,6 +134,10 @@ class CORE_EXPORT LocalFrame final : public Frame,
   // This sets the is_inert_ flag and also recurses through this frame's
   // subtree, updating the inert bit on all descendant frames.
   void SetIsInert(bool) override;
+  void SetInheritedEffectiveTouchAction(TouchAction) override;
+  bool BubbleLogicalScrollFromChildFrame(ScrollDirection direction,
+                                         ScrollGranularity granularity,
+                                         Frame* child) override;
 
   void DetachChildren();
   void DocumentAttached();
@@ -154,6 +162,7 @@ class CORE_EXPORT LocalFrame final : public Frame,
 
   Editor& GetEditor() const;
   EventHandler& GetEventHandler() const;
+  EventHandlerRegistry& GetEventHandlerRegistry() const;
   FrameLoader& Loader() const;
   NavigationScheduler& GetNavigationScheduler() const;
   FrameSelection& Selection() const;
@@ -227,7 +236,9 @@ class CORE_EXPORT LocalFrame final : public Frame,
 
   bool ShouldThrottleRendering() const;
 
-  // Returns the frame scheduler, creating one if needed.
+  // Returns frame scheduler for this frame.
+  // FrameScheduler is destroyed during frame detach and nullptr will be
+  // returned after it.
   FrameScheduler* GetFrameScheduler();
   scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(TaskType);
   void ScheduleVisualUpdateUnlessThrottled();
@@ -293,13 +304,6 @@ class CORE_EXPORT LocalFrame final : public Frame,
   void SetViewportIntersectionFromParent(const IntRect&);
   IntRect RemoteViewportIntersection() { return remote_viewport_intersection_; }
 
-  // Dummy leftover for compile test.
-  static std::unique_ptr<UserGestureIndicator> CreateUserGesture(
-      LocalFrame*,
-      UserGestureToken::Status = UserGestureToken::kPossiblyExistingGesture) {
-    return std::make_unique<UserGestureIndicator>();
-  }
-
   // Replaces the initial empty document with a Document suitable for
   // |mime_type| and populated with the contents of |data|. Only intended for
   // use in internal-implementation LocalFrames that aren't in the frame tree.
@@ -327,6 +331,16 @@ class CORE_EXPORT LocalFrame final : public Frame,
   ComputedAccessibleNode* GetOrCreateComputedAccessibleNode(AXID,
                                                             WebComputedAXTree*);
 
+  // True if AdTracker heuristics have determined that this frame is an ad.
+  bool IsAdSubframe() const { return is_ad_subframe_; }
+  void SetIsAdSubframe() {
+    DCHECK(!IsMainFrame());
+    if (is_ad_subframe_)
+      return;
+    is_ad_subframe_ = true;
+    InstanceCounters::IncrementCounter(InstanceCounters::kAdSubframeCounter);
+  }
+
  private:
   friend class FrameNavigationDisabler;
 
@@ -344,6 +358,8 @@ class CORE_EXPORT LocalFrame final : public Frame,
   void DisableNavigation() { ++navigation_disable_count_; }
 
   bool CanNavigateWithoutFramebusting(const Frame&, String& error_reason);
+
+  bool ComputeIsAdSubFrame() const;
 
   void PropagateInertToChildFrames();
 
@@ -389,6 +405,12 @@ class CORE_EXPORT LocalFrame final : public Frame,
   float text_zoom_factor_;
 
   bool in_view_source_mode_;
+
+  // True if this frame is heuristically determined to have been created for
+  // advertising purposes. It's per-frame (as opposed to per-document) because
+  // when an iframe is created on behalf of ad script that same frame is not
+  // typically reused for non-ad purposes.
+  bool is_ad_subframe_ = false;
 
   Member<CoreProbeSink> probe_sink_;
   scoped_refptr<InspectorTaskRunner> inspector_task_runner_;

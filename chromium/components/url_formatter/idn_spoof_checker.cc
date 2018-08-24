@@ -155,15 +155,20 @@ IDNSpoofChecker::IDNSpoofChecker() {
       UTRANS_FORWARD, parse_error, status));
 
   // Supplement the Unicode confusable list by the following mapping.
+  //   - {U+00E6 (æ), U+04D5 (ӕ)}  => "ae"
   //   - {U+00FE (þ), U+03FC (ϼ), U+048F (ҏ)} => p
   //   - {U+0127 (ħ), U+043D (н), U+045B (ћ), U+04A3 (ң), U+04A5 (ҥ),
   //      U+04C8 (ӈ), U+04CA (ӊ), U+050B (ԋ), U+0527 (ԧ), U+0529 (ԩ)} => h
   //   - {U+0138 (ĸ), U+03BA (κ), U+043A (к), U+049B (қ), U+049D (ҝ),
   //      U+049F (ҟ), U+04A1(ҡ), U+04C4 (ӄ), U+051F (ԟ)} => k
-  //   - {U+014B (ŋ), U+043F (п)} => n
+  //   - {U+014B (ŋ), U+043F (п), U+0525 (ԥ)} => n
+  //   - U+0153 (œ) => "ce"
+  //     TODO: see https://crbug.com/843352 for further work on
+  //     U+0525 and U+0153.
   //   - {U+0167 (ŧ), U+0442 (т), U+04AD (ҭ), U+050F (ԏ)} => t
   //   - {U+0185 (ƅ), U+044C (ь), U+048D (ҍ), U+0432 (в)} => b
-  //   - {U+03C9 (ω), U+0448 (ш), U+0449 (щ), U+0E1F (ฟ)} => w
+  //   - {U+03C9 (ω), U+0448 (ш), U+0449 (щ), U+0E1E (พ),
+  //      U+0E1F (ฟ), U+0E9E (ພ), U+0E9F (ຟ)} => w
   //   - {U+043C (м), U+04CE (ӎ)} => m
   //   - {U+0454 (є), U+04BD (ҽ), U+04BF (ҿ), U+1054 (ၔ)} => e
   //   - U+0491 (ґ) => r
@@ -173,18 +178,20 @@ IDNSpoofChecker::IDNSpoofChecker() {
   //   - U+03C7 (χ), U+04B3 (ҳ), U+04FD (ӽ), U+04FF (ӿ) => x
   //   - U+0503 (ԃ) => d
   //   - {U+050D (ԍ), U+100c (ဌ)} => g
-  //   - {U+0D1F (ട), U+0E23 (ร)} => s
+  //   - {U+0D1F (ട), U+0E23 (ร), U+0EA3 (ຣ), U+0EAE (ຮ)} => s
   //   - U+1042 (၂) => j
-  //   - {U+0437 (з), U+04E1 (ӡ)} => 3
+  //   - {U+0437 (з), U+0499 (ҙ), U+04E1 (ӡ), U+10D5 (ვ), U+1012 (ဒ)} => 3
+  //   - {U+0E1A (บ), U+0E9A (ບ)} => u
   extra_confusable_mapper_.reset(icu::Transliterator::createFromRules(
       UNICODE_STRING_SIMPLE("ExtraConf"),
-      icu::UnicodeString::fromUTF8("[þϼҏ] > p; [ħнћңҥӈӊԋԧԩ] > h;"
-                                   "[ĸκкқҝҟҡӄԟ] > k; [ŋп] > n; [ŧтҭԏ] > t;"
-                                   "[ƅьҍв] > b;  [ωшщฟ] > w; [мӎ] > m;"
-                                   "[єҽҿၔ] > e; ґ > r; [ғӻ] > f; [ҫင] > c;"
-                                   "ұ > y; [χҳӽӿ] > x;"
-                                   "ԃ  > d; [ԍဌ] > g; [ടร] > s; ၂ > j;"
-                                   "[зӡ] > 3"),
+      icu::UnicodeString::fromUTF8(
+          "[æӕ] > ae; [þϼҏ] > p; [ħнћңҥӈӊԋԧԩ] > h;"
+          "[ĸκкқҝҟҡӄԟ] > k; [ŋпԥ] > n; œ > ce;"
+          "[ŧтҭԏ] > t; [ƅьҍв] > b;  [ωшщพฟພຟ] > w;"
+          "[мӎ] > m; [єҽҿၔ] > e; ґ > r; [ғӻ] > f;"
+          "[ҫင] > c; ұ > y; [χҳӽӿ] > x;"
+          "ԃ  > d; [ԍဌ] > g; [ടรຣຮ] > s; ၂ > j;"
+          "[зҙӡვဒ] > 3; [บບ] > u"),
       UTRANS_FORWARD, parse_error, status));
   DCHECK(U_SUCCESS(status))
       << "Spoofchecker initalization failed due to an error: "
@@ -274,8 +281,6 @@ bool IDNSpoofChecker::SafeToDisplayAsUnicode(base::StringPiece16 label,
     // - Disallow three Hiragana letters (U+307[8-A]) or Katakana letters
     //   (U+30D[8-A]) that look exactly like each other when they're used in a
     //   label otherwise entirely in Katakna or Hiragana.
-    // - Disallow U+0585 (Armenian Small Letter Oh) and U+0581 (Armenian Small
-    //   Letter Co) to be next to Latin.
     // - Disallow combining diacritical mark (U+0300-U+0339) after a non-LGC
     //   character. Other combining diacritical marks are not in the allowed
     //   character set.

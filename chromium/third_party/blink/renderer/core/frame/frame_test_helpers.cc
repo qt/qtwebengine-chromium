@@ -120,10 +120,11 @@ void LoadHistoryItem(WebLocalFrame* frame,
                      const WebHistoryItem& item,
                      WebHistoryLoadType load_type,
                      mojom::FetchCacheMode cache_mode) {
-  WebURLRequest request = frame->RequestFromHistoryItem(item, cache_mode);
-  frame->Load(request, WebFrameLoadType::kBackForward, item,
-              kWebHistoryDifferentDocumentLoad, /*is_client_redirect=*/false,
-              base::UnguessableToken::Create());
+  HistoryItem* history_item = item;
+  frame->CommitNavigation(
+      WrappedResourceRequest(history_item->GenerateResourceRequest(cache_mode)),
+      WebFrameLoadType::kBackForward, item, kWebHistoryDifferentDocumentLoad,
+      /*is_client_redirect=*/false, base::UnguessableToken::Create());
   PumpPendingRequestsForFrameToLoad(frame);
 }
 
@@ -439,6 +440,16 @@ void TestWebFrameClient::DidStartLoading(bool) {
 void TestWebFrameClient::DidStopLoading() {
   DCHECK_GT(loads_in_progress_, 0);
   --loads_in_progress_;
+}
+
+void TestWebFrameClient::DidCreateDocumentLoader(
+    WebDocumentLoader* document_loader) {
+  base::TimeTicks redirect_start;
+  base::TimeTicks redirect_end;
+  base::TimeTicks fetch_start = base::TimeTicks::Now();
+  bool has_redirect = false;
+  document_loader->UpdateNavigation(redirect_start, redirect_end, fetch_start,
+                                    has_redirect);
 }
 
 TestWebRemoteFrameClient::TestWebRemoteFrameClient() = default;

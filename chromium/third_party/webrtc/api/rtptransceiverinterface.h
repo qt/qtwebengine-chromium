@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "api/array_view.h"
 #include "api/optional.h"
 #include "api/rtpreceiverinterface.h"
 #include "api/rtpsenderinterface.h"
@@ -28,9 +29,6 @@ enum class RtpTransceiverDirection {
   kRecvOnly,
   kInactive
 };
-
-// This is provided as a debugging aid. The format of the output is unspecified.
-std::ostream& operator<<(std::ostream& os, RtpTransceiverDirection direction);
 
 // Structure for initializing an RtpTransceiver in a call to
 // PeerConnectionInterface::AddTransceiver.

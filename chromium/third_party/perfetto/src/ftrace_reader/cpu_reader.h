@@ -21,13 +21,20 @@
 #include <string.h>
 
 #include <array>
+#include <atomic>
 #include <memory>
+#include <set>
+#include <thread>
 
 #include "gtest/gtest_prod.h"
+#include "perfetto/base/build_config.h"
+#include "perfetto/base/page_allocator.h"
 #include "perfetto/base/scoped_file.h"
+#include "perfetto/base/thread_checker.h"
 #include "perfetto/ftrace_reader/ftrace_controller.h"
-#include "perfetto/protozero/protozero_message.h"
-#include "proto_translation_table.h"
+#include "perfetto/protozero/message.h"
+#include "perfetto/traced/data_source_types.h"
+#include "src/ftrace_reader/proto_translation_table.h"
 
 namespace perfetto {
 
@@ -64,17 +71,24 @@ class EventFilter {
   std::set<std::string> enabled_names_;
 };
 
+// Processes raw ftrace data for a logical CPU core.
 class CpuReader {
  public:
-  CpuReader(const ProtoTranslationTable*, size_t cpu, base::ScopedFile fd);
+  // |on_data_available| will be called on an arbitrary thread when at least one
+  // page of ftrace data is available for draining on this CPU.
+  CpuReader(const ProtoTranslationTable*,
+            size_t cpu,
+            base::ScopedFile fd,
+            std::function<void()> on_data_available);
   ~CpuReader();
 
-  bool Drain(
-      const std::array<const EventFilter*, kMaxSinks>&,
-      const std::array<
-          protozero::ProtoZeroMessageHandle<protos::pbzero::FtraceEventBundle>,
-          kMaxSinks>&);
-  int GetFileDescriptor();
+  // Drains all available data from the staging pipe into the given sinks.
+  // Should be called in response to the |on_data_available| callback.
+  bool Drain(const std::array<const EventFilter*, kMaxSinks>&,
+             const std::array<
+                 protozero::MessageHandle<protos::pbzero::FtraceEventBundle>,
+                 kMaxSinks>&,
+             const std::array<FtraceMetadata*, kMaxSinks>& metadatas);
 
   template <typename T>
   static bool ReadAndAdvance(const uint8_t** ptr, const uint8_t* end, T* out) {
@@ -88,13 +102,69 @@ class CpuReader {
 
   // Caller must do the bounds check:
   // [start + offset, start + offset + sizeof(T))
+  // Returns the raw value not the varint.
   template <typename T>
-  static void ReadIntoVarInt(const uint8_t* start,
-                             size_t field_id,
-                             protozero::ProtoZeroMessage* out) {
+  static T ReadIntoVarInt(const uint8_t* start,
+                          uint32_t field_id,
+                          protozero::Message* out) {
     T t;
     memcpy(&t, reinterpret_cast<const void*>(start), sizeof(T));
     out->AppendVarInt<T>(field_id, t);
+    return t;
+  }
+
+  template <typename T>
+  static void ReadInode(const uint8_t* start,
+                        uint32_t field_id,
+                        protozero::Message* out,
+                        FtraceMetadata* metadata) {
+    T t = ReadIntoVarInt<T>(start, field_id, out);
+    metadata->AddInode(static_cast<Inode>(t));
+  }
+
+  template <typename T>
+  static void ReadDevId(const uint8_t* start,
+                        uint32_t field_id,
+                        protozero::Message* out,
+                        FtraceMetadata* metadata) {
+    T t;
+    memcpy(&t, reinterpret_cast<const void*>(start), sizeof(T));
+    BlockDeviceID dev_id = TranslateBlockDeviceIDToUserspace<T>(t);
+    out->AppendVarInt<BlockDeviceID>(field_id, dev_id);
+    metadata->AddDevice(dev_id);
+  }
+
+  static void ReadPid(const uint8_t* start,
+                      uint32_t field_id,
+                      protozero::Message* out,
+                      FtraceMetadata* metadata) {
+    int32_t pid = ReadIntoVarInt<int32_t>(start, field_id, out);
+    metadata->AddPid(pid);
+  }
+
+  static void ReadCommonPid(const uint8_t* start,
+                            uint32_t field_id,
+                            protozero::Message* out,
+                            FtraceMetadata* metadata) {
+    int32_t pid = ReadIntoVarInt<int32_t>(start, field_id, out);
+    metadata->AddCommonPid(pid);
+  }
+
+  // Internally the kernel stores device ids in a different layout to that
+  // exposed to userspace via stat etc. There's no userspace function to convert
+  // between the formats so we have to do it ourselves.
+  template <typename T>
+  static BlockDeviceID TranslateBlockDeviceIDToUserspace(T kernel_dev) {
+    // Provided search index s_dev from
+    // https://github.com/torvalds/linux/blob/v4.12/include/linux/fs.h#L404
+    // Convert to user space id using
+    // https://github.com/torvalds/linux/blob/v4.12/include/linux/kdev_t.h#L10
+    // TODO(azappone): see if this is the same on all platforms
+    uint64_t maj = static_cast<uint64_t>(kernel_dev) >> 20;
+    uint64_t min = static_cast<uint64_t>(kernel_dev) & ((1U << 20) - 1);
+    return static_cast<BlockDeviceID>(  // From makedev()
+        ((maj & 0xfffff000ULL) << 32) | ((maj & 0xfffULL) << 8) |
+        ((min & 0xffffff00ULL) << 12) | ((min & 0xffULL)));
   }
 
   // Parse a raw ftrace page beginning at ptr and write the events a protos
@@ -103,11 +173,11 @@ class CpuReader {
   // run time (e.g. field offset and size) information necessary to do this.
   // The table is initialized once at start time by the ftrace controller
   // which passes it to the CpuReader which passes it here.
-  static size_t ParsePage(size_t cpu,
-                          const uint8_t* ptr,
+  static size_t ParsePage(const uint8_t* ptr,
                           const EventFilter*,
                           protos::pbzero::FtraceEventBundle*,
-                          const ProtoTranslationTable* table);
+                          const ProtoTranslationTable* table,
+                          FtraceMetadata*);
 
   // Parse a single raw ftrace event beginning at |start| and ending at |end|
   // and write it into the provided bundle as a proto.
@@ -120,22 +190,35 @@ class CpuReader {
                          const uint8_t* start,
                          const uint8_t* end,
                          const ProtoTranslationTable* table,
-                         protozero::ProtoZeroMessage* message);
+                         protozero::Message* message,
+                         FtraceMetadata* metadata);
 
   static bool ParseField(const Field& field,
                          const uint8_t* start,
                          const uint8_t* end,
-                         protozero::ProtoZeroMessage* message);
+                         protozero::Message* message,
+                         FtraceMetadata* metadata);
 
  private:
+  static void RunWorkerThread(size_t cpu,
+                              int trace_fd,
+                              int staging_write_fd,
+                              const std::function<void()>& on_data_available,
+                              std::atomic<bool>* exiting);
+
   uint8_t* GetBuffer();
   CpuReader(const CpuReader&) = delete;
   CpuReader& operator=(const CpuReader&) = delete;
 
   const ProtoTranslationTable* table_;
   const size_t cpu_;
-  base::ScopedFile fd_;
-  std::unique_ptr<uint8_t[]> buffer_;
+  base::ScopedFile trace_fd_;
+  base::ScopedFile staging_read_fd_;
+  base::ScopedFile staging_write_fd_;
+  base::PageAllocator::UniquePtr buffer_;
+  std::thread worker_thread_;
+  std::atomic<bool> exiting_{false};
+  PERFETTO_THREAD_CHECKER(thread_checker_)
 };
 
 }  // namespace perfetto

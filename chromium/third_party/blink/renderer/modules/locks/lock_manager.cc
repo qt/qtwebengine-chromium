@@ -69,7 +69,7 @@ class LockManager::LockRequestImpl final
         binding_(this, std::move(request)),
         manager_(manager) {}
 
-  ~LockRequestImpl() = default;
+  ~LockRequestImpl() override = default;
 
   void Trace(blink::Visitor* visitor) {
     visitor->Trace(resolver_);
@@ -80,7 +80,7 @@ class LockManager::LockRequestImpl final
   // Wrapper tracing is needed for callbacks. The reference chain is
   // NavigatorLocksImpl -> LockManager -> LockRequestImpl ->
   // V8LockGrantedCallback.
-  void TraceWrappers(const ScriptWrappableVisitor* visitor) const override {
+  void TraceWrappers(ScriptWrappableVisitor* visitor) const override {
     visitor->TraceWrappers(callback_);
   }
   const char* NameInHeapSnapshot() const override {
@@ -92,6 +92,10 @@ class LockManager::LockRequestImpl final
   void Cancel() { binding_.Close(); }
 
   void Abort(const String& reason) override {
+    // Abort signal after acquisition should be ignored.
+    if (!manager_->IsPendingRequest(this))
+      return;
+
     manager_->RemovePendingRequest(this);
     binding_.Close();
 
@@ -323,6 +327,10 @@ void LockManager::RemovePendingRequest(LockRequestImpl* request) {
   pending_requests_.erase(request);
 }
 
+bool LockManager::IsPendingRequest(LockRequestImpl* request) {
+  return pending_requests_.Contains(request);
+}
+
 void LockManager::Trace(blink::Visitor* visitor) {
   ScriptWrappable::Trace(visitor);
   ContextLifecycleObserver::Trace(visitor);
@@ -330,7 +338,7 @@ void LockManager::Trace(blink::Visitor* visitor) {
   visitor->Trace(held_locks_);
 }
 
-void LockManager::TraceWrappers(const ScriptWrappableVisitor* visitor) const {
+void LockManager::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   for (auto request : pending_requests_)
     visitor->TraceWrappers(request);
   ScriptWrappable::TraceWrappers(visitor);

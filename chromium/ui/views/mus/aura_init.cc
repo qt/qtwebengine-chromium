@@ -21,7 +21,6 @@
 #include "ui/base/ui_base_paths.h"
 #include "ui/views/layout/layout_provider.h"
 #include "ui/views/mus/mus_client.h"
-#include "ui/views/style/typography_provider.h"
 #include "ui/views/views_delegate.h"
 
 #if defined(OS_LINUX)
@@ -93,14 +92,18 @@ bool AuraInit::Init(service_manager::Connector* connector,
                     scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
                     Mode mode,
                     bool register_path_provider) {
-  env_ = aura::Env::CreateInstance(
-      (mode == Mode::AURA_MUS || mode == Mode::AURA_MUS_WINDOW_MANAGER)
-          ? aura::Env::Mode::MUS
-          : aura::Env::Mode::LOCAL);
+  env_ = aura::Env::CreateInstance(aura::Env::Mode::MUS);
 
-  if (mode == Mode::AURA_MUS) {
-    mus_client_ =
-        base::WrapUnique(new MusClient(connector, identity, io_task_runner));
+  if (mode == Mode::AURA_MUS || mode == Mode::AURA_MUS2) {
+    MusClient::InitParams params;
+    params.connector = connector;
+    params.identity = identity;
+    params.io_task_runner = io_task_runner;
+    params.wtc_config = mode == Mode::AURA_MUS2
+                            ? aura::WindowTreeClient::Config::kMus2
+                            : aura::WindowTreeClient::Config::kMash;
+    params.create_wm_state = true;
+    mus_client_ = std::make_unique<MusClient>(params);
   }
   // MaterialDesignController may have initialized already (such as happens
   // in the utility process).
@@ -114,7 +117,7 @@ bool AuraInit::Init(service_manager::Connector* connector,
 // Initialize the skia font code to go ask fontconfig underneath.
 #if defined(OS_LINUX)
   font_loader_ = sk_make_sp<font_service::FontLoader>(connector);
-  SkFontConfigInterface::SetGlobal(font_loader_.get());
+  SkFontConfigInterface::SetGlobal(font_loader_);
 
   // Initialize static default font, by running this now, before any other apps
   // load, we ensure all the state is set up.

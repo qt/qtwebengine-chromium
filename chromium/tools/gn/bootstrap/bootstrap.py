@@ -129,7 +129,9 @@ def windows_prepare_toolchain(tempdir):
        toolchain_paths["vs_path"],
        toolchain_paths["sdk_path"],
        toolchain_paths["runtime_dirs"],
+       "win",
        "x64",
+       "environment.x64",
        "true"
       ],
       cwd=tempdir)
@@ -523,13 +525,17 @@ def write_gn_ninja(path, root_gen_dir, options, windows_x64_toolchain):
       'base/location.cc',
       'base/logging.cc',
       'base/md5.cc',
+      'base/memory/platform_shared_memory_region.cc',
+      'base/memory/read_only_shared_memory_region.cc',
       'base/memory/ref_counted.cc',
       'base/memory/ref_counted_memory.cc',
+      'base/memory/shared_memory_mapping.cc',
       'base/memory/shared_memory_handle.cc',
       'base/memory/shared_memory_tracker.cc',
       'base/memory/weak_ptr.cc',
       'base/message_loop/incoming_task_queue.cc',
       'base/message_loop/message_loop.cc',
+      'base/message_loop/message_loop_current.cc',
       'base/message_loop/message_loop_task_runner.cc',
       'base/message_loop/message_pump.cc',
       'base/message_loop/message_pump_default.cc',
@@ -594,6 +600,7 @@ def write_gn_ninja(path, root_gen_dir, options, windows_x64_toolchain):
       'base/task_scheduler/scoped_set_task_priority_for_current_thread.cc',
       'base/task_scheduler/sequence.cc',
       'base/task_scheduler/sequence_sort_key.cc',
+      'base/task_scheduler/service_thread.cc',
       'base/task_scheduler/task.cc',
       'base/task_scheduler/task_scheduler.cc',
       'base/task_scheduler/task_scheduler_impl.cc',
@@ -626,7 +633,6 @@ def write_gn_ninja(path, root_gen_dir, options, windows_x64_toolchain):
       'base/trace_event/event_name_filter.cc',
       'base/trace_event/heap_profiler_allocation_context.cc',
       'base/trace_event/heap_profiler_allocation_context_tracker.cc',
-      'base/trace_event/heap_profiler_allocation_register.cc',
       'base/trace_event/heap_profiler_event_filter.cc',
       'base/trace_event/heap_profiler_heap_dump_writer.cc',
       'base/trace_event/heap_profiler_serialization_state.cc',
@@ -643,7 +649,6 @@ def write_gn_ninja(path, root_gen_dir, options, windows_x64_toolchain):
       'base/trace_event/memory_peak_detector.cc',
       'base/trace_event/memory_usage_estimator.cc',
       'base/trace_event/process_memory_dump.cc',
-      'base/trace_event/sharded_allocation_register.cc',
       'base/trace_event/trace_buffer.cc',
       'base/trace_event/trace_config.cc',
       'base/trace_event/trace_config_category_filter.cc',
@@ -659,6 +664,19 @@ def write_gn_ninja(path, root_gen_dir, options, windows_x64_toolchain):
       'base/values.cc',
       'base/vlog.cc',
   ])
+
+  if is_win:
+    static_libraries['base']['sources'].extend([
+        'base/memory/platform_shared_memory_region_win.cc'
+    ])
+  elif is_mac:
+    static_libraries['base']['sources'].extend([
+        'base/memory/platform_shared_memory_region_mac.cc'
+    ])
+  elif is_posix:
+    static_libraries['base']['sources'].extend([
+        'base/memory/platform_shared_memory_region_posix.cc'
+    ])
 
   if is_posix:
     static_libraries['base']['sources'].extend([
@@ -689,7 +707,6 @@ def write_gn_ninja(path, root_gen_dir, options, windows_x64_toolchain):
         'base/threading/platform_thread_posix.cc',
         'base/threading/thread_local_storage_posix.cc',
         'base/time/time_conversion_posix.cc',
-        'base/trace_event/heap_profiler_allocation_register_posix.cc',
     ])
     static_libraries['libevent'] = {
         'sources': [
@@ -929,7 +946,6 @@ def write_gn_ninja(path, root_gen_dir, options, windows_x64_toolchain):
         'base/threading/thread_local_storage_win.cc',
         'base/time/time_win.cc',
         'base/timer/hi_res_timer_manager_win.cc',
-        'base/trace_event/heap_profiler_allocation_register_win.cc',
         'base/trace_event/trace_event_etw_export_win.cc',
         'base/win/core_winrt_util.cc',
         'base/win/enum_variant.cc',

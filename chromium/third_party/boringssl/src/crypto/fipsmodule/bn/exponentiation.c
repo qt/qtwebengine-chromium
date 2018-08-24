@@ -109,6 +109,7 @@
 #include <openssl/bn.h>
 
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <openssl/cpu.h>
@@ -585,6 +586,13 @@ err:
 
 int BN_mod_exp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p, const BIGNUM *m,
                BN_CTX *ctx) {
+  if (a->neg || BN_ucmp(a, m) >= 0) {
+    if (!BN_nnmod(r, a, m, ctx)) {
+      return 0;
+    }
+    a = r;
+  }
+
   if (BN_is_odd(m)) {
     return BN_mod_exp_mont(r, a, p, m, ctx, NULL);
   }
@@ -598,6 +606,11 @@ int BN_mod_exp_mont(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
     OPENSSL_PUT_ERROR(BN, BN_R_CALLED_WITH_EVEN_MODULUS);
     return 0;
   }
+  if (a->neg || BN_ucmp(a, m) >= 0) {
+    OPENSSL_PUT_ERROR(BN, BN_R_INPUT_NOT_REDUCED);
+    return 0;
+  }
+
   int bits = BN_num_bits(p);
   if (bits == 0) {
     // x**0 mod 1 is still zero.
@@ -622,35 +635,19 @@ int BN_mod_exp_mont(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
 
   // Allocate a montgomery context if it was not supplied by the caller.
   if (mont == NULL) {
-    new_mont = BN_MONT_CTX_new_for_modulus(m, ctx);
+    new_mont = BN_MONT_CTX_new_consttime(m, ctx);
     if (new_mont == NULL) {
       goto err;
     }
     mont = new_mont;
   }
 
-  const BIGNUM *aa;
-  if (a->neg || BN_ucmp(a, m) >= 0) {
-    if (!BN_nnmod(val[0], a, m, ctx)) {
-      goto err;
-    }
-    aa = val[0];
-  } else {
-    aa = a;
-  }
-
-  if (BN_is_zero(aa)) {
-    BN_zero(rr);
-    ret = 1;
-    goto err;
-  }
-
   // We exponentiate by looking at sliding windows of the exponent and
-  // precomputing powers of |aa|. Windows may be shifted so they always end on a
-  // set bit, so only precompute odd powers. We compute val[i] = aa^(2*i + 1)
+  // precomputing powers of |a|. Windows may be shifted so they always end on a
+  // set bit, so only precompute odd powers. We compute val[i] = a^(2*i + 1)
   // for i = 0 to 2^(window-1), all in Montgomery form.
   int window = BN_window_bits_for_exponent_size(bits);
-  if (!BN_to_montgomery(val[0], aa, mont, ctx)) {
+  if (!BN_to_montgomery(val[0], a, mont, ctx)) {
     goto err;
   }
   if (window > 1) {
@@ -666,10 +663,8 @@ int BN_mod_exp_mont(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
     }
   }
 
-  if (!bn_one_to_montgomery(r, mont, ctx)) {
-    goto err;
-  }
-
+  // |p| is non-zero, so at least one window is non-zero. To save some
+  // multiplications, defer initializing |r| until then.
   int r_is_one = 1;
   int wstart = bits - 1;  // The top bit of the window.
   for (;;) {
@@ -706,7 +701,11 @@ int BN_mod_exp_mont(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
 
     assert(wvalue & 1);
     assert(wvalue < (1 << window));
-    if (!BN_mod_mul_montgomery(r, r, val[wvalue >> 1], mont, ctx)) {
+    if (r_is_one) {
+      if (!BN_copy(r, val[wvalue >> 1])) {
+        goto err;
+      }
+    } else if (!BN_mod_mul_montgomery(r, r, val[wvalue >> 1], mont, ctx)) {
       goto err;
     }
 
@@ -716,6 +715,9 @@ int BN_mod_exp_mont(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
     }
     wstart -= wsize + 1;
   }
+
+  // |p| is non-zero, so |r_is_one| must be cleared at some point.
+  assert(!r_is_one);
 
   if (!BN_from_montgomery(rr, r, mont, ctx)) {
     goto err;
@@ -728,29 +730,24 @@ err:
   return ret;
 }
 
-int bn_mod_exp_mont_small(BN_ULONG *r, size_t num_r, const BN_ULONG *a,
-                          size_t num_a, const BN_ULONG *p, size_t num_p,
-                          const BN_MONT_CTX *mont) {
-  size_t num_n = mont->N.width;
-  if (num_n != num_a || num_n != num_r || num_n > BN_SMALL_MAX_WORDS) {
-    OPENSSL_PUT_ERROR(BN, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
-    return 0;
+void bn_mod_exp_mont_small(BN_ULONG *r, const BN_ULONG *a, size_t num,
+                           const BN_ULONG *p, size_t num_p,
+                           const BN_MONT_CTX *mont) {
+  if (num != (size_t)mont->N.width || num > BN_SMALL_MAX_WORDS) {
+    abort();
   }
-  if (!BN_is_odd(&mont->N)) {
-    OPENSSL_PUT_ERROR(BN, BN_R_CALLED_WITH_EVEN_MODULUS);
-    return 0;
+  assert(BN_is_odd(&mont->N));
+
+  // Count the number of bits in |p|. Note this function treats |p| as public.
+  while (num_p != 0 && p[num_p - 1] == 0) {
+    num_p--;
   }
-  unsigned bits = 0;
-  if (num_p != 0) {
-    bits = BN_num_bits_word(p[num_p - 1]) + (num_p - 1) * BN_BITS2;
+  if (num_p == 0) {
+    bn_from_montgomery_small(r, mont->RR.d, num, mont);
+    return;
   }
-  if (bits == 0) {
-    OPENSSL_memset(r, 0, num_r * sizeof(BN_ULONG));
-    if (!BN_is_one(&mont->N)) {
-      r[0] = 1;
-    }
-    return 1;
-  }
+  unsigned bits = BN_num_bits_word(p[num_p - 1]) + (num_p - 1) * BN_BITS2;
+  assert(bits != 0);
 
   // We exponentiate by looking at sliding windows of the exponent and
   // precomputing powers of |a|. Windows may be shifted so they always end on a
@@ -760,34 +757,24 @@ int bn_mod_exp_mont_small(BN_ULONG *r, size_t num_r, const BN_ULONG *a,
   if (window > TABLE_BITS_SMALL) {
     window = TABLE_BITS_SMALL;  // Tolerate excessively large |p|.
   }
-  int ret = 0;
   BN_ULONG val[TABLE_SIZE_SMALL][BN_SMALL_MAX_WORDS];
-  OPENSSL_memcpy(val[0], a, num_n * sizeof(BN_ULONG));
+  OPENSSL_memcpy(val[0], a, num * sizeof(BN_ULONG));
   if (window > 1) {
     BN_ULONG d[BN_SMALL_MAX_WORDS];
-    if (!bn_mod_mul_montgomery_small(d, num_n, val[0], num_n, val[0], num_n,
-                                     mont)) {
-      goto err;
-    }
+    bn_mod_mul_montgomery_small(d, val[0], val[0], num, mont);
     for (unsigned i = 1; i < 1u << (window - 1); i++) {
-      if (!bn_mod_mul_montgomery_small(val[i], num_n, val[i - 1], num_n, d,
-                                       num_n, mont)) {
-        goto err;
-      }
+      bn_mod_mul_montgomery_small(val[i], val[i - 1], d, num, mont);
     }
   }
 
-  if (!bn_one_to_montgomery_small(r, num_r, mont)) {
-    goto err;
-  }
-
+  // |p| is non-zero, so at least one window is non-zero. To save some
+  // multiplications, defer initializing |r| until then.
   int r_is_one = 1;
   unsigned wstart = bits - 1;  // The top bit of the window.
   for (;;) {
     if (!bn_is_bit_set_words(p, num_p, wstart)) {
-      if (!r_is_one &&
-          !bn_mod_mul_montgomery_small(r, num_r, r, num_r, r, num_r, mont)) {
-        goto err;
+      if (!r_is_one) {
+        bn_mod_mul_montgomery_small(r, r, r, num, mont);
       }
       if (wstart == 0) {
         break;
@@ -810,19 +797,17 @@ int bn_mod_exp_mont_small(BN_ULONG *r, size_t num_r, const BN_ULONG *a,
     // Shift |r| to the end of the window.
     if (!r_is_one) {
       for (unsigned i = 0; i < wsize + 1; i++) {
-        if (!bn_mod_mul_montgomery_small(r, num_r, r, num_r, r, num_r, mont)) {
-          goto err;
-        }
+        bn_mod_mul_montgomery_small(r, r, r, num, mont);
       }
     }
 
     assert(wvalue & 1);
     assert(wvalue < (1u << window));
-    if (!bn_mod_mul_montgomery_small(r, num_r, r, num_r, val[wvalue >> 1],
-                                     num_n, mont)) {
-      goto err;
+    if (r_is_one) {
+      OPENSSL_memcpy(r, val[wvalue >> 1], num * sizeof(BN_ULONG));
+    } else {
+      bn_mod_mul_montgomery_small(r, r, val[wvalue >> 1], num, mont);
     }
-
     r_is_one = 0;
     if (wstart == wsize) {
       break;
@@ -830,38 +815,33 @@ int bn_mod_exp_mont_small(BN_ULONG *r, size_t num_r, const BN_ULONG *a,
     wstart -= wsize + 1;
   }
 
-  ret = 1;
-
-err:
+  // |p| is non-zero, so |r_is_one| must be cleared at some point.
+  assert(!r_is_one);
   OPENSSL_cleanse(val, sizeof(val));
-  return ret;
 }
 
-int bn_mod_inverse_prime_mont_small(BN_ULONG *r, size_t num_r,
-                                    const BN_ULONG *a, size_t num_a,
-                                    const BN_MONT_CTX *mont) {
-  const BN_ULONG *p = mont->N.d;
-  size_t num_p = mont->N.width;
-  if (num_p > BN_SMALL_MAX_WORDS || num_p == 0) {
-    OPENSSL_PUT_ERROR(BN, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
-    return 0;
+void bn_mod_inverse_prime_mont_small(BN_ULONG *r, const BN_ULONG *a, size_t num,
+                                     const BN_MONT_CTX *mont) {
+  if (num != (size_t)mont->N.width || num > BN_SMALL_MAX_WORDS) {
+    abort();
   }
 
   // Per Fermat's Little Theorem, a^-1 = a^(p-2) (mod p) for p prime.
   BN_ULONG p_minus_two[BN_SMALL_MAX_WORDS];
-  OPENSSL_memcpy(p_minus_two, p, num_p * sizeof(BN_ULONG));
+  const BN_ULONG *p = mont->N.d;
+  OPENSSL_memcpy(p_minus_two, p, num * sizeof(BN_ULONG));
   if (p_minus_two[0] >= 2) {
     p_minus_two[0] -= 2;
   } else {
     p_minus_two[0] -= 2;
-    for (size_t i = 1; i < num_p; i++) {
+    for (size_t i = 1; i < num; i++) {
       if (p_minus_two[i]-- != 0) {
         break;
       }
     }
   }
 
-  return bn_mod_exp_mont_small(r, num_r, a, num_a, p_minus_two, num_p, mont);
+  bn_mod_exp_mont_small(r, a, num, p_minus_two, num, mont);
 }
 
 
@@ -934,9 +914,6 @@ static int copy_from_prebuf(BIGNUM *b, int top, unsigned char *buf, int idx,
   return 1;
 }
 
-// BN_mod_exp_mont_conttime is based on the assumption that the L1 data cache
-// line width of the target processor is at least the following value.
-#define MOD_EXP_CTIME_MIN_CACHE_LINE_WIDTH (64)
 #define MOD_EXP_CTIME_MIN_CACHE_LINE_MASK \
   (MOD_EXP_CTIME_MIN_CACHE_LINE_WIDTH - 1)
 
@@ -988,10 +965,13 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
   int powerbufLen = 0;
   unsigned char *powerbuf = NULL;
   BIGNUM tmp, am;
-  BIGNUM *new_a = NULL;
 
   if (!BN_is_odd(m)) {
     OPENSSL_PUT_ERROR(BN, BN_R_CALLED_WITH_EVEN_MODULUS);
+    return 0;
+  }
+  if (a->neg || BN_ucmp(a, m) >= 0) {
+    OPENSSL_PUT_ERROR(BN, BN_R_INPUT_NOT_REDUCED);
     return 0;
   }
 
@@ -1010,7 +990,7 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
 
   // Allocate a montgomery context if it was not supplied by the caller.
   if (mont == NULL) {
-    new_mont = BN_MONT_CTX_new_for_modulus(m, ctx);
+    new_mont = BN_MONT_CTX_new_consttime(m, ctx);
     if (new_mont == NULL) {
       goto err;
     }
@@ -1021,15 +1001,14 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
   // implementation assumes it can use |top| to size R.
   int top = mont->N.width;
 
-  if (a->neg || BN_ucmp(a, m) >= 0) {
-    new_a = BN_new();
-    if (new_a == NULL ||
-        !BN_nnmod(new_a, a, m, ctx)) {
-      goto err;
-    }
-    a = new_a;
-  }
-
+#if defined(OPENSSL_BN_ASM_MONT5) || defined(RSAZ_ENABLED)
+  // Share one large stack-allocated buffer between the RSAZ and non-RSAZ code
+  // paths. If we were to use separate static buffers for each then there is
+  // some chance that both large buffers would be allocated on the stack,
+  // causing the stack space requirement to be truly huge (~10KB).
+  alignas(MOD_EXP_CTIME_MIN_CACHE_LINE_WIDTH) BN_ULONG
+    storage[MOD_EXP_CTIME_STORAGE_LEN];
+#endif
 #ifdef RSAZ_ENABLED
   // If the size of the operands allow it, perform the optimized
   // RSAZ exponentiation. For further information see
@@ -1039,7 +1018,8 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
     if (!bn_wexpand(rr, 16)) {
       goto err;
     }
-    RSAZ_1024_mod_exp_avx2(rr->d, a->d, p->d, m->d, mont->RR.d, mont->n0[0]);
+    RSAZ_1024_mod_exp_avx2(rr->d, a->d, p->d, m->d, mont->RR.d, mont->n0[0],
+                           storage);
     rr->width = 16;
     rr->neg = 0;
     ret = 1;
@@ -1063,26 +1043,23 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
   powerbufLen +=
       sizeof(m->d[0]) *
       (top * numPowers + ((2 * top) > numPowers ? (2 * top) : numPowers));
-#ifdef alloca
-  if (powerbufLen < 3072) {
-    powerbufFree = alloca(powerbufLen + MOD_EXP_CTIME_MIN_CACHE_LINE_WIDTH);
-  } else
+
+#if defined(OPENSSL_BN_ASM_MONT5)
+  if ((size_t)powerbufLen <= sizeof(storage)) {
+    powerbuf = (unsigned char *)storage;
+  }
+  // |storage| is more than large enough to handle 1024-bit inputs.
+  assert(powerbuf != NULL || top * BN_BITS2 > 1024);
 #endif
-  {
-    if ((powerbufFree = OPENSSL_malloc(
-            powerbufLen + MOD_EXP_CTIME_MIN_CACHE_LINE_WIDTH)) == NULL) {
+  if (powerbuf == NULL) {
+    powerbufFree =
+        OPENSSL_malloc(powerbufLen + MOD_EXP_CTIME_MIN_CACHE_LINE_WIDTH);
+    if (powerbufFree == NULL) {
       goto err;
     }
+    powerbuf = MOD_EXP_CTIME_ALIGN(powerbufFree);
   }
-
-  powerbuf = MOD_EXP_CTIME_ALIGN(powerbufFree);
   OPENSSL_memset(powerbuf, 0, powerbufLen);
-
-#ifdef alloca
-  if (powerbufLen < 3072) {
-    powerbufFree = NULL;
-  }
-#endif
 
   // lay down tmp and am right after powers table
   tmp.d = (BN_ULONG *)(powerbuf + sizeof(m->d[0]) * top * numPowers);
@@ -1290,7 +1267,9 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
 
 err:
   BN_MONT_CTX_free(new_mont);
-  BN_clear_free(new_a);
+  if (powerbuf != NULL && powerbufFree == NULL) {
+    OPENSSL_cleanse(powerbuf, powerbufLen);
+  }
   OPENSSL_free(powerbufFree);
   return (ret);
 }
@@ -1302,6 +1281,11 @@ int BN_mod_exp_mont_word(BIGNUM *rr, BN_ULONG a, const BIGNUM *p,
   BN_init(&a_bignum);
 
   int ret = 0;
+
+  // BN_mod_exp_mont requires reduced inputs.
+  if (bn_minimal_width(m) == 1) {
+    a %= m->d[0];
+  }
 
   if (!BN_set_word(&a_bignum, a)) {
     OPENSSL_PUT_ERROR(BN, ERR_R_INTERNAL_ERROR);

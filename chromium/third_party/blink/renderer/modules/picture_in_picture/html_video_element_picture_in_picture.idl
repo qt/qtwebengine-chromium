@@ -5,14 +5,14 @@
 // https://wicg.github.io/picture-in-picture/#htmlvideoelement-extensions
 [
     ImplementedAs=HTMLVideoElementPictureInPicture,
-    RuntimeEnabled=PictureInPictureAPI
+    OriginTrialEnabled=PictureInPictureAPI
 ]
 partial interface HTMLVideoElement {
-    [CallWith=ScriptState] Promise<PictureInPictureWindow> requestPictureInPicture();
+    [CallWith=ScriptState, Measure] Promise<PictureInPictureWindow> requestPictureInPicture();
 
     attribute EventHandler onenterpictureinpicture;
     attribute EventHandler onleavepictureinpicture;
 
-    [CEReactions, Reflect] attribute boolean disablePictureInPicture;
+    [CEReactions, Measure, Reflect] attribute boolean disablePictureInPicture;
 
 };

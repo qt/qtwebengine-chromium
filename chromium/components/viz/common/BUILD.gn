@@ -62,16 +62,13 @@ viz_component("common") {
     "gpu/context_lost_observer.h",
     "gpu/context_provider.cc",
     "gpu/context_provider.h",
-    "gpu/in_process_context_provider.cc",
-    "gpu/in_process_context_provider.h",
     "gpu/raster_context_provider.cc",
     "gpu/raster_context_provider.h",
     "gpu/texture_allocation.cc",
     "gpu/texture_allocation.h",
-    "gpu/vulkan_context_provider.h",
-    "gpu/vulkan_in_process_context_provider.cc",
-    "gpu/vulkan_in_process_context_provider.h",
     "hit_test/aggregated_hit_test_region.h",
+    "hit_test/hit_test_region_list.cc",
+    "hit_test/hit_test_region_list.h",
     "quads/compositor_frame.cc",
     "quads/compositor_frame.h",
     "quads/compositor_frame_metadata.cc",
@@ -121,10 +118,12 @@ viz_component("common") {
     "resources/resource_settings.cc",
     "resources/resource_settings.h",
     "resources/resource_sizes.h",
-    "resources/resource_texture_hint.h",
     "resources/resource_type.h",
+    "resources/return_callback.h",
     "resources/returned_resource.h",
     "resources/shared_bitmap_manager.h",
+    "resources/shared_bitmap_reporter.cc",
+    "resources/shared_bitmap_reporter.h",
     "resources/single_release_callback.cc",
     "resources/single_release_callback.h",
     "resources/transferable_resource.cc",
@@ -165,9 +164,6 @@ viz_component("common") {
     "//gpu/command_buffer/client:gles2_interface",
     "//gpu/command_buffer/client:raster",
     "//gpu/command_buffer/client:raster_interface",
-    "//gpu/command_buffer/service",
-    "//gpu/ipc:gl_in_process_context",
-    "//gpu/skia_bindings:skia_bindings",
     "//gpu/vulkan:buildflags",
     "//mojo/public/cpp/bindings",
     "//skia",
@@ -181,8 +177,22 @@ viz_component("common") {
   ]
 
   if (enable_vulkan) {
+    sources += [
+      "gpu/vulkan_context_provider.h",
+      "gpu/vulkan_in_process_context_provider.cc",
+      "gpu/vulkan_in_process_context_provider.h",
+    ]
     configs = [ "//third_party/vulkan:vulkan_config" ]
-    deps += [ "//gpu/vulkan" ]
+    deps += [ "//gpu/vulkan/init" ]
+  }
+
+  if (is_win) {
+    sources += [
+      "display/use_layered_window.cc",
+      "display/use_layered_window.h",
+    ]
+
+    deps += [ "//ui/base" ]
   }
 
   public_deps = [
@@ -204,6 +214,7 @@ viz_source_set("unit_tests") {
     "quads/draw_quad_unittest.cc",
     "quads/render_pass_unittest.cc",
     "resources/platform_color_unittest.cc",
+    "resources/resource_sizes_unittest.cc",
     "surfaces/child_local_surface_id_allocator_unittest.cc",
     "surfaces/local_surface_id_unittest.cc",
     "surfaces/parent_local_surface_id_allocator_unittest.cc",

@@ -67,16 +67,6 @@ helper_script_and_deps = [
     "helper_file_generator.py",
   ],
   [
-    "vulkan_gen_struct_size_helper_c",
-    "vk_struct_size_helper.c",
-    "helper_file_generator.py",
-  ],
-  [
-    "vulkan_gen_struct_size_helper_h",
-    "vk_struct_size_helper.h",
-    "helper_file_generator.py",
-  ],
-  [
     "vulkan_gen_thread_check_helper",
     "thread_check.h",
     "threading_generator.py",
@@ -121,8 +111,12 @@ foreach(script_and_dep, helper_script_and_deps) {
     script = "src/scripts/lvl_genvk.py"
     inputs = [
       "src/scripts/$dep",
+      "src/scripts/cgenerator.py",
+      "src/scripts/common_codegen.py",
       "src/scripts/generator.py",
       "src/scripts/reg.py",
+      "src/scripts/vuid_mapping.py",
+      "src/layers/vk_validation_error_messages.h",
       "src/scripts/vk.xml",
     ]
     outputs = [
@@ -284,8 +278,8 @@ if (!is_android) {
     sources = [
       "src/loader/cJSON.c",
       "src/loader/cJSON.h",
-      "src/loader/debug_report.c",
-      "src/loader/debug_report.h",
+      "src/loader/debug_utils.c",
+      "src/loader/debug_utils.h",
       "src/loader/dev_ext_trampoline.c",
       "src/loader/extension_manual.c",
       "src/loader/extension_manual.h",
@@ -502,10 +496,15 @@ if (!is_android) {
       "//build/config:exe_and_shlib_deps",
     ]
     deps += [ ":vulkan_generate_mock_icd_files" ]
+    data_deps = [
+      ":vulkan_gen_icd_json_file",
+    ]
     sources = mock_icd_sources
     if (is_win) {
       sources += [ "src/icd/VkICD_mock_icd.def" ]
     }
+    configs -= [ "//build/config/compiler:chromium_code" ]
+    configs += [ "//build/config/compiler:no_chromium_code" ]
   }
 
   action("vulkan_gen_icd_json_file") {

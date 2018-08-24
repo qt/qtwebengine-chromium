@@ -25,6 +25,7 @@
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
 #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
+#include "third_party/blink/renderer/core/fullscreen/fullscreen_options.h"
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
@@ -182,11 +183,12 @@ WebRemoteFrame* WebRemoteFrameImpl::CreateRemoteChild(
   return child;
 }
 
-void WebRemoteFrameImpl::SetWebLayer(WebLayer* layer) {
+void WebRemoteFrameImpl::SetCcLayer(cc::Layer* layer,
+                                    bool prevent_contents_opaque_changes) {
   if (!GetFrame())
     return;
 
-  GetFrame()->SetWebLayer(layer);
+  GetFrame()->SetCcLayer(layer, prevent_contents_opaque_changes);
 }
 
 void WebRemoteFrameImpl::SetCoreFrame(RemoteFrame* frame) {
@@ -203,12 +205,13 @@ WebRemoteFrameImpl* WebRemoteFrameImpl::FromFrame(RemoteFrame& frame) {
 
 void WebRemoteFrameImpl::SetReplicatedOrigin(
     const WebSecurityOrigin& origin,
-    bool is_potentially_trustworthy_unique_origin) {
+    bool is_potentially_trustworthy_opaque_origin) {
   DCHECK(GetFrame());
   scoped_refptr<SecurityOrigin> security_origin = origin.Get()->IsolatedCopy();
-  security_origin->SetUniqueOriginIsPotentiallyTrustworthy(
-      is_potentially_trustworthy_unique_origin);
+  security_origin->SetOpaqueOriginIsPotentiallyTrustworthy(
+      is_potentially_trustworthy_opaque_origin);
   GetFrame()->GetSecurityContext()->SetReplicatedOrigin(security_origin);
+  ApplyReplicatedFeaturePolicyHeader();
 
   // If the origin of a remote frame changed, the accessibility object for the
   // owner element now points to a different child.
@@ -239,6 +242,11 @@ void WebRemoteFrameImpl::SetReplicatedName(const WebString& name) {
 
 void WebRemoteFrameImpl::SetReplicatedFeaturePolicyHeader(
     const ParsedFeaturePolicy& parsed_header) {
+  feature_policy_header_ = parsed_header;
+  ApplyReplicatedFeaturePolicyHeader();
+}
+
+void WebRemoteFrameImpl::ApplyReplicatedFeaturePolicyHeader() {
   FeaturePolicy* parent_feature_policy = nullptr;
   if (Parent()) {
     Frame* parent_frame = GetFrame()->Client()->Parent();
@@ -249,7 +257,7 @@ void WebRemoteFrameImpl::SetReplicatedFeaturePolicyHeader(
   if (GetFrame()->Owner())
     container_policy = GetFrame()->Owner()->ContainerPolicy();
   GetFrame()->GetSecurityContext()->InitializeFeaturePolicy(
-      parsed_header, container_policy, parent_feature_policy);
+      feature_policy_header_, container_policy, parent_feature_policy);
 }
 
 void WebRemoteFrameImpl::AddReplicatedContentSecurityPolicyHeader(
@@ -330,7 +338,7 @@ void WebRemoteFrameImpl::WillEnterFullscreen() {
   // future, this should plumb in information about which request type
   // (prefixed or unprefixed) to use for firing fullscreen events.
   Fullscreen::RequestFullscreen(
-      *owner_element,
+      *owner_element, FullscreenOptions(),
       Fullscreen::RequestType::kPrefixedForCrossProcessDescendant);
 }
 
@@ -387,6 +395,16 @@ void WebRemoteFrameImpl::ScrollRectToVisible(
       DeNormalizeRect(params.relative_caret_bounds, rect_in_document));
   view_impl->ZoomAndScrollToFocusedEditableElementRect(
       element_bounds_in_document, caret_bounds_in_document, true);
+}
+
+void WebRemoteFrameImpl::BubbleLogicalScroll(WebScrollDirection direction,
+                                             WebScrollGranularity granularity) {
+  Frame* parent_frame = GetFrame()->Tree().Parent();
+  DCHECK(parent_frame);
+  DCHECK(parent_frame->IsLocalFrame());
+
+  parent_frame->BubbleLogicalScrollFromChildFrame(direction, granularity,
+                                                  GetFrame());
 }
 
 void WebRemoteFrameImpl::IntrinsicSizingInfoChanged(

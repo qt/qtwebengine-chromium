@@ -116,7 +116,6 @@ all_platforms="${all_platforms} armv7s-darwin-gcc"
 all_platforms="${all_platforms} armv8-linux-gcc"
 all_platforms="${all_platforms} mips32-linux-gcc"
 all_platforms="${all_platforms} mips64-linux-gcc"
-all_platforms="${all_platforms} ppc64-linux-gcc"
 all_platforms="${all_platforms} ppc64le-linux-gcc"
 all_platforms="${all_platforms} sparc-solaris-gcc"
 all_platforms="${all_platforms} x86-android-gcc"
@@ -328,6 +327,7 @@ CONFIG_LIST="
     multi_res_encoding
     temporal_denoising
     vp9_temporal_denoising
+    consistent_recode
     coefficient_range_checking
     vp9_highbitdepth
     better_hw_compatibility
@@ -389,6 +389,7 @@ CMDLINE_SELECT="
     multi_res_encoding
     temporal_denoising
     vp9_temporal_denoising
+    consistent_recode
     coefficient_range_checking
     better_hw_compatibility
     vp9_highbitdepth
@@ -573,16 +574,30 @@ process_detect() {
         check_ld() {
             true
         }
+        check_lib() {
+            true
+        }
     fi
     check_header stdio.h || die "Unable to invoke compiler: ${CC} ${CFLAGS}"
     check_ld <<EOF || die "Toolchain is unable to link executables"
 int main(void) {return 0;}
 EOF
     # check system headers
-    check_header pthread.h
+
+    # Use both check_header and check_lib here, since check_lib
+    # could be a stub that always returns true.
+    check_header pthread.h && check_lib -lpthread <<EOF || disable_feature pthread_h
+#include <pthread.h>
+#include <stddef.h>
+int main(void) { return pthread_create(NULL, NULL, NULL, NULL); }
+EOF
     check_header unistd.h # for sysconf(3) and friends.
 
     check_header vpx/vpx_integer.h -I${source_path} && enable_feature vpx_ports
+
+    if enabled neon && ! enabled external_build; then
+      check_header arm_neon.h || die "Unable to find arm_neon.h"
+    fi
 }
 
 process_toolchain() {
@@ -708,9 +723,7 @@ process_toolchain() {
             check_cxx "$@" <<EOF && soft_enable unit_tests
 int z;
 EOF
-            check_cxx "$@" <<EOF && soft_enable webm_io
-int z;
-EOF
+            check_add_cxxflags -std=c++11 && soft_enable webm_io
             check_cxx "$@" <<EOF && soft_enable libyuv
 int z;
 EOF
@@ -719,9 +732,7 @@ EOF
             enabled pthread_h && check_cxx "$@" <<EOF && soft_enable unit_tests
 int z;
 EOF
-            check_cxx "$@" <<EOF && soft_enable webm_io
-int z;
-EOF
+            check_add_cxxflags -std=c++11 && soft_enable webm_io
             check_cxx "$@" <<EOF && soft_enable libyuv
 int z;
 EOF

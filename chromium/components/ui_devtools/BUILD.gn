@@ -19,7 +19,7 @@ _protocol_generated = [
 
 action("protocol_compatibility") {
   visibility = [ ":*" ]  # Only targets in this file can depend on this.
-  script = "$_inspector_protocol/CheckProtocolCompatibility.py"
+  script = "$_inspector_protocol/check_protocol_compatibility.py"
   inputs = [
     "protocol.json",
   ]
@@ -89,7 +89,11 @@ component("ui_devtools") {
     ":protocol_generated_sources",
     "//base",
     "//net",
-    "//net:http_server",
     "//ui/gfx",
+  ]
+
+  public_deps = [
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
   ]
 }

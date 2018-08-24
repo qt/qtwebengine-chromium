@@ -68,6 +68,18 @@ message AccountIdentifier {
   optional string account_id = 2;
 }
 
+// Parameters for connecting and making requests to a key delegate service.
+// This is currently used for making challenge requests for keys of the
+// |KEY_TYPE_CHALLENGE_RESPONSE| type.
+message KeyDelegate {
+  // D-Bus service name of the key delegate service that exports the key
+  // delegate object.
+  optional string dbus_service_name = 1;
+  // D-Bus object path of the key delegate object that implements the
+  // org.chromium.CryptohomeKeyDelegateInterface interface.
+  optional string dbus_object_path = 2;
+}
+
 message AuthorizationRequest {
   // |key| must supply at least a |key.secret()|.  If no |key.data()| or
   // |key.data().label()| is supplied, the |key.secret()| will be tested
@@ -76,7 +88,11 @@ message AuthorizationRequest {
   // |key.data().label()| is supplied, then the |key.secret()| will only be
   // tested against the matching VaultKeyset.
   optional Key key = 1;
-};
+  // Describes delegate service that should be used for operations with the
+  // |key| key.
+  // Should be set only for keys with the |KEY_TYPE_CHALLENGE_RESPONSE| type.
+  optional KeyDelegate key_delegate = 2;
+}
 
 // These parameters are for inbound data to Cryptohome RPC
 // interfaces.  When calls are added that return data, a
@@ -133,7 +149,7 @@ message MountReply {
   optional bool recreated = 1 [default=false];
   // Returns the filesystem-sanitized username.
   optional string sanitized_username = 2;
-};
+}
 
 message CreateRequest {
   repeated Key keys = 1;
@@ -355,9 +371,6 @@ message MigrateToDircryptoRequest {
 // Request parameters for challenge requests for keys of the
 // |KEY_TYPE_CHALLENGE_RESPONSE| type.
 message KeyChallengeRequest {
-  // An opaque identifier of the request. Should be used for sending the
-  // response back.
-  optional int64 request_id = 1;
   // Specifies challenge types.
   enum ChallengeType {
     // Challenge is a request of a cryptographic signature of the specified data
@@ -365,10 +378,10 @@ message KeyChallengeRequest {
     CHALLENGE_TYPE_SIGNATURE = 1;
   }
   // Type of the requested challenge.
-  optional ChallengeType challenge_type = 2;
+  optional ChallengeType challenge_type = 1;
   // Is set when |challenge_type| is |CHALLENGE_TYPE_SIGNATURE|. Contains the
   // challenge request data.
-  optional SignatureKeyChallengeRequestData signature_request_data = 3;
+  optional SignatureKeyChallengeRequestData signature_request_data = 2;
 }
 
 // Request data for challenge requests of the |CHALLENGE_TYPE_SIGNATURE| request
@@ -385,13 +398,10 @@ message SignatureKeyChallengeRequestData {
 
 // Response for challenge requests.
 message KeyChallengeResponse {
-  // The request identifier. Should be taken from the |request_id| field of the
-  // KeyChallengeRequest message.
-  optional int64 request_id = 1;
   // Is set for responses to challenge requests of the
-  // |CHALLENGE_TYPE_SIGNATURE| challenge type. Contains the challenge
-  // response data.
-  optional SignatureKeyChallengeResponseData signature_response_data = 2;
+  // |CHALLENGE_TYPE_SIGNATURE| challenge type. Contains the challenge response
+  // data.
+  optional SignatureKeyChallengeResponseData signature_response_data = 1;
 }
 
 // Response data for challenge requests of the |CHALLENGE_TYPE_SIGNATURE|

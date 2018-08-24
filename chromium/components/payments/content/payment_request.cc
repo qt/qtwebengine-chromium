@@ -18,6 +18,7 @@
 #include "components/payments/core/features.h"
 #include "components/payments/core/payment_details.h"
 #include "components/payments/core/payment_details_validation.h"
+#include "components/payments/core/payment_instrument.h"
 #include "components/payments/core/payment_prefs.h"
 #include "components/prefs/pref_service.h"
 #include "components/url_formatter/elide_url.h"
@@ -265,11 +266,16 @@ void PaymentRequest::Complete(mojom::PaymentComplete result) {
 }
 
 void PaymentRequest::CanMakePayment() {
-  state()->CanMakePayment(base::BindOnce(
-      &PaymentRequest::CanMakePaymentCallback, weak_ptr_factory_.GetWeakPtr()));
-
   if (observer_for_testing_)
     observer_for_testing_->OnCanMakePaymentCalled();
+
+  if (!delegate_->GetPrefService()->GetBoolean(kCanMakePaymentEnabled)) {
+    CanMakePaymentCallback(/*can_make_payment=*/false);
+  } else {
+    state()->CanMakePayment(
+        base::BindOnce(&PaymentRequest::CanMakePaymentCallback,
+                       weak_ptr_factory_.GetWeakPtr()));
+  }
 }
 
 void PaymentRequest::OnPaymentResponseAvailable(
@@ -342,7 +348,24 @@ void PaymentRequest::OnConnectionTerminated() {
 
 void PaymentRequest::Pay() {
   journey_logger_.SetEventOccurred(JourneyLogger::EVENT_PAY_CLICKED);
-  journey_logger_.SetEventOccurred(JourneyLogger::EVENT_SELECTED_CREDIT_CARD);
+
+  // Log the correct "selected instrument" metric according to type.
+  DCHECK(state_->selected_instrument());
+  JourneyLogger::Event selected_event =
+      JourneyLogger::Event::EVENT_SELECTED_OTHER;
+  switch (state_->selected_instrument()->type()) {
+    case PaymentInstrument::Type::AUTOFILL:
+      selected_event = JourneyLogger::Event::EVENT_SELECTED_CREDIT_CARD;
+      break;
+    case PaymentInstrument::Type::SERVICE_WORKER_APP:
+      selected_event = JourneyLogger::Event::EVENT_SELECTED_OTHER;
+      break;
+    case PaymentInstrument::Type::NATIVE_MOBILE_APP:
+      NOTREACHED();
+      break;
+  }
+  journey_logger_.SetEventOccurred(selected_event);
+
   state_->GeneratePaymentResponse();
 }
 
@@ -394,12 +417,6 @@ void PaymentRequest::CanMakePaymentCallback(bool can_make_payment) {
 
 void PaymentRequest::RespondToCanMakePaymentQuery(bool can_make_payment,
                                                   bool warn_localhost_or_file) {
-  if (delegate_->IsIncognito()) {
-    can_make_payment =
-        spec()->HasBasicCardMethodName() ||
-        base::FeatureList::IsEnabled(::features::kServiceWorkerPaymentApps);
-  }
-
   mojom::CanMakePaymentQueryResult positive =
       warn_localhost_or_file
           ? mojom::CanMakePaymentQueryResult::WARNING_CAN_MAKE_PAYMENT

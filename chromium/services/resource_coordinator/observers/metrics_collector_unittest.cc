@@ -345,6 +345,7 @@ TEST_F(MAYBE_MetricsCollectorTest,
       kTabFromBackgroundedToFirstFaviconUpdatedUMA, 1);
 }
 
+// Flaky test: https://crbug.com/833028
 TEST_F(MAYBE_MetricsCollectorTest, ResponsivenessMetric) {
   auto page_cu = CreateCoordinationUnit<PageCoordinationUnitImpl>();
   coordination_unit_manager().OnCoordinationUnitCreated(page_cu.get());

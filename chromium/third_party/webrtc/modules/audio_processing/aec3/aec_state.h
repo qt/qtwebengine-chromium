@@ -22,6 +22,7 @@
 #include "api/optional.h"
 #include "modules/audio_processing/aec3/aec3_common.h"
 #include "modules/audio_processing/aec3/delay_estimate.h"
+#include "modules/audio_processing/aec3/echo_audibility.h"
 #include "modules/audio_processing/aec3/echo_path_variability.h"
 #include "modules/audio_processing/aec3/erl_estimator.h"
 #include "modules/audio_processing/aec3/erle_estimator.h"
@@ -53,9 +54,27 @@ class AecState {
   // Returns whether the render signal is currently active.
   bool ActiveRender() const { return blocks_with_active_render_ > 200; }
 
+  // Returns the appropriate scaling of the residual echo to match the
+  // audibility.
+  void GetResidualEchoScaling(rtc::ArrayView<float> residual_scaling) const {
+    echo_audibility_.GetResidualEchoScaling(residual_scaling);
+  }
+
+  // Returns whether the stationary properties of the signals are used in the
+  // aec.
+  bool UseStationaryProperties() const { return use_stationary_properties_; }
+
   // Returns the ERLE.
   const std::array<float, kFftLengthBy2Plus1>& Erle() const {
     return erle_estimator_.Erle();
+  }
+
+  // Returns any uncertainty in the ERLE estimate.
+  rtc::Optional<float> ErleUncertainty() const {
+    if (allow_linear_mode_with_diverged_filter_ && diverged_linear_filter_) {
+      return 10.f;
+    }
+    return rtc::nullopt;
   }
 
   // Returns the time-domain ERLE.
@@ -120,6 +139,16 @@ class AecState {
               const std::array<float, kFftLengthBy2Plus1>& Y2,
               const std::array<float, kBlockSize>& s);
 
+  // Returns the tail freq. response of the linear filter.
+  rtc::ArrayView<const float> GetFreqRespTail() const {
+    return filter_analyzer_.GetFreqRespTail();
+  }
+
+  // Returns filter length in blocks.
+  int FilterLengthBlocks() const {
+    return filter_analyzer_.FilterLengthBlocks();
+  }
+
  private:
   void UpdateReverb(const std::vector<float>& impulse_response);
   bool DetectActiveRender(rtc::ArrayView<const float> x) const;
@@ -129,7 +158,10 @@ class AecState {
 
   static int instance_count_;
   std::unique_ptr<ApmDataDumper> data_dumper_;
+  const EchoCanceller3Config config_;
   const bool allow_transparent_mode_;
+  const bool use_stationary_properties_;
+  const bool allow_linear_mode_with_diverged_filter_;
   ErlEstimator erl_estimator_;
   ErleEstimator erle_estimator_;
   size_t capture_block_counter_ = 0;
@@ -137,6 +169,7 @@ class AecState {
   size_t blocks_with_proper_filter_adaptation_ = 0;
   size_t blocks_with_active_render_ = 0;
   bool usable_linear_estimate_ = false;
+  bool diverged_linear_filter_ = false;
   bool capture_signal_saturation_ = false;
   bool echo_saturation_ = false;
   bool transparent_mode_ = false;
@@ -153,7 +186,6 @@ class AecState {
   bool found_end_of_reverb_decay_ = false;
   bool main_filter_is_adapting_ = true;
   std::array<float, kMaxAdaptiveFilterLength> block_energies_;
-  const EchoCanceller3Config config_;
   std::vector<float> max_render_;
   float reverb_decay_ = fabsf(config_.ep_strength.default_len);
   bool filter_has_had_time_to_converge_ = false;
@@ -173,7 +205,7 @@ class AecState {
   size_t converged_filter_count_ = 0;
   bool finite_erl_ = false;
   size_t active_blocks_since_converged_filter_ = 0;
-
+  EchoAudibility echo_audibility_;
   RTC_DISALLOW_COPY_AND_ASSIGN(AecState);
 };
 

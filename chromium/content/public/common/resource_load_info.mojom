@@ -4,10 +4,33 @@
 
 module content.mojom;
 
+import "content/public/common/load_timing_info.mojom";
 import "content/public/common/resource_type.mojom";
-import "mojo/public/mojom/base/time.mojom";
 import "net/interfaces/ip_address.mojom";
+import "services/network/public/mojom/network_param.mojom";
 import "url/mojom/url.mojom";
+
+// Network related information reported for loads and redirects.
+struct CommonNetworkInfo {
+  // True if the request accessed the network in the process of retrieving data.
+  bool network_accessed;
+
+  // True if loading this resource always requires accessing the network, either
+  // because it should always be revalidated or because it should not be cached.
+  bool always_access_network;
+
+  // The host IP and port of the response.
+  network.mojom.HostPortPair? ip_port_pair;
+};
+
+// Information for a redirect.
+struct RedirectInfo {
+  // The URL after the redirect.
+  url.mojom.Url url;
+
+  // Various network related information.
+  CommonNetworkInfo network_info;
+};
 
 // Information pertaining to resource loading.
 // This will be passed to ResourceResponse callback methods.
@@ -34,18 +57,29 @@ struct ResourceLoadInfo {
   // The mime type.
   string mime_type;
 
-  // The host IP.
-  net.interfaces.IPAddress? ip;
-
   // True if the response was fetched from the network cache.
   bool was_cached;
 
-  // True if the request accessed the network in the process of retrieving data.
-  bool network_accessed;
+  // Various network related information.
+  CommonNetworkInfo network_info;
 
   // The network error code, net::OK if no error happened.
   int32 net_error;
 
-  // The time at which the request was started.
-  mojo_base.mojom.TimeTicks request_start;
+  // The timing info.
+  content.mojom.LoadTimingInfo load_timing_info;
+
+  // The size of the response body before removing any content encodings.
+  // Does not include redirects or sub-requests issued at lower levels (range
+  // requests or auth). Does include bytes from the cache.
+  int64 raw_body_bytes;
+
+  // The total amount of data received from network after SSL decoding and proxy
+  // handling. Pertains only to the last request, i.e. reset on redirects, but
+  // not reset when multiple roundtrips are used for range requests or auth.
+  int64 total_received_bytes;
+
+  // The list of redirects that led to this resource load. Empty if there were
+  // no redirects.
+  array<RedirectInfo> redirect_info_chain;
 };

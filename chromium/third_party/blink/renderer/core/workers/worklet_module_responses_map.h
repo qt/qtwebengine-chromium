@@ -7,7 +7,6 @@
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/loader/modulescript/module_script_creation_params.h"
-#include "third_party/blink/renderer/core/workers/worker_or_worklet_module_fetch_coordinator.h"
 #include "third_party/blink/renderer/platform/heap/heap.h"
 #include "third_party/blink/renderer/platform/heap/heap_allocator.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_parameters.h"
@@ -33,11 +32,16 @@ namespace blink {
 // TODO(nhiroki): Rename this to WorkletModuleFetchCoordinator, and revise the
 // class-level comment.
 class CORE_EXPORT WorkletModuleResponsesMap
-    : public GarbageCollectedFinalized<WorkletModuleResponsesMap>,
-      public WorkerOrWorkletModuleFetchCoordinator {
-  USING_GARBAGE_COLLECTED_MIXIN(WorkletModuleResponsesMap);
-
+    : public GarbageCollectedFinalized<WorkletModuleResponsesMap> {
  public:
+  // Used for notifying results of Fetch().
+  class CORE_EXPORT Client : public GarbageCollectedMixin {
+   public:
+    virtual ~Client() = default;
+    virtual void OnFetched(const ModuleScriptCreationParams&) = 0;
+    virtual void OnFailed() = 0;
+  };
+
   explicit WorkletModuleResponsesMap(ResourceFetcher*);
 
   // Fetches a module script. If the script is already fetched, synchronously

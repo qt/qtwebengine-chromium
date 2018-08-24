@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "build/build_config.h"
+#include "net/cert/ct_policy_enforcer.h"
 #include "net/cert/do_nothing_ct_verifier.h"
 #include "net/cert/mock_cert_verifier.h"
 #include "net/dns/mock_host_resolver.h"
@@ -19,9 +20,6 @@
 #include "net/quic/chromium/mock_quic_data.h"
 #include "net/quic/chromium/quic_http_utils.h"
 #include "net/quic/chromium/quic_test_packet_maker.h"
-#include "net/quic/core/quic_versions.h"
-#include "net/quic/test_tools/mock_clock.h"
-#include "net/quic/test_tools/mock_random.h"
 #include "net/socket/socket_tag.h"
 #include "net/socket/socket_test_util.h"
 #include "net/ssl/channel_id_service.h"
@@ -29,6 +27,10 @@
 #include "net/test/cert_test_util.h"
 #include "net/test/gtest_util.h"
 #include "net/test/test_data_directory.h"
+#include "net/test/test_with_scoped_task_environment.h"
+#include "net/third_party/quic/core/quic_versions.h"
+#include "net/third_party/quic/test_tools/mock_clock.h"
+#include "net/third_party/quic/test_tools/mock_random.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -61,7 +63,8 @@ class MockSSLConfigService : public SSLConfigService {
 namespace test {
 
 class HttpProxyClientSocketWrapperTest
-    : public ::testing::TestWithParam<std::tuple<QuicTransportVersion, bool>> {
+    : public ::testing::TestWithParam<std::tuple<QuicTransportVersion, bool>>,
+      public WithScopedTaskEnvironment {
  protected:
   static const bool kFin = true;
   static const bool kIncludeVersion = true;
@@ -128,7 +131,6 @@ class HttpProxyClientSocketWrapperTest
         kMaxTimeForCryptoHandshakeSecs,
         /*max_idle_time_before_crypto_handshake_seconds=*/
         kInitialIdleTimeoutSecs,
-        /*connect_using_default_network=*/true,
         migrate_sessions_on_network_change_, migrate_sessions_early_,
         migrate_sessions_on_network_change_v2_, migrate_sessions_early_v2_,
         base::TimeDelta::FromSeconds(kMaxTimeOnNonDefaultNetworkSecs),
@@ -136,10 +138,11 @@ class HttpProxyClientSocketWrapperTest
         allow_server_migration_, race_cert_verification_, estimate_initial_rtt_,
         client_headers_include_h2_stream_dependency_, connection_options_,
         client_connection_options_, /*enable_token_binding=*/false,
+        /*enable_channel_id=*/false,
         /*enable_socket_recv_optimization=*/false));
   }
 
-  void PopulateConnectRequestIR(SpdyHeaderBlock* block) {
+  void PopulateConnectRequestIR(spdy::SpdyHeaderBlock* block) {
     (*block)[":method"] = "CONNECT";
     (*block)[":authority"] = endpoint_host_port_.ToString();
     (*block)["user-agent"] = kUserAgent;
@@ -153,7 +156,7 @@ class HttpProxyClientSocketWrapperTest
 
   std::unique_ptr<QuicReceivedPacket> ConstructConnectRequestPacket(
       QuicPacketNumber packet_number) {
-    SpdyHeaderBlock block;
+    spdy::SpdyHeaderBlock block;
     PopulateConnectRequestIR(&block);
     return client_maker_.MakeRequestHeadersPacket(
         packet_number, kClientDataStreamId1, kIncludeVersion, !kFin,
@@ -164,7 +167,7 @@ class HttpProxyClientSocketWrapperTest
   std::unique_ptr<QuicReceivedPacket> ConstructServerConnectReplyPacket(
       QuicPacketNumber packet_number,
       bool fin) {
-    SpdyHeaderBlock block;
+    spdy::SpdyHeaderBlock block;
     block[":status"] = "200";
 
     return server_maker_.MakeResponseHeadersPacket(
@@ -207,7 +210,7 @@ class HttpProxyClientSocketWrapperTest
   MockTaggingClientSocketFactory socket_factory_;
   HttpServerPropertiesImpl http_server_properties_;
   std::unique_ptr<MockCertVerifier> cert_verifier_;
-  CTPolicyEnforcer ct_policy_enforcer_;
+  DefaultCTPolicyEnforcer ct_policy_enforcer_;
   std::unique_ptr<ChannelIDService> channel_id_service_;
   TransportSecurityState transport_security_state_;
   std::unique_ptr<DoNothingCTVerifier> cert_transparency_verifier_;
@@ -250,12 +253,12 @@ TEST_P(HttpProxyClientSocketWrapperTest, QuicProxy) {
   ProofVerifyDetailsChromium verify_details = DefaultProofVerifyDetails();
   crypto_client_stream_factory_.AddProofVerifyDetails(&verify_details);
 
-  mock_quic_data_.AddWrite(ConstructSettingsPacket(1));
-  mock_quic_data_.AddWrite(ConstructConnectRequestPacket(2));
-  mock_quic_data_.AddRead(ConstructServerConnectReplyPacket(1, !kFin));
+  mock_quic_data_.AddWrite(SYNCHRONOUS, ConstructSettingsPacket(1));
+  mock_quic_data_.AddWrite(SYNCHRONOUS, ConstructConnectRequestPacket(2));
+  mock_quic_data_.AddRead(ASYNC, ConstructServerConnectReplyPacket(1, !kFin));
   mock_quic_data_.AddRead(SYNCHRONOUS, ERR_IO_PENDING);
   mock_quic_data_.AddWrite(
-      ConstructAckAndRstPacket(3, QUIC_STREAM_CANCELLED, 1, 1, 1));
+      SYNCHRONOUS, ConstructAckAndRstPacket(3, QUIC_STREAM_CANCELLED, 1, 1, 1));
   mock_quic_data_.AddSocketDataToFactory(&socket_factory_);
 
   scoped_refptr<TransportSocketParams> transport_params =
@@ -299,12 +302,12 @@ TEST_P(HttpProxyClientSocketWrapperTest, QuicProxySocketTag) {
   ProofVerifyDetailsChromium verify_details = DefaultProofVerifyDetails();
   crypto_client_stream_factory_.AddProofVerifyDetails(&verify_details);
 
-  mock_quic_data_.AddWrite(ConstructSettingsPacket(1));
-  mock_quic_data_.AddWrite(ConstructConnectRequestPacket(2));
-  mock_quic_data_.AddRead(ConstructServerConnectReplyPacket(1, !kFin));
+  mock_quic_data_.AddWrite(SYNCHRONOUS, ConstructSettingsPacket(1));
+  mock_quic_data_.AddWrite(SYNCHRONOUS, ConstructConnectRequestPacket(2));
+  mock_quic_data_.AddRead(ASYNC, ConstructServerConnectReplyPacket(1, !kFin));
   mock_quic_data_.AddRead(SYNCHRONOUS, ERR_IO_PENDING);
   mock_quic_data_.AddWrite(
-      ConstructAckAndRstPacket(3, QUIC_STREAM_CANCELLED, 1, 1, 1));
+      SYNCHRONOUS, ConstructAckAndRstPacket(3, QUIC_STREAM_CANCELLED, 1, 1, 1));
   mock_quic_data_.AddSocketDataToFactory(&socket_factory_);
 
   scoped_refptr<TransportSocketParams> transport_params =
@@ -347,7 +350,7 @@ TEST_P(HttpProxyClientSocketWrapperTest, QuicProxySocketTag) {
 #endif
 
 INSTANTIATE_TEST_CASE_P(
-    VersionIncludeStreamDependencySequnece,
+    VersionIncludeStreamDependencySequence,
     HttpProxyClientSocketWrapperTest,
     ::testing::Combine(::testing::ValuesIn(AllSupportedTransportVersions()),
                        ::testing::Bool()));

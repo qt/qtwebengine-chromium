@@ -1,5 +1,8 @@
-specific_include_rules = {
-  ".*test\.cc": [
-    "+components/viz/test",
-  ],
-}
+include_rules = [
+  "-services",
+  "-third_party",
+
+  "+third_party/blink/renderer/platform/scheduler/base",
+  "+third_party/blink/renderer/platform/platform_export.h",
+  "+base",
+]

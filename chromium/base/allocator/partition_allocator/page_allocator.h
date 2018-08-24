@@ -9,38 +9,16 @@
 
 #include <cstddef>
 
+#include "base/allocator/partition_allocator/page_allocator_constants.h"
 #include "base/base_export.h"
 #include "base/compiler_specific.h"
 #include "build/build_config.h"
 
 namespace base {
 
-#if defined(OS_WIN)
-static const size_t kPageAllocationGranularityShift = 16;  // 64KB
-#elif defined(_MIPS_ARCH_LOONGSON)
-static const size_t kPageAllocationGranularityShift = 14;  // 16KB
-#else
-static const size_t kPageAllocationGranularityShift = 12;  // 4KB
-#endif
-static const size_t kPageAllocationGranularity =
-    1 << kPageAllocationGranularityShift;
-static const size_t kPageAllocationGranularityOffsetMask =
-    kPageAllocationGranularity - 1;
-static const size_t kPageAllocationGranularityBaseMask =
-    ~kPageAllocationGranularityOffsetMask;
-
-#if defined(_MIPS_ARCH_LOONGSON)
-static const size_t kSystemPageSize = 16384;
-#else
-static const size_t kSystemPageSize = 4096;
-#endif
-static const size_t kSystemPageOffsetMask = kSystemPageSize - 1;
-static_assert((kSystemPageSize & (kSystemPageSize - 1)) == 0,
-              "kSystemPageSize must be power of 2");
-static const size_t kSystemPageBaseMask = ~kSystemPageOffsetMask;
-
 enum PageAccessibilityConfiguration {
   PageInaccessible,
+  PageRead,
   PageReadWrite,
   PageReadExecute,
   // This flag is deprecated and will go away soon.
@@ -155,12 +133,31 @@ BASE_EXPORT WARN_UNUSED_RESULT bool RecommitSystemPages(
 // based on the original page content, or a page of zeroes.
 BASE_EXPORT void DiscardSystemPages(void* address, size_t length);
 
-ALWAYS_INLINE uintptr_t RoundUpToSystemPage(uintptr_t address) {
+// Rounds up |address| to the next multiple of |kSystemPageSize|. Returns
+// 0 for an |address| of 0.
+constexpr ALWAYS_INLINE uintptr_t RoundUpToSystemPage(uintptr_t address) {
   return (address + kSystemPageOffsetMask) & kSystemPageBaseMask;
 }
 
-ALWAYS_INLINE uintptr_t RoundDownToSystemPage(uintptr_t address) {
+// Rounds down |address| to the previous multiple of |kSystemPageSize|. Returns
+// 0 for an |address| of 0.
+constexpr ALWAYS_INLINE uintptr_t RoundDownToSystemPage(uintptr_t address) {
   return address & kSystemPageBaseMask;
+}
+
+// Rounds up |address| to the next multiple of |kPageAllocationGranularity|.
+// Returns 0 for an |address| of 0.
+constexpr ALWAYS_INLINE uintptr_t
+RoundUpToPageAllocationGranularity(uintptr_t address) {
+  return (address + kPageAllocationGranularityOffsetMask) &
+         kPageAllocationGranularityBaseMask;
+}
+
+// Rounds down |address| to the previous multiple of
+// |kPageAllocationGranularity|. Returns 0 for an |address| of 0.
+constexpr ALWAYS_INLINE uintptr_t
+RoundDownToPageAllocationGranularity(uintptr_t address) {
+  return address & kPageAllocationGranularityBaseMask;
 }
 
 // Reserves (at least) |size| bytes of address space, aligned to

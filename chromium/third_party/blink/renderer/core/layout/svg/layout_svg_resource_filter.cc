@@ -75,7 +75,7 @@ void LayoutSVGResourceFilter::RemoveAllClientsFromCache(
                             : SVGResourceClient::kParentOnlyInvalidation);
 }
 
-bool LayoutSVGResourceFilter::RemoveClientFromCache(LayoutObject& client) {
+bool LayoutSVGResourceFilter::RemoveClientFromCache(SVGResourceClient& client) {
   auto entry = filter_.find(&client);
   if (entry == filter_.end())
     return false;
@@ -127,14 +127,13 @@ void LayoutSVGResourceFilter::PrimitiveAttributeChanged(
     if (!primitive.SetFilterEffectAttribute(effect, attribute))
       return;
     node_map->InvalidateDependentEffects(effect);
-
-    // Issue paint invalidations for the image on the screen.
-    MarkClientForInvalidation(*filter.key,
-                              SVGResourceClient::kPaintInvalidation);
   }
   if (LocalSVGResource* resource =
-          ToSVGFilterElement(GetElement())->AssociatedResource())
-    resource->NotifyContentChanged(SVGResourceClient::kPaintInvalidation);
+          ToSVGFilterElement(GetElement())->AssociatedResource()) {
+    resource->NotifyContentChanged(
+        SVGResourceClient::kPaintInvalidation |
+        SVGResourceClient::kSkipAncestorInvalidation);
+  }
 }
 
 }  // namespace blink

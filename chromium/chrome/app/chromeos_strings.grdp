@@ -74,6 +74,15 @@
   <message name="IDS_WALLPAPER_MANAGER_LAYOUT_STRETCH" desc="Label for option to stretch a customized wallpaper.">
     Stretch
   </message>
+  <message name="IDS_WALLPAPER_MANAGER_CURRENTLY_SET_LABEL" desc="The string displayed before the title of the currently set wallpaper.">
+    Currently set
+  </message>
+  <message name="IDS_WALLPAPER_MANAGER_CONFIRM_PREVIEW_WALLPAPER_LABEL" desc="Label for the button that confirms setting the preview wallpaper.">
+    Set Wallpaper
+  </message>
+  <message name="IDS_WALLPAPER_MANAGER_SET_SUCCESSFULLY_MESSAGE" desc="Message shown to user after setting wallpaper is done.">
+    Wallpaper set successfully
+  </message>
   <message name="IDS_CURRENT_WALLPAPER_SET_BY_MESSAGE" desc="The string displayed to user if the current wallpaper is set by a third party wallpaper app/extension.">
     The current wallpaper is set by '<ph name="APP_NAME">$1</ph>'. You may need to uninstall '<ph name="APP_NAME">$1</ph>' before selecting a different wallpaper.
   </message>
@@ -120,8 +129,38 @@
   </message>
 
   <!-- MultiDevice setup dialog. -->
-  <message name="IDS_MULTIDEVICE_SETUP_DIALOG_TITLE" desc="Title for the MultiDevice setup dialog, which allows users to enable features which involve communication between multiple devices (e.g., a Chromebook and a phone).">
+  <message name="IDS_MULTIDEVICE_SETUP_DIALOG_TITLE" desc="Title for the MultiDevice setup dialog, which allows users to enable features which involve communication between multiple devices (e.g., a Chromebook and a phone)." translateable="false">
     MultiDevice Setup
+  </message>
+  <message name="IDS_MULTIDEVICE_SETUP_ACCEPT_LABEL" desc="Label for button to accept conditions and begin MultiDevice setup workflow." translateable="false">
+    Accept
+  </message>
+  <message name="IDS_MULTIDEVICE_SETUP_TRY_AGAIN_LABEL" desc="Label for button to retry setup upon failure." translateable="false">
+    Try again
+  </message>
+  <message name="IDS_MULTIDEVICE_SETUP_SETUP_FAILED_PAGE_HEADER" desc="Header for failed setup page." translateable="false">
+    Could not connect to phone (PlAcEhOlDeR tExT!!)
+  </message>
+  <message name="IDS_MULTIDEVICE_SETUP_SETUP_FAILED_PAGE_MESSAGE" desc="Message for failed setup page." translateable="false">
+    PlAcEhOlDeR tExT!! This is a paragraph about an error. Blah blah blah. Something went wrong. Whomp whomp whomp.
+  </message>
+  <message name="IDS_MULTIDEVICE_SETUP_SETUP_SUCCEEDED_PAGE_HEADER" desc="Header for successful setup page." translateable="false">
+    You're all set! (PlAcEhOlDeR tExT!!)
+  </message>
+  <message name="IDS_MULTIDEVICE_SETUP_SETUP_SUCCEEDED_PAGE_MESSAGE" desc="Message for successful setup page." translateable="false">
+    PlAcEhOlDeR tExT!! This String includes a link with the text &lt;a id="settings-link"&gt;Settings&lt;/a&gt; that opens the settings page. Blah blah blah.
+  </message>
+  <message name="IDS_MULTIDEVICE_SETUP_START_SETUP_PAGE_HEADER" desc="Header for welcome page." translateable="false">
+    Better together (PlAcEhOlDeR tExT!!)
+  </message>
+  <message name="IDS_MULTIDEVICE_SETUP_START_SETUP_PAGE_MESSAGE" desc="Message for welcome page." translateable="false">
+    PlAcEhOlDeR tExT!! This String includes a link with the text &lt;a id="terms-and-conditions-link" href="chrome://foo-bar"&gt;Terms and Conditions&lt;/a&gt; that opens a browser window to that info. Blah blah blah.
+  </message>
+  <message name="IDS_MULTIDEVICE_SETUP_START_SETUP_PAGE_SINGLE_DEVICE_HEADER" desc="Label over potential host name if exactly one potential host is found." translateable="false">
+    Device detected (PlAcEhOlDeR tExT!!)
+  </message>
+  <message name="IDS_MULTIDEVICE_SETUP_START_SETUP_PAGE_MULTIPLE_DEVICE_HEADER" desc="Label over potential host dropdown menu if more than one potential host is found." translateable="false">
+    Select a device (PlAcEhOlDeR tExT!!)
   </message>
 
   <!-- File Manager -->
@@ -175,6 +214,9 @@
   </message>
   <message name="IDS_FILE_BROWSER_DOWNLOADS_DIRECTORY_LABEL" desc="Downloads local directory label.">
     Downloads
+  </message>
+  <message name="IDS_FILE_BROWSER_LINUX_FILES_ROOT_LABEL" desc="A label for the 'Linux Files' root which shows crostini files.">
+    Linux Files
   </message>
   <message name="IDS_FILE_BROWSER_MEDIA_VIEW_IMAGES_ROOT_LABEL" desc="A label for the 'Images' root of media views.">
     Images
@@ -290,6 +332,10 @@
   <message name="IDS_FILE_BROWSER_ERROR_EXTERNAL_DRIVE_LONG_NAME" desc="Error message displayed when user tries to enter too long name for an external drive.">
     Use a name that's <ph name="MAX_LENGTH">$1<ex>11</ex></ph> characters or less
   </message>
+  <message name="IDS_FILE_BROWSER_ERROR_LINUX_FILES_CONNECTION" desc="Text to show user when there is an error starting or mounting crostini container to show Linux Files.">
+    Unable to view Linux Files
+  </message>
+
   <message name="IDS_FILE_BROWSER_EMPTY_FOLDER" desc="Label shown in an empty folder.">
     Nothing to see here...
   </message>
@@ -586,8 +632,14 @@
   <message name="IDS_FILE_BROWSER_REMOVE_FOLDER_SHORTCUT_BUTTON_LABEL" desc="Menu item label, unpinning the selected folder from the left nav.">
     Remove shortcut
   </message>
+  <message name="IDS_FILE_BROWSER_SELECT_ALL_COMMAND_LABEL" desc="Menu item label, select all files and folders in the right view">
+    Select all
+  </message>
   <message name="IDS_FILE_BROWSER_SHARE_BUTTON_LABEL" desc="Menu item's label, showing dialog to share the selected Google Drive files. This message is also used as a tooltip label and a spoken feedback label of a button which also shows the dialog to share the files. The translation should be consistent with the sharing dialog's title in Google Drive Web UI.">
     Share with others
+  </message>
+  <message name="IDS_FILE_BROWSER_MANAGE_IN_DRIVE_BUTTON_LABEL" desc="Menu item's label, showing dialog to open the selected Google Drive files in the Drive webpage for managing sharing permissions, etc.">
+    Manage in Drive
   </message>
   <message name="IDS_FILE_BROWSER_TOGGLE_HIDDEN_FILES_COMMAND_LABEL" desc="Label for menu or button with checkmark that toggles visibility of hidden files.">
     Show hidden files
@@ -1290,6 +1342,9 @@
   <message name="IDS_FILE_BROWSER_FAILED_SPACE_INFO" desc="Menu item, saying that FileBrowser is failed to retrieve space information.">
     Failed to retrieve space info
   </message>
+  <message name="IDS_FILE_BROWSER_SEE_MENU_FOR_ACTIONS" desc="Text to be used by screen reader to indicate users that there are more options on the action bar.">
+    More options available on the action bar. Press Alt + A to focus the action bar.
+  </message>
 
 <!-- Common for Audio player and Media player -->
   <message name="IDS_MEDIA_PLAYER_PLAY_BUTTON_LABEL" desc="Label for the Play button of media players (audio player / video player).">
@@ -1376,16 +1431,13 @@
 
   <!-- Chrome OS Strings -->
   <message name="IDS_ECHO_CONSENT_DIALOG_TEXT" desc="Dialog text shown when user is asked to give consent to proceed with redeeming an ECHO offer.">
-    <ph name="SERVICE_NAME">$1<ex>Google Drive</ex></ph> wants to check if you are using an eligible Chrome OS device. <ph name="MORE_INFO_LINK">$2<ex>More info</ex></ph>
+    <ph name="SERVICE_NAME">$1<ex>Google Drive</ex></ph> wants to check if you are using an eligible Chrome OS device.
   </message>
   <message name="IDS_ECHO_DISABLED_CONSENT_DIALOG_TEXT" desc="Dialog text shown when user is informed that redeeming offers is disabled for the device.">
-    Your IT administrator has disabled Chrome Goodies for your device. <ph name="MORE_INFO_LINK">$1<ex>More info</ex></ph>
+    Your IT administrator has disabled Chrome Goodies for your device.
   </message>
   <message name="IDS_ECHO_CONSENT_DISMISS_BUTTON" desc="Dismiss dialog button label for disabled echo dialog.">
-    Dismiss
-  </message>
-  <message name="IDS_OFFERS_CONSENT_INFOBAR_LABEL_LEARN_MORE" desc="Text of the Learn More link in the echo dialog.">
-    Learn More
+    Got it
   </message>
   <message name="IDS_OFFERS_CONSENT_INFOBAR_ENABLE_BUTTON" desc="Enable button label.">
     Allow
@@ -1734,6 +1786,66 @@
   </message>
   <message name="IDS_LOGIN_SYNC_CONSENT_SCREEN_ACCEPT_AND_CONTINUE" desc="The label on the button that closes dialog while accepting the selected settings.">
     Accept and continue
+  </message>
+  <message name="IDS_LOGIN_SYNC_CONSENT_GET_GOOGLE_SMARTS" desc="The title of the dialog that explains Chrome Sync and privacy options.">
+    Get Google smarts in <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph>
+  </message>
+  <message name="IDS_LOGIN_SYNC_CONSENT_YOUR_BOOKMARKS_ON_ALL_DEVICES" desc="Example of how user will benefit from enabling sync and personalization Chrome features.">
+    Your bookmarks, passwords, history, and more on all your devices
+  </message>
+  <message name="IDS_LOGIN_SYNC_CONSENT_PERSONALIZED_GOOGLE_SERVICES" desc="Example of how user will benefit from enabling sync and personalization Chrome features.">
+    Personalized Google services like Play
+  </message>
+  <message name="IDS_LOGIN_SYNC_CONSENT_IMPROVE_CHROME" desc="Example of how user can help to make Chrome better by enabling sync and personalization Chrome features.">
+    Improve <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> and its security by sending system information and usage to Google
+  </message>
+  <message name="IDS_LOGIN_SYNC_CONSENT_GOOGLE_MAY_USE" desc="The explanation how google may use statistics.">
+    Google may use content on sites you visit and browsing activity and interactions to personalize <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> and other Google services like Translate, Search, and ads. You can customize this anytime in Settings.
+  </message>
+  <message name="IDS_LOGIN_SYNC_CONSENT_MORE_OPTIONS" desc="Label on the button that will open a new dialog with options.">
+    More options
+  </message>
+  <message name="IDS_LOGIN_SYNC_CONSENT_YES_I_AM_IN" desc="Label on the button that user should press to agree with displayed options.">
+    Yes, I'm in.
+  </message>
+  <message name="IDS_LOGIN_SYNC_CONSENT_SYNC_OPTIONS" desc="The title of the dialog that allows user to adjust Chrome sync options.">
+    Sync and personalization options
+  </message>
+  <message name="IDS_LOGIN_SYNC_CONSENT_SYNC_OPTIONS_SUBTITLE" desc="A paragraph below the dialog title explaining the meaning of the selectable options in the dialog.">
+    To help you more easily manage your experience in <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph>, features related to sync and personalization are now under a single control. Turning this on may change your current settings.
+  </message>
+  <message name="IDS_LOGIN_SYNC_CONSENT_CHOOSE_OPTION" desc="A paragraph below the dialog title explaining that user needs to choose one of the displayed options below.">
+    To continue, choose an option:
+  </message>
+  <message name="IDS_LOGIN_SYNC_CONSENT_OPTION_REVIEW" desc="A label displayed next to the radio-button that will open features review dialog after setup is completed.">
+    Review sync and personalization features following setup
+  </message>
+  <message name="IDS_LOGIN_SYNC_CONSENT_OPTION_REVIEW_DSC" desc="A short description that is displayed under the option label, explaining what this option is about. This option will allow user to review individual settings later.">
+    Review the settings for each feature and change them if you want
+  </message>
+  <message name="IDS_LOGIN_SYNC_CONSENT_OPTION_JUST_SYNC" desc="A label displayed next to the radio-button that will turn on only Chrome sync feature and no personalization.">
+    Just sync
+  </message>
+  <message name="IDS_LOGIN_SYNC_CONSENT_OPTION_JUST_SYNC_DSC" desc="A short description that is displayed under the selectable option name, explaining that this option will turn on only Chrome sync and no personalization.">
+    Only enable features related to <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> Sync
+  </message>
+  <message name="IDS_LOGIN_SYNC_CONSENT_OPTION_SYNC_AND_PERSONALIZATION" desc="A label displayed next to the radio-button that will turn on both Chrome sync and personalization features.">
+    Go ahead, turn on sync and personalization features
+  </message>
+  <message name="IDS_LOGIN_SYNC_CONSENT_OPTION_SYNC_AND_PERSONALIZATION_DSC" desc="A short description that is displayed under the selectable 'all features' option name, explaining user can always change this selection later in Chrome Settings.">
+    You can always change this later in settings
+  </message>
+  <message name="IDS_LOGIN_RECOMMEND_APPS_SCREEN_TITLE" desc="The title of the dialog that recommend apps which user has installed in other devices">
+    Install apps from your other devices
+  </message>
+  <message name="IDS_LOGIN_RECOMMEND_APPS_SCREEN_DESCRIPTION" desc="The description of the 'Recommend Apps' section">
+    You have apps that are optimized for Chromebooks
+  </message>
+  <message name="IDS_LOGIN_RECOMMEND_APPS_SKIP" desc="The label on the button that skips installing any recommended apps">
+    Skip
+  </message>
+  <message name="IDS_LOGIN_RECOMMEND_APPS_INSTALL" desc="The label on the button that installs the user selected apps">
+    Install
   </message>
   <message name="IDS_DISABLED_ADD_USER_TOOLTIP" desc="Tooltip over disabled Add user button">
     The owner of this device has disabled new users from being added
@@ -2612,7 +2724,7 @@
     <ph name="BR">&lt;br&gt;</ph>
     <ph name="BR">&lt;br&gt;</ph>
     For more information about the debugging features see:<ph name="BR">&lt;br&gt;</ph>
-    http://www.chromium.org/chromium-os/how-tos-and-troubleshooting/debugging-features
+    https://www.chromium.org/chromium-os/how-tos-and-troubleshooting/debugging-features
     <ph name="BR">&lt;br&gt;</ph>
     <ph name="BR">&lt;br&gt;</ph>
     <ph name="BEGIN_BOLD">&lt;b&gt;</ph>Note:<ph name="END_BOLD">&lt;/b&gt;</ph>  The system will reboot during the process.
@@ -2793,6 +2905,9 @@
   <message name="IDS_CHROMEOS_ACC_LOGIN_SIGNIN_PUBLIC_ACCOUNT" desc="Status when signing in into a public account.">
     Entering public session.
   </message>
+  <message name="IDS_CHROMEOS_ACC_LEARN_MORE" desc="Dialog button [?] linking to more information.">
+    Learn more.
+  </message>
 
   <!-- Removable device notifications -->
   <message name="IDS_REMOVABLE_DEVICE_DETECTION_TITLE" desc="Text of notification message which is shown when user inserts removable device (SD card, USB key...)">
@@ -2870,41 +2985,6 @@
   </message>
   <message name="IDS_RENAMING_OF_DEVICE_FINISHED_FAILURE_MESSAGE" desc="Text of notification message which is shown when there are some errors while renaming.">
     Aw, Snap! There was an error during renaming.
-  </message>
-
-  <!-- Extensions Kiosk apps -->
-  <message name="IDS_EXTENSIONS_ADD_KIOSK_APP_BUTTON" desc="Label of the button to bring up kiosk management overlay on chrome extensions page.">
-    Manage kiosk applications...
-  </message>
-  <message name="IDS_EXTENSIONS_KIOSK_OVERLAY_TITLE" desc="The title text of the kiosk settings overlay.">
-    Manage Kiosk Applications
-  </message>
-  <message name="IDS_EXTENSIONS_KIOSK_ADD_APP" desc="Label above the application id text input in the kiosk settings overlay.">
-    Add kiosk application:
-  </message>
-  <message name="IDS_EXTENSIONS_KIOSK_ADD_APP_HINT" desc="Placeholder hint in  the application id text input in the kiosk settings overlay.">
-    Enter application id or webstore URL.
-  </message>
-  <message name="IDS_EXTENSIONS_KIOSK_ENABLE_AUTO_LAUNCH" desc="Text for a button that enables an application to auto launch on startup in the kiosk settings overlay.">
-    Set to auto-launch
-  </message>
-  <message name="IDS_EXTENSIONS_KIOSK_DISABLE_AUTO_LAUNCH" desc="Text for a button that disables an application to auto launch on startup in the kiosk settings overlay.">
-    Disable auto-launch
-  </message>
-  <message name="IDS_EXTENSIONS_KIOSK_AUTO_LAUNCH" desc="Text shows besides an application that is set to auto launch on start up in the kiosk settings overlay.">
-    (auto-launched)
-  </message>
-  <message name="IDS_EXTENSIONS_KIOSK_INVALID_APP" desc="Text shows besides an application that is not valid in the kiosk settings overlay.">
-    Invalid application.
-  </message>
-  <message name="IDS_EXTENSIONS_KIOSK_DISABLE_BAILOUT_SHORTCUT_LABEL" desc="Label text for a checkbox to disable kiosk application launch bail out shortcut.">
-    Permanently keep this device in kiosk mode.
-  </message>
-  <message name="IDS_EXTENSIONS_KIOSK_DISABLE_BAILOUT_SHORTCUT_WARNING_BOLD" desc="Bold text of the warning dialog for disabling kiosk application launch bail out shortcut.">
-    Are you sure you want to permanently keep this device in kiosk mode?
-  </message>
-  <message name="IDS_EXTENSIONS_KIOSK_DISABLE_BAILOUT_SHORTCUT_WARNING_FORMAT" desc="Warning text of disabling kiosk application launch bail out shortcut.">
-    The only way to undo this is to re-install <ph name="IDS_SHORT_PRODUCT_OS_NAME">$1<ex>Chrome OS</ex></ph>.
   </message>
 
   <!-- Keyboard overlay UI -->
@@ -3383,6 +3463,15 @@
   <message name="IDS_KEYBOARD_OVERLAY_TOGGLE_CHROMEVOX_SPOKEN_FEEDBACK" desc="The text in the keyboard overlay to explain the shortcut (enable or disable spoken feedback).">
     ChromeVox (spoken feedback)
   </message>
+  <message name="IDS_KEYBOARD_OVERLAY_TOGGLE_DICTATION" desc="The text in the keyboard overlay to explain the shortcut (start or stop speak to type).">
+    Dictation
+  </message>
+  <message name="IDS_KEYBOARD_OVERLAY_TOGGLE_DOCKED_MAGNIFIER" desc="The text in the keyboard overlay to explain the shortcut (toggle the Docked Magnifier on/off).">
+    Toggle Docked Magnifier
+  </message>
+  <message name="IDS_KEYBOARD_OVERLAY_TOGGLE_FULLSCREEN_MAGNIFIER" desc="The text in the keyboard overlay to explain the shortcut (toggle the Fullscreen Magnifier on/off).">
+    Toggle Fullscreen Magnifier
+  </message>
   <message name="IDS_KEYBOARD_OVERLAY_TOGGLE_HIGH_CONTRAST_MODE" desc="The text in the keyboard overlay to explain the shortcut (Toggle high contrast mode).">
     Toggle High Contrast Mode
   </message>
@@ -3648,10 +3737,10 @@
 
   <!-- Idle warning dialog -->
   <message name="IDS_IDLE_WARNING_TITLE" desc="Title of the warning dialog shown when the user becomes idle and is about to get logged out.">
-    Are you still there?
+    You'll be signed out in <ph name="LOGOUT_TIME_LEFT">$1<ex>5 seconds</ex></ph>
   </message>
   <message name="IDS_IDLE_WARNING_LOGOUT_WARNING" desc="Content of the warning dialog shown when the user becomes idle and is about to get logged out.">
-    If you keep doing nothing, you will be signed out in <ph name="LOGOUT_TIME_LEFT">$1<ex>5 seconds</ex></ph>.
+    For security, sign out when your computer isn't being used.
   </message>
   <message name="IDS_KIOSK_APP_FAILED_TO_LAUNCH" desc="Generic error message used when a kiosk app fails to launch.">
     Darn, the kiosk application could not be launched.
@@ -3757,7 +3846,7 @@
 
   <!-- Platform verification UI -->
   <message name="IDS_PLATFORM_VERIFICATION_DIALOG_HEADLINE" desc="The label to describe what the dialog wants to confirm.">
-    <ph name="DOMAIN">$1<ex>example.com</ex></ph> wants your device's identity to be verified, by Google, to determine eligibility for enhanced playback of protected content. <ph name="LEARN_MORE">$2<ex>Learn more</ex></ph>.
+    <ph name="DOMAIN">$1<ex>example.com</ex></ph> wants your device's identity to be verified, by Google, to determine eligibility for enhanced playback of protected content.
   </message>
 
   <!-- First-run tutorial -->
@@ -4643,6 +4732,9 @@
   <message name="IDS_ARC_OOBE_TERMS_POPUP_HELP_CLOSE_BUTTON" desc="Close button of the popup local help of Arc Play Store Terms OOBE dialog.">
     Close
   </message>
+  <message name="IDS_ARC_POPUP_HELP_LOADING" desc="Loading message of the Arc popup help.">
+    Loading...
+  </message>
   <message name="IDS_LOW_DISK_NOTIFICATION_TITLE" desc="Title of the notification warning users that they are low on disk space.">
     Device is low on disk space
   </message>
@@ -4705,6 +4797,9 @@
   </message>
   <message name="IDS_VOICE_INTERACTION_VALUE_PROP_NEXT_BUTTION" desc="Button label for accepting voice interaction value proposition.">
     Next
+  </message>
+  <message name="IDS_VOICE_INTERACTION_VALUE_PROP_MORE_BUTTION" desc="Button label for more information in voice interaction value proposition.">
+    More
   </message>
   <message name="IDS_WAIT_FOR_CONTAINER_READY_TITLE" desc="Title of the wait for container ready OOBE screen.">
     Just a sec
@@ -4875,13 +4970,18 @@
     Settings
   </message>
 
+  <!-- Launcher Settings shortcuts -->
+  <message name="IDS_LAUNCHER_SHORTCUTS_BLUETOOTH" desc="The name of bluetooth shortcut.">
+    Bluetooth
+  </message>
+
   <message name="IDS_CROSTINI_INSTALLER_TITLE" desc="Title of the Crostini installer, a dialog for installing the 'Terminal'.">
     <ph name="APP_NAME">$1<ex>Terminal</ex></ph> for <ph name="DEVICE_TYPE">$2<ex>Chromebook</ex></ph>
   </message>
   <message name="IDS_CROSTINI_INSTALLER_BODY" desc="Description for the Crostini installer, a dialog for installing the 'Terminal'.">
     Develop on your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. You can run your favorite native apps and command-line tools seamlessly and securely.
 
-Installing the <ph name="APP_NAME">$2<ex>Terminal</ex></ph> will download <ph name="DOWNLOAD_SIZE">$3<ex>200MB</ex></ph> of data.
+Installing the <ph name="APP_NAME">$2<ex>Terminal</ex></ph> will download <ph name="DOWNLOAD_SIZE">$3<ex>300MB</ex></ph> of data.
   </message>
   <message name="IDS_CROSTINI_INSTALLER_INSTALL_BUTTON" desc="Label for the button in the Crostini installer dialog to begin installing the 'Terminal'.">
     Install
@@ -4894,6 +4994,21 @@ Installing the <ph name="APP_NAME">$2<ex>Terminal</ex></ph> will download <ph na
   </message>
   <message name="IDS_CROSTINI_INSTALLER_COMPLETE" desc="Text shown in the Crostini installer dialog when installation is complete.">
     Finished installing <ph name="APP_NAME">$1<ex>Terminal</ex></ph>.
+  </message>
+    <message name="IDS_CROSTINI_INSTALLER_LOAD_TERMINA_MESSAGE" desc="Text shown in the Crostini installer dialog when the 'Termina' component is loading">
+    Loading Termina component.
+  </message>
+  <message name="IDS_CROSTINI_INSTALLER_START_CONCIERGE_MESSAGE" desc="Text shown in the Crostini installer dialog when the 'Concierge' service is starting">
+    Starting Concierge service.
+  </message>
+  <message name="IDS_CROSTINI_INSTALLER_CREATE_DISK_IMAGE_MESSAGE" desc="Text shown in the Crostini installer dialog when the disk image is being created">
+    Creating disk image.
+  </message>
+  <message name="IDS_CROSTINI_INSTALLER_START_TERMINA_VM_MESSAGE" desc="Text shown in the Crostini installer dialog when the 'Termina VM' is starting">
+    Starting Termina VM.
+  </message>
+  <message name="IDS_CROSTINI_INSTALLER_START_CONTAINER_MESSAGE" desc="Text shown in the Crostini installer dialog when the container inside the 'Termina VM' is starting">
+    Starting container inside Termina VM.
   </message>
   <message name="IDS_CROSTINI_INSTALLER_LOAD_TERMINA_ERROR" desc="Text shown in the Crostini installer dialog when the 'Termina' component fails to load">
     ERROR: Failed to load Termina component.
@@ -4909,5 +5024,31 @@ Installing the <ph name="APP_NAME">$2<ex>Terminal</ex></ph> will download <ph na
   </message>
   <message name="IDS_CROSTINI_INSTALLER_START_CONTAINER_ERROR" desc="Text shown in the Crostini installer dialog when the container fails to start inside the 'Termina VM'">
     ERROR: Failed to start container inside Termina VM.
+  </message>
+  <message name="IDS_CROSTINI_UNINSTALLER_TITLE" desc="Title of the Crostini uninstaller, a dialog for uninstalling the 'Terminal', the associated VM and Linux container.">
+    <ph name="APP_NAME">$1<ex>Uninstall Terminal</ex></ph> for <ph name="DEVICE_TYPE">$2<ex>Chromebook</ex></ph>
+  </message>
+  <message name="IDS_CROSTINI_UNINSTALLER_BODY" desc="Description for the Crostini uninstaller, a dialog for uninstalling the 'Terminal', the associated VM and Linux container.">
+    This will uninstall the <ph name="APP_NAME">$1<ex>Terminal</ex></ph>, and remove all Linux data and applications from your <ph name="DEVICE_TYPE">$2<ex>Chromebook</ex></ph>. Are you sure?
+  </message>
+  <message name="IDS_CROSTINI_UNINSTALLER_UNINSTALL_BUTTON" desc="Label for the button in the Crostini uninstaller dialog to uninstall the 'Terminal'.">
+    Uninstall
+  </message>
+  <message name="IDS_CROSTINI_UNINSTALLER_UNINSTALLING_MESSAGE" desc="Text shown in the Crostini installer dialog when the 'Terminal' uninstall is in progress.">
+    Uninstalling...
+  </message>
+  <message name="IDS_CROSTINI_UNINSTALLER_ERROR" desc="Text shown in the Crostini uninstaller dialog when the 'Terminal' uninstall process fails.">
+    ERROR: Failed to uninstall <ph name="APP_NAME">$1<ex>Terminal</ex></ph>.
+  </message>
+
+  <!-- Time limit notification -->
+  <message name="IDS_SCREEN_TIME_NOTIFICATION_TITLE" desc="The title of the notification when screen usage limit reaches before locking the device.">
+    Almost time for a break
+  </message>
+  <message name="IDS_BED_TIME_NOTIFICATION_TITLE" desc="The title of the notification when bedtime reaches before locking the device.">
+    Lights out soon
+  </message>
+  <message name="IDS_TIME_LIMIT_NOTIFICATION_DISPLAY_SOURCE" desc="The string shown as the display source of the bedtime or screen time notifications.">
+    Family Link
   </message>
 </grit-part>

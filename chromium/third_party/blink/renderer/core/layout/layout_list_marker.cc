@@ -114,23 +114,6 @@ bool LayoutListMarker::IsImage() const {
   return image_ && !image_->ErrorOccurred();
 }
 
-LayoutRect LayoutListMarker::LocalSelectionRect() const {
-  InlineBox* box = InlineBoxWrapper();
-  if (!box)
-    return LayoutRect(LayoutPoint(), Size());
-  RootInlineBox& root = InlineBoxWrapper()->Root();
-  const ComputedStyle* block_style = root.Block().Style();
-  LayoutUnit new_logical_top =
-      block_style->IsFlippedBlocksWritingMode()
-          ? InlineBoxWrapper()->LogicalBottom() - root.SelectionBottom()
-          : root.SelectionTop() - InlineBoxWrapper()->LogicalTop();
-  return block_style->IsHorizontalWritingMode()
-             ? LayoutRect(LayoutUnit(), new_logical_top, Size().Width(),
-                          root.SelectionHeight())
-             : LayoutRect(new_logical_top, LayoutUnit(), root.SelectionHeight(),
-                          Size().Height());
-}
-
 void LayoutListMarker::Paint(const PaintInfo& paint_info,
                              const LayoutPoint& paint_offset) const {
   ListMarkerPainter(*this).Paint(paint_info, paint_offset);
@@ -194,16 +177,14 @@ void LayoutListMarker::ImageChanged(WrappedImagePtr o,
 }
 
 void LayoutListMarker::UpdateMarginsAndContent() {
-  UpdateContent();
-  UpdateMargins();
+  if (PreferredLogicalWidthsDirty())
+    ComputePreferredLogicalWidths();
+  else
+    UpdateMargins();
 }
 
 void LayoutListMarker::UpdateContent() {
-  // FIXME: This if-statement is just a performance optimization, but it's messy
-  // to use the preferredLogicalWidths dirty bit for this.
-  // It's unclear if this is a premature optimization.
-  if (!PreferredLogicalWidthsDirty())
-    return;
+  DCHECK(PreferredLogicalWidthsDirty());
 
   text_ = "";
 
@@ -299,8 +280,16 @@ void LayoutListMarker::UpdateMargins() {
     std::tie(margin_start, margin_end) =
         InlineMarginsForOutside(style, IsImage(), MinPreferredLogicalWidth());
   }
-  MutableStyleRef().SetMarginStart(Length(margin_start, kFixed));
-  MutableStyleRef().SetMarginEnd(Length(margin_end, kFixed));
+
+  Length start_length(margin_start, kFixed);
+  Length end_length(margin_end, kFixed);
+
+  if (start_length != style.MarginStart() || end_length != style.MarginEnd()) {
+    scoped_refptr<ComputedStyle> new_style = ComputedStyle::Clone(style);
+    new_style->SetMarginStart(start_length);
+    new_style->SetMarginEnd(end_length);
+    SetStyleInternal(std::move(new_style));
+  }
 }
 
 std::pair<LayoutUnit, LayoutUnit> LayoutListMarker::InlineMarginsForInside(

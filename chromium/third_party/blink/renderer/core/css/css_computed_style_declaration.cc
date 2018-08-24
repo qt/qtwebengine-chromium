@@ -197,8 +197,7 @@ CSSComputedStyleDeclaration::ComputableProperties() {
   DEFINE_STATIC_LOCAL(Vector<const CSSProperty*>, properties, ());
   if (properties.IsEmpty()) {
     CSSProperty::FilterEnabledCSSPropertiesIntoVector(
-        kComputedPropertyArray, WTF_ARRAY_LENGTH(kComputedPropertyArray),
-        properties);
+        kComputedPropertyArray, arraysize(kComputedPropertyArray), properties);
   }
   return properties;
 }
@@ -521,11 +520,10 @@ void CSSComputedStyleDeclaration::SetPropertyInternal(
     bool,
     SecureContextMode,
     ExceptionState& exception_state) {
-  // TODO(leviw): This code is currently unreachable, but shouldn't be.
   exception_state.ThrowDOMException(
       kNoModificationAllowedError,
       "These styles are computed, and therefore the '" +
-          CSSProperty::Get(id).GetPropertyNameString() +
+          CSSUnresolvedProperty::Get(id).GetPropertyNameString() +
           "' property is read-only.");
 }
 

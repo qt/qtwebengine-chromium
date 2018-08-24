@@ -17,6 +17,8 @@
 
 #include "base/optional.h"
 #include "build/build_config.h"
+#include "cc/input/touch_action.h"
+#include "cc/trees/render_frame_metadata.h"
 #include "components/viz/common/surfaces/surface_id.h"
 #include "components/viz/common/surfaces/surface_info.h"
 #include "content/common/buildflags.h"
@@ -29,7 +31,7 @@
 #include "content/common/frame_message_structs.h"
 #include "content/common/frame_owner_properties.h"
 #include "content/common/frame_replication_state.h"
-#include "content/common/frame_resize_params.h"
+#include "content/common/frame_visual_properties.h"
 #include "content/common/navigation_gesture.h"
 #include "content/common/navigation_params.h"
 #include "content/common/resource_timing_info.h"
@@ -62,10 +64,12 @@
 #include "third_party/blink/public/platform/web_insecure_request_policy.h"
 #include "third_party/blink/public/platform/web_intrinsic_sizing_info.h"
 #include "third_party/blink/public/platform/web_scroll_into_view_params.h"
+#include "third_party/blink/public/platform/web_scroll_types.h"
 #include "third_party/blink/public/platform/web_sudden_termination_disabler_type.h"
 #include "third_party/blink/public/web/web_find_options.h"
 #include "third_party/blink/public/web/web_frame_owner_properties.h"
 #include "third_party/blink/public/web/web_frame_serializer_cache_control_policy.h"
+#include "third_party/blink/public/web/web_fullscreen_options.h"
 #include "third_party/blink/public/web/web_tree_scope_type.h"
 #include "third_party/blink/public/web/web_triggering_event_info.h"
 #include "ui/gfx/geometry/rect.h"
@@ -134,6 +138,12 @@ IPC_ENUM_TRAITS_MAX_VALUE(content::CSPDisposition,
                           content::CSPDisposition::LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebTriggeringEventInfo,
                           blink::WebTriggeringEventInfo::kLast)
+IPC_ENUM_TRAITS_MIN_MAX_VALUE(blink::WebScrollDirection,
+                              blink::kFirstScrollDirection,
+                              blink::kLastScrollDirection)
+IPC_ENUM_TRAITS_MIN_MAX_VALUE(blink::WebScrollGranularity,
+                              blink::kFirstScrollGranularity,
+                              blink::kLastScrollGranularity)
 
 IPC_STRUCT_TRAITS_BEGIN(blink::WebFloatSize)
   IPC_STRUCT_TRAITS_MEMBER(width)
@@ -152,6 +162,10 @@ IPC_STRUCT_TRAITS_BEGIN(blink::WebFindOptions)
   IPC_STRUCT_TRAITS_MEMBER(match_case)
   IPC_STRUCT_TRAITS_MEMBER(find_next)
   IPC_STRUCT_TRAITS_MEMBER(force)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(blink::WebFullscreenOptions)
+  IPC_STRUCT_TRAITS_MEMBER(prefers_navigation_bar)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(blink::WebScrollIntoViewParams::Alignment)
@@ -230,14 +244,25 @@ IPC_STRUCT_TRAITS_BEGIN(content::FrameOwnerProperties)
   IPC_STRUCT_TRAITS_MEMBER(required_csp)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(content::FrameResizeParams)
+IPC_STRUCT_TRAITS_BEGIN(content::FrameVisualProperties)
   IPC_STRUCT_TRAITS_MEMBER(screen_info)
   IPC_STRUCT_TRAITS_MEMBER(auto_resize_enabled)
   IPC_STRUCT_TRAITS_MEMBER(min_size_for_auto_resize)
   IPC_STRUCT_TRAITS_MEMBER(max_size_for_auto_resize)
-  IPC_STRUCT_TRAITS_MEMBER(auto_resize_sequence_number)
   IPC_STRUCT_TRAITS_MEMBER(screen_space_rect)
   IPC_STRUCT_TRAITS_MEMBER(local_frame_size)
+  IPC_STRUCT_TRAITS_MEMBER(capture_sequence_number)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(cc::RenderFrameMetadata)
+  IPC_STRUCT_TRAITS_MEMBER(is_scroll_offset_at_top)
+  IPC_STRUCT_TRAITS_MEMBER(root_background_color)
+  IPC_STRUCT_TRAITS_MEMBER(root_scroll_offset)
+  IPC_STRUCT_TRAITS_MEMBER(selection)
+  IPC_STRUCT_TRAITS_MEMBER(is_mobile_optimized)
+  IPC_STRUCT_TRAITS_MEMBER(device_scale_factor)
+  IPC_STRUCT_TRAITS_MEMBER(viewport_size_in_pixels)
+  IPC_STRUCT_TRAITS_MEMBER(local_surface_id)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(blink::FramePolicy)
@@ -426,11 +451,6 @@ IPC_STRUCT_BEGIN_WITH_PARENT(FrameHostMsg_DidCommitProvisionalLoad_Params,
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(FrameMsg_PostMessage_Params)
-  // Whether the data format is supplied as serialized script value, or as
-  // a simple string. If it is a raw string, must be converted from string to a
-  // WebSerializedScriptValue in the renderer process.
-  IPC_STRUCT_MEMBER(bool, is_data_raw_string)
-
   // When sent to the browser, this is the routing ID of the source frame in
   // the source process.  The browser replaces it with the routing ID of the
   // equivalent frame proxy in the destination process.
@@ -473,7 +493,8 @@ IPC_STRUCT_TRAITS_BEGIN(content::CommonNavigationParams)
   IPC_STRUCT_TRAITS_MEMBER(should_check_main_world_csp)
   IPC_STRUCT_TRAITS_MEMBER(has_user_gesture)
   IPC_STRUCT_TRAITS_MEMBER(started_from_context_menu)
-  IPC_STRUCT_TRAITS_MEMBER(suggested_filename)
+  IPC_STRUCT_TRAITS_MEMBER(initiator_csp)
+  IPC_STRUCT_TRAITS_MEMBER(initiator_self_source)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::NavigationTiming)
@@ -550,7 +571,7 @@ IPC_STRUCT_BEGIN(FrameHostMsg_OpenURL_Params)
   IPC_STRUCT_MEMBER(bool, user_gesture)
   IPC_STRUCT_MEMBER(bool, is_history_navigation_in_new_child)
   IPC_STRUCT_MEMBER(blink::WebTriggeringEventInfo, triggering_event_info)
-  IPC_STRUCT_MEMBER(base::Optional<std::string>, suggested_filename)
+  IPC_STRUCT_MEMBER(mojo::MessagePipeHandle, blob_url_token)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(FrameHostMsg_DownloadUrl_Params)
@@ -560,6 +581,7 @@ IPC_STRUCT_BEGIN(FrameHostMsg_DownloadUrl_Params)
   IPC_STRUCT_MEMBER(content::Referrer, referrer)
   IPC_STRUCT_MEMBER(url::Origin, initiator_origin)
   IPC_STRUCT_MEMBER(base::string16, suggested_name)
+  IPC_STRUCT_MEMBER(mojo::MessagePipeHandle, blob_url_token)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(FrameMsg_TextTrackSettings_Params)
@@ -763,9 +785,6 @@ IPC_MESSAGE_ROUTED4(FrameHostMsg_ShowCreatedWindow,
                     WindowOpenDisposition /* disposition */,
                     gfx::Rect /* initial_rect */,
                     bool /* opened_by_user_gesture */)
-
-// Let the browser know a StreamHandle has been consumed and can be released.
-IPC_MESSAGE_ROUTED1(FrameHostMsg_StreamHandleConsumed, GURL /* stream_url */)
 
 #if BUILDFLAG(ENABLE_PLUGINS)
 IPC_STRUCT_TRAITS_BEGIN(content::PepperRendererInstanceData)
@@ -990,10 +1009,10 @@ IPC_MESSAGE_ROUTED1(FrameMsg_PostMessageEvent, FrameMsg_PostMessage_Params)
 // Tells the RenderFrame to clear the focused element (if any).
 IPC_MESSAGE_ROUTED0(FrameMsg_ClearFocusedElement)
 
-// Informs the parent renderer that the child would like a new
-// viz::LocalSurfaceId in response to an auto-resize.
-IPC_MESSAGE_ROUTED1(FrameMsg_ResizeDueToAutoResize,
-                    uint64_t /* sequence_number */)
+// Informs the parent renderer that the child has completed an autoresize
+// transaction and should update with the provided viz::LocalSurfaceId.
+IPC_MESSAGE_ROUTED1(FrameMsg_DidUpdateVisualProperties,
+                    cc::RenderFrameMetadata /* metadata */)
 
 // Requests a viz::LocalSurfaceId to enable auto-resize mode from the parent
 // renderer.
@@ -1004,38 +1023,6 @@ IPC_MESSAGE_ROUTED2(FrameMsg_EnableAutoResize,
 // Requests a viz::LocalSurfaceId to disable auto-resize-mode from the parent
 // renderer.
 IPC_MESSAGE_ROUTED0(FrameMsg_DisableAutoResize)
-
-#if defined(OS_ANDROID)
-// Request the distance to the nearest find result in a frame from the point at
-// (x, y), defined in fractions of the content document's width and height. The
-// distance will be returned via FrameHostMsg_GetNearestFindResult_Reply.  Note
-// that |nfr_request_id| is a completely seperate ID from the |request_id| used
-// in other find-related IPCs. It is specifically used to uniquely identify a
-// nearest find result request, rather than a find request.
-IPC_MESSAGE_ROUTED3(FrameMsg_GetNearestFindResult,
-                    int /* nfr_request_id */,
-                    float /* x */,
-                    float /* y */)
-
-// Activates a find result. The point (x,y) is in fractions of the content
-// document's width and height.
-IPC_MESSAGE_ROUTED3(FrameMsg_ActivateNearestFindResult,
-                    int /* request_id */,
-                    float /* x */,
-                    float /* y */)
-
-// Sent when the browser wants the bounding boxes of the current find matches.
-//
-// If match rects are already cached on the browser side, |current_version|
-// should be the version number from the FrameHostMsg_FindMatchRects_Reply
-// they came in, so the renderer can tell if it needs to send updated rects.
-// Otherwise just pass -1 to always receive the list of rects.
-//
-// There must be an active search string (it is probably most useful to call
-// this immediately after a FrameHostMsg_Find_Reply message arrives with
-// final_update set to true).
-IPC_MESSAGE_ROUTED1(FrameMsg_FindMatchRects, int /* current_version */)
-#endif
 
 #if BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
 #if defined(OS_MACOSX)
@@ -1093,11 +1080,6 @@ IPC_MESSAGE_ROUTED3(FrameMsg_Find,
                     int /* request_id */,
                     base::string16 /* search_text */,
                     blink::WebFindOptions)
-
-// This message notifies the frame that it is no longer the active frame in the
-// current find session, and so it should clear its active find match (and no
-// longer highlight it with special coloring).
-IPC_MESSAGE_ROUTED0(FrameMsg_ClearActiveFindMatch)
 
 // This message notifies the frame that the user has closed the find-in-page
 // window (and what action to take regarding the selection).
@@ -1170,6 +1152,12 @@ IPC_MESSAGE_ROUTED1(FrameMsg_MixedContentFound,
 IPC_MESSAGE_ROUTED2(FrameMsg_ScrollRectToVisible,
                     gfx::Rect /* rect_to_scroll */,
                     blink::WebScrollIntoViewParams /* properties */)
+
+// Sent to the parent process of a cross-process frame to continue bubbling
+// a logical scroll.
+IPC_MESSAGE_ROUTED2(FrameMsg_BubbleLogicalScroll,
+                    blink::WebScrollDirection /* direction */,
+                    blink::WebScrollGranularity /* granularity */)
 
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
@@ -1497,10 +1485,10 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_BeforeUnload_ACK,
 // Indicates that the current frame has swapped out, after a SwapOut message.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_SwapOut_ACK)
 
-// Tells the browser that a child's resize parameters have changed.
-IPC_MESSAGE_ROUTED2(FrameHostMsg_UpdateResizeParams,
+// Tells the browser that a child's visual properties have changed.
+IPC_MESSAGE_ROUTED2(FrameHostMsg_SynchronizeVisualProperties,
                     viz::SurfaceId /* surface_id */,
-                    content::FrameResizeParams)
+                    content::FrameVisualProperties)
 
 // Sent by a parent frame to update its child's viewport intersection rect for
 // use by the IntersectionObserver API.
@@ -1515,6 +1503,10 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_VisibilityChanged, bool /* visible */)
 
 // Sets or unsets the inert bit on a remote frame.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_SetIsInert, bool /* inert */)
+
+// Sets the inherited effective touch action on a remote frame.
+IPC_MESSAGE_ROUTED1(FrameHostMsg_SetInheritedEffectiveTouchAction,
+                    cc::TouchAction)
 
 // Toggles render throttling on a remote frame. |is_throttled| indicates
 // whether the current frame should be throttled based on its viewport
@@ -1622,7 +1614,11 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_VisualStateResponse, uint64_t /* id */)
 
 // Puts the browser into "tab fullscreen" mode for the sending renderer.
 // See the comment in chrome/browser/ui/browser.h for more details.
-IPC_MESSAGE_ROUTED1(FrameHostMsg_ToggleFullscreen, bool /* enter_fullscreen */)
+IPC_MESSAGE_ROUTED1(FrameHostMsg_EnterFullscreen, blink::WebFullscreenOptions)
+
+// Exits the browser from "tab fullscreen" mode for the sending renderer.
+// See the comment in chrome/browser/ui/browser.h for more details.
+IPC_MESSAGE_ROUTED0(FrameHostMsg_ExitFullscreen)
 
 // Sent when a new sudden termination disabler condition is either introduced or
 // removed.
@@ -1735,8 +1731,7 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_UpdateFaviconURL,
 
 // A message from HTML-based UI.  When (trusted) Javascript calls
 // send(message, args), this message is sent to the browser.
-IPC_MESSAGE_ROUTED3(FrameHostMsg_WebUISend,
-                    GURL /* source_url */,
+IPC_MESSAGE_ROUTED2(FrameHostMsg_WebUISend,
                     std::string /* message */,
                     base::ListValue /* args */)
 
@@ -1744,6 +1739,12 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_WebUISend,
 IPC_MESSAGE_ROUTED2(FrameHostMsg_ScrollRectToVisibleInParentFrame,
                     gfx::Rect /* rect_to_scroll */,
                     blink::WebScrollIntoViewParams /* properties */)
+
+// Sent by a local root to continue bubbling a logical scroll in its parent
+// process.
+IPC_MESSAGE_ROUTED2(FrameHostMsg_BubbleLogicalScrollInParentFrame,
+                    blink::WebScrollDirection /* direction */,
+                    blink::WebScrollGranularity /* granularity */)
 
 // Sent to notify that a frame called |window.focus()|.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_FrameDidCallFocus)
@@ -1765,34 +1766,6 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_ShowPopup,
                     FrameHostMsg_ShowPopup_Params)
 IPC_MESSAGE_ROUTED0(FrameHostMsg_HidePopup)
 
-#endif
-
-#if defined(OS_ANDROID)
-// Response to FrameMsg_FindMatchRects.
-//
-// |version| will contain the current version number of the renderer's find
-// match list (incremented whenever they change), which should be passed in the
-// next call to FrameMsg_FindMatchRects.
-//
-// |rects| will either contain a list of the enclosing rects of all matches
-// found by the most recent Find operation, or will be empty if |version| is not
-// greater than the |current_version| passed to FrameMsg_FindMatchRects (hence
-// your locally cached rects should still be valid). The rect coords will be
-// custom normalized fractions of the document size. The rects will be sorted by
-// frame traversal order starting in the main frame, then by dom order.
-//
-// |active_rect| will contain the bounding box of the active find-in-page match
-// marker, in similarly normalized coords (or an empty rect if there isn't one).
-IPC_MESSAGE_ROUTED3(FrameHostMsg_FindMatchRects_Reply,
-                    int /* version */,
-                    std::vector<gfx::RectF> /* rects */,
-                    gfx::RectF /* active_rect */)
-
-// Response to FrameMsg_GetNearestFindResult. |distance| is the distance to the
-// nearest find result in the sending frame.
-IPC_MESSAGE_ROUTED2(FrameHostMsg_GetNearestFindResult_Reply,
-                    int /* nfr_request_id */,
-                    float /* distance */)
 #endif
 
 // Adding a new message? Stick to the sort order above: first platform

@@ -10,8 +10,8 @@
 #include "base/callback.h"
 #include "base/optional.h"
 #include "base/time/time.h"
+#include "content/browser/web_package/signed_exchange_consts.h"
 #include "content/browser/web_package/signed_exchange_header.h"
-#include "content/browser/web_package/signed_exchange_utils.h"
 #include "content/common/content_export.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "net/base/completion_callback.h"
@@ -28,6 +28,7 @@ class CertVerifyResult;
 class DrainableIOBuffer;
 class SourceStream;
 class URLRequestContextGetter;
+struct OCSPVerifyResult;
 }  // namespace net
 
 namespace network {
@@ -39,6 +40,7 @@ namespace content {
 class SignedExchangeCertFetcher;
 class SignedExchangeCertFetcherFactory;
 class SignedExchangeCertificateChain;
+class SignedExchangeDevToolsProxy;
 
 // IMPORTANT: Currenly SignedExchangeHandler partially implements the verifying
 // logic.
@@ -70,7 +72,7 @@ class CONTENT_EXPORT SignedExchangeHandler {
       ExchangeHeadersCallback headers_callback,
       std::unique_ptr<SignedExchangeCertFetcherFactory> cert_fetcher_factory,
       scoped_refptr<net::URLRequestContextGetter> request_context_getter,
-      int frame_tree_node_id);
+      std::unique_ptr<SignedExchangeDevToolsProxy> devtools_proxy);
   ~SignedExchangeHandler();
 
  protected:
@@ -94,8 +96,10 @@ class CONTENT_EXPORT SignedExchangeHandler {
   void OnCertReceived(
       std::unique_ptr<SignedExchangeCertificateChain> cert_chain);
   void OnCertVerifyComplete(int result);
+  bool CheckOCSPStatus(const net::OCSPVerifyResult& ocsp_result);
 
   ExchangeHeadersCallback headers_callback_;
+  base::Optional<SignedExchangeVersion> version_;
   std::unique_ptr<net::SourceStream> source_;
 
   State state_ = State::kReadingHeadersLength;
@@ -123,7 +127,7 @@ class CONTENT_EXPORT SignedExchangeHandler {
   // with Network Service.
   net::NetLogWithSource net_log_;
 
-  signed_exchange_utils::LogCallback error_message_callback_;
+  std::unique_ptr<SignedExchangeDevToolsProxy> devtools_proxy_;
 
   base::WeakPtrFactory<SignedExchangeHandler> weak_factory_;
 

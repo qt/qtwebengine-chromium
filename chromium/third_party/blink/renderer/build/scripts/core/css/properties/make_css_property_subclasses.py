@@ -19,8 +19,8 @@ class PropertyMethod(namedtuple('PropertyMethod', 'name,return_type,parameters')
 
 
 class CSSPropertiesWriter(CSSPropertyBaseWriter):
-    def __init__(self, json5_file_paths):
-        super(CSSPropertiesWriter, self).__init__(json5_file_paths)
+    def __init__(self, json5_file_paths, output_dir):
+        super(CSSPropertiesWriter, self).__init__(json5_file_paths, output_dir)
         assert len(json5_file_paths) == 3,\
             ('CSSPropertiesWriter requires 3 input json5 files, ' +
              'got {}.'.format(len(json5_file_paths)))
@@ -97,64 +97,32 @@ class CSSPropertiesWriter(CSSPropertyBaseWriter):
         return generate_property_cpp
 
     def calculate_apply_functions_to_declare(self, property_):
-        if property_['custom_apply_functions_all']:
-            property_name = property_['upper_camel_name']
-            if (property_name in ['Clip', 'ColumnCount', 'ColumnWidth', 'ZIndex']):
-                property_['custom_apply'] = "auto"
-                property_['custom_apply_args'] = {'auto_identity': 'CSSValueAuto'}
-            elif (property_name in [
-                    'BorderImageOutset', 'BorderImageRepeat', 'BorderImageSlice', 'BorderImageWidth', 'WebkitMaskBoxImageOutset',
-                    'WebkitMaskBoxImageRepeat', 'WebkitMaskBoxImageSlice', 'WebkitMaskBoxImageWidth']):
-                property_['custom_apply'] = 'border_image'
-                is_mask_box = 'WebkitMaskBox' in property_name
-                getter = 'MaskBoxImage' if is_mask_box else 'BorderImage'
-                modifier_type = property_name[len('WebkitMaskBoxImage'):] if is_mask_box else property_name[len('BorderImage'):]
-                property_['custom_apply_args'] = {
-                    'is_mask_box': is_mask_box,
-                    'modifier_type': modifier_type,
-                    'getter': getter,
-                    'setter': 'Set' + getter
-                }
-            elif (property_name in [
-                    'BackgroundAttachment', 'BackgroundBlendMode', 'BackgroundClip', 'BackgroundImage', 'BackgroundOrigin',
-                    'BackgroundPositionX', 'BackgroundPositionY', 'BackgroundRepeatX', 'BackgroundRepeatY', 'BackgroundSize',
-                    'MaskSourceType', 'WebkitMaskClip', 'WebkitMaskComposite', 'WebkitMaskImage', 'WebkitMaskOrigin',
-                    'WebkitMaskPositionX', 'WebkitMaskPositionY', 'WebkitMaskRepeatX', 'WebkitMaskRepeatY', 'WebkitMaskSize']):
-                fill_type = property_name if property_name == 'MaskSourceType' else property_name[len('Background'):]
-                property_['custom_apply'] = 'fill_layer'
-                property_['should_implement_apply_functions_in_cpp'] = True
-                property_['custom_apply_args'] = {
-                    'layer_type': 'Background' if 'Background' in property_name else 'Mask',
-                    'fill_type': fill_type,
-                    'fill_type_getter': 'Get' + fill_type if fill_type == "Image" else fill_type
-                }
+        if property_['style_builder_template'] in ['background_layer', 'color', 'counter', 'mask_layer']:
+            property_['should_implement_apply_functions_in_cpp'] = True
+
         property_['should_implement_apply_functions'] = (
             property_['is_property'] and
             not property_['longhands'] and
             not property_['direction_aware_options'] and
             not property_['builder_skip'] and
-            (not (property_['custom_apply_functions_initial'] and
-                  property_['custom_apply_functions_inherit'] and
-                  property_['custom_apply_functions_value']) or
-             'custom_apply' in property_))
+            not property_['style_builder_legacy'])
 
     def h_includes(self, property_):
         if property_['alias_for']:
-            yield "core/css/properties/css_unresolved_property.h"
+            yield "third_party/blink/renderer/core/css/properties/css_unresolved_property.h"
         else:
-            yield "core/css/properties/" + property_['namespace_group'].lower() + ".h"
+            yield "third_party/blink/renderer/core/css/properties/" + property_['namespace_group'].lower() + ".h"
             if property_['direction_aware_options']:
-                yield "core/style_property_shorthand.h"
-            if property_['runtime_flag']:
-                yield "platform/runtime_enabled_features.h"
-            if property_['should_implement_apply_functions']:
-                for include in self.apply_includes(property_):
-                    yield include
+                yield "third_party/blink/renderer/core/style_property_shorthand.h"
+            for include in self.apply_includes(property_):
+                yield 'third_party/blink/renderer/' + include
+        if property_['runtime_flag']:
+            yield "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
     def cpp_includes(self, property_):
         if 'should_implement_apply_functions_in_cpp' in property_:
             for include in self.apply_includes(property_):
-                yield include
+                yield 'third_party/blink/renderer/' + include
 
     def apply_includes(self, property_):
         yield "core/css/resolver/style_resolver_state.h"
@@ -175,12 +143,16 @@ class CSSPropertiesWriter(CSSPropertyBaseWriter):
             yield "core/style/svg_computed_style.h"
         else:
             yield "core/style/computed_style.h"
-        if ('custom_apply_args' in property_ and
-                property_['custom_apply_args'].get('modifier_type')
+        if ('style_builder_template_args' in property_ and
+                property_['style_builder_template_args'].get('modifier_type')
                 in ['Width', 'Slice', 'Outset']):
             yield "core/css/properties/style_building_utils.h"
-        if property_.get('custom_apply') == "fill_layer":
+        if property_.get('style_builder_template') in ['animation', 'background_layer', 'counter',
+                                                       'mask_layer', 'transition']:
             yield "core/css/css_value_list.h"
+        if property_.get('style_builder_template') in ['counter']:
+            yield "core/css/css_value_pair.h"
+            yield "core/css/css_custom_ident_value.h"
 
 
 if __name__ == '__main__':

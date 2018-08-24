@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/single_thread_task_runner.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
@@ -24,7 +25,7 @@
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader.h"
 #include "third_party/blink/renderer/platform/loader/fetch/script_fetch_options.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_encoding.h"
 #include "v8/include/v8.h"
@@ -62,7 +63,7 @@ class ScriptStreamingTest : public testing::Test {
     GetResource()->SetResponse(response);
   }
 
-  ~ScriptStreamingTest() {
+  ~ScriptStreamingTest() override {
     if (pending_script_)
       pending_script_->Dispose();
   }
@@ -100,7 +101,7 @@ class ScriptStreamingTest : public testing::Test {
   }
 
   void Finish() {
-    GetResource()->Loader()->DidFinishLoading(0.0, 0, 0, 0, false);
+    GetResource()->Loader()->DidFinishLoading(TimeTicks(), 0, 0, 0, false);
     GetResource()->SetStatus(ResourceStatus::kCached);
   }
 

@@ -40,7 +40,7 @@ class NGOffsetMappingTest : public NGLayoutTest {
   }
 
   bool IsOffsetMappingStored() const {
-    return layout_block_flow_->GetNGInlineNodeData()->offset_mapping_.get();
+    return layout_block_flow_->GetNGInlineNodeData()->offset_mapping.get();
   }
 
   const LayoutText* GetLayoutTextUnder(const char* parent_id) {
@@ -53,7 +53,8 @@ class NGOffsetMappingTest : public NGLayoutTest {
     return GetOffsetMapping().GetMappingUnitForPosition(position);
   }
 
-  Optional<unsigned> GetTextContentOffset(const Position& position) const {
+  base::Optional<unsigned> GetTextContentOffset(
+      const Position& position) const {
     return GetOffsetMapping().GetTextContentOffset(position);
   }
 

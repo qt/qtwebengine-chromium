@@ -19,12 +19,12 @@
 #include "base/time/time.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_export.h"
-#include "net/quic/core/quic_bandwidth.h"
-#include "net/quic/core/quic_server_id.h"
-#include "net/quic/core/quic_versions.h"
 #include "net/socket/next_proto.h"
-#include "net/spdy/core/spdy_framer.h"  // TODO(willchan): Reconsider this.
-#include "net/spdy/core/spdy_protocol.h"
+#include "net/third_party/quic/core/quic_bandwidth.h"
+#include "net/third_party/quic/core/quic_server_id.h"
+#include "net/third_party/quic/core/quic_versions.h"
+#include "net/third_party/spdy/core/spdy_framer.h"  // TODO(willchan): Reconsider this.
+#include "net/third_party/spdy/core/spdy_protocol.h"
 #include "url/scheme_host_port.h"
 
 namespace base {
@@ -58,10 +58,10 @@ NET_EXPORT void HistogramAlternateProtocolUsage(AlternateProtocolUsage usage,
                                                 bool proxy_server_used);
 
 enum BrokenAlternateProtocolLocation {
-  BROKEN_ALTERNATE_PROTOCOL_LOCATION_HTTP_STREAM_FACTORY_IMPL_JOB = 0,
+  BROKEN_ALTERNATE_PROTOCOL_LOCATION_HTTP_STREAM_FACTORY_JOB = 0,
   BROKEN_ALTERNATE_PROTOCOL_LOCATION_QUIC_STREAM_FACTORY = 1,
-  BROKEN_ALTERNATE_PROTOCOL_LOCATION_HTTP_STREAM_FACTORY_IMPL_JOB_ALT = 2,
-  BROKEN_ALTERNATE_PROTOCOL_LOCATION_HTTP_STREAM_FACTORY_IMPL_JOB_MAIN = 3,
+  BROKEN_ALTERNATE_PROTOCOL_LOCATION_HTTP_STREAM_FACTORY_JOB_ALT = 2,
+  BROKEN_ALTERNATE_PROTOCOL_LOCATION_HTTP_STREAM_FACTORY_JOB_MAIN = 3,
   BROKEN_ALTERNATE_PROTOCOL_LOCATION_QUIC_HTTP_STREAM = 4,
   BROKEN_ALTERNATE_PROTOCOL_LOCATION_MAX,
 };

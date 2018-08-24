@@ -47,8 +47,7 @@ FPDF_WIDESTRING AsFPDFWideString(ByteString* bsUTF16LE);
 class CPDFSDK_FormFillEnvironment
     : public Observable<CPDFSDK_FormFillEnvironment> {
  public:
-  CPDFSDK_FormFillEnvironment(UnderlyingDocumentType* pDoc,
-                              FPDF_FORMFILLINFO* pFFinfo);
+  CPDFSDK_FormFillEnvironment(CPDF_Document* pDoc, FPDF_FORMFILLINFO* pFFinfo);
   ~CPDFSDK_FormFillEnvironment();
 
   static bool IsSHIFTKeyDown(uint32_t nFlag) {
@@ -81,7 +80,7 @@ class CPDFSDK_FormFillEnvironment
                     const CPDF_Document* pSrcDoc,
                     const std::vector<uint16_t>& arrSrcPages);
 
-  int GetPageCount() const { return m_pUnderlyingDoc->GetPageCount(); }
+  int GetPageCount() const;
   bool GetPermissions(int nFlag) const;
 
   bool GetChangeMark() const { return m_bChangeMask; }
@@ -97,12 +96,11 @@ class CPDFSDK_FormFillEnvironment
   void SetCursor(int nCursorType);
   int SetTimer(int uElapse, TimerCallback lpTimerFunc);
   void KillTimer(int nTimerID);
+
   FX_SYSTEMTIME GetLocalTime() const;
+  FPDF_PAGE GetCurrentPage() const;
 
   void OnChange();
-
-  FPDF_PAGE GetCurrentPage(UnderlyingDocumentType* document);
-
   void ExecuteNamedAction(const char* namedAction);
   void OnSetFieldInputFocus(FPDF_WIDESTRING focusText,
                             FPDF_DWORD nTextLen,
@@ -113,18 +111,10 @@ class CPDFSDK_FormFillEnvironment
                     float* fPosArray,
                     int sizeOfArray);
 
-  UnderlyingDocumentType* GetUnderlyingDocument() const {
-    return m_pUnderlyingDoc.Get();
-  }
+  CPDF_Document* GetPDFDocument() const { return m_pCPDFDoc.Get(); }
 
 #ifdef PDF_ENABLE_XFA
-  CPDF_Document* GetPDFDocument() const {
-    return m_pUnderlyingDoc ? m_pUnderlyingDoc->GetPDFDoc() : nullptr;
-  }
-
-  CPDFXFA_Context* GetXFAContext() const { return m_pUnderlyingDoc.Get(); }
-  void ResetXFADocument() { m_pUnderlyingDoc = nullptr; }
-
+  CPDFXFA_Context* GetXFAContext() const;
   int GetPageViewCount() const { return m_PageMap.size(); }
 
   void DisplayCaret(CPDFXFA_Page* page,
@@ -133,14 +123,14 @@ class CPDFSDK_FormFillEnvironment
                     double top,
                     double right,
                     double bottom);
-  int GetCurrentPageIndex(CPDFXFA_Context* document);
-  void SetCurrentPage(CPDFXFA_Context* document, int iCurPage);
+  int GetCurrentPageIndex() const;
+  void SetCurrentPage(int iCurPage);
 
   // TODO(dsinclair): This should probably change to PDFium?
   WideString FFI_GetAppName() const { return WideString(L"Acrobat"); }
 
   WideString GetPlatform();
-  void GotoURL(CPDFXFA_Context* document, const WideStringView& wsURL);
+  void GotoURL(const WideString& wsURL);
   void GetPageViewRect(CPDFXFA_Page* page, FS_RECTF& dstRect);
   bool PopupMenu(CPDFXFA_Page* page,
                  FPDF_WIDGET hWidget,
@@ -160,45 +150,43 @@ class CPDFSDK_FormFillEnvironment
   FPDF_FILEHANDLER* OpenFile(int fileType,
                              FPDF_WIDESTRING wsURL,
                              const char* mode);
-  RetainPtr<IFX_SeekableReadStream> DownloadFromURL(const wchar_t* url);
-  WideString PostRequestURL(const wchar_t* wsURL,
-                            const wchar_t* wsData,
-                            const wchar_t* wsContentType,
-                            const wchar_t* wsEncode,
-                            const wchar_t* wsHeader);
-  FPDF_BOOL PutRequestURL(const wchar_t* wsURL,
-                          const wchar_t* wsData,
-                          const wchar_t* wsEncode);
+  RetainPtr<IFX_SeekableReadStream> DownloadFromURL(const WideString& url);
+  WideString PostRequestURL(const WideString& wsURL,
+                            const WideString& wsData,
+                            const WideString& wsContentType,
+                            const WideString& wsEncode,
+                            const WideString& wsHeader);
+  FPDF_BOOL PutRequestURL(const WideString& wsURL,
+                          const WideString& wsData,
+                          const WideString& wsEncode);
   WideString GetLanguage();
 
   void PageEvent(int iPageCount, uint32_t dwEventType) const;
-#else   // PDF_ENABLE_XFA
-  CPDF_Document* GetPDFDocument() const { return m_pUnderlyingDoc.Get(); }
 #endif  // PDF_ENABLE_XFA
 
-  int JS_appAlert(const wchar_t* Msg,
-                  const wchar_t* Title,
+  int JS_appAlert(const WideString& Msg,
+                  const WideString& Title,
                   uint32_t Type,
                   uint32_t Icon);
-  int JS_appResponse(const wchar_t* Question,
-                     const wchar_t* Title,
-                     const wchar_t* Default,
-                     const wchar_t* cLabel,
+  int JS_appResponse(const WideString& Question,
+                     const WideString& Title,
+                     const WideString& Default,
+                     const WideString& cLabel,
                      FPDF_BOOL bPassword,
                      void* response,
                      int length);
   void JS_appBeep(int nType);
   WideString JS_fieldBrowse();
   WideString JS_docGetFilePath();
-  void JS_docSubmitForm(void* formData, int length, const wchar_t* URL);
+  void JS_docSubmitForm(void* formData, int length, const WideString& URL);
   void JS_docmailForm(void* mailData,
                       int length,
                       FPDF_BOOL bUI,
-                      const wchar_t* To,
-                      const wchar_t* Subject,
-                      const wchar_t* CC,
-                      const wchar_t* BCC,
-                      const wchar_t* Msg);
+                      const WideString& To,
+                      const WideString& Subject,
+                      const WideString& CC,
+                      const WideString& BCC,
+                      const WideString& Msg);
   void JS_docprint(FPDF_BOOL bUI,
                    int nStart,
                    int nEnd,
@@ -231,7 +219,7 @@ class CPDFSDK_FormFillEnvironment
   std::map<UnderlyingPageType*, std::unique_ptr<CPDFSDK_PageView>> m_PageMap;
   std::unique_ptr<CPDFSDK_InterForm> m_pInterForm;
   CPDFSDK_Annot::ObservedPtr m_pFocusAnnot;
-  UnownedPtr<UnderlyingDocumentType> m_pUnderlyingDoc;
+  UnownedPtr<CPDF_Document> const m_pCPDFDoc;
   std::unique_ptr<CFFL_InteractiveFormFiller> m_pFormFiller;
   std::unique_ptr<CFX_SystemHandler> m_pSysHandler;
   bool m_bChangeMask;

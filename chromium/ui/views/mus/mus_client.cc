@@ -11,6 +11,7 @@
 #include "base/threading/thread.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/ui/public/cpp/gpu/gpu.h"
+#include "services/ui/public/cpp/input_devices/input_device_client.h"
 #include "services/ui/public/cpp/property_type_converters.h"
 #include "services/ui/public/interfaces/constants.mojom.h"
 #include "services/ui/public/interfaces/event_matcher.mojom.h"
@@ -19,7 +20,6 @@
 #include "ui/aura/mus/capture_synchronizer.h"
 #include "ui/aura/mus/mus_context_factory.h"
 #include "ui/aura/mus/property_converter.h"
-#include "ui/aura/mus/window_tree_client.h"
 #include "ui/aura/mus/window_tree_host_mus.h"
 #include "ui/aura/mus/window_tree_host_mus_init_params.h"
 #include "ui/aura/window.h"
@@ -64,12 +64,11 @@ namespace views {
 // static
 MusClient* MusClient::instance_ = nullptr;
 
-MusClient::MusClient(service_manager::Connector* connector,
-                     const service_manager::Identity& identity,
-                     scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
-                     bool create_wm_state,
-                     MusClientTestingState testing_state)
-    : identity_(identity) {
+MusClient::InitParams::InitParams() = default;
+
+MusClient::InitParams::~InitParams() = default;
+
+MusClient::MusClient(const InitParams& params) : identity_(params.identity) {
   DCHECK(!instance_);
   DCHECK(aura::Env::GetInstance());
   instance_ = this;
@@ -81,9 +80,12 @@ MusClient::MusClient(service_manager::Connector* connector,
   // instance. Partially initialize the ozone cursor internals here, like we
   // partially initialize other ozone subsystems in
   // ChromeBrowserMainExtraPartsViews.
-  cursor_factory_ozone_ = std::make_unique<ui::CursorDataFactoryOzone>();
+  if (params.create_cursor_factory)
+    cursor_factory_ozone_ = std::make_unique<ui::CursorDataFactoryOzone>();
 #endif
 
+  scoped_refptr<base::SingleThreadTaskRunner> io_task_runner =
+      params.io_task_runner;
   if (!io_task_runner) {
     io_thread_ = std::make_unique<base::Thread>("IOThread");
     base::Thread::Options thread_options(base::MessageLoop::TYPE_IO, 0);
@@ -92,34 +94,49 @@ MusClient::MusClient(service_manager::Connector* connector,
     io_task_runner = io_thread_->task_runner();
   }
 
-  // TODO(msw): Avoid this... use some default value? Allow clients to extend?
   property_converter_ = std::make_unique<aura::PropertyConverter>();
   property_converter_->RegisterPrimitiveProperty(
       ::wm::kShadowElevationKey,
       ui::mojom::WindowManager::kShadowElevation_Property,
       aura::PropertyConverter::CreateAcceptAnyValueCallback());
 
-  if (create_wm_state)
+  if (params.create_wm_state)
     wm_state_ = std::make_unique<wm::WMState>();
 
-  if (testing_state == MusClientTestingState::CREATE_TESTING_STATE) {
+  service_manager::Connector* connector = params.connector;
+  if (params.bind_test_ws_interfaces) {
     connector->BindInterface(ui::mojom::kServiceName, &server_test_ptr_);
     connector->BindInterface(ui::mojom::kServiceName, &event_injector_);
   }
 
-  window_tree_client_ = aura::WindowTreeClient::CreateForWindowTreeFactory(
-      connector, this, true, std::move(io_task_runner));
-  aura::Env::GetInstance()->SetWindowTreeClient(window_tree_client_.get());
+  if (!params.window_tree_client) {
+    DCHECK(io_task_runner);
+    owned_window_tree_client_ =
+        aura::WindowTreeClient::CreateForWindowTreeFactory(
+            connector, this, true, std::move(io_task_runner),
+            params.wtc_config);
+    window_tree_client_ = owned_window_tree_client_.get();
+    aura::Env::GetInstance()->SetWindowTreeClient(window_tree_client_);
+  } else {
+    window_tree_client_ = params.window_tree_client;
+  }
 
   pointer_watcher_event_router_ =
-      std::make_unique<PointerWatcherEventRouter>(window_tree_client_.get());
+      std::make_unique<PointerWatcherEventRouter>(window_tree_client_);
 
-  screen_ = std::make_unique<ScreenMus>(this);
-  screen_->Init(connector);
+  if (connector) {
+    input_device_client_ = std::make_unique<ui::InputDeviceClient>();
+    ui::mojom::InputDeviceServerPtr input_device_server;
+    connector->BindInterface(ui::mojom::kServiceName, &input_device_server);
+    input_device_client_->Connect(std::move(input_device_server));
 
-  std::unique_ptr<ClipboardMus> clipboard = std::make_unique<ClipboardMus>();
-  clipboard->Init(connector);
-  ui::Clipboard::SetClipboardForCurrentThread(std::move(clipboard));
+    screen_ = std::make_unique<ScreenMus>(this);
+    screen_->Init(connector);
+
+    std::unique_ptr<ClipboardMus> clipboard = std::make_unique<ClipboardMus>();
+    clipboard->Init(connector);
+    ui::Clipboard::SetClipboardForCurrentThread(std::move(clipboard));
+  }
 
   ViewsDelegate::GetInstance()->set_native_widget_factory(
       base::Bind(&MusClient::CreateNativeWidget, base::Unretained(this)));
@@ -130,7 +147,8 @@ MusClient::MusClient(service_manager::Connector* connector,
 MusClient::~MusClient() {
   // ~WindowTreeClient calls back to us (we're its delegate), destroy it while
   // we are still valid.
-  window_tree_client_.reset();
+  owned_window_tree_client_.reset();
+  window_tree_client_ = nullptr;
   ui::OSExchangeDataProviderFactory::SetFactory(nullptr);
   ui::Clipboard::DestroyClipboardForCurrentThread();
 
@@ -321,8 +339,10 @@ void MusClient::OnEmbedRootDestroyed(
 }
 
 void MusClient::OnPointerEventObserved(const ui::PointerEvent& event,
+                                       int64_t display_id,
                                        aura::Window* target) {
-  pointer_watcher_event_router_->OnPointerEventObserved(event, target);
+  pointer_watcher_event_router_->OnPointerEventObserved(event, display_id,
+                                                        target);
 }
 
 void MusClient::OnWindowManagerFrameValuesChanged() {

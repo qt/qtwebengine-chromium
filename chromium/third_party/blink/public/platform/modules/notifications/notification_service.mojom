@@ -17,7 +17,7 @@ interface NonPersistentNotificationListener {
 
   // Called when the notification was closed; either programatically, or by the
   // developer calling Notification.close().
-  OnClose();
+  OnClose() => ();
 };
 
 // Possible things that can go wrong when displaying a notification created by
@@ -64,6 +64,11 @@ interface NotificationService {
         NotificationData notification_data,
         NotificationResources notification_resources)
                 => (PersistentNotificationError error);
+
+  // Closes the notification identified by |notification_id|.
+  // TODO(https://crbug.com/834045): Instead identify it via a token from which
+  // the notification ID can be calculated, as per non-persistent notifications,
+  ClosePersistentNotification(string notification_id);
 
   // Retrieves currently-displayed persistent notifications for a given
   // service worker registration (i.e. notifications shown via

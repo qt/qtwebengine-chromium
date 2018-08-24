@@ -56,7 +56,7 @@ class DOMTimerCoordinator;
 class ErrorEvent;
 class EventQueue;
 class EventTarget;
-class FrameOrWorkerGlobalScopeScheduler;
+class FrameOrWorkerScheduler;
 class InterfaceInvalidator;
 class LocalDOMWindow;
 class PausableObject;
@@ -74,12 +74,34 @@ enum ReasonForCallingCanExecuteScripts {
 
 enum class SecureContextMode { kInsecureContext, kSecureContext };
 
+// An environment in which script can execute. This class exposes the common
+// properties of script execution environments on the web (i.e, common between
+// script executing in a document and script executing in a worker), such as:
+//
+// - a base URL for the resolution of relative URLs
+// - a security context that defines the privileges associated with the
+//   environment (note, however, that specific isolated script contexts may
+//   still enjoy elevated privileges)
+// - affordances for the activity (including script and active DOM objects) to
+//   be paused or terminated, e.g. because a frame has entered the background or
+//   been closed permanently
+// - a console logging facility for debugging
+//
+// Typically, the ExecutionContext is an instance of Document or of
+// WorkerOrWorkletGlobalScope.
+//
+// Note that this is distinct from the notion of a ScriptState or v8::Context,
+// which are associated with a single script context (with a single global
+// object). For example, there are separate JavaScript globals for "main world"
+// script written by a web author and an "isolated world" content script written
+// by an extension developer, but these share an ExecutionContext (the document)
+// in common.
 class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
                                      public Supplementable<ExecutionContext> {
   MERGE_GARBAGE_COLLECTED_MIXINS();
 
  public:
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
   static ExecutionContext* From(const ScriptState*);
 
@@ -206,7 +228,7 @@ class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
     return nullptr;
   }
 
-  virtual FrameOrWorkerGlobalScopeScheduler* GetScheduler() = 0;
+  virtual FrameOrWorkerScheduler* GetScheduler() = 0;
   virtual scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(
       TaskType) = 0;
 
@@ -214,7 +236,7 @@ class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
 
  protected:
   ExecutionContext();
-  virtual ~ExecutionContext();
+  ~ExecutionContext() override;
 
  private:
   bool DispatchErrorEventInternal(ErrorEvent*, AccessControlStatus);

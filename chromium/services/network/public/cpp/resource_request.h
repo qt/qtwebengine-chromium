@@ -187,17 +187,6 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
   // about this.
   int transition_type = 0;
 
-  // For navigations, whether this navigation should replace the current session
-  // history entry on commit.
-  bool should_replace_current_entry = false;
-
-  // The following two members identify a previous request that has been
-  // created before this navigation has been transferred to a new process.
-  // This serves the purpose of recycling the old request.
-  // Unless this refers to a transferred navigation, these values are -1 and -1.
-  int transferred_request_child_id = -1;
-  int transferred_request_request_id = -1;
-
   // Whether or not we should allow the URL to download.
   bool allow_download = false;
 
@@ -213,11 +202,6 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
   // TODO(jam): remove this from the struct since network service shouldn't know
   // about this.
   int previews_state = 0;
-
-  // PlzNavigate: the stream url associated with a navigation. Used to get
-  // access to the body of the response that has already been fetched by the
-  // browser.
-  GURL resource_body_stream_url;
 
   // Wether or not the initiator of this request is a secure context.
   bool initiated_in_secure_context = false;

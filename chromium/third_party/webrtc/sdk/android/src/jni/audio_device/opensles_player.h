@@ -29,7 +29,7 @@ namespace webrtc {
 
 class FineAudioBuffer;
 
-namespace android_adm {
+namespace jni {
 
 // Implements 16-bit mono PCM audio output support for Android using the
 // C based OpenSL ES API. No calls from C/C++ to Java using JNI is done.
@@ -140,9 +140,8 @@ class OpenSLESPlayer : public AudioOutput {
   SLDataFormat_PCM pcm_format_;
 
   // Queue of audio buffers to be used by the player object for rendering
-  // audio. They will be used in a Round-robin way and the size of each buffer
-  // is given by FineAudioBuffer::RequiredBufferSizeBytes().
-  std::unique_ptr<SLint8[]> audio_buffers_[kNumOfOpenSLESBuffers];
+  // audio.
+  std::unique_ptr<SLint16[]> audio_buffers_[kNumOfOpenSLESBuffers];
 
   // FineAudioBuffer takes an AudioDeviceBuffer which delivers audio data
   // in chunks of 10ms. It then allows for this data to be pulled in
@@ -189,7 +188,7 @@ class OpenSLESPlayer : public AudioOutput {
   uint32_t last_play_time_;
 };
 
-}  // namespace android_adm
+}  // namespace jni
 
 }  // namespace webrtc
 

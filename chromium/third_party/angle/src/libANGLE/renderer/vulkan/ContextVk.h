@@ -123,7 +123,7 @@ class ContextVk : public ContextImpl
     VertexArrayImpl *createVertexArray(const gl::VertexArrayState &state) override;
 
     // Query and Fence creation
-    QueryImpl *createQuery(GLenum type) override;
+    QueryImpl *createQuery(gl::QueryType type) override;
     FenceNVImpl *createFenceNV() override;
     SyncImpl *createSync() override;
 
@@ -158,10 +158,14 @@ class ContextVk : public ContextImpl
 
     const VkClearValue &getClearColorValue() const;
     const VkClearValue &getClearDepthStencilValue() const;
+    VkColorComponentFlags getClearColorMask() const;
     const VkRect2D &getScissor() const { return mPipelineDesc->getScissor(); }
+    gl::Error getIncompleteTexture(const gl::Context *context,
+                                   gl::TextureType type,
+                                   gl::Texture **textureOut);
 
   private:
-    gl::Error initPipeline(const gl::Context *context);
+    gl::Error initPipeline();
     gl::Error setupDraw(const gl::Context *context,
                         const gl::DrawCallParams &drawCallParams,
                         vk::CommandGraphNode **drawNodeOut,
@@ -185,9 +189,12 @@ class ContextVk : public ContextImpl
     bool mTexturesDirty;
     bool mVertexArrayBindingHasChanged;
 
-    // Cached clear value for color and depth/stencil.
+    // Cached clear value/mask for color and depth/stencil.
     VkClearValue mClearColorValue;
     VkClearValue mClearDepthStencilValue;
+    VkColorComponentFlags mClearColorMask;
+
+    IncompleteTextureSet mIncompleteTextures;
 };
 }  // namespace rx
 

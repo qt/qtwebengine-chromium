@@ -58,7 +58,7 @@ class GbmBufferGenerator : public ScanoutBufferGenerator {
 
 class GbmDeviceGenerator : public DrmDeviceGenerator {
  public:
-  GbmDeviceGenerator(bool use_atomic) : use_atomic_(use_atomic) {}
+  GbmDeviceGenerator() {}
   ~GbmDeviceGenerator() override {}
 
   // DrmDeviceGenerator:
@@ -67,14 +67,13 @@ class GbmDeviceGenerator : public DrmDeviceGenerator {
                                         bool is_primary_device) override {
     scoped_refptr<DrmDevice> drm =
         new GbmDevice(path, std::move(file), is_primary_device);
-    if (drm->Initialize(use_atomic_))
+    if (drm->Initialize())
       return drm;
 
     return nullptr;
   }
 
  private:
-  bool use_atomic_;
 
   DISALLOW_COPY_AND_ASSIGN(GbmDeviceGenerator);
 };
@@ -98,12 +97,8 @@ void DrmThread::Start(base::OnceClosure binding_completer) {
 }
 
 void DrmThread::Init() {
-  bool use_atomic = false;
-  use_atomic = base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableDrmAtomic);
-
   device_manager_.reset(
-      new DrmDeviceManager(std::make_unique<GbmDeviceGenerator>(use_atomic)));
+      new DrmDeviceManager(std::make_unique<GbmDeviceGenerator>()));
   buffer_generator_.reset(new GbmBufferGenerator());
   screen_manager_.reset(new ScreenManager(buffer_generator_.get()));
 
@@ -138,6 +133,10 @@ void DrmThread::CreateBuffer(gfx::AcceleratedWidget widget,
     case gfx::BufferUsage::SCANOUT_CAMERA_READ_WRITE:
       flags = GBM_BO_USE_LINEAR | GBM_BO_USE_CAMERA_WRITE | GBM_BO_USE_SCANOUT |
               GBM_BO_USE_TEXTURING;
+      break;
+    case gfx::BufferUsage::CAMERA_AND_CPU_READ_WRITE:
+      flags =
+          GBM_BO_USE_LINEAR | GBM_BO_USE_CAMERA_WRITE | GBM_BO_USE_TEXTURING;
       break;
     case gfx::BufferUsage::SCANOUT_CPU_READ_WRITE:
       flags = GBM_BO_USE_LINEAR | GBM_BO_USE_SCANOUT | GBM_BO_USE_TEXTURING;

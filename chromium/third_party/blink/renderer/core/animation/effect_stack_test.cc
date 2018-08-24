@@ -37,7 +37,8 @@ class AnimationEffectStackTest : public PageTestBase {
 
   void UpdateTimeline(double time) {
     GetDocument().GetAnimationClock().UpdateTime(
-        GetDocument().Timeline().ZeroTime() + time);
+        base::TimeTicks() + base::TimeDelta::FromSecondsD(
+                                GetDocument().Timeline().ZeroTime() + time));
     timeline->ServiceAnimations(kTimingUpdateForAnimationFrame);
   }
 
@@ -171,7 +172,7 @@ TEST_F(AnimationEffectStackTest, ForwardsFillDiscarding) {
   Play(MakeKeyframeEffect(MakeEffectModel(CSSPropertyFontSize, "2px")), 6);
   Play(MakeKeyframeEffect(MakeEffectModel(CSSPropertyFontSize, "3px")), 4);
   GetDocument().GetPendingAnimations().Update(
-      Optional<CompositorElementIdSet>());
+      base::Optional<CompositorElementIdSet>());
   ActiveInterpolationsMap interpolations;
 
   UpdateTimeline(11);

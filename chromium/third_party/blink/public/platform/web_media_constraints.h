@@ -41,6 +41,10 @@
 
 namespace blink {
 
+// Possible values of the echo canceller type constraint.
+BLINK_PLATFORM_EXPORT extern const char kEchoCancellationTypeBrowser[];
+BLINK_PLATFORM_EXPORT extern const char kEchoCancellationTypeSystem[];
+
 class WebMediaConstraintsPrivate;
 
 class BLINK_PLATFORM_EXPORT BaseConstraint {
@@ -228,6 +232,7 @@ struct WebMediaTrackConstraintSet {
   LongConstraint sample_rate;
   LongConstraint sample_size;
   BooleanConstraint echo_cancellation;
+  StringConstraint echo_cancellation_type;
   DoubleConstraint latency;
   LongConstraint channel_count;
   StringConstraint device_id;

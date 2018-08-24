@@ -39,9 +39,65 @@
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/loader/resource/image_resource_content.h"
 #include "third_party/blink/renderer/core/paint/image_painter.h"
+#include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/svg/graphics/svg_image.h"
+#include "third_party/blink/renderer/platform/feature_policy/feature_policy.h"
 
 namespace blink {
+
+namespace {
+constexpr float kmax_downscaling_ratio = 2.0f;
+
+bool CheckForOptimizedImagePolicy(const LocalFrame& frame,
+                                  LayoutImage* layout_image,
+                                  ImageResourceContent* new_image) {
+  // Invert the image if the document does not have the 'legacy-image-formats'
+  // feature enabled, and the image is not one of the allowed formats.
+  if (IsSupportedInFeaturePolicy(
+          mojom::FeaturePolicyFeature::kLegacyImageFormats) &&
+      !frame.IsFeatureEnabled(
+          mojom::FeaturePolicyFeature::kLegacyImageFormats)) {
+    if (!new_image->IsAcceptableContentType()) {
+      return true;
+    }
+  }
+  // Invert the image if the document does not have the image-compression'
+  // feature enabled and the image is not sufficiently-well-compressed.
+  if (IsSupportedInFeaturePolicy(
+          mojom::FeaturePolicyFeature::kImageCompression) &&
+      !frame.IsFeatureEnabled(mojom::FeaturePolicyFeature::kImageCompression)) {
+    if (!new_image->IsAcceptableCompressionRatio())
+      return true;
+  }
+  return false;
+}
+
+bool CheckForMaxDownscalingImagePolicy(const LocalFrame& frame,
+                                       HTMLImageElement* element,
+                                       LayoutImage* layout_image) {
+  if (!IsSupportedInFeaturePolicy(
+          mojom::FeaturePolicyFeature::kMaxDownscalingImage) ||
+      frame.IsFeatureEnabled(mojom::FeaturePolicyFeature::kMaxDownscalingImage))
+    return false;
+  // Invert the image if the image's size is more than 2 times bigger than the
+  // size it is being laid-out by.
+  LayoutUnit layout_width = layout_image->ContentBoxRect().Width();
+  LayoutUnit layout_height = layout_image->ContentBoxRect().Height();
+  auto image_width = element->naturalWidth();
+  auto image_height = element->naturalHeight();
+  if (layout_width > 0 && layout_height > 0 && image_width > 0 &&
+      image_height > 0) {
+    double device_pixel_ratio = frame.DevicePixelRatio();
+    if (LayoutUnit(image_width / kmax_downscaling_ratio * device_pixel_ratio) >
+            layout_width ||
+        LayoutUnit(image_height / kmax_downscaling_ratio * device_pixel_ratio) >
+            layout_height)
+      return true;
+  }
+  return false;
+}
+
+}  // namespace
 
 using namespace HTMLNames;
 
@@ -49,7 +105,9 @@ LayoutImage::LayoutImage(Element* element)
     : LayoutReplaced(element, LayoutSize()),
       did_increment_visually_non_empty_pixel_count_(false),
       is_generated_content_(false),
-      image_device_pixel_ratio_(1.0f) {}
+      image_device_pixel_ratio_(1.0f),
+      is_legacy_format_or_compressed_image_(false),
+      is_downscaled_image_(false) {}
 
 LayoutImage* LayoutImage::CreateAnonymous(PseudoElement& pseudo) {
   LayoutImage* image = new LayoutImage(nullptr);
@@ -197,6 +255,15 @@ void LayoutImage::ImageNotifyFinished(ImageResourceContent* new_image) {
 
   InvalidateBackgroundObscurationStatus();
 
+  // Check for optimized image policies.
+  if (View() && View()->GetFrameView()) {
+    bool old_flag = ShouldInvertColor();
+    is_legacy_format_or_compressed_image_ = CheckForOptimizedImagePolicy(
+        View()->GetFrameView()->GetFrame(), this, new_image);
+    if (old_flag != ShouldInvertColor())
+      UpdateShouldInvertColor();
+  }
+
   if (new_image == image_resource_->CachedImage()) {
     // tell any potential compositing layers
     // that the image is done and they can reference it directly.
@@ -297,6 +364,20 @@ bool LayoutImage::NodeAtPoint(HitTestResult& result,
 
 void LayoutImage::ComputeIntrinsicSizingInfo(
     IntrinsicSizingInfo& intrinsic_sizing_info) const {
+  if (SVGImage* svg_image = EmbeddedSVGImage()) {
+    svg_image->GetIntrinsicSizingInfo(intrinsic_sizing_info);
+
+    // Handle zoom & vertical writing modes here, as the embedded SVG document
+    // doesn't know about them.
+    intrinsic_sizing_info.size.Scale(Style()->EffectiveZoom());
+    if (Style()->GetObjectFit() != EObjectFit::kScaleDown)
+      intrinsic_sizing_info.size.Scale(ImageDevicePixelRatio());
+
+    if (!IsHorizontalWritingMode())
+      intrinsic_sizing_info.Transpose();
+    return;
+  }
+
   LayoutReplaced::ComputeIntrinsicSizingInfo(intrinsic_sizing_info);
 
   // Our intrinsicSize is empty if we're laying out generated images with
@@ -326,19 +407,11 @@ void LayoutImage::ComputeIntrinsicSizingInfo(
 bool LayoutImage::NeedsPreferredWidthsRecalculation() const {
   if (LayoutReplaced::NeedsPreferredWidthsRecalculation())
     return true;
-  return EmbeddedReplacedContent();
+  SVGImage* svg_image = EmbeddedSVGImage();
+  return svg_image && svg_image->HasIntrinsicSizingInfo();
 }
 
-bool LayoutImage::GetNestedIntrinsicSizingInfo(
-    IntrinsicSizingInfo& intrinsic_sizing_info) const {
-  if (LayoutReplaced* content_layout_object = EmbeddedReplacedContent()) {
-    content_layout_object->ComputeIntrinsicSizingInfo(intrinsic_sizing_info);
-    return true;
-  }
-  return false;
-}
-
-LayoutReplaced* LayoutImage::EmbeddedReplacedContent() const {
+SVGImage* LayoutImage::EmbeddedSVGImage() const {
   if (!image_resource_)
     return nullptr;
   ImageResourceContent* cached_image = image_resource_->CachedImage();
@@ -346,10 +419,37 @@ LayoutReplaced* LayoutImage::EmbeddedReplacedContent() const {
   // https://crbug.com/761026
   if (!cached_image || cached_image->IsCacheValidator())
     return nullptr;
-  Image* image = cached_image->GetImage();
-  if (!image->IsSVGImage())
-    return nullptr;
-  return ToSVGImage(image)->EmbeddedReplacedContent();
+  return ToSVGImageOrNull(cached_image->GetImage());
+}
+
+bool LayoutImage::ShouldInvertColor() const {
+  return is_downscaled_image_ || is_legacy_format_or_compressed_image_;
+}
+
+void LayoutImage::UpdateShouldInvertColor() {
+  SetNeedsPaintPropertyUpdate();
+  // If composited image, update compositing layer.
+  if (Layer())
+    Layer()->SetNeedsCompositingInputsUpdate();
+}
+
+void LayoutImage::UpdateShouldInvertColorForTest(bool value) {
+  is_downscaled_image_ = value;
+  is_legacy_format_or_compressed_image_ = value;
+  UpdateShouldInvertColor();
+}
+
+void LayoutImage::UpdateAfterLayout() {
+  LayoutBox::UpdateAfterLayout();
+  Node* node = GetNode();
+  // Check for optimized image policies.
+  if (IsHTMLImageElement(node) && View() && View()->GetFrameView()) {
+    bool old_flag = ShouldInvertColor();
+    is_downscaled_image_ = CheckForMaxDownscalingImagePolicy(
+        View()->GetFrameView()->GetFrame(), ToHTMLImageElement(node), this);
+    if (old_flag != ShouldInvertColor())
+      UpdateShouldInvertColor();
+  }
 }
 
 }  // namespace blink

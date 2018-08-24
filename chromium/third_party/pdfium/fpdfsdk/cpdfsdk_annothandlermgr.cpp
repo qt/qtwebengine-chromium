@@ -76,6 +76,10 @@ void CPDFSDK_AnnotHandlerMgr::Annot_OnLoad(CPDFSDK_Annot* pAnnot) {
   GetAnnotHandler(pAnnot)->OnLoad(pAnnot);
 }
 
+WideString CPDFSDK_AnnotHandlerMgr::Annot_GetText(CPDFSDK_Annot* pAnnot) {
+  return GetAnnotHandler(pAnnot)->GetText(pAnnot);
+}
+
 WideString CPDFSDK_AnnotHandlerMgr::Annot_GetSelectedText(
     CPDFSDK_Annot* pAnnot) {
   return GetAnnotHandler(pAnnot)->GetSelectedText(pAnnot);
@@ -84,6 +88,22 @@ WideString CPDFSDK_AnnotHandlerMgr::Annot_GetSelectedText(
 void CPDFSDK_AnnotHandlerMgr::Annot_ReplaceSelection(CPDFSDK_Annot* pAnnot,
                                                      const WideString& text) {
   GetAnnotHandler(pAnnot)->ReplaceSelection(pAnnot, text);
+}
+
+bool CPDFSDK_AnnotHandlerMgr::Annot_CanUndo(CPDFSDK_Annot* pAnnot) {
+  return GetAnnotHandler(pAnnot)->CanUndo(pAnnot);
+}
+
+bool CPDFSDK_AnnotHandlerMgr::Annot_CanRedo(CPDFSDK_Annot* pAnnot) {
+  return GetAnnotHandler(pAnnot)->CanRedo(pAnnot);
+}
+
+bool CPDFSDK_AnnotHandlerMgr::Annot_Undo(CPDFSDK_Annot* pAnnot) {
+  return GetAnnotHandler(pAnnot)->Undo(pAnnot);
+}
+
+bool CPDFSDK_AnnotHandlerMgr::Annot_Redo(CPDFSDK_Annot* pAnnot) {
+  return GetAnnotHandler(pAnnot)->Redo(pAnnot);
 }
 
 IPDFSDK_AnnotHandler* CPDFSDK_AnnotHandlerMgr::GetAnnotHandler(

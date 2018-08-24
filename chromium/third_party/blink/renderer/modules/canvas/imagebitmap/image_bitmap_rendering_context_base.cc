@@ -44,13 +44,13 @@ scoped_refptr<StaticBitmapImage> ImageBitmapRenderingContextBase::GetImage(
   return image_layer_bridge_->GetImage();
 }
 
-void ImageBitmapRenderingContextBase::SetUV(const FloatPoint left_top,
-                                            const FloatPoint right_bottom) {
+void ImageBitmapRenderingContextBase::SetUV(const FloatPoint& left_top,
+                                            const FloatPoint& right_bottom) {
   image_layer_bridge_->SetUV(left_top, right_bottom);
 }
 
-WebLayer* ImageBitmapRenderingContextBase::PlatformLayer() const {
-  return image_layer_bridge_->PlatformLayer();
+cc::Layer* ImageBitmapRenderingContextBase::CcLayer() const {
+  return image_layer_bridge_->CcLayer();
 }
 
 bool ImageBitmapRenderingContextBase::IsPaintable() const {

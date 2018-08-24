@@ -37,6 +37,7 @@
 #include "ui/events/devices/x11/touch_factory_x11.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keyboard_hook.h"
+#include "ui/events/keycodes/dom/dom_code.h"
 #include "ui/events/null_event_targeter.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/events/platform/x11/x11_event_source.h"
@@ -598,7 +599,7 @@ void DesktopWindowTreeHostX11::StackAtTop() {
 
 void DesktopWindowTreeHostX11::CenterWindow(const gfx::Size& size) {
   gfx::Size size_in_pixels = ToPixelRect(gfx::Rect(size)).size();
-  gfx::Rect parent_bounds_in_pixels = GetWorkAreaBoundsInPixels();
+  gfx::Rect parent_bounds_in_pixels = ToPixelRect(GetWorkAreaBoundsInScreen());
 
   // If |window_|'s transient parent bounds are big enough to contain |size|,
   // use them instead.
@@ -670,24 +671,21 @@ gfx::Rect DesktopWindowTreeHostX11::GetRestoredBounds() const {
 }
 
 std::string DesktopWindowTreeHostX11::GetWorkspace() const {
-  if (workspace_.empty())
-    const_cast<DesktopWindowTreeHostX11*>(this)->UpdateWorkspace();
-  return workspace_;
+  return workspace_ ? base::IntToString(workspace_.value()) : std::string();
 }
 
-bool DesktopWindowTreeHostX11::UpdateWorkspace() {
-  int workspace_int;
-  if (!ui::GetWindowDesktop(xwindow_, &workspace_int))
-    return false;
-  std::string workspace_str = base::IntToString(workspace_int);
-  if (workspace_ == workspace_str)
-    return false;
-  workspace_ = workspace_str;
-  return true;
+void DesktopWindowTreeHostX11::UpdateWorkspace() {
+  int workspace;
+  if (ui::GetWindowDesktop(xwindow_, &workspace))
+    workspace_ = workspace;
+  else
+    workspace_ = base::nullopt;
 }
 
 gfx::Rect DesktopWindowTreeHostX11::GetWorkAreaBoundsInScreen() const {
-  return ToDIPRect(GetWorkAreaBoundsInPixels());
+  return display::Screen::GetScreen()
+      ->GetDisplayNearestWindow(const_cast<aura::Window*>(window()))
+      .work_area();
 }
 
 void DesktopWindowTreeHostX11::SetShape(
@@ -891,7 +889,7 @@ void DesktopWindowTreeHostX11::SetVisibleOnAllWorkspaces(bool always_visible) {
       return;
   }
 
-  workspace_ = base::IntToString(kAllDesktops);
+  workspace_ = kAllDesktops;
   XEvent xevent;
   memset (&xevent, 0, sizeof (xevent));
   xevent.type = ClientMessage;
@@ -1199,7 +1197,13 @@ gfx::Rect DesktopWindowTreeHostX11::GetBoundsInPixels() const {
 }
 
 void DesktopWindowTreeHostX11::SetBoundsInPixels(
-    const gfx::Rect& requested_bounds_in_pixel) {
+    const gfx::Rect& requested_bounds_in_pixel,
+    const viz::LocalSurfaceId& local_surface_id) {
+  // On desktop-x11, the callers of SetBoundsInPixels() shouldn't need to (or be
+  // able to) allocate LocalSurfaceId for the compositor. Aura itself should
+  // allocate the new ids as needed, instead.
+  DCHECK(!local_surface_id.is_valid());
+
   gfx::Rect bounds_in_pixels(requested_bounds_in_pixel.origin(),
                              AdjustSize(requested_bounds_in_pixel.size()));
   bool origin_changed = bounds_in_pixels_.origin() != bounds_in_pixels.origin();
@@ -1251,7 +1255,7 @@ void DesktopWindowTreeHostX11::SetBoundsInPixels(
   if (origin_changed)
     native_widget_delegate_->AsWidget()->OnNativeWidgetMove();
   if (size_changed) {
-    OnHostResizedInPixels(bounds_in_pixels.size());
+    OnHostResizedInPixels(bounds_in_pixels.size(), local_surface_id);
     ResetWindowRegion();
   }
 }
@@ -1298,15 +1302,16 @@ void DesktopWindowTreeHostX11::ReleaseCapture() {
 }
 
 bool DesktopWindowTreeHostX11::CaptureSystemKeyEventsImpl(
-    base::Optional<base::flat_set<int>> key_codes) {
+    base::Optional<base::flat_set<ui::DomCode>> dom_codes) {
   // Only one KeyboardHook should be active at a time, otherwise there will be
   // problems with event routing (i.e. which Hook takes precedence) and
   // destruction ordering.
   DCHECK(!keyboard_hook_);
   keyboard_hook_ = ui::KeyboardHook::Create(
-      std::move(key_codes),
+      std::move(dom_codes), GetAcceleratedWidget(),
       base::BindRepeating(&DesktopWindowTreeHostX11::DispatchKeyEvent,
                           base::Unretained(this)));
+
   return keyboard_hook_ != nullptr;
 }
 
@@ -1314,8 +1319,8 @@ void DesktopWindowTreeHostX11::ReleaseSystemKeyEventCapture() {
   keyboard_hook_.reset();
 }
 
-bool DesktopWindowTreeHostX11::IsKeyLocked(int native_key_code) {
-  return keyboard_hook_ && keyboard_hook_->IsKeyLocked(native_key_code);
+bool DesktopWindowTreeHostX11::IsKeyLocked(ui::DomCode dom_code) {
+  return keyboard_hook_ && keyboard_hook_->IsKeyLocked(dom_code);
 }
 
 void DesktopWindowTreeHostX11::SetCursorNative(gfx::NativeCursor cursor) {
@@ -1363,11 +1368,39 @@ void DesktopWindowTreeHostX11::OnFullscreenStateChanged() {}
 
 void DesktopWindowTreeHostX11::InitX11Window(
     const Widget::InitParams& params) {
-  unsigned long attribute_mask = CWBackPixmap | CWBitGravity;
+  unsigned long attribute_mask = CWBackPixel | CWBitGravity;
   XSetWindowAttributes swa;
   memset(&swa, 0, sizeof(swa));
   swa.background_pixmap = x11::None;
   swa.bit_gravity = NorthWestGravity;
+
+  // Set the background color on startup to make the initial flickering
+  // happening between the XWindow is mapped and the first expose event
+  // is completely handled less annoying. If possible, we use the content
+  // window's background color, otherwise we fallback to white.
+  int background_color;
+
+  const views::LinuxUI* linux_ui = views::LinuxUI::instance();
+  if (linux_ui && content_window()) {
+    ui::NativeTheme::ColorId target_color;
+    switch (params.type) {
+      case Widget::InitParams::TYPE_BUBBLE:
+        target_color = ui::NativeTheme::kColorId_BubbleBackground;
+        break;
+      case Widget::InitParams::TYPE_TOOLTIP:
+        target_color = ui::NativeTheme::kColorId_TooltipBackground;
+        break;
+      default:
+        target_color = ui::NativeTheme::kColorId_WindowBackground;
+        break;
+    }
+
+    ui::NativeTheme* theme = linux_ui->GetNativeTheme(content_window());
+    background_color = theme->GetSystemColor(target_color);
+  } else {
+    background_color = WhitePixel(xdisplay_, DefaultScreen(xdisplay_));
+  }
+  swa.background_pixel = background_color;
 
   ::Atom window_type;
   switch (params.type) {
@@ -1495,7 +1528,7 @@ void DesktopWindowTreeHostX11::InitX11Window(
   if (is_always_on_top_)
     state_atom_list.push_back(gfx::GetAtom("_NET_WM_STATE_ABOVE"));
 
-  workspace_.clear();
+  workspace_ = base::nullopt;
   if (params.visible_on_all_workspaces) {
     state_atom_list.push_back(gfx::GetAtom("_NET_WM_STATE_STICKY"));
     ui::SetIntProperty(xwindow_, "_NET_WM_DESKTOP", "CARDINAL", kAllDesktops);
@@ -2134,7 +2167,12 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
         case ui::ET_SCROLL_FLING_CANCEL:
         case ui::ET_SCROLL: {
           ui::ScrollEvent scrollev(xev);
-          SendEventToSink(&scrollev);
+          // We need to filter zero scroll offset here. Because
+          // MouseWheelEventQueue assumes we'll never get a zero scroll offset
+          // event and we need delta to determine which element to scroll on
+          // phaseBegan.
+          if (scrollev.x_offset() != 0.0 || scrollev.y_offset() != 0.0)
+            SendEventToSink(&scrollev);
           break;
         }
         case ui::ET_KEY_PRESSED:
@@ -2253,7 +2291,9 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
       } else if (changed_atom == gfx::GetAtom("_NET_FRAME_EXTENTS")) {
         OnFrameExtentsUpdated();
       } else if (changed_atom == gfx::GetAtom("_NET_WM_DESKTOP")) {
-        if (UpdateWorkspace())
+        base::Optional<int> old_workspace = workspace_;
+        UpdateWorkspace();
+        if (workspace_ != old_workspace)
           OnHostWorkspaceChanged();
       }
       break;
@@ -2278,27 +2318,6 @@ void DesktopWindowTreeHostX11::DelayedChangeFrameType(Widget::FrameType type) {
   // swappable glass frame like on Windows, we still replace the frame because
   // the button assets don't update otherwise.
   native_widget_delegate_->AsWidget()->non_client_view()->UpdateFrame();
-}
-
-gfx::Rect DesktopWindowTreeHostX11::GetWorkAreaBoundsInPixels() const {
-  std::vector<int> value;
-  if (ui::GetIntArrayProperty(x_root_window_, "_NET_WORKAREA", &value) &&
-      value.size() >= 4) {
-    return gfx::Rect(value[0], value[1], value[2], value[3]);
-  }
-
-  // Fetch the geometry of the root window.
-  Window root;
-  int x, y;
-  unsigned int width, height;
-  unsigned int border_width, depth;
-  if (!XGetGeometry(xdisplay_, x_root_window_, &root, &x, &y, &width, &height,
-                    &border_width, &depth)) {
-    NOTIMPLEMENTED();
-    return gfx::Rect(0, 0, 10, 10);
-  }
-
-  return gfx::Rect(x, y, width, height);
 }
 
 gfx::Rect DesktopWindowTreeHostX11::ToDIPRect(
@@ -2348,6 +2367,13 @@ void DesktopWindowTreeHostX11::RestartDelayedResizeTask() {
 
 aura::Window* DesktopWindowTreeHostX11::content_window() {
   return desktop_native_widget_aura_->content_window();
+}
+
+base::flat_map<std::string, std::string>
+DesktopWindowTreeHostX11::GetKeyboardLayoutMap() {
+  if (views::LinuxUI::instance())
+    return views::LinuxUI::instance()->GetKeyboardLayoutMap();
+  return {};
 }
 
 ////////////////////////////////////////////////////////////////////////////////

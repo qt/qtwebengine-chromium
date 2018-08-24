@@ -203,39 +203,23 @@ static void p224_felem_to_bin28(uint8_t out[28], const p224_felem in) {
   }
 }
 
-// To preserve endianness when using BN_bn2bin and BN_bin2bn
-static void p224_flip_endian(uint8_t *out, const uint8_t *in, size_t len) {
-  for (size_t i = 0; i < len; ++i) {
-    out[i] = in[len - 1 - i];
-  }
-}
-
-// From OpenSSL BIGNUM to internal representation
-static int p224_BN_to_felem(p224_felem out, const BIGNUM *bn) {
-  // BN_bn2bin eats leading zeroes
-  p224_felem_bytearray b_out;
-  OPENSSL_memset(b_out, 0, sizeof(b_out));
-  size_t num_bytes = BN_num_bytes(bn);
-  if (num_bytes > sizeof(b_out) ||
-      BN_is_negative(bn)) {
-    OPENSSL_PUT_ERROR(EC, EC_R_BIGNUM_OUT_OF_RANGE);
-    return 0;
-  }
-
-  p224_felem_bytearray b_in;
-  num_bytes = BN_bn2bin(bn, b_in);
-  p224_flip_endian(b_out, b_in, num_bytes);
-  p224_bin28_to_felem(out, b_out);
-  return 1;
-}
-
 // From internal representation to OpenSSL BIGNUM
 static BIGNUM *p224_felem_to_BN(BIGNUM *out, const p224_felem in) {
-  p224_felem_bytearray b_in, b_out;
-  p224_felem_to_bin28(b_in, in);
-  p224_flip_endian(b_out, b_in, sizeof(b_out));
-  return BN_bin2bn(b_out, sizeof(b_out), out);
+  p224_felem_bytearray b_out;
+  p224_felem_to_bin28(b_out, in);
+  return BN_le2bn(b_out, sizeof(b_out), out);
 }
+
+static void p224_generic_to_felem(p224_felem out, const EC_FELEM *in) {
+  p224_bin28_to_felem(out, in->bytes);
+}
+
+static void p224_felem_to_generic(EC_FELEM *out, const p224_felem in) {
+  p224_felem_to_bin28(out->bytes, in);
+  // 224 is not a multiple of 64, so zero the remaining bytes.
+  OPENSSL_memset(out->bytes + 28, 0, 32 - 28);
+}
+
 
 // Field operations, using the internal representation of field elements.
 // NB! These operations are specific to our point multiplication and cannot be
@@ -986,29 +970,23 @@ static void p224_batch_mul(p224_felem x_out, p224_felem y_out, p224_felem z_out,
 
 // Takes the Jacobian coordinates (X, Y, Z) of a point and returns
 // (X', Y') = (X/Z^2, Y/Z^3)
-static int ec_GFp_nistp224_point_get_affine_coordinates(const EC_GROUP *group,
-                                                        const EC_POINT *point,
-                                                        BIGNUM *x, BIGNUM *y,
-                                                        BN_CTX *ctx) {
-  p224_felem z1, z2, x_in, y_in, x_out, y_out;
-  p224_widefelem tmp;
-
-  if (EC_POINT_is_at_infinity(group, point)) {
+static int ec_GFp_nistp224_point_get_affine_coordinates(
+    const EC_GROUP *group, const EC_RAW_POINT *point, BIGNUM *x, BIGNUM *y) {
+  if (ec_GFp_simple_is_at_infinity(group, point)) {
     OPENSSL_PUT_ERROR(EC, EC_R_POINT_AT_INFINITY);
     return 0;
   }
 
-  if (!p224_BN_to_felem(x_in, &point->X) ||
-      !p224_BN_to_felem(y_in, &point->Y) ||
-      !p224_BN_to_felem(z1, &point->Z)) {
-    return 0;
-  }
-
+  p224_felem z1, z2;
+  p224_widefelem tmp;
+  p224_generic_to_felem(z1, &point->Z);
   p224_felem_inv(z2, z1);
   p224_felem_square(tmp, z2);
   p224_felem_reduce(z1, tmp);
 
   if (x != NULL) {
+    p224_felem x_in, x_out;
+    p224_generic_to_felem(x_in, &point->X);
     p224_felem_mul(tmp, x_in, z1);
     p224_felem_reduce(x_in, tmp);
     p224_felem_contract(x_out, x_in);
@@ -1019,6 +997,8 @@ static int ec_GFp_nistp224_point_get_affine_coordinates(const EC_GROUP *group,
   }
 
   if (y != NULL) {
+    p224_felem y_in, y_out;
+    p224_generic_to_felem(y_in, &point->Y);
     p224_felem_mul(tmp, z1, z2);
     p224_felem_reduce(z1, tmp);
     p224_felem_mul(tmp, y_in, z1);
@@ -1033,10 +1013,10 @@ static int ec_GFp_nistp224_point_get_affine_coordinates(const EC_GROUP *group,
   return 1;
 }
 
-static int ec_GFp_nistp224_points_mul(const EC_GROUP *group, EC_POINT *r,
-                                      const EC_SCALAR *g_scalar,
-                                      const EC_POINT *p,
-                                      const EC_SCALAR *p_scalar, BN_CTX *ctx) {
+static void ec_GFp_nistp224_points_mul(const EC_GROUP *group, EC_RAW_POINT *r,
+                                       const EC_SCALAR *g_scalar,
+                                       const EC_RAW_POINT *p,
+                                       const EC_SCALAR *p_scalar) {
   p224_felem p_pre_comp[17][3];
   p224_felem x_in, y_in, z_in, x_out, y_out, z_out;
 
@@ -1045,11 +1025,9 @@ static int ec_GFp_nistp224_points_mul(const EC_GROUP *group, EC_POINT *r,
     // they contribute nothing to the linear combination.
     OPENSSL_memset(&p_pre_comp, 0, sizeof(p_pre_comp));
     // precompute multiples
-    if (!p224_BN_to_felem(x_out, &p->X) ||
-        !p224_BN_to_felem(y_out, &p->Y) ||
-        !p224_BN_to_felem(z_out, &p->Z)) {
-      return 0;
-    }
+    p224_generic_to_felem(x_out, &p->X);
+    p224_generic_to_felem(y_out, &p->Y);
+    p224_generic_to_felem(z_out, &p->Z);
 
     p224_felem_assign(p_pre_comp[1][0], x_out);
     p224_felem_assign(p_pre_comp[1][1], y_out);
@@ -1076,15 +1054,44 @@ static int ec_GFp_nistp224_points_mul(const EC_GROUP *group, EC_POINT *r,
 
   // reduce the output to its unique minimal representation
   p224_felem_contract(x_in, x_out);
+  p224_felem_to_generic(&r->X, x_in);
   p224_felem_contract(y_in, y_out);
+  p224_felem_to_generic(&r->Y, y_in);
   p224_felem_contract(z_in, z_out);
-  if (!p224_felem_to_BN(&r->X, x_in) ||
-      !p224_felem_to_BN(&r->Y, y_in) ||
-      !p224_felem_to_BN(&r->Z, z_in)) {
-    OPENSSL_PUT_ERROR(EC, ERR_R_BN_LIB);
-    return 0;
-  }
-  return 1;
+  p224_felem_to_generic(&r->Z, z_in);
+}
+
+static void ec_GFp_nistp224_felem_mul(const EC_GROUP *group, EC_FELEM *r,
+                                      const EC_FELEM *a, const EC_FELEM *b) {
+  p224_felem felem1, felem2;
+  p224_widefelem wide;
+  p224_generic_to_felem(felem1, a);
+  p224_generic_to_felem(felem2, b);
+  p224_felem_mul(wide, felem1, felem2);
+  p224_felem_reduce(felem1, wide);
+  p224_felem_contract(felem1, felem1);
+  p224_felem_to_generic(r, felem1);
+}
+
+static void ec_GFp_nistp224_felem_sqr(const EC_GROUP *group, EC_FELEM *r,
+                                      const EC_FELEM *a) {
+  p224_felem felem;
+  p224_generic_to_felem(felem, a);
+  p224_widefelem wide;
+  p224_felem_square(wide, felem);
+  p224_felem_reduce(felem, wide);
+  p224_felem_contract(felem, felem);
+  p224_felem_to_generic(r, felem);
+}
+
+static int ec_GFp_nistp224_bignum_to_felem(const EC_GROUP *group, EC_FELEM *out,
+                                           const BIGNUM *in) {
+  return bn_copy_words(out->words, group->field.width, in);
+}
+
+static int ec_GFp_nistp224_felem_to_bignum(const EC_GROUP *group, BIGNUM *out,
+                                           const EC_FELEM *in) {
+  return bn_set_words(out, in->words, group->field.width);
 }
 
 DEFINE_METHOD_FUNCTION(EC_METHOD, EC_GFp_nistp224_method) {
@@ -1095,10 +1102,11 @@ DEFINE_METHOD_FUNCTION(EC_METHOD, EC_GFp_nistp224_method) {
       ec_GFp_nistp224_point_get_affine_coordinates;
   out->mul = ec_GFp_nistp224_points_mul;
   out->mul_public = ec_GFp_nistp224_points_mul;
-  out->field_mul = ec_GFp_simple_field_mul;
-  out->field_sqr = ec_GFp_simple_field_sqr;
-  out->field_encode = NULL;
-  out->field_decode = NULL;
+  out->felem_mul = ec_GFp_nistp224_felem_mul;
+  out->felem_sqr = ec_GFp_nistp224_felem_sqr;
+  out->bignum_to_felem = ec_GFp_nistp224_bignum_to_felem;
+  out->felem_to_bignum = ec_GFp_nistp224_felem_to_bignum;
+  out->scalar_inv_montgomery = ec_simple_scalar_inv_montgomery;
 };
 
 #endif  // BORINGSSL_HAS_UINT128 && !SMALL

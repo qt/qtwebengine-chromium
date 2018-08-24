@@ -22,22 +22,22 @@
 #include "base/values.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_response_body_drainer.h"
-#include "net/http/http_stream_factory_impl.h"
+#include "net/http/http_stream_factory.h"
 #include "net/http/url_security_manager.h"
 #include "net/proxy_resolution/proxy_resolution_service.h"
 #include "net/quic/chromium/quic_crypto_client_stream_factory.h"
 #include "net/quic/chromium/quic_stream_factory.h"
-#include "net/quic/core/crypto/quic_random.h"
-#include "net/quic/core/quic_packets.h"
-#include "net/quic/core/quic_tag.h"
-#include "net/quic/core/quic_utils.h"
-#include "net/quic/platform/impl/quic_chromium_clock.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_pool_manager_impl.h"
 #include "net/socket/next_proto.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/websocket_endpoint_lock_manager.h"
-#include "net/spdy/chromium/spdy_session_pool.h"
+#include "net/spdy/spdy_session_pool.h"
+#include "net/third_party/quic/core/crypto/quic_random.h"
+#include "net/third_party/quic/core/quic_packets.h"
+#include "net/third_party/quic/core/quic_tag.h"
+#include "net/third_party/quic/core/quic_utils.h"
+#include "net/third_party/quic/platform/impl/quic_chromium_clock.h"
 
 namespace net {
 
@@ -75,21 +75,23 @@ namespace {
 // Keep all HTTP2 parameters in |http2_settings|, even the ones that are not
 // implemented, to be sent to the server.
 // Set default values for settings that |http2_settings| does not specify.
-SettingsMap AddDefaultHttp2Settings(SettingsMap http2_settings) {
+spdy::SettingsMap AddDefaultHttp2Settings(spdy::SettingsMap http2_settings) {
   // Set default values only if |http2_settings| does not have
   // a value set for given setting.
-  SettingsMap::iterator it = http2_settings.find(SETTINGS_HEADER_TABLE_SIZE);
+  spdy::SettingsMap::iterator it =
+      http2_settings.find(spdy::SETTINGS_HEADER_TABLE_SIZE);
   if (it == http2_settings.end())
-    http2_settings[SETTINGS_HEADER_TABLE_SIZE] = kSpdyMaxHeaderTableSize;
+    http2_settings[spdy::SETTINGS_HEADER_TABLE_SIZE] = kSpdyMaxHeaderTableSize;
 
-  it = http2_settings.find(SETTINGS_MAX_CONCURRENT_STREAMS);
+  it = http2_settings.find(spdy::SETTINGS_MAX_CONCURRENT_STREAMS);
   if (it == http2_settings.end())
-    http2_settings[SETTINGS_MAX_CONCURRENT_STREAMS] =
+    http2_settings[spdy::SETTINGS_MAX_CONCURRENT_STREAMS] =
         kSpdyMaxConcurrentPushedStreams;
 
-  it = http2_settings.find(SETTINGS_INITIAL_WINDOW_SIZE);
+  it = http2_settings.find(spdy::SETTINGS_INITIAL_WINDOW_SIZE);
   if (it == http2_settings.end())
-    http2_settings[SETTINGS_INITIAL_WINDOW_SIZE] = kSpdyStreamMaxRecvWindowSize;
+    http2_settings[spdy::SETTINGS_INITIAL_WINDOW_SIZE] =
+        kSpdyStreamMaxRecvWindowSize;
 
   return http2_settings;
 }
@@ -123,7 +125,6 @@ HttpNetworkSession::Params::Params()
           kMaxTimeForCryptoHandshakeSecs),
       quic_max_idle_time_before_crypto_handshake_seconds(
           kInitialIdleTimeoutSecs),
-      quic_connect_using_default_network(false),
       quic_migrate_sessions_on_network_change(false),
       quic_migrate_sessions_early(false),
       quic_migrate_sessions_on_network_change_v2(false),
@@ -140,9 +141,10 @@ HttpNetworkSession::Params::Params()
       quic_estimate_initial_rtt(false),
       quic_headers_include_h2_stream_dependency(false),
       enable_token_binding(false),
+      enable_channel_id(false),
       http_09_on_non_default_ports_enabled(false),
       disable_idle_sockets_close_on_memory_pressure(false) {
-  quic_supported_versions.push_back(QUIC_VERSION_39);
+  quic_supported_versions.push_back(QUIC_VERSION_43);
 }
 
 HttpNetworkSession::Params::Params(const Params& other) = default;
@@ -212,7 +214,6 @@ HttpNetworkSession::HttpNetworkSession(const Params& params,
           params.quic_reduced_ping_timeout_seconds,
           params.quic_max_time_before_crypto_handshake_seconds,
           params.quic_max_idle_time_before_crypto_handshake_seconds,
-          params.quic_connect_using_default_network,
           params.quic_migrate_sessions_on_network_change,
           params.quic_migrate_sessions_early,
           params.quic_migrate_sessions_on_network_change_v2,
@@ -226,6 +227,7 @@ HttpNetworkSession::HttpNetworkSession(const Params& params,
           params.quic_connection_options,
           params.quic_client_connection_options,
           params.enable_token_binding,
+          params.enable_channel_id,
           params.quic_enable_socket_recv_optimization),
       spdy_session_pool_(context.host_resolver,
                          context.ssl_config_service,
@@ -237,7 +239,7 @@ HttpNetworkSession::HttpNetworkSession(const Params& params,
                          params.spdy_session_max_recv_window_size,
                          AddDefaultHttp2Settings(params.http2_settings),
                          params.time_func),
-      http_stream_factory_(std::make_unique<HttpStreamFactoryImpl>(this)),
+      http_stream_factory_(std::make_unique<HttpStreamFactory>(this)),
       params_(params),
       context_(context) {
   DCHECK(proxy_resolution_service_);
@@ -446,8 +448,11 @@ void HttpNetworkSession::GetSSLConfig(const HttpRequestInfo& request,
   *proxy_config = *server_config;
   if (request.privacy_mode == PRIVACY_MODE_ENABLED) {
     server_config->channel_id_enabled = false;
-  } else if (params_.enable_token_binding && context_.channel_id_service) {
-    server_config->token_binding_params.push_back(TB_PARAM_ECDSAP256);
+  } else {
+    server_config->channel_id_enabled = params_.enable_channel_id;
+    if (params_.enable_token_binding && context_.channel_id_service) {
+      server_config->token_binding_params.push_back(TB_PARAM_ECDSAP256);
+    }
   }
 }
 

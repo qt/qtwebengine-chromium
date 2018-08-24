@@ -48,8 +48,8 @@
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/html/html_plugin_element.h"
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/inspector/main_thread_debugger.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
@@ -145,17 +145,10 @@ v8::Local<v8::Value> ScriptController::ExecuteScriptAndReturnValue(
       return result;
 
     v8::MaybeLocal<v8::Value> maybe_result;
-    if (RuntimeEnabledFeatures::CodeCacheAfterExecuteEnabled()) {
-      maybe_result = V8ScriptRunner::RunCompiledScript(
-          GetIsolate(), script, GetFrame()->GetDocument());
-      V8ScriptRunner::ProduceCache(GetIsolate(), script, source,
-                                   produce_cache_options, compile_options);
-    } else {
-      V8ScriptRunner::ProduceCache(GetIsolate(), script, source,
-                                   produce_cache_options, compile_options);
-      maybe_result = V8ScriptRunner::RunCompiledScript(
-          GetIsolate(), script, GetFrame()->GetDocument());
-    }
+    maybe_result = V8ScriptRunner::RunCompiledScript(GetIsolate(), script,
+                                                     GetFrame()->GetDocument());
+    V8ScriptRunner::ProduceCache(GetIsolate(), script, source,
+                                 produce_cache_options, compile_options);
 
     if (!maybe_result.ToLocal(&result)) {
       return result;

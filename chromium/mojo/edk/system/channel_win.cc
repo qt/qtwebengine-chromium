@@ -16,7 +16,7 @@
 #include "base/location.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_current.h"
 #include "base/message_loop/message_pump_for_io.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner.h"
@@ -29,11 +29,11 @@ namespace edk {
 namespace {
 
 class ChannelWin : public Channel,
-                   public base::MessageLoop::DestructionObserver,
+                   public base::MessageLoopCurrent::DestructionObserver,
                    public base::MessagePumpForIO::IOHandler {
  public:
   ChannelWin(Delegate* delegate,
-             ScopedPlatformHandle handle,
+             ScopedInternalPlatformHandle handle,
              scoped_refptr<base::TaskRunner> io_task_runner)
       : Channel(delegate),
         self_(this),
@@ -79,11 +79,11 @@ class ChannelWin : public Channel,
     leak_handle_ = true;
   }
 
-  bool GetReadPlatformHandles(
+  bool GetReadInternalPlatformHandles(
       size_t num_handles,
       const void* extra_header,
       size_t extra_header_size,
-      std::vector<ScopedPlatformHandle>* handles) override {
+      std::vector<ScopedInternalPlatformHandle>* handles) override {
     DCHECK(extra_header);
     if (num_handles > std::numeric_limits<uint16_t>::max())
       return false;
@@ -95,7 +95,7 @@ class ChannelWin : public Channel,
     const HandleEntry* extra_header_handles =
         reinterpret_cast<const HandleEntry*>(extra_header);
     for (size_t i = 0; i < num_handles; i++) {
-      handles->emplace_back(ScopedPlatformHandle(PlatformHandle(
+      handles->emplace_back(ScopedInternalPlatformHandle(InternalPlatformHandle(
           base::win::Uint32ToHandle(extra_header_handles[i].handle))));
     }
     return true;
@@ -106,8 +106,8 @@ class ChannelWin : public Channel,
   ~ChannelWin() override {}
 
   void StartOnIOThread() {
-    base::MessageLoop::current()->AddDestructionObserver(this);
-    base::MessageLoopForIO::current()->RegisterIOHandler(
+    base::MessageLoopCurrent::Get()->AddDestructionObserver(this);
+    base::MessageLoopCurrentForIO::Get()->RegisterIOHandler(
         handle_.get().handle, this);
 
     if (handle_.get().needs_connection) {
@@ -150,7 +150,7 @@ class ChannelWin : public Channel,
   }
 
   void ShutDownOnIOThread() {
-    base::MessageLoop::current()->RemoveDestructionObserver(this);
+    base::MessageLoopCurrent::Get()->RemoveDestructionObserver(this);
 
     // BUG(crbug.com/583525): This function is expected to be called once, and
     // |handle_| should be valid at this point.
@@ -164,7 +164,7 @@ class ChannelWin : public Channel,
     self_ = nullptr;
   }
 
-  // base::MessageLoop::DestructionObserver:
+  // base::MessageLoopCurrent::DestructionObserver:
   void WillDestroyCurrentMessageLoop() override {
     DCHECK(io_task_runner_->RunsTasksInCurrentSequence());
     if (self_)
@@ -235,10 +235,14 @@ class ChannelWin : public Channel,
       Channel::MessagePtr message = std::move(outgoing_messages_.front());
       outgoing_messages_.pop_front();
 
-      // Clear any handles so they don't get closed on destruction.
-      std::vector<ScopedPlatformHandle> handles = message->TakeHandles();
+      // Invalidate all the scoped handles so we don't attempt to close them.
+      // Note that we don't simply release these objects because they also own
+      // an internal process handle (in |owning_process|) which *does* need to
+      // be closed.
+      std::vector<ScopedInternalPlatformHandle> handles =
+          message->TakeHandles();
       for (auto& handle : handles)
-        ignore_result(handle.release());
+        handle.get().handle = INVALID_HANDLE_VALUE;
 
       // Overlapped WriteFile() to a pipe should always fully complete.
       if (message->data_num_bytes() != bytes_written)
@@ -311,7 +315,7 @@ class ChannelWin : public Channel,
   // Keeps the Channel alive at least until explicit shutdown on the IO thread.
   scoped_refptr<Channel> self_;
 
-  ScopedPlatformHandle handle_;
+  ScopedInternalPlatformHandle handle_;
   const scoped_refptr<base::TaskRunner> io_task_runner_;
 
   base::MessagePumpForIO::IOContext connect_context_;

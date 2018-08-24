@@ -16,6 +16,7 @@
 #include "components/viz/common/features.h"
 #include "content/browser/renderer_host/cursor_manager.h"
 #include "content/browser/renderer_host/input/synthetic_tap_gesture.h"
+#include "content/browser/renderer_host/input/touch_emulator.h"
 #include "content/browser/renderer_host/render_widget_host_input_event_router.h"
 #include "content/browser/renderer_host/render_widget_host_view_child_frame.h"
 #include "content/common/frame_messages.h"
@@ -34,6 +35,7 @@
 #include "ui/display/display_switches.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/events/gesture_detection/gesture_configuration.h"
+#include "ui/events/gesture_detection/gesture_provider_config_helper.h"
 
 #if defined(USE_AURA)
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
@@ -469,6 +471,68 @@ bool ConvertJSONToRect(const std::string& str, gfx::Rect* rect) {
 }
 #endif  // defined(USE_AURA)
 
+// Class for intercepting SetMouseCapture messages being sent to a
+// RenderWidgetHost. Note that this only works for RenderWidgetHosts that
+// are attached to RenderFrameHosts, and not those for page popups, which
+// use different bindings.
+class SetMouseCaptureInterceptor
+    : public base::RefCountedThreadSafe<SetMouseCaptureInterceptor>,
+      public mojom::WidgetInputHandlerHostInterceptorForTesting {
+ public:
+  SetMouseCaptureInterceptor(RenderWidgetHostImpl* host)
+      : msg_received_(false),
+        capturing_(false),
+        host_(host),
+        impl_(binding().SwapImplForTesting(this)) {}
+
+  bool Capturing() const { return capturing_; }
+
+  void Wait() {
+    DCHECK(!run_loop_);
+    if (msg_received_) {
+      msg_received_ = false;
+      return;
+    }
+    run_loop_.reset(new base::RunLoop());
+    run_loop_->Run();
+    run_loop_.reset();
+    msg_received_ = false;
+  }
+
+ protected:
+  // mojom::WidgetInputHandlerHostInterceptorForTesting:
+  mojom::WidgetInputHandlerHost* GetForwardingInterface() override {
+    return impl_;
+  }
+  void SetMouseCapture(bool capturing) override {
+    capturing_ = capturing;
+    msg_received_ = true;
+    if (run_loop_)
+      run_loop_->Quit();
+    GetForwardingInterface()->SetMouseCapture(capturing);
+  }
+
+ private:
+  friend class base::RefCountedThreadSafe<SetMouseCaptureInterceptor>;
+
+  ~SetMouseCaptureInterceptor() override {
+    binding().SwapImplForTesting(impl_);
+  }
+
+  mojo::Binding<mojom::WidgetInputHandlerHost>& binding() {
+    return static_cast<InputRouterImpl*>(host_->input_router())
+        ->frame_host_binding_for_testing();
+  }
+
+  std::unique_ptr<base::RunLoop> run_loop_;
+  bool msg_received_;
+  bool capturing_;
+  RenderWidgetHostImpl* host_;
+  mojom::WidgetInputHandlerHost* impl_;
+
+  DISALLOW_COPY_AND_ASSIGN(SetMouseCaptureInterceptor);
+};
+
 }  // namespace
 
 class SitePerProcessHitTestBrowserTest
@@ -485,6 +549,8 @@ class SitePerProcessHitTestBrowserTest
     } else if (std::get<0>(GetParam()) == 2) {
       feature_list_.InitAndEnableFeature(
           features::kEnableVizHitTestSurfaceLayer);
+    } else {
+      feature_list_.InitAndDisableFeature(features::kEnableVizHitTestDrawQuad);
     }
   }
 
@@ -628,7 +694,7 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessInternalsHitTestBrowserTest,
       parent_iframe_node->current_frame_host()
           ->GetRenderWidgetHost()
           ->GetView(),
-      &nested_in_parent);
+      &nested_in_parent, viz::EventSource::MOUSE);
 
   // Get original scroll position.
   double div_scroll_top_start;
@@ -993,6 +1059,157 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
   root_scroll_begin_observer.Wait();
 }
 
+class SitePerProcessEmulatedTouchBrowserTest
+    : public SitePerProcessHitTestBrowserTest {
+ public:
+  enum TestType { ScrollBubbling, PinchGoesToMainFrame };
+
+  ~SitePerProcessEmulatedTouchBrowserTest() override {}
+
+  void RunTest(TestType test_type) {
+    GURL main_url(embedded_test_server()->GetURL(
+        "/frame_tree/page_with_positioned_frame.html"));
+    ASSERT_TRUE(NavigateToURL(shell(), main_url));
+
+    // It is safe to obtain the root frame tree node here, as it doesn't change.
+    FrameTreeNode* root = web_contents()->GetFrameTree()->root();
+    ASSERT_EQ(1U, root->child_count());
+
+    FrameTreeNode* iframe_node = root->child_at(0);
+    GURL site_url(embedded_test_server()->GetURL("baz.com", "/title1.html"));
+    EXPECT_EQ(site_url, iframe_node->current_url());
+
+    RenderWidgetHostViewBase* root_rwhv =
+        static_cast<RenderWidgetHostViewBase*>(
+            root->current_frame_host()->GetRenderWidgetHost()->GetView());
+    RenderWidgetHostViewBase* child_rwhv =
+        static_cast<RenderWidgetHostViewBase*>(iframe_node->current_frame_host()
+                                                   ->GetRenderWidgetHost()
+                                                   ->GetView());
+
+    RenderWidgetHostInputEventRouter* router =
+        static_cast<WebContentsImpl*>(shell()->web_contents())
+            ->GetInputEventRouter();
+
+    WaitForChildFrameSurfaceReady(iframe_node->current_frame_host());
+
+    auto expect_gesture_with_position = base::BindRepeating(
+        [](blink::WebInputEvent::Type expected_type,
+           const gfx::Point& expected_position, content::InputEventAckSource,
+           content::InputEventAckState, const blink::WebInputEvent& event) {
+          if (event.GetType() != expected_type)
+            return false;
+
+          const blink::WebGestureEvent& gesture_event =
+              static_cast<const blink::WebGestureEvent&>(event);
+          EXPECT_NEAR(expected_position.x(), gesture_event.PositionInWidget().x,
+                      1);
+          EXPECT_NEAR(expected_position.y(), gesture_event.PositionInWidget().y,
+                      1);
+          EXPECT_EQ(blink::kWebGestureDeviceTouchscreen,
+                    gesture_event.SourceDevice());
+          return true;
+        });
+
+    blink::WebInputEvent::Type expected_gesture_type;
+    switch (test_type) {
+      case ScrollBubbling:
+        expected_gesture_type = blink::WebInputEvent::kGestureScrollBegin;
+        break;
+      case PinchGoesToMainFrame:
+        expected_gesture_type = blink::WebInputEvent::kGesturePinchBegin;
+        break;
+      default:
+        ASSERT_TRUE(false);
+    }
+
+    gfx::Point position_in_child(5, 5);
+    InputEventAckWaiter child_gesture_event_observer(
+        child_rwhv->GetRenderWidgetHost(),
+        base::BindRepeating(expect_gesture_with_position, expected_gesture_type,
+                            position_in_child));
+
+    gfx::Point position_in_root =
+        child_rwhv->TransformPointToRootCoordSpace(position_in_child);
+    InputEventAckWaiter root_gesture_event_observer(
+        root_rwhv->GetRenderWidgetHost(),
+        base::BindRepeating(expect_gesture_with_position, expected_gesture_type,
+                            position_in_root));
+
+    // Enable touch emulation.
+    auto* touch_emulator = router->GetTouchEmulator();
+    ASSERT_TRUE(touch_emulator);
+    touch_emulator->Enable(TouchEmulator::Mode::kEmulatingTouchFromMouse,
+                           ui::GestureProviderConfigType::CURRENT_PLATFORM);
+
+    // Create mouse events to emulate touch scroll. Since the page has no touch
+    // handlers, these events will be converted into a gesture scroll sequence.
+    base::TimeTicks simulated_event_time = ui::EventTimeForNow();
+    base::TimeDelta simulated_event_time_delta =
+        base::TimeDelta::FromMilliseconds(100);
+    blink::WebMouseEvent mouse_move_event =
+        SyntheticWebMouseEventBuilder::Build(blink::WebInputEvent::kMouseMove,
+                                             position_in_root.x(),
+                                             position_in_root.y(), 0);
+    mouse_move_event.SetTimeStamp(simulated_event_time);
+
+    int mouse_modifier = (test_type == PinchGoesToMainFrame)
+                             ? blink::WebInputEvent::kShiftKey
+                             : 0;
+    mouse_modifier |= blink::WebInputEvent::kLeftButtonDown;
+    blink::WebMouseEvent mouse_down_event =
+        SyntheticWebMouseEventBuilder::Build(
+            blink::WebInputEvent::kMouseDown, position_in_root.x(),
+            position_in_root.y(), mouse_modifier);
+    mouse_down_event.button = blink::WebMouseEvent::Button::kLeft;
+    simulated_event_time += simulated_event_time_delta;
+    mouse_down_event.SetTimeStamp(simulated_event_time);
+
+    blink::WebMouseEvent mouse_drag_event =
+        SyntheticWebMouseEventBuilder::Build(
+            blink::WebInputEvent::kMouseMove, position_in_root.x(),
+            position_in_root.y() + 20, mouse_modifier);
+    simulated_event_time += simulated_event_time_delta;
+    mouse_drag_event.SetTimeStamp(simulated_event_time);
+    mouse_drag_event.button = blink::WebMouseEvent::Button::kLeft;
+
+    blink::WebMouseEvent mouse_up_event = SyntheticWebMouseEventBuilder::Build(
+        blink::WebInputEvent::kMouseUp, position_in_root.x(),
+        position_in_root.y() + 20, mouse_modifier);
+    mouse_up_event.button = blink::WebMouseEvent::Button::kLeft;
+    simulated_event_time += simulated_event_time_delta;
+    mouse_up_event.SetTimeStamp(simulated_event_time);
+
+    // Send mouse events and wait for GesturePinchBegin.
+    router->RouteMouseEvent(root_rwhv, &mouse_move_event, ui::LatencyInfo());
+    router->RouteMouseEvent(root_rwhv, &mouse_down_event, ui::LatencyInfo());
+    router->RouteMouseEvent(root_rwhv, &mouse_drag_event, ui::LatencyInfo());
+    router->RouteMouseEvent(root_rwhv, &mouse_up_event, ui::LatencyInfo());
+
+    if (test_type == ScrollBubbling) {
+      // Verify child receives GestureScrollBegin.
+      child_gesture_event_observer.Wait();
+    }
+
+    // Verify the root receives the GesturePinchBegin or GestureScrollBegin,
+    // depending on |test_type|.
+    root_gesture_event_observer.Wait();
+
+    // Shut down.
+    touch_emulator->Disable();
+  }
+};
+
+IN_PROC_BROWSER_TEST_P(SitePerProcessEmulatedTouchBrowserTest,
+                       EmulatedTouchScrollBubbles) {
+  RunTest(ScrollBubbling);
+}
+
+IN_PROC_BROWSER_TEST_P(SitePerProcessEmulatedTouchBrowserTest,
+                       EmulatedTouchPinchGoesToMainFrame) {
+  RunTest(PinchGoesToMainFrame);
+}
+
 #if defined(USE_AURA) || defined(OS_ANDROID)
 
 // When unconsumed scrolls in a child bubble to the root and start an
@@ -1001,6 +1218,14 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
 // overscroll gesture.
 IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
                        RootConsumesScrollDuringOverscrollGesture) {
+#if defined(OS_ANDROID)
+  // TODO(835058): Fix flakiness on android with viz hit testing.
+  if (features::IsVizHitTestingEnabled()) {
+    LOG(INFO) << "Skipping test due to https://crbug.com/835058";
+    return;
+  }
+#endif
+
   GURL main_url(embedded_test_server()->GetURL(
       "a.com", "/cross_site_iframe_factory.html?a(b)"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
@@ -1207,7 +1432,15 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
 // results in a scroll. This is only handled by RenderWidgetHostViewAura
 // and is needed for trackpad scrolling on Chromebooks.
 #if defined(USE_AURA)
-IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest, ScrollEventToOOPIF) {
+
+#if defined(THREAD_SANITIZER)
+// Flaky: https://crbug.com/833380
+#define MAYBE_ScrollEventToOOPIF DISABLED_ScrollEventToOOPIF
+#else
+#define MAYBE_ScrollEventToOOPIF ScrollEventToOOPIF
+#endif
+IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
+                       MAYBE_ScrollEventToOOPIF) {
   GURL main_url(embedded_test_server()->GetURL(
       "/frame_tree/page_with_positioned_frame.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
@@ -1252,8 +1485,17 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest, ScrollEventToOOPIF) {
   EXPECT_EQ(child_frame_monitor.EventType(), blink::WebInputEvent::kMouseWheel);
 }
 
+#if defined(THREAD_SANITIZER)
+// Flaky: https://crbug.com/833380
+#define MAYBE_InputEventRouterWheelCoalesceTest \
+  DISABLED_InputEventRouterWheelCoalesceTest
+#else
+#define MAYBE_InputEventRouterWheelCoalesceTest \
+  InputEventRouterWheelCoalesceTest
+#endif
+
 IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
-                       InputEventRouterWheelCoalesceTest) {
+                       MAYBE_InputEventRouterWheelCoalesceTest) {
   GURL main_url(embedded_test_server()->GetURL(
       "/frame_tree/page_with_positioned_frame.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
@@ -1351,13 +1593,19 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
 }
 
 // Same test as above, but runs in high-dpi mode.
+// NOTE: This has to be renamed from SurfaceHitTestTest to
+// HighDPISurfaceHitTestTest. Otherwise MAYBE_SurfaceHitTestTest gets #defined
+// twice.
 #if defined(OS_ANDROID) || defined(OS_WIN)
 // High DPI browser tests are not needed on Android, and confuse some of the
 // coordinate calculations. Android uses fixed device scale factor.
 // Windows is disabled because of https://crbug.com/545547.
-#define MAYBE_HighDPISurfaceHitTestTest DISABLED_SurfaceHitTestTest
+#define MAYBE_HighDPISurfaceHitTestTest DISABLED_HighDPISurfaceHitTestTest
+#elif defined(THREAD_SANITIZER)
+// Flaky: https://crbug.com/833380
+#define MAYBE_HighDPISurfaceHitTestTest DISABLED_HighDPISurfaceHitTestTest
 #else
-#define MAYBE_HighDPISurfaceHitTestTest SurfaceHitTestTest
+#define MAYBE_HighDPISurfaceHitTestTest HighDPISurfaceHitTestTest
 #endif
 IN_PROC_BROWSER_TEST_P(SitePerProcessHighDPIHitTestBrowserTest,
                        MAYBE_HighDPISurfaceHitTestTest) {
@@ -1381,27 +1629,46 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
   OverlapSurfaceHitTestHelper(shell(), embedded_test_server());
 }
 
+#if defined(OS_LINUX)
+// Flaky timeouts and failures: https://crbug.com/833380
+#define MAYBE_OverlapSurfaceHitTestTest DISABLED_OverlapSurfaceHitTestTest
+#else
+#define MAYBE_OverlapSurfaceHitTestTest OverlapSurfaceHitTestTest
+#endif
 IN_PROC_BROWSER_TEST_P(SitePerProcessHighDPIHitTestBrowserTest,
-                       OverlapSurfaceHitTestTest) {
+                       MAYBE_OverlapSurfaceHitTestTest) {
   OverlapSurfaceHitTestHelper(shell(), embedded_test_server());
 }
 
+#if defined(OS_LINUX)
+// Flaky timeouts and failures: https://crbug.com/833380
+#define MAYBE_HitTestLayerSquashing DISABLED_HitTestLayerSquashing
+#else
+#define MAYBE_HitTestLayerSquashing HitTestLayerSquashing
+#endif
 IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
-                       HitTestLayerSquashing) {
+                       MAYBE_HitTestLayerSquashing) {
   HitTestLayerSquashing(shell(), embedded_test_server());
 }
 
 IN_PROC_BROWSER_TEST_P(SitePerProcessHighDPIHitTestBrowserTest,
-                       HitTestLayerSquashing) {
+                       MAYBE_HitTestLayerSquashing) {
   HitTestLayerSquashing(shell(), embedded_test_server());
 }
 
-IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest, HitTestWatermark) {
+#if defined(OS_LINUX)
+// Flaky timeouts and failures: https://crbug.com/833380
+#define MAYBE_HitTestWatermark DISABLED_HitTestWatermark
+#else
+#define MAYBE_HitTestWatermark HitTestWatermark
+#endif
+IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
+                       MAYBE_HitTestWatermark) {
   HitTestWatermark(shell(), embedded_test_server());
 }
 
 IN_PROC_BROWSER_TEST_P(SitePerProcessHighDPIHitTestBrowserTest,
-                       HitTestWatermark) {
+                       MAYBE_HitTestWatermark) {
   HitTestWatermark(shell(), embedded_test_server());
 }
 
@@ -1478,10 +1745,18 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
   EXPECT_EQ(result.target_location.value(), parent_location);
 }
 
+#if defined(THREAD_SANITIZER)
+// Flaky: https://crbug.com/833380
+#define MAYBE_SurfaceHitTestPointerEventsNone \
+  DISABLED_SurfaceHitTestPointerEventsNone
+#else
+#define MAYBE_SurfaceHitTestPointerEventsNone SurfaceHitTestPointerEventsNone
+#endif
+
 // This test tests that browser process hittesting ignores frames with
 // pointer-events: none.
 IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
-                       SurfaceHitTestPointerEventsNone) {
+                       MAYBE_SurfaceHitTestPointerEventsNone) {
   GURL main_url(embedded_test_server()->GetURL(
       "/frame_tree/page_with_positioned_frame_pointer-events_none.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
@@ -1718,6 +1993,109 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
 }
 #endif  // !defined(OS_ANDROID)
 
+#if defined(OS_ANDROID)
+// The following test ensures that we don't get a crash if a tooltip is
+// triggered on Android. This test is nearly identical to
+// SitePerProcessHitTestBrowserTest.CrossProcessTooltipTestAndroid, except
+// it omits the tooltip monitor, and all dereferences of GetCursorManager().
+IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
+                       CrossProcessTooltipTestAndroid) {
+  GURL main_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b)"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+
+  EXPECT_EQ(
+      " Site A ------------ proxies for B\n"
+      "   +--Site B ------- proxies for A\n"
+      "Where A = http://a.com/\n"
+      "      B = http://b.com/",
+      DepictFrameTree(root));
+
+  FrameTreeNode* b_node = root->child_at(0);
+
+  RenderWidgetHostViewBase* rwhv_a = static_cast<RenderWidgetHostViewBase*>(
+      root->current_frame_host()->GetRenderWidgetHost()->GetView());
+  RenderWidgetHostViewBase* rwhv_b = static_cast<RenderWidgetHostViewBase*>(
+      b_node->current_frame_host()->GetRenderWidgetHost()->GetView());
+
+  // On Android we don't expect GetCursorManager() to return anything other
+  // than nullptr. If it did, this test would be unnecessary.
+  DCHECK(!rwhv_a->GetCursorManager());
+
+  WaitForChildFrameSurfaceReady(b_node->current_frame_host());
+
+  // Make sure the point_in_a_frame value is outside the default 8px margin
+  // for the body element.
+  gfx::Point point_in_a_frame(10, 10);
+  gfx::Point point_in_b_frame =
+      rwhv_b->TransformPointToRootCoordSpace(gfx::Point(25, 25));
+
+  // Create listeners for mouse events. These are used to verify that the
+  // RenderWidgetHostInputEventRouter is generating MouseLeave, etc for
+  // the right renderers.
+  RenderWidgetHostMouseEventMonitor a_frame_monitor(
+      root->current_frame_host()->GetRenderWidgetHost());
+  RenderWidgetHostMouseEventMonitor b_frame_monitor(
+      b_node->current_frame_host()->GetRenderWidgetHost());
+
+  // Add tooltip text to both the body and the iframe in A.
+  std::string script_a =
+      "body = document.body.setAttribute('title', 'body_a_tooltip');\n"
+      "iframe = document.getElementsByTagName('iframe')[0];\n"
+      "iframe.setAttribute('title','iframe_for_b');";
+  EXPECT_TRUE(ExecuteScript(root->current_frame_host(), script_a));
+  std::string script_b =
+      "body = document.body.setAttribute('title', 'body_b_tooltip');";
+  EXPECT_TRUE(ExecuteScript(b_node->current_frame_host(), script_b));
+
+  // Send mouse events to both A and B.
+  blink::WebMouseEvent mouse_event(
+      blink::WebInputEvent::kMouseMove, blink::WebInputEvent::kNoModifiers,
+      blink::WebInputEvent::GetStaticTimeStampForTests());
+  auto* router = web_contents()->GetInputEventRouter();
+
+  // Alternate mouse moves between main frame and the cross-process iframe to
+  // test that the tool tip in the iframe can override the one set by the main
+  // frame renderer, even on a second entry into the iframe.
+  gfx::Point current_point;
+  for (int iteration = 0; iteration < 2; ++iteration) {
+    // The following is a bit of a hack to prevent hitting the same
+    // position/node check in ChromeClient::SetToolTip().
+    current_point = point_in_a_frame;
+    current_point.Offset(iteration, iteration);
+    SetWebEventPositions(&mouse_event, current_point, rwhv_a);
+    RouteMouseEventAndWaitUntilDispatch(router, rwhv_a, rwhv_a, &mouse_event);
+    EXPECT_TRUE(a_frame_monitor.EventWasReceived());
+    a_frame_monitor.ResetEventReceived();
+    // B will receive a mouseLeave on all but the first iteration.
+    EXPECT_EQ(iteration != 0, b_frame_monitor.EventWasReceived());
+    b_frame_monitor.ResetEventReceived();
+
+    // Next send a MouseMove to B frame, and A should receive a MouseMove event.
+    current_point = point_in_b_frame;
+    current_point.Offset(iteration, iteration);
+    SetWebEventPositions(&mouse_event, current_point, rwhv_a);
+    RouteMouseEventAndWaitUntilDispatch(router, rwhv_a, rwhv_b, &mouse_event);
+    EXPECT_TRUE(a_frame_monitor.EventWasReceived());
+    EXPECT_EQ(a_frame_monitor.event().GetType(),
+              blink::WebInputEvent::kMouseMove);
+    a_frame_monitor.ResetEventReceived();
+    EXPECT_TRUE(b_frame_monitor.EventWasReceived());
+    b_frame_monitor.ResetEventReceived();
+  }
+
+  // This is an (arbitrary) delay to allow the test to crash if it's going to.
+  base::RunLoop run_loop;
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, run_loop.QuitClosure(), TestTimeouts::action_max_timeout());
+  run_loop.Run();
+}
+#endif  // defined(OS_ANDROID)
+
 // This test verifies that MouseEnter and MouseLeave events fire correctly
 // when the mouse cursor moves between processes.
 IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
@@ -1833,13 +2211,22 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
   EXPECT_TRUE(d_frame_monitor.EventWasReceived());
 }
 
+#if defined(OS_LINUX)
+// Flaky timeouts and failures: https://crbug.com/833380
+#define MAYBE_CrossProcessMouseCapture DISABLED_CrossProcessMouseCapture
+#else
+#define MAYBE_CrossProcessMouseCapture CrossProcessMouseCapture
+#endif
 // Verify that mouse capture works on a RenderWidgetHostView level, so that
 // dragging scroll bars and selecting text continues even when the mouse
 // cursor crosses over cross-process frame boundaries.
+// TODO(kenrb): This currently only works for scrollbar dragging.
+// Other reasons for a node to capture mouse input need to be addressed. See
+// https://crbug.com/647378.
 IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
-                       CrossProcessMouseCapture) {
+                       MAYBE_CrossProcessMouseCapture) {
   GURL main_url(embedded_test_server()->GetURL(
-      "/frame_tree/page_with_positioned_frame.html"));
+      "/frame_tree/page_with_large_scrollable_frame.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
 
   // It is safe to obtain the root frame tree node here, as it doesn't change.
@@ -1847,10 +2234,12 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
   ASSERT_EQ(1U, root->child_count());
 
   FrameTreeNode* child_node = root->child_at(0);
-  GURL site_url(embedded_test_server()->GetURL("baz.com", "/title1.html"));
-  EXPECT_EQ(site_url, child_node->current_url());
-  EXPECT_NE(shell()->web_contents()->GetSiteInstance(),
-            child_node->current_frame_host()->GetSiteInstance());
+  ASSERT_EQ(
+      " Site A ------------ proxies for B\n"
+      "   +--Site B ------- proxies for A\n"
+      "Where A = http://127.0.0.1/\n"
+      "      B = http://baz.com/",
+      DepictFrameTree(root));
 
   // Create listeners for mouse events.
   RenderWidgetHostMouseEventMonitor main_frame_monitor(
@@ -1896,76 +2285,78 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
   EXPECT_FALSE(main_frame_monitor.EventWasReceived());
   EXPECT_TRUE(child_frame_monitor.EventWasReceived());
 
-  // Target MouseMove to main frame. This should still be routed to the
-  // child frame because it is now capturing mouse input.
+  // Target MouseMove to main frame. This should be routed to the main frame
+  // because the child frame is not capturing input.
   mouse_event.SetType(blink::WebInputEvent::kMouseMove);
   mouse_event.SetModifiers(blink::WebInputEvent::kLeftButtonDown);
   SetWebEventPositions(&mouse_event, gfx::Point(1, 1), root_view);
-  // Note that this event is sent twice, with the monitors cleared after
-  // the first time, because the first MouseMove to the child frame
-  // causes a MouseMove to be sent to the main frame also, which we
-  // need to ignore.
-  router->RouteMouseEvent(root_view, &mouse_event, ui::LatencyInfo());
-  main_frame_monitor.ResetEventReceived();
-  child_frame_monitor.ResetEventReceived();
-  SetWebEventPositions(&mouse_event, gfx::Point(1, 5), root_view);
-  RouteMouseEventAndWaitUntilDispatch(router, root_view, rwhv_child,
+  RouteMouseEventAndWaitUntilDispatch(router, root_view, root_view,
                                       &mouse_event);
 
-  EXPECT_FALSE(main_frame_monitor.EventWasReceived());
-  EXPECT_TRUE(child_frame_monitor.EventWasReceived());
-
-  // A MouseUp to the child frame should cancel the mouse capture.
-  mouse_event.SetType(blink::WebInputEvent::kMouseUp);
-  mouse_event.SetModifiers(blink::WebInputEvent::kNoModifiers);
-  SetWebEventPositions(&mouse_event,
-                       gfx::Point(child_frame_target_x, child_frame_target_y),
-                       root_view);
+  // Dispatch twice because the router generates an extra MouseLeave for the
+  // child frame.
   main_frame_monitor.ResetEventReceived();
   child_frame_monitor.ResetEventReceived();
-  RouteMouseEventAndWaitUntilDispatch(router, root_view, rwhv_child,
+  RouteMouseEventAndWaitUntilDispatch(router, root_view, root_view,
                                       &mouse_event);
-
-  EXPECT_FALSE(main_frame_monitor.EventWasReceived());
-  EXPECT_TRUE(child_frame_monitor.EventWasReceived());
-
-  // Subsequent MouseMove events targeted to the main frame should be routed
-  // to that frame.
-  mouse_event.SetType(blink::WebInputEvent::kMouseMove);
-  SetWebEventPositions(&mouse_event, gfx::Point(1, 10), root_view);
-  // Sending the MouseMove twice for the same reason as above.
-  router->RouteMouseEvent(root_view, &mouse_event, ui::LatencyInfo());
-  main_frame_monitor.ResetEventReceived();
-  child_frame_monitor.ResetEventReceived();
-  SetWebEventPositions(&mouse_event, gfx::Point(1, 15), root_view);
-  router->RouteMouseEvent(root_view, &mouse_event, ui::LatencyInfo());
 
   EXPECT_TRUE(main_frame_monitor.EventWasReceived());
   EXPECT_FALSE(child_frame_monitor.EventWasReceived());
 
-  // Target MouseDown to the main frame to cause it to capture input.
+// Targeting a scrollbar with a click doesn't work on Mac or Android.
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
+  scoped_refptr<SetMouseCaptureInterceptor> interceptor =
+      new SetMouseCaptureInterceptor(static_cast<RenderWidgetHostImpl*>(
+          root->current_frame_host()->GetRenderWidgetHost()));
+
+  // Now send a MouseDown to target the thumb part of the scroll bar, which
+  // should initiate mouse capture for the main frame.
   mouse_event.SetType(blink::WebInputEvent::kMouseDown);
-  SetWebEventPositions(&mouse_event, gfx::Point(1, 20), root_view);
-  main_frame_monitor.ResetEventReceived();
-  child_frame_monitor.ResetEventReceived();
+  SetWebEventPositions(&mouse_event, gfx::Point(100, 25), root_view);
   router->RouteMouseEvent(root_view, &mouse_event, ui::LatencyInfo());
 
   EXPECT_TRUE(main_frame_monitor.EventWasReceived());
-  EXPECT_FALSE(child_frame_monitor.EventWasReceived());
 
-  // Sending a MouseMove to the child frame should still result in the main
-  // frame receiving the event.
+  // Wait for the mouse capture message.
+  interceptor->Wait();
+  EXPECT_TRUE(interceptor->Capturing());
+
+  // Yield the thread, in order to let the capture message be processed by its
+  // actual handler.
+  {
+    base::RunLoop loop;
+    base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
+                                                  loop.QuitClosure());
+    loop.Run();
+  }
+
+  main_frame_monitor.ResetEventReceived();
+  child_frame_monitor.ResetEventReceived();
+
+  // Now that the main frame is capturing, a MouseMove targeted to the child
+  // frame should be received by the main frame.
   mouse_event.SetType(blink::WebInputEvent::kMouseMove);
-  mouse_event.SetModifiers(blink::WebInputEvent::kLeftButtonDown);
   SetWebEventPositions(&mouse_event,
                        gfx::Point(child_frame_target_x, child_frame_target_y),
                        root_view);
-  main_frame_monitor.ResetEventReceived();
-  child_frame_monitor.ResetEventReceived();
-  router->RouteMouseEvent(root_view, &mouse_event, ui::LatencyInfo());
-
+  RouteMouseEventAndWaitUntilDispatch(router, root_view, root_view,
+                                      &mouse_event);
   EXPECT_TRUE(main_frame_monitor.EventWasReceived());
   EXPECT_FALSE(child_frame_monitor.EventWasReceived());
+  main_frame_monitor.ResetEventReceived();
+  child_frame_monitor.ResetEventReceived();
+
+  // A MouseUp sent anywhere should cancel the mouse capture.
+  mouse_event.SetType(blink::WebInputEvent::kMouseUp);
+  SetWebEventPositions(&mouse_event,
+                       gfx::Point(child_frame_target_x, child_frame_target_y),
+                       root_view);
+  RouteMouseEventAndWaitUntilDispatch(router, root_view, root_view,
+                                      &mouse_event);
+
+  interceptor->Wait();
+  EXPECT_FALSE(interceptor->Capturing());
+#endif  // !defined(OS_MACOSX) && !defined(OS_ANDROID)
 }
 
 // There are no cursors on Android.
@@ -2102,14 +2493,16 @@ void CursorUpdateReceivedFromCrossSiteIframeHelper(
 
 }  // namespace
 
+// Flaky: https://crbug.com/833380
 IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
-                       CursorUpdateReceivedFromCrossSiteIframe) {
+                       DISABLED_CursorUpdateReceivedFromCrossSiteIframe) {
   CursorUpdateReceivedFromCrossSiteIframeHelper(shell(),
                                                 embedded_test_server());
 }
 
+// Flaky: https://crbug.com/833380
 IN_PROC_BROWSER_TEST_P(SitePerProcessHighDPIHitTestBrowserTest,
-                       CursorUpdateReceivedFromCrossSiteIframe) {
+                       DISABLED_CursorUpdateReceivedFromCrossSiteIframe) {
   CursorUpdateReceivedFromCrossSiteIframeHelper(shell(),
                                                 embedded_test_server());
 }
@@ -2784,8 +3177,9 @@ void SendTouchpadFlingSequenceWithExpectedTarget(
                               ui::EventTimeForNow(), 0, 1, 0, 1, 0, 1);
   UpdateEventRootLocation(&fling_start, root_view_aura);
   TestInputEventObserver target_monitor(expected_target->GetRenderWidgetHost());
-  InputEventAckWaiter waiter(expected_target->GetRenderWidgetHost(),
-                             blink::WebInputEvent::kGestureFlingStart);
+  InputEventAckWaiter fling_start_waiter(
+      expected_target->GetRenderWidgetHost(),
+      blink::WebInputEvent::kGestureFlingStart);
   root_view_aura->OnScrollEvent(&fling_start);
   // If the expected target is not the root, then we should be doing async
   // targeting first. So event dispatch should not happen synchronously.
@@ -2793,11 +3187,17 @@ void SendTouchpadFlingSequenceWithExpectedTarget(
   // such cases.
   if (root_view != expected_target)
     EXPECT_FALSE(target_monitor.EventWasReceived());
-  waiter.Wait();
+  fling_start_waiter.Wait();
   EXPECT_TRUE(target_monitor.EventWasReceived());
   EXPECT_EQ(expected_target, router_touchpad_gesture_target);
   target_monitor.ResetEventsReceived();
 
+  // Send a GFC event, the fling_controller will process the GFC and stop the
+  // fling by generating a wheel event with phaseEnded. The
+  // mouse_wheel_event_queue will process the wheel event and generate a GSE.
+  InputEventAckWaiter gestrue_scroll_end_waiter(
+      expected_target->GetRenderWidgetHost(),
+      blink::WebInputEvent::kGestureScrollEnd);
   ui::ScrollEvent fling_cancel(ui::ET_SCROLL_FLING_CANCEL, gesture_point,
                                ui::EventTimeForNow(), 0, 1, 0, 1, 0, 1);
   UpdateEventRootLocation(&fling_cancel, root_view_aura);
@@ -2806,24 +3206,22 @@ void SendTouchpadFlingSequenceWithExpectedTarget(
   EXPECT_TRUE(target_monitor.EventWasReceived());
   EXPECT_EQ(target_monitor.EventType(),
             blink::WebInputEvent::kGestureFlingCancel);
-
-  if (root_view_aura->wheel_scroll_latching_enabled()) {
-    blink::WebGestureEvent gesture_event(
-        blink::WebGestureEvent::kGestureScrollEnd,
-        blink::WebInputEvent::kNoModifiers,
-        blink::WebInputEvent::GetStaticTimeStampForTests(),
-        blink::kWebGestureDeviceTouchpad);
-    gesture_event.SetPositionInWidget(gfx::PointF(gesture_point));
-    expected_target->GetRenderWidgetHost()->ForwardGestureEvent(gesture_event);
-  }
+  gestrue_scroll_end_waiter.Wait();
 }
 #endif  // !defined(OS_WIN)
 
 }  // anonymous namespace
 
 // Flaky, see https://crbug.com/823578
+#if defined(OS_WIN)
+#define MAYBE_InputEventRouterGestureTargetMapTest \
+  DISABLED_InputEventRouterGestureTargetMapTest
+#else
+#define MAYBE_InputEventRouterGestureTargetMapTest \
+  InputEventRouterGestureTargetMapTest
+#endif
 IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
-                       DISABLED_InputEventRouterGestureTargetMapTest) {
+                       MAYBE_InputEventRouterGestureTargetMapTest) {
   GURL main_url(embedded_test_server()->GetURL(
       "/frame_tree/page_with_positioned_nested_frames.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
@@ -2996,6 +3394,14 @@ IN_PROC_BROWSER_TEST_P(
 
 IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
                        InputEventRouterTouchpadGestureTargetTest) {
+#if defined(OS_WIN)
+  // TODO(838835): Flaky with viz hit testing
+  if (features::IsVizHitTestingEnabled()) {
+    LOG(INFO) << "Skipping test due to https://crbug.com/838835";
+    return;
+  }
+#endif
+
   GURL main_url(embedded_test_server()->GetURL(
       "/frame_tree/page_with_positioned_nested_frames.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
@@ -3166,25 +3572,29 @@ void CreateContextMenuTestHelper(
   EXPECT_NEAR(point.y(), params.y, 2);
 }
 
+#if defined(OS_ANDROID) || defined(OS_WIN)
+// High DPI tests don't work properly on Android, which has fixed scale factor.
+// Windows is disabled because of https://crbug.com/545547.
+#define MAYBE_CreateContextMenuTest DISABLED_CreateContextMenuTest
+#elif defined(THREAD_SANITIZER)
+// TSAN is flaky on both standard and High DPI: https://crbug.com/833380
+#define MAYBE_CreateContextMenuTest DISABLED_CreateContextMenuTest
+#else
+#define MAYBE_CreateContextMenuTest CreateContextMenuTest
+#endif
+
 // Test that a mouse right-click to an out-of-process iframe causes a context
 // menu to be generated with the correct screen position.
 IN_PROC_BROWSER_TEST_P(SitePerProcessHitTestBrowserTest,
-                       CreateContextMenuTest) {
+                       MAYBE_CreateContextMenuTest) {
   CreateContextMenuTestHelper(shell(), embedded_test_server());
 }
 
 // Test that a mouse right-click to an out-of-process iframe causes a context
 // menu to be generated with the correct screen position on a screen with
 // non-default scale factor.
-#if defined(OS_ANDROID) || defined(OS_WIN)
-// High DPI tests don't work properly on Android, which has fixed scale factor.
-// Windows is disabled because of https://crbug.com/545547.
-#define MAYBE_HighDPICreateContextMenuTest DISABLED_HighDPICreateContextMenuTest
-#else
-#define MAYBE_HighDPICreateContextMenuTest HighDPICreateContextMenuTest
-#endif
 IN_PROC_BROWSER_TEST_P(SitePerProcessHighDPIHitTestBrowserTest,
-                       MAYBE_HighDPICreateContextMenuTest) {
+                       MAYBE_CreateContextMenuTest) {
   CreateContextMenuTestHelper(shell(), embedded_test_server());
 }
 
@@ -3469,6 +3879,7 @@ class SitePerProcessGestureHitTestBrowserTest
         ui::ET_GESTURE_SCROLL_BEGIN);
     gesture_scroll_begin_details.set_device_type(
         ui::GestureDeviceType::DEVICE_TOUCHSCREEN);
+    gesture_scroll_begin_details.set_touch_points(2);
     ui::GestureEvent gesture_scroll_begin(
         position.x(), position.y(), 0, ui::EventTimeForNow(),
         gesture_scroll_begin_details, touch_pressed.unique_event_id());
@@ -3857,6 +4268,10 @@ INSTANTIATE_TEST_CASE_P(/* no prefix */,
                                          testing::ValuesIn(kOneScale)));
 INSTANTIATE_TEST_CASE_P(/* no prefix */,
                         SitePerProcessNonIntegerScaleFactorHitTestBrowserTest,
+                        testing::Combine(testing::ValuesIn(kHitTestOption),
+                                         testing::ValuesIn(kOneScale)));
+INSTANTIATE_TEST_CASE_P(/* no prefix */,
+                        SitePerProcessEmulatedTouchBrowserTest,
                         testing::Combine(testing::ValuesIn(kHitTestOption),
                                          testing::ValuesIn(kOneScale)));
 #if defined(USE_AURA)

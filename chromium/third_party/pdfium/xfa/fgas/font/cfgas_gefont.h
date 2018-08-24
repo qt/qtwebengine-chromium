@@ -22,8 +22,6 @@ class CFX_UnicodeEncoding;
 
 class CFGAS_GEFont : public Retainable {
  public:
-  template <typename T>
-  friend class RetainPtr;
   template <typename T, typename... Args>
   friend RetainPtr<T> pdfium::MakeRetain(Args&&... args);
 
@@ -38,7 +36,7 @@ class CFGAS_GEFont : public Retainable {
       CFGAS_FontMgr* pFontMgr);
 
   uint32_t GetFontStyles() const;
-  bool GetCharWidth(wchar_t wUnicode, int32_t& iWidth);
+  bool GetCharWidth(wchar_t wUnicode, int32_t* pWidth);
   int32_t GetGlyphIndex(wchar_t wUnicode);
   int32_t GetAscent() const;
   int32_t GetDescent() const;
@@ -48,10 +46,6 @@ class CFGAS_GEFont : public Retainable {
 
   RetainPtr<CFGAS_GEFont> GetSubstFont(int32_t iGlyphIndex);
   CFX_Font* GetDevFont() const { return m_pFont; }
-
-  void SetFontProvider(CFGAS_PDFFontMgr* pProvider) {
-    m_pProvider.Reset(pProvider);
-  }
 
   void SetLogicalFontStyle(uint32_t dwLogFontStyle) {
     m_bUseLogFontStyle = true;
@@ -67,8 +61,6 @@ class CFGAS_GEFont : public Retainable {
                         uint32_t dwFontStyles,
                         uint16_t wCodePage);
   bool LoadFontInternal(const uint8_t* pBuffer, int32_t length);
-  bool LoadFontInternal(const RetainPtr<CFX_SeekableStreamProxy>& pFontStream,
-                        bool bSaveStream);
 #endif  // _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
   bool LoadFontInternal(std::unique_ptr<CFX_Font> pInternalFont);
   bool LoadFontInternal(CFX_Font* pExternalFont);
@@ -84,8 +76,6 @@ class CFGAS_GEFont : public Retainable {
   bool m_bExternalFont;
   RetainPtr<CFGAS_GEFont> m_pSrcFont;  // Only set by ctor, so no cycles.
   CFGAS_FontMgr::ObservedPtr m_pFontMgr;
-  CFGAS_PDFFontMgr::ObservedPtr m_pProvider;
-  RetainPtr<CFX_SeekableStreamProxy> m_pStream;
   RetainPtr<IFX_SeekableReadStream> m_pFileRead;
   std::unique_ptr<CFX_UnicodeEncoding> m_pFontEncoding;
   std::map<wchar_t, int32_t> m_CharWidthMap;

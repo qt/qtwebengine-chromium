@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/callback.h"
+#include "base/single_thread_task_runner.h"
 #include "content/common/content_export.h"
 #include "content/renderer/media/webrtc/webrtc_media_stream_adapter_map.h"
 #include "content/renderer/media/webrtc/webrtc_media_stream_track_adapter_map.h"
@@ -62,7 +63,10 @@ class CONTENT_EXPORT RTCRtpSender : public blink::WebRTCRtpSender {
                     blink::WebRTCVoidRequest request) override;
   std::unique_ptr<blink::WebRTCDTMFSenderHandler> GetDtmfSender()
       const override;
-  std::unique_ptr<blink::WebRTCRtpParameters> GetParameters() const override;
+  std::unique_ptr<webrtc::RtpParameters> GetParameters() const override;
+  void SetParameters(blink::WebVector<webrtc::RtpEncodingParameters>,
+                     webrtc::DegradationPreference,
+                     blink::WebRTCVoidRequest) override;
   void GetStats(std::unique_ptr<blink::WebRTCStatsReportCallback>) override;
 
   webrtc::RtpSenderInterface* webrtc_sender() const;

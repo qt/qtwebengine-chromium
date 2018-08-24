@@ -7,10 +7,13 @@
 #include "xfa/fxfa/parser/cxfa_document.h"
 
 #include <set>
+#include <utility>
 
 #include "core/fxcrt/fx_extension.h"
-#include "core/fxcrt/fx_fallthrough.h"
+#include "core/fxcrt/xml/cfx_xmldocument.h"
 #include "fxjs/cfxjse_engine.h"
+#include "third_party/base/compiler_specific.h"
+#include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/cxfa_ffnotify.h"
 #include "xfa/fxfa/parser/cscript_datawindow.h"
 #include "xfa/fxfa/parser/cscript_eventpseudomodel.h"
@@ -442,7 +445,7 @@ CXFA_Node* FindMatchingDataNode(
           pResult = pGlobalBindNode;
           break;
         }
-        FX_FALLTHROUGH;
+        FALLTHROUGH;
       case XFA_AttributeEnum::Once: {
         bAccessedDataDOM = true;
         CXFA_Node* pOnceBindNode = FindOnceDataNode(
@@ -514,7 +517,7 @@ void CreateDataBinding(CXFA_Node* pFormNode,
         pDataNode->JSObject()->SetCData(XFA_Attribute::ContentType,
                                         wsContentType, false, false);
         if (!wsHref.IsEmpty())
-          pXMLDataElement->SetString(L"href", wsHref);
+          pXMLDataElement->SetAttribute(L"href", wsHref);
 
         break;
       }
@@ -537,8 +540,8 @@ void CreateDataBinding(CXFA_Node* pFormNode,
           } else {
             CFX_XMLNode* pXMLNode = pDataNode->GetXMLMappingNode();
             ASSERT(pXMLNode->GetType() == FX_XMLNODE_Element);
-            static_cast<CFX_XMLElement*>(pXMLNode)->SetString(L"xfa:dataNode",
-                                                              L"dataGroup");
+            static_cast<CFX_XMLElement*>(pXMLNode)->SetAttribute(
+                L"xfa:dataNode", L"dataGroup");
           }
         } else if (!wsValue.IsEmpty()) {
           pDataNode->JSObject()->SetAttributeValue(
@@ -657,14 +660,14 @@ void CreateDataBinding(CXFA_Node* pFormNode,
         ASSERT(pXMLDataElement);
 
         WideString wsContentType =
-            pXMLDataElement->GetString(L"xfa:contentType");
+            pXMLDataElement->GetAttribute(L"xfa:contentType");
         if (!wsContentType.IsEmpty()) {
           pDataNode->JSObject()->SetCData(XFA_Attribute::ContentType,
                                           wsContentType, false, false);
           image->SetContentType(wsContentType);
         }
 
-        WideString wsHref = pXMLDataElement->GetString(L"href");
+        WideString wsHref = pXMLDataElement->GetAttribute(L"href");
         if (!wsHref.IsEmpty())
           image->SetHref(wsHref);
       }
@@ -1280,7 +1283,9 @@ CXFA_Document::CXFA_Document(CXFA_FFNotify* notify)
       m_dwDocFlags(0) {}
 
 CXFA_Document::~CXFA_Document() {
-  // Remove all the bindings before freeing the node as the ownership is wonky.
+  // The destruction order of the nodes is not known because they're stored in a
+  // list in the document. Therefore. the binding nodes must be released before
+  // freeing the nodes to avoid dangling UnownedPtrs.
   if (m_pRootNode)
     m_pRootNode->ReleaseBindingNodes();
 }
@@ -1446,17 +1451,19 @@ CFXJSE_Engine* CXFA_Document::GetScriptContext() const {
 XFA_VERSION CXFA_Document::RecognizeXFAVersionNumber(
     const WideString& wsTemplateNS) {
   WideStringView wsTemplateURIPrefix(kTemplateNS);
-  size_t nPrefixLength = wsTemplateURIPrefix.GetLength();
-  if (WideStringView(wsTemplateNS.c_str(), wsTemplateNS.GetLength()) !=
-      wsTemplateURIPrefix) {
+  if (wsTemplateNS.GetLength() <= wsTemplateURIPrefix.GetLength())
     return XFA_VERSION_UNKNOWN;
-  }
-  auto nDotPos = wsTemplateNS.Find('.', nPrefixLength);
+
+  size_t prefixLength = wsTemplateURIPrefix.GetLength();
+  if (WideStringView(wsTemplateNS.c_str(), prefixLength) != wsTemplateURIPrefix)
+    return XFA_VERSION_UNKNOWN;
+
+  auto nDotPos = wsTemplateNS.Find('.', prefixLength);
   if (!nDotPos.has_value())
     return XFA_VERSION_UNKNOWN;
 
   int8_t iMajor = FXSYS_wtoi(
-      wsTemplateNS.Mid(nPrefixLength, nDotPos.value() - nPrefixLength).c_str());
+      wsTemplateNS.Mid(prefixLength, nDotPos.value() - prefixLength).c_str());
   int8_t iMinor =
       FXSYS_wtoi(wsTemplateNS
                      .Mid(nDotPos.value() + 1,
@@ -1510,12 +1517,13 @@ void CXFA_Document::DoProtoMerge() {
   }
 
   for (CXFA_Node* pUseHrefNode : sUseNodes) {
+    // Must outlive the WideStringViews below.
+    WideString wsUseVal =
+        pUseHrefNode->JSObject()->GetCData(XFA_Attribute::Usehref);
     WideStringView wsURI;
     WideStringView wsID;
     WideStringView wsSOM;
 
-    WideString wsUseVal =
-        pUseHrefNode->JSObject()->GetCData(XFA_Attribute::Usehref);
     if (!wsUseVal.IsEmpty()) {
       auto uSharpPos = wsUseVal.Find('#');
       if (!uSharpPos.has_value()) {
@@ -1624,18 +1632,20 @@ void CXFA_Document::DoDataMerge() {
   CXFA_Node* pDatasetsRoot = ToNode(GetXFAObject(XFA_HASHCODE_Datasets));
   if (!pDatasetsRoot) {
     // Ownership will be passed in the AppendChild below to the XML tree.
-    auto pDatasetsXMLNode = pdfium::MakeUnique<CFX_XMLElement>(L"xfa:datasets");
-    pDatasetsXMLNode->SetString(L"xmlns:xfa",
-                                L"http://www.xfa.org/schema/xfa-data/1.0/");
+    auto* pDatasetsXMLNode =
+        notify_->GetHDOC()->GetXMLDocument()->CreateNode<CFX_XMLElement>(
+            L"xfa:datasets");
+    pDatasetsXMLNode->SetAttribute(L"xmlns:xfa",
+                                   L"http://www.xfa.org/schema/xfa-data/1.0/");
     pDatasetsRoot =
         CreateNode(XFA_PacketType::Datasets, XFA_Element::DataModel);
     pDatasetsRoot->JSObject()->SetCData(XFA_Attribute::Name, L"datasets", false,
                                         false);
 
-    CFX_XMLElement* ref = pDatasetsXMLNode.get();
-    m_pRootNode->GetXMLMappingNode()->AppendChild(pDatasetsXMLNode.release());
+    m_pRootNode->GetXMLMappingNode()->AppendChild(pDatasetsXMLNode);
     m_pRootNode->InsertChild(pDatasetsRoot, nullptr);
-    pDatasetsRoot->SetXMLMappingNode(ref);
+
+    pDatasetsRoot->SetXMLMappingNode(pDatasetsXMLNode);
   }
 
   CXFA_Node *pDataRoot = nullptr, *pDDRoot = nullptr;
@@ -1668,8 +1678,11 @@ void CXFA_Document::DoDataMerge() {
   if (!pDataRoot) {
     pDataRoot = CreateNode(XFA_PacketType::Datasets, XFA_Element::DataGroup);
     pDataRoot->JSObject()->SetCData(XFA_Attribute::Name, L"data", false, false);
-    pDataRoot->SetXMLMappingNode(
-        pdfium::MakeUnique<CFX_XMLElement>(L"xfa:data"));
+
+    auto* elem =
+        notify_->GetHDOC()->GetXMLDocument()->CreateNode<CFX_XMLElement>(
+            L"xfa:data");
+    pDataRoot->SetXMLMappingNode(elem);
     pDatasetsRoot->InsertChild(pDataRoot, nullptr);
   }
 
@@ -1723,8 +1736,11 @@ void CXFA_Document::DoDataMerge() {
         CreateNode(XFA_PacketType::Datasets, XFA_Element::DataGroup));
     pDataTopLevel->JSObject()->SetCData(XFA_Attribute::Name, wsDataTopLevelName,
                                         false, false);
-    pDataTopLevel->SetXMLMappingNode(
-        pdfium::MakeUnique<CFX_XMLElement>(wsDataTopLevelName));
+
+    auto* elem =
+        notify_->GetHDOC()->GetXMLDocument()->CreateNode<CFX_XMLElement>(
+            wsDataTopLevelName);
+    pDataTopLevel->SetXMLMappingNode(elem);
 
     CXFA_Node* pBeforeNode = pDataRoot->GetFirstChild();
     pDataRoot->InsertChild(pDataTopLevel, pBeforeNode);

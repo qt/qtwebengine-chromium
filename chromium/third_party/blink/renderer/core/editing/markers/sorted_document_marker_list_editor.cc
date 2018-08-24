@@ -16,7 +16,7 @@ void SortedDocumentMarkerListEditor::AddMarkerWithoutMergingOverlapping(
     return;
   }
 
-  const auto pos = std::lower_bound(
+  auto* const pos = std::lower_bound(
       list->begin(), list->end(), marker,
       [](const Member<DocumentMarker>& marker_in_list,
          const DocumentMarker* marker_to_insert) {
@@ -143,9 +143,9 @@ bool SortedDocumentMarkerListEditor::ShiftMarkersContentIndependent(
   bool did_shift_marker = false;
   for (MarkerList::iterator it = shift_range_begin; it != list->end(); ++it) {
     DocumentMarker& marker = **it;
-    Optional<DocumentMarker::MarkerOffsets> result =
+    base::Optional<DocumentMarker::MarkerOffsets> result =
         marker.ComputeOffsetsAfterShift(offset, old_length, new_length);
-    if (result == WTF::nullopt) {
+    if (result == base::nullopt) {
       if (erase_range_begin == list->end())
         erase_range_begin = it;
       erase_range_end = std::next(it);
@@ -172,7 +172,7 @@ DocumentMarker* SortedDocumentMarkerListEditor::FirstMarkerIntersectingRange(
     unsigned end_offset) {
   DCHECK_LE(start_offset, end_offset);
 
-  const auto& marker_it =
+  auto* const marker_it =
       std::lower_bound(list.begin(), list.end(), start_offset,
                        [](const DocumentMarker* marker, unsigned start_offset) {
                          return marker->EndOffset() <= start_offset;
@@ -192,12 +192,12 @@ SortedDocumentMarkerListEditor::MarkersIntersectingRange(const MarkerList& list,
                                                          unsigned end_offset) {
   DCHECK_LE(start_offset, end_offset);
 
-  const auto& start_it =
+  auto* const start_it =
       std::lower_bound(list.begin(), list.end(), start_offset,
                        [](const DocumentMarker* marker, unsigned start_offset) {
                          return marker->EndOffset() <= start_offset;
                        });
-  const auto& end_it =
+  auto* const end_it =
       std::upper_bound(list.begin(), list.end(), end_offset,
                        [](unsigned end_offset, const DocumentMarker* marker) {
                          return end_offset <= marker->StartOffset();

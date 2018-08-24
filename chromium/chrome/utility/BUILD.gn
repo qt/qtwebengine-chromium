@@ -112,7 +112,6 @@ static_library("utility") {
     ]
     deps += [
       "//chrome/common/extensions/api",
-      "//chrome/services/media_gallery_util:lib",
       "//chrome/services/removable_storage_writer:lib",
     ]
 
@@ -149,7 +148,10 @@ static_library("utility") {
       "//ash/components/autoclick:lib",
       "//ash/components/quick_launch:lib",
       "//ash/components/quick_launch/public/mojom",
-      "//ash/components/touch_hud:lib",
+      "//ash/components/shortcut_viewer:lib",
+      "//ash/components/shortcut_viewer/public/mojom",
+      "//ash/components/tap_visualizer:lib",
+      "//ash/components/tap_visualizer/public/mojom",
       "//chrome/services/file_util:lib",
       "//components/services/font:lib",
       "//components/services/font/public/interfaces",
@@ -169,6 +171,13 @@ static_library("utility") {
     ]
   }
 
+  if (enable_basic_printing) {
+    deps += [
+      "//components/services/pdf_compositor/public/cpp:factory",
+      "//components/services/pdf_compositor/public/interfaces",
+    ]
+  }
+
   if (enable_print_preview) {
     deps += [ "//chrome/services/printing:lib" ]
 
@@ -180,18 +189,15 @@ static_library("utility") {
     }
   }
 
-  if (enable_basic_printing || enable_print_preview) {
-    deps += [
-      "//components/printing/service/public/cpp:factory",
-      "//components/printing/service/public/interfaces",
-    ]
-  }
-
   if (safe_browsing_mode == 1) {
     deps += [ "//chrome/services/file_util:lib" ]
     if (is_mac) {
       deps += [ "//chrome/utility/safe_browsing/mac" ]
     }
+  }
+
+  if (is_android || enable_extensions) {
+    deps += [ "//chrome/services/media_gallery_util:lib" ]
   }
 }
 

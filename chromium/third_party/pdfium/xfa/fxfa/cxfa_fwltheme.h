@@ -29,10 +29,12 @@ class CXFA_FWLTheme final : public IFWL_ThemeProvider {
   explicit CXFA_FWLTheme(CXFA_FFApp* pApp);
   ~CXFA_FWLTheme() override;
 
+  bool LoadCalendarFont(CXFA_FFDoc* doc);
+
   // IFWL_ThemeProvider:
   void DrawBackground(CFWL_ThemeBackground* pParams) override;
   void DrawText(CFWL_ThemeText* pParams) override;
-  void CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF& rect) override;
+  void CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF* pRect) override;
   float GetCXBorderSize() const override;
   float GetCYBorderSize() const override;
   CFX_RectF GetUIMargin(CFWL_ThemePart* pThemePart) const override;

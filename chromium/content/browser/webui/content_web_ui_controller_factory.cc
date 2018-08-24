@@ -8,20 +8,19 @@
 #include "content/browser/accessibility/accessibility_ui.h"
 #include "content/browser/appcache/appcache_internals_ui.h"
 #include "content/browser/gpu/gpu_internals_ui.h"
+#include "content/browser/histograms_internals_ui.h"
 #include "content/browser/indexed_db/indexed_db_internals_ui.h"
 #include "content/browser/media/media_internals_ui.h"
 #include "content/browser/net/network_errors_listing_ui.h"
+#include "content/browser/process_internals/process_internals_ui.h"
 #include "content/browser/service_worker/service_worker_internals_ui.h"
 #include "content/browser/tracing/tracing_ui.h"
+#include "content/browser/webrtc/webrtc_internals_ui.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/url_constants.h"
 #include "media/media_buildflags.h"
-
-#if BUILDFLAG(ENABLE_WEBRTC)
-#include "content/browser/webrtc/webrtc_internals_ui.h"
-#endif
 
 namespace content {
 
@@ -35,12 +34,14 @@ WebUI::TypeID ContentWebUIControllerFactory::GetWebUIType(
       url.host_piece() == kChromeUITracingHost ||
 #endif
       url.host_piece() == kChromeUIGpuHost ||
+      url.host_piece() == kChromeUIHistogramHost ||
       url.host_piece() == kChromeUIIndexedDBInternalsHost ||
       url.host_piece() == kChromeUIMediaInternalsHost ||
       url.host_piece() == kChromeUIServiceWorkerInternalsHost ||
       url.host_piece() == kChromeUIAccessibilityHost ||
       url.host_piece() == kChromeUIAppCacheInternalsHost ||
-      url.host_piece() == kChromeUINetworkErrorsListingHost) {
+      url.host_piece() == kChromeUINetworkErrorsListingHost ||
+      url.host_piece() == kChromeUIProcessInternalsHost) {
     return const_cast<ContentWebUIControllerFactory*>(this);
   }
   return WebUI::kNoWebUI;
@@ -65,6 +66,8 @@ WebUIController* ContentWebUIControllerFactory::CreateWebUIControllerForURL(
     return new AppCacheInternalsUI(web_ui);
   if (url.host_piece() == kChromeUIGpuHost)
     return new GpuInternalsUI(web_ui);
+  if (url.host_piece() == kChromeUIHistogramHost)
+    return new HistogramsInternalsUI(web_ui);
   if (url.host_piece() == kChromeUIIndexedDBInternalsHost)
     return new IndexedDBInternalsUI(web_ui);
   if (url.host_piece() == kChromeUIMediaInternalsHost)
@@ -79,11 +82,10 @@ WebUIController* ContentWebUIControllerFactory::CreateWebUIControllerForURL(
   if (url.host_piece() == kChromeUITracingHost)
     return new TracingUI(web_ui);
 #endif
-
-#if BUILDFLAG(ENABLE_WEBRTC)
   if (url.host_piece() == kChromeUIWebRTCInternalsHost)
     return new WebRTCInternalsUI(web_ui);
-#endif
+  if (url.host_piece() == kChromeUIProcessInternalsHost)
+    return new ProcessInternalsUI(web_ui);
 
   return nullptr;
 }

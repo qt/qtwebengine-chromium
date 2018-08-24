@@ -18,6 +18,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "components/ukm/ukm_source.h"
+#include "services/metrics/public/cpp/ukm_decode.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "third_party/metrics_proto/ukm/entry.pb.h"
 #include "third_party/metrics_proto/ukm/report.pb.h"
@@ -96,6 +97,7 @@ enum class DroppedDataReason {
   EXTENSION_URLS_DISABLED = 6,
   EXTENSION_NOT_SYNCED = 7,
   NOT_MATCHED = 8,
+  EMPTY_URL = 9,
   NUM_DROPPED_DATA_REASONS
 };
 
@@ -119,8 +121,8 @@ void StoreEntryProto(const mojom::UkmEntry& in, Entry* out) {
   out->set_event_hash(in.event_hash);
   for (const auto& metric : in.metrics) {
     Entry::Metric* proto_metric = out->add_metrics();
-    proto_metric->set_metric_hash(metric->metric_hash);
-    proto_metric->set_value(metric->value);
+    proto_metric->set_metric_hash(metric.first);
+    proto_metric->set_value(metric.second);
   }
 }
 
@@ -147,6 +149,19 @@ void AppendWhitelistedUrls(
       urls->insert(kv.second->url().GetOrigin().spec());
     }
   }
+}
+
+bool HasUnknownMetrics(const ukm::builders::DecodeMap& decode_map,
+                       const mojom::UkmEntry& entry) {
+  const auto it = decode_map.find(entry.event_hash);
+  if (it == decode_map.end())
+    return true;
+  const auto& metric_map = it->second.metric_map;
+  for (const auto& metric : entry.metrics) {
+    if (metric_map.count(metric.first) == 0)
+      return true;
+  }
+  return false;
 }
 
 }  // namespace
@@ -236,6 +251,8 @@ void UkmRecorderImpl::StoreRecordingsInReport(Report* report) {
         event_aggregate.dropped_due_to_limits);
     proto_aggregate->set_dropped_due_to_sampling(
         event_aggregate.dropped_due_to_sampling);
+    proto_aggregate->set_dropped_due_to_whitelist(
+        event_aggregate.dropped_due_to_whitelist);
     for (const auto& metric_and_aggregate : event_aggregate.metrics) {
       const MetricAggregate& aggregate = metric_and_aggregate.second;
       Aggregate::Metric* proto_metric = proto_aggregate->add_metrics();
@@ -254,6 +271,11 @@ void UkmRecorderImpl::StoreRecordingsInReport(Report* report) {
           event_aggregate.dropped_due_to_sampling) {
         proto_metric->set_dropped_due_to_sampling(
             aggregate.dropped_due_to_sampling);
+      }
+      if (aggregate.dropped_due_to_whitelist !=
+          event_aggregate.dropped_due_to_whitelist) {
+        proto_metric->set_dropped_due_to_whitelist(
+            aggregate.dropped_due_to_whitelist);
       }
     }
   }
@@ -328,6 +350,11 @@ void UkmRecorderImpl::UpdateSourceURL(SourceId source_id,
     return;
   }
 
+  if (unsanitized_url.is_empty()) {
+    RecordDroppedSource(DroppedDataReason::EMPTY_URL);
+    return;
+  }
+
   source_counts_.observed++;
   if (GetSourceIdType(source_id) == SourceIdType::NAVIGATION_ID)
     source_counts_.navigation_sources++;
@@ -336,6 +363,8 @@ void UkmRecorderImpl::UpdateSourceURL(SourceId source_id,
 
   if (!HasSupportedScheme(url)) {
     RecordDroppedSource(DroppedDataReason::UNSUPPORTED_URL_SCHEME);
+    DVLOG(2) << "Dropped Unsupported UKM URL:" << source_id << ":"
+             << url.spec();
     return;
   }
 
@@ -371,29 +400,34 @@ void UkmRecorderImpl::UpdateSourceURL(SourceId source_id,
 void UkmRecorderImpl::AddEntry(mojom::UkmEntryPtr entry) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
+  DCHECK(!HasUnknownMetrics(decode_map_, *entry));
+
   if (!recording_enabled_) {
     RecordDroppedEntry(DroppedDataReason::RECORDING_DISABLED);
     return;
   }
 
+  EventAggregate& event_aggregate = event_aggregations_[entry->event_hash];
+  event_aggregate.total_count++;
+  for (const auto& metric : entry->metrics) {
+    MetricAggregate& aggregate = event_aggregate.metrics[metric.first];
+    double value = metric.second;
+    aggregate.total_count++;
+    aggregate.value_sum += value;
+    aggregate.value_square_sum += value * value;
+  }
+
   if (ShouldRestrictToWhitelistedEntries() &&
       !base::ContainsKey(whitelisted_entry_hashes_, entry->event_hash)) {
     RecordDroppedEntry(DroppedDataReason::NOT_WHITELISTED);
+    event_aggregate.dropped_due_to_whitelist++;
+    for (auto& metric : entry->metrics)
+      event_aggregate.metrics[metric.first].dropped_due_to_whitelist++;
     return;
   }
 
   if (default_sampling_rate_ == 0)
     LoadExperimentSamplingInfo();
-
-  EventAggregate& event_aggregate = event_aggregations_[entry->event_hash];
-  event_aggregate.total_count++;
-  for (const auto& metric : entry->metrics) {
-    MetricAggregate& aggregate = event_aggregate.metrics[metric->metric_hash];
-    double value = metric->value;
-    aggregate.total_count++;
-    aggregate.value_sum += value;
-    aggregate.value_square_sum += value * value;
-  }
 
   auto found = event_sampling_rates_.find(entry->event_hash);
   int sampling_rate = (found != event_sampling_rates_.end())
@@ -404,7 +438,7 @@ void UkmRecorderImpl::AddEntry(mojom::UkmEntryPtr entry) {
     RecordDroppedEntry(DroppedDataReason::SAMPLED_OUT);
     event_aggregate.dropped_due_to_sampling++;
     for (auto& metric : entry->metrics)
-      event_aggregate.metrics[metric->metric_hash].dropped_due_to_sampling++;
+      event_aggregate.metrics[metric.first].dropped_due_to_sampling++;
     return;
   }
 
@@ -412,7 +446,7 @@ void UkmRecorderImpl::AddEntry(mojom::UkmEntryPtr entry) {
     RecordDroppedEntry(DroppedDataReason::MAX_HIT);
     event_aggregate.dropped_due_to_limits++;
     for (auto& metric : entry->metrics)
-      event_aggregate.metrics[metric->metric_hash].dropped_due_to_limits++;
+      event_aggregate.metrics[metric.first].dropped_due_to_limits++;
     return;
   }
 
@@ -461,6 +495,7 @@ void UkmRecorderImpl::StoreWhitelistedEntries() {
                         base::SPLIT_WANT_NONEMPTY);
   for (const auto& entry_string : entries)
     whitelisted_entry_hashes_.insert(base::HashMetricName(entry_string));
+  decode_map_ = ::ukm::builders::CreateDecodeMap();
 }
 
 }  // namespace ukm

@@ -20,11 +20,11 @@ static_library("test_support") {
 
   if (is_fuchsia) {
     sources += [ "test_utils_fuchsia.cc" ]
-  } else {
+  } else if (is_posix) {
     sources += [ "test_utils_posix.cc" ]
   }
 
-  deps = [
+  public_deps = [
     "//base",
     "//base/test:test_support",
     "//mojo/edk",

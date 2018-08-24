@@ -22,26 +22,28 @@ language: cpp
 # entries below.
 matrix:
   include:
-    - os: osx
-      osx_image: xcode8.3
-      compiler: clang
-      env: CFG=mac-clang-x86_64-release GN_ARGS="is_debug=false"
-    - os: osx
-      osx_image: xcode8.3
-      compiler: clang
-      env: CFG=mac-clang-x86_64-debug GN_ARGS="is_debug=true"
-    - os: osx
-      osx_image: xcode8.3
-      compiler: clang
-      env: CFG=mac-clang-x86_64-asan GN_ARGS="is_debug=false is_asan=true"
-    - os: osx
-      osx_image: xcode8.3
-      compiler: clang
-      env: CFG=mac-clang-x86_64-tsan GN_ARGS="is_debug=false is_tsan=true"
-    - os: osx
-      osx_image: xcode8.3
-      compiler: clang
-      env: CFG=mac-clang-x86_64-ubsan GN_ARGS="is_debug=false is_ubsan=true"
+# OS X builds are processing too slow and block the queue.
+# Commenting out until the problem is resolved.
+#    - os: osx
+#      osx_image: xcode8.3
+#      compiler: clang
+#      env: CFG=mac-clang-x86_64-release GN_ARGS="is_debug=false"
+#    - os: osx
+#      osx_image: xcode8.3
+#      compiler: clang
+#      env: CFG=mac-clang-x86_64-debug GN_ARGS="is_debug=true"
+#    - os: osx
+#      osx_image: xcode8.3
+#      compiler: clang
+#      env: CFG=mac-clang-x86_64-asan GN_ARGS="is_debug=false is_asan=true"
+#    - os: osx
+#      osx_image: xcode8.3
+#      compiler: clang
+#      env: CFG=mac-clang-x86_64-tsan GN_ARGS="is_debug=false is_tsan=true"
+#    - os: osx
+#      osx_image: xcode8.3
+#      compiler: clang
+#      env: CFG=mac-clang-x86_64-ubsan GN_ARGS="is_debug=false is_ubsan=true"
     - os: linux
       dist: trusty
       sudo: false
@@ -53,12 +55,7 @@ matrix:
         apt:
           packages:
             - clang
-      env: CFG=linux_trusty-clang-x86_64-debug GN_ARGS="is_debug=true"
-    - os: linux
-      dist: trusty
-      sudo: true
-      compiler: clang
-      env: CFG=linux_trusty-clang-x86_64-asan GN_ARGS="is_debug=false is_asan=true"
+      env: CFG=linux_trusty-clang-x86_64-debug GN_ARGS="is_debug=true is_hermetic_clang=false"
     - os: linux
       dist: trusty
       sudo: false
@@ -73,12 +70,7 @@ matrix:
       dist: trusty
       sudo: true
       compiler: clang
-      env: CFG=linux_trusty-clang-x86_64-lsan GN_ARGS="is_debug=false is_lsan=true"
-    - os: linux
-      dist: trusty
-      sudo: false
-      compiler: clang
-      env: CFG=linux_trusty-clang-x86_64-ubsan GN_ARGS="is_debug=false is_ubsan=true"
+      env: CFG=linux_trusty-clang-x86_64-ubsan_asan_lsan GN_ARGS="is_debug=false is_ubsan=true is_asan=true is_lsan=true"
     - os: linux
       dist: trusty
       sudo: false
@@ -96,11 +88,6 @@ matrix:
       env: CFG=android-clang-arm-release GN_ARGS="is_debug=false target_os=\"android\" target_cpu=\"arm\""
     - os: linux
       dist: trusty
-      sudo: false
-      compiler: clang
-      env: CFG=android-clang-arm64-release GN_ARGS="is_debug=false target_os=\"android\" target_cpu=\"arm64\""
-    - os: linux
-      dist: trusty
       sudo: true
       compiler: clang
       env: CFG=android-clang-arm-asan GN_ARGS="is_debug=false target_os=\"android\" target_cpu=\"arm\" is_asan=true"
@@ -108,7 +95,7 @@ matrix:
       dist: trusty
       sudo: true
       compiler: clang
-      env: CFG=android-clang-arm64-asan GN_ARGS="is_debug=false target_os=\"android\" target_cpu=\"arm64\" is_asan=true"
+      env: CFG=linux_trusty-clang-x86_64-libfuzzer GN_ARGS="is_clang=true is_debug=false use_libfuzzer=true is_asan=true"
 
 # Cache the deps that get git-pulled to avoid hitting quota limits (b/68252114).
 # Do not cache NDK/SDK and things that come from .zip files rather than git.
@@ -117,7 +104,9 @@ cache:
   timeout: 1800  # 30 mins
   directories:
     - buildtools/benchmark
+    - buildtools/emulator
     - buildtools/googletest
+    - buildtools/libbacktrace
     - buildtools/libcxx
     - buildtools/libcxxabi
     - buildtools/libunwind
@@ -133,8 +122,7 @@ install:
     if [[ "$CFG" != android-* ]]; then
       tools/install-build-deps --no-android
     else
-      ARCH=$(echo "$CFG" | cut -d- -f3)
-      tools/install-build-deps --emulator="$ARCH"
+      tools/install-build-deps
     fi
   - |
     if [[ -e buildtools/clang/bin/llvm-symbolizer ]]; then
@@ -143,22 +131,29 @@ install:
 
 script:
   - tools/gn gen out/dist --args="${GN_ARGS}" --check
-  - tools/ninja -C out/dist -j8 all
+  - tools/ninja -C out/dist -j8
   - |
     TEST_TARGETS="
-    perfetto_tests
-    perfetto_benchmarks
+    perfetto_integrationtests
+    perfetto_unittests
     "
     if [[ "$CFG" != android-* ]]; then
       for TEST_TARGET in $TEST_TARGETS; do
         "out/dist/$TEST_TARGET"
       done
+      BENCHMARK_FUNCTIONAL_TEST_ONLY=true out/dist/perfetto_benchmarks
+      if [[ "$CFG" == *-libfuzzer ]]; then
+        # Run a single iteration each to make sure they are not crashing.
+        out/dist/end_to_end_shared_memory_fuzzer -runs=1
+        out/dist/buffered_frame_deserializer_fuzzer -runs=1
+      fi
     else
       TARGET_ARCH=$(echo $CFG | cut -d- -f3)
-      tools/run_android_emulator $TARGET_ARCH --pid /tmp/emulator.pid -v &
+      tools/run_android_emulator --pid /tmp/emulator.pid -v &
       for TEST_TARGET in $TEST_TARGETS; do
         tools/run_android_test out/dist "$TEST_TARGET"
       done
+      tools/run_android_test --env BENCHMARK_FUNCTIONAL_TEST_ONLY=true out/dist "perfetto_benchmarks"
     fi
 
 after_script:

@@ -7,7 +7,7 @@
 
 #include <memory>
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/renderer/core/clipboard/pasteboard.h"
+#include "third_party/blink/renderer/core/clipboard/system_clipboard.h"
 #include "third_party/blink/renderer/core/dom/qualified_name.h"
 #include "third_party/blink/renderer/core/editing/editor.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
@@ -26,6 +26,7 @@
 #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
 #include "third_party/blink/renderer/core/xlink_names.h"
 #include "third_party/blink/renderer/platform/geometry/int_size.h"
+#include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
@@ -68,9 +69,11 @@ String ContentAfterPastingHTML(DummyPageHolder* page_holder,
       frame.Selection().ComputeVisibleSelectionInDOMTree().IsContentEditable())
       << "We should be pasting into something editable.";
 
-  Pasteboard* pasteboard = Pasteboard::GeneralPasteboard();
-  pasteboard->WriteHTML(html_to_paste, BlankURL(), "",
-                        Pasteboard::kCannotSmartReplace);
+  SystemClipboard::GetInstance().WriteHTML(
+      html_to_paste, BlankURL(), "", SystemClipboard::kCannotSmartReplace);
+  // Run all tasks in a message loop to allow asynchronous clipboard writing
+  // to happen before reading from it synchronously.
+  test::RunPendingTasks();
   EXPECT_TRUE(frame.GetEditor().ExecuteCommand("Paste"));
 
   return body->InnerHTMLAsString();

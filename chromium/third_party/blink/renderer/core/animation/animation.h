@@ -35,6 +35,7 @@
 
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/optional.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
 #include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
@@ -52,7 +53,6 @@
 #include "third_party/blink/renderer/platform/animation/compositor_animation_delegate.h"
 #include "third_party/blink/renderer/platform/graphics/compositor_element_id.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 
 namespace blink {
 
@@ -101,7 +101,7 @@ class CORE_EXPORT Animation final : public EventTargetWithInlineData,
 
   // AnimationEffectOwner:
   void UpdateIfNecessary() override;
-  void SpecifiedTimingChanged() override;
+  void EffectInvalidated() override;
   bool IsEventDispatchAllowed() const override;
   Animation* GetAnimation() override { return this; }
 
@@ -137,7 +137,7 @@ class CORE_EXPORT Animation final : public EventTargetWithInlineData,
   ScriptPromise finished(ScriptState*);
   ScriptPromise ready(ScriptState*);
 
-  bool Playing() const {
+  bool Playing() const override {
     return !(PlayStateInternal() == kIdle || Limited() || paused_ ||
              is_paused_for_testing_);
   }
@@ -161,8 +161,8 @@ class CORE_EXPORT Animation final : public EventTargetWithInlineData,
   DocumentTimeline* TimelineInternal() { return timeline_; }
 
   double startTime(bool& is_null) const;
-  WTF::Optional<double> startTime() const;
-  WTF::Optional<double> StartTimeInternal() const { return start_time_; }
+  base::Optional<double> startTime() const;
+  base::Optional<double> StartTimeInternal() const { return start_time_; }
   void setStartTime(double, bool is_null);
 
   const AnimationEffect* effect() const { return content_.Get(); }
@@ -184,9 +184,10 @@ class CORE_EXPORT Animation final : public EventTargetWithInlineData,
   bool Outdated() { return outdated_; }
 
   CompositorAnimations::FailureCode CheckCanStartAnimationOnCompositor(
-      const Optional<CompositorElementIdSet>& composited_element_ids) const;
+      const base::Optional<CompositorElementIdSet>& composited_element_ids)
+      const;
   void StartAnimationOnCompositor(
-      const Optional<CompositorElementIdSet>& composited_element_ids);
+      const base::Optional<CompositorElementIdSet>& composited_element_ids);
   void CancelAnimationOnCompositor();
   void RestartAnimationOnCompositor();
   void CancelIncompatibleAnimationsOnCompositor();
@@ -205,11 +206,11 @@ class CORE_EXPORT Animation final : public EventTargetWithInlineData,
   // Returns whether we should continue with the commit for this animation or
   // wait until next commit.
   bool PreCommit(int compositor_group,
-                 const Optional<CompositorElementIdSet>&,
+                 const base::Optional<CompositorElementIdSet>&,
                  bool start_on_compositor);
   void PostCommit(double timeline_time);
 
-  unsigned SequenceNumber() const { return sequence_number_; }
+  unsigned SequenceNumber() const override { return sequence_number_; }
   int CompositorGroup() const { return compositor_group_; }
 
   static bool HasLowerPriority(const Animation* animation1,
@@ -221,10 +222,6 @@ class CORE_EXPORT Animation final : public EventTargetWithInlineData,
   void SetEffectSuppressed(bool);
 
   void InvalidateKeyframeEffect(const TreeScope&);
-
-  bool IsNonCompositedCompositable() const {
-    return is_non_composited_compositable_;
-  }
 
   void Trace(blink::Visitor*) override;
 
@@ -245,19 +242,19 @@ class CORE_EXPORT Animation final : public EventTargetWithInlineData,
   bool Limited(double current_time) const;
 
   AnimationPlayState CalculatePlayState() const;
-  WTF::Optional<double> CalculateStartTime(double current_time) const;
+  base::Optional<double> CalculateStartTime(double current_time) const;
   double CalculateCurrentTime() const;
 
   void UnpauseInternal();
   void SetPlaybackRateInternal(double);
-  void SetStartTimeInternal(WTF::Optional<double>);
+  void SetStartTimeInternal(base::Optional<double>);
   void UpdateCurrentTimingState(TimingUpdateReason);
 
   void BeginUpdatingState();
   void EndUpdatingState();
 
   CompositorAnimations::FailureCode CheckCanStartAnimationOnCompositorInternal(
-      const Optional<CompositorElementIdSet>&) const;
+      const base::Optional<CompositorElementIdSet>&) const;
   void CreateCompositorAnimation();
   void DestroyCompositorAnimation();
   void AttachCompositorTimeline();
@@ -280,8 +277,8 @@ class CORE_EXPORT Animation final : public EventTargetWithInlineData,
 
   AnimationPlayState play_state_;
   double playback_rate_;
-  WTF::Optional<double> start_time_;
-  WTF::Optional<double> hold_time_;
+  base::Optional<double> start_time_;
+  base::Optional<double> hold_time_;
 
   unsigned sequence_number_;
 
@@ -320,8 +317,8 @@ class CORE_EXPORT Animation final : public EventTargetWithInlineData,
           playback_rate(animation.playback_rate_),
           effect_changed(false),
           pending_action(kStart) {}
-    WTF::Optional<double> start_time;
-    WTF::Optional<double> hold_time;
+    base::Optional<double> start_time;
+    base::Optional<double> hold_time;
     double playback_rate;
     bool effect_changed;
     CompositorAction pending_action;
@@ -389,15 +386,6 @@ class CORE_EXPORT Animation final : public EventTargetWithInlineData,
   bool state_is_being_updated_;
 
   bool effect_suppressed_;
-
-  // crbug.com/758439: In order to have better animation targeting metrics, we'd
-  // like to track whether there are main-thread animations which could be
-  // composited, but is not due to running experiment. This variable is
-  // initially false, it is set to be true after the call to
-  // "CheckCanStartAnimationOnCompositor" according to its return value. In
-  // other words, this bit is true only for an animation that hits the
-  // "Experiment group" for the experiment described in crbug.com/754471.
-  bool is_non_composited_compositable_ = false;
 
   FRIEND_TEST_ALL_PREFIXES(AnimationAnimationTest,
                            NoCompositeWithoutCompositedElementId);

@@ -17,13 +17,12 @@
 #ifndef SRC_TRACING_CORE_TRACE_WRITER_IMPL_H_
 #define SRC_TRACING_CORE_TRACE_WRITER_IMPL_H_
 
-#include <forward_list>
-
-#include "perfetto/protozero/protozero_message_handle.h"
+#include "perfetto/protozero/message_handle.h"
 #include "perfetto/protozero/scattered_stream_writer.h"
 #include "perfetto/tracing/core/basic_types.h"
 #include "perfetto/tracing/core/shared_memory_abi.h"
 #include "perfetto/tracing/core/trace_writer.h"
+#include "src/tracing/core/patch_list.h"
 
 namespace perfetto {
 
@@ -34,30 +33,15 @@ class TraceWriterImpl : public TraceWriter,
                         public protozero::ScatteredStreamWriter::Delegate {
  public:
   // TracePacketHandle is defined in trace_writer.h
-
   TraceWriterImpl(SharedMemoryArbiterImpl*, WriterID, BufferID);
   ~TraceWriterImpl() override;
 
-  // TraceWriter implementation. See documentation in trace_writer.h .
+  // TraceWriter implementation. See documentation in trace_writer.h.
   TracePacketHandle NewTracePacket() override;
+  void Flush(std::function<void()> callback = {}) override;
   WriterID writer_id() const override;
 
  private:
-  // Used to handle the backfilling of the headers (the |size_field|) of nested
-  // messages when a proto is fragmented over several chunks. This patchlist is
-  // sent out of band to the tracing service, after having returned the initial
-  // chunks of the fragment.
-  struct Patch {
-    Patch(uint16_t chunk_id, uint16_t offset);
-    Patch(const Patch&) = delete;
-    Patch& operator=(const Patch&) = delete;
-    Patch(Patch&&) noexcept = delete;
-    Patch& operator=(Patch&&) = delete;
-
-    const uint16_t chunk_id;
-    const uint16_t offset_in_chunk;
-    uint8_t size_field[SharedMemoryABI::kPacketHeaderSize] = {};
-  };
   TraceWriterImpl(const TraceWriterImpl&) = delete;
   TraceWriterImpl& operator=(const TraceWriterImpl&) = delete;
 
@@ -77,7 +61,7 @@ class TraceWriterImpl : public TraceWriter,
 
   // Monotonic (% wrapping) sequence id of the chunk. Together with the WriterID
   // this allows the Service to reconstruct the linear sequence of packets.
-  uint16_t cur_chunk_id_ = 0;
+  uint16_t next_chunk_id_ = 0;
 
   // The chunk we are holding onto (if any).
   SharedMemoryABI::Chunk cur_chunk_;
@@ -106,11 +90,7 @@ class TraceWriterImpl : public TraceWriter,
   // have to release the ownership of the current Chunk). This list will be
   // later sent out-of-band to the tracing service, who will patch the required
   // chunks, if they are still around.
-  // Note: the ProtoZeroMessage will take pointers to the |size_field| of these
-  // entries. This container must guarantee that the Patch objects are never
-  // moved around (i.e. cannot be a vector because of reallocations can change
-  // addresses of pre-existing entries).
-  std::forward_list<Patch> patch_list_;
+  PatchList patch_list_;
 };
 
 }  // namespace perfetto

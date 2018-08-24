@@ -1,4 +1,5 @@
 include_rules = [
+    "+base/auto_reset.h",
     "+base/callback.h",
     "+base/callback_forward.h",
     "+base/containers/span.h",
@@ -10,8 +11,12 @@ include_rules = [
     "+base/memory/ptr_util.h",
     "+base/memory/weak_ptr.h",
     "+base/metrics/histogram_macros.h",
+    "+base/optional.h",
+    "+base/rand_util.h",
     "+base/sequenced_task_runner.h",
     "+base/single_thread_task_runner.h",
+    "+base/stl_util.h",
+    "+base/sys_info.h",
     "+base/task_scheduler/post_task.h",
     "+base/thread_annotations.h",
     "+base/threading/thread_checker.h",

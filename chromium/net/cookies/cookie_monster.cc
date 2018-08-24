@@ -75,6 +75,7 @@
 using base::Time;
 using base::TimeDelta;
 using base::TimeTicks;
+using TimeRange = net::CookieDeletionInfo::TimeRange;
 
 // In steady state, most cookie requests can be satisfied by the in memory
 // cookie monster store. If the cookie request cannot be satisfied by the in
@@ -507,34 +508,25 @@ void CookieMonster::DeleteCanonicalCookieAsync(const CanonicalCookie& cookie,
       std::move(callback)));
 }
 
-void CookieMonster::DeleteAllCreatedBetweenAsync(const Time& delete_begin,
-                                                 const Time& delete_end,
-                                                 DeleteCallback callback) {
+void CookieMonster::DeleteAllCreatedInTimeRangeAsync(
+    const TimeRange& creation_range,
+    DeleteCallback callback) {
   DoCookieCallback(base::BindOnce(
       // base::Unretained is safe as DoCookieCallbackForURL stores
       // the callback on |*this|, so the callback will not outlive
       // the object.
-      &CookieMonster::DeleteAllCreatedBetween, base::Unretained(this),
-      delete_begin, delete_end, std::move(callback)));
+      &CookieMonster::DeleteAllCreatedInTimeRange, base::Unretained(this),
+      creation_range, std::move(callback)));
 }
 
-void CookieMonster::DeleteAllCreatedBetweenWithPredicateAsync(
-    const Time& delete_begin,
-    const Time& delete_end,
-    const base::Callback<bool(const CanonicalCookie&)>& predicate,
-    DeleteCallback callback) {
-  if (predicate.is_null()) {
-    MaybeRunCookieCallback(std::move(callback), 0u);
-    return;
-  }
-
+void CookieMonster::DeleteAllMatchingInfoAsync(CookieDeletionInfo delete_info,
+                                               DeleteCallback callback) {
   DoCookieCallback(base::BindOnce(
       // base::Unretained is safe as DoCookieCallbackForURL stores
       // the callback on |*this|, so the callback will not outlive
       // the object.
-      &CookieMonster::DeleteAllCreatedBetweenWithPredicate,
-      base::Unretained(this), delete_begin, delete_end, predicate,
-      std::move(callback)));
+      &CookieMonster::DeleteAllMatchingInfo, base::Unretained(this),
+      std::move(delete_info), std::move(callback)));
 }
 
 void CookieMonster::DeleteSessionCookiesAsync(
@@ -575,7 +567,7 @@ bool CookieMonster::IsCookieableScheme(const std::string& scheme) {
 const char* const CookieMonster::kDefaultCookieableSchemes[] = {"http", "https",
                                                                 "ws", "wss"};
 const int CookieMonster::kDefaultCookieableSchemesCount =
-    arraysize(kDefaultCookieableSchemes);
+    base::size(kDefaultCookieableSchemes);
 
 CookieChangeDispatcher& CookieMonster::GetChangeDispatcher() {
   return change_dispatcher_;
@@ -678,9 +670,8 @@ void CookieMonster::GetCookieListWithOptions(const GURL& url,
   MaybeRunCookieCallback(std::move(callback), cookies);
 }
 
-void CookieMonster::DeleteAllCreatedBetween(const Time& delete_begin,
-                                            const Time& delete_end,
-                                            DeleteCallback callback) {
+void CookieMonster::DeleteAllCreatedInTimeRange(const TimeRange& creation_range,
+                                                DeleteCallback callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   uint32_t num_deleted = 0;
@@ -689,8 +680,7 @@ void CookieMonster::DeleteAllCreatedBetween(const Time& delete_begin,
     CanonicalCookie* cc = curit->second.get();
     ++it;
 
-    if (cc->CreationDate() >= delete_begin &&
-        (delete_end.is_null() || cc->CreationDate() < delete_end)) {
+    if (creation_range.Contains(cc->CreationDate())) {
       InternalDeleteCookie(curit, true, /*sync_to_store*/
                            DELETE_COOKIE_EXPLICIT);
       ++num_deleted;
@@ -703,22 +693,15 @@ void CookieMonster::DeleteAllCreatedBetween(const Time& delete_begin,
                               : base::OnceClosure()));
 }
 
-void CookieMonster::DeleteAllCreatedBetweenWithPredicate(
-    const base::Time& delete_begin,
-    const base::Time& delete_end,
-    const base::Callback<bool(const CanonicalCookie&)>& predicate,
-    DeleteCallback callback) {
+void CookieMonster::DeleteAllMatchingInfo(CookieDeletionInfo delete_info,
+                                          DeleteCallback callback) {
   uint32_t num_deleted = 0;
   for (CookieMap::iterator it = cookies_.begin(); it != cookies_.end();) {
     CookieMap::iterator curit = it;
     CanonicalCookie* cc = curit->second.get();
     ++it;
 
-    if (cc->CreationDate() >= delete_begin &&
-        // The assumption that null |delete_end| is equivalent to
-        // Time::Max() is confusing.
-        (delete_end.is_null() || cc->CreationDate() < delete_end) &&
-        predicate.Run(*cc)) {
+    if (delete_info.Matches(*cc)) {
       InternalDeleteCookie(curit, true, /*sync_to_store*/
                            DELETE_COOKIE_EXPLICIT);
       ++num_deleted;
@@ -1372,7 +1355,7 @@ void CookieMonster::InternalDeleteCookie(CookieMap::iterator it,
   // Ideally, this would be asserted up where we define kChangeCauseMapping,
   // but DeletionCause's visibility (or lack thereof) forces us to make
   // this check here.
-  static_assert(arraysize(kChangeCauseMapping) == DELETE_COOKIE_LAST_ENTRY + 1,
+  static_assert(base::size(kChangeCauseMapping) == DELETE_COOKIE_LAST_ENTRY + 1,
                 "kChangeCauseMapping size should match DeletionCause size");
 
   CanonicalCookie* cc = it->second.get();

@@ -146,7 +146,6 @@ Page::Page(PageClients& page_clients)
       pointer_lock_controller_(PointerLockController::Create(this)),
       browser_controls_(BrowserControls::Create(*this)),
       console_message_storage_(new ConsoleMessageStorage()),
-      event_handler_registry_(new EventHandlerRegistry(*this)),
       global_root_scroller_controller_(
           TopDocumentRootScrollerController::Create(*this)),
       visual_viewport_(VisualViewport::Create(*this)),
@@ -236,14 +235,6 @@ const ConsoleMessageStorage& Page::GetConsoleMessageStorage() const {
   return *console_message_storage_;
 }
 
-EventHandlerRegistry& Page::GetEventHandlerRegistry() {
-  return *event_handler_registry_;
-}
-
-const EventHandlerRegistry& Page::GetEventHandlerRegistry() const {
-  return *event_handler_registry_;
-}
-
 TopDocumentRootScrollerController& Page::GlobalRootScrollerController() const {
   return *global_root_scroller_controller_;
 }
@@ -274,7 +265,12 @@ DOMRectList* Page::NonFastScrollableRects(const LocalFrame* frame) {
       frame->View()->LayoutViewportScrollableArea()->LayerForScrolling();
   if (!layer)
     return DOMRectList::Create();
-  return DOMRectList::Create(layer->PlatformLayer()->NonFastScrollableRegion());
+  const cc::Region& region = layer->CcLayer()->non_fast_scrollable_region();
+  Vector<IntRect> rects;
+  rects.ReserveCapacity(region.GetRegionComplexity());
+  for (const gfx::Rect& rect : region)
+    rects.push_back(IntRect(rect));
+  return DOMRectList::Create(rects);
 }
 
 void Page::SetMainFrame(Frame* main_frame) {
@@ -313,13 +309,12 @@ void Page::PlatformColorsChanged() {
     }
 }
 
-void Page::SetNeedsRecalcStyleInAllFrames() {
+void Page::InitialStyleChanged() {
   for (Frame* frame = MainFrame(); frame;
        frame = frame->Tree().TraverseNext()) {
-    if (frame->IsLocalFrame())
-      ToLocalFrame(frame)->GetDocument()->SetNeedsStyleRecalc(
-          kSubtreeStyleChange,
-          StyleChangeReasonForTracing::Create(StyleChangeReason::kSettings));
+    if (!frame->IsLocalFrame())
+      continue;
+    ToLocalFrame(frame)->GetDocument()->GetStyleEngine().InitialStyleChanged();
   }
 }
 
@@ -527,7 +522,7 @@ int Page::SubframeCount() const {
 void Page::SettingsChanged(SettingsDelegate::ChangeType change_type) {
   switch (change_type) {
     case SettingsDelegate::kStyleChange:
-      SetNeedsRecalcStyleInAllFrames();
+      InitialStyleChanged();
       break;
     case SettingsDelegate::kViewportDescriptionChange:
       if (MainFrame() && MainFrame()->IsLocalFrame()) {
@@ -709,7 +704,6 @@ void Page::Trace(blink::Visitor* visitor) {
   visitor->Trace(smooth_scroll_sequencer_);
   visitor->Trace(browser_controls_);
   visitor->Trace(console_message_storage_);
-  visitor->Trace(event_handler_registry_);
   visitor->Trace(global_root_scroller_controller_);
   visitor->Trace(visual_viewport_);
   visitor->Trace(overscroll_controller_);
@@ -739,10 +733,7 @@ void Page::WillCloseLayerTreeView(WebLayerTreeView& layer_tree_view,
 void Page::WillBeDestroyed() {
   Frame* main_frame = main_frame_;
 
-  // TODO(sashab): Remove this check, the call to detach() here should always
-  // work.
-  if (main_frame->IsAttached())
-    main_frame->Detach(FrameDetachType::kRemove);
+  main_frame->Detach(FrameDetachType::kRemove);
 
   DCHECK(AllPages().Contains(this));
   AllPages().erase(this);
@@ -806,6 +797,13 @@ void Page::RequestBeginMainFrameNotExpected(bool new_state) {
   if (!main_frame_ || !main_frame_->IsLocalFrame())
     return;
 
+  base::debug::StackTrace main_frame_created_trace =
+      main_frame_->CreateStackForDebugging();
+  base::debug::Alias(&main_frame_created_trace);
+  base::debug::StackTrace main_frame_detached_trace =
+      main_frame_->DetachStackForDebugging();
+  base::debug::Alias(&main_frame_detached_trace);
+  CHECK(main_frame_->IsAttached());
   if (LocalFrame* main_frame = DeprecatedLocalMainFrame()) {
     if (WebLayerTreeView* layer_tree_view =
             chrome_client_->GetWebLayerTreeView(main_frame)) {

@@ -8,10 +8,11 @@
 #include <memory>
 
 #include "base/containers/id_map.h"
+#include "base/single_thread_task_runner.h"
 #include "content/child/child_thread_impl.h"
 #include "content/child/scoped_child_process_reference.h"
 #include "content/common/service_worker/embedded_worker.mojom.h"
-#include "mojo/public/cpp/bindings/associated_binding.h"
+#include "mojo/public/cpp/bindings/binding.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_installed_scripts_manager.mojom.h"
 #include "third_party/blink/public/web/worker_content_settings_proxy.mojom.h"
 
@@ -55,10 +56,12 @@ class EmbeddedWorkerInstanceClientImpl
   // Creates a new EmbeddedWorkerInstanceClientImpl instance bound to
   // |request|. The instance destroys itself when needed, see the class
   // documentation.
+  // TODO(shimazu): Create a service worker's execution context by this method
+  // instead of just creating an instance of EmbeddedWorkerInstanceClient.
   static void Create(
       base::TimeTicks blink_initialized_time,
       scoped_refptr<base::SingleThreadTaskRunner> io_thread_runner,
-      mojom::EmbeddedWorkerInstanceClientAssociatedRequest request);
+      mojom::EmbeddedWorkerInstanceClientRequest request);
 
   ~EmbeddedWorkerInstanceClientImpl() override;
 
@@ -82,7 +85,7 @@ class EmbeddedWorkerInstanceClientImpl
 
   EmbeddedWorkerInstanceClientImpl(
       scoped_refptr<base::SingleThreadTaskRunner> io_thread_runner,
-      mojom::EmbeddedWorkerInstanceClientAssociatedRequest request);
+      mojom::EmbeddedWorkerInstanceClientRequest request);
 
   // mojom::EmbeddedWorkerInstanceClient implementation
   void StartWorker(mojom::EmbeddedWorkerStartParamsPtr params) override;
@@ -99,9 +102,10 @@ class EmbeddedWorkerInstanceClientImpl
   std::unique_ptr<WorkerWrapper> StartWorkerContext(
       mojom::EmbeddedWorkerStartParamsPtr params,
       std::unique_ptr<ServiceWorkerContextClient> context_client,
-      service_manager::mojom::InterfaceProviderPtr interface_provider);
+      blink::mojom::CacheStoragePtrInfo cache_storage,
+      service_manager::mojom::InterfaceProviderPtrInfo interface_provider);
 
-  mojo::AssociatedBinding<mojom::EmbeddedWorkerInstanceClient> binding_;
+  mojo::Binding<mojom::EmbeddedWorkerInstanceClient> binding_;
 
   // This is valid before StartWorker is called. After that, this object
   // will be passed to ServiceWorkerContextClient.

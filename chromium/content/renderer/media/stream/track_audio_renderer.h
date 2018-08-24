@@ -16,7 +16,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
-#include "base/threading/thread_checker.h"
 #include "content/common/content_export.h"
 #include "content/public/renderer/media_stream_audio_renderer.h"
 #include "content/public/renderer/media_stream_audio_sink.h"
@@ -65,8 +64,7 @@ class CONTENT_EXPORT TrackAudioRenderer
   TrackAudioRenderer(const blink::WebMediaStreamTrack& audio_track,
                      int playout_render_frame_id,
                      int session_id,
-                     const std::string& device_id,
-                     const url::Origin& security_origin);
+                     const std::string& device_id);
 
   // MediaStreamAudioRenderer implementation.
   // Called on the main thread.
@@ -79,7 +77,6 @@ class CONTENT_EXPORT TrackAudioRenderer
   base::TimeDelta GetCurrentRenderTime() const override;
   bool IsLocalRenderer() const override;
   void SwitchOutputDevice(const std::string& device_id,
-                          const url::Origin& security_origin,
                           const media::OutputDeviceStatusCB& callback) override;
 
  protected:
@@ -164,7 +161,6 @@ class CONTENT_EXPORT TrackAudioRenderer
   // The preferred device id of the output device or empty for the default
   // output device.
   std::string output_device_id_;
-  url::Origin security_origin_;
 
   // Cache value for the volume.  Whenever |sink_| is re-created, its volume
   // should be set to this.
@@ -172,9 +168,6 @@ class CONTENT_EXPORT TrackAudioRenderer
 
   // Flag to indicate whether |sink_| has been started yet.
   bool sink_started_;
-
-  // Used to DCHECK that some methods are called on the audio thread.
-  base::ThreadChecker audio_thread_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(TrackAudioRenderer);
 };

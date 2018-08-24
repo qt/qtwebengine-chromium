@@ -98,7 +98,7 @@ void AudioWorkletHandler::Process(size_t frames_to_process) {
       output_buses.push_back(Output(i).Bus());
 
     for (const auto& param_name : param_value_map_.Keys()) {
-      const auto param_handler = param_handler_map_.at(param_name);
+      auto* const param_handler = param_handler_map_.at(param_name);
       AudioFloatArray* param_values = param_value_map_.at(param_name);
       if (param_handler->HasSampleAccurateValues()) {
         param_handler->CalculateSampleAccurateValues(
@@ -141,6 +141,13 @@ void AudioWorkletHandler::CheckNumberOfChannelsForInput(AudioNodeInput* input) {
       // downstream in the graph.
       Output(0).SetNumberOfChannels(number_of_input_channels);
     }
+  }
+
+  // If the node has zero output, it becomes the "automatic pull" node. This
+  // does not apply to the general case where we have outputs that aren't
+  // connected.
+  if (NumberOfOutputs() == 0) {
+    Context()->GetDeferredTaskHandler().AddAutomaticPullNode(this);
   }
 
   AudioHandler::CheckNumberOfChannelsForInput(input);
@@ -214,11 +221,13 @@ AudioWorkletNode::AudioWorkletNode(
   HashMap<String, scoped_refptr<AudioParamHandler>> param_handler_map;
   for (const auto& param_info : param_info_list) {
     String param_name = param_info.Name().IsolatedCopy();
-    AudioParam* audio_param =
-        AudioParam::Create(context, kParamTypeAudioWorklet,
-                           "AudioWorklet(\"" + name + "\")." + param_name,
-                           param_info.DefaultValue(), param_info.MinValue(),
-                           param_info.MaxValue());
+    AudioParam* audio_param = AudioParam::Create(
+        context, kParamTypeAudioWorklet,
+        param_info.DefaultValue(), AudioParamHandler::AutomationRate::kAudio,
+        AudioParamHandler::AutomationRateMode::kVariable, param_info.MinValue(),
+        param_info.MaxValue());
+    audio_param->SetCustomParamName("AudioWorkletNode(\"" + name + "\")." +
+                                    param_name);
     audio_param_map.Set(param_name, audio_param);
     param_handler_map.Set(param_name, WrapRefCounted(&audio_param->Handler()));
 
@@ -322,8 +331,12 @@ AudioWorkletNode* AudioWorkletNode::Create(
 
   node->HandleChannelOptions(options, exception_state);
 
-  // context keeps reference as a source node.
-  context->NotifySourceNodeStartedProcessing(node);
+  // context keeps reference as a source node if the node has a valid output.
+  // The node with zero output cannot be a source, so it won't be added as an
+  // active source node.
+  if (node->numberOfOutputs() > 0) {
+    context->NotifySourceNodeStartedProcessing(node);
+  }
 
   v8::Isolate* isolate = script_state->GetIsolate();
   SerializedScriptValue::SerializeOptions serialize_options;

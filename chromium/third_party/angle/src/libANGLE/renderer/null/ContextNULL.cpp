@@ -78,6 +78,7 @@ ContextNULL::ContextNULL(const gl::ContextState &state, AllocationTrackerNULL *a
     mExtensions.debugMarker            = true;
     mExtensions.translatedShaderSource = true;
 
+    mExtensions.textureStorage             = true;
     mExtensions.rgb8rgba8 = true;
     mExtensions.textureCompressionDXT1     = true;
     mExtensions.textureCompressionDXT3     = true;
@@ -88,6 +89,11 @@ ContextNULL::ContextNULL(const gl::ContextState &state, AllocationTrackerNULL *a
     mExtensions.compressedETC1RGB8Texture  = true;
     mExtensions.lossyETCDecode             = true;
     mExtensions.geometryShader             = true;
+
+    mExtensions.eglImage                  = true;
+    mExtensions.eglImageExternal          = true;
+    mExtensions.eglImageExternalEssl3     = true;
+    mExtensions.eglStreamConsumerExternal = true;
 
     const gl::Version maxClientVersion(3, 1);
     mCaps = GenerateMinimumCaps(maxClientVersion, mExtensions);
@@ -367,7 +373,7 @@ VertexArrayImpl *ContextNULL::createVertexArray(const gl::VertexArrayState &data
     return new VertexArrayNULL(data);
 }
 
-QueryImpl *ContextNULL::createQuery(GLenum type)
+QueryImpl *ContextNULL::createQuery(gl::QueryType type)
 {
     return new QueryNULL(type);
 }

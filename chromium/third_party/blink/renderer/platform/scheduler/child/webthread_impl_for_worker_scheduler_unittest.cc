@@ -10,7 +10,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.h"
 #include "third_party/blink/renderer/platform/web_task_runner.h"
 
@@ -62,9 +61,7 @@ void RemoveTaskObserver(WebThreadImplForWorkerScheduler* thread,
 }
 
 void ShutdownOnThread(WebThreadImplForWorkerScheduler* thread) {
-  WebSchedulerImpl* web_scheduler_impl =
-      static_cast<WebSchedulerImpl*>(thread->Scheduler());
-  web_scheduler_impl->Shutdown();
+  thread->Scheduler()->Shutdown();
 }
 
 class WebThreadImplForWorkerSchedulerTest : public testing::Test {

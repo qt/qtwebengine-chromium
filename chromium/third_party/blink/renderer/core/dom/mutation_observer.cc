@@ -68,13 +68,13 @@ class MutationObserver::V8DelegateImpl final
     callback_->InvokeAndReportException(&observer, records, &observer);
   }
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(callback_);
     MutationObserver::Delegate::Trace(visitor);
     ContextClient::Trace(visitor);
   }
 
-  virtual void TraceWrappers(const ScriptWrappableVisitor* visitor) const {
+  void TraceWrappers(ScriptWrappableVisitor* visitor) const override {
     visitor->TraceWrappers(callback_);
     MutationObserver::Delegate::TraceWrappers(visitor);
   }
@@ -379,8 +379,7 @@ void MutationObserver::Trace(blink::Visitor* visitor) {
   ContextClient::Trace(visitor);
 }
 
-void MutationObserver::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+void MutationObserver::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(delegate_);
   for (auto record : records_)
     visitor->TraceWrappers(record);

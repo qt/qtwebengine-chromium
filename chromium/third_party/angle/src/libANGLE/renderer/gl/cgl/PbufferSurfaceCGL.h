@@ -16,6 +16,7 @@ namespace rx
 {
 
 class FunctionsGL;
+class RendererGL;
 class StateManagerGL;
 struct WorkaroundsGL;
 
@@ -39,8 +40,10 @@ class PbufferSurfaceCGL : public SurfaceGL
                              EGLint width,
                              EGLint height) override;
     egl::Error querySurfacePointerANGLE(EGLint attribute, void **value) override;
-    egl::Error bindTexImage(gl::Texture *texture, EGLint buffer) override;
-    egl::Error releaseTexImage(EGLint buffer) override;
+    egl::Error bindTexImage(const gl::Context *context,
+                            gl::Texture *texture,
+                            EGLint buffer) override;
+    egl::Error releaseTexImage(const gl::Context *context, EGLint buffer) override;
     void setSwapInterval(EGLint interval) override;
 
     EGLint getWidth() const override;
@@ -55,9 +58,10 @@ class PbufferSurfaceCGL : public SurfaceGL
     unsigned mWidth;
     unsigned mHeight;
 
+    // TODO(geofflang): Don't store these, they are potentially specific to a single GL context.
+    // http://anglebug.com/2464
     const FunctionsGL *mFunctions;
     StateManagerGL *mStateManager;
-    RendererGL *mRenderer;
 
     GLuint mFramebuffer;
     GLuint mColorRenderbuffer;

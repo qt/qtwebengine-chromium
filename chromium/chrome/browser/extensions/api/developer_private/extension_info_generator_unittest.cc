@@ -15,6 +15,7 @@
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "chrome/browser/extensions/api/developer_private/inspectable_views_finder.h"
 #include "chrome/browser/extensions/chrome_test_extension_loader.h"
@@ -32,6 +33,7 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
+#include "extensions/common/extension_features.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/permissions/permission_message.h"
 #include "extensions/common/permissions/permissions_data.h"
@@ -253,7 +255,7 @@ TEST_F(ExtensionInfoGeneratorUnitTest, BasicInfoTest) {
       base::UTF8ToUTF16("message"),
       StackTrace(1, StackFrame(1, 1, base::UTF8ToUTF16("source"),
                                base::UTF8ToUTF16("function"))),
-      kContextUrl, logging::LOG_VERBOSE, 1, 1));
+      kContextUrl, logging::LOG_WARNING, 1, 1));
 
   // It's not feasible to validate every field here, because that would be
   // a duplication of the logic in the method itself. Instead, test a handful
@@ -301,7 +303,7 @@ TEST_F(ExtensionInfoGeneratorUnitTest, BasicInfoTest) {
   ASSERT_EQ(1u, info->manifest_errors.size());
   const api::developer_private::RuntimeError& runtime_error_verbose =
       info->runtime_errors[1];
-  EXPECT_EQ(api::developer_private::ERROR_LEVEL_LOG,
+  EXPECT_EQ(api::developer_private::ERROR_LEVEL_WARN,
             runtime_error_verbose.severity);
   const api::developer_private::ManifestError& manifest_error =
       info->manifest_errors[0];
@@ -390,9 +392,9 @@ TEST_F(ExtensionInfoGeneratorUnitTest, GenerateExtensionsJSONData) {
 // urls, and only when the switch is on.
 TEST_F(ExtensionInfoGeneratorUnitTest, ExtensionInfoRunOnAllUrls) {
   // Start with the switch enabled.
-  std::unique_ptr<FeatureSwitch::ScopedOverride> enable_scripts_switch(
-      new FeatureSwitch::ScopedOverride(FeatureSwitch::scripts_require_action(),
-                                        true));
+  auto scoped_feature_list = std::make_unique<base::test::ScopedFeatureList>();
+  scoped_feature_list->InitAndEnableFeature(features::kRuntimeHostPermissions);
+
   // Two extensions - one with all urls, one without.
   scoped_refptr<const Extension> all_urls_extension = CreateExtension(
       "all_urls", ListBuilder().Append(kAllHostsPermission).Build(),
@@ -403,55 +405,31 @@ TEST_F(ExtensionInfoGeneratorUnitTest, ExtensionInfoRunOnAllUrls) {
   std::unique_ptr<developer::ExtensionInfo> info =
       GenerateExtensionInfo(all_urls_extension->id());
 
-  // The extension should want all urls, but not currently have it.
-  EXPECT_TRUE(info->run_on_all_urls.is_enabled);
-  EXPECT_FALSE(info->run_on_all_urls.is_active);
-
-  // Give the extension all urls.
-  ScriptingPermissionsModifier permissions_modifier(profile(),
-                                                    all_urls_extension);
-  permissions_modifier.SetAllowedOnAllUrls(true);
-
-  // Now the extension should both want and have all urls.
-  info = GenerateExtensionInfo(all_urls_extension->id());
+  // The extension should want all urls, and have it currently granted.
   EXPECT_TRUE(info->run_on_all_urls.is_enabled);
   EXPECT_TRUE(info->run_on_all_urls.is_active);
+
+  // Revoke the all urls permission.
+  ScriptingPermissionsModifier permissions_modifier(profile(),
+                                                    all_urls_extension);
+  permissions_modifier.SetAllowedOnAllUrls(false);
+
+  // Now the extension want all urls, but not have it granted.
+  info = GenerateExtensionInfo(all_urls_extension->id());
+  EXPECT_TRUE(info->run_on_all_urls.is_enabled);
+  EXPECT_FALSE(info->run_on_all_urls.is_active);
 
   // The other extension should neither want nor have all urls.
   info = GenerateExtensionInfo(no_urls_extension->id());
   EXPECT_FALSE(info->run_on_all_urls.is_enabled);
   EXPECT_FALSE(info->run_on_all_urls.is_active);
 
-  // Revoke the first extension's permissions.
-  permissions_modifier.SetAllowedOnAllUrls(false);
-
-  // Turn off the switch and load another extension (so permissions are
-  // re-initialized).
-  enable_scripts_switch.reset();
-
-  // Since the extension doesn't have access to all urls (but normally would),
-  // the extension should have the "want" flag even with the switch off.
-  info = GenerateExtensionInfo(all_urls_extension->id());
-  EXPECT_TRUE(info->run_on_all_urls.is_enabled);
-  EXPECT_FALSE(info->run_on_all_urls.is_active);
-
-  // If we grant the extension all urls, then the checkbox should still be
-  // there, since it has an explicitly-set user preference.
-  permissions_modifier.SetAllowedOnAllUrls(true);
-  info = GenerateExtensionInfo(all_urls_extension->id());
-  EXPECT_TRUE(info->run_on_all_urls.is_enabled);
-  EXPECT_TRUE(info->run_on_all_urls.is_active);
-
-  // Load another extension with all urls (so permissions get re-init'd).
-  all_urls_extension = CreateExtension(
-      "all_urls_II", ListBuilder().Append(kAllHostsPermission).Build(),
-      Manifest::INTERNAL);
-
-  // Even though the extension has all_urls permission, the checkbox shouldn't
-  // show up without the switch.
+  // Turn off the switch. With the switch off, the run_on_all_urls control
+  // should never be enabled.
+  scoped_feature_list.reset();
   info = GenerateExtensionInfo(all_urls_extension->id());
   EXPECT_FALSE(info->run_on_all_urls.is_enabled);
-  EXPECT_TRUE(info->run_on_all_urls.is_active);
+  EXPECT_FALSE(info->run_on_all_urls.is_active);
 }
 
 // Test that file:// access checkbox does not show up when the user can't
@@ -469,6 +447,20 @@ TEST_F(ExtensionInfoGeneratorUnitTest, ExtensionInfoLockedAllUrls) {
   // in chrome://extensions.
   EXPECT_TRUE(locked_extension->wants_file_access());
   EXPECT_FALSE(info->file_access.is_enabled);
+  EXPECT_FALSE(info->file_access.is_active);
+}
+
+// Tests that file:// access checkbox shows up for extensions with activeTab
+// permission. See crbug.com/850643.
+TEST_F(ExtensionInfoGeneratorUnitTest, ActiveTabFileUrls) {
+  scoped_refptr<const Extension> extension =
+      CreateExtension("activeTab", ListBuilder().Append("activeTab").Build(),
+                      Manifest::INTERNAL);
+  std::unique_ptr<developer::ExtensionInfo> info =
+      GenerateExtensionInfo(extension->id());
+
+  EXPECT_TRUE(extension->wants_file_access());
+  EXPECT_TRUE(info->file_access.is_enabled);
   EXPECT_FALSE(info->file_access.is_active);
 }
 

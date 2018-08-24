@@ -66,7 +66,6 @@ class CORE_EXPORT WebSettingsImpl final : public WebSettings {
   void SetAntialiased2dCanvasEnabled(bool) override;
   void SetAntialiasedClips2dCanvasEnabled(bool) override;
   void SetAutoZoomFocusedNodeToLegibleScale(bool) override;
-  void SetBrowserSideNavigationEnabled(bool) override;
   void SetClobberUserAgentInitialScaleQuirk(bool) override;
   void SetCookieEnabled(bool) override;
   void SetNavigateOnDragDrop(bool) override;
@@ -117,6 +116,8 @@ class CORE_EXPORT WebSettingsImpl final : public WebSettings {
   void SetMainFrameResizesAreOrientationChanges(bool) override;
   void SetMaxTouchPoints(int) override;
   void SetPictureInPictureEnabled(bool) override;
+  void SetDataSaverHoldbackWebApi(bool) override;
+  void SetDataSaverHoldbackMediaApi(bool) override;
   void SetMediaPlaybackGestureWhitelistScope(const WebString&) override;
   void SetPresentationRequiresUserGesture(bool) override;
   void SetEmbeddedMediaExperienceEnabled(bool) override;
@@ -145,7 +146,7 @@ class CORE_EXPORT WebSettingsImpl final : public WebSettings {
   void SetRubberBandingOnCompositorThread(bool) override;
   void SetSansSerifFontFamily(const WebString&,
                               UScriptCode = USCRIPT_COMMON) override;
-  void SetSelectTrailingWhitespaceEnabled(bool override);
+  void SetSelectTrailingWhitespaceEnabled(bool override) override;
   void SetSelectionIncludesAltImageText(bool) override;
   void SetSelectionStrategy(SelectionStrategyType) override;
   void SetSerifFontFamily(const WebString&,

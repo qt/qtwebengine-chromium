@@ -125,7 +125,6 @@
 #include "third_party/blink/renderer/core/layout/adjust_for_absolute_zoom.h"
 #include "third_party/blink/renderer/core/layout/layout_text_fragment.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
-#include "third_party/blink/renderer/core/layout/svg/svg_resources.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/focus_controller.h"
@@ -151,6 +150,7 @@
 #include "third_party/blink/renderer/platform/bindings/v8_dom_wrapper.h"
 #include "third_party/blink/renderer/platform/bindings/v8_per_context_data.h"
 #include "third_party/blink/renderer/platform/event_dispatch_forbidden_scope.h"
+#include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scroll/scrollable_area.h"
 #include "third_party/blink/renderer/platform/scroll/smooth_scroll_sequencer.h"
@@ -630,6 +630,7 @@ void Element::NativeDistributeScroll(ScrollState& scroll_state) {
 }
 
 void Element::CallDistributeScroll(ScrollState& scroll_state) {
+  TRACE_EVENT0("input", "Element::CallDistributeScroll");
   ScrollStateCallback* callback =
       GetScrollCustomizationCallbacks().GetDistributeScroll(this);
 
@@ -681,7 +682,7 @@ void Element::NativeApplyScroll(ScrollState& scroll_state) {
 
   LayoutBox* box_to_scroll = nullptr;
 
-  if (GetDocument().GetRootScrollerController().ScrollsViewport(*this))
+  if (this == GetDocument().documentElement())
     box_to_scroll = GetDocument().GetLayoutView();
   else if (GetLayoutObject())
     box_to_scroll = ToLayoutBox(GetLayoutObject());
@@ -689,7 +690,13 @@ void Element::NativeApplyScroll(ScrollState& scroll_state) {
   if (!box_to_scroll)
     return;
 
-  ScrollResult result = box_to_scroll->EnclosingBox()->Scroll(
+  ScrollableArea* scrollable_area =
+      box_to_scroll->EnclosingBox()->GetScrollableArea();
+
+  if (!scrollable_area)
+    return;
+
+  ScrollResult result = scrollable_area->UserScroll(
       ScrollGranularity(static_cast<int>(scroll_state.deltaGranularity())),
       delta);
 
@@ -708,6 +715,7 @@ void Element::NativeApplyScroll(ScrollState& scroll_state) {
 };
 
 void Element::CallApplyScroll(ScrollState& scroll_state) {
+  TRACE_EVENT0("input", "Element::CallApplyScroll");
   // Hits ASSERTs when trying to determine whether we need to scroll on main
   // or CC. http://crbug.com/625676.
   DisableCompositingQueryAsserts disabler;
@@ -1565,6 +1573,9 @@ void Element::AttributeChanged(const AttributeModificationParams& params) {
   } else if (name == HTMLNames::partAttr) {
     if (RuntimeEnabledFeatures::CSSPartPseudoElementEnabled())
       EnsureElementRareData().SetPart(params.new_value);
+  } else if (name == HTMLNames::partmapAttr) {
+    if (RuntimeEnabledFeatures::CSSPartPseudoElementEnabled())
+      EnsureElementRareData().SetPartNamesMap(params.new_value);
   } else if (IsStyledElement()) {
     if (name == styleAttr) {
       StyleAttributeChanged(params.new_value, params.reason);
@@ -1901,17 +1912,17 @@ void Element::RemovedFrom(ContainerNode* insertion_point) {
     if (this == GetDocument().CssTarget())
       GetDocument().SetCSSTarget(nullptr);
 
-    if (HasPendingResources())
-      SVGResources::RemoveWatchesForElement(*this);
-
     if (GetCustomElementState() == CustomElementState::kCustom)
       CustomElement::EnqueueDisconnectedCallback(this);
     else if (IsUpgradedV0CustomElement())
       V0CustomElement::DidDetach(this, insertion_point->GetDocument());
 
-    if (NeedsStyleInvalidation())
-      GetDocument().GetStyleEngine().GetStyleInvalidator().ClearInvalidation(
-          *this);
+    if (NeedsStyleInvalidation()) {
+      GetDocument()
+          .GetStyleEngine()
+          .GetPendingNodeInvalidations()
+          .ClearInvalidation(*this);
+    }
   }
 
   GetDocument().GetRootScrollerController().ElementRemoved(*this);
@@ -2048,9 +2059,12 @@ void Element::DetachLayoutTree(const AttachContext& context) {
     GetDocument().UserActionElements().DidDetach(*this);
   }
 
-  if (context.clear_invalidation)
-    GetDocument().GetStyleEngine().GetStyleInvalidator().ClearInvalidation(
-        *this);
+  if (context.clear_invalidation) {
+    GetDocument()
+        .GetStyleEngine()
+        .GetPendingNodeInvalidations()
+        .ClearInvalidation(*this);
+  }
 
   SetNeedsResizeObserverUpdate();
 
@@ -2146,6 +2160,11 @@ void Element::RecalcStyle(StyleRecalcChange change) {
     if (ParentComputedStyle()) {
       change = RecalcOwnStyle(change);
     } else if (NeedsAttach()) {
+      if (!CanParticipateInFlatTree()) {
+        // Recalculate style for reattachment of Shadow DOM v0 <content>
+        // fallback.
+        RecalcShadowIncludingDescendantStylesForReattach();
+      }
       SetNeedsReattachLayoutTree();
       change = kReattach;
     }
@@ -2303,6 +2322,9 @@ StyleRecalcChange Element::RecalcOwnStyle(StyleRecalcChange change) {
 }
 
 void Element::RecalcStyleForReattach() {
+  if (HasCustomStyleCallbacks())
+    WillRecalcStyle(kReattach);
+
   bool recalc_descendants = false;
   if (ParentComputedStyle()) {
     scoped_refptr<ComputedStyle> non_attached_style = StyleForLayoutObject();
@@ -2320,12 +2342,13 @@ void Element::RecalcStyleForReattach() {
   }
   if (recalc_descendants)
     RecalcShadowIncludingDescendantStylesForReattach();
+
+  if (HasCustomStyleCallbacks())
+    DidRecalcStyle(kReattach);
 }
 
 void Element::RecalcShadowIncludingDescendantStylesForReattach() {
   if (!ChildrenCanHaveStyle())
-    return;
-  if (HasCustomStyleCallbacks())
     return;
   SelectorFilterParentScope filterScope(*this);
   RecalcShadowRootStylesForReattach();
@@ -4783,8 +4806,9 @@ void Element::AddPropertyToPresentationAttributeStyle(
     CSSPropertyID property_id,
     const String& value) {
   DCHECK(IsStyledElement());
-  style->SetProperty(property_id, value, false,
-                     GetDocument().GetSecureContextMode());
+  Document& document = GetDocument();
+  style->SetProperty(property_id, value, false, document.GetSecureContextMode(),
+                     document.ElementSheet().Contents());
 }
 
 void Element::AddPropertyToPresentationAttributeStyle(
@@ -4870,7 +4894,7 @@ void Element::Trace(blink::Visitor* visitor) {
   ContainerNode::Trace(visitor);
 }
 
-void Element::TraceWrappers(const ScriptWrappableVisitor* visitor) const {
+void Element::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   if (HasRareData()) {
     visitor->TraceWrappersWithManualWriteBarrier(GetElementRareData());
   }
@@ -4891,6 +4915,17 @@ bool Element::HasPartName() const {
 const SpaceSplitString* Element::PartNames() const {
   return RuntimeEnabledFeatures::CSSPartPseudoElementEnabled() && HasRareData()
              ? GetElementRareData()->PartNames()
+             : nullptr;
+}
+
+bool Element::HasPartNamesMap() const {
+  const NamesMap* names_map = PartNamesMap();
+  return names_map && names_map->size() > 0;
+}
+
+const NamesMap* Element::PartNamesMap() const {
+  return RuntimeEnabledFeatures::CSSPartPseudoElementEnabled() && HasRareData()
+             ? GetElementRareData()->PartNamesMap()
              : nullptr;
 }
 

@@ -5,6 +5,7 @@
 <link rel="import" href="chrome://resources/cr_elements/cr_toolbar/cr_toolbar.html">
 <link rel="import" href="chrome://resources/cr_elements/icons.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-styles/color.html">
+<link rel="import" href="../find_shortcut_behavior.html">
 <link rel="import" href="../global_scroll_target_behavior.html">
 <link rel="import" href="../i18n_setup.html">
 <link rel="import" href="../icons.html">
@@ -24,13 +25,10 @@
   <template>
     <style include="settings-shared">
       :host {
+        @apply --cr-page-host;
         @apply --layout-fit;
-        color: var(--primary-text-color);
         display: flex;
         flex-direction: column;
-        line-height: 154%; /* Apply 20px line-height to all texts by default. */
-        overflow: hidden;  /* Prevent double scroll bar bugs. */
-        user-select: text;
       }
 
       cr-drawer {
@@ -68,6 +66,7 @@
       <div class="drawer-content">
         <template is="dom-if" id="drawerTemplate">
           <settings-menu page-visibility="[[pageVisibility_]]"
+              show-crostini="[[showCrostini_]]"
               show-android-apps="[[showAndroidApps_]]"
               show-multidevice="[[showMultidevice_]]"
               have-play-store-app="[[havePlayStoreApp_]]"
@@ -81,6 +80,7 @@
       <settings-main id="main" prefs="{{prefs}}"
           toolbar-spinner-active="{{toolbarSpinnerActive_}}"
           page-visibility="[[pageVisibility_]]"
+          show-crostini="[[showCrostini_]]"
           show-android-apps="[[showAndroidApps_]]"
           show-multidevice="[[showMultidevice_]]"
           have-play-store-app="[[havePlayStoreApp_]]"

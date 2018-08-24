@@ -65,14 +65,15 @@ const char* const kInvalidNumbers[] = {
   "3056 9309 0259 04aa", /* non-digit characters */
 };
 
-const char kUTF8MidlineEllipsis[] =
-    "  "
-    "\xE2\x80\xA2\xE2\x80\x86"
-    "\xE2\x80\xA2\xE2\x80\x86"
-    "\xE2\x80\xA2\xE2\x80\x86"
-    "\xE2\x80\xA2\xE2\x80\x86";
-
 }  // namespace
+
+TEST(CreditCardTest, GetObfuscatedStringForCardDigits) {
+  const base::string16 digits = base::ASCIIToUTF16("1235");
+  const base::string16 expected =
+      base::string16() + base::i18n::kLeftToRightEmbeddingMark +
+      kMidlineEllipsis + digits + base::i18n::kPopDirectionalFormatting;
+  EXPECT_EQ(expected, internal::GetObfuscatedStringForCardDigits(digits));
+}
 
 // Tests credit card summary string generation.  This test simulates a variety
 // of different possible summary strings.  Variations occur based on the
@@ -107,39 +108,39 @@ TEST(CreditCardTest, PreviewSummaryAndNetworkAndLastFourDigitsStrings) {
   test::SetCreditCardInfo(&credit_card2, "John Dillinger",
                           "5105 1051 0510 5100", "", "2010", "1");
   base::string16 summary2 = credit_card2.Label();
-  EXPECT_EQ(
-      UTF8ToUTF16(std::string("Mastercard") + kUTF8MidlineEllipsis + "5100"),
-      summary2);
+  EXPECT_EQ(UTF8ToUTF16(std::string("Mastercard  ") +
+                        test::ObfuscatedCardDigitsAsUTF8("5100")),
+            summary2);
   base::string16 obfuscated2 = credit_card2.NetworkAndLastFourDigits();
-  EXPECT_EQ(
-      UTF8ToUTF16(std::string("Mastercard") + kUTF8MidlineEllipsis + "5100"),
-      obfuscated2);
+  EXPECT_EQ(UTF8ToUTF16(std::string("Mastercard  ") +
+                        test::ObfuscatedCardDigitsAsUTF8("5100")),
+            obfuscated2);
 
   // Case 3: No year.
   CreditCard credit_card3(base::GenerateGUID(), "https://www.example.com/");
   test::SetCreditCardInfo(&credit_card3, "John Dillinger",
                           "5105 1051 0510 5100", "01", "", "1");
   base::string16 summary3 = credit_card3.Label();
-  EXPECT_EQ(
-      UTF8ToUTF16(std::string("Mastercard") + kUTF8MidlineEllipsis + "5100"),
-      summary3);
+  EXPECT_EQ(UTF8ToUTF16(std::string("Mastercard  ") +
+                        test::ObfuscatedCardDigitsAsUTF8("5100")),
+            summary3);
   base::string16 obfuscated3 = credit_card3.NetworkAndLastFourDigits();
-  EXPECT_EQ(
-      UTF8ToUTF16(std::string("Mastercard") + kUTF8MidlineEllipsis + "5100"),
-      obfuscated3);
+  EXPECT_EQ(UTF8ToUTF16(std::string("Mastercard  ") +
+                        test::ObfuscatedCardDigitsAsUTF8("5100")),
+            obfuscated3);
 
   // Case 4: Have everything.
   CreditCard credit_card4(base::GenerateGUID(), "https://www.example.com/");
   test::SetCreditCardInfo(&credit_card4, "John Dillinger",
                           "5105 1051 0510 5100", "01", "2010", "1");
   base::string16 summary4 = credit_card4.Label();
-  EXPECT_EQ(UTF8ToUTF16(std::string("Mastercard") + kUTF8MidlineEllipsis +
-                        "5100, 01/2010"),
+  EXPECT_EQ(UTF8ToUTF16(std::string("Mastercard  ") +
+                        test::ObfuscatedCardDigitsAsUTF8("5100") + ", 01/2010"),
             summary4);
   base::string16 obfuscated4 = credit_card4.NetworkAndLastFourDigits();
-  EXPECT_EQ(
-      UTF8ToUTF16(std::string("Mastercard") + kUTF8MidlineEllipsis + "5100"),
-      obfuscated4);
+  EXPECT_EQ(UTF8ToUTF16(std::string("Mastercard  ") +
+                        test::ObfuscatedCardDigitsAsUTF8("5100")),
+            obfuscated4);
 
   // Case 5: Very long credit card
   CreditCard credit_card5(base::GenerateGUID(), "https://www.example.com/");
@@ -148,11 +149,12 @@ TEST(CreditCardTest, PreviewSummaryAndNetworkAndLastFourDigitsStrings) {
       "0123456789 0123456789 0123456789 5105 1051 0510 5100", "01", "2010",
       "1");
   base::string16 summary5 = credit_card5.Label();
-  EXPECT_EQ(
-      UTF8ToUTF16(std::string("Card") + kUTF8MidlineEllipsis + "5100, 01/2010"),
-      summary5);
+  EXPECT_EQ(UTF8ToUTF16(std::string("Card  ") +
+                        test::ObfuscatedCardDigitsAsUTF8("5100") + ", 01/2010"),
+            summary5);
   base::string16 obfuscated5 = credit_card5.NetworkAndLastFourDigits();
-  EXPECT_EQ(UTF8ToUTF16(std::string("Card") + kUTF8MidlineEllipsis + "5100"),
+  EXPECT_EQ(UTF8ToUTF16(std::string("Card  ") +
+                        test::ObfuscatedCardDigitsAsUTF8("5100")),
             obfuscated5);
 }
 
@@ -165,7 +167,8 @@ TEST(CreditCardTest, BankNameAndLastFourDigitsStrings) {
   credit_card1.set_bank_name("Chase");
   base::string16 obfuscated1 = credit_card1.BankNameAndLastFourDigits();
   EXPECT_FALSE(credit_card1.bank_name().empty());
-  EXPECT_EQ(UTF8ToUTF16(std::string("Chase") + kUTF8MidlineEllipsis + "5100"),
+  EXPECT_EQ(UTF8ToUTF16(std::string("Chase  ") +
+                        test::ObfuscatedCardDigitsAsUTF8("5100")),
             obfuscated1);
 
   // Case 2: Have no bank name and not show bank name.
@@ -174,8 +177,9 @@ TEST(CreditCardTest, BankNameAndLastFourDigitsStrings) {
                           "5105 1051 0510 5100", "01", "2010", "1");
   base::string16 obfuscated2 = credit_card2.BankNameAndLastFourDigits();
   EXPECT_TRUE(credit_card2.bank_name().empty());
-  EXPECT_EQ(UTF8ToUTF16(std::string(kUTF8MidlineEllipsis) + "5100"),
-            obfuscated2);
+  EXPECT_EQ(
+      internal::GetObfuscatedStringForCardDigits(base::ASCIIToUTF16("5100")),
+      obfuscated2);
 
   // Case 3: Have bank name but no last four digits, only show bank name.
   CreditCard credit_card3(base::GenerateGUID(), "https://www.example.com/");
@@ -198,9 +202,9 @@ TEST(CreditCardTest, NetworkOrBankNameAndLastFourDigitsStrings) {
   base::string16 obfuscated1 =
       credit_card1.NetworkOrBankNameAndLastFourDigits();
   EXPECT_FALSE(credit_card1.bank_name().empty());
-  EXPECT_EQ(
-      UTF8ToUTF16(std::string("Mastercard") + kUTF8MidlineEllipsis + "5100"),
-      obfuscated1);
+  EXPECT_EQ(UTF8ToUTF16(std::string("Mastercard  ") +
+                        test::ObfuscatedCardDigitsAsUTF8("5100")),
+            obfuscated1);
 
   // Turn on feature flag.
   base::test::ScopedFeatureList scoped_feature_list_;
@@ -214,9 +218,9 @@ TEST(CreditCardTest, NetworkOrBankNameAndLastFourDigitsStrings) {
   EXPECT_TRUE(credit_card2.bank_name().empty());
   base::string16 obfuscated2 =
       credit_card2.NetworkOrBankNameAndLastFourDigits();
-  EXPECT_EQ(
-      UTF8ToUTF16(std::string("Mastercard") + kUTF8MidlineEllipsis + "5100"),
-      obfuscated2);
+  EXPECT_EQ(UTF8ToUTF16(std::string("Mastercard  ") +
+                        test::ObfuscatedCardDigitsAsUTF8("5100")),
+            obfuscated2);
 
   // Case 3: Experiment on && bank name not empty -> show bank name.
   CreditCard credit_card3(base::GenerateGUID(), "https://www.example.com/");
@@ -227,23 +231,24 @@ TEST(CreditCardTest, NetworkOrBankNameAndLastFourDigitsStrings) {
   base::string16 obfuscated3 =
       credit_card3.NetworkOrBankNameAndLastFourDigits();
   EXPECT_FALSE(credit_card3.bank_name().empty());
-  EXPECT_EQ(UTF8ToUTF16(std::string("Chase") + kUTF8MidlineEllipsis + "5100"),
+  EXPECT_EQ(UTF8ToUTF16(std::string("Chase  ") +
+                        test::ObfuscatedCardDigitsAsUTF8("5100")),
             obfuscated3);
 }
 
 TEST(CreditCardTest, AssignmentOperator) {
-  CreditCard a(base::GenerateGUID(), "some origin");
+  CreditCard a(base::GenerateGUID(), test::kEmptyOrigin);
   test::SetCreditCardInfo(&a, "John Dillinger", "123456789012", "01", "2010",
                           "1");
 
   // Result of assignment should be logically equal to the original profile.
-  CreditCard b(base::GenerateGUID(), "some other origin");
+  CreditCard b(base::GenerateGUID(), test::kEmptyOrigin);
   b = a;
-  EXPECT_TRUE(a == b);
+  EXPECT_EQ(a, b);
 
   // Assignment to self should not change the profile value.
   a = *&a;  // The *& defeats Clang's -Wself-assign warning.
-  EXPECT_TRUE(a == b);
+  EXPECT_EQ(a, b);
 }
 
 struct SetExpirationYearFromStringTestCase {
@@ -331,7 +336,7 @@ INSTANTIATE_TEST_CASE_P(
         SetExpirationDateFromStringTestCase{"05_2045", 0, 0}));
 
 TEST(CreditCardTest, Copy) {
-  CreditCard a(base::GenerateGUID(), "https://www.example.com");
+  CreditCard a(base::GenerateGUID(), test::kEmptyOrigin);
   test::SetCreditCardInfo(&a, "John Dillinger", "123456789012", "01", "2010",
                           base::GenerateGUID());
 
@@ -509,7 +514,7 @@ TEST(CreditCardTest, IconResourceId) {
 }
 
 TEST(CreditCardTest, UpdateFromImportedCard) {
-  CreditCard original_card(base::GenerateGUID(), "https://www.example.com");
+  CreditCard original_card(base::GenerateGUID(), test::kEmptyOrigin);
   test::SetCreditCardInfo(&original_card, "John Dillinger", "123456789012",
                           "09", "2017", "1");
 
@@ -518,14 +523,14 @@ TEST(CreditCardTest, UpdateFromImportedCard) {
   // The new card has a different name, expiration date, and origin.
   CreditCard b = a;
   b.set_guid(base::GenerateGUID());
-  b.set_origin("https://www.example.org");
+  b.set_origin(test::kEmptyOrigin);
   b.SetRawInfo(CREDIT_CARD_NAME_FULL, ASCIIToUTF16("J. Dillinger"));
   b.SetRawInfo(CREDIT_CARD_EXP_MONTH, ASCIIToUTF16("08"));
   b.SetRawInfo(CREDIT_CARD_EXP_4_DIGIT_YEAR, ASCIIToUTF16("2019"));
 
   // |a| should be updated with the information from |b|.
   EXPECT_TRUE(a.UpdateFromImportedCard(b, "en-US"));
-  EXPECT_EQ("https://www.example.org", a.origin());
+  EXPECT_EQ(test::kEmptyOrigin, a.origin());
   EXPECT_EQ(ASCIIToUTF16("J. Dillinger"), a.GetRawInfo(CREDIT_CARD_NAME_FULL));
   EXPECT_EQ(ASCIIToUTF16("08"), a.GetRawInfo(CREDIT_CARD_EXP_MONTH));
   EXPECT_EQ(ASCIIToUTF16("2019"), a.GetRawInfo(CREDIT_CARD_EXP_4_DIGIT_YEAR));
@@ -537,7 +542,7 @@ TEST(CreditCardTest, UpdateFromImportedCard) {
   b.SetRawInfo(CREDIT_CARD_NAME_FULL, base::string16());
 
   EXPECT_TRUE(a.UpdateFromImportedCard(b, "en-US"));
-  EXPECT_EQ("https://www.example.org", a.origin());
+  EXPECT_EQ(test::kEmptyOrigin, a.origin());
   EXPECT_EQ(ASCIIToUTF16("John Dillinger"),
             a.GetRawInfo(CREDIT_CARD_NAME_FULL));
   EXPECT_EQ(ASCIIToUTF16("08"), a.GetRawInfo(CREDIT_CARD_EXP_MONTH));
@@ -731,13 +736,13 @@ TEST(CreditCardTest, CreditCardVerificationCode) {
   EXPECT_EQ(base::string16(), card.GetRawInfo(CREDIT_CARD_VERIFICATION_CODE));
 }
 
-struct MatchingTypesCase {
-  MatchingTypesCase(const char* value,
-                    const char* card_exp_month,
-                    const char* card_exp_year,
-                    CreditCard::RecordType record_type,
-                    ServerFieldTypeSet expected_matched_types,
-                    const char* locale = "US")
+struct CreditCardMatchingTypesCase {
+  CreditCardMatchingTypesCase(const char* value,
+                              const char* card_exp_month,
+                              const char* card_exp_year,
+                              CreditCard::RecordType record_type,
+                              ServerFieldTypeSet expected_matched_types,
+                              const char* locale = "US")
       : value(value),
         card_exp_month(card_exp_month),
         card_exp_year(card_exp_year),
@@ -746,7 +751,7 @@ struct MatchingTypesCase {
         locale(locale) {}
 
   // The value entered by the user.
-  const std::string value;
+  const char* value;
   // Some values for an already saved card. Card number will be fixed to
   // 4012888888881881.
   const char* card_exp_month;
@@ -755,13 +760,13 @@ struct MatchingTypesCase {
   // The types that are expected to match.
   const ServerFieldTypeSet expected_matched_types;
 
-  const std::string locale;
+  const char* locale = "US";
 };
 
-class GetMatchingTypesTest : public testing::TestWithParam<MatchingTypesCase> {
-};
+class CreditCardMatchingTypesTest
+    : public testing::TestWithParam<CreditCardMatchingTypesCase> {};
 
-TEST_P(GetMatchingTypesTest, Cases) {
+TEST_P(CreditCardMatchingTypesTest, Cases) {
   auto test_case = GetParam();
   CreditCard card(base::GenerateGUID(), "https://www.example.com/");
   card.set_record_type(test_case.record_type);
@@ -777,129 +782,60 @@ TEST_P(GetMatchingTypesTest, Cases) {
   EXPECT_EQ(test_case.expected_matched_types, matching_types);
 }
 
-INSTANTIATE_TEST_CASE_P(
-    CreditCardTest,
-    GetMatchingTypesTest,
-    testing::Values(
-        // If comparing against a masked card, last four digits are checked.
-        MatchingTypesCase{"1881",
-                          "01",
-                          "2020",
-                          MASKED_SERVER_CARD,
-                          {CREDIT_CARD_NUMBER}},
-        MatchingTypesCase{"4012888888881881",
-                          "01",
-                          "2020",
-                          MASKED_SERVER_CARD,
-                          {CREDIT_CARD_NUMBER}},
-        MatchingTypesCase{"4111111111111111", "01", "2020",
-                          CreditCard::MASKED_SERVER_CARD, ServerFieldTypeSet()},
-        // Same value will not match a local card or full server card since we
-        // have the full number for those. However the full number will.
-        MatchingTypesCase{"1881", "01", "2020", LOCAL_CARD,
-                          ServerFieldTypeSet()},
-        MatchingTypesCase{"1881", "01", "2020", FULL_SERVER_CARD,
-                          ServerFieldTypeSet()},
-        MatchingTypesCase{"4012888888881881",
-                          "01",
-                          "2020",
-                          LOCAL_CARD,
-                          {CREDIT_CARD_NUMBER}},
-        MatchingTypesCase{"4012888888881881",
-                          "01",
-                          "2020",
-                          FULL_SERVER_CARD,
-                          {CREDIT_CARD_NUMBER}},
+const CreditCardMatchingTypesCase kCreditCardMatchingTypesTestCases[] = {
+    // If comparing against a masked card, last four digits are checked.
+    {"1881", "01", "2020", MASKED_SERVER_CARD, {CREDIT_CARD_NUMBER}},
+    {"4012888888881881",
+     "01",
+     "2020",
+     MASKED_SERVER_CARD,
+     {CREDIT_CARD_NUMBER}},
+    {"4111111111111111", "01", "2020", CreditCard::MASKED_SERVER_CARD,
+     ServerFieldTypeSet()},
+    // Same value will not match a local card or full server card since we
+    // have the full number for those. However the full number will.
+    {"1881", "01", "2020", LOCAL_CARD, ServerFieldTypeSet()},
+    {"1881", "01", "2020", FULL_SERVER_CARD, ServerFieldTypeSet()},
+    {"4012888888881881", "01", "2020", LOCAL_CARD, {CREDIT_CARD_NUMBER}},
+    {"4012888888881881", "01", "2020", FULL_SERVER_CARD, {CREDIT_CARD_NUMBER}},
 
-        // Wrong last four digits.
-        MatchingTypesCase{"1111", "01", "2020", MASKED_SERVER_CARD,
-                          ServerFieldTypeSet()},
-        MatchingTypesCase{"1111", "01", "2020", LOCAL_CARD,
-                          ServerFieldTypeSet()},
-        MatchingTypesCase{"1111", "01", "2020", FULL_SERVER_CARD,
-                          ServerFieldTypeSet()},
-        MatchingTypesCase{"4111111111111111", "01", "2020", MASKED_SERVER_CARD,
-                          ServerFieldTypeSet()},
-        MatchingTypesCase{"4111111111111111", "01", "2020", LOCAL_CARD,
-                          ServerFieldTypeSet()},
-        MatchingTypesCase{"4111111111111111", "01", "2020", FULL_SERVER_CARD,
-                          ServerFieldTypeSet()},
+    // Wrong last four digits.
+    {"1111", "01", "2020", MASKED_SERVER_CARD, ServerFieldTypeSet()},
+    {"1111", "01", "2020", LOCAL_CARD, ServerFieldTypeSet()},
+    {"1111", "01", "2020", FULL_SERVER_CARD, ServerFieldTypeSet()},
+    {"4111111111111111", "01", "2020", MASKED_SERVER_CARD,
+     ServerFieldTypeSet()},
+    {"4111111111111111", "01", "2020", LOCAL_CARD, ServerFieldTypeSet()},
+    {"4111111111111111", "01", "2020", FULL_SERVER_CARD, ServerFieldTypeSet()},
 
-        // Matching the expiration month.
-        MatchingTypesCase{"01",
-                          "01",
-                          "2020",
-                          LOCAL_CARD,
-                          {CREDIT_CARD_EXP_MONTH}},
-        MatchingTypesCase{"1",
-                          "01",
-                          "2020",
-                          LOCAL_CARD,
-                          {CREDIT_CARD_EXP_MONTH}},
-        MatchingTypesCase{"jan",
-                          "01",
-                          "2020",
-                          LOCAL_CARD,
-                          {CREDIT_CARD_EXP_MONTH},
-                          "US"},
-        // Locale-specific interpretations.
-        MatchingTypesCase{"janv",
-                          "01",
-                          "2020",
-                          LOCAL_CARD,
-                          {CREDIT_CARD_EXP_MONTH},
-                          "FR"},
-        MatchingTypesCase{"janv.",
-                          "01",
-                          "2020",
-                          LOCAL_CARD,
-                          {CREDIT_CARD_EXP_MONTH},
-                          "FR"},
-        MatchingTypesCase{"janvier",
-                          "01",
-                          "2020",
-                          LOCAL_CARD,
-                          {CREDIT_CARD_EXP_MONTH},
-                          "FR"},
-        MatchingTypesCase{"février",
-                          "02",
-                          "2020",
-                          LOCAL_CARD,
-                          {CREDIT_CARD_EXP_MONTH},
-                          "FR"},
-        MatchingTypesCase{"mars", "01", "2020", LOCAL_CARD,
-                          ServerFieldTypeSet(), "FR"},
+    // Matching the expiration month.
+    {"01", "01", "2020", LOCAL_CARD, {CREDIT_CARD_EXP_MONTH}},
+    {"1", "01", "2020", LOCAL_CARD, {CREDIT_CARD_EXP_MONTH}},
+    {"jan", "01", "2020", LOCAL_CARD, {CREDIT_CARD_EXP_MONTH}, "US"},
+    // Locale-specific interpretations.
+    {"janv", "01", "2020", LOCAL_CARD, {CREDIT_CARD_EXP_MONTH}, "FR"},
+    {"janv.", "01", "2020", LOCAL_CARD, {CREDIT_CARD_EXP_MONTH}, "FR"},
+    {"janvier", "01", "2020", LOCAL_CARD, {CREDIT_CARD_EXP_MONTH}, "FR"},
+    {"février", "02", "2020", LOCAL_CARD, {CREDIT_CARD_EXP_MONTH}, "FR"},
+    {"mars", "01", "2020", LOCAL_CARD, ServerFieldTypeSet(), "FR"},
 
-        // Matching the expiration year.
-        MatchingTypesCase{"2019",
-                          "01",
-                          "2019",
-                          LOCAL_CARD,
-                          {CREDIT_CARD_EXP_4_DIGIT_YEAR}},
-        MatchingTypesCase{"19",
-                          "01",
-                          "2019",
-                          LOCAL_CARD,
-                          {CREDIT_CARD_EXP_2_DIGIT_YEAR}},
-        MatchingTypesCase{"01/2019",
-                          "01",
-                          "2019",
-                          LOCAL_CARD,
-                          {CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR}},
-        MatchingTypesCase{"01-2019",
-                          "01",
-                          "2019",
-                          LOCAL_CARD,
-                          {CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR}},
-        MatchingTypesCase{"01/2020", "01", "2019", LOCAL_CARD,
-                          ServerFieldTypeSet()},
-        MatchingTypesCase{"20", "01", "2019", LOCAL_CARD, ServerFieldTypeSet()},
-        MatchingTypesCase{"2021", "01", "2019", LOCAL_CARD,
-                          ServerFieldTypeSet()}));
+    // Matching the expiration year.
+    {"2019", "01", "2019", LOCAL_CARD, {CREDIT_CARD_EXP_4_DIGIT_YEAR}},
+    {"19", "01", "2019", LOCAL_CARD, {CREDIT_CARD_EXP_2_DIGIT_YEAR}},
+    {"01/2019", "01", "2019", LOCAL_CARD, {CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR}},
+    {"01-2019", "01", "2019", LOCAL_CARD, {CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR}},
+    {"01/2020", "01", "2019", LOCAL_CARD, ServerFieldTypeSet()},
+    {"20", "01", "2019", LOCAL_CARD, ServerFieldTypeSet()},
+    {"2021", "01", "2019", LOCAL_CARD, ServerFieldTypeSet()},
+};
+
+INSTANTIATE_TEST_CASE_P(CreditCardTest,
+                        CreditCardMatchingTypesTest,
+                        testing::ValuesIn(kCreditCardMatchingTypesTestCases));
 
 struct GetCardNetworkTestCase {
-  std::string card_number;
-  std::string issuer_network;
+  const char* card_number;
+  const char* issuer_network;
   bool is_valid;
 };
 
@@ -975,7 +911,7 @@ INSTANTIATE_TEST_CASE_P(
         GetCardNetworkTestCase{"6362970000457013", kEloCard, true},
 
         // Empty string
-        GetCardNetworkTestCase{std::string(), kGenericCard, false},
+        GetCardNetworkTestCase{"", kGenericCard, false},
 
         // Non-numeric
         GetCardNetworkTestCase{"garbage", kGenericCard, false},
@@ -1119,16 +1055,27 @@ INSTANTIATE_TEST_CASE_P(
 TEST(CreditCardTest, LastFourDigits) {
   CreditCard card(base::GenerateGUID(), "https://www.example.com/");
   ASSERT_EQ(base::string16(), card.LastFourDigits());
+  ASSERT_EQ(internal::GetObfuscatedStringForCardDigits(base::string16()),
+            card.ObfuscatedLastFourDigits());
 
   test::SetCreditCardInfo(&card, "Baby Face Nelson", "5212341234123489", "01",
                           "2010", "1");
   ASSERT_EQ(base::ASCIIToUTF16("3489"), card.LastFourDigits());
+  ASSERT_EQ(
+      internal::GetObfuscatedStringForCardDigits(base::ASCIIToUTF16("3489")),
+      card.ObfuscatedLastFourDigits());
 
   card.SetRawInfo(CREDIT_CARD_NUMBER, ASCIIToUTF16("3489"));
   ASSERT_EQ(base::ASCIIToUTF16("3489"), card.LastFourDigits());
+  ASSERT_EQ(
+      internal::GetObfuscatedStringForCardDigits(base::ASCIIToUTF16("3489")),
+      card.ObfuscatedLastFourDigits());
 
   card.SetRawInfo(CREDIT_CARD_NUMBER, ASCIIToUTF16("489"));
   ASSERT_EQ(base::ASCIIToUTF16("489"), card.LastFourDigits());
+  ASSERT_EQ(
+      internal::GetObfuscatedStringForCardDigits(base::ASCIIToUTF16("489")),
+      card.ObfuscatedLastFourDigits());
 }
 
 // Verifies that a credit card should be updated.

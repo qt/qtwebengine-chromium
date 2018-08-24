@@ -26,9 +26,9 @@
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
 #include <memory>
+#include "base/optional.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/wtf_test_helper.h"
 
@@ -108,13 +108,13 @@ TEST(VectorTest, Erase) {
   EXPECT_EQ(2, int_vector[2]);
   EXPECT_EQ(3, int_vector[3]);
 
-  auto first = int_vector.erase(int_vector.begin());
+  auto* first = int_vector.erase(int_vector.begin());
   EXPECT_EQ(3u, int_vector.size());
   EXPECT_EQ(1, *first);
   EXPECT_EQ(int_vector.begin(), first);
 
-  auto last = std::lower_bound(int_vector.begin(), int_vector.end(), 3);
-  auto end = int_vector.erase(last);
+  auto* last = std::lower_bound(int_vector.begin(), int_vector.end(), 3);
+  auto* end = int_vector.erase(last);
   EXPECT_EQ(2u, int_vector.size());
   EXPECT_EQ(int_vector.end(), end);
 }
@@ -613,7 +613,7 @@ TEST(VectorTest, InitializerList) {
 }
 
 TEST(VectorTest, Optional) {
-  Optional<Vector<int>> vector;
+  base::Optional<Vector<int>> vector;
   EXPECT_FALSE(vector);
   vector.emplace(3);
   EXPECT_TRUE(vector);

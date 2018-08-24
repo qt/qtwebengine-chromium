@@ -18,6 +18,10 @@
 #include "gpu/ipc/common/surface_handle.h"
 #include "gpu/ipc/in_process_command_buffer.h"
 
+#if defined(OS_WIN)
+#include "components/viz/service/display_embedder/output_device_backing.h"
+#endif
+
 namespace gpu {
 class GpuChannelManager;
 class GpuChannelManagerDelegate;
@@ -27,7 +31,7 @@ class ImageFactory;
 namespace viz {
 class Display;
 class ExternalBeginFrameControllerImpl;
-class OutputDeviceBacking;
+class GpuServiceImpl;
 class SoftwareOutputDevice;
 
 // In-process implementation of DisplayProvider.
@@ -35,6 +39,7 @@ class VIZ_SERVICE_EXPORT GpuDisplayProvider : public DisplayProvider {
  public:
   GpuDisplayProvider(
       uint32_t restart_id,
+      GpuServiceImpl* gpu_service_impl,
       scoped_refptr<gpu::InProcessCommandBuffer::Service> gpu_service,
       gpu::GpuChannelManager* gpu_channel_manager,
       bool headless,
@@ -46,6 +51,7 @@ class VIZ_SERVICE_EXPORT GpuDisplayProvider : public DisplayProvider {
       const FrameSinkId& frame_sink_id,
       gpu::SurfaceHandle surface_handle,
       bool gpu_compositing,
+      mojom::DisplayClient* display_client,
       ExternalBeginFrameControllerImpl* external_begin_frame_controller,
       const RendererSettings& renderer_settings,
       std::unique_ptr<SyntheticBeginFrameSource>* out_begin_frame_source)
@@ -53,9 +59,11 @@ class VIZ_SERVICE_EXPORT GpuDisplayProvider : public DisplayProvider {
 
  private:
   std::unique_ptr<SoftwareOutputDevice> CreateSoftwareOutputDeviceForPlatform(
-      gpu::SurfaceHandle surface_handle);
+      gpu::SurfaceHandle surface_handle,
+      mojom::DisplayClient* display_client);
 
   const uint32_t restart_id_;
+  GpuServiceImpl* const gpu_service_impl_;
   scoped_refptr<gpu::InProcessCommandBuffer::Service> gpu_service_;
   gpu::GpuChannelManagerDelegate* const gpu_channel_manager_delegate_;
   std::unique_ptr<gpu::GpuMemoryBufferManager> gpu_memory_buffer_manager_;
@@ -63,7 +71,7 @@ class VIZ_SERVICE_EXPORT GpuDisplayProvider : public DisplayProvider {
 
 #if defined(OS_WIN)
   // Used for software compositing output on Windows.
-  std::unique_ptr<OutputDeviceBacking> output_device_backing_;
+  OutputDeviceBacking output_device_backing_;
 #endif
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;

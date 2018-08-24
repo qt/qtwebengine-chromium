@@ -6,6 +6,9 @@ import("//build/config/compiler/compiler.gni")
 if (is_android) {
   import("//build/config/android/config.gni")  # For public_android_sdk
 }
+if (is_chromeos) {
+  import("//build/config/chromeos/rules.gni")
+}
 
 group("telemetry_chrome_test") {
   testonly = true
@@ -19,6 +22,7 @@ group("telemetry_chrome_test") {
       data_deps += [
         "//android_webview:system_webview_apk",
         "//android_webview/tools/system_webview_shell:system_webview_shell_apk",
+        "//chrome/android:monochrome_public_apk",
       ]
     }
   } else {
@@ -53,6 +57,10 @@ group("telemetry_chrome_test") {
     ]
   }
 
+  if (is_chromeos && cros_board != "") {
+    data_deps += [ "//chromeos:cros_vm_launcher" ]
+  }
+
   if (is_win && (symbol_level == 1 || symbol_level == 2)) {
     data_deps += [
       "//build/win:copy_cdb_to_output",
@@ -73,7 +81,7 @@ group("telemetry_chrome_test") {
   }
 }
 
-group("telemetry_chrome_test_experimental") {
+group("telemetry_chrome_test_without_chrome") {
   testonly = true
 
   if (is_android) {

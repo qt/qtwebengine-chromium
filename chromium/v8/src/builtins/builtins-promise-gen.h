@@ -85,14 +85,16 @@ class PromiseBuiltinsAssembler : public CodeStubAssembler {
   Node* AllocateAndSetJSPromise(Node* context, v8::Promise::PromiseState status,
                                 Node* result);
 
-  Node* AllocatePromiseReaction(Node* next, Node* payload,
+  Node* AllocatePromiseReaction(Node* next, Node* promise_or_capability,
                                 Node* fulfill_handler, Node* reject_handler);
 
   Node* AllocatePromiseReactionJobTask(Heap::RootListIndex map_root_index,
                                        Node* context, Node* argument,
-                                       Node* handler, Node* payload);
+                                       Node* handler,
+                                       Node* promise_or_capability);
   Node* AllocatePromiseReactionJobTask(Node* map, Node* context, Node* argument,
-                                       Node* handler, Node* payload);
+                                       Node* handler,
+                                       Node* promise_or_capability);
   Node* AllocatePromiseResolveThenableJobTask(Node* promise_to_resolve,
                                               Node* then, Node* thenable,
                                               Node* context);
@@ -111,7 +113,7 @@ class PromiseBuiltinsAssembler : public CodeStubAssembler {
   // case to mark it's done).
   Node* CreatePromiseAllResolveElementContext(Node* promise_capability,
                                               Node* native_context);
-  Node* CreatePromiseAllResolveElementFunction(Node* context, Node* index,
+  Node* CreatePromiseAllResolveElementFunction(Node* context, TNode<Smi> index,
                                                Node* native_context);
 
   Node* CreatePromiseResolvingFunctionsContext(Node* promise, Node* debug_event,
@@ -192,7 +194,8 @@ class PromiseBuiltinsAssembler : public CodeStubAssembler {
   Node* PromiseStatus(Node* promise);
 
   void PromiseReactionJob(Node* context, Node* argument, Node* handler,
-                          Node* payload, PromiseReaction::Type type);
+                          Node* promise_or_capability,
+                          PromiseReaction::Type type);
 
   Node* IsPromiseStatus(Node* actual, v8::Promise::PromiseState expected);
   void PromiseSetStatus(Node* promise, v8::Promise::PromiseState status);

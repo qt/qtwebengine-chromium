@@ -12,6 +12,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
+#include "base/strings/string16.h"
 #include "base/synchronization/lock.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -20,6 +21,8 @@
 #include "chrome/browser/safe_browsing/chrome_cleaner/reporter_runner_win.h"
 #include "chrome/browser/safe_browsing/chrome_cleaner/srt_field_trial_win.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/component_updater/pref_names.h"
+#include "components/prefs/pref_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_message_handler.h"
@@ -30,15 +33,6 @@ using safe_browsing::ChromeCleanerController;
 namespace settings {
 
 namespace {
-
-// These numeric values must be kept in sync with the definition of
-// settings.ChromeCleanupDismissSource in
-// chrome/browser/resources/settings/chrome_cleanup_page/chrome_cleanup_page.js.
-enum ChromeCleanerDismissSource {
-  kOther = 0,
-  kCleanupSuccessDoneButton = 1,
-  kCleanupFailureDoneButton = 2,
-};
 
 // Returns a ListValue containing a copy of the file paths stored in |files|.
 std::unique_ptr<base::ListValue> GetFilesAsListStorage(
@@ -102,17 +96,20 @@ std::string IdleReasonToString(
 }  // namespace
 
 ChromeCleanupHandler::ChromeCleanupHandler(Profile* profile)
-    : controller_(ChromeCleanerController::GetInstance()), profile_(profile) {}
+    : controller_(ChromeCleanerController::GetInstance()), profile_(profile) {
+  DCHECK(g_browser_process->local_state());
+  logs_enabled_pref_.Init(g_browser_process->local_state());
+  logs_enabled_pref_.Add(
+      prefs::kSwReporterReportingEnabled,
+      base::BindRepeating(&ChromeCleanupHandler::OnLogsEnabledPrefChanged,
+                          base::Unretained(this)));
+}
 
 ChromeCleanupHandler::~ChromeCleanupHandler() {
   controller_->RemoveObserver(this);
 }
 
 void ChromeCleanupHandler::RegisterMessages() {
-  web_ui()->RegisterMessageCallback(
-      "dismissCleanupPage",
-      base::BindRepeating(&ChromeCleanupHandler::HandleDismiss,
-                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "registerChromeCleanerObserver",
       base::BindRepeating(
@@ -197,37 +194,20 @@ void ChromeCleanupHandler::OnRebootRequired() {
 }
 
 void ChromeCleanupHandler::OnLogsEnabledChanged(bool logs_enabled) {
+  // Logs are considered managed if the logs themselves are managed or if the
+  // entire cleanup feature is disabled by policy.
+  PrefService* local_state = g_browser_process->local_state();
+  bool is_managed = !controller_->IsAllowedByPolicy() ||
+                    (local_state && local_state->IsManagedPreference(
+                                        prefs::kSwReporterReportingEnabled));
   FireWebUIListener("chrome-cleanup-upload-permission-change",
-                    base::Value(logs_enabled));
+                    base::Value(is_managed), base::Value(logs_enabled));
 }
 
-void ChromeCleanupHandler::HandleDismiss(const base::ListValue* args) {
-  CHECK_EQ(1U, args->GetSize());
-  int dismiss_source_int = -1;
-  CHECK(args->GetInteger(0, &dismiss_source_int));
-
-  ChromeCleanerDismissSource dismiss_source =
-      static_cast<ChromeCleanerDismissSource>(dismiss_source_int);
-
-  switch (dismiss_source) {
-    case kCleanupSuccessDoneButton:
-      base::RecordAction(base::UserMetricsAction(
-          "SoftwareReporter.CleanupWebui_CleanupSuccessDone"));
-      break;
-    case kCleanupFailureDoneButton:
-      base::RecordAction(base::UserMetricsAction(
-          "SoftwareReporter.CleanupWebui_CleanupFailureDone"));
-      break;
-    case kOther:
-      break;
-    default:
-      NOTREACHED();
-  }
-
-  controller_->RemoveObserver(this);
-  controller_->ResetIdleState();
-
-  FireWebUIListener("chrome-cleanup-on-dismiss");
+void ChromeCleanupHandler::OnLogsEnabledPrefChanged() {
+  bool is_enabled = controller_->IsReportingAllowedByPolicy();
+  controller_->SetLogsEnabled(is_enabled);
+  OnLogsEnabledChanged(is_enabled);
 }
 
 void ChromeCleanupHandler::HandleRegisterChromeCleanerObserver(
@@ -241,12 +221,18 @@ void ChromeCleanupHandler::HandleRegisterChromeCleanerObserver(
 
   // Send the current logs upload state.
   OnLogsEnabledChanged(controller_->logs_enabled());
+
+  FireWebUIListener("chrome-cleanup-enabled-change",
+                    base::Value(controller_->IsAllowedByPolicy()));
 }
 
 void ChromeCleanupHandler::HandleStartScanning(const base::ListValue* args) {
   CHECK_EQ(1U, args->GetSize());
   bool allow_logs_upload = false;
   args->GetBoolean(0, &allow_logs_upload);
+
+  // If this operation is not allowed the UI should be disabled.
+  CHECK(controller_->IsAllowedByPolicy());
 
   // The state is propagated to all open tabs and should be consistent.
   DCHECK_EQ(controller_->logs_enabled(), allow_logs_upload);
@@ -262,8 +248,6 @@ void ChromeCleanupHandler::HandleRestartComputer(const base::ListValue* args) {
 
   base::RecordAction(
       base::UserMetricsAction("SoftwareReporter.CleanupWebui_RestartComputer"));
-
-  FireWebUIListener("chrome-cleanup-on-dismiss");
 
   controller_->Reboot();
 }
@@ -351,11 +335,12 @@ void ChromeCleanupHandler::GetPluralString(int id,
 
   int num_items = 0;
   args->GetInteger(1, &num_items);
-  DCHECK_GT(0, num_items);
 
-  ResolveJavascriptCallback(
-      base::Value(callback_id),
-      base::Value(l10n_util::GetPluralStringFUTF16(id, num_items)));
+  const base::string16 plural_string =
+      num_items > 0 ? l10n_util::GetPluralStringFUTF16(id, num_items)
+                    : base::string16();
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(plural_string));
 }
 
 }  // namespace settings

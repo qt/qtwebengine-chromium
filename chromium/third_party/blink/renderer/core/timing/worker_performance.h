@@ -42,8 +42,6 @@ class ExecutionContext;
 class WorkerGlobalScope;
 
 class WorkerPerformance final : public Performance {
-  DEFINE_WRAPPERTYPEINFO();
-
  public:
   static WorkerPerformance* Create(WorkerGlobalScope* context) {
     return new WorkerPerformance(context);
@@ -53,7 +51,7 @@ class WorkerPerformance final : public Performance {
     return execution_context_;
   }
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   explicit WorkerPerformance(WorkerGlobalScope*);

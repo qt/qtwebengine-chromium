@@ -14,13 +14,14 @@
 #include "base/callback.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_params.h"
-#include "base/metrics/histogram_macros.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/history/core/browser/history_service.h"
 #include "components/password_manager/core/browser/password_reuse_detector.h"
+#include "components/safe_browsing/common/utils.h"
 #include "components/safe_browsing/db/database_manager.h"
 #include "components/safe_browsing/db/whitelist_checker_client.h"
 #include "components/safe_browsing/features.h"
@@ -95,6 +96,8 @@ const char kSyncPasswordPageInfoHistogram[] =
     "PasswordProtection.PageInfoAction.SyncPasswordEntry";
 const char kSyncPasswordChromeSettingsHistogram[] =
     "PasswordProtection.ChromeSettingsAction.SyncPasswordEntry";
+const char kSyncPasswordInterstitialHistogram[] =
+    "PasswordProtection.InterstitialAction.SyncPasswordEntry";
 
 PasswordProtectionService::PasswordProtectionService(
     const scoped_refptr<SafeBrowsingDatabaseManager>& database_manager,
@@ -133,19 +136,22 @@ void PasswordProtectionService::RecordWarningAction(WarningUIType ui_type,
                                                     WarningAction action) {
   switch (ui_type) {
     case PAGE_INFO:
-      UMA_HISTOGRAM_ENUMERATION(kSyncPasswordPageInfoHistogram, action,
-                                MAX_ACTION);
+      base::UmaHistogramEnumeration(kSyncPasswordPageInfoHistogram, action,
+                                    MAX_ACTION);
       break;
     case MODAL_DIALOG:
-      UMA_HISTOGRAM_ENUMERATION(kSyncPasswordWarningDialogHistogram, action,
-                                MAX_ACTION);
+      base::UmaHistogramEnumeration(kSyncPasswordWarningDialogHistogram, action,
+                                    MAX_ACTION);
       break;
     case CHROME_SETTINGS:
-      UMA_HISTOGRAM_ENUMERATION(kSyncPasswordChromeSettingsHistogram, action,
-                                MAX_ACTION);
+      base::UmaHistogramEnumeration(kSyncPasswordChromeSettingsHistogram,
+                                    action, MAX_ACTION);
+      break;
+    case INTERSTITIAL:
+      base::UmaHistogramEnumeration(kSyncPasswordInterstitialHistogram, action,
+                                    MAX_ACTION);
       break;
     case NOT_USED:
-    case MAX_UI_TYPE:
       NOTREACHED();
       break;
   }
@@ -163,16 +169,8 @@ bool PasswordProtectionService::ShouldShowModalWarning(
   }
 
   return (verdict_type == LoginReputationClientResponse::PHISHING ||
-          (verdict_type == LoginReputationClientResponse::LOW_REPUTATION &&
-           base::GetFieldTrialParamByFeatureAsBool(
-               kGoogleBrandedPhishingWarning, "warn_on_low_reputation",
-               false))) &&
+          verdict_type == LoginReputationClientResponse::LOW_REPUTATION) &&
          IsWarningEnabled();
-}
-
-bool PasswordProtectionService::ShouldShowSofterWarning() {
-  return base::GetFieldTrialParamByFeatureAsBool(kGoogleBrandedPhishingWarning,
-                                                 "softer_warning", false);
 }
 
 // We cache both types of pings under the same content settings type (
@@ -202,7 +200,7 @@ PasswordProtectionService::GetCachedVerdict(
           hostname, GURL(), CONTENT_SETTINGS_TYPE_PASSWORD_PROTECTION,
           std::string(), nullptr));
 
-  if (!cache_dictionary.get() || cache_dictionary->empty())
+  if (!cache_dictionary || cache_dictionary->empty())
     return LoginReputationClientResponse::VERDICT_TYPE_UNSPECIFIED;
 
   base::DictionaryValue* verdict_dictionary = nullptr;
@@ -282,7 +280,7 @@ void PasswordProtectionService::CacheVerdict(
           hostname, GURL(), CONTENT_SETTINGS_TYPE_PASSWORD_PROTECTION,
           std::string(), nullptr));
 
-  if (!cache_dictionary || !cache_dictionary.get())
+  if (!cache_dictionary || !cache_dictionary)
     cache_dictionary = std::make_unique<base::DictionaryValue>();
 
   std::unique_ptr<base::DictionaryValue> verdict_entry(
@@ -389,8 +387,9 @@ void PasswordProtectionService::MaybeStartPasswordFieldOnFocusRequest(
     const GURL& password_form_action,
     const GURL& password_form_frame_url) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  RequestOutcome reason;
   if (CanSendPing(LoginReputationClientRequest::UNFAMILIAR_LOGIN_PAGE,
-                  main_frame_url, false)) {
+                  main_frame_url, false, &reason)) {
     StartRequest(web_contents, main_frame_url, password_form_action,
                  password_form_frame_url,
                  false, /* matches_sync_password: not used for this type */
@@ -406,26 +405,33 @@ void PasswordProtectionService::MaybeStartProtectedPasswordEntryRequest(
     const std::vector<std::string>& matching_domains,
     bool password_field_exists) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  RequestOutcome reason;
   if (CanSendPing(LoginReputationClientRequest::PASSWORD_REUSE_EVENT,
-                  main_frame_url, matches_sync_password)) {
+                  main_frame_url, matches_sync_password, &reason)) {
     StartRequest(web_contents, main_frame_url, GURL(), GURL(),
                  matches_sync_password, matching_domains,
                  LoginReputationClientRequest::PASSWORD_REUSE_EVENT,
                  password_field_exists);
+  } else {
+    MaybeLogPasswordReuseLookupEvent(web_contents, reason, nullptr);
+    if (reason == PASSWORD_ALERT_MODE && matches_sync_password) {
+      ShowInterstitial(web_contents);
+    }
   }
 }
 
 bool PasswordProtectionService::CanSendPing(
     LoginReputationClientRequest::TriggerType trigger_type,
     const GURL& main_frame_url,
-    bool matches_sync_password) {
-  RequestOutcome request_outcome = URL_NOT_VALID_FOR_REPUTATION_COMPUTING;
-  if (IsPingingEnabled(trigger_type, &request_outcome) &&
-      !IsURLWhitelistedForPasswordEntry(main_frame_url, &request_outcome) &&
+    bool matches_sync_password,
+    RequestOutcome* reason) {
+  *reason = URL_NOT_VALID_FOR_REPUTATION_COMPUTING;
+  if (IsPingingEnabled(trigger_type, reason) &&
+      !IsURLWhitelistedForPasswordEntry(main_frame_url, reason) &&
       CanGetReputationOfURL(main_frame_url)) {
     return true;
   }
-  RecordNoPingingReason(trigger_type, request_outcome, matches_sync_password);
+  RecordNoPingingReason(trigger_type, *reason, matches_sync_password);
   return false;
 }
 
@@ -546,24 +552,25 @@ void PasswordProtectionService::FillUserPopulation(
   user_population->set_user_population(
       IsExtendedReporting() ? ChromeUserPopulation::EXTENDED_REPORTING
                             : ChromeUserPopulation::SAFE_BROWSING);
+  user_population->set_profile_management_status(
+      GetProfileManagementStatus(GetBrowserPolicyConnector()));
   user_population->set_is_history_sync_enabled(IsHistorySyncEnabled());
 }
 
 void PasswordProtectionService::OnURLsDeleted(
     history::HistoryService* history_service,
-    bool all_history,
-    bool expired,
-    const history::URLRows& deleted_rows,
-    const std::set<GURL>& favicon_urls) {
+    const history::DeletionInfo& deletion_info) {
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&PasswordProtectionService::RemoveContentSettingsOnURLsDeleted,
-                 GetWeakPtr(), all_history, deleted_rows));
+                 GetWeakPtr(), deletion_info.IsAllHistory(),
+                 deletion_info.deleted_rows()));
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&PasswordProtectionService::
                      RemoveUnhandledSyncPasswordReuseOnURLsDeleted,
-                 GetWeakPtr(), all_history, deleted_rows));
+                 GetWeakPtr(), deletion_info.IsAllHistory(),
+                 deletion_info.deleted_rows()));
 }
 
 void PasswordProtectionService::HistoryServiceBeingDeleted(
@@ -619,7 +626,7 @@ int PasswordProtectionService::GetVerdictCountForURL(
       base::DictionaryValue::From(content_settings_->GetWebsiteSetting(
           url, GURL(), CONTENT_SETTINGS_TYPE_PASSWORD_PROTECTION, std::string(),
           nullptr));
-  if (!cache_dictionary.get() || cache_dictionary->empty())
+  if (!cache_dictionary || cache_dictionary->empty())
     return 0;
 
   if (trigger_type == LoginReputationClientRequest::UNFAMILIAR_LOGIN_PAGE) {
@@ -772,8 +779,8 @@ void PasswordProtectionService::RecordNoPingingReason(
          trigger_type == LoginReputationClientRequest::PASSWORD_REUSE_EVENT);
 
   if (trigger_type == LoginReputationClientRequest::UNFAMILIAR_LOGIN_PAGE) {
-    UMA_HISTOGRAM_ENUMERATION(kPasswordOnFocusRequestOutcomeHistogram, reason,
-                              MAX_OUTCOME);
+    base::UmaHistogramEnumeration(kPasswordOnFocusRequestOutcomeHistogram,
+                                  reason, MAX_OUTCOME);
     return;
   }
 
@@ -784,14 +791,14 @@ void PasswordProtectionService::RecordNoPingingReason(
 void PasswordProtectionService::LogPasswordEntryRequestOutcome(
     RequestOutcome reason,
     bool matches_sync_password) {
-  UMA_HISTOGRAM_ENUMERATION(kAnyPasswordEntryRequestOutcomeHistogram, reason,
-                            MAX_OUTCOME);
+  base::UmaHistogramEnumeration(kAnyPasswordEntryRequestOutcomeHistogram,
+                                reason, MAX_OUTCOME);
   if (matches_sync_password) {
-    UMA_HISTOGRAM_ENUMERATION(kSyncPasswordEntryRequestOutcomeHistogram, reason,
-                              MAX_OUTCOME);
+    base::UmaHistogramEnumeration(kSyncPasswordEntryRequestOutcomeHistogram,
+                                  reason, MAX_OUTCOME);
   } else {
-    UMA_HISTOGRAM_ENUMERATION(kProtectedPasswordEntryRequestOutcomeHistogram,
-                              reason, MAX_OUTCOME);
+    base::UmaHistogramEnumeration(
+        kProtectedPasswordEntryRequestOutcomeHistogram, reason, MAX_OUTCOME);
   }
 }
 
@@ -841,15 +848,12 @@ bool PasswordProtectionService::IsModalWarningShowingInWebContents(
 }
 
 bool PasswordProtectionService::IsWarningEnabled() {
-  return base::FeatureList::IsEnabled(kGoogleBrandedPhishingWarning) &&
-         GetPasswordProtectionTriggerPref(
-             prefs::kPasswordProtectionWarningTrigger) == PHISHING_REUSE;
+  return GetPasswordProtectionWarningTriggerPref() == PHISHING_REUSE;
 }
 
 bool PasswordProtectionService::IsEventLoggingEnabled() {
-  return base::FeatureList::IsEnabled(kGaiaPasswordReuseReporting) &&
-         GetPasswordProtectionTriggerPref(
-             prefs::kPasswordProtectionRiskTrigger) == PHISHING_REUSE;
+  return GetSyncAccountType() !=
+         LoginReputationClientRequest::PasswordReuseEvent::NOT_SIGNED_IN;
 }
 
 }  // namespace safe_browsing

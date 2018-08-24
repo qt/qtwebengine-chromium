@@ -21,6 +21,7 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/websocket_handshake_userdata_key.h"
+#include "net/websockets/websocket_basic_handshake_stream.h"
 #include "net/websockets/websocket_errors.h"
 #include "net/websockets/websocket_event_interface.h"
 #include "net/websockets/websocket_handshake_constants.h"
@@ -104,7 +105,7 @@ class WebSocketStreamRequestImpl : public WebSocketStreamRequest {
       const URLRequestContext* context,
       const url::Origin& origin,
       const GURL& site_for_cookies,
-      const std::string& additional_headers,
+      const HttpRequestHeaders& additional_headers,
       std::unique_ptr<WebSocketStream::ConnectDelegate> connect_delegate,
       std::unique_ptr<WebSocketHandshakeStreamCreateHelper> create_helper)
       : delegate_(std::make_unique<Delegate>(this)),
@@ -113,16 +114,33 @@ class WebSocketStreamRequestImpl : public WebSocketStreamRequest {
                                             delegate_.get(),
                                             kTrafficAnnotation)),
         connect_delegate_(std::move(connect_delegate)),
-        handshake_stream_(nullptr) {
+        handshake_stream_(nullptr),
+        on_handshake_stream_created_has_been_called_(false),
+        perform_upgrade_has_been_called_(false) {
     create_helper->set_stream_request(this);
-    HttpRequestHeaders headers;
+    HttpRequestHeaders headers = additional_headers;
     headers.SetHeader(websockets::kUpgrade, websockets::kWebSocketLowercase);
-    headers.SetHeader(HttpRequestHeaders::kConnection, websockets::kUpgrade);
+    if (base::FeatureList::IsEnabled(WebSocketBasicHandshakeStream::
+                                         kWebSocketHandshakeReuseConnection)) {
+      // "Keep-Alive" is included in the "Connection" header for consistency
+      // with Firefox, even though they don't send a Keep-Alive header and
+      // neither do we. Firefox writes "keep-alive" in lowercase, but hopefully
+      // no servers care about the difference.  TODO(ricea): See if we can do
+      // without the "Keep-Alive".
+      constexpr char kKeepAliveUpgrade[] = "Keep-Alive, Upgrade";
+      headers.SetHeader(HttpRequestHeaders::kConnection, kKeepAliveUpgrade);
+    } else {
+      headers.SetHeader(HttpRequestHeaders::kConnection, websockets::kUpgrade);
+    }
     headers.SetHeader(HttpRequestHeaders::kOrigin, origin.Serialize());
     headers.SetHeader(websockets::kSecWebSocketVersion,
                       websockets::kSupportedVersion);
 
-    headers.AddHeadersFromString(additional_headers);
+    // Remove HTTP headers that are important to websocket connections: they
+    // will be added later.
+    headers.RemoveHeader(websockets::kSecWebSocketExtensions);
+    headers.RemoveHeader(websockets::kSecWebSocketKey);
+    headers.RemoveHeader(websockets::kSecWebSocketProtocol);
 
     url_request_->SetExtraRequestHeaders(headers);
     url_request_->set_initiator(origin);
@@ -140,6 +158,11 @@ class WebSocketStreamRequestImpl : public WebSocketStreamRequest {
 
   void OnHandshakeStreamCreated(
       WebSocketHandshakeStreamBase* handshake_stream) override {
+    // TODO(bnc): Change to DCHECK after https://crbug.com/842575 is fixed.
+    CHECK(handshake_stream);
+
+    on_handshake_stream_created_has_been_called_ = true;
+
     handshake_stream_ = handshake_stream;
   }
 
@@ -166,14 +189,22 @@ class WebSocketStreamRequestImpl : public WebSocketStreamRequest {
     }
 
     DCHECK(timer_);
-    DCHECK(handshake_stream_);
+    CHECK(!perform_upgrade_has_been_called_);
+    CHECK(on_handshake_stream_created_has_been_called_);
+    // TODO(bnc): Change to DCHECK after https://crbug.com/842575 is fixed.
+    CHECK(handshake_stream_);
+    CHECK(connect_delegate_);
+
+    perform_upgrade_has_been_called_ = true;
 
     timer_->Stop();
 
     std::unique_ptr<URLRequest> url_request = std::move(url_request_);
     WebSocketHandshakeStreamBase* handshake_stream = handshake_stream_;
     handshake_stream_ = nullptr;
-    connect_delegate_->OnSuccess(handshake_stream->Upgrade());
+    // TODO(bnc): Combine into one line after https://crbug.com/842575 is fixed.
+    std::unique_ptr<WebSocketStream> stream = handshake_stream->Upgrade();
+    connect_delegate_->OnSuccess(std::move(stream));
 
     // This is safe even if |this| has already been deleted.
     url_request->CancelWithError(ERR_WS_UPGRADE);
@@ -245,11 +276,16 @@ class WebSocketStreamRequestImpl : public WebSocketStreamRequest {
   std::unique_ptr<WebSocketStream::ConnectDelegate> connect_delegate_;
 
   // This is owned by the caller of
-  // WebsocketHandshakeStreamCreateHelper::CreateBaseStream().  Both the stream
-  // and this object will be destroyed during the destruction of the URLRequest
-  // object associated with the handshake. This is only guaranteed to be a valid
-  // pointer if the handshake succeeded.
+  // WebsocketHandshakeStreamCreateHelper::CreateBasicStream() or
+  // CreateHttp2Stream().  Both the stream and this object will be destroyed
+  // during the destruction of the URLRequest object associated with the
+  // handshake. This is only guaranteed to be a valid pointer if the handshake
+  // succeeded.
   WebSocketHandshakeStreamBase* handshake_stream_;
+
+  // TODO(bnc): Remove after https://crbug.com/842575 is fixed.
+  bool on_handshake_stream_created_has_been_called_;
+  bool perform_upgrade_has_been_called_;
 
   // The failure message supplied by WebSocketBasicHandshakeStream, if any.
   std::string failure_message_;
@@ -398,7 +434,7 @@ std::unique_ptr<WebSocketStreamRequest> WebSocketStream::CreateAndConnectStream(
     std::unique_ptr<WebSocketHandshakeStreamCreateHelper> create_helper,
     const url::Origin& origin,
     const GURL& site_for_cookies,
-    const std::string& additional_headers,
+    const HttpRequestHeaders& additional_headers,
     URLRequestContext* url_request_context,
     const NetLogWithSource& net_log,
     std::unique_ptr<ConnectDelegate> connect_delegate) {
@@ -416,7 +452,7 @@ WebSocketStream::CreateAndConnectStreamForTesting(
     std::unique_ptr<WebSocketHandshakeStreamCreateHelper> create_helper,
     const url::Origin& origin,
     const GURL& site_for_cookies,
-    const std::string& additional_headers,
+    const HttpRequestHeaders& additional_headers,
     URLRequestContext* url_request_context,
     const NetLogWithSource& net_log,
     std::unique_ptr<WebSocketStream::ConnectDelegate> connect_delegate,
@@ -437,9 +473,8 @@ void WebSocketDispatchOnFinishOpeningHandshake(
   DCHECK(connect_delegate);
   if (headers.get()) {
     connect_delegate->OnFinishOpeningHandshake(
-        std::make_unique<WebSocketHandshakeResponseInfo>(
-            url, headers->response_code(), headers->GetStatusText(), headers,
-            response_time));
+        std::make_unique<WebSocketHandshakeResponseInfo>(url, headers,
+                                                         response_time));
   }
 }
 

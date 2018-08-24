@@ -12,8 +12,9 @@
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/shared_memory_mapping.h"
+#include "base/memory/unsafe_shared_memory_region.h"
 #include "base/synchronization/lock.h"
-#include "mojo/edk/embedder/platform_shared_buffer.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/dispatcher.h"
 #include "mojo/edk/system/ports/port_ref.h"
@@ -34,7 +35,7 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher final
   static scoped_refptr<DataPipeProducerDispatcher> Create(
       NodeController* node_controller,
       const ports::PortRef& control_port,
-      scoped_refptr<PlatformSharedBuffer> shared_ring_buffer,
+      base::UnsafeSharedMemoryRegion shared_ring_buffer,
       const MojoCreateDataPipeOptions& options,
       uint64_t pipe_id);
 
@@ -43,10 +44,8 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher final
   MojoResult Close() override;
   MojoResult WriteData(const void* elements,
                        uint32_t* num_bytes,
-                       MojoReadDataFlags flags) override;
-  MojoResult BeginWriteData(void** buffer,
-                            uint32_t* buffer_num_bytes,
-                            MojoWriteDataFlags flags) override;
+                       const MojoWriteDataOptions& options) override;
+  MojoResult BeginWriteData(void** buffer, uint32_t* buffer_num_bytes) override;
   MojoResult EndWriteData(uint32_t num_bytes_written) override;
   HandleSignalsState GetHandleSignalsState() const override;
   MojoResult AddWatcherRef(const scoped_refptr<WatcherDispatcher>& watcher,
@@ -58,7 +57,7 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher final
                       uint32_t* num_handles) override;
   bool EndSerialize(void* destination,
                     ports::PortName* ports,
-                    ScopedPlatformHandle* handles) override;
+                    ScopedInternalPlatformHandle* handles) override;
   bool BeginTransit() override;
   void CompleteTransitAndClose() override;
   void CancelTransit() override;
@@ -68,22 +67,20 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher final
       size_t num_bytes,
       const ports::PortName* ports,
       size_t num_ports,
-      ScopedPlatformHandle* handles,
+      ScopedInternalPlatformHandle* handles,
       size_t num_handles);
 
  private:
   class PortObserverThunk;
   friend class PortObserverThunk;
 
-  DataPipeProducerDispatcher(
-      NodeController* node_controller,
-      const ports::PortRef& port,
-      scoped_refptr<PlatformSharedBuffer> shared_ring_buffer,
-      const MojoCreateDataPipeOptions& options,
-      uint64_t pipe_id);
+  DataPipeProducerDispatcher(NodeController* node_controller,
+                             const ports::PortRef& port,
+                             base::UnsafeSharedMemoryRegion shared_ring_buffer,
+                             const MojoCreateDataPipeOptions& options,
+                             uint64_t pipe_id);
   ~DataPipeProducerDispatcher() override;
 
-  void OnSharedBufferCreated(const scoped_refptr<PlatformSharedBuffer>& buffer);
   bool InitializeNoLock();
   MojoResult CloseNoLock();
   HandleSignalsState GetHandleSignalsStateNoLock() const;
@@ -101,10 +98,8 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher final
 
   WatcherSet watchers_;
 
-  bool buffer_requested_ = false;
-
-  scoped_refptr<PlatformSharedBuffer> shared_ring_buffer_;
-  std::unique_ptr<PlatformSharedBufferMapping> ring_buffer_mapping_;
+  base::UnsafeSharedMemoryRegion shared_ring_buffer_;
+  base::WritableSharedMemoryMapping ring_buffer_mapping_;
 
   bool in_transit_ = false;
   bool is_closed_ = false;

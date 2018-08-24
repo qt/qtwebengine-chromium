@@ -3,8 +3,9 @@
 # found in the LICENSE file.
 
 typemaps = [
+  "//mojo/public/cpp/base/file_info.typemap",
   "//mojo/public/cpp/base/file_path.typemap",
-  "//mojo/common/values.typemap",
+  "//mojo/public/cpp/base/shared_memory.typemap",
   "//third_party/blink/renderer/core/messaging/blink_cloneable_message.typemap",
   "//third_party/blink/renderer/core/messaging/blink_transferable_message.typemap",
   "//third_party/blink/renderer/platform/blob/serialized_blob.typemap",
@@ -20,4 +21,6 @@ typemaps = [
   "//third_party/blink/public/platform/modules/bluetooth/bluetooth.typemap",
   "//third_party/blink/public/platform/modules/fetch/fetch_api_request.typemap",
   "//third_party/blink/public/platform/modules/notifications/notification_types.typemap",
+  "//third_party/blink/public/common/manifest/display_mode.typemap",
+  "//third_party/blink/public/common/screen_orientation/screen_orientation_lock_types.typemap",
 ]

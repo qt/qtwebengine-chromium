@@ -32,6 +32,18 @@
 
 - (instancetype)initWithWidth:(int)width
                        height:(int)height
+                        dataY:(const uint8_t *)dataY
+                        dataU:(const uint8_t *)dataU
+                        dataV:(const uint8_t *)dataV {
+  if (self = [super init]) {
+    _i420Buffer = webrtc::I420Buffer::Copy(
+        width, height, dataY, width, dataU, (width + 1) / 2, dataV, (width + 1) / 2);
+  }
+  return self;
+}
+
+- (instancetype)initWithWidth:(int)width
+                       height:(int)height
                       strideY:(int)strideY
                       strideU:(int)strideU
                       strideV:(int)strideV {
@@ -115,9 +127,9 @@
                      _i420Buffer->DataV(),
                      _i420Buffer->StrideV(),
                      ctxData,
-                     _i420Buffer->width() * 4,
-                     _i420Buffer->width(),
-                     _i420Buffer->height());
+                     CGBitmapContextGetBytesPerRow(c),
+                     CGBitmapContextGetWidth(c),
+                     CGBitmapContextGetHeight(c));
 
   UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
   UIGraphicsEndImageContext();

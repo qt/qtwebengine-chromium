@@ -258,6 +258,11 @@ struct CrxComponent {
   // For extension, this information is set from the update service, which
   // gets the install source from the update URL.
   std::string install_source;
+
+  // Information about where the component/extension was loaded from.
+  // For extensions, this information is inferred from the extension
+  // registry.
+  std::string install_location;
 };
 
 // Called when a non-blocking call of UpdateClient completes.
@@ -270,8 +275,8 @@ using Callback = base::OnceCallback<void(Error error)>;
 class UpdateClient : public base::RefCounted<UpdateClient> {
  public:
   using CrxDataCallback =
-      base::OnceCallback<void(const std::vector<std::string>& ids,
-                              std::vector<CrxComponent>* components)>;
+      base::OnceCallback<std::vector<std::unique_ptr<CrxComponent>>(
+          const std::vector<std::string>& ids)>;
 
   // Defines an interface to observe the UpdateClient. It provides
   // notifications when state changes occur for the service itself or for the

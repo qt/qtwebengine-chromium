@@ -47,9 +47,10 @@ class FEImage final : public FilterEffect {
   // depend on the value of color-interpolation-filters.
   void SetOperatingInterpolationSpace(InterpolationSpace) override {}
 
-  TextStream& ExternalRepresentation(TextStream&, int indention) const override;
+  WTF::TextStream& ExternalRepresentation(WTF::TextStream&,
+                                          int indention) const override;
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   ~FEImage() override = default;

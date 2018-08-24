@@ -23,6 +23,14 @@ TEST(ByteString, ElementAccess) {
   EXPECT_DEATH({ abc[3]; }, ".*");
 #endif
 
+  pdfium::span<const char> abc_span = abc.AsSpan();
+  EXPECT_EQ(3u, abc_span.size());
+  EXPECT_EQ(0, memcmp(abc_span.data(), "abc", 3));
+
+  pdfium::span<const uint8_t> abc_raw_span = abc.AsRawSpan();
+  EXPECT_EQ(3u, abc_raw_span.size());
+  EXPECT_EQ(0, memcmp(abc_raw_span.data(), "abc", 3));
+
   ByteString mutable_abc = abc;
   EXPECT_EQ(abc.c_str(), mutable_abc.c_str());
   EXPECT_EQ('a', mutable_abc[0]);
@@ -839,22 +847,23 @@ TEST(ByteString, Reserve) {
 }
 
 TEST(ByteString, GetBuffer) {
+  ByteString str1;
   {
-    ByteString str;
-    char* buffer = str.GetBuffer(12);
+    pdfium::span<char> buffer = str1.GetBuffer(12);
     // NOLINTNEXTLINE(runtime/printf)
-    strcpy(buffer, "clams");
-    str.ReleaseBuffer(str.GetStringLength());
-    EXPECT_EQ("clams", str);
+    strcpy(buffer.data(), "clams");
   }
+  str1.ReleaseBuffer(str1.GetStringLength());
+  EXPECT_EQ("clams", str1);
+
+  ByteString str2("cl");
   {
-    ByteString str("cl");
-    char* buffer = str.GetBuffer(12);
+    pdfium::span<char> buffer = str2.GetBuffer(12);
     // NOLINTNEXTLINE(runtime/printf)
-    strcpy(buffer + 2, "ams");
-    str.ReleaseBuffer(str.GetStringLength());
-    EXPECT_EQ("clams", str);
+    strcpy(&buffer[2], "ams");
   }
+  str2.ReleaseBuffer(str2.GetStringLength());
+  EXPECT_EQ("clams", str2);
 }
 
 TEST(ByteString, ReleaseBuffer) {
@@ -1522,8 +1531,21 @@ TEST(ByteString, Empty) {
   ByteString empty_str;
   EXPECT_TRUE(empty_str.IsEmpty());
   EXPECT_EQ(0u, empty_str.GetLength());
+
   const char* cstr = empty_str.c_str();
+  EXPECT_NE(nullptr, cstr);
   EXPECT_EQ(0u, strlen(cstr));
+
+  const uint8_t* rstr = empty_str.raw_str();
+  EXPECT_EQ(nullptr, rstr);
+
+  pdfium::span<const char> cspan = empty_str.AsSpan();
+  EXPECT_TRUE(cspan.empty());
+  EXPECT_EQ(nullptr, cspan.data());
+
+  pdfium::span<const uint8_t> rspan = empty_str.AsRawSpan();
+  EXPECT_TRUE(rspan.empty());
+  EXPECT_EQ(nullptr, rspan.data());
 }
 
 TEST(ByteString, InitializerList) {

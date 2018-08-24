@@ -41,7 +41,6 @@ static void TranslateDeviceInfos(
               : media::PIXEL_FORMAT_I420;
       translated_format.frame_size = format.frame_size;
       translated_format.frame_rate = format.frame_rate;
-      translated_format.pixel_storage = media::VideoPixelStorage::CPU;
       if (base::ContainsValue(translated_device_info.supported_formats,
                               translated_format))
         continue;
@@ -131,10 +130,16 @@ void DeviceFactoryMediaToMojoAdapter::CreateDevice(
                  base::Passed(&create_and_add_new_device_cb)));
 }
 
-void DeviceFactoryMediaToMojoAdapter::AddVirtualDevice(
+void DeviceFactoryMediaToMojoAdapter::AddSharedMemoryVirtualDevice(
     const media::VideoCaptureDeviceInfo& device_info,
     mojom::ProducerPtr producer,
-    mojom::VirtualDeviceRequest virtual_device_request) {
+    mojom::SharedMemoryVirtualDeviceRequest virtual_device_request) {
+  NOTIMPLEMENTED();
+}
+
+void DeviceFactoryMediaToMojoAdapter::AddTextureVirtualDevice(
+    const media::VideoCaptureDeviceInfo& device_info,
+    mojom::TextureVirtualDeviceRequest virtual_device_request) {
   NOTIMPLEMENTED();
 }
 

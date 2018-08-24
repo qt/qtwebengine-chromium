@@ -39,7 +39,7 @@ class MockGLES2Decoder : public GLES2Decoder {
  public:
   MockGLES2Decoder(CommandBufferServiceBase* command_buffer_service,
                    Outputter* outputter);
-  virtual ~MockGLES2Decoder();
+  ~MockGLES2Decoder() override;
 
   base::WeakPtr<DecoderContext> AsWeakPtr() override;
 
@@ -94,13 +94,13 @@ class MockGLES2Decoder : public GLES2Decoder {
   MOCK_CONST_METHOD0(ClearAllAttributes, void());
   MOCK_CONST_METHOD0(RestoreAllAttributes, void());
   MOCK_METHOD0(GetQueryManager, gpu::QueryManager*());
+  MOCK_METHOD2(SetQueryCallback, void(unsigned int, base::OnceClosure));
   MOCK_METHOD0(GetGpuFenceManager, gpu::gles2::GpuFenceManager*());
   MOCK_METHOD0(GetFramebufferManager, gpu::gles2::FramebufferManager*());
   MOCK_METHOD0(
       GetTransformFeedbackManager, gpu::gles2::TransformFeedbackManager*());
   MOCK_METHOD0(GetVertexArrayManager, gpu::gles2::VertexArrayManager*());
   MOCK_METHOD0(GetImageManagerForTest, gpu::gles2::ImageManager*());
-  MOCK_METHOD0(GetTransferCacheForTest, gpu::ServiceTransferCache*());
   MOCK_METHOD1(
       SetResizeCallback, void(const base::Callback<void(gfx::Size, float)>&));
   MOCK_METHOD1(SetIgnoreCachedStateForTest, void(bool ignore));

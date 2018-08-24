@@ -114,11 +114,10 @@ typedef enum {
 // more modern primitives.
 OPENSSL_EXPORT EC_GROUP *EC_GROUP_new_by_curve_name(int nid);
 
-// EC_GROUP_free frees |group| and the data that it points to.
+// EC_GROUP_free releases a reference to |group|.
 OPENSSL_EXPORT void EC_GROUP_free(EC_GROUP *group);
 
-// EC_GROUP_dup returns a fresh |EC_GROUP| which is equal to |a| or NULL on
-// error.
+// EC_GROUP_dup takes a reference to |a| and returns it.
 OPENSSL_EXPORT EC_GROUP *EC_GROUP_dup(const EC_GROUP *a);
 
 // EC_GROUP_cmp returns zero if |a| and |b| are the same group and non-zero
@@ -154,6 +153,11 @@ OPENSSL_EXPORT int EC_GROUP_get_curve_name(const EC_GROUP *group);
 // EC_GROUP_get_degree returns the number of bits needed to represent an
 // element of the field underlying |group|.
 OPENSSL_EXPORT unsigned EC_GROUP_get_degree(const EC_GROUP *group);
+
+// EC_curve_nid2nist returns the NIST name of the elliptic curve specified by
+// |nid|, or NULL if |nid| is not a NIST curve. For example, it returns "P-256"
+// for |NID_X9_62_prime256v1|.
+OPENSSL_EXPORT const char *EC_curve_nid2nist(int nid);
 
 
 // Points on elliptic curves.
@@ -194,17 +198,6 @@ OPENSSL_EXPORT int EC_POINT_is_on_curve(const EC_GROUP *group,
 // not equal and -1 on error. If |ctx| is not NULL, it may be used.
 OPENSSL_EXPORT int EC_POINT_cmp(const EC_GROUP *group, const EC_POINT *a,
                                 const EC_POINT *b, BN_CTX *ctx);
-
-// EC_POINT_make_affine converts |point| to affine form, internally. It returns
-// one on success and zero otherwise. If |ctx| is not NULL, it may be used.
-OPENSSL_EXPORT int EC_POINT_make_affine(const EC_GROUP *group, EC_POINT *point,
-                                        BN_CTX *ctx);
-
-// EC_POINTs_make_affine converts |num| points from |points| to affine form,
-// internally. It returns one on success and zero otherwise. If |ctx| is not
-// NULL, it may be used.
-OPENSSL_EXPORT int EC_POINTs_make_affine(const EC_GROUP *group, size_t num,
-                                         EC_POINT *points[], BN_CTX *ctx);
 
 
 // Point conversion.
@@ -327,7 +320,7 @@ OPENSSL_EXPORT void EC_GROUP_set_asn1_flag(EC_GROUP *group, int flag);
 
 typedef struct ec_method_st EC_METHOD;
 
-// EC_GROUP_method_of returns NULL.
+// EC_GROUP_method_of returns a dummy non-NULL pointer.
 OPENSSL_EXPORT const EC_METHOD *EC_GROUP_method_of(const EC_GROUP *group);
 
 // EC_METHOD_get_field_type returns NID_X9_62_prime_field.

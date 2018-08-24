@@ -45,44 +45,12 @@ class MessageReceiver : public EmbeddedWorkerTestHelper {
   void SimulateSetCachedMetadata(int embedded_worker_id,
                                  const GURL& url,
                                  const std::vector<uint8_t>& data) {
-    ASSERT_TRUE(service_worker_host_map_[embedded_worker_id]);
-    service_worker_host_map_[embedded_worker_id]->SetCachedMetadata(url, data);
+    GetServiceWorkerHost(embedded_worker_id)->SetCachedMetadata(url, data);
   }
 
   void SimulateClearCachedMetadata(int embedded_worker_id, const GURL& url) {
-    ASSERT_TRUE(service_worker_host_map_[embedded_worker_id]);
-    service_worker_host_map_[embedded_worker_id]->ClearCachedMetadata(url);
+    GetServiceWorkerHost(embedded_worker_id)->ClearCachedMetadata(url);
   }
-
- protected:
-  void OnStartWorker(
-      int embedded_worker_id,
-      int64_t service_worker_version_id,
-      const GURL& scope,
-      const GURL& script_url,
-      bool pause_after_download,
-      mojom::ServiceWorkerEventDispatcherRequest dispatcher_request,
-      mojom::ControllerServiceWorkerRequest controller_request,
-      blink::mojom::ServiceWorkerHostAssociatedPtrInfo service_worker_host,
-      mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
-      mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
-      blink::mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info)
-      override {
-    service_worker_host_map_[embedded_worker_id].Bind(
-        std::move(service_worker_host));
-    EmbeddedWorkerTestHelper::OnStartWorker(
-        embedded_worker_id, service_worker_version_id, scope, script_url,
-        pause_after_download, std::move(dispatcher_request),
-        std::move(controller_request), nullptr /* service_worker_host */,
-        std::move(instance_host), std::move(provider_info),
-        std::move(installed_scripts_info));
-  }
-
- private:
-  std::map<
-      int /* embedded_worker_id */,
-      blink::mojom::ServiceWorkerHostAssociatedPtr /* service_worker_host */>
-      service_worker_host_map_;
 
   DISALLOW_COPY_AND_ASSIGN(MessageReceiver);
 };
@@ -177,7 +145,8 @@ class ServiceWorkerVersionTest : public testing::Test {
     blink::mojom::ServiceWorkerRegistrationOptions options;
     options.scope = pattern_;
     registration_ = new ServiceWorkerRegistration(
-        options, 1L, helper_->context()->AsWeakPtr());
+        options, helper_->context()->storage()->NewRegistrationId(),
+        helper_->context()->AsWeakPtr());
     version_ = new ServiceWorkerVersion(
         registration_.get(),
         GURL("https://www.example.com/test/service_worker.js"),
@@ -266,7 +235,6 @@ class MessageReceiverDisallowStart : public MessageReceiver {
       bool pause_after_download,
       mojom::ServiceWorkerEventDispatcherRequest dispatcher_request,
       mojom::ControllerServiceWorkerRequest controller_request,
-      blink::mojom::ServiceWorkerHostAssociatedPtrInfo service_worker_host,
       mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
       mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
       blink::mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info)
@@ -287,16 +255,13 @@ class MessageReceiverDisallowStart : public MessageReceiver {
                   mock_instance_clients()->size());
         // Remove the connection by peer
         mock_instance_clients()->at(current_mock_instance_index_).reset();
-        std::move(dispatcher_request);
-        std::move(controller_request);
         break;
       case StartMode::SUCCEED:
         MessageReceiver::OnStartWorker(
             embedded_worker_id, service_worker_version_id, scope, script_url,
             pause_after_download, std::move(dispatcher_request),
-            std::move(controller_request), std::move(service_worker_host),
-            std::move(instance_host), std::move(provider_info),
-            std::move(installed_scripts_info));
+            std::move(controller_request), std::move(instance_host),
+            std::move(provider_info), std::move(installed_scripts_info));
         break;
     }
     current_mock_instance_index_++;
@@ -1264,6 +1229,26 @@ TEST_F(ServiceWorkerVersionTest, RendererCrashDuringEvent) {
   // Request already failed, calling finsh should return false.
   EXPECT_FALSE(version_->FinishRequest(request_id, true /* was_handled */,
                                        base::Time::Now()));
+}
+
+// Test starting a service worker from a disallowed origin.
+TEST_F(ServiceWorkerVersionTest, BadOrigin) {
+  const GURL scope("bad-origin://www.example.com/test/");
+  blink::mojom::ServiceWorkerRegistrationOptions options;
+  options.scope = scope;
+  auto registration = base::MakeRefCounted<ServiceWorkerRegistration>(
+      options, helper_->context()->storage()->NewRegistrationId(),
+      helper_->context()->AsWeakPtr());
+  auto version = base::MakeRefCounted<ServiceWorkerVersion>(
+      registration_.get(),
+      GURL("bad-origin://www.example.com/test/service_worker.js"),
+      helper_->context()->storage()->NewVersionId(),
+      helper_->context()->AsWeakPtr());
+  ServiceWorkerStatusCode status = SERVICE_WORKER_OK;
+  version->StartWorker(ServiceWorkerMetrics::EventType::UNKNOWN,
+                       CreateReceiverOnCurrentThread(&status));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(SERVICE_WORKER_ERROR_DISALLOWED, status);
 }
 
 TEST_F(ServiceWorkerFailToStartTest, FailingWorkerUsesNewRendererProcess) {

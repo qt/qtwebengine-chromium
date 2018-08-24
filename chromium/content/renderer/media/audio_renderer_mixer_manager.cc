@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <string>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -81,11 +82,13 @@ media::AudioParameters GetMixerOutputParams(
 
   DCHECK_NE(output_buffer_size, 0);
 
-  // Force to 16-bit output for now since we know that works everywhere;
-  // ChromeOS does not support other bit depths.
   media::AudioParameters params(input_params.format(),
                                 input_params.channel_layout(),
-                                output_sample_rate, 16, output_buffer_size);
+                                output_sample_rate, output_buffer_size);
+
+  // Use the actual channel count when the channel layout is "DISCRETE".
+  if (input_params.channel_layout() == media::CHANNEL_LAYOUT_DISCRETE)
+    params.set_channels_for_discrete(input_params.channels());
 
   // Specify the latency info to be passed to the browser side.
   params.set_latency_tag(latency);
@@ -145,7 +148,6 @@ media::AudioRendererMixerInput* AudioRendererMixerManager::CreateInput(
     int source_render_frame_id,
     int session_id,
     const std::string& device_id,
-    const url::Origin& security_origin,
     media::AudioLatency::LatencyType latency) {
   // AudioRendererMixerManager lives on the renderer thread and is destroyed on
   // renderer thread destruction, so it's safe to pass its pointer to a mixer
@@ -154,11 +156,10 @@ media::AudioRendererMixerInput* AudioRendererMixerManager::CreateInput(
       this, source_render_frame_id,
       media::AudioDeviceDescription::UseSessionIdToSelectDevice(session_id,
                                                                 device_id)
-          ? GetOutputDeviceInfo(source_render_frame_id, session_id, device_id,
-                                security_origin)
+          ? GetOutputDeviceInfo(source_render_frame_id, session_id, device_id)
                 .device_id()
           : device_id,
-      security_origin, latency);
+      latency);
 }
 
 media::AudioRendererMixer* AudioRendererMixerManager::GetMixer(
@@ -166,13 +167,11 @@ media::AudioRendererMixer* AudioRendererMixerManager::GetMixer(
     const media::AudioParameters& input_params,
     media::AudioLatency::LatencyType latency,
     const std::string& device_id,
-    const url::Origin& security_origin,
     media::OutputDeviceStatus* device_status) {
   // Effects are not passed through to output creation, so ensure none are set.
   DCHECK_EQ(input_params.effects(), media::AudioParameters::NO_EFFECTS);
 
-  const MixerKey key(source_render_frame_id, input_params, latency, device_id,
-                     security_origin);
+  const MixerKey key(source_render_frame_id, input_params, latency, device_id);
   base::AutoLock auto_lock(mixers_lock_);
 
   // Update latency map when the mixer is requested, i.e. there is an attempt to
@@ -199,7 +198,7 @@ media::AudioRendererMixer* AudioRendererMixerManager::GetMixer(
   }
 
   scoped_refptr<media::AudioRendererSink> sink =
-      sink_cache_->GetSink(source_render_frame_id, device_id, security_origin);
+      sink_cache_->GetSink(source_render_frame_id, device_id);
 
   const media::OutputDeviceInfo& device_info = sink->GetOutputDeviceInfo();
   if (device_status)
@@ -244,23 +243,20 @@ void AudioRendererMixerManager::ReturnMixer(media::AudioRendererMixer* mixer) {
 media::OutputDeviceInfo AudioRendererMixerManager::GetOutputDeviceInfo(
     int source_render_frame_id,
     int session_id,
-    const std::string& device_id,
-    const url::Origin& security_origin) {
-  return sink_cache_->GetSinkInfo(source_render_frame_id, session_id, device_id,
-                                  security_origin);
+    const std::string& device_id) {
+  return sink_cache_->GetSinkInfo(source_render_frame_id, session_id,
+                                  device_id);
 }
 
 AudioRendererMixerManager::MixerKey::MixerKey(
     int source_render_frame_id,
     const media::AudioParameters& params,
     media::AudioLatency::LatencyType latency,
-    const std::string& device_id,
-    const url::Origin& security_origin)
+    const std::string& device_id)
     : source_render_frame_id(source_render_frame_id),
       params(params),
       latency(latency),
-      device_id(device_id),
-      security_origin(security_origin) {}
+      device_id(device_id) {}
 
 AudioRendererMixerManager::MixerKey::MixerKey(const MixerKey& other) = default;
 

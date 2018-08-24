@@ -8,13 +8,16 @@
 #include <stdint.h>
 
 #include <memory>
+#include <string>
 
+#include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
+#include "base/observer_list.h"
 #include "base/optional.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
+#include "components/viz/common/surfaces/local_surface_id.h"
 #include "ui/aura/aura_export.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/ime/input_method_delegate.h"
@@ -33,6 +36,7 @@ class Transform;
 
 namespace ui {
 class Compositor;
+enum class DomCode;
 class EventSink;
 class InputMethod;
 class ViewProp;
@@ -180,14 +184,17 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
   // Hides the WindowTreeHost.
   void Hide();
 
-  // Gets/Sets the size of the WindowTreeHost (in pixels).
-  // TODO(ccameron): The existence of OnHostMoved/ResizedInPixels and this
-  // function create confusion as to the source of the true bounds. Should it
-  // be expected that this will always return the values most recently
-  // specified by OnHostMoved/ResizedInPixels? If so, why do we ask the
-  // sub-classes to return the value when this class already knows the value?
+  // Sets/Gets the bounds of the WindowTreeHost (in pixels). Note that a call to
+  // GetBoundsInPixels() immediately following a SetBoundsInPixels() can return
+  // the old bounds, because SetBoundsInPixels() can take effect asynchronously,
+  // depending on the platform. The |local_surface_id| takes effect when (and
+  // if) the new size is confirmed (potentially asynchronously) by the platform.
+  // If |local_surface_id| is invalid, then a new LocalSurfaceId is allocated
+  // when the size change takes effect.
+  virtual void SetBoundsInPixels(
+      const gfx::Rect& bounds_in_pixels,
+      const viz::LocalSurfaceId& local_surface_id = viz::LocalSurfaceId()) = 0;
   virtual gfx::Rect GetBoundsInPixels() const = 0;
-  virtual void SetBoundsInPixels(const gfx::Rect& bounds_in_pixels) = 0;
 
   // Sets the OS capture to the root window.
   virtual void SetCapture() = 0;
@@ -200,11 +207,14 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
   float device_scale_factor() const { return device_scale_factor_; }
 
   // Requests that |keys| be intercepted at the platform level and routed
-  // directly to the web content.  If |keys| is empty, all keys will be
+  // directly to the web content.  If |codes| is empty, all keys will be
   // intercepted.  Returns a ScopedKeyboardHook instance which stops capturing
   // system key events when destroyed.
   std::unique_ptr<ScopedKeyboardHook> CaptureSystemKeyEvents(
-      base::Optional<base::flat_set<int>> keys);
+      base::Optional<base::flat_set<ui::DomCode>> codes);
+
+  // Returns a map of KeyboardEvent code to KeyboardEvent key values.
+  virtual base::flat_map<std::string, std::string> GetKeyboardLayoutMap() = 0;
 
  protected:
   friend class ScopedKeyboardHook;
@@ -230,10 +240,9 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
   virtual gfx::Point GetLocationOnScreenInPixels() const = 0;
 
   void OnHostMovedInPixels(const gfx::Point& new_location_in_pixels);
-  // TODO(ccameron): This needs to specify a device scale factor. It should
-  // arguably be merged with OnHostMovedInPixels (since all callers are pulling
-  // the size or position from a rect which also feeds OnHostMovedInPixels).
-  void OnHostResizedInPixels(const gfx::Size& new_size_in_pixels);
+  void OnHostResizedInPixels(
+      const gfx::Size& new_size_in_pixels,
+      const viz::LocalSurfaceId& local_surface_id = viz::LocalSurfaceId());
   void OnHostWorkspaceChanged();
   void OnHostDisplayChanged();
   void OnHostCloseRequested();
@@ -267,13 +276,13 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
 
   // Begins capturing system key events.  Returns true if successful.
   virtual bool CaptureSystemKeyEventsImpl(
-      base::Optional<base::flat_set<int>> keys) = 0;
+      base::Optional<base::flat_set<ui::DomCode>> dom_codes) = 0;
 
   // Stops capturing system keyboard events.
   virtual void ReleaseSystemKeyEventCapture() = 0;
 
-  // True if |native_key_code| is reserved for an active KeyboardLock request.
-  virtual bool IsKeyLocked(int native_key_code) = 0;
+  // True if |dom_code| is reserved for an active KeyboardLock request.
+  virtual bool IsKeyLocked(ui::DomCode dom_code) = 0;
 
   virtual gfx::Rect GetTransformedRootWindowBoundsInPixels(
       const gfx::Size& size_in_pixels) const;

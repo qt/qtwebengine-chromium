@@ -38,9 +38,9 @@ class CORE_EXPORT WorkletGlobalScope
   // Always returns false here as PaintWorkletGlobalScope and
   // AnimationWorkletGlobalScope don't have a #close() method on the global.
   // Note that AudioWorkletGlobal overrides this behavior.
-  bool IsClosing() const { return false; }
+  bool IsClosing() const override { return false; }
 
-  ExecutionContext* GetExecutionContext() const;
+  ExecutionContext* GetExecutionContext() const override;
 
   // ExecutionContext
   const KURL& Url() const final { return url_; }
@@ -84,7 +84,7 @@ class CORE_EXPORT WorkletGlobalScope
   bool DocumentSecureContext() const { return document_secure_context_; }
 
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(const ScriptWrappableVisitor*) const override;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
  protected:
   // Partial implementation of the "set up a worklet environment settings

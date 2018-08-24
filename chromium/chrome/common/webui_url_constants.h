@@ -120,6 +120,8 @@ extern const char kChromeUIPrintURL[];
 extern const char kChromeUIQuitHost[];
 extern const char kChromeUIQuitURL[];
 extern const char kChromeUIQuotaInternalsHost[];
+extern const char kChromeUIResetPasswordHost[];
+extern const char kChromeUIResetPasswordURL[];
 extern const char kChromeUIRestartHost[];
 extern const char kChromeUIRestartURL[];
 extern const char kChromeUISettingsHost[];
@@ -137,6 +139,7 @@ extern const char kChromeUISupervisedUserInternalsHost[];
 extern const char kChromeUISupervisedUserPassphrasePageHost[];
 extern const char kChromeUISyncConfirmationHost[];
 extern const char kChromeUISyncConfirmationURL[];
+extern const char kChromeUISyncConsentBumpURL[];
 extern const char kChromeUISyncFileSystemInternalsHost[];
 extern const char kChromeUISyncHost[];
 extern const char kChromeUISyncInternalsHost[];
@@ -248,9 +251,7 @@ extern const char kChromeUITabModalConfirmDialogHost[];
 extern const char kChromeUIPrintHost[];
 #endif
 
-#if BUILDFLAG(ENABLE_WEBRTC)
 extern const char kChromeUIWebRtcLogsHost[];
-#endif
 
 // Settings sub-pages.
 extern const char kAutofillSubPage[];
@@ -278,6 +279,7 @@ extern const char kHelpSubPage[];
 extern const char kInternetSubPage[];
 extern const char kNetworkDetailSubPage[];
 extern const char kPowerSubPage[];
+extern const char kSmbSharesPage[];
 extern const char kStylusSubPage[];
 #endif
 #if defined(OS_WIN)

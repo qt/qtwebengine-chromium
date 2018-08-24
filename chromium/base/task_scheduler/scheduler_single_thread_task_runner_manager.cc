@@ -76,8 +76,9 @@ class AtomicThreadRefChecker {
 
 class SchedulerWorkerDelegate : public SchedulerWorker::Delegate {
  public:
-  SchedulerWorkerDelegate(const std::string& thread_name)
-      : thread_name_(thread_name) {}
+  SchedulerWorkerDelegate(const std::string& thread_name,
+                          SchedulerWorker::ThreadLabel thread_label)
+      : thread_name_(thread_name), thread_label_(thread_label) {}
 
   void set_worker(SchedulerWorker* worker) {
     DCHECK(!worker_);
@@ -91,7 +92,11 @@ class SchedulerWorkerDelegate : public SchedulerWorker::Delegate {
     worker_->WakeUp();
   }
 
-  void OnMainEntry(SchedulerWorker* worker) override {
+  SchedulerWorker::ThreadLabel GetThreadLabel() const final {
+    return thread_label_;
+  }
+
+  void OnMainEntry(const SchedulerWorker* /* worker */) override {
     thread_ref_checker_.Set();
     PlatformThread::SetName(thread_name_);
   }
@@ -149,6 +154,7 @@ class SchedulerWorkerDelegate : public SchedulerWorker::Delegate {
 
  private:
   const std::string thread_name_;
+  const SchedulerWorker::ThreadLabel thread_label_;
 
   // The SchedulerWorker that has |this| as a delegate. Must be set before
   // starting or posting a task to the SchedulerWorker, because it's used in
@@ -171,13 +177,15 @@ class SchedulerWorkerDelegate : public SchedulerWorker::Delegate {
 class SchedulerWorkerCOMDelegate : public SchedulerWorkerDelegate {
  public:
   SchedulerWorkerCOMDelegate(const std::string& thread_name,
-                             TaskTracker* task_tracker)
-      : SchedulerWorkerDelegate(thread_name), task_tracker_(task_tracker) {}
+                             SchedulerWorker::ThreadLabel thread_label,
+                             TrackedRef<TaskTracker> task_tracker)
+      : SchedulerWorkerDelegate(thread_name, thread_label),
+        task_tracker_(std::move(task_tracker)) {}
 
   ~SchedulerWorkerCOMDelegate() override { DCHECK(!scoped_com_initializer_); }
 
   // SchedulerWorker::Delegate:
-  void OnMainEntry(SchedulerWorker* worker) override {
+  void OnMainEntry(const SchedulerWorker* worker) override {
     SchedulerWorkerDelegate::OnMainEntry(worker);
 
     scoped_com_initializer_ = std::make_unique<win::ScopedCOMInitializer>();
@@ -254,7 +262,7 @@ class SchedulerWorkerCOMDelegate : public SchedulerWorkerDelegate {
 
   bool get_work_first_ = true;
   const scoped_refptr<Sequence> message_pump_sequence_ = new Sequence;
-  TaskTracker* const task_tracker_;
+  const TrackedRef<TaskTracker> task_tracker_;
   std::unique_ptr<win::ScopedCOMInitializer> scoped_com_initializer_;
 
   DISALLOW_COPY_AND_ASSIGN(SchedulerWorkerCOMDelegate);
@@ -376,9 +384,10 @@ class SchedulerSingleThreadTaskRunnerManager::SchedulerSingleThreadTaskRunner
 };
 
 SchedulerSingleThreadTaskRunnerManager::SchedulerSingleThreadTaskRunnerManager(
-    TaskTracker* task_tracker,
+    TrackedRef<TaskTracker> task_tracker,
     DelayedTaskManager* delayed_task_manager)
-    : task_tracker_(task_tracker), delayed_task_manager_(delayed_task_manager) {
+    : task_tracker_(std::move(task_tracker)),
+      delayed_task_manager_(delayed_task_manager) {
   DCHECK(task_tracker_);
   DCHECK(delayed_task_manager_);
 #if defined(OS_WIN)
@@ -401,7 +410,11 @@ SchedulerSingleThreadTaskRunnerManager::
   g_manager_is_alive = false;
 }
 
-void SchedulerSingleThreadTaskRunnerManager::Start() {
+void SchedulerSingleThreadTaskRunnerManager::Start(
+    SchedulerWorkerObserver* scheduler_worker_observer) {
+  DCHECK(!scheduler_worker_observer_);
+  scheduler_worker_observer_ = scheduler_worker_observer;
+
   decltype(workers_) workers_to_start;
   {
     AutoSchedulerLock auto_lock(lock_);
@@ -412,7 +425,7 @@ void SchedulerSingleThreadTaskRunnerManager::Start() {
   // Start workers that were created before this method was called. Other
   // workers are started as they are created.
   for (scoped_refptr<SchedulerWorker> worker : workers_to_start) {
-    worker->Start();
+    worker->Start(scheduler_worker_observer_);
     worker->WakeUp();
   }
 }
@@ -478,14 +491,14 @@ SchedulerSingleThreadTaskRunnerManager::CreateTaskRunnerWithTraitsImpl(
         worker_name += "Shared";
       worker_name += environment_params.name_suffix;
       worker = CreateAndRegisterSchedulerWorker<DelegateType>(
-          worker_name, environment_params.priority_hint);
+          worker_name, thread_mode, environment_params.priority_hint);
       new_worker = true;
     }
     started = started_;
   }
 
   if (new_worker && started)
-    worker->Start();
+    worker->Start(scheduler_worker_observer_);
 
   return MakeRefCounted<SchedulerSingleThreadTaskRunner>(this, traits, worker,
                                                          thread_mode);
@@ -517,18 +530,28 @@ void SchedulerSingleThreadTaskRunnerManager::JoinForTesting() {
 template <>
 std::unique_ptr<SchedulerWorkerDelegate>
 SchedulerSingleThreadTaskRunnerManager::CreateSchedulerWorkerDelegate<
-    SchedulerWorkerDelegate>(const std::string& name, int id) {
+    SchedulerWorkerDelegate>(const std::string& name,
+                             int id,
+                             SingleThreadTaskRunnerThreadMode thread_mode) {
   return std::make_unique<SchedulerWorkerDelegate>(
-      StringPrintf("TaskSchedulerSingleThread%s%d", name.c_str(), id));
+      StringPrintf("TaskSchedulerSingleThread%s%d", name.c_str(), id),
+      thread_mode == SingleThreadTaskRunnerThreadMode::DEDICATED
+          ? SchedulerWorker::ThreadLabel::DEDICATED
+          : SchedulerWorker::ThreadLabel::SHARED);
 }
 
 #if defined(OS_WIN)
 template <>
 std::unique_ptr<SchedulerWorkerDelegate>
 SchedulerSingleThreadTaskRunnerManager::CreateSchedulerWorkerDelegate<
-    SchedulerWorkerCOMDelegate>(const std::string& name, int id) {
+    SchedulerWorkerCOMDelegate>(const std::string& name,
+                                int id,
+                                SingleThreadTaskRunnerThreadMode thread_mode) {
   return std::make_unique<SchedulerWorkerCOMDelegate>(
       StringPrintf("TaskSchedulerSingleThreadCOMSTA%s%d", name.c_str(), id),
+      thread_mode == SingleThreadTaskRunnerThreadMode::DEDICATED
+          ? SchedulerWorker::ThreadLabel::DEDICATED_COM
+          : SchedulerWorker::ThreadLabel::SHARED_COM,
       task_tracker_);
 }
 #endif  // defined(OS_WIN)
@@ -537,11 +560,12 @@ template <typename DelegateType>
 SchedulerWorker*
 SchedulerSingleThreadTaskRunnerManager::CreateAndRegisterSchedulerWorker(
     const std::string& name,
+    SingleThreadTaskRunnerThreadMode thread_mode,
     ThreadPriority priority_hint) {
   lock_.AssertAcquired();
   int id = next_worker_id_++;
   std::unique_ptr<SchedulerWorkerDelegate> delegate =
-      CreateSchedulerWorkerDelegate<DelegateType>(name, id);
+      CreateSchedulerWorkerDelegate<DelegateType>(name, id, thread_mode);
   SchedulerWorkerDelegate* delegate_raw = delegate.get();
   scoped_refptr<SchedulerWorker> worker = MakeRefCounted<SchedulerWorker>(
       priority_hint, std::move(delegate), task_tracker_);

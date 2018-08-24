@@ -31,7 +31,6 @@
 #include "content/browser/service_worker/service_worker_installed_scripts_sender.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_type_converters.h"
-#include "content/common/origin_trials/trial_policy_impl.h"
 #include "content/common/service_worker/embedded_worker.mojom.h"
 #include "content/common/service_worker/service_worker_messages.h"
 #include "content/common/service_worker/service_worker_utils.h"
@@ -166,17 +165,20 @@ void OnEventDispatcherConnectionError(
   }
 }
 
+// In S13nServiceWorker, |loader_factory| is the factory to use loading new
+// scripts from network (or other sources, e.g., for chrome-extension:// URLs).
 mojom::ServiceWorkerProviderInfoForStartWorkerPtr
 CompleteProviderHostPreparation(
     ServiceWorkerVersion* version,
     std::unique_ptr<ServiceWorkerProviderHost> provider_host,
     base::WeakPtr<ServiceWorkerContextCore> context,
-    int process_id) {
+    int process_id,
+    scoped_refptr<network::SharedURLLoaderFactory> loader_factory) {
   // Caller should ensure |context| is alive when completing StartWorker
   // preparation.
   DCHECK(context);
-  auto info =
-      provider_host->CompleteStartWorkerPreparation(process_id, version);
+  auto info = provider_host->CompleteStartWorkerPreparation(
+      process_id, version, std::move(loader_factory));
   context->AddProviderHost(std::move(provider_host));
   return info;
 }
@@ -329,14 +331,14 @@ ServiceWorkerVersion::ServiceWorkerVersion(
       tick_clock_(base::DefaultTickClock::GetInstance()),
       clock_(base::DefaultClock::GetInstance()),
       ping_controller_(new PingController(this)),
-      validator_(TrialPolicyImpl::CreateValidatorForPolicy()),
+      validator_(std::make_unique<blink::TrialTokenValidator>()),
       weak_factory_(this) {
   DCHECK_NE(blink::mojom::kInvalidServiceWorkerVersionId, version_id);
   DCHECK(context_);
   DCHECK(registration);
   DCHECK(script_url_.is_valid());
   embedded_worker_ = context_->embedded_worker_registry()->CreateWorker(this);
-  embedded_worker_->AddListener(this);
+  embedded_worker_->AddObserver(this);
   context_->AddLiveVersion(this);
 }
 
@@ -359,7 +361,7 @@ ServiceWorkerVersion::~ServiceWorkerVersion() {
       running_status() == EmbeddedWorkerStatus::RUNNING) {
     embedded_worker_->Stop();
   }
-  embedded_worker_->RemoveListener(this);
+  embedded_worker_->RemoveObserver(this);
 }
 
 void ServiceWorkerVersion::SetNavigationPreloadState(
@@ -453,9 +455,9 @@ ServiceWorkerVersionInfo ServiceWorkerVersion::GetInfo() {
     const ServiceWorkerProviderHost* host = controllee.second;
     info.clients.insert(std::make_pair(
         host->client_uuid(),
-        ServiceWorkerVersionInfo::ClientInfo(
-            host->process_id(), host->route_id(), host->web_contents_getter(),
-            host->provider_type())));
+        ServiceWorkerClientInfo(host->process_id(), host->route_id(),
+                                host->web_contents_getter(),
+                                host->provider_type())));
   }
   if (!main_script_http_info_)
     return info;
@@ -504,15 +506,7 @@ void ServiceWorkerVersion::StartWorker(ServiceWorkerMetrics::EventType purpose,
         base::BindOnce(std::move(callback), SERVICE_WORKER_ERROR_REDUNDANT));
     return;
   }
-
-  // Check that the worker is allowed to start on the given scope. Since this
-  // worker might not be used for a specific tab, pass a null callback as
-  // WebContents getter.
-  // resource_context() can return null in unit tests.
-  if (context_->wrapper()->resource_context() &&
-      !GetContentClient()->browser()->AllowServiceWorker(
-          scope_, scope_, context_->wrapper()->resource_context(),
-          base::Callback<WebContents*(void)>())) {
+  if (!IsStartWorkerAllowed()) {
     RecordStartWorkerResult(purpose, status_, kInvalidTraceId,
                             is_browser_startup_complete,
                             SERVICE_WORKER_ERROR_DISALLOWED);
@@ -729,6 +723,7 @@ void ServiceWorkerVersion::RunAfterStartWorker(
 
 void ServiceWorkerVersion::AddControllee(
     ServiceWorkerProviderHost* provider_host) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   const std::string& uuid = provider_host->client_uuid();
   CHECK(!provider_host->client_uuid().empty());
   DCHECK(!base::ContainsKey(controllee_map_, uuid));
@@ -736,22 +731,28 @@ void ServiceWorkerVersion::AddControllee(
   // Keep the worker alive a bit longer right after a new controllee is added.
   RestartTick(&idle_time_);
   ClearTick(&no_controllees_time_);
-  for (auto& observer : listeners_)
-    observer.OnControlleeAdded(this, provider_host);
+
+  // Notify observers asynchronously for consistency with RemoveControllee.
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE,
+      base::BindOnce(&ServiceWorkerVersion::NotifyControlleeAdded,
+                     weak_factory_.GetWeakPtr(), uuid,
+                     ServiceWorkerClientInfo(
+                         provider_host->process_id(), provider_host->route_id(),
+                         provider_host->web_contents_getter(),
+                         provider_host->provider_type())));
 }
 
-void ServiceWorkerVersion::RemoveControllee(
-    ServiceWorkerProviderHost* provider_host) {
-  const std::string& uuid = provider_host->client_uuid();
-  DCHECK(base::ContainsKey(controllee_map_, uuid));
-  controllee_map_.erase(uuid);
-  for (auto& observer : listeners_)
-    observer.OnControlleeRemoved(this, provider_host);
-  if (!HasControllee()) {
-    RestartTick(&no_controllees_time_);
-    for (auto& observer : listeners_)
-      observer.OnNoControllees(this);
-  }
+void ServiceWorkerVersion::RemoveControllee(const std::string& client_uuid) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK(base::ContainsKey(controllee_map_, client_uuid));
+  controllee_map_.erase(client_uuid);
+  // Notify observers asynchronously since this gets called during
+  // ServiceWorkerProviderHost's destructor, and we don't want observers to do
+  // work during that.
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::BindOnce(&ServiceWorkerVersion::NotifyControlleeRemoved,
+                                weak_factory_.GetWeakPtr(), client_uuid));
 }
 
 void ServiceWorkerVersion::OnStreamResponseStarted() {
@@ -935,9 +936,6 @@ ServiceWorkerVersion::InflightRequest::~InflightRequest() {}
 
 void ServiceWorkerVersion::OnThreadStarted() {
   DCHECK_EQ(EmbeddedWorkerStatus::STARTING, running_status());
-  DCHECK(provider_host_);
-  provider_host_->SetReadyToSendMessagesToWorker(
-      embedded_worker()->thread_id());
   // Activate ping/pong now that JavaScript execution will start.
   ping_controller_->Activate();
 }
@@ -1517,9 +1515,19 @@ void ServiceWorkerVersion::StartWorkerInternal() {
   // TODO(horo): These CHECKs are for debugging crbug.com/759938.
   CHECK(event_dispatcher_.is_bound());
   CHECK(params->dispatcher_request.is_pending());
-
+  event_dispatcher_.set_connection_error_handler(base::BindOnce(
+      &OnEventDispatcherConnectionError, embedded_worker_->AsWeakPtr()));
+  blink::mojom::ServiceWorkerHostAssociatedPtrInfo service_worker_host;
   binding_.Close();
-  binding_.Bind(mojo::MakeRequest(&params->service_worker_host));
+  binding_.Bind(mojo::MakeRequest(&service_worker_host));
+  ServiceWorkerRegistration* registration =
+      context_->GetLiveRegistration(registration_id_);
+  DCHECK(registration);
+  provider_host->SetDocumentUrl(script_url());
+  event_dispatcher_->InitializeGlobalScope(
+      std::move(service_worker_host),
+      provider_host->CreateServiceWorkerRegistrationObjectInfo(
+          scoped_refptr<ServiceWorkerRegistration>(registration)));
 
   // S13nServiceWorker:
   if (!controller_request_.is_pending()) {
@@ -1536,8 +1544,6 @@ void ServiceWorkerVersion::StartWorkerInternal() {
                      std::move(provider_host), context()),
       base::BindOnce(&ServiceWorkerVersion::OnStartSentAndScriptEvaluated,
                      weak_factory_.GetWeakPtr()));
-  event_dispatcher_.set_connection_error_handler(base::BindOnce(
-      &OnEventDispatcherConnectionError, embedded_worker_->AsWeakPtr()));
 }
 
 void ServiceWorkerVersion::StartTimeoutTimer() {
@@ -1610,10 +1616,10 @@ void ServiceWorkerVersion::OnTimeoutTimer() {
     // EmbeddedWorkerInstance could destroy our ServiceWorkerProviderHost
     // which could in turn destroy |this|.
     scoped_refptr<ServiceWorkerVersion> protect_this(this);
-    embedded_worker_->RemoveListener(this);
+    embedded_worker_->RemoveObserver(this);
     embedded_worker_->Detach();
     embedded_worker_ = context_->embedded_worker_registry()->CreateWorker(this);
-    embedded_worker_->AddListener(this);
+    embedded_worker_->AddObserver(this);
 
     // Call OnStoppedInternal to fail callbacks and possibly restart.
     OnStoppedInternal(EmbeddedWorkerStatus::STOPPING);
@@ -1992,6 +1998,52 @@ void ServiceWorkerVersion::OnNoWorkInBrowser() {
   for (auto& observer : listeners_)
     observer.OnNoWork(this);
   idle_timer_fired_in_renderer_ = false;
+}
+
+bool ServiceWorkerVersion::IsStartWorkerAllowed() const {
+  // Check that the worker is allowed on this origin. It's possible a
+  // worker was previously allowed and installed, but later the embedder's
+  // policy or binary changed to disallow this origin.
+  if (!ServiceWorkerUtils::AllOriginsMatchAndCanAccessServiceWorkers(
+          {script_url_})) {
+    return false;
+  }
+
+  // Check that the worker is allowed on the given scope. It's possible a worker
+  // was previously allowed and installed, but later content settings changed to
+  // disallow this scope. Since this worker might not be used for a specific
+  // tab, pass a null callback as WebContents getter.
+  // resource_context() can return null in unit tests.
+  if ((context_->wrapper()->resource_context() &&
+       !GetContentClient()->browser()->AllowServiceWorker(
+           scope_, scope_, context_->wrapper()->resource_context(),
+           base::Callback<WebContents*(void)>()))) {
+    return false;
+  }
+
+  return true;
+}
+
+void ServiceWorkerVersion::NotifyControlleeAdded(
+    const std::string& uuid,
+    const ServiceWorkerClientInfo& info) {
+  for (auto& observer : listeners_)
+    observer.OnControlleeAdded(this, uuid, info);
+}
+
+void ServiceWorkerVersion::NotifyControlleeRemoved(const std::string& uuid) {
+  // The observers can destroy |this|, so protect it first.
+  // TODO(falken): Make OnNoControllees an explicit call to our registration
+  // instead of an observer callback, if it has dangerous side-effects like
+  // destroying the caller.
+  auto protect = base::WrapRefCounted(this);
+  for (auto& observer : listeners_)
+    observer.OnControlleeRemoved(this, uuid);
+  if (!HasControllee()) {
+    RestartTick(&no_controllees_time_);
+    for (auto& observer : listeners_)
+      observer.OnNoControllees(this);
+  }
 }
 
 }  // namespace content

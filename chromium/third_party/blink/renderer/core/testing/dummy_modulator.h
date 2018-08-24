@@ -28,8 +28,8 @@ class DummyModulator : public Modulator {
 
  public:
   DummyModulator();
-  virtual ~DummyModulator();
-  void Trace(blink::Visitor*);
+  ~DummyModulator() override;
+  void Trace(blink::Visitor*) override;
 
   ScriptModuleResolver* GetScriptModuleResolver() override;
   base::SingleThreadTaskRunner* TaskRunner() override;
@@ -37,12 +37,17 @@ class DummyModulator : public Modulator {
   const SecurityOrigin* GetSecurityOriginForFetch() override;
   ScriptState* GetScriptState() override;
 
-  void FetchTree(const ModuleScriptFetchRequest&, ModuleTreeClient*) override;
+  void FetchTree(const KURL&,
+                 WebURLRequest::RequestContext destination,
+                 const ScriptFetchOptions&,
+                 ModuleTreeClient*) override;
   void FetchSingle(const ModuleScriptFetchRequest&,
                    ModuleGraphLevel,
                    SingleModuleClient*) override;
-  void FetchDescendantsForInlineScript(ModuleScript*,
-                                       ModuleTreeClient*) override;
+  void FetchDescendantsForInlineScript(
+      ModuleScript*,
+      WebURLRequest::RequestContext destination,
+      ModuleTreeClient*) override;
   ModuleScript* GetFetchedModuleScript(const KURL&) override;
   void FetchNewSingleModule(const ModuleScriptFetchRequest&,
                             ModuleGraphLevel,

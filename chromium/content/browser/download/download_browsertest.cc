@@ -18,7 +18,6 @@
 #include "base/format_macros.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/path_service.h"
@@ -125,7 +124,7 @@ class DownloadTestContentBrowserClient : public TestContentBrowserClient {
 class MockDownloadItemObserver : public download::DownloadItem::Observer {
  public:
   MockDownloadItemObserver() {}
-  virtual ~MockDownloadItemObserver() {}
+  ~MockDownloadItemObserver() override {}
 
   MOCK_METHOD1(OnDownloadUpdated, void(download::DownloadItem*));
   MOCK_METHOD1(OnDownloadOpened, void(download::DownloadItem*));
@@ -139,7 +138,7 @@ class MockDownloadManagerObserver : public DownloadManager::Observer {
     manager_ = manager;
     manager->AddObserver(this);
   }
-  virtual ~MockDownloadManagerObserver() {
+  ~MockDownloadManagerObserver() override {
     if (manager_)
       manager_->RemoveObserver(this);
   }
@@ -147,7 +146,7 @@ class MockDownloadManagerObserver : public DownloadManager::Observer {
   MOCK_METHOD2(OnDownloadCreated,
                void(DownloadManager*, download::DownloadItem*));
   MOCK_METHOD1(ModelChanged, void(DownloadManager*));
-  void ManagerGoingDown(DownloadManager* manager) {
+  void ManagerGoingDown(DownloadManager* manager) override {
     DCHECK_EQ(manager_, manager);
     MockManagerGoingDown(manager);
 
@@ -370,7 +369,7 @@ class CountingDownloadFile : public download::DownloadFileImpl {
     download::GetDownloadTaskRunner()->PostTaskAndReply(
         FROM_HERE,
         base::BindOnce(&CountingDownloadFile::GetNumberActiveFiles, &result),
-        base::MessageLoop::current()->QuitWhenIdleClosure());
+        base::RunLoop::QuitCurrentWhenIdleClosureDeprecated());
     base::RunLoop().Run();
     DCHECK_NE(-1, result);
     return result;
@@ -576,6 +575,46 @@ class DownloadCreateObserver : DownloadManager::Observer {
   base::Closure completion_closure_;
 };
 
+class ErrorStreamCountingObserver : download::DownloadItem::Observer {
+ public:
+  ErrorStreamCountingObserver() : item_(nullptr), count_(0){};
+
+  ~ErrorStreamCountingObserver() override {
+    if (item_)
+      item_->RemoveObserver(this);
+  }
+
+  void OnDownloadUpdated(download::DownloadItem* download) override {
+    std::unique_ptr<base::HistogramSamples> samples =
+        histogram_tester_.GetHistogramSamplesSinceCreation(
+            "Download.ParallelDownloadAddStreamSuccess");
+    if (samples->GetCount(0 /* failure */) == count_ &&
+        !completion_closure_.is_null())
+      base::ResetAndReturn(&completion_closure_).Run();
+  }
+
+  void OnDownloadDestroyed(download::DownloadItem* download) override {
+    item_ = nullptr;
+  }
+
+  void WaitForFinished(download::DownloadItem* item, int count) {
+    item_ = item;
+    count_ = count;
+    if (item_) {
+      item_->AddObserver(this);
+      base::RunLoop run_loop;
+      completion_closure_ = run_loop.QuitClosure();
+      run_loop.Run();
+    }
+  }
+
+ private:
+  base::HistogramTester histogram_tester_;
+  download::DownloadItem* item_;
+  int count_;
+  base::Closure completion_closure_;
+};
+
 bool IsDownloadInState(download::DownloadItem::DownloadState state,
                        download::DownloadItem* item) {
   return item->GetState() == state;
@@ -723,7 +762,7 @@ class DownloadContentTest : public ContentBrowserTest {
     test_delegate_->SetDownloadManager(manager);
 
     base::FilePath test_data_dir;
-    ASSERT_TRUE(PathService::Get(content::DIR_TEST_DATA, &test_data_dir));
+    ASSERT_TRUE(base::PathService::Get(content::DIR_TEST_DATA, &test_data_dir));
     embedded_test_server()->ServeFilesFromDirectory(test_data_dir);
     embedded_test_server()->RegisterRequestHandler(
         base::Bind(&SlowDownloadHttpResponse::HandleSlowDownloadRequest));
@@ -974,7 +1013,8 @@ class ParallelDownloadTest : public DownloadContentTest {
   void RunResumptionTest(
       const download::DownloadItem::ReceivedSlices& received_slices,
       int64_t total_length,
-      size_t expected_request_count) {
+      size_t expected_request_count,
+      bool support_partial_response) {
     EXPECT_TRUE(
         base::FeatureList::IsEnabled(download::features::kParallelDownloading));
     GURL url = TestDownloadHttpResponse::GetNextURLForDownload();
@@ -983,6 +1023,7 @@ class ParallelDownloadTest : public DownloadContentTest {
     parameters.etag = "ABC";
     parameters.size = total_length;
     parameters.last_modified = std::string();
+    parameters.support_partial_response = support_partial_response;
     // Needed to specify HTTP connection type to create parallel download.
     parameters.connection_type = net::HttpResponseInfo::CONNECTION_INFO_HTTP1_1;
     TestDownloadHttpResponse::StartServing(parameters, server_url);
@@ -999,12 +1040,17 @@ class ParallelDownloadTest : public DownloadContentTest {
     // Resume the parallel download with sparse file and received slices data.
     download->Resume();
     WaitForCompletion(download);
-    test_response_handler()->WaitUntilCompletion(expected_request_count);
+    // TODO(qinmin): count the failed partial responses in DownloadJob when
+    // support_partial_response is false. EmbeddedTestServer doesn't know
+    // whether completing or canceling the response will come first.
+    if (support_partial_response) {
+      test_response_handler()->WaitUntilCompletion(expected_request_count);
 
-    // Verify number of requests sent to the server.
-    const TestDownloadResponseHandler::CompletedRequests& completed_requests =
-        test_response_handler()->completed_requests();
-    EXPECT_EQ(expected_request_count, completed_requests.size());
+      // Verify number of requests sent to the server.
+      const TestDownloadResponseHandler::CompletedRequests& completed_requests =
+          test_response_handler()->completed_requests();
+      EXPECT_EQ(expected_request_count, completed_requests.size());
+    }
 
     // Verify download content on disk.
     ReadAndVerifyFileContents(parameters.pattern_generator_seed,
@@ -1013,6 +1059,7 @@ class ParallelDownloadTest : public DownloadContentTest {
 
   // Verifies parallel download completion.
   void RunCompletionTest(TestDownloadHttpResponse::Parameters& parameters) {
+    ErrorStreamCountingObserver observer;
     EXPECT_TRUE(
         base::FeatureList::IsEnabled(download::features::kParallelDownloading));
 
@@ -1026,22 +1073,28 @@ class ParallelDownloadTest : public DownloadContentTest {
     parameters.connection_type = net::HttpResponseInfo::CONNECTION_INFO_HTTP1_1;
     TestRequestPauseHandler request_pause_handler;
     parameters.on_pause_handler = request_pause_handler.GetOnPauseHandler();
+    // Send some data for the first request and pause it so download won't
+    // complete before other parallel requests are created.
     parameters.pause_offset = DownloadRequestCore::kDownloadByteStreamSize;
     TestDownloadHttpResponse::StartServing(parameters, server_url);
 
     download::DownloadItem* download =
         StartDownloadAndReturnItem(shell(), server_url);
-    // Send some data for the first request and pause it so download won't
-    // complete before other parallel requests are created.
-    test_response_handler()->WaitUntilCompletion(2u);
+
+    if (parameters.support_partial_response)
+      test_response_handler()->WaitUntilCompletion(2u);
+    else
+      observer.WaitForFinished(download, 2);
 
     // Now resume the first request.
     request_pause_handler.Resume();
     WaitForCompletion(download);
-    test_response_handler()->WaitUntilCompletion(3u);
-    const TestDownloadResponseHandler::CompletedRequests& completed_requests =
-        test_response_handler()->completed_requests();
-    EXPECT_EQ(kTestRequestCount, static_cast<int>(completed_requests.size()));
+    if (parameters.support_partial_response) {
+      test_response_handler()->WaitUntilCompletion(3u);
+      const TestDownloadResponseHandler::CompletedRequests& completed_requests =
+          test_response_handler()->completed_requests();
+      EXPECT_EQ(3u, completed_requests.size());
+    }
     ReadAndVerifyFileContents(parameters.pattern_generator_seed,
                               parameters.size, download->GetTargetFilePath());
   }
@@ -2141,7 +2194,14 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, CancelResumingDownload) {
   EXPECT_TRUE(EnsureNoPendingDownloads());
 }
 
-IN_PROC_BROWSER_TEST_F(DownloadContentTest, RemoveResumedDownload) {
+// Flaky on ASAN. crbug.com/838403
+#if defined(ADDRESS_SANITIZER)
+#define MAYBE_RemoveResumedDownload DISABLED_RemoveResumedDownload
+#else
+#define MAYBE_RemoveResumedDownload RemoveResumedDownload
+#endif  // defined(ADDRESS_SANITIZER)
+
+IN_PROC_BROWSER_TEST_F(DownloadContentTest, MAYBE_RemoveResumedDownload) {
   SetupErrorInjectionDownloads();
   TestDownloadHttpResponse::Parameters parameters =
       TestDownloadHttpResponse::Parameters::WithSingleInterruption(
@@ -2180,7 +2240,13 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, RemoveResumedDownload) {
   test_response_handler()->WaitUntilCompletion(2u);
 }
 
-IN_PROC_BROWSER_TEST_F(DownloadContentTest, CancelResumedDownload) {
+// TODO(qinmin): Flaky crashes on ASAN Linux. https://crbug.com/836689
+#if defined(OS_LINUX) && defined(ADDRESS_SANITIZER)
+#define MAYBE_CancelResumedDownload DISABLED_CancelResumedDownload
+#else
+#define MAYBE_CancelResumedDownload CancelResumedDownload
+#endif
+IN_PROC_BROWSER_TEST_F(DownloadContentTest, MAYBE_CancelResumedDownload) {
   SetupErrorInjectionDownloads();
   TestDownloadHttpResponse::Parameters parameters =
       TestDownloadHttpResponse::Parameters::WithSingleInterruption(
@@ -2919,7 +2985,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadAttributeServerError) {
 }
 
 // A cross-origin request that fails before it gets a response from the server
-// should result in the old page staying current.
+// should result in a network error page.
 IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadAttributeNetworkError) {
   SetupErrorInjectionDownloads();
   GURL url = TestDownloadHttpResponse::GetNextURLForDownload();
@@ -3169,6 +3235,17 @@ IN_PROC_BROWSER_TEST_F(ParallelDownloadTest, OnlyFirstRequestValid) {
   RunCompletionTest(parameters);
 }
 
+// The server will send Accept-Ranges header without partial response.
+IN_PROC_BROWSER_TEST_F(ParallelDownloadTest, NoPartialResponse) {
+  TestDownloadHttpResponse::Parameters parameters;
+  parameters.etag = "ABC";
+  parameters.size = 5097152;
+  parameters.support_byte_ranges = true;
+  parameters.support_partial_response = false;
+
+  RunCompletionTest(parameters);
+}
+
 // Verify parallel download resumption.
 IN_PROC_BROWSER_TEST_F(ParallelDownloadTest, Resumption) {
   // Create the received slices data, the last request is not finished and the
@@ -3179,7 +3256,8 @@ IN_PROC_BROWSER_TEST_F(ParallelDownloadTest, Resumption) {
       download::DownloadItem::ReceivedSlice(2000000, 1000,
                                             false /* finished */)};
 
-  RunResumptionTest(received_slices, 3000000, kTestRequestCount);
+  RunResumptionTest(received_slices, 3000000, kTestRequestCount,
+                    true /* support_partial_response */);
 }
 
 // Verifies that if the last slice is finished, parallel download resumption
@@ -3194,7 +3272,8 @@ IN_PROC_BROWSER_TEST_F(ParallelDownloadTest, ResumptionLastSliceFinished) {
 
   // The server shouldn't receive an additional request, since the last slice
   // is marked as finished.
-  RunResumptionTest(received_slices, 3000000, kTestRequestCount - 1);
+  RunResumptionTest(received_slices, 3000000, kTestRequestCount - 1,
+                    true /* support_partial_response */);
 }
 
 // Verifies that if the last slice is finished, but the database record is not
@@ -3210,7 +3289,23 @@ IN_PROC_BROWSER_TEST_F(ParallelDownloadTest, ResumptionLastSliceUnfinished) {
 
   // Client will send an out of range request where server will send back HTTP
   // range not satisfied, and download can complete.
-  RunResumptionTest(received_slices, 3000000, kTestRequestCount);
+  RunResumptionTest(received_slices, 3000000, kTestRequestCount,
+                    true /* support_partial_response */);
+}
+
+// Verify that if server doesn't support partial response, resuming a parallel
+// download should complete the download.
+IN_PROC_BROWSER_TEST_F(ParallelDownloadTest, ResumptionNoPartialResponse) {
+  // Create the received slices data, the last request is not finished and the
+  // server will send more data to finish the last slice.
+  std::vector<download::DownloadItem::ReceivedSlice> received_slices = {
+      download::DownloadItem::ReceivedSlice(0, 1000),
+      download::DownloadItem::ReceivedSlice(1000000, 1000),
+      download::DownloadItem::ReceivedSlice(2000000, 1000,
+                                            false /* finished */)};
+
+  RunResumptionTest(received_slices, 3000000, kTestRequestCount,
+                    false /* support_partial_response */);
 }
 
 // Test to verify that the browser-side enforcement of X-Frame-Options does
@@ -3375,7 +3470,8 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, FetchErrorResponseBodyResumption) {
             std::string("header_value"));
 }
 
-IN_PROC_BROWSER_TEST_F(DownloadContentTest, ForceDownloadMultipartRelatedPage) {
+IN_PROC_BROWSER_TEST_F(DownloadContentTest,
+                       DISABLED_ForceDownloadMultipartRelatedPage) {
   // Force downloading the MHTML.
   DownloadTestContentBrowserClient new_client;
   new_client.set_allowed_rendering_mhtml_over_http(false);

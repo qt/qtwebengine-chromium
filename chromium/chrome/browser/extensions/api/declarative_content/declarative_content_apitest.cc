@@ -841,9 +841,9 @@ IN_PROC_BROWSER_TEST_F(DeclarativeContentApiTest,
                        WebContentsWithoutTabAddedNotificationAtOnLoaded) {
   // Add a web contents to the tab strip in a way that doesn't trigger
   // NOTIFICATION_TAB_ADDED.
-  content::WebContents* contents = content::WebContents::Create(
+  std::unique_ptr<content::WebContents> contents = content::WebContents::Create(
       content::WebContents::CreateParams(profile()));
-  browser()->tab_strip_model()->AppendWebContents(contents, false);
+  browser()->tab_strip_model()->AppendWebContents(std::move(contents), false);
 
   // The actual extension contents don't matter here -- we're just looking to
   // trigger OnExtensionLoaded.
@@ -868,8 +868,8 @@ IN_PROC_BROWSER_TEST_F(DeclarativeContentApiTest,
       browser()->tab_strip_model()->GetWebContentsAt(0);
 
   AddTabAtIndex(1, GURL("http://test2/"), ui::PAGE_TRANSITION_LINK);
-  std::unique_ptr<content::WebContents> tab2(
-      browser()->tab_strip_model()->GetWebContentsAt(1));
+  content::WebContents* tab2 =
+      browser()->tab_strip_model()->GetWebContentsAt(1);
 
   // Add a rule matching the second tab.
   const std::string kAddTestRules =
@@ -886,8 +886,7 @@ IN_PROC_BROWSER_TEST_F(DeclarativeContentApiTest,
       "}], 'add_rules');\n";
   EXPECT_EQ("add_rules",
             ExecuteScriptInBackgroundPage(extension->id(), kAddTestRules));
-  EXPECT_TRUE(page_action->GetIsVisible(
-      ExtensionTabUtil::GetTabId(tab2.get())));
+  EXPECT_TRUE(page_action->GetIsVisible(ExtensionTabUtil::GetTabId(tab2)));
 
   // Remove the rule.
   const std::string kRemoveTestRule1 = "removeRule('2', 'remove_rule1');\n";
@@ -896,7 +895,8 @@ IN_PROC_BROWSER_TEST_F(DeclarativeContentApiTest,
 
   // Remove the second tab, then trigger a rule evaluation for the remaining
   // tab.
-  tab2.reset();
+  browser()->tab_strip_model()->DetachWebContentsAt(
+      browser()->tab_strip_model()->GetIndexOfWebContents(tab2));
   NavigateInRenderer(tab1, GURL("http://test1/"));
   EXPECT_TRUE(page_action->GetIsVisible(ExtensionTabUtil::GetTabId(tab1)));
 }

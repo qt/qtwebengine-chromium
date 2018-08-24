@@ -23,6 +23,7 @@
 #include "net/proxy_resolution/proxy_info.h"
 #include "net/test/event_waiter.h"
 #include "net/test/gtest_util.h"
+#include "net/test/test_with_scoped_task_environment.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -34,7 +35,7 @@ namespace net {
 
 namespace {
 
-class ProxyResolverV8TracingTest : public testing::Test {
+class ProxyResolverV8TracingTest : public TestWithScopedTaskEnvironment {
  public:
   void TearDown() override {
     // Drain any pending messages, which may be left over from cancellation.
@@ -46,7 +47,7 @@ class ProxyResolverV8TracingTest : public testing::Test {
 
 scoped_refptr<PacFileData> LoadScriptData(const char* filename) {
   base::FilePath path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &path);
+  base::PathService::Get(base::DIR_SOURCE_ROOT, &path);
   path = path.AppendASCII("net");
   path = path.AppendASCII("data");
   path = path.AppendASCII("proxy_resolver_v8_tracing_unittest");

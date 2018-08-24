@@ -93,9 +93,12 @@ bool CanSendReport(const SBErrorOptions& error_display_options,
 DataCollectorsContainer::DataCollectorsContainer() {}
 DataCollectorsContainer::~DataCollectorsContainer() {}
 
-TriggerManager::TriggerManager(BaseUIManager* ui_manager)
+TriggerManager::TriggerManager(BaseUIManager* ui_manager,
+                               ReferrerChainProvider* referrer_chain_provider,
+                               PrefService* local_state_prefs)
     : ui_manager_(ui_manager),
-      trigger_throttler_(new TriggerThrottler()),
+      referrer_chain_provider_(referrer_chain_provider),
+      trigger_throttler_(new TriggerThrottler(local_state_prefs)),
       weak_factory_(this) {}
 
 TriggerManager::~TriggerManager() {}
@@ -123,6 +126,16 @@ SBErrorOptions TriggerManager::GetSBErrorDisplayOptions(
 bool TriggerManager::CanStartDataCollection(
     const SBErrorOptions& error_display_options,
     const TriggerType trigger_type) {
+  TriggerManagerReason unused_reason;
+  return CanStartDataCollectionWithReason(error_display_options, trigger_type,
+                                          &unused_reason);
+}
+
+bool TriggerManager::CanStartDataCollectionWithReason(
+    const SBErrorOptions& error_display_options,
+    const TriggerType trigger_type,
+    TriggerManagerReason* out_reason) {
+  *out_reason = TriggerManagerReason::NO_REASON;
   // If the |kAdSamplerCollectButDontSendFeature| feature is enabled then we
   // will overlook other checks to force the report to be created (which is safe
   // because we ensure it will be discarded downstream).
@@ -148,12 +161,18 @@ bool TriggerManager::CanStartDataCollection(
   // change the Extended Reporting opt-in, and the |trigger_type| has available
   // quota. For some triggers we also require Scout or extended reporting opt-in
   // in order to start data collection.
-  return !error_display_options.is_off_the_record &&
-         error_display_options.is_extended_reporting_opt_in_allowed &&
-         optin_required_check_ok && scout_check_ok &&
-         trigger_throttler_->TriggerCanFire(trigger_type);
+  if (!error_display_options.is_off_the_record &&
+      error_display_options.is_extended_reporting_opt_in_allowed &&
+      optin_required_check_ok && scout_check_ok) {
+    bool quota_ok = trigger_throttler_->TriggerCanFire(trigger_type);
+    if (!quota_ok)
+      *out_reason = TriggerManagerReason::DAILY_QUOTA_EXCEEDED;
+    return quota_ok;
+  } else {
+    *out_reason = TriggerManagerReason::USER_PREFERENCES;
+    return false;
+  }
 }
-
 bool TriggerManager::StartCollectingThreatDetails(
     const TriggerType trigger_type,
     content::WebContents* web_contents,
@@ -161,8 +180,23 @@ bool TriggerManager::StartCollectingThreatDetails(
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     history::HistoryService* history_service,
     const SBErrorOptions& error_display_options) {
+  TriggerManagerReason unused_reason;
+  return StartCollectingThreatDetailsWithReason(
+      trigger_type, web_contents, resource, url_loader_factory, history_service,
+      error_display_options, &unused_reason);
+}
+
+bool TriggerManager::StartCollectingThreatDetailsWithReason(
+    const TriggerType trigger_type,
+    content::WebContents* web_contents,
+    const security_interstitials::UnsafeResource& resource,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+    history::HistoryService* history_service,
+    const SBErrorOptions& error_display_options,
+    TriggerManagerReason* reason) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (!CanStartDataCollection(error_display_options, trigger_type))
+  if (!CanStartDataCollectionWithReason(error_display_options, trigger_type,
+                                        reason))
     return false;
 
   // Ensure we're not already collecting ThreatDetails on this tab. Create an
@@ -175,7 +209,7 @@ bool TriggerManager::StartCollectingThreatDetails(
   collectors->threat_details =
       scoped_refptr<ThreatDetails>(ThreatDetails::NewThreatDetails(
           ui_manager_, web_contents, resource, url_loader_factory,
-          history_service, should_trim_threat_details,
+          history_service, referrer_chain_provider_, should_trim_threat_details,
           base::Bind(&TriggerManager::ThreatDetailsDone,
                      weak_factory_.GetWeakPtr())));
   return true;

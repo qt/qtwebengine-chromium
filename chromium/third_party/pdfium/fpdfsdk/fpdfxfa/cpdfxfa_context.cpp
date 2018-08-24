@@ -10,7 +10,6 @@
 #include <utility>
 
 #include "core/fpdfapi/parser/cpdf_document.h"
-#include "core/fxcrt/fx_fallthrough.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "fpdfsdk/cpdfsdk_interform.h"
@@ -20,6 +19,7 @@
 #include "fxjs/cjs_runtime.h"
 #include "fxjs/ijs_runtime.h"
 #include "public/fpdf_formfill.h"
+#include "third_party/base/compiler_specific.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fgas/font/cfgas_defaultfontmanager.h"
@@ -52,7 +52,7 @@ CPDFXFA_Context::~CPDFXFA_Context() {
     m_pFormFillEnv->ClearAllFocusedAnnots();
     // Once we're deleted the FormFillEnvironment will point at a bad underlying
     // doc so we need to reset it ...
-    m_pFormFillEnv->ResetXFADocument();
+    m_pFormFillEnv->GetPDFDocument()->SetExtension(nullptr);
     m_pFormFillEnv.Reset();
   }
 
@@ -73,18 +73,26 @@ void CPDFXFA_Context::SetFormFillEnv(
   // The layout data can have pointers back into the script context. That
   // context will be different if the form fill environment closes, so, force
   // the layout data to clear.
-  if (m_pXFADoc && m_pXFADoc->GetXFADoc())
+  if (m_pXFADoc && m_pXFADoc->GetXFADoc()) {
+    // The CPDF_XFADocView has a pointer to the CXFA_LayoutProcessor which is
+    // owned by the CXFA_Document. The Layout Processor will be freed with the
+    // ClearLayoutData() call. Make sure the doc view has already released the
+    // pointer.
+    if (m_pXFADocView)
+      m_pXFADocView->ResetLayoutProcessor();
+
     m_pXFADoc->GetXFADoc()->ClearLayoutData();
+  }
 
   m_pFormFillEnv.Reset(pFormFillEnv);
 }
 
 bool CPDFXFA_Context::LoadXFADoc() {
   m_nLoadStatus = FXFA_LOADSTATUS_LOADING;
+  m_XFAPageList.clear();
+
   if (!m_pPDFDoc)
     return false;
-
-  m_XFAPageList.clear();
 
   CXFA_FFApp* pApp = GetXFAApp();
   if (!pApp)
@@ -96,8 +104,13 @@ bool CPDFXFA_Context::LoadXFADoc() {
     return false;
   }
 
-  m_pXFADoc->GetXFADoc()->InitScriptContext(GetCJSRuntime());
+  CJS_Runtime* actual_runtime = GetCJSRuntime();  // Null if a stub.
+  if (!actual_runtime) {
+    SetLastError(FPDF_ERR_XFALOAD);
+    return false;
+  }
 
+  m_pXFADoc->GetXFADoc()->InitScriptContext(actual_runtime);
   if (m_pXFADoc->GetFormType() == FormType::kXFAFull)
     m_FormType = FormType::kXFAFull;
   else
@@ -113,7 +126,6 @@ bool CPDFXFA_Context::LoadXFADoc() {
   m_pXFADocView->DoLayout();
   m_pXFADocView->StopLayout();
   m_nLoadStatus = FXFA_LOADSTATUS_LOADED;
-
   return true;
 }
 
@@ -127,7 +139,7 @@ int CPDFXFA_Context::GetPageCount() const {
     case FormType::kXFAForeground:
       if (m_pPDFDoc)
         return m_pPDFDoc->GetPageCount();
-      FX_FALLTHROUGH;
+      FALLTHROUGH;
     case FormType::kXFAFull:
       if (m_pXFADoc)
         return m_pXFADocView->CountPageViews();
@@ -176,6 +188,10 @@ RetainPtr<CPDFXFA_Page> CPDFXFA_Context::GetXFAPage(
   return nullptr;
 }
 
+CPDF_Document* CPDFXFA_Context::GetPDFDoc() const {
+  return m_pPDFDoc.get();
+}
+
 void CPDFXFA_Context::DeletePage(int page_index) {
   // Delete from the document first because, if GetPage was never called for
   // this |page_index| then |m_XFAPageList| may have size < |page_index| even
@@ -196,8 +212,7 @@ CJS_Runtime* CPDFXFA_Context::GetCJSRuntime() const {
   if (!m_pFormFillEnv)
     return nullptr;
 
-  // XFA requires V8, if we have V8 then we have a CJS_Runtime and not the stub.
-  return static_cast<CJS_Runtime*>(m_pFormFillEnv->GetIJSRuntime());
+  return m_pFormFillEnv->GetIJSRuntime()->AsCJSRuntime();
 }
 
 WideString CPDFXFA_Context::GetAppTitle() const {
@@ -225,7 +240,7 @@ int32_t CPDFXFA_Context::MsgBox(const WideString& wsMessage,
                                 const WideString& wsTitle,
                                 uint32_t dwIconType,
                                 uint32_t dwButtonType) {
-  if (!m_pFormFillEnv)
+  if (!m_pFormFillEnv || m_nLoadStatus != FXFA_LOADSTATUS_LOADED)
     return -1;
 
   uint32_t iconType = 0;
@@ -258,8 +273,9 @@ int32_t CPDFXFA_Context::MsgBox(const WideString& wsMessage,
       iButtonType |= 3;
       break;
   }
-  int32_t iRet = m_pFormFillEnv->JS_appAlert(wsMessage.c_str(), wsTitle.c_str(),
-                                             iButtonType, iconType);
+  int32_t iRet =
+      m_pFormFillEnv->JS_appAlert(wsMessage, wsTitle, iButtonType, iconType);
+
   switch (iRet) {
     case 1:
       return XFA_IDOK;
@@ -282,9 +298,9 @@ WideString CPDFXFA_Context::Response(const WideString& wsQuestion,
 
   int nLength = 2048;
   std::vector<uint8_t> pBuff(nLength);
-  nLength = m_pFormFillEnv->JS_appResponse(wsQuestion.c_str(), wsTitle.c_str(),
-                                           wsDefaultAnswer.c_str(), nullptr,
-                                           bMark, pBuff.data(), nLength);
+  nLength = m_pFormFillEnv->JS_appResponse(wsQuestion, wsTitle, wsDefaultAnswer,
+                                           WideString(), bMark, pBuff.data(),
+                                           nLength);
   if (nLength <= 0)
     return WideString();
 
@@ -297,8 +313,7 @@ WideString CPDFXFA_Context::Response(const WideString& wsQuestion,
 
 RetainPtr<IFX_SeekableReadStream> CPDFXFA_Context::DownloadURL(
     const WideString& wsURL) {
-  return m_pFormFillEnv ? m_pFormFillEnv->DownloadFromURL(wsURL.c_str())
-                        : nullptr;
+  return m_pFormFillEnv ? m_pFormFillEnv->DownloadFromURL(wsURL) : nullptr;
 }
 
 bool CPDFXFA_Context::PostRequestURL(const WideString& wsURL,
@@ -310,9 +325,8 @@ bool CPDFXFA_Context::PostRequestURL(const WideString& wsURL,
   if (!m_pFormFillEnv)
     return false;
 
-  wsResponse = m_pFormFillEnv->PostRequestURL(
-      wsURL.c_str(), wsData.c_str(), wsContentType.c_str(), wsEncode.c_str(),
-      wsHeader.c_str());
+  wsResponse = m_pFormFillEnv->PostRequestURL(wsURL, wsData, wsContentType,
+                                              wsEncode, wsHeader);
   return true;
 }
 
@@ -320,8 +334,7 @@ bool CPDFXFA_Context::PutRequestURL(const WideString& wsURL,
                                     const WideString& wsData,
                                     const WideString& wsEncode) {
   return m_pFormFillEnv &&
-         m_pFormFillEnv->PutRequestURL(wsURL.c_str(), wsData.c_str(),
-                                       wsEncode.c_str());
+         m_pFormFillEnv->PutRequestURL(wsURL, wsData, wsEncode);
 }
 
 IFWL_AdapterTimerMgr* CPDFXFA_Context::GetTimerMgr() {

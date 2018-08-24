@@ -31,6 +31,7 @@
 #ifndef THIRD_PARTY_BLINK_PUBLIC_WEB_MODULES_SERVICEWORKER_WEB_SERVICE_WORKER_CONTEXT_PROXY_H_
 #define THIRD_PARTY_BLINK_PUBLIC_WEB_MODULES_SERVICEWORKER_WEB_SERVICE_WORKER_CONTEXT_PROXY_H_
 
+#include "base/time/time.h"
 #include "third_party/blink/public/common/message_port/transferable_message.h"
 #include "third_party/blink/public/platform/modules/serviceworker/web_service_worker.h"
 #include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_registration.h"
@@ -60,13 +61,18 @@ class WebServiceWorkerContextProxy {
   virtual void SetRegistration(
       std::unique_ptr<WebServiceWorkerRegistration::Handle>) = 0;
 
+  // Script evaluation does not start until this function is called.
+  virtual void ReadyToEvaluateScript() = 0;
+
   virtual void DispatchActivateEvent(int event_id) = 0;
 
   enum class BackgroundFetchState { kPending, kSucceeded, kFailed };
 
   virtual void DispatchBackgroundFetchAbortEvent(
       int event_id,
-      const WebString& developer_id) = 0;
+      const WebString& developer_id,
+      const WebString& unique_id,
+      const WebVector<WebBackgroundFetchSettledFetch>& fetches) = 0;
   virtual void DispatchBackgroundFetchClickEvent(
       int event_id,
       const WebString& developer_id,
@@ -74,12 +80,19 @@ class WebServiceWorkerContextProxy {
   virtual void DispatchBackgroundFetchFailEvent(
       int event_id,
       const WebString& developer_id,
+      const WebString& unique_id,
       const WebVector<WebBackgroundFetchSettledFetch>& fetches) = 0;
   virtual void DispatchBackgroundFetchedEvent(
       int event_id,
       const WebString& developer_id,
       const WebString& unique_id,
       const WebVector<WebBackgroundFetchSettledFetch>& fetches) = 0;
+  // TODO(pwnall): Use blink::CanonicalCookie, after https://crrev.com/c/991196
+  //               lands.
+  virtual void DispatchCookieChangeEvent(int event_id,
+                                         const WebString& cookie_name,
+                                         const WebString& cookie_value,
+                                         bool is_cookie_delete) = 0;
   virtual void DispatchExtendableMessageEvent(
       int event_id,
       TransferableMessage,
@@ -130,7 +143,7 @@ class WebServiceWorkerContextProxy {
       int fetch_event_id,
       std::unique_ptr<WebServiceWorkerError>) = 0;
   virtual void OnNavigationPreloadComplete(int fetch_event_id,
-                                           double completion_time,
+                                           base::TimeTicks completion_time,
                                            int64_t encoded_data_length,
                                            int64_t encoded_body_length,
                                            int64_t decoded_body_length) = 0;

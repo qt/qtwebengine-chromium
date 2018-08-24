@@ -114,6 +114,10 @@
     white-space: nowrap;
 }
 
+.pretty-printed .CodeMirror-linenumber {
+    color: var( --accent-color-b);
+}
+
 .cm-highlight {
     -webkit-animation: fadeout 2s 0s;
 }
@@ -545,4 +549,8 @@ div.CodeMirror span.CodeMirror-nonmatchingbracket {
 
 .CodeMirror-composing {
     border-bottom: 2px solid;
+}
+
+.pretty-printed .CodeMirror-linenumber {
+    color: var(--accent-color-b);
 }

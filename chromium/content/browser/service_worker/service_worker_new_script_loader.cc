@@ -16,6 +16,7 @@
 #include "content/browser/service_worker/service_worker_write_to_cache_job.h"
 #include "content/browser/url_loader_factory_getter.h"
 #include "content/common/service_worker/service_worker_utils.h"
+#include "net/base/load_flags.h"
 #include "net/cert/cert_status_flags.h"
 #include "services/network/public/cpp/resource_response.h"
 #include "third_party/blink/public/common/mime_util/mime_util.h"
@@ -31,20 +32,23 @@ ServiceWorkerNewScriptLoader::ServiceWorkerNewScriptLoader(
     int32_t routing_id,
     int32_t request_id,
     uint32_t options,
-    const network::ResourceRequest& resource_request,
+    const network::ResourceRequest& original_request,
     network::mojom::URLLoaderClientPtr client,
     scoped_refptr<ServiceWorkerVersion> version,
-    scoped_refptr<URLLoaderFactoryGetter> loader_factory_getter,
+    scoped_refptr<network::SharedURLLoaderFactory> loader_factory,
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation)
-    : request_url_(resource_request.url),
-      resource_type_(static_cast<ResourceType>(resource_request.resource_type)),
+    : request_url_(original_request.url),
+      resource_type_(static_cast<ResourceType>(original_request.resource_type)),
       version_(version),
       network_client_binding_(this),
       network_watcher_(FROM_HERE,
                        mojo::SimpleWatcher::ArmingPolicy::MANUAL,
                        base::SequencedTaskRunnerHandle::Get()),
+      loader_factory_(std::move(loader_factory)),
       client_(std::move(client)),
       weak_factory_(this) {
+  network::ResourceRequest resource_request(original_request);
+
   // ServiceWorkerNewScriptLoader is used for fetching the service worker main
   // script (RESOURCE_TYPE_SERVICE_WORKER) during worker startup or
   // importScripts() (RESOURCE_TYPE_SCRIPT).
@@ -64,10 +68,13 @@ ServiceWorkerNewScriptLoader::ServiceWorkerNewScriptLoader(
   // |incumbent_cache_resource_id| is valid if the incumbent service worker
   // exists and it's required to do the byte-for-byte check.
   int64_t incumbent_cache_resource_id = kInvalidServiceWorkerResourceId;
-  if (resource_type_ == RESOURCE_TYPE_SERVICE_WORKER) {
-    scoped_refptr<ServiceWorkerRegistration> registration =
-        version_->context()->GetLiveRegistration(version_->registration_id());
-    DCHECK(registration);
+  scoped_refptr<ServiceWorkerRegistration> registration =
+      version_->context()->GetLiveRegistration(version_->registration_id());
+  // ServiceWorkerVersion keeps the registration alive while the service
+  // worker is starting up, and it must be starting up here.
+  DCHECK(registration);
+  const bool is_main_script = resource_type_ == RESOURCE_TYPE_SERVICE_WORKER;
+  if (is_main_script) {
     ServiceWorkerVersion* stored_version = registration->waiting_version()
                                                ? registration->waiting_version()
                                                : registration->active_version();
@@ -79,6 +86,10 @@ ServiceWorkerNewScriptLoader::ServiceWorkerNewScriptLoader(
           stored_version->script_cache_map()->LookupResourceId(request_url_);
     }
   }
+
+  if (ServiceWorkerUtils::ShouldBypassCacheDueToUpdateViaCache(
+          is_main_script, registration->update_via_cache()))
+    resource_request.load_flags |= net::LOAD_BYPASS_CACHE;
 
   // Create response readers only when we have to do the byte-for-byte check.
   std::unique_ptr<ServiceWorkerResponseReader> compare_reader;
@@ -96,20 +107,21 @@ ServiceWorkerNewScriptLoader::ServiceWorkerNewScriptLoader(
                                                      cache_resource_id);
   AdvanceState(State::kStarted);
 
-  // Disable MIME sniffing sniffing. The spec requires the header list to have
-  // a JavaScript MIME type. Therefore, no sniffing is needed.
+  // Disable MIME sniffing. The spec requires the header list to have a
+  // JavaScript MIME type. Therefore, no sniffing is needed.
   options &= ~network::mojom::kURLLoadOptionSniffMimeType;
 
   network::mojom::URLLoaderClientPtr network_client;
   network_client_binding_.Bind(mojo::MakeRequest(&network_client));
-  loader_factory_getter->GetNetworkFactory()->CreateLoaderAndStart(
+  loader_factory_->CreateLoaderAndStart(
       mojo::MakeRequest(&network_loader_), routing_id, request_id, options,
       resource_request, std::move(network_client), traffic_annotation);
 }
 
 ServiceWorkerNewScriptLoader::~ServiceWorkerNewScriptLoader() = default;
 
-void ServiceWorkerNewScriptLoader::FollowRedirect() {
+void ServiceWorkerNewScriptLoader::FollowRedirect(
+    const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
   // Resource requests for service worker scripts should not follow redirects.
   // See comments in OnReceiveRedirect().
   NOTREACHED();

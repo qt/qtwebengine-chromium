@@ -15,8 +15,8 @@
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
-#include "net/spdy/chromium/spdy_http_utils.h"
-#include "net/spdy/chromium/spdy_session.h"
+#include "net/spdy/spdy_http_utils.h"
+#include "net/spdy/spdy_session.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/websockets/websocket_basic_stream.h"
 #include "net/websockets/websocket_deflate_parameters.h"
@@ -230,7 +230,7 @@ void WebSocketHttp2HandshakeStream::Drain(HttpNetworkSession* session) {
 void WebSocketHttp2HandshakeStream::SetPriority(RequestPriority priority) {
   priority_ = priority;
   if (stream_)
-    stream_->set_priority(priority_);
+    stream_->SetPriority(priority_);
 }
 
 HttpStream* WebSocketHttp2HandshakeStream::RenewStreamForAuth() {
@@ -262,7 +262,7 @@ void WebSocketHttp2HandshakeStream::OnHeadersSent() {
 }
 
 void WebSocketHttp2HandshakeStream::OnHeadersReceived(
-    const SpdyHeaderBlock& response_headers) {
+    const spdy::SpdyHeaderBlock& response_headers) {
   DCHECK(!response_headers_complete_);
   DCHECK(http_response_info_);
 

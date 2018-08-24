@@ -39,6 +39,7 @@ namespace content {
 struct CursorInfo;
 class RenderProcessHost;
 class RenderWidgetHostIterator;
+class RenderWidgetHostObserver;
 class RenderWidgetHostView;
 struct ScreenInfo;
 
@@ -76,8 +77,8 @@ struct ScreenInfo;
 // the render process dies, the RenderWidgetHostView goes away and all
 // references to it must become nullptr.
 //
-// RenderViewHost (a RenderWidgetHost subclass) is the conduit used to
-// communicate with the RenderView and is owned by the WebContents. If the
+// RenderViewHost (an owner delegate for RenderWidgetHost) is the conduit used
+// to communicate with the RenderView and is owned by the WebContents. If the
 // render process crashes, the RenderViewHost remains and restarts the render
 // process if needed to continue navigation.
 //
@@ -92,9 +93,9 @@ struct ScreenInfo;
 // For select popups, the situation is a little different. The RenderWidgetHost
 // associated with the select popup owns the view and itself (is responsible
 // for destroying itself when the view is closed). The WebContents's only
-// responsibility is to select popups is to create them when it is told to. When
-// the View is destroyed via an IPC message (for when WebCore destroys the
-// popup, e.g. if the user selects one of the options), or because
+// responsibility with select popups is to create them when it is told to. When
+// the View is destroyed via an IPC message (triggered when WebCore destroys
+// the popup, e.g. if the user selects one of the options), or because
 // WM_CANCELMODE is received by the view, the View schedules the destruction of
 // the render process. However in this case since there's no WebContents
 // container, when the render process is destroyed, the RenderWidgetHost just
@@ -207,8 +208,9 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
 
   virtual void SetIgnoreInputEvents(bool ignore_input_events) = 0;
 
-  // Called to notify the RenderWidget that it has been resized.
-  virtual void WasResized() = 0;
+  // Called to propagate updated visual properties to the renderer. Returns
+  // whether the renderer has been informed of updated properties.
+  virtual bool SynchronizeVisualProperties() = 0;
 
   // Access to the implementation's IPC::Listener::OnMessageReceived. Intended
   // only for test code.
@@ -240,6 +242,12 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   // Add/remove an input event observer.
   virtual void AddInputEventObserver(InputEventObserver* observer) = 0;
   virtual void RemoveInputEventObserver(InputEventObserver* observer) = 0;
+
+  // Add and remove observers for widget host events. The order in which
+  // notifications are sent to observers is undefined. Observers must be sure to
+  // remove the observer before they go away.
+  virtual void AddObserver(RenderWidgetHostObserver* observer) = 0;
+  virtual void RemoveObserver(RenderWidgetHostObserver* observer) = 0;
 
   // Get the screen info corresponding to this render widget.
   virtual void GetScreenInfo(ScreenInfo* result) = 0;

@@ -50,6 +50,7 @@ class UI_ANDROID_EXPORT DelegatedFrameHostAndroid
     virtual void ReclaimResources(
         const std::vector<viz::ReturnedResource>&) = 0;
     virtual void OnFrameTokenChanged(uint32_t frame_token) = 0;
+    virtual void DidReceiveFirstFrameAfterNavigation() = 0;
   };
 
   DelegatedFrameHostAndroid(ViewAndroid* view,
@@ -62,7 +63,7 @@ class UI_ANDROID_EXPORT DelegatedFrameHostAndroid
   void SubmitCompositorFrame(
       const viz::LocalSurfaceId& local_surface_id,
       viz::CompositorFrame frame,
-      viz::mojom::HitTestRegionListPtr hit_test_region_list);
+      base::Optional<viz::HitTestRegionList> hit_test_region_list);
   void DidNotProduceFrame(const viz::BeginFrameAck& ack);
 
   void DestroyDelegatedContent();
@@ -87,7 +88,11 @@ class UI_ANDROID_EXPORT DelegatedFrameHostAndroid
   void AttachToCompositor(WindowAndroidCompositor* compositor);
   void DetachFromCompositor();
 
-  void WasResized();
+  void SynchronizeVisualProperties(gfx::Size size_in_pixels);
+
+  // Called when we begin a resize operation. Takes the compositor lock until we
+  // receive a frame of the expected size.
+  void PixelSizeWillChange(const gfx::Size& pixel_size);
 
   // Returns the ID for the current Surface. Returns an invalid ID if no
   // surface exists (!HasDelegatedContent()).
@@ -96,7 +101,15 @@ class UI_ANDROID_EXPORT DelegatedFrameHostAndroid
   // Returns the local surface ID for this delegated content.
   const viz::LocalSurfaceId& GetLocalSurfaceId() const;
 
+  // TODO(fsamuel): We should move the viz::ParentLocalSurfaceIdAllocator to
+  // RenderWidgetHostViewAndroid.
+  viz::ParentLocalSurfaceIdAllocator* GetLocalSurfaceIdAllocator() {
+    return &local_surface_id_allocator_;
+  }
+
   void TakeFallbackContentFrom(DelegatedFrameHostAndroid* other);
+
+  void DidNavigate();
 
  private:
   // viz::mojom::CompositorFrameSinkClient implementation.
@@ -141,13 +154,26 @@ class UI_ANDROID_EXPORT DelegatedFrameHostAndroid
   scoped_refptr<cc::SurfaceLayer> content_layer_;
 
   const bool enable_surface_synchronization_;
+  const bool enable_viz_;
   viz::ParentLocalSurfaceIdAllocator local_surface_id_allocator_;
-  viz::LocalSurfaceId local_surface_id_;
+
+  // The size we are resizing to. Once we receive a frame of this size we can
+  // release any resize compositor lock.
+  gfx::Size expected_pixel_size_;
 
   // A lock that is held from the point at which we attach to the compositor to
   // the point at which we submit our first frame to the compositor. This
   // ensures that the compositor doesn't swap without a frame available.
   std::unique_ptr<ui::CompositorLock> compositor_attach_until_frame_lock_;
+
+  // A lock that is held from the point we begin resizing this frame to the
+  // point at which we receive a frame of the correct size.
+  std::unique_ptr<ui::CompositorLock> compositor_pending_resize_lock_;
+
+  // Whether we've received a frame from the renderer since navigating.
+  // Only used in Viz mode.
+  bool received_frame_after_navigation_ = false;
+  uint32_t parent_sequence_number_at_navigation_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(DelegatedFrameHostAndroid);
 };

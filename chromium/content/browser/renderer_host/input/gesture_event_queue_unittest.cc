@@ -12,7 +12,6 @@
 
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/test/scoped_feature_list.h"
@@ -36,8 +35,8 @@ namespace content {
 
 class GestureEventQueueTest : public testing::Test,
                               public GestureEventQueueClient,
-                              public TouchpadTapSuppressionControllerClient,
-                              public FlingControllerClient {
+                              public FlingControllerEventSenderClient,
+                              public FlingControllerSchedulerClient {
  public:
   GestureEventQueueTest() : GestureEventQueueTest(false) {}
 
@@ -65,17 +64,13 @@ class GestureEventQueueTest : public testing::Test,
     queue_.reset();
   }
 
-  void SetUpForTapSuppression(int max_cancel_to_down_time_ms,
-                              int max_tap_gap_time_ms) {
+  void SetUpForTapSuppression(int max_cancel_to_down_time_ms) {
     GestureEventQueue::Config gesture_config;
     gesture_config.fling_config.touchscreen_tap_suppression_config.enabled =
         true;
     gesture_config.fling_config.touchscreen_tap_suppression_config
         .max_cancel_to_down_time =
         base::TimeDelta::FromMilliseconds(max_cancel_to_down_time_ms);
-    gesture_config.fling_config.touchscreen_tap_suppression_config
-        .max_tap_gap_time =
-        base::TimeDelta::FromMilliseconds(max_tap_gap_time_ms);
     queue_.reset(new GestureEventQueue(this, this, this, gesture_config));
   }
 
@@ -101,17 +96,17 @@ class GestureEventQueueTest : public testing::Test,
     }
   }
 
-  // TouchpadTapSuppressionControllerClient
-  void SendMouseEventImmediately(
-      const MouseEventWithLatencyInfo& event) override {}
-
-  // FlingControllerClient
+  // FlingControllerEventSenderClient
   void SendGeneratedWheelEvent(
       const MouseWheelEventWithLatencyInfo& wheel_event) override {}
   void SendGeneratedGestureScrollEvents(
       const GestureEventWithLatencyInfo& gesture_event) override {}
-  void SetNeedsBeginFrameForFlingProgress() override {}
-  void DidStopFlingingOnBrowser() override {}
+
+  // FlingControllerSchedulerClient
+  void ScheduleFlingProgress(
+      base::WeakPtr<FlingController> fling_controller) override {}
+  void DidStopFlingingOnBrowser(
+      base::WeakPtr<FlingController> fling_controller) override {}
 
  protected:
   static GestureEventQueue::Config DefaultConfig() {
@@ -1036,7 +1031,7 @@ TEST_F(GestureEventQueueTest, DebounceDefersFollowingGestureEvents) {
   EXPECT_EQ(2U, GestureEventDebouncingQueueSize());
 
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-      FROM_HERE, base::MessageLoop::QuitWhenIdleClosure(),
+      FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated(),
       TimeDelta::FromMilliseconds(5));
   base::RunLoop().Run();
 
@@ -1159,7 +1154,7 @@ TEST_F(GestureEventQueueTest, DebounceDropsDeferredEvents) {
 // Test that the fling cancelling tap down event and its following tap get
 // suppressed when tap suppression is enabled.
 TEST_F(GestureEventQueueTest, TapGetsSuppressedAfterTapDownCancellsFling) {
-  SetUpForTapSuppression(400, 200);
+  SetUpForTapSuppression(400);
   SimulateGestureFlingStartEvent(0, -10, blink::kWebGestureDeviceTouchscreen);
   EXPECT_TRUE(FlingInProgress());
   // The fling start event is not sent to the renderer.

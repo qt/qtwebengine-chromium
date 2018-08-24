@@ -83,7 +83,6 @@
 #include "third_party/blink/renderer/modules/accessibility/ax_radio_input.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_relation_cache.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_slider.h"
-#include "third_party/blink/renderer/modules/accessibility/ax_spin_button.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_svg_root.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_table.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_table_cell.h"
@@ -107,9 +106,10 @@ AXObjectCacheImpl::AXObjectCacheImpl(Document& document)
       document_(document),
       modification_count_(0),
       relation_cache_(new AXRelationCache(this)),
-      notification_post_timer_(document.GetTaskRunner(TaskType::kUnspecedTimer),
-                               this,
-                               &AXObjectCacheImpl::NotificationPostTimerFired),
+      notification_post_timer_(
+          document.GetTaskRunner(TaskType::kInternalDefault),
+          this,
+          &AXObjectCacheImpl::NotificationPostTimerFired),
       accessibility_event_permission_(mojom::PermissionStatus::ASK),
       permission_observer_binding_(this) {
   if (document_->LoadEventFinished())
@@ -305,6 +305,7 @@ static bool NodeHasRole(Node* node, const String& role) {
   if (!node || !node->IsElementNode())
     return false;
 
+  // TODO(accessibility) support role strings with multiple roles.
   return EqualIgnoringASCIICase(ToElement(node)->getAttribute(roleAttr), role);
 }
 
@@ -367,8 +368,14 @@ AXObject* AXObjectCacheImpl::CreateFromRenderer(LayoutObject* layout_object) {
       LayoutTableRow* table_row = ToLayoutTableRow(css_box);
       LayoutTable* containing_table = table_row->Table();
       DCHECK(containing_table);
-      if (NodeHasGridRole(containing_table->GetNode()))
-        return AXARIAGridRow::Create(layout_object, *this);
+      if (NodeHasGridRole(containing_table->GetNode())) {
+        if (node)
+          return AXARIAGridRow::Create(layout_object, *this);
+        // ARIA grids only create rows for non-anonymous nodes, because if
+        // the author accidentally leaves out some table CSS, extra unexpected
+        // anonymous layout cells exist that don't match the ARIA markup.
+        return AXLayoutObject::Create(layout_object, *this);
+      }
       return AXTableRow::Create(ToLayoutTableRow(css_box), *this);
     }
     if (css_box->IsTableCell()) {
@@ -376,8 +383,14 @@ AXObject* AXObjectCacheImpl::CreateFromRenderer(LayoutObject* layout_object) {
       LayoutTableCell* table_cell = ToLayoutTableCell(css_box);
       LayoutTable* containing_table = table_cell->Table();
       DCHECK(containing_table);
-      if (NodeHasGridRole(containing_table->GetNode()))
-        return AXARIAGridCell::Create(layout_object, *this);
+      if (NodeHasGridRole(containing_table->GetNode())) {
+        if (node)
+          return AXARIAGridCell::Create(layout_object, *this);
+        // ARIA grids only create cells for non-anonymous nodes, because if
+        // the author accidentally leaves out some table CSS, extra unexpected
+        // anonymous layout cells exist that don't match the ARIA markup.
+        return AXLayoutObject::Create(layout_object, *this);
+      }
       return AXTableCell::Create(ToLayoutTableCell(css_box), *this);
     }
 
@@ -508,7 +521,6 @@ AXObject* AXObjectCacheImpl::GetOrCreate(
 AXObject* AXObjectCacheImpl::GetOrCreate(AccessibilityRole role) {
   AXObject* obj = nullptr;
 
-  // will be filled in...
   switch (role) {
     case kColumnRole:
       obj = AXTableColumn::Create(*this);
@@ -521,12 +533,6 @@ AXObject* AXObjectCacheImpl::GetOrCreate(AccessibilityRole role) {
       break;
     case kMenuListPopupRole:
       obj = AXMenuListPopup::Create(*this);
-      break;
-    case kSpinButtonRole:
-      obj = AXSpinButton::Create(*this);
-      break;
-    case kSpinButtonPartRole:
-      obj = AXSpinButtonPart::Create(*this);
       break;
     default:
       obj = nullptr;

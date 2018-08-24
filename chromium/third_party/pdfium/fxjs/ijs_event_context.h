@@ -9,6 +9,8 @@
 
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
+#include "fxjs/ijs_runtime.h"
+#include "third_party/base/optional.h"
 
 class CPDF_Bookmark;
 class CPDF_FormField;
@@ -20,7 +22,10 @@ class CPDFSDK_FormFillEnvironment;
 // may trigger new events on top of one another.
 class IJS_EventContext {
  public:
-  virtual bool RunScript(const WideString& script, WideString* info) = 0;
+  virtual ~IJS_EventContext() {}
+
+  virtual Optional<IJS_Runtime::JS_Error> RunScript(
+      const WideString& script) = 0;
 
   virtual void OnApp_Init() = 0;
 
@@ -125,9 +130,6 @@ class IJS_EventContext {
   virtual void OnBatchExec(CPDFSDK_FormFillEnvironment* pFormFillEnv) = 0;
   virtual void OnConsole_Exec() = 0;
   virtual void OnExternal_Exec() = 0;
-
- protected:
-  virtual ~IJS_EventContext() {}
 };
 
 #endif  // FXJS_IJS_EVENT_CONTEXT_H_

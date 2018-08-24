@@ -70,10 +70,6 @@ class SVGAnimatedEnumeration : public SVGAnimatedEnumerationBase {
         SVGAnimatedEnumerationBase::CurrentValue());
   }
 
-  virtual void TraceWrappers(const ScriptWrappableVisitor* visitor) const {
-    SVGAnimatedEnumerationBase::TraceWrappers(visitor);
-  }
-
  protected:
   SVGAnimatedEnumeration(SVGElement* context_element,
                          const QualifiedName& attribute_name,

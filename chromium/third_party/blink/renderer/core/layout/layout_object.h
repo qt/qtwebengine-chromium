@@ -27,6 +27,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_LAYOUT_OBJECT_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_LAYOUT_OBJECT_H_
 
+#include "base/auto_reset.h"
 #include "base/macros.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -43,18 +44,17 @@
 #include "third_party/blink/renderer/core/loader/resource/image_resource_observer.h"
 #include "third_party/blink/renderer/core/paint/compositing/compositing_state.h"
 #include "third_party/blink/renderer/core/paint/fragment_data.h"
-#include "third_party/blink/renderer/core/paint/layer_hit_test_rects.h"
 #include "third_party/blink/renderer/core/paint/paint_phase.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/style/style_difference.h"
 #include "third_party/blink/renderer/platform/geometry/float_quad.h"
 #include "third_party/blink/renderer/platform/geometry/layout_rect.h"
-#include "third_party/blink/renderer/platform/geometry/transform_state.h"
 #include "third_party/blink/renderer/platform/graphics/compositing_reasons.h"
 #include "third_party/blink/renderer/platform/graphics/paint/display_item_client.h"
 #include "third_party/blink/renderer/platform/graphics/paint_invalidation_reason.h"
+#include "third_party/blink/renderer/platform/graphics/touch_action_rect.h"
+#include "third_party/blink/renderer/platform/transforms/transform_state.h"
 #include "third_party/blink/renderer/platform/transforms/transformation_matrix.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 
 namespace blink {
 
@@ -522,6 +522,9 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   bool IsLayoutNGBlockFlow() const {
     return IsOfType(kLayoutObjectNGBlockFlow);
   }
+  bool IsLayoutNGFlexibleBox() const {
+    return IsOfType(kLayoutObjectNGFlexibleBox);
+  }
   bool IsLayoutNGMixin() const { return IsOfType(kLayoutObjectNGMixin); }
   bool IsLayoutNGListItem() const { return IsOfType(kLayoutObjectNGListItem); }
   bool IsLayoutNGListMarker() const {
@@ -530,6 +533,7 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   bool IsLayoutNGListMarkerImage() const {
     return IsOfType(kLayoutObjectNGListMarkerImage);
   }
+  bool IsLayoutNGText() const { return IsOfType(kLayoutObjectNGText); }
   bool IsLayoutTableCol() const {
     return IsOfType(kLayoutObjectLayoutTableCol);
   }
@@ -1211,8 +1215,6 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   void SetStyleWithWritingModeOf(scoped_refptr<ComputedStyle>,
                                  LayoutObject* parent);
   void SetStyleWithWritingModeOfParent(scoped_refptr<ComputedStyle>);
-  void AddChildWithWritingModeOfParent(LayoutObject* new_child,
-                                       LayoutObject* before_child);
 
   void FirstLineStyleDidChange(const ComputedStyle& old_style,
                                const ComputedStyle& new_style);
@@ -1331,7 +1333,8 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
 
   // Return the offset from the container() layoutObject (excluding transforms
   // and multicol).
-  virtual LayoutSize OffsetFromContainer(const LayoutObject*) const;
+  LayoutSize OffsetFromContainer(const LayoutObject*,
+                                 bool ignore_scroll_offset = false) const;
   // Return the offset from an object up the container() chain. Asserts that
   // none of the intermediate objects have transforms.
   LayoutSize OffsetFromAncestorContainer(const LayoutObject*) const;
@@ -1394,7 +1397,6 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
 
   // style_ can only be nullptr before the first style is set, thus most
   // callers will never see a nullptr style and should use StyleRef().
-  // FIXME: It would be better if style() returned a const reference.
   const ComputedStyle& StyleRef() const { return MutableStyleRef(); }
   ComputedStyle& MutableStyleRef() const {
     DCHECK(style_);
@@ -1467,11 +1469,11 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   // and clip. This is even true if the main frame is remote.
   //
   // If visualRectFlags has the EdgeInclusive bit set, clipping operations will
-  // use/ LayoutRect::inclusiveIntersect, and the return value of
-  // inclusiveIntersect will be propagated to the return value of this method.
+  // use LayoutRect::InclusiveIntersect, and the return value of
+  // InclusiveIntersect will be propagated to the return value of this method.
   // Otherwise, clipping operations will use LayoutRect::intersect, and the
   // return value will be true only if the clipped rect has non-zero area.
-  // See the documentation for LayoutRect::inclusiveIntersect for more
+  // See the documentation for LayoutRect::InclusiveIntersect for more
   // information.
   bool MapToVisualRectInAncestorSpace(
       const LayoutBoxModelObject* ancestor,
@@ -1959,7 +1961,7 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   LayoutRect SelectionVisualRect() const {
     return fragment_.SelectionVisualRect();
   }
-  LayoutRect PartialInvalidationRect() const {
+  LayoutRect PartialInvalidationRect() const override {
     return fragment_.PartialInvalidationRect();
   }
 
@@ -1967,6 +1969,10 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
 
   bool ContainsInlineWithOutlineAndContinuation() const {
     return bitfields_.ContainsInlineWithOutlineAndContinuation();
+  }
+
+  void SetOutlineMayBeAffectedByDescendants(bool b) {
+    bitfields_.SetOutlineMayBeAffectedByDescendants(b);
   }
 
  protected:
@@ -1987,10 +1993,12 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
     kLayoutObjectMedia,
     kLayoutObjectMenuList,
     kLayoutObjectNGBlockFlow,
+    kLayoutObjectNGFlexibleBox,
     kLayoutObjectNGMixin,
     kLayoutObjectNGListItem,
     kLayoutObjectNGListMarker,
     kLayoutObjectNGListMarkerImage,
+    kLayoutObjectNGText,
     kLayoutObjectProgress,
     kLayoutObjectQuote,
     kLayoutObjectLayoutButton,
@@ -2058,11 +2066,15 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   virtual bool AnonymousHasStylePropagationOverride() { return false; }
 
   // A fast path for MapToVisualRectInAncestorSpace for when GeometryMapper
-  // can be used.
+  // can be used. |intersects| is set to whether the input rect intersected
+  // (see documentation of return value of MapToVisualRectInAncestorSpace).
+  //
+  // The return value of this method is whether the fast path could be used.
   bool MapToVisualRectInAncestorSpaceInternalFastPath(
       const LayoutBoxModelObject* ancestor,
       LayoutRect&,
-      VisualRectFlags) const;
+      VisualRectFlags,
+      bool& intersects) const;
 
   // This function is called before calling the destructor so that some clean-up
   // can happen regardless of whether they call a virtual function or not. As a
@@ -2142,9 +2154,6 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
     bitfields_.SetContainsInlineWithOutlineAndContinuation(b);
   }
 
-  void SetOutlineMayBeAffectedByDescendants(bool b) {
-    bitfields_.SetOutlineMayBeAffectedByDescendants(b);
-  }
   void SetPreviousOutlineMayBeAffectedByDescendants(bool b) {
     bitfields_.SetPreviousOutlineMayBeAffectedByDescendants(b);
   }
@@ -2153,6 +2162,12 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   virtual LayoutRect LocalVisualRectIgnoringVisibility() const;
 
   virtual bool CanBeSelectionLeafInternal() const { return false; }
+
+  virtual LayoutSize OffsetFromContainerInternal(
+      const LayoutObject*,
+      bool ignore_scroll_offset) const;
+  LayoutSize OffsetFromScrollableContainer(const LayoutObject*,
+                                           bool ignore_scroll_offset) const;
 
  private:
   // Used only by applyFirstLineChanges to get a first line style based off of a
@@ -2327,7 +2342,7 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
           needs_paint_property_update_(true),
           subtree_needs_paint_property_update_(true),
           descendant_needs_paint_property_update_(true),
-          background_changed_since_last_paint_invalidation_(false),
+          background_changed_since_last_paint_invalidation_(true),
           outline_may_be_affected_by_descendants_(false),
           previous_outline_may_be_affected_by_descendants_(false),
           is_truncated_(false),
@@ -2665,7 +2680,7 @@ class DeprecatedDisableModifyLayoutTreeStructureAsserts {
   static bool CanModifyLayoutTreeStateInAnyState();
 
  private:
-  AutoReset<bool> disabler_;
+  base::AutoReset<bool> disabler_;
   DISALLOW_COPY_AND_ASSIGN(DeprecatedDisableModifyLayoutTreeStructureAsserts);
 };
 

@@ -219,6 +219,17 @@ bool CFFL_FormFiller::OnChar(CPDFSDK_Annot* pAnnot,
   return pWnd && pWnd->OnChar(nChar, nFlags);
 }
 
+WideString CFFL_FormFiller::GetText(CPDFSDK_Annot* pAnnot) {
+  if (!IsValid())
+    return WideString();
+
+  CPDFSDK_PageView* pPageView = GetCurPageView(true);
+  ASSERT(pPageView);
+
+  CPWL_Wnd* pWnd = GetPDFWindow(pPageView, false);
+  return pWnd ? pWnd->GetText() : WideString();
+}
+
 WideString CFFL_FormFiller::GetSelectedText(CPDFSDK_Annot* pAnnot) {
   if (!IsValid())
     return WideString();
@@ -245,8 +256,52 @@ void CFFL_FormFiller::ReplaceSelection(CPDFSDK_Annot* pAnnot,
   pWnd->ReplaceSelection(text);
 }
 
+bool CFFL_FormFiller::CanUndo(CPDFSDK_Annot* pAnnot) {
+  if (!IsValid())
+    return false;
+
+  CPDFSDK_PageView* pPageView = GetCurPageView(true);
+  ASSERT(pPageView);
+
+  CPWL_Wnd* pWnd = GetPDFWindow(pPageView, false);
+  return pWnd && pWnd->CanUndo();
+}
+
+bool CFFL_FormFiller::CanRedo(CPDFSDK_Annot* pAnnot) {
+  if (!IsValid())
+    return false;
+
+  CPDFSDK_PageView* pPageView = GetCurPageView(true);
+  ASSERT(pPageView);
+
+  CPWL_Wnd* pWnd = GetPDFWindow(pPageView, false);
+  return pWnd && pWnd->CanRedo();
+}
+
+bool CFFL_FormFiller::Undo(CPDFSDK_Annot* pAnnot) {
+  if (!IsValid())
+    return false;
+
+  CPDFSDK_PageView* pPageView = GetCurPageView(true);
+  ASSERT(pPageView);
+
+  CPWL_Wnd* pWnd = GetPDFWindow(pPageView, false);
+  return pWnd && pWnd->Undo();
+}
+
+bool CFFL_FormFiller::Redo(CPDFSDK_Annot* pAnnot) {
+  if (!IsValid())
+    return false;
+
+  CPDFSDK_PageView* pPageView = GetCurPageView(true);
+  ASSERT(pPageView);
+
+  CPWL_Wnd* pWnd = GetPDFWindow(pPageView, false);
+  return pWnd && pWnd->Redo();
+}
+
 void CFFL_FormFiller::SetFocusForAnnot(CPDFSDK_Annot* pAnnot, uint32_t nFlag) {
-  CPDFSDK_Widget* pWidget = (CPDFSDK_Widget*)pAnnot;
+  auto* pWidget = static_cast<CPDFSDK_Widget*>(pAnnot);
   UnderlyingPageType* pPage = pWidget->GetUnderlyingPage();
   CPDFSDK_PageView* pPageView = m_pFormFillEnv->GetPageView(pPage, true);
   if (CPWL_Wnd* pWnd = GetPDFWindow(pPageView, true))

@@ -21,6 +21,7 @@
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "sandbox/mac/seatbelt_exec.h"
+#include "services/service_manager/embedder/result_codes.h"
 #include "services/service_manager/sandbox/mac/cdm.sb.h"
 #include "services/service_manager/sandbox/mac/common_v2.sb.h"
 #include "services/service_manager/sandbox/mac/gpu_v2.sb.h"
@@ -31,14 +32,15 @@
 #include "services/service_manager/sandbox/mac/utility.sb.h"
 #include "services/service_manager/sandbox/sandbox.h"
 #include "services/service_manager/sandbox/sandbox_type.h"
+#include "services/service_manager/sandbox/switches.h"
 
 namespace content {
 namespace internal {
 
-mojo::edk::ScopedPlatformHandle
+mojo::edk::ScopedInternalPlatformHandle
 ChildProcessLauncherHelper::PrepareMojoPipeHandlesOnClientThread() {
   DCHECK_CURRENTLY_ON(client_thread_id_);
-  return mojo::edk::ScopedPlatformHandle();
+  return mojo::edk::ScopedInternalPlatformHandle();
 }
 
 void ChildProcessLauncherHelper::BeforeLaunchOnClientThread() {
@@ -66,8 +68,9 @@ bool ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
   auto sandbox_type =
       service_manager::SandboxTypeFromCommandLine(*command_line_);
 
-  bool no_sandbox = command_line_->HasSwitch(switches::kNoSandbox) ||
-                    service_manager::IsUnsandboxedSandboxType(sandbox_type);
+  bool no_sandbox =
+      command_line_->HasSwitch(service_manager::switches::kNoSandbox) ||
+      service_manager::IsUnsandboxedSandboxType(sandbox_type);
 
   // TODO(kerrnel): Delete this switch once the V2 sandbox is always enabled.
   bool v2_process = false;
@@ -161,7 +164,8 @@ bool ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
     }
 
     base::FilePath helper_executable;
-    CHECK(PathService::Get(content::CHILD_PROCESS_EXE, &helper_executable));
+    CHECK(
+        base::PathService::Get(content::CHILD_PROCESS_EXE, &helper_executable));
 
     options->fds_to_remap.push_back(std::make_pair(pipe, pipe));
 
@@ -221,13 +225,15 @@ void ChildProcessLauncherHelper::AfterLaunchOnLauncherThread(
   broker->GetLock().Release();
 }
 
-base::TerminationStatus ChildProcessLauncherHelper::GetTerminationStatus(
+ChildProcessTerminationInfo ChildProcessLauncherHelper::GetTerminationInfo(
     const ChildProcessLauncherHelper::Process& process,
-    bool known_dead,
-    int* exit_code) {
-  return known_dead
-      ? base::GetKnownDeadTerminationStatus(process.process.Handle(), exit_code)
-      : base::GetTerminationStatus(process.process.Handle(), exit_code);
+    bool known_dead) {
+  ChildProcessTerminationInfo info;
+  info.status = known_dead ? base::GetKnownDeadTerminationStatus(
+                                 process.process.Handle(), &info.exit_code)
+                           : base::GetTerminationStatus(
+                                 process.process.Handle(), &info.exit_code);
+  return info;
 }
 
 // static
@@ -244,7 +250,7 @@ void ChildProcessLauncherHelper::ForceNormalProcessTerminationSync(
   DCHECK(CurrentlyOnProcessLauncherTaskRunner());
   // Client has gone away, so just kill the process.  Using exit code 0 means
   // that UMA won't treat this as a crash.
-  process.process.Terminate(RESULT_CODE_NORMAL_EXIT, false);
+  process.process.Terminate(service_manager::RESULT_CODE_NORMAL_EXIT, false);
   base::EnsureProcessTerminated(std::move(process.process));
 }
 

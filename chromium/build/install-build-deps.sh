@@ -116,15 +116,16 @@ fi
 
 distro_codename=$(lsb_release --codename --short)
 distro_id=$(lsb_release --id --short)
-supported_codenames="(trusty|xenial|zesty|artful)"
+supported_codenames="(trusty|xenial|artful|bionic)"
 supported_ids="(Debian)"
 if [ 0 -eq "${do_unsupported-0}" ] && [ 0 -eq "${do_quick_check-0}" ] ; then
   if [[ ! $distro_codename =~ $supported_codenames &&
         ! $distro_id =~ $supported_ids ]]; then
     echo -e "ERROR: The only supported distros are\n" \
-      "\tUbuntu 14.04 (trusty)\n" \
-      "\tUbuntu 16.04 (xenial)\n" \
+      "\tUbuntu 14.04 LTS (trusty)\n" \
+      "\tUbuntu 16.04 LTS (xenial)\n" \
       "\tUbuntu 17.10 (artful)\n" \
+      "\tUbuntu 18.04 LTS (bionic)\n" \
       "\tDebian 8 (jessie) or later" >&2
     exit 1
   fi
@@ -151,6 +152,7 @@ fi
 # Packages needed for development
 dev_list="\
   bison
+  bzip2
   cdbs
   curl
   dbus-x11
@@ -159,7 +161,6 @@ dev_list="\
   devscripts
   fakeroot
   flex
-  fonts-ipafont
   g++
   git-core
   git-svn
@@ -168,7 +169,6 @@ dev_list="\
   libappindicator3-dev
   libasound2-dev
   libbrlapi-dev
-  libav-tools
   libbz2-dev
   libcairo2-dev
   libcap-dev
@@ -220,6 +220,7 @@ dev_list="\
   wdiff
   x11-utils
   xcompmgr
+  xz-utils
   zip
   $chromeos_dev_list
 "
@@ -285,7 +286,6 @@ dbg_list="\
   libffi6-dbg
   libgtk2.0-0-dbg
   libpcre3-dbg
-  libpixman-1-0-dbg
   libxau6-dbg
   libxcb1-dbg
   libxcomposite1-dbg
@@ -295,6 +295,11 @@ dbg_list="\
   zlib1g-dbg
 "
 
+if package_exists libpixman-1-0-dbgsym; then
+  dbg_list="${dbg_list} libpixman-1-0-dbgsym"
+elif package_exists libpixman-1-0-dbg; then
+  dbg_list="${dbg_list} libpixman-1-0-dbg"
+fi
 if package_exists libstdc++6-6-dbg; then
   dbg_list="${dbg_list} libstdc++6-6-dbg"
 elif package_exists libstdc++6-4.9-dbg; then
@@ -353,7 +358,9 @@ fi
 if package_exists libxtst6-dbg; then
   dbg_list="${dbg_list} libxtst6-dbg"
 fi
-if package_exists libglib2.0-0-dbg; then
+if package_exists libglib2.0-0-dbgsym; then
+  dbg_list="${dbg_list} libglib2.0-0-dbgsym"
+elif package_exists libglib2.0-0-dbg; then
   dbg_list="${dbg_list} libglib2.0-0-dbg"
 fi
 if package_exists libxcursor1-dbgsym; then
@@ -365,6 +372,11 @@ if package_exists libsqlite3-0-dbgsym; then
   dbg_list="${dbg_list} libsqlite3-0-dbgsym"
 else
   dbg_list="${dbg_list} libsqlite3-0-dbg"
+fi
+if package_exists libpixman-1-0-dbgsym; then
+  dbg_list="${dbg_list} libpixman-1-0-dbgsym"
+else
+  dbg_list="${dbg_list} libpixman-1-0-dbg"
 fi
 
 # 32-bit libraries needed e.g. to compile V8 snapshot for Android or armhf
@@ -422,7 +434,7 @@ case $distro_codename in
     arm_list+=" g++-4.8-multilib-arm-linux-gnueabihf
                 gcc-4.8-multilib-arm-linux-gnueabihf"
     ;;
-  xenial|zesty|artful)
+  xenial|artful|bionic)
     arm_list+=" g++-5-multilib-arm-linux-gnueabihf
                 gcc-5-multilib-arm-linux-gnueabihf
                 gcc-arm-linux-gnueabihf"
@@ -505,23 +517,17 @@ if package_exists apache2.2-bin; then
 else
   dev_list="${dev_list} apache2-bin"
 fi
-if package_exists xfonts-mathml; then
-  dev_list="${dev_list} xfonts-mathml"
+if package_exists libav-tools; then
+  dev_list="${dev_list} libav-tools"
 fi
-if package_exists php7.1-cgi; then
+if package_exists php7.2-cgi; then
+  dev_list="${dev_list} php7.2-cgi libapache2-mod-php7.2"
+elif package_exists php7.1-cgi; then
   dev_list="${dev_list} php7.1-cgi libapache2-mod-php7.1"
 elif package_exists php7.0-cgi; then
   dev_list="${dev_list} php7.0-cgi libapache2-mod-php7.0"
 else
   dev_list="${dev_list} php5-cgi libapache2-mod-php5"
-fi
-# ttf-mscorefonts-installer is in the Debian contrib repo, which has
-# dependencies on non-free software.  Install it only if the user has already
-# enabled contrib.
-if package_exists ttf-mscorefonts-installer; then
-  dev_list="${dev_list} ttf-mscorefonts-installer"
-elif package_exists msttcorefonts; then
-  dev_list="${dev_list} msttcorefonts"
 fi
 
 # Some packages are only needed if the distribution actually supports

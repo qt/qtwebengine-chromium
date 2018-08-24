@@ -47,6 +47,7 @@
 #include "third_party/blink/renderer/core/loader/threadable_loading_context.h"
 #include "third_party/blink/renderer/core/loader/worker_fetch_context.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
+#include "third_party/blink/renderer/core/script/script.h"
 #include "third_party/blink/renderer/core/workers/parent_execution_context_task_runners.h"
 #include "third_party/blink/renderer/core/workers/worker_backing_thread_startup_data.h"
 #include "third_party/blink/renderer/core/workers/worker_classic_script_loader.h"
@@ -75,13 +76,17 @@ std::unique_ptr<WebEmbeddedWorker> WebEmbeddedWorker::Create(
     std::unique_ptr<WebServiceWorkerInstalledScriptsManager>
         installed_scripts_manager,
     mojo::ScopedMessagePipeHandle content_settings_handle,
+    mojo::ScopedMessagePipeHandle cache_storage,
     mojo::ScopedMessagePipeHandle interface_provider) {
   return std::make_unique<WebEmbeddedWorkerImpl>(
       std::move(client), std::move(installed_scripts_manager),
       std::make_unique<ServiceWorkerContentSettingsProxy>(
           // Chrome doesn't use interface versioning.
+          // TODO(falken): Is that comment about versioning correct?
           mojom::blink::WorkerContentSettingsProxyPtrInfo(
               std::move(content_settings_handle), 0u)),
+      mojom::blink::CacheStoragePtrInfo(std::move(cache_storage),
+                                        mojom::blink::CacheStorage::Version_),
       service_manager::mojom::blink::InterfaceProviderPtrInfo(
           std::move(interface_provider),
           service_manager::mojom::blink::InterfaceProvider::Version_));
@@ -92,6 +97,7 @@ WebEmbeddedWorkerImpl::WebEmbeddedWorkerImpl(
     std::unique_ptr<WebServiceWorkerInstalledScriptsManager>
         installed_scripts_manager,
     std::unique_ptr<ServiceWorkerContentSettingsProxy> content_settings_client,
+    mojom::blink::CacheStoragePtrInfo cache_storage_info,
     service_manager::mojom::blink::InterfaceProviderPtrInfo
         interface_provider_info)
     : worker_context_client_(std::move(client)),
@@ -99,6 +105,7 @@ WebEmbeddedWorkerImpl::WebEmbeddedWorkerImpl(
       worker_inspector_proxy_(WorkerInspectorProxy::Create()),
       pause_after_download_state_(kDontPauseAfterDownload),
       waiting_for_debugger_state_(kNotWaitingForDebugger),
+      cache_storage_info_(std::move(cache_storage_info)),
       interface_provider_info_(std::move(interface_provider_info)) {
   if (installed_scripts_manager) {
     installed_scripts_manager_ =
@@ -347,9 +354,9 @@ void WebEmbeddedWorkerImpl::StartWorkerThread() {
   String source_code;
   std::unique_ptr<Vector<char>> cached_meta_data;
 
-  // TODO(nhiroki); Set the coordinator for module fetch.
-  // (https://crbug.com/680046)
-  WorkerOrWorkletModuleFetchCoordinator* module_fetch_coordinator = nullptr;
+  // TODO(nhiroki); Set |script_type| to ScriptType::kModule for module fetch.
+  // (https://crbug.com/824647)
+  ScriptType script_type = ScriptType::kClassic;
 
   // |main_script_loader_| isn't created if the InstalledScriptsManager had the
   // script.
@@ -360,14 +367,16 @@ void WebEmbeddedWorkerImpl::StartWorkerThread() {
         main_script_loader_->ReleaseContentSecurityPolicy(),
         main_script_loader_->GetReferrerPolicy());
     global_scope_creation_params = std::make_unique<GlobalScopeCreationParams>(
-        worker_start_data_.script_url, worker_start_data_.user_agent,
+        worker_start_data_.script_url, script_type,
+        worker_start_data_.user_agent,
         document->GetContentSecurityPolicy()->Headers().get(),
         document->GetReferrerPolicy(), starter_origin, starter_secure_context,
         worker_clients, main_script_loader_->ResponseAddressSpace(),
         main_script_loader_->OriginTrialTokens(), devtools_worker_token_,
         std::move(worker_settings),
         static_cast<V8CacheOptions>(worker_start_data_.v8_cache_options),
-        module_fetch_coordinator, std::move(interface_provider_info_));
+        nullptr /* worklet_module_respones_map */,
+        std::move(interface_provider_info_));
     source_code = main_script_loader_->SourceText();
     cached_meta_data = main_script_loader_->ReleaseCachedMetadata();
     main_script_loader_ = nullptr;
@@ -376,13 +385,15 @@ void WebEmbeddedWorkerImpl::StartWorkerThread() {
     // SetContentSecurityPolicyAndReferrerPolicy() before evaluating the main
     // script.
     global_scope_creation_params = std::make_unique<GlobalScopeCreationParams>(
-        worker_start_data_.script_url, worker_start_data_.user_agent,
-        nullptr /* ContentSecurityPolicy */, kReferrerPolicyDefault,
-        starter_origin, starter_secure_context, worker_clients,
-        worker_start_data_.address_space, nullptr /* OriginTrialTokens */,
-        devtools_worker_token_, std::move(worker_settings),
+        worker_start_data_.script_url, script_type,
+        worker_start_data_.user_agent, nullptr /* ContentSecurityPolicy */,
+        kReferrerPolicyDefault, starter_origin, starter_secure_context,
+        worker_clients, worker_start_data_.address_space,
+        nullptr /* OriginTrialTokens */, devtools_worker_token_,
+        std::move(worker_settings),
         static_cast<V8CacheOptions>(worker_start_data_.v8_cache_options),
-        module_fetch_coordinator, std::move(interface_provider_info_));
+        nullptr /* worklet_module_respones_map */,
+        std::move(interface_provider_info_));
   }
 
   if (RuntimeEnabledFeatures::ServiceWorkerScriptFullCodeCacheEnabled()) {
@@ -393,7 +404,7 @@ void WebEmbeddedWorkerImpl::StartWorkerThread() {
   worker_thread_ = std::make_unique<ServiceWorkerThread>(
       ThreadableLoadingContext::Create(*document),
       ServiceWorkerGlobalScopeProxy::Create(*this, *worker_context_client_),
-      std::move(installed_scripts_manager_));
+      std::move(installed_scripts_manager_), std::move(cache_storage_info_));
 
   // We have a dummy document here for loading but it doesn't really represent
   // the document/frame of associated document(s) for this worker. Here we
@@ -408,6 +419,9 @@ void WebEmbeddedWorkerImpl::StartWorkerThread() {
                                                worker_start_data_.script_url);
 
   // TODO(nhiroki): Support module workers (https://crbug.com/680046).
+  // Note that this doesn't really start the script evaluation until
+  // ReadyToEvaluateScript() is called on the WebServiceWorkerContextProxy
+  // on the worker thread.
   worker_thread_->EvaluateClassicScript(
       worker_start_data_.script_url, source_code, std::move(cached_meta_data),
       v8_inspector::V8StackTraceId());

@@ -229,6 +229,13 @@ class DataReductionProxyConfigServiceClientTest : public testing::Test {
     half_reporting_fraction_encoded_config_ =
         EncodeConfig(half_reporting_fraction_config);
 
+    ClientConfig no_proxies_config;
+    no_proxies_config.set_session_key(kSuccessSessionKey);
+    no_proxies_config.mutable_refresh_duration()->set_seconds(
+        kConfigRefreshDurationSeconds);
+    no_proxies_config.mutable_refresh_duration()->set_nanos(0);
+    no_proxies_config_ = EncodeConfig(no_proxies_config);
+
     success_reads_[0] = net::MockRead("HTTP/1.1 200 OK\r\n\r\n");
     success_reads_[1] =
         net::MockRead(net::ASYNC, config_.c_str(), config_.length());
@@ -394,25 +401,24 @@ class DataReductionProxyConfigServiceClientTest : public testing::Test {
 
   void AddMockSuccess() {
     socket_data_providers_.push_back(
-        (std::make_unique<net::StaticSocketDataProvider>(
-            success_reads_, arraysize(success_reads_), nullptr, 0)));
+        std::make_unique<net::StaticSocketDataProvider>(
+            success_reads_, base::span<net::MockWrite>()));
     mock_socket_factory_->AddSocketDataProvider(
         socket_data_providers_.back().get());
   }
 
   void AddMockPreviousSuccess() {
     socket_data_providers_.push_back(
-        (std::make_unique<net::StaticSocketDataProvider>(
-            previous_success_reads_, arraysize(previous_success_reads_),
-            nullptr, 0)));
+        std::make_unique<net::StaticSocketDataProvider>(
+            previous_success_reads_, base::span<net::MockWrite>()));
     mock_socket_factory_->AddSocketDataProvider(
         socket_data_providers_.back().get());
   }
 
   void AddMockFailure() {
     socket_data_providers_.push_back(
-        (std::make_unique<net::StaticSocketDataProvider>(
-            not_found_reads_, arraysize(not_found_reads_), nullptr, 0)));
+        std::make_unique<net::StaticSocketDataProvider>(
+            not_found_reads_, base::span<net::MockWrite>()));
     mock_socket_factory_->AddSocketDataProvider(
         socket_data_providers_.back().get());
   }
@@ -448,6 +454,7 @@ class DataReductionProxyConfigServiceClientTest : public testing::Test {
   const std::string& half_reporting_fraction_encoded_config() const {
     return half_reporting_fraction_encoded_config_;
   }
+  const std::string& no_proxies_config() const { return no_proxies_config_; }
 
   const std::string& loaded_config() const { return loaded_config_; }
 
@@ -490,6 +497,9 @@ class DataReductionProxyConfigServiceClientTest : public testing::Test {
 
   // A configuration where the pingback reporting fraction is set to 0.5f.
   std::string half_reporting_fraction_encoded_config_;
+
+  // A configuration where no proxies are configured.
+  std::string no_proxies_config_;
 
   // Mock socket data.
   std::vector<std::unique_ptr<net::SocketDataProvider>> socket_data_providers_;
@@ -929,9 +939,6 @@ TEST_F(DataReductionProxyConfigServiceClientTest,
     if (test.expect_valid_config) {
       EXPECT_EQ(kSuccessSessionKey, request_options()->GetSecureSession());
     }
-    histogram_tester.ExpectUniqueSample(
-        "DataReductionProxy.ConfigService.PersistedConfigIsExpired",
-        !test.expect_valid_config, 1);
   }
 }
 
@@ -995,7 +1002,7 @@ TEST_F(DataReductionProxyConfigServiceClientTest, MultipleAuthFailures) {
                           std::string(kSuccessSessionKey) + ", key=value");
   // Calling ShouldRetryDueToAuthFailure should trigger fetching of remote
   // config.
-  EXPECT_FALSE(config_client()->ShouldRetryDueToAuthFailure(
+  EXPECT_TRUE(config_client()->ShouldRetryDueToAuthFailure(
       request_headers, parsed.get(), origin, load_timing_info));
   EXPECT_EQ(1, config_client()->GetBackoffErrorCount());
   histogram_tester.ExpectBucketCount(
@@ -1018,9 +1025,13 @@ TEST_F(DataReductionProxyConfigServiceClientTest, MultipleAuthFailures) {
   EXPECT_GE(persisted_config_retrieval_time() + base::TimeDelta::FromMinutes(2),
             base::Time::Now());
 
-  histogram_tester.ExpectUniqueSample(
+  histogram_tester.ExpectBucketCount(
+      "DataReductionProxy.ConfigService.AuthExpiredSessionKey",
+      0 /* AUTH_EXPIRED_SESSION_KEY_MISMATCH */, 1);
+  histogram_tester.ExpectBucketCount(
       "DataReductionProxy.ConfigService.AuthExpiredSessionKey",
       1 /* AUTH_EXPIRED_SESSION_KEY_MATCH */, 1);
+
   histogram_tester.ExpectBucketCount(
       "DataReductionProxy.ConfigService.AuthExpired", false, 2);
   histogram_tester.ExpectBucketCount(
@@ -1357,6 +1368,16 @@ TEST_F(DataReductionProxyConfigServiceClientTest,
   config_client()->ApplySerializedConfig(
       half_reporting_fraction_encoded_config());
   EXPECT_EQ(0.5f, pingback_reporting_fraction());
+}
+
+TEST_F(DataReductionProxyConfigServiceClientTest, EmptyConfigDisablesDRP) {
+  Init(true);
+  SetDataReductionProxyEnabled(true, true);
+  EXPECT_EQ(std::vector<net::ProxyServer>(), GetConfiguredProxiesForHttp());
+
+  config_client()->ApplySerializedConfig(no_proxies_config());
+  EXPECT_EQ(std::vector<net::ProxyServer>(), GetConfiguredProxiesForHttp());
+  EXPECT_TRUE(configurator()->GetProxyConfig().proxy_rules().empty());
 }
 
 #if defined(OS_ANDROID)

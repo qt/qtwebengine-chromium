@@ -28,6 +28,17 @@ bool EnableTransparentMode() {
   return !field_trial::IsEnabled("WebRTC-Aec3TransparentModeKillSwitch");
 }
 
+bool EnableStationaryRenderImprovements() {
+  return !field_trial::IsEnabled(
+      "WebRTC-Aec3StationaryRenderImprovementsKillSwitch");
+}
+
+
+bool EnableLinearModeWithDivergedFilter() {
+  return !field_trial::IsEnabled(
+      "WebRTC-Aec3LinearModeWithDivergedFilterKillSwitch");
+}
+
 float ComputeGainRampupIncrease(const EchoCanceller3Config& config) {
   const auto& c = config.echo_removal_control.gain_rampup;
   return powf(1.f / c.first_non_zero_gain, 1.f / c.non_zero_gain_blocks);
@@ -43,9 +54,14 @@ int AecState::instance_count_ = 0;
 AecState::AecState(const EchoCanceller3Config& config)
     : data_dumper_(
           new ApmDataDumper(rtc::AtomicOps::Increment(&instance_count_))),
-      allow_transparent_mode_(EnableTransparentMode()),
-      erle_estimator_(config.erle.min, config.erle.max_l, config.erle.max_h),
       config_(config),
+      allow_transparent_mode_(EnableTransparentMode()),
+      use_stationary_properties_(
+          EnableStationaryRenderImprovements() &&
+          config_.echo_audibility.use_stationary_properties),
+      allow_linear_mode_with_diverged_filter_(
+          EnableLinearModeWithDivergedFilter()),
+      erle_estimator_(config.erle.min, config.erle.max_l, config.erle.max_h),
       max_render_(config_.filter.main.length_blocks, 0.f),
       reverb_decay_(fabsf(config_.ep_strength.default_len)),
       gain_rampup_increase_(ComputeGainRampupIncrease(config_)),
@@ -63,6 +79,7 @@ void AecState::HandleEchoPathChange(
     filter_analyzer_.Reset();
     blocks_since_last_saturation_ = 0;
     usable_linear_estimate_ = false;
+    diverged_linear_filter_ = false;
     capture_signal_saturation_ = false;
     echo_saturation_ = false;
     std::fill(max_render_.begin(), max_render_.end(), 0.f);
@@ -112,7 +129,8 @@ void AecState::Update(
     const std::array<float, kFftLengthBy2Plus1>& Y2,
     const std::array<float, kBlockSize>& s) {
   // Analyze the filter and compute the delays.
-  filter_analyzer_.Update(adaptive_filter_impulse_response, render_buffer);
+  filter_analyzer_.Update(adaptive_filter_impulse_response,
+                          adaptive_filter_frequency_response, render_buffer);
   filter_delay_blocks_ = filter_analyzer_.DelayBlocks();
 
   if (filter_analyzer_.Consistent()) {
@@ -138,11 +156,20 @@ void AecState::Update(
   suppression_gain_limiter_.Update(render_buffer.GetRenderActivity(),
                                    transparent_mode_);
 
+  if (UseStationaryProperties()) {
+    // Update the echo audibility evaluator.
+    echo_audibility_.Update(
+        render_buffer, FilterDelayBlocks(), external_delay_seen_,
+        config_.ep_strength.reverb_based_on_render ? ReverbDecay() : 0.f);
+  }
+
   // Update the ERL and ERLE measures.
-  if (converged_filter && blocks_since_reset_ >= 2 * kNumBlocksPerSecond) {
+  if (blocks_since_reset_ >= 2 * kNumBlocksPerSecond) {
     const auto& X2 = render_buffer.Spectrum(filter_delay_blocks_);
-    erle_estimator_.Update(X2, Y2, E2_main);
-    erl_estimator_.Update(X2, Y2);
+    erle_estimator_.Update(X2, Y2, E2_main, converged_filter);
+    if (converged_filter) {
+      erl_estimator_.Update(X2, Y2);
+    }
   }
 
   // Detect and flag echo saturation.
@@ -233,8 +260,16 @@ void AecState::Update(
       usable_linear_estimate_ && recently_converged_filter;
   usable_linear_estimate_ = usable_linear_estimate_ && !diverged_filter;
   usable_linear_estimate_ = usable_linear_estimate_ && external_delay;
+  usable_linear_estimate_ =
+      usable_linear_estimate_ && recently_converged_filter;
+  if (!allow_linear_mode_with_diverged_filter_) {
+    usable_linear_estimate_ = usable_linear_estimate_ && !diverged_filter;
+  }
 
   use_linear_filter_output_ = usable_linear_estimate_ && !TransparentMode();
+  diverged_linear_filter_ = diverged_filter;
+
+  UpdateReverb(adaptive_filter_impulse_response);
 
   data_dumper_->DumpRaw("aec3_erle", Erle());
   data_dumper_->DumpRaw("aec3_erle_onset", erle_estimator_.ErleOnsets());
@@ -266,11 +301,12 @@ void AecState::Update(
                         filter_has_had_time_to_converge);
   data_dumper_->DumpRaw("aec3_recently_converged_filter",
                         recently_converged_filter);
+  data_dumper_->DumpRaw("aec3_filter_tail_freq_resp_est", GetFreqRespTail());
 }
 
 void AecState::UpdateReverb(const std::vector<float>& impulse_response) {
   // Echo tail estimation enabled if the below variable is set as negative.
-  if (config_.ep_strength.default_len > 0.f) {
+  if (config_.ep_strength.default_len >= 0.f) {
     return;
   }
 
@@ -400,7 +436,7 @@ void AecState::UpdateReverb(const std::vector<float>& impulse_response) {
     const float N = num_reverb_decay_sections_ * kFftLengthBy2;
     accumulated_nz_ = 0.f;
     const float k1By12 = 1.f / 12.f;
-    // Arithmetic sum $2 \sum_{i=0}^{(N-1)/2}i^2$ calculated directly.
+    // Arithmetic sum $2 \sum_{i=0.5}^{(N-1)/2}i^2$ calculated directly.
     accumulated_nn_ = N * (N * N - 1.0f) * k1By12;
     accumulated_count_ = -N * 0.5f;
     // Linear regression approach assumes symmetric index around 0.

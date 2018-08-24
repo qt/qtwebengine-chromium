@@ -9,15 +9,15 @@
 
 #include <set>
 
+#include "base/task/sequence_manager/sequenced_task_source.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_argument.h"
 #include "third_party/blink/renderer/platform/scheduler/base/enqueue_order.h"
 #include "third_party/blink/renderer/platform/scheduler/base/intrusive_heap.h"
-#include "third_party/blink/renderer/platform/scheduler/base/sequenced_task_source.h"
 #include "third_party/blink/renderer/platform/scheduler/base/task_queue_impl.h"
 
-namespace blink {
-namespace scheduler {
+namespace base {
+namespace sequence_manager {
 namespace internal {
 
 class WorkQueueSets;
@@ -33,7 +33,7 @@ class WorkQueueSets;
 // throttling mechanisms.
 class PLATFORM_EXPORT WorkQueue {
  public:
-  using QueueType = SequencedTaskSource::WorkType;
+  using QueueType = internal::TaskQueueImpl::WorkQueueType;
 
   // Note |task_queue| can be null if queue_type is kNonNestable.
   WorkQueue(TaskQueueImpl* task_queue, const char* name, QueueType queue_type);
@@ -46,8 +46,7 @@ class PLATFORM_EXPORT WorkQueue {
   // Assigns the current set index.
   void AssignSetIndex(size_t work_queue_set_index);
 
-  void AsValueInto(base::TimeTicks now,
-                   base::trace_event::TracedValue* state) const;
+  void AsValueInto(TimeTicks now, trace_event::TracedValue* state) const;
 
   // Returns true if the |tasks_| is empty. This method ignores any fences.
   bool Empty() const { return tasks_.empty(); }
@@ -150,7 +149,7 @@ class PLATFORM_EXPORT WorkQueue {
 };
 
 }  // namespace internal
-}  // namespace scheduler
-}  // namespace blink
+}  // namespace sequence_manager
+}  // namespace base
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCHEDULER_BASE_WORK_QUEUE_H_

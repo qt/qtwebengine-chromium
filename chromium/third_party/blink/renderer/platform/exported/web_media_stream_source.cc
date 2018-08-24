@@ -127,6 +127,16 @@ bool WebMediaStreamSource::Remote() const {
   return private_.Get()->Remote();
 }
 
+void WebMediaStreamSource::SetGroupId(const blink::WebString& group_id) {
+  DCHECK(!private_.IsNull());
+  private_->SetGroupId(group_id);
+}
+
+WebString WebMediaStreamSource::GroupId() const {
+  DCHECK(!private_.IsNull());
+  return private_->GroupId();
+}
+
 void WebMediaStreamSource::SetReadyState(ReadyState state) {
   DCHECK(!private_.IsNull());
   private_->SetReadyState(static_cast<MediaStreamSource::ReadyState>(state));
@@ -156,12 +166,15 @@ void WebMediaStreamSource::SetExtraData(ExtraData* extra_data) {
       base::WrapUnique(extra_data)));
 }
 
-void WebMediaStreamSource::SetAudioProcessingProperties(bool echo_cancellation,
-                                                        bool auto_gain_control,
-                                                        bool noise_supression) {
+void WebMediaStreamSource::SetAudioProcessingProperties(
+    EchoCancellationMode echo_cancellation_mode,
+    bool auto_gain_control,
+    bool noise_supression) {
   DCHECK(!private_.IsNull());
-  private_->SetAudioProcessingProperties(echo_cancellation, auto_gain_control,
-                                         noise_supression);
+  private_->SetAudioProcessingProperties(
+      static_cast<MediaStreamSource::EchoCancellationMode>(
+          echo_cancellation_mode),
+      auto_gain_control, noise_supression);
 }
 
 WebMediaConstraints WebMediaStreamSource::Constraints() {

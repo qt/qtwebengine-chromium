@@ -10,7 +10,6 @@
 #include "base/bind.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
-#include "base/message_loop/message_loop.h"
 #include "base/observer_list.h"
 #include "content/browser/devtools/devtools_manager.h"
 #include "content/browser/devtools/devtools_session.h"
@@ -207,16 +206,6 @@ bool DevToolsAgentHostImpl::AttachRestrictedClient(
   if (SessionByClient(client))
     return false;
   return InnerAttachClient(client, true /* restricted */);
-}
-
-void DevToolsAgentHostImpl::ForceAttachClient(DevToolsAgentHostClient* client) {
-  if (SessionByClient(client))
-    return;
-  scoped_refptr<DevToolsAgentHostImpl> protect(this);
-  if (!sessions_.empty())
-    ForceDetachAllSessions();
-  DCHECK(sessions_.empty());
-  InnerAttachClient(client, false /* restricted */);
 }
 
 bool DevToolsAgentHostImpl::DetachClient(DevToolsAgentHostClient* client) {

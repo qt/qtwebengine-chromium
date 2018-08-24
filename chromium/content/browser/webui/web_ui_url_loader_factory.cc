@@ -7,6 +7,7 @@
 #include <map>
 
 #include "base/bind.h"
+#include "base/debug/crash_logging.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
@@ -17,7 +18,6 @@
 #include "content/browser/blob_storage/blob_internals_url_loader.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
-#include "content/browser/histogram_internals_url_loader.h"
 #include "content/browser/resource_context_impl.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/webui/network_error_url_loader.h"
@@ -257,6 +257,11 @@ class WebUIURLLoaderFactory : public network::mojom::URLLoaderFactory,
     if (!allowed_hosts_.empty() &&
         (!request.url.has_host() ||
          allowed_hosts_.find(request.url.host()) == allowed_hosts_.end())) {
+      // Temporary reporting the bad WebUI host for for http://crbug.com/837328.
+      static auto* crash_key = base::debug::AllocateCrashKeyString(
+          "webui_url", base::debug::CrashKeySize::Size64);
+      base::debug::SetCrashKeyString(crash_key, request.url.spec());
+
       DVLOG(1) << "Bad host: \"" << request.url.host() << '"';
       ReceivedBadMessage(render_frame_host_->GetProcess(),
                          bad_message::WEBUI_BAD_HOST_ACCESS);
@@ -277,11 +282,6 @@ class WebUIURLLoaderFactory : public network::mojom::URLLoaderFactory,
     if (request.url.host_piece() == kChromeUINetworkErrorHost ||
         request.url.host_piece() == kChromeUIDinoHost) {
       StartNetworkErrorsURLLoader(request, std::move(client));
-      return;
-    }
-
-    if (request.url.host_piece() == kChromeUIHistogramHost) {
-      StartHistogramInternalsURLLoader(request, std::move(client));
       return;
     }
 

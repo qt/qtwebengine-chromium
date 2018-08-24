@@ -37,7 +37,7 @@ class CONTENT_EXPORT ServiceWorkerInstalledScriptLoader
 
   // ServiceWorkerInstalledScriptReader::Client overrides:
   void OnStarted(std::string encoding,
-                 std::unordered_map<std::string, std::string> headers,
+                 base::flat_map<std::string, std::string> headers,
                  mojo::ScopedDataPipeConsumerHandle body_handle,
                  uint64_t body_size,
                  mojo::ScopedDataPipeConsumerHandle meta_data_handle,
@@ -48,7 +48,8 @@ class CONTENT_EXPORT ServiceWorkerInstalledScriptLoader
       ServiceWorkerInstalledScriptReader::FinishedReason reason) override;
 
   // network::mojom::URLLoader overrides:
-  void FollowRedirect() override;
+  void FollowRedirect(const base::Optional<net::HttpRequestHeaders>&
+                          modified_request_headers) override;
   void ProceedWithResponse() override;
   void SetPriority(net::RequestPriority priority,
                    int32_t intra_priority_value) override;

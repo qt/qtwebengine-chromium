@@ -11,7 +11,6 @@
 #include "services/device/public/mojom/screen_orientation.mojom-blink.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/public/platform/modules/screen_orientation/web_lock_orientation_callback.h"
 #include "third_party/blink/public/platform/web_size.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/user_gesture_indicator.h"
@@ -28,6 +27,7 @@
 #include "third_party/blink/renderer/modules/device_orientation/device_orientation_data.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_impl.h"
 #include "third_party/blink/renderer/modules/screen_orientation/screen_orientation_controller_impl.h"
+#include "third_party/blink/renderer/modules/screen_orientation/web_lock_orientation_callback.h"
 #include "third_party/blink/renderer/platform/geometry/int_rect.h"
 #include "third_party/blink/renderer/platform/layout_test_support.h"
 #include "third_party/blink/renderer/platform/testing/empty_web_media_player.h"
@@ -89,13 +89,13 @@ class MockScreenOrientation final
 void DidEnterFullscreen(Document* document) {
   DCHECK(document);
   Fullscreen::From(*document).DidEnterFullscreen();
-  document->ServiceScriptedAnimations(WTF::CurrentTimeTicksInSeconds());
+  document->ServiceScriptedAnimations(WTF::CurrentTimeTicks());
 }
 
 void DidExitFullscreen(Document* document) {
   DCHECK(document);
   Fullscreen::From(*document).DidExitFullscreen();
-  document->ServiceScriptedAnimations(WTF::CurrentTimeTicksInSeconds());
+  document->ServiceScriptedAnimations(WTF::CurrentTimeTicks());
 }
 
 class MockChromeClientForOrientationLockDelegate final
@@ -114,7 +114,7 @@ class MockChromeClientForOrientationLockDelegate final
   }
   // The real ChromeClient::EnterFullscreen/ExitFullscreen implementation is
   // async due to IPC, emulate that by posting tasks:
-  void EnterFullscreen(LocalFrame& frame) override {
+  void EnterFullscreen(LocalFrame& frame, const FullscreenOptions&) override {
     Platform::Current()->CurrentThread()->GetTaskRunner()->PostTask(
         FROM_HERE,
         WTF::Bind(DidEnterFullscreen, WrapPersistent(frame.GetDocument())));

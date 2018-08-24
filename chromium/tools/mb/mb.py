@@ -54,7 +54,6 @@ class MetaBuildWrapper(object):
     self.sep = os.sep
     self.args = argparse.Namespace()
     self.configs = {}
-    self.luci_tryservers = {}
     self.masters = {}
     self.mixins = {}
 
@@ -221,14 +220,6 @@ class MetaBuildWrapper(object):
                       default=self.default_config,
                       help='path to config file (default is %(default)s)')
     subp.set_defaults(func=self.CmdValidate)
-
-    subp = subps.add_parser('gerrit-buildbucket-config',
-                            help='Print buildbucket.config for gerrit '
-                            '(see MB user guide)')
-    subp.add_argument('-f', '--config-file', metavar='PATH',
-                      default=self.default_config,
-                      help='path to config file (default is %(default)s)')
-    subp.set_defaults(func=self.CmdBuildbucket)
 
     subp = subps.add_parser('zip',
                             help='generate a .zip containing the files needed '
@@ -483,25 +474,6 @@ class MetaBuildWrapper(object):
             ('cpu', 'x86-64'),
             os_dim]
 
-  def CmdBuildbucket(self):
-    self.ReadConfigFile()
-
-    self.Print('# This file was generated using '
-               '"tools/mb/mb.py gerrit-buildbucket-config".')
-
-    for luci_tryserver in sorted(self.luci_tryservers):
-      self.Print('[bucket "luci.%s"]' % luci_tryserver)
-      for bot in sorted(self.luci_tryservers[luci_tryserver]):
-        self.Print('\tbuilder = %s' % bot)
-
-    for master in sorted(self.masters):
-      if master.startswith('tryserver.'):
-        self.Print('[bucket "master.%s"]' % master)
-        for bot in sorted(self.masters[master]):
-          self.Print('\tbuilder = %s' % bot)
-
-    return 0
-
   def CmdValidate(self, print_ok=True):
     errs = []
 
@@ -665,7 +637,6 @@ class MetaBuildWrapper(object):
                  (self.args.config_file, e))
 
     self.configs = contents['configs']
-    self.luci_tryservers = contents.get('luci_tryservers', {})
     self.masters = contents['masters']
     self.mixins = contents['mixins']
 
@@ -992,6 +963,7 @@ class MetaBuildWrapper(object):
     isolate_map = self.ReadIsolateMap()
 
     is_android = 'target_os="android"' in vals['gn_args']
+    is_simplechrome = vals.get('cros_passthrough', False)
     is_fuchsia = 'target_os="fuchsia"' in vals['gn_args']
     is_win = self.platform == 'win32' or 'target_os="win"' in vals['gn_args']
 
@@ -1036,6 +1008,11 @@ class MetaBuildWrapper(object):
           '../../testing/test_env.py',
           os.path.join('bin', 'run_%s' % target),
       ]
+    elif is_simplechrome and test_type != 'script':
+      cmdline = [
+          '../../testing/test_env.py',
+          os.path.join('bin', 'run_%s' % target),
+      ]
     elif use_xvfb and test_type == 'windowed_test_launcher':
       extra_files.append('../../testing/xvfb.py')
       cmdline = [
@@ -1060,7 +1037,13 @@ class MetaBuildWrapper(object):
           '--cfi-diag=%d' % cfi_diag,
       ]
     elif test_type == 'script':
-      cmdline = [
+      cmdline = []
+      # If we're testing a CrOS simplechrome build, assume we need to launch a
+      # VM first. So prepend the command to run with the VM launcher.
+      # TODO(bpastene): Differentiate between CrOS VM and hardware tests.
+      if is_simplechrome:
+        cmdline = [os.path.join('bin', 'launch_cros_vm')]
+      cmdline += [
           '../../testing/test_env.py',
           '../../' + self.ToSrcRelPath(isolate_map[target]['script'])
       ]

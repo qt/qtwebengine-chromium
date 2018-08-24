@@ -186,6 +186,12 @@ bool ServiceWorkerUtils::ExtractSinglePartHttpRange(
   const net::HttpByteRange& byte_range = ranges[0];
   if (byte_range.first_byte_position() < 0)
     return false;
+  // Allow the range [0, -1] to be valid and specify the entire range.
+  if (byte_range.first_byte_position() == 0 &&
+      byte_range.last_byte_position() == -1) {
+    *has_range_out = false;
+    return true;
+  }
   if (byte_range.last_byte_position() < 0)
     return false;
 
@@ -204,6 +210,21 @@ bool ServiceWorkerUtils::ExtractSinglePartHttpRange(
   *offset_out = static_cast<uint64_t>(byte_range.first_byte_position());
   *length_out = length.ValueOrDie();
   return true;
+}
+
+bool ServiceWorkerUtils::ShouldBypassCacheDueToUpdateViaCache(
+    bool is_main_script,
+    blink::mojom::ServiceWorkerUpdateViaCache cache_mode) {
+  switch (cache_mode) {
+    case blink::mojom::ServiceWorkerUpdateViaCache::kImports:
+      return is_main_script;
+    case blink::mojom::ServiceWorkerUpdateViaCache::kNone:
+      return true;
+    case blink::mojom::ServiceWorkerUpdateViaCache::kAll:
+      return false;
+  }
+  NOTREACHED() << static_cast<int>(cache_mode);
+  return false;
 }
 
 bool LongestScopeMatcher::MatchLongest(const GURL& scope) {

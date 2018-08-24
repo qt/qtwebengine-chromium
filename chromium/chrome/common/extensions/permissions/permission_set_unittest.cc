@@ -716,6 +716,25 @@ TEST(PermissionsTest, IsPrivilegeIncrease) {
   }
 }
 
+// Tests that swapping out a permission for a less powerful one is not
+// considered a privilege increase.
+// Regression test for https://crbug.com/841938.
+TEST(PermissionsTest,
+     IsNotPrivilegeIncreaseWhenSwitchingForLowerPrivilegePermission) {
+  APIPermissionSet apis1;
+  apis1.insert(APIPermission::kHistory);
+  PermissionSet permissions1(apis1, ManifestPermissionSet(), URLPatternSet(),
+                             URLPatternSet());
+
+  APIPermissionSet apis2;
+  apis2.insert(APIPermission::kTopSites);
+  PermissionSet permissions2(apis2, ManifestPermissionSet(), URLPatternSet(),
+                             URLPatternSet());
+
+  EXPECT_FALSE(PermissionMessageProvider::Get()->IsPrivilegeIncrease(
+      permissions1, permissions2, Manifest::TYPE_EXTENSION));
+}
+
 TEST(PermissionsTest, PermissionMessages) {
   // Ensure that all permissions that needs to show install UI actually have
   // strings associated with them.
@@ -808,6 +827,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kBrailleDisplayPrivate);
   skip.insert(APIPermission::kCast);
   skip.insert(APIPermission::kCastStreaming);
+  skip.insert(APIPermission::kCecPrivate);
   skip.insert(APIPermission::kChromeosInfoPrivate);
   skip.insert(APIPermission::kCloudPrintPrivate);
   skip.insert(APIPermission::kCommandLinePrivate);
@@ -834,6 +854,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kImageWriterPrivate);
   skip.insert(APIPermission::kResourcesPrivate);
   skip.insert(APIPermission::kRtcPrivate);
+  skip.insert(APIPermission::kSafeBrowsingPrivate);
   skip.insert(APIPermission::kStreamsPrivate);
   skip.insert(APIPermission::kSystemPrivate);
   skip.insert(APIPermission::kTabCaptureForTab);
@@ -1071,16 +1092,21 @@ TEST(PermissionsTest, MergedFileSystemPermissionComparison) {
   EXPECT_FALSE(provider->IsPrivilegeIncrease(write_directory_permissions,
                                              directory_permissions,
                                              Manifest::TYPE_PLATFORM_APP));
-  EXPECT_TRUE(provider->IsPrivilegeIncrease(
-      write_permissions, directory_permissions, Manifest::TYPE_PLATFORM_APP));
   EXPECT_TRUE(provider->IsPrivilegeIncrease(write_permissions,
                                             write_directory_permissions,
                                             Manifest::TYPE_PLATFORM_APP));
-  EXPECT_FALSE(provider->IsPrivilegeIncrease(
-      directory_permissions, write_permissions, Manifest::TYPE_PLATFORM_APP));
   EXPECT_TRUE(provider->IsPrivilegeIncrease(directory_permissions,
                                             write_directory_permissions,
                                             Manifest::TYPE_PLATFORM_APP));
+  // Tricky case: going from kFileSystemWrite to kFileSystemDirectory (or vice
+  // versa). A warning is only shown if *both* kFileSystemWrite and
+  // kFileSystemDirectory are present. Even though kFileSystemWrite is not in
+  // the new set of permissions, it will still be a granted permission.
+  // Therefore, we should consider this a privilege increase.
+  EXPECT_TRUE(provider->IsPrivilegeIncrease(
+      write_permissions, directory_permissions, Manifest::TYPE_PLATFORM_APP));
+  EXPECT_TRUE(provider->IsPrivilegeIncrease(
+      directory_permissions, write_permissions, Manifest::TYPE_PLATFORM_APP));
 }
 
 TEST(PermissionsTest, GetWarningMessages_ManyHosts) {

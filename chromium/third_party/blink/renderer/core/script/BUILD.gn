@@ -22,6 +22,8 @@ blink_core_sources("script") {
     "html_parser_script_runner.h",
     "html_parser_script_runner_host.h",
     "ignore_destructive_write_count_incrementer.h",
+    "layered_api.cc",
+    "layered_api.h",
     "modulator.cc",
     "modulator.h",
     "modulator_impl_base.cc",
@@ -45,6 +47,7 @@ blink_core_sources("script") {
     "script_module_resolver_impl.h",
     "script_runner.cc",
     "script_runner.h",
+    "script_scheduling_type.h",
     "worker_modulator_impl.cc",
     "worker_modulator_impl.h",
     "worklet_modulator_impl.cc",
@@ -52,6 +55,10 @@ blink_core_sources("script") {
     "xml_parser_script_runner.cc",
     "xml_parser_script_runner.h",
     "xml_parser_script_runner_host.h",
+  ]
+
+  deps = [
+    "//third_party/blink/public:resources",
   ]
 
   jumbo_excluded_sources = [ "modulator.cc" ]  # https://crbug.com/716395

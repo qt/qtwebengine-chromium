@@ -5,7 +5,6 @@
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support.h"
 
 #include "base/macros.h"
-#include "cc/resources/resource_provider.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/common/quads/compositor_frame.h"
@@ -23,6 +22,7 @@
 #include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/khronos/GLES2/gl2.h"
 
 using testing::UnorderedElementsAre;
 using testing::IsEmpty;
@@ -70,13 +70,7 @@ class MockFrameSinkManagerClient : public mojom::FrameSinkManagerClient {
   MOCK_METHOD1(OnFirstSurfaceActivation, void(const SurfaceInfo&));
   void OnAggregatedHitTestRegionListUpdated(
       const FrameSinkId& frame_sink_id,
-      mojo::ScopedSharedBufferHandle active_handle,
-      uint32_t active_handle_size,
-      mojo::ScopedSharedBufferHandle idle_handle,
-      uint32_t idle_handle_sizes) override {}
-  void SwitchActiveAggregatedHitTestRegionList(
-      const FrameSinkId& frame_sink_id,
-      uint8_t active_handle_index) override {}
+      const std::vector<AggregatedHitTestRegion>& hit_test_data) override {}
   void OnFrameTokenChanged(const FrameSinkId& frame_sink_id,
                            uint32_t frame_token) override {}
 
@@ -130,7 +124,8 @@ class CompositorFrameSinkSupportTest : public testing::Test {
     auto frame = MakeDefaultCompositorFrame();
     frame.render_pass_list.back()->copy_requests.push_back(std::move(request));
     const auto result = support_->MaybeSubmitCompositorFrame(
-        local_surface_id_, std::move(frame), nullptr);
+        local_surface_id_, std::move(frame), base::nullopt,
+        mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
     switch (result) {
       case CompositorFrameSinkSupport::ACCEPTED:
         return true;
@@ -540,22 +535,28 @@ TEST_F(CompositorFrameSinkSupportTest, MonotonicallyIncreasingLocalSurfaceIds) {
   LocalSurfaceId local_surface_id5(8, 1, kArbitraryToken);
   LocalSurfaceId local_surface_id6(9, 3, kArbitraryToken);
   auto result = support->MaybeSubmitCompositorFrame(
-      local_surface_id1, MakeDefaultCompositorFrame(), nullptr);
+      local_surface_id1, MakeDefaultCompositorFrame(), base::nullopt,
+      mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(CompositorFrameSinkSupport::ACCEPTED, result);
   result = support->MaybeSubmitCompositorFrame(
-      local_surface_id2, MakeDefaultCompositorFrame(), nullptr);
+      local_surface_id2, MakeDefaultCompositorFrame(), base::nullopt,
+      mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(CompositorFrameSinkSupport::ACCEPTED, result);
   result = support->MaybeSubmitCompositorFrame(
-      local_surface_id3, MakeDefaultCompositorFrame(), nullptr);
+      local_surface_id3, MakeDefaultCompositorFrame(), base::nullopt,
+      mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(CompositorFrameSinkSupport::ACCEPTED, result);
   result = support->MaybeSubmitCompositorFrame(
-      local_surface_id4, MakeDefaultCompositorFrame(), nullptr);
+      local_surface_id4, MakeDefaultCompositorFrame(), base::nullopt,
+      mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(CompositorFrameSinkSupport::SURFACE_INVARIANTS_VIOLATION, result);
   result = support->MaybeSubmitCompositorFrame(
-      local_surface_id5, MakeDefaultCompositorFrame(), nullptr);
+      local_surface_id5, MakeDefaultCompositorFrame(), base::nullopt,
+      mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(CompositorFrameSinkSupport::SURFACE_INVARIANTS_VIOLATION, result);
   result = support->MaybeSubmitCompositorFrame(
-      local_surface_id6, MakeDefaultCompositorFrame(), nullptr);
+      local_surface_id6, MakeDefaultCompositorFrame(), base::nullopt,
+      mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(CompositorFrameSinkSupport::ACCEPTED, result);
 
   manager_.InvalidateFrameSinkId(kAnotherArbitraryFrameSinkId);
@@ -775,7 +776,8 @@ TEST_F(CompositorFrameSinkSupportTest, ZeroDeviceScaleFactor) {
                    .SetDeviceScaleFactor(0.f)
                    .Build();
   const auto result = support_->MaybeSubmitCompositorFrame(
-      local_surface_id_, std::move(frame), nullptr);
+      local_surface_id_, std::move(frame), base::nullopt,
+      mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(CompositorFrameSinkSupport::SURFACE_INVARIANTS_VIOLATION, result);
   EXPECT_FALSE(GetSurfaceForId(id));
 }
@@ -789,8 +791,9 @@ TEST_F(CompositorFrameSinkSupportTest, FrameSizeMismatch) {
   auto frame = CompositorFrameBuilder()
                    .AddRenderPass(gfx::Rect(5, 5), gfx::Rect())
                    .Build();
-  auto result = support_->MaybeSubmitCompositorFrame(local_surface_id_,
-                                                     std::move(frame), nullptr);
+  auto result = support_->MaybeSubmitCompositorFrame(
+      local_surface_id_, std::move(frame), base::nullopt,
+      mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(CompositorFrameSinkSupport::ACCEPTED, result);
   EXPECT_TRUE(GetSurfaceForId(id));
 
@@ -799,8 +802,9 @@ TEST_F(CompositorFrameSinkSupportTest, FrameSizeMismatch) {
   frame = CompositorFrameBuilder()
               .AddRenderPass(gfx::Rect(5, 4), gfx::Rect())
               .Build();
-  result = support_->MaybeSubmitCompositorFrame(local_surface_id_,
-                                                std::move(frame), nullptr);
+  result = support_->MaybeSubmitCompositorFrame(
+      local_surface_id_, std::move(frame), base::nullopt,
+      mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(CompositorFrameSinkSupport::SURFACE_INVARIANTS_VIOLATION, result);
 }
 
@@ -815,8 +819,9 @@ TEST_F(CompositorFrameSinkSupportTest, DeviceScaleFactorMismatch) {
                    .AddDefaultRenderPass()
                    .SetDeviceScaleFactor(0.5f)
                    .Build();
-  auto result = support_->MaybeSubmitCompositorFrame(local_surface_id_,
-                                                     std::move(frame), nullptr);
+  auto result = support_->MaybeSubmitCompositorFrame(
+      local_surface_id_, std::move(frame), base::nullopt,
+      mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(CompositorFrameSinkSupport::ACCEPTED, result);
   EXPECT_TRUE(GetSurfaceForId(id));
 
@@ -826,8 +831,9 @@ TEST_F(CompositorFrameSinkSupportTest, DeviceScaleFactorMismatch) {
               .AddDefaultRenderPass()
               .SetDeviceScaleFactor(0.4f)
               .Build();
-  result = support_->MaybeSubmitCompositorFrame(local_surface_id_,
-                                                std::move(frame), nullptr);
+  result = support_->MaybeSubmitCompositorFrame(
+      local_surface_id_, std::move(frame), base::nullopt,
+      mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(CompositorFrameSinkSupport::SURFACE_INVARIANTS_VIOLATION, result);
 }
 

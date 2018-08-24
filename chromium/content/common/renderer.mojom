@@ -80,16 +80,7 @@ struct CreateViewParams {
   bool has_committed_real_load;
 
   // The initial renderer size.
-  ResizeParams initial_size;
-
-  // Whether to enable auto-resize.
-  bool enable_auto_resize;
-
-  // The minimum size to layout the page if auto-resize is enabled.
-  gfx.mojom.Size min_size;
-
-  // The maximum size to layout the page if auto-resize is enabled.
-  gfx.mojom.Size max_size;
+  VisualProperties visual_properties;
 
   // The page zoom level.
   double page_zoom_level;
@@ -190,13 +181,6 @@ interface Renderer {
   // Tells the renderer to create a new RenderFrame.
   CreateFrame(CreateFrameParams params);
 
-  // Tells the renderer to create an EmbeddedWorkerInstanceClient, which is what
-  // manages service worker startup and shutdown.
-  // TODO(shimazu): Create a service worker's execution context by this method
-  // instead of just creating an instance of EmbeddedWorkerInstanceClient.
-  SetUpEmbeddedWorkerChannelForServiceWorker(
-      associated EmbeddedWorkerInstanceClient& client_request);
-
   // Tells the renderer to create a new RenderFrameProxy object with
   // |routing_id|.  |render_view_routing_id| identifies the
   // RenderView to be associated with this proxy.  The new proxy's opener should
@@ -211,6 +195,13 @@ interface Renderer {
                    int32 opener_routing_id, int32 parent_routing_id,
                    FrameReplicationState replication_state,
                    mojo_base.mojom.UnguessableToken devtools_frame_token);
+
+  // Tells the renderer to create an EmbeddedWorkerInstanceClient, which is what
+  // manages service worker startup and shutdown.
+  // TODO(shimazu): Send all params for starting service worker to reduce the
+  // number of IPCs.
+  SetUpEmbeddedWorkerChannelForServiceWorker(
+      EmbeddedWorkerInstanceClient& client_request);
 
   // Tells the renderer that the network type has changed so that
   // navigator.onLine and navigator.connection can be updated.
@@ -233,6 +224,12 @@ interface Renderer {
   // Tells the renderer to suspend/resume the webkit timers. Only for use on
   // Android.
   SetWebKitSharedTimersSuspended(bool suspend);
+
+  // Sets the user-agent string. This is needed because getting the value in the
+  // renderer from the system leads to a wrong value due to sandboxing. This
+  // must be called as early as possible, during the renderer process
+  // initialization.
+  SetUserAgent(string user_agent);
 
   // Tells the renderer about a scrollbar appearance change. Only for use on
   // OS X.

@@ -16,6 +16,7 @@
 #include "base/i18n/case_conversion.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
@@ -306,6 +307,28 @@ bool AllTypesCaptured(const FormStructure& form,
   return true;
 }
 
+// Encode password attributes |vote| into |upload|.
+void EncodePasswordAttributesVote(
+    const std::pair<PasswordAttribute, bool>& vote,
+    AutofillUploadContents* upload) {
+  switch (vote.first) {
+    case PasswordAttribute::kHasLowercaseLetter:
+      upload->set_password_has_lowercase_letter(vote.second);
+      break;
+    case PasswordAttribute::kHasUppercaseLetter:
+      upload->set_password_has_uppercase_letter(vote.second);
+      break;
+    case PasswordAttribute::kHasNumeric:
+      upload->set_password_has_numeric(vote.second);
+      break;
+    case PasswordAttribute::kHasSpecialSymbol:
+      upload->set_password_has_special_symbol(vote.second);
+      break;
+    case PasswordAttribute::kPasswordAttributesCount:
+      NOTREACHED();
+  }
+}
+
 }  // namespace
 
 FormStructure::FormStructure(const FormData& form)
@@ -324,7 +347,8 @@ FormStructure::FormStructure(const FormData& form)
       is_form_tag_(form.is_form_tag),
       is_formless_checkout_(form.is_formless_checkout),
       all_fields_are_passwords_(!form.fields.empty()),
-      is_signin_upload_(false) {
+      is_signin_upload_(false),
+      passwords_were_revealed_(false) {
   // Copy the form fields.
   std::map<base::string16, size_t> unique_names;
   for (const FormFieldData& field : form.fields) {
@@ -397,7 +421,7 @@ void FormStructure::DetermineHeuristicTypes(ukm::UkmRecorder* ukm_recorder) {
   if (developer_engagement_metrics) {
     AutofillMetrics::LogDeveloperEngagementUkm(
         ukm_recorder, main_frame_origin().GetURL(), IsCompleteCreditCardForm(),
-        GetFormTypes(), developer_engagement_metrics);
+        GetFormTypes(), developer_engagement_metrics, form_signature());
   }
 
   if (base::FeatureList::IsEnabled(kAutofillRationalizeFieldTypePredictions))
@@ -421,6 +445,9 @@ bool FormStructure::EncodeUploadRequest(
   upload->set_form_signature(form_signature());
   upload->set_autofill_used(form_was_autofilled);
   upload->set_data_present(EncodeFieldTypes(available_field_types));
+  upload->set_passwords_revealed(passwords_were_revealed_);
+  if (password_attributes_vote_)
+    EncodePasswordAttributesVote(*password_attributes_vote_, upload);
 
   if (IsAutofillFieldMetadataEnabled()) {
     upload->set_action_signature(StrToHash64Bit(target_url_.host()));
@@ -460,6 +487,7 @@ bool FormStructure::EncodeQueryRequest(
     if (processed_forms.find(signature) != processed_forms.end())
       continue;
     processed_forms.insert(signature);
+    UMA_HISTOGRAM_COUNTS_1000("Autofill.FieldCount", form->field_count());
     if (form->IsMalformed())
       continue;
 
@@ -514,7 +542,7 @@ void FormStructure::ParseQueryResponse(
       if (heuristic_type != UNKNOWN_TYPE)
         heuristics_detected_fillable_field = true;
 
-      field->set_overall_server_type(field_type);
+      field->set_server_type(field_type);
       std::vector<AutofillQueryResponseContents::Field::FieldPrediction>
           server_predictions;
       if (current_field->predictions_size() == 0) {
@@ -537,10 +565,10 @@ void FormStructure::ParseQueryResponse(
         !query_response_has_no_server_data);
 
     form->UpdateAutofillCount();
-    form->IdentifySections(false);
-
     if (base::FeatureList::IsEnabled(kAutofillRationalizeFieldTypePredictions))
       form->RationalizeFieldTypePredictions();
+
+    form->IdentifySections(false);
   }
 
   AutofillMetrics::ServerQueryMetric metric;
@@ -579,10 +607,11 @@ std::vector<FormDataPredictions> FormStructure::GetFieldTypePredictions(
       annotated_field.heuristic_type =
           AutofillType(field->heuristic_type()).ToString();
       annotated_field.server_type =
-          AutofillType(field->overall_server_type()).ToString();
+          AutofillType(field->server_type()).ToString();
       annotated_field.overall_type = field->Type().ToString();
       annotated_field.parseable_name =
           base::UTF16ToUTF8(field->parseable_name());
+      annotated_field.section = field->section;
       form.fields.push_back(annotated_field);
     }
 
@@ -701,7 +730,7 @@ void FormStructure::RetrieveFromCache(
         field->set_heuristic_type(cached_field->second->heuristic_type());
         field->SetHtmlType(cached_field->second->html_type(),
                            cached_field->second->html_mode());
-        field->set_section(cached_field->second->section());
+        field->section = cached_field->second->section;
         field->set_only_fill_when_focused(
             cached_field->second->only_fill_when_focused());
       }
@@ -714,8 +743,7 @@ void FormStructure::RetrieveFromCache(
         // default values are equivalent to empty fields.
         field->value = base::string16();
       }
-      field->set_overall_server_type(
-          cached_field->second->overall_server_type());
+      field->set_server_type(cached_field->second->server_type());
       field->set_previously_autofilled(
           cached_field->second->previously_autofilled());
     }
@@ -845,7 +873,7 @@ void FormStructure::LogQualityMetrics(
           main_frame_origin().GetURL());
     AutofillMetrics::LogAutofillFormSubmittedState(
         state, is_for_credit_card, GetFormTypes(), form_parsed_timestamp_,
-        form_interactions_ukm_logger);
+        form_signature(), form_interactions_ukm_logger);
   }
 }
 
@@ -880,7 +908,7 @@ void FormStructure::ParseFieldTypesFromAutocompleteAttributes() {
     // in the default section.  These default section names will be overridden
     // by subsequent heuristic parsing steps if there are no author-specified
     // section names.
-    field->set_section(kDefaultSection);
+    field->section = kDefaultSection;
 
     std::vector<std::string> tokens =
         LowercaseAndTokenizeAttributeString(field->autocomplete_attribute);
@@ -930,8 +958,8 @@ void FormStructure::ParseFieldTypesFromAutocompleteAttributes() {
       tokens.pop_back();
     }
 
-    DCHECK_EQ(kDefaultSection, field->section());
-    std::string section = field->section();
+    DCHECK_EQ(kDefaultSection, field->section);
+    std::string section = field->section;
     HtmlFieldMode mode = HTML_MODE_NONE;
 
     // (3) The preceding token, if any, may be a fixed string that is either
@@ -964,7 +992,7 @@ void FormStructure::ParseFieldTypesFromAutocompleteAttributes() {
 
     if (section != kDefaultSection) {
       has_author_specified_sections_ = true;
-      field->set_section(section);
+      field->section = section;
     }
 
     // No errors encountered while parsing!
@@ -1086,7 +1114,8 @@ void FormStructure::RationalizeCreditCardFieldPredictions() {
   size_t num_months_found = 0;
   size_t num_other_fields_found = 0;
   for (const auto& field : fields_) {
-    ServerFieldType current_field_type = field->Type().GetStorableType();
+    ServerFieldType current_field_type =
+        field->ComputedType().GetStorableType();
     switch (current_field_type) {
       case CREDIT_CARD_NAME_FIRST:
         cc_first_name_found = true;
@@ -1163,15 +1192,15 @@ void FormStructure::RationalizeCreditCardFieldPredictions() {
     switch (current_field_type) {
       case CREDIT_CARD_NAME_FIRST:
         if (!keep_cc_fields)
-          field->SetTypeTo(NAME_FIRST);
+          field->SetTypeTo(AutofillType(NAME_FIRST));
         break;
       case CREDIT_CARD_NAME_LAST:
         if (!keep_cc_fields)
-          field->SetTypeTo(NAME_LAST);
+          field->SetTypeTo(AutofillType(NAME_LAST));
         break;
       case CREDIT_CARD_NAME_FULL:
         if (!keep_cc_fields)
-          field->SetTypeTo(NAME_FULL);
+          field->SetTypeTo(AutofillType(NAME_FULL));
         break;
       case CREDIT_CARD_NUMBER:
       case CREDIT_CARD_TYPE:
@@ -1179,7 +1208,7 @@ void FormStructure::RationalizeCreditCardFieldPredictions() {
       case CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR:
       case CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR:
         if (!keep_cc_fields)
-          field->SetTypeTo(UNKNOWN_TYPE);
+          field->SetTypeTo(AutofillType(UNKNOWN_TYPE));
         break;
       case CREDIT_CARD_EXP_MONTH:
         // Do not preserve an expiry month prediction if any of the following
@@ -1192,16 +1221,16 @@ void FormStructure::RationalizeCreditCardFieldPredictions() {
         //       that also has one or more quantity fields. Suppress the expiry
         //       month field(s) not immediately preceding an expiry year field.
         if (!keep_cc_fields || !cc_date_found) {
-          field->SetTypeTo(UNKNOWN_TYPE);
+          field->SetTypeTo(AutofillType(UNKNOWN_TYPE));
         } else if (num_months_found > 1) {
           auto it2 = it + 1;
           if (it2 == fields_.end()) {
-            field->SetTypeTo(UNKNOWN_TYPE);
+            field->SetTypeTo(AutofillType(UNKNOWN_TYPE));
           } else {
             ServerFieldType next_field_type = (*it2)->Type().GetStorableType();
             if (next_field_type != CREDIT_CARD_EXP_2_DIGIT_YEAR &&
                 next_field_type != CREDIT_CARD_EXP_4_DIGIT_YEAR) {
-              field->SetTypeTo(UNKNOWN_TYPE);
+              field->SetTypeTo(AutofillType(UNKNOWN_TYPE));
             }
           }
         }
@@ -1209,7 +1238,7 @@ void FormStructure::RationalizeCreditCardFieldPredictions() {
       case CREDIT_CARD_EXP_2_DIGIT_YEAR:
       case CREDIT_CARD_EXP_4_DIGIT_YEAR:
         if (!keep_cc_fields || !cc_date_found)
-          field->SetTypeTo(UNKNOWN_TYPE);
+          field->SetTypeTo(AutofillType(UNKNOWN_TYPE));
         break;
       default:
         break;
@@ -1222,7 +1251,7 @@ void FormStructure::RationalizePhoneNumbersInSection(std::string section) {
     return;
   std::vector<AutofillField*> fields;
   for (size_t i = 0; i < field_count(); ++i) {
-    if (field(i)->section() != section)
+    if (field(i)->section != section)
       continue;
     fields.push_back(field(i));
   }
@@ -1232,6 +1261,9 @@ void FormStructure::RationalizePhoneNumbersInSection(std::string section) {
 
 void FormStructure::RationalizeFieldTypePredictions() {
   RationalizeCreditCardFieldPredictions();
+  for (const auto& field : fields_) {
+    field->SetTypeTo(field->Type());
+  }
 }
 
 void FormStructure::EncodeFormForQuery(
@@ -1283,10 +1315,8 @@ void FormStructure::EncodeFormForUpload(AutofillUploadContents* upload) const {
             field->form_classifier_outcome());
       }
 
-      if (field->username_vote_type()) {
-        added_field->set_username_vote_type(field->username_vote_type());
-      } else {
-        DCHECK(field_type != autofill::USERNAME);
+      if (field->vote_type()) {
+        added_field->set_vote_type(field->vote_type());
       }
 
       added_field->set_signature(field->GetFieldSignature());
@@ -1318,10 +1348,10 @@ bool FormStructure::IsMalformed() const {
     return true;
 
   // Some badly formatted web sites repeat fields - limit number of fields to
-  // 48, which is far larger than any valid form and proto still fits into 2K.
+  // 100, which is far larger than any valid form and proto still fits into 2K.
   // Do not send requests for forms with more than this many fields, as they are
   // near certainly not valid/auto-fillable.
-  const size_t kMaxFieldsOnTheForm = 48;
+  const size_t kMaxFieldsOnTheForm = 100;
   if (field_count() > kMaxFieldsOnTheForm)
     return true;
   return false;
@@ -1346,7 +1376,7 @@ void FormStructure::IdentifySections(bool has_author_specified_sections) {
       // All credit card fields belong to the same section that's different
       // from address sections.
       if (AutofillType(current_type).group() == CREDIT_CARD) {
-        field->set_section("credit-card");
+        field->section = "credit-card";
         continue;
       }
 
@@ -1419,7 +1449,7 @@ void FormStructure::IdentifySections(bool has_author_specified_sections) {
         is_hidden_section = false;
       }
 
-      field->set_section(base::UTF16ToUTF8(current_section));
+      field->section = base::UTF16ToUTF8(current_section);
     }
   }
 
@@ -1428,9 +1458,9 @@ void FormStructure::IdentifySections(bool has_author_specified_sections) {
   for (const auto& field : fields_) {
     FieldTypeGroup field_type_group = field->Type().group();
     if (field_type_group == CREDIT_CARD)
-      field->set_section(field->section() + "-cc");
+      field->section = field->section + "-cc";
     else
-      field->set_section(field->section() + "-default");
+      field->section = field->section + "-default";
   }
 }
 
@@ -1503,6 +1533,16 @@ std::set<FormType> FormStructure::GetFormTypes() const {
         FormTypes::FieldTypeGroupToFormType(field->Type().group()));
   }
   return form_types;
+}
+
+base::string16 FormStructure::GetIdentifierForRefill() const {
+  if (!form_name().empty())
+    return form_name();
+
+  if (field_count() && !field(0)->unique_name().empty())
+    return field(0)->unique_name();
+
+  return base::string16();
 }
 
 }  // namespace autofill

@@ -21,14 +21,14 @@
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
 #include "third_party/blink/renderer/core/inspector/main_thread_debugger.h"
 #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
+#include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
+#include "third_party/blink/renderer/core/script/script.h"
 #include "third_party/blink/renderer/core/workers/dedicated_worker_messaging_proxy.h"
 #include "third_party/blink/renderer/core/workers/worker_classic_script_loader.h"
 #include "third_party/blink/renderer/core/workers/worker_clients.h"
 #include "third_party/blink/renderer/core/workers/worker_content_settings_client.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
-#include "third_party/blink/renderer/core/workers/worker_module_fetch_coordinator.h"
-#include "third_party/blink/renderer/core/workers/worker_or_worklet_module_fetch_coordinator.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
 
@@ -96,9 +96,7 @@ DedicatedWorker::DedicatedWorker(ExecutionContext* context,
     : AbstractWorker(context),
       script_url_(script_url),
       options_(options),
-      context_proxy_(new DedicatedWorkerMessagingProxy(context, this)),
-      module_fetch_coordinator_(
-          WorkerModuleFetchCoordinator::Create(context->Fetcher())) {
+      context_proxy_(new DedicatedWorkerMessagingProxy(context, this)) {
   DCHECK(context->IsContextThread());
   DCHECK(script_url_.IsValid());
   DCHECK(context_proxy_);
@@ -170,11 +168,31 @@ void DedicatedWorker::terminate() {
   context_proxy_->TerminateGlobalScope();
 }
 
+BeginFrameProviderParams DedicatedWorker::CreateBeginFrameProviderParams() {
+  DCHECK(GetExecutionContext()->IsContextThread());
+  // If we don't have a frame or we are not in Document, some of the SinkIds
+  // won't be initialized. If that's the case, the Worker will initialize it by
+  // itself later.
+  BeginFrameProviderParams begin_frame_provider_params;
+  if (GetExecutionContext()->IsDocument()) {
+    LocalFrame* frame = ToDocument(GetExecutionContext())->GetFrame();
+    WebLayerTreeView* layer_tree_view = nullptr;
+    if (frame) {
+      layer_tree_view =
+          frame->GetPage()->GetChromeClient().GetWebLayerTreeView(frame);
+      begin_frame_provider_params.parent_frame_sink_id =
+          layer_tree_view->GetFrameSinkId();
+    }
+    begin_frame_provider_params.frame_sink_id =
+        Platform::Current()->GenerateFrameSinkId();
+  }
+  return begin_frame_provider_params;
+}
+
 void DedicatedWorker::ContextDestroyed(ExecutionContext*) {
   DCHECK(GetExecutionContext()->IsContextThread());
   if (classic_script_loader_)
     classic_script_loader_->Cancel();
-  module_fetch_coordinator_->Dispose();
   terminate();
 }
 
@@ -258,17 +276,20 @@ DedicatedWorker::CreateGlobalScopeCreationParams() {
     settings = WorkerSettings::Copy(worker_global_scope->GetWorkerSettings());
   }
 
+  ScriptType script_type = (options_.type() == "classic") ? ScriptType::kClassic
+                                                          : ScriptType::kModule;
   return std::make_unique<GlobalScopeCreationParams>(
-      script_url_, GetExecutionContext()->UserAgent(),
+      script_url_, script_type, GetExecutionContext()->UserAgent(),
       GetExecutionContext()->GetContentSecurityPolicy()->Headers().get(),
       kReferrerPolicyDefault, GetExecutionContext()->GetSecurityOrigin(),
       GetExecutionContext()->IsSecureContext(), CreateWorkerClients(),
       GetExecutionContext()->GetSecurityContext().AddressSpace(),
       OriginTrialContext::GetTokens(GetExecutionContext()).get(),
       devtools_worker_token, std::move(settings), kV8CacheOptionsDefault,
-      module_fetch_coordinator_.Get(),
+      nullptr /* worklet_module_responses_map */,
       ConnectToWorkerInterfaceProvider(GetExecutionContext(),
-                                       SecurityOrigin::Create(script_url_)));
+                                       SecurityOrigin::Create(script_url_)),
+      CreateBeginFrameProviderParams());
 }
 
 const AtomicString& DedicatedWorker::InterfaceName() const {
@@ -277,7 +298,6 @@ const AtomicString& DedicatedWorker::InterfaceName() const {
 
 void DedicatedWorker::Trace(blink::Visitor* visitor) {
   visitor->Trace(context_proxy_);
-  visitor->Trace(module_fetch_coordinator_);
   AbstractWorker::Trace(visitor);
 }
 

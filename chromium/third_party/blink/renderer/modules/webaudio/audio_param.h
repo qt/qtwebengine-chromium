@@ -94,8 +94,26 @@ enum AudioParamType {
 class AudioParamHandler final : public ThreadSafeRefCounted<AudioParamHandler>,
                                 public AudioSummingJunction {
  public:
+  // Automation rate of the AudioParam
+  enum AutomationRate {
+    // a-rate
+    kAudio,
+    // k-rate
+    kControl
+  };
+
+  // Indicates whether automation rate can be changed.
+  enum AutomationRateMode {
+    // Rate can't be changed after construction
+    kFixed,
+    // Rate can be selected
+    kVariable
+  };
+
   AudioParamType GetParamType() const { return param_type_; }
   void SetParamType(AudioParamType);
+  // Set the parameter name for an AudioWorklet.
+  void SetCustomParamName(const String name);
   // Return a nice name for the AudioParam.
   String GetParamName() const;
 
@@ -104,12 +122,14 @@ class AudioParamHandler final : public ThreadSafeRefCounted<AudioParamHandler>,
 
   static scoped_refptr<AudioParamHandler> Create(BaseAudioContext& context,
                                                  AudioParamType param_type,
-                                                 String param_name,
                                                  double default_value,
+                                                 AutomationRate rate,
+                                                 AutomationRateMode rate_mode,
                                                  float min_value,
                                                  float max_value) {
-    return base::AdoptRef(new AudioParamHandler(
-        context, param_type, param_name, default_value, min_value, max_value));
+    return base::AdoptRef(new AudioParamHandler(context, param_type,
+                                                default_value, rate, rate_mode,
+                                                min_value, max_value));
   }
 
   // This should be used only in audio rendering thread.
@@ -123,6 +143,15 @@ class AudioParamHandler final : public ThreadSafeRefCounted<AudioParamHandler>,
   // Intrinsic value.
   float Value();
   void SetValue(float);
+
+  AutomationRate GetAutomationRate() const { return automation_rate_; }
+  void SetAutomationRate(AutomationRate automation_rate) {
+    automation_rate_ = automation_rate;
+  };
+
+  bool IsAutomationRateFixed() const {
+    return rate_mode_ == AutomationRateMode::kFixed;
+  }
 
   // Final value for k-rate parameters, otherwise use
   // calculateSampleAccurateValues() for a-rate.
@@ -147,12 +176,17 @@ class AudioParamHandler final : public ThreadSafeRefCounted<AudioParamHandler>,
   void ResetSmoothedValue() { timeline_.SetSmoothedValue(IntrinsicValue()); }
 
   bool HasSampleAccurateValues() {
+    if (automation_rate_ != kAudio)
+      return false;
+
     bool has_values =
         timeline_.HasValues(destination_handler_->CurrentSampleFrame(),
                             destination_handler_->SampleRate());
 
     return has_values || NumberOfRenderingConnections();
   }
+
+  bool IsAudioRate() const { return automation_rate_ == kAudio; }
 
   // Calculates numberOfValues parameter values starting at the context's
   // current time.
@@ -168,8 +202,9 @@ class AudioParamHandler final : public ThreadSafeRefCounted<AudioParamHandler>,
  private:
   AudioParamHandler(BaseAudioContext&,
                     AudioParamType,
-                    String param_name,
                     double default_value,
+                    AutomationRate rate,
+                    AutomationRateMode rate_mode,
                     float min,
                     float max);
 
@@ -186,15 +221,23 @@ class AudioParamHandler final : public ThreadSafeRefCounted<AudioParamHandler>,
   // node it belongs to.  Mostly for informational purposes and doesn't affect
   // implementation.
   AudioParamType param_type_;
-  // Name of the AudioParam. This is only used for printing out more
-  // informative warnings, and is otherwise arbitrary.
-  String param_name_;
+  // Name of the AudioParam. This is only used for printing out more informative
+  // warnings, and only used for AudioWorklets.  All others have a name derived
+  // from the |param_type_|.  Worklets need custom names because they're defined
+  // by the user.
+  String custom_param_name_;
 
   // Intrinsic value
   float intrinsic_value_;
   void SetIntrinsicValue(float new_value);
 
   float default_value_;
+
+  // The automation rate of the AudioParam (k-rate or a-rate)
+  AutomationRate automation_rate_;
+  // |rate_mode_| determines if the user can change the automation rate to a
+  // different value.
+  const AutomationRateMode rate_mode_;
 
   // Nominal range for the value
   float min_value_;
@@ -212,15 +255,22 @@ class AudioParam final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
+  // The most common case where the rate, mode, and limits can default.
+  static AudioParam* Create(BaseAudioContext&,
+                            AudioParamType,
+                            double default_value);
+  // The general case where the rate and mode cannot use defaults (but the
+  // limits can).
   static AudioParam* Create(
       BaseAudioContext&,
       AudioParamType,
-      String param_name,
       double default_value,
+      AudioParamHandler::AutomationRate rate,
+      AudioParamHandler::AutomationRateMode rate_mode,
       float min_value = -std::numeric_limits<float>::max(),
       float max_value = std::numeric_limits<float>::max());
 
-  void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
   // |handler| always returns a valid object.
   AudioParamHandler& Handler() const { return *handler_; }
   // |context| always returns a valid object.
@@ -228,11 +278,16 @@ class AudioParam final : public ScriptWrappable {
 
   AudioParamType GetParamType() const { return Handler().GetParamType(); }
   void SetParamType(AudioParamType);
+  void SetCustomParamName(const String name);
   String GetParamName() const;
 
   float value() const;
   void setValue(float, ExceptionState&);
   void setValue(float);
+
+  String automationRate() const;
+  void setAutomationRate(const String&, ExceptionState&);
+
   float defaultValue() const;
 
   float minValue() const;
@@ -259,8 +314,9 @@ class AudioParam final : public ScriptWrappable {
  private:
   AudioParam(BaseAudioContext&,
              AudioParamType,
-             String param_name,
              double default_value,
+             AudioParamHandler::AutomationRate rate,
+             AudioParamHandler::AutomationRateMode rate_mode,
              float min,
              float max);
 

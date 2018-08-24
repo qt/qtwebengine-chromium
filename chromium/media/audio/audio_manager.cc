@@ -13,7 +13,6 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/power_monitor/power_monitor.h"
 #include "base/single_thread_task_runner.h"
@@ -286,9 +285,7 @@ std::unique_ptr<AudioManager> AudioManager::Create(
     AudioLogFactory* audio_log_factory) {
   std::unique_ptr<AudioManager> manager =
       CreateAudioManager(std::move(audio_thread), audio_log_factory);
-#if BUILDFLAG(ENABLE_WEBRTC)
   manager->InitializeDebugRecording();
-#endif
   return manager;
 }
 

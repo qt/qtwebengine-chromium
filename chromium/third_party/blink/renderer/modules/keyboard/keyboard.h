@@ -11,6 +11,7 @@
 namespace blink {
 
 class ExecutionContext;
+class KeyboardLayout;
 class KeyboardLock;
 class ScriptState;
 
@@ -24,13 +25,16 @@ class Keyboard final : public ScriptWrappable {
 
   // KeyboardLock API: https://w3c.github.io/keyboard-lock/
   ScriptPromise lock(ScriptState*, const Vector<String>&);
-  void unlock();
+  void unlock(ScriptState*);
+
+  ScriptPromise getLayoutMap(ScriptState*);
 
   // ScriptWrappable override.
   void Trace(blink::Visitor*) override;
 
  private:
   Member<KeyboardLock> keyboard_lock_;
+  Member<KeyboardLayout> keyboard_layout_;
 };
 
 }  // namespace blink

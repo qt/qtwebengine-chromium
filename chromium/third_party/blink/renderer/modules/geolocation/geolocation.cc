@@ -32,9 +32,9 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
 #include "third_party/blink/renderer/core/dom/document.h"
-#include "third_party/blink/renderer/core/frame/PerformanceMonitor.h"
 #include "third_party/blink/renderer/core/frame/deprecation.h"
 #include "third_party/blink/renderer/core/frame/hosts_using_features.h"
+#include "third_party/blink/renderer/core/frame/performance_monitor.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
@@ -119,7 +119,7 @@ void Geolocation::Trace(blink::Visitor* visitor) {
   PageVisibilityObserver::Trace(visitor);
 }
 
-void Geolocation::TraceWrappers(const ScriptWrappableVisitor* visitor) const {
+void Geolocation::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   for (const auto& one_shot : one_shots_)
     visitor->TraceWrappers(one_shot);
   visitor->TraceWrappers(watchers_);

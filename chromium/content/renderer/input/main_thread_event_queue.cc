@@ -5,9 +5,7 @@
 #include "content/renderer/input/main_thread_event_queue.h"
 
 #include "base/containers/circular_deque.h"
-#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/strings/string_number_conversions.h"
 #include "content/common/input/event_with_latency_info.h"
 #include "content/common/input_messages.h"
 #include "content/renderer/render_widget.h"
@@ -51,13 +49,15 @@ class QueuedWebInputEvent : public ScopedWebInputEventWithLatencyInfo,
   QueuedWebInputEvent(ui::WebScopedInputEvent event,
                       const ui::LatencyInfo& latency,
                       bool originally_cancelable,
-                      HandledEventCallback callback)
+                      HandledEventCallback callback,
+                      bool known_by_scheduler)
       : ScopedWebInputEventWithLatencyInfo(std::move(event), latency),
         non_blocking_coalesced_count_(0),
         creation_timestamp_(base::TimeTicks::Now()),
         last_coalesced_timestamp_(creation_timestamp_),
         originally_cancelable_(originally_cancelable),
-        callback_(std::move(callback)) {}
+        callback_(std::move(callback)),
+        known_by_scheduler_count_(known_by_scheduler ? 1 : 0) {}
 
   ~QueuedWebInputEvent() override {}
 
@@ -85,6 +85,7 @@ class QueuedWebInputEvent : public ScopedWebInputEventWithLatencyInfo,
     } else {
       non_blocking_coalesced_count_++;
     }
+    known_by_scheduler_count_ += other_event->known_by_scheduler_count_;
     ScopedWebInputEventWithLatencyInfo::CoalesceWith(*other_event);
     last_coalesced_timestamp_ = base::TimeTicks::Now();
 
@@ -125,11 +126,10 @@ class QueuedWebInputEvent : public ScopedWebInputEventWithLatencyInfo,
       }
     }
 
-    size_t num_events_handled = 1 + blocking_coalesced_callbacks_.size();
     if (queue->main_thread_scheduler_) {
       // TODO(dtapuska): Change the scheduler API to take into account number of
       // events processed.
-      for (size_t i = 0; i < num_events_handled; ++i) {
+      for (size_t i = 0; i < known_by_scheduler_count_; ++i) {
         queue->main_thread_scheduler_->DidHandleInputEventOnMainThread(
             event(), ack_result == INPUT_EVENT_ACK_STATE_CONSUMED
                          ? blink::WebInputEventResult::kHandledApplication
@@ -197,6 +197,8 @@ class QueuedWebInputEvent : public ScopedWebInputEventWithLatencyInfo,
   bool originally_cancelable_;
 
   HandledEventCallback callback_;
+
+  size_t known_by_scheduler_count_;
 };
 
 MainThreadEventQueue::SharedState::SharedState()
@@ -213,33 +215,17 @@ MainThreadEventQueue::MainThreadEventQueue(
       last_touch_start_forced_nonblocking_due_to_fling_(false),
       enable_fling_passive_listener_flag_(base::FeatureList::IsEnabled(
           features::kPassiveEventListenersDueToFling)),
-      enable_non_blocking_due_to_main_thread_responsiveness_flag_(
-          base::FeatureList::IsEnabled(
-              features::kMainThreadBusyScrollIntervention)),
       needs_low_latency_(false),
       allow_raf_aligned_input_(allow_raf_aligned_input),
       main_task_runner_(main_task_runner),
       main_thread_scheduler_(main_thread_scheduler),
       use_raf_fallback_timer_(true) {
-  if (enable_non_blocking_due_to_main_thread_responsiveness_flag_) {
-    std::string group = base::FieldTrialList::FindFullName(
-        "MainThreadResponsivenessScrollIntervention");
-
-    // The group name will be of the form Enabled$THRESHOLD_MS. Trim the prefix
-    // "Enabled", and parse the threshold.
-    int threshold_ms = 0;
-    std::string prefix = "Enabled";
-    group.erase(0, prefix.length());
-    base::StringToInt(group, &threshold_ms);
-
-    if (threshold_ms <= 0) {
-      enable_non_blocking_due_to_main_thread_responsiveness_flag_ = false;
-    } else {
-      main_thread_responsiveness_threshold_ =
-          base::TimeDelta::FromMilliseconds(threshold_ms);
-    }
-  }
   raf_fallback_timer_.SetTaskRunner(main_task_runner);
+
+  event_predictor_ =
+      base::FeatureList::IsEnabled(features::kResamplingInputEvents)
+          ? std::make_unique<InputEventPrediction>()
+          : nullptr;
 }
 
 MainThreadEventQueue::~MainThreadEventQueue() {}
@@ -292,17 +278,6 @@ void MainThreadEventQueue::HandleEvent(
       }
     }
 
-    if (enable_non_blocking_due_to_main_thread_responsiveness_flag_ &&
-        touch_event->dispatch_type == blink::WebInputEvent::kBlocking) {
-      bool passive_due_to_unresponsive_main =
-          main_thread_scheduler_->MainThreadSeemsUnresponsive(
-              main_thread_responsiveness_threshold_);
-      if (passive_due_to_unresponsive_main) {
-        touch_event->dispatch_type = blink::WebInputEvent::
-            kListenersForcedNonBlockingDueToMainThreadResponsiveness;
-        non_blocking = true;
-      }
-    }
     // If the event is non-cancelable ACK it right away.
     if (!non_blocking &&
         touch_event->dispatch_type != blink::WebInputEvent::kBlocking)
@@ -327,9 +302,9 @@ void MainThreadEventQueue::HandleEvent(
     event_callback = std::move(callback);
   }
 
-  std::unique_ptr<QueuedWebInputEvent> queued_event(
-      new QueuedWebInputEvent(std::move(event), latency, originally_cancelable,
-                              std::move(event_callback)));
+  std::unique_ptr<QueuedWebInputEvent> queued_event(new QueuedWebInputEvent(
+      std::move(event), latency, originally_cancelable,
+      std::move(event_callback), IsForwardedAndSchedulerKnown(ack_result)));
 
   QueueEvent(std::move(queued_event));
 
@@ -392,6 +367,7 @@ void MainThreadEventQueue::DispatchEvents() {
       task = shared_state_.events_.Pop();
     }
 
+    HandleEventResampling(task, base::TimeTicks::Now());
     // Dispatching the event is outside of critical section.
     task->Dispatch(this);
   }
@@ -450,6 +426,7 @@ void MainThreadEventQueue::DispatchRafAlignedInput(base::TimeTicks frame_time) {
       }
       task = shared_state_.events_.Pop();
     }
+    HandleEventResampling(task, frame_time);
     // Dispatching the event is outside of critical section.
     task->Dispatch(this);
   }
@@ -504,6 +481,16 @@ bool MainThreadEventQueue::IsRafAlignedEvent(
              !needs_low_latency_until_pointer_up_;
     default:
       return false;
+  }
+}
+
+void MainThreadEventQueue::HandleEventResampling(
+    const std::unique_ptr<MainThreadEventQueueTask>& item,
+    base::TimeTicks frame_time) {
+  if (item->IsWebInputEvent() && allow_raf_aligned_input_ && event_predictor_) {
+    QueuedWebInputEvent* event = static_cast<QueuedWebInputEvent*>(item.get());
+    event_predictor_->HandleEvents(event->coalesced_event(), frame_time,
+                                   &event->event());
   }
 }
 

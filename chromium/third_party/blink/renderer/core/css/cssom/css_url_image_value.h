@@ -24,7 +24,7 @@ class CORE_EXPORT CSSURLImageValue final : public CSSStyleImageValue {
   const String& url() const;
 
   // CSSStyleImageValue
-  WTF::Optional<IntSize> IntrinsicSize() const final;
+  base::Optional<IntSize> IntrinsicSize() const final;
 
   // CanvasImageSource
   ResourceStatus Status() const final;
@@ -37,7 +37,7 @@ class CORE_EXPORT CSSURLImageValue final : public CSSStyleImageValue {
   StyleValueType GetType() const final { return kURLImageType; }
   const CSSValue* ToCSSValue() const final;
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   explicit CSSURLImageValue(const CSSImageValue& value) : value_(value) {}

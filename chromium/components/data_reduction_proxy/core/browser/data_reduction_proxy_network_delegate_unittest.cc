@@ -430,9 +430,8 @@ class DataReductionProxyNetworkDelegateTest : public testing::Test {
     }
 
     EXPECT_FALSE(socket_);
-    socket_ = std::make_unique<net::StaticSocketDataProvider>(
-        reads_list->data(), reads_list->size(), writes_list->data(),
-        writes_list->size());
+    socket_ = std::make_unique<net::StaticSocketDataProvider>(*reads_list,
+                                                              *writes_list);
     mock_socket_factory_->AddSocketDataProvider(socket_.get());
   }
 
@@ -481,7 +480,7 @@ class DataReductionProxyNetworkDelegateTest : public testing::Test {
     net::MockRead reads[] = {net::MockRead(response_headers.c_str()),
                              net::MockRead(response_body.c_str()),
                              net::MockRead(net::SYNCHRONOUS, net::OK)};
-    net::StaticSocketDataProvider socket(reads, arraysize(reads), nullptr, 0);
+    net::StaticSocketDataProvider socket(reads, base::span<net::MockWrite>());
     mock_socket_factory_->AddSocketDataProvider(&socket);
 
     net::TestDelegate delegate;
@@ -501,7 +500,7 @@ class DataReductionProxyNetworkDelegateTest : public testing::Test {
     // Get the path of data directory.
     const size_t kDefaultBufferSize = 4096;
     base::FilePath data_dir;
-    PathService::Get(base::DIR_SOURCE_ROOT, &data_dir);
+    base::PathService::Get(base::DIR_SOURCE_ROOT, &data_dir);
     data_dir = data_dir.AppendASCII("net");
     data_dir = data_dir.AppendASCII("data");
     data_dir = data_dir.AppendASCII("filter_unittests");
@@ -594,8 +593,7 @@ class DataReductionProxyNetworkDelegateTest : public testing::Test {
     }
 
     net::MockWrite writes[] = {net::MockWrite(mock_write.c_str())};
-    net::StaticSocketDataProvider socket(reads, arraysize(reads), writes,
-                                         arraysize(writes));
+    net::StaticSocketDataProvider socket(reads, writes);
     mock_socket_factory_->AddSocketDataProvider(&socket);
 
     net::TestDelegate delegate;
@@ -707,12 +705,10 @@ class DataReductionProxyNetworkDelegateTest : public testing::Test {
 
     std::unique_ptr<net::StaticSocketDataProvider> socket;
     if (!redirect_once) {
-      socket = std::make_unique<net::StaticSocketDataProvider>(
-          reads, arraysize(reads), writes, arraysize(writes));
+      socket = std::make_unique<net::StaticSocketDataProvider>(reads, writes);
     } else {
-      socket = std::make_unique<net::StaticSocketDataProvider>(
-          redirect_reads, arraysize(redirect_reads), redirect_writes,
-          arraysize(redirect_writes));
+      socket = std::make_unique<net::StaticSocketDataProvider>(redirect_reads,
+                                                               redirect_writes);
     }
 
     mock_socket_factory_->AddSocketDataProvider(socket.get());
@@ -911,15 +907,15 @@ TEST_F(DataReductionProxyNetworkDelegateTest, LoFiTransitions) {
           GURL(kTestURL), net::IDLE, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS);
       fake_request->SetLoadFlags(net::LOAD_MAIN_FRAME_DEPRECATED);
       lofi_decider()->SetIsUsingLoFi(config()->ShouldAcceptServerPreview(
-          *fake_request.get(), test_previews_decider));
+          *fake_request, test_previews_decider));
       NotifyNetworkDelegate(fake_request.get(), data_reduction_proxy_info,
                             proxy_retry_info, &headers);
 
       VerifyHeaders(is_data_reduction_proxy_enabled[i], true, headers);
-      VerifyDataReductionProxyData(
-          *fake_request, is_data_reduction_proxy_enabled[i],
-          config()->ShouldAcceptServerPreview(*fake_request.get(),
-                                              test_previews_decider));
+      VerifyDataReductionProxyData(*fake_request,
+                                   is_data_reduction_proxy_enabled[i],
+                                   config()->ShouldAcceptServerPreview(
+                                       *fake_request, test_previews_decider));
     }
 
     {
@@ -994,13 +990,13 @@ TEST_F(DataReductionProxyNetworkDelegateTest, LoFiTransitions) {
           GURL(kTestURL), net::IDLE, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS);
       fake_request->SetLoadFlags(net::LOAD_MAIN_FRAME_DEPRECATED);
       lofi_decider()->SetIsUsingLoFi(config()->ShouldAcceptServerPreview(
-          *fake_request.get(), test_previews_decider));
+          *fake_request, test_previews_decider));
       NotifyNetworkDelegate(fake_request.get(), data_reduction_proxy_info,
                             proxy_retry_info, &headers);
-      VerifyDataReductionProxyData(
-          *fake_request, is_data_reduction_proxy_enabled[i],
-          config()->ShouldAcceptServerPreview(*fake_request.get(),
-                                              test_previews_decider));
+      VerifyDataReductionProxyData(*fake_request,
+                                   is_data_reduction_proxy_enabled[i],
+                                   config()->ShouldAcceptServerPreview(
+                                       *fake_request, test_previews_decider));
     }
   }
 }
@@ -1064,8 +1060,7 @@ TEST_F(DataReductionProxyNetworkDelegateTest, RequestDataConfigurations) {
         &headers);
     network_delegate()->NotifyBeforeSendHeaders(
         request.get(), data_reduction_proxy_info, proxy_retry_info, &headers);
-    DataReductionProxyData* data =
-        DataReductionProxyData::GetData(*request.get());
+    DataReductionProxyData* data = DataReductionProxyData::GetData(*request);
     if (!test.used_data_reduction_proxy) {
       EXPECT_FALSE(data);
     } else {
@@ -1124,8 +1119,7 @@ TEST_F(DataReductionProxyNetworkDelegateTest,
     net::ProxyRetryInfoMap proxy_retry_info;
     network_delegate()->NotifyBeforeSendHeaders(
         request.get(), data_reduction_proxy_info, proxy_retry_info, &headers);
-    DataReductionProxyData* data =
-        DataReductionProxyData::GetData(*request.get());
+    DataReductionProxyData* data = DataReductionProxyData::GetData(*request);
     if (!test.data_reduction_proxy_enabled || !test.used_direct) {
       EXPECT_FALSE(data);
     } else {
@@ -1170,8 +1164,7 @@ TEST_F(DataReductionProxyNetworkDelegateTest, RedirectRequestDataCleared) {
   network_delegate()->NotifyBeforeSendHeaders(
       request.get(), data_reduction_proxy_info, proxy_retry_info,
       &headers_original);
-  DataReductionProxyData* data =
-      DataReductionProxyData::GetData(*request.get());
+  DataReductionProxyData* data = DataReductionProxyData::GetData(*request);
 
   EXPECT_TRUE(data);
   EXPECT_EQ(net::EFFECTIVE_CONNECTION_TYPE_OFFLINE,
@@ -1186,7 +1179,7 @@ TEST_F(DataReductionProxyNetworkDelegateTest, RedirectRequestDataCleared) {
   // Simulate a redirect even though the same URL is used. Should clear
   // DataReductionProxyData.
   network_delegate()->NotifyBeforeRedirect(request.get(), GURL(kTestURL));
-  data = DataReductionProxyData::GetData(*request.get());
+  data = DataReductionProxyData::GetData(*request);
   EXPECT_FALSE(data && data->used_data_reduction_proxy());
 
   // Call NotifyBeforeSendHeaders again with different proxy info to check that
@@ -1203,7 +1196,7 @@ TEST_F(DataReductionProxyNetworkDelegateTest, RedirectRequestDataCleared) {
   network_delegate()->NotifyBeforeSendHeaders(
       request.get(), data_reduction_proxy_info, proxy_retry_info,
       &headers_redirect);
-  data = DataReductionProxyData::GetData(*request.get());
+  data = DataReductionProxyData::GetData(*request);
   EXPECT_FALSE(data);
 }
 
@@ -1447,8 +1440,8 @@ TEST_F(DataReductionProxyNetworkDelegateTest, DetailedNetHistograms) {
           ssl_socket_data_provider());
     }
 
-    std::string via_header = "";
-    std::string ocl_header = "";
+    std::string via_header;
+    std::string ocl_header;
 
     if (test.proxy_config == USE_INSECURE_PROXY) {
       via_header = "Via: 1.1 Chrome-Compression-Proxy\r\n";
@@ -1815,8 +1808,7 @@ TEST_F(DataReductionProxyNetworkDelegateTest,
       &headers);
   network_delegate()->NotifyBeforeSendHeaders(
       request.get(), data_reduction_proxy_info, proxy_retry_info, &headers);
-  DataReductionProxyData* data =
-      DataReductionProxyData::GetData(*request.get());
+  DataReductionProxyData* data = DataReductionProxyData::GetData(*request);
   EXPECT_TRUE(data_reduction_proxy_info.is_http());
   EXPECT_EQ(++page_id, data->page_id().value());
 
@@ -1832,14 +1824,14 @@ TEST_F(DataReductionProxyNetworkDelegateTest,
       &headers);
   network_delegate()->NotifyBeforeSendHeaders(
       request.get(), data_reduction_proxy_info, proxy_retry_info, &headers);
-  data = DataReductionProxyData::GetData(*request.get());
+  data = DataReductionProxyData::GetData(*request);
   EXPECT_EQ(++page_id, data->page_id().value());
 
   // Verify that redirects are the same page ID.
   network_delegate()->NotifyBeforeRedirect(request.get(), GURL(kTestURL));
   network_delegate()->NotifyBeforeSendHeaders(
       request.get(), data_reduction_proxy_info, proxy_retry_info, &headers);
-  data = DataReductionProxyData::GetData(*request.get());
+  data = DataReductionProxyData::GetData(*request);
   EXPECT_EQ(page_id, data->page_id().value());
 
   network_delegate()->NotifyBeforeRedirect(request.get(), GURL(kTestURL));
@@ -1848,7 +1840,7 @@ TEST_F(DataReductionProxyNetworkDelegateTest,
   page_id = io_data()->request_options()->GeneratePageId();
   network_delegate()->NotifyBeforeSendHeaders(
       request.get(), data_reduction_proxy_info, proxy_retry_info, &headers);
-  data = DataReductionProxyData::GetData(*request.get());
+  data = DataReductionProxyData::GetData(*request);
   EXPECT_EQ(++page_id, data->page_id().value());
 }
 
@@ -2077,7 +2069,7 @@ TEST_F(DataReductionProxyNetworkDelegateClientLoFiTest, DataSavingsNonDRP) {
     net::MockRead reads[] = {net::MockRead(test.headers),
                              net::MockRead(response_body.c_str()),
                              net::MockRead(net::ASYNC, net::OK)};
-    net::StaticSocketDataProvider socket(reads, arraysize(reads), nullptr, 0);
+    net::StaticSocketDataProvider socket(reads, base::span<net::MockWrite>());
     mock_socket_factory()->AddSocketDataProvider(&socket);
 
     net::TestDelegate test_delegate;
@@ -2111,7 +2103,7 @@ TEST_F(DataReductionProxyNetworkDelegateClientLoFiTest, DataSavingsThroughDRP) {
   net::MockRead reads[] = {net::MockRead(kHeaders),
                            net::MockRead(response_body.c_str()),
                            net::MockRead(net::ASYNC, net::OK)};
-  net::StaticSocketDataProvider socket(reads, arraysize(reads), nullptr, 0);
+  net::StaticSocketDataProvider socket(reads, base::span<net::MockWrite>());
   mock_socket_factory()->AddSocketDataProvider(&socket);
 
   net::TestDelegate test_delegate;

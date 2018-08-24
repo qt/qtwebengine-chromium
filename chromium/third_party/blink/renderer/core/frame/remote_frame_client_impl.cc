@@ -108,11 +108,14 @@ base::UnguessableToken RemoteFrameClientImpl::GetDevToolsFrameToken() const {
   return base::UnguessableToken::Create();
 }
 
-void RemoteFrameClientImpl::Navigate(const ResourceRequest& request,
-                                     bool should_replace_current_entry) {
+void RemoteFrameClientImpl::Navigate(
+    const ResourceRequest& request,
+    bool should_replace_current_entry,
+    mojom::blink::BlobURLTokenPtr blob_url_token) {
   if (web_frame_->Client()) {
     web_frame_->Client()->Navigate(WrappedResourceRequest(request),
-                                   should_replace_current_entry);
+                                   should_replace_current_entry,
+                                   blob_url_token.PassInterface().PassHandle());
   }
 }
 
@@ -174,6 +177,11 @@ void RemoteFrameClientImpl::VisibilityChanged(bool visible) {
 
 void RemoteFrameClientImpl::SetIsInert(bool inert) {
   web_frame_->Client()->SetIsInert(inert);
+}
+
+void RemoteFrameClientImpl::SetInheritedEffectiveTouchAction(
+    TouchAction touch_action) {
+  web_frame_->Client()->SetInheritedEffectiveTouchAction(touch_action);
 }
 
 void RemoteFrameClientImpl::UpdateRenderThrottlingStatus(

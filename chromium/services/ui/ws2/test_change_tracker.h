@@ -8,9 +8,9 @@
 #include <stdint.h>
 
 #include <string>
-#include <unordered_map>
 #include <vector>
 
+#include "base/containers/flat_map.h"
 #include "base/macros.h"
 #include "services/ui/common/types.h"
 #include "services/ui/public/interfaces/window_tree.mojom.h"
@@ -19,8 +19,7 @@
 #include "ui/gfx/geometry/point_f.h"
 
 namespace ui {
-
-namespace ws {
+namespace ws2 {
 
 enum ChangeType {
   CHANGE_TYPE_CAPTURE_CHANGED,
@@ -64,6 +63,7 @@ struct TestWindow {
   Id parent_id;
   Id window_id;
   bool visible;
+  gfx::Rect bounds;
   std::map<std::string, std::vector<uint8_t>> properties;
 };
 
@@ -98,11 +98,20 @@ struct Change {
   float device_scale_factor;
   gfx::Transform transform;
   // Set in OnWindowInputEvent() if the event is a KeyEvent.
-  std::unordered_map<std::string, std::vector<uint8_t>> key_event_properties;
+  base::flat_map<std::string, std::vector<uint8_t>> key_event_properties;
   int64_t display_id;
   gfx::Point location1;
   gfx::PointF location2;
 };
+
+// The ChangeToDescription related functions convert a Change into a string.
+// To avoid updating all tests as more descriptive strings are added, new
+// variants are added and identified with a numeric suffix. Differences
+// between versions:
+// 1 and no suffix is the original version.
+// 2: OnEmbed() includes the boolean value supplied to OnEmbed().
+
+std::string ChangeToDescription(const Change& change);
 
 // Converts Changes to string descriptions.
 std::vector<std::string> ChangesToDescription1(
@@ -111,6 +120,7 @@ std::vector<std::string> ChangesToDescription1(
 // Convenience for returning the description of the first item in |changes|.
 // Returns an empty string if |changes| has something other than one entry.
 std::string SingleChangeToDescription(const std::vector<Change>& changes);
+
 std::string SingleChangeToDescription2(const std::vector<Change>& changes);
 
 // Convenience for returning the description of the first item in |windows|.
@@ -179,8 +189,7 @@ class TestChangeTracker {
       int64_t display_id,
       const gfx::PointF& event_location_in_screen_pixel_layout,
       bool matches_pointer_watcher);
-  void OnPointerEventObserved(const ui::Event& event,
-                              uint32_t window_id);
+  void OnPointerEventObserved(const ui::Event& event, Id window_id);
   void OnWindowSharedPropertyChanged(
       Id window_id,
       const std::string& name,
@@ -203,8 +212,7 @@ class TestChangeTracker {
   DISALLOW_COPY_AND_ASSIGN(TestChangeTracker);
 };
 
-}  // namespace ws
-
+}  // namespace ws2
 }  // namespace ui
 
 #endif  // SERVICES_UI_WS2_TEST_CHANGE_TRACKER_H_

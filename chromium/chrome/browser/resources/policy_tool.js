@@ -173,6 +173,10 @@ policy.Page.prototype.initialize = function() {
     chrome.send('exportLinux', [policy.Page.getInstance().getDictionary()]);
   };
 
+  $('export-policies-mac').onclick = (event) => {
+    chrome.send('exportMac', [policy.Page.getInstance().getDictionary()]);
+  };
+
   // Notify the browser that the page has loaded, causing it to send the
   // list of all known policies and the values from the default session.
   chrome.send('initialized');
@@ -243,6 +247,8 @@ policy.Policy.prototype.setStatus_ = function(value) {
     status = loadTimeData.getString('unset');
   } else if (value.error) {
     status = value.error;
+  } else if (!value.valid) {
+    status = loadTimeData.getString('errorInvalidType');
   } else {
     status = loadTimeData.getString('ok');
   }
@@ -256,7 +262,7 @@ policy.Policy.prototype.setStatus_ = function(value) {
  */
 policy.Policy.prototype.setValue_ = function(value) {
   this.value = value;
-  if (!value) {
+  if (value === undefined) {
     value = '';
   } else if (typeof value != 'string') {
     value = JSON.stringify(value);

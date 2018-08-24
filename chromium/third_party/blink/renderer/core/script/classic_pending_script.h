@@ -53,13 +53,12 @@ class CORE_EXPORT ClassicPendingScript final : public PendingScript,
   void SetStreamer(ScriptStreamer*);
   void StreamingFinished();
 
-  void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
   blink::ScriptType GetScriptType() const override {
     return blink::ScriptType::kClassic;
   }
 
-  bool CheckMIMETypeBeforeRunScript(Document* context_document) const override;
   ClassicScript* GetSource(const KURL& document_url,
                            bool& error_occurred) const override;
   bool IsReady() const override;

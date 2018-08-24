@@ -24,9 +24,7 @@
 #include "rtc_base/function_view.h"
 #include "rtc_base/gtest_prod_util.h"
 #include "rtc_base/ignore_wundef.h"
-#include "rtc_base/protobuf_utils.h"
 #include "rtc_base/swap_queue.h"
-#include "rtc_base/system/file_wrapper.h"
 #include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
@@ -65,6 +63,8 @@ class AudioProcessingImpl : public AudioProcessing {
   void AttachPlayoutAudioGenerator(
       std::unique_ptr<AudioGenerator> audio_generator) override;
   void DetachPlayoutAudioGenerator() override;
+
+  void SetRuntimeSetting(RuntimeSetting setting) override;
 
   // Capture-side exclusive methods possibly running APM in a
   // multi-threaded manner. Acquire the capture lock.
@@ -143,11 +143,30 @@ class AudioProcessingImpl : public AudioProcessing {
   FRIEND_TEST_ALL_PREFIXES(ApmConfiguration, DefaultBehavior);
   FRIEND_TEST_ALL_PREFIXES(ApmConfiguration, ValidConfigBehavior);
   FRIEND_TEST_ALL_PREFIXES(ApmConfiguration, InValidConfigBehavior);
+
+  // Class providing thread-safe message pipe functionality for
+  // |runtime_settings_|.
+  class RuntimeSettingEnqueuer {
+   public:
+    explicit RuntimeSettingEnqueuer(
+        SwapQueue<RuntimeSetting>* runtime_settings);
+    ~RuntimeSettingEnqueuer();
+    void Enqueue(RuntimeSetting setting);
+
+   private:
+    SwapQueue<RuntimeSetting>& runtime_settings_;
+  };
   struct ApmPublicSubmodules;
   struct ApmPrivateSubmodules;
 
   std::unique_ptr<ApmDataDumper> data_dumper_;
   static int instance_count_;
+
+  SwapQueue<RuntimeSetting> capture_runtime_settings_;
+  SwapQueue<RuntimeSetting> render_runtime_settings_;
+
+  RuntimeSettingEnqueuer capture_runtime_settings_enqueuer_;
+  RuntimeSettingEnqueuer render_runtime_settings_enqueuer_;
 
   // Submodule interface implementations.
   std::unique_ptr<HighPassFilter> high_pass_filter_impl_;
@@ -169,6 +188,7 @@ class AudioProcessingImpl : public AudioProcessing {
                 bool beamformer_enabled,
                 bool adaptive_gain_controller_enabled,
                 bool gain_controller2_enabled,
+                bool pre_amplifier_enabled,
                 bool echo_controller_enabled,
                 bool voice_activity_detector_enabled,
                 bool level_estimator_enabled,
@@ -192,6 +212,7 @@ class AudioProcessingImpl : public AudioProcessing {
     bool beamformer_enabled_ = false;
     bool adaptive_gain_controller_enabled_ = false;
     bool gain_controller2_enabled_ = false;
+    bool pre_amplifier_enabled_ = false;
     bool echo_controller_enabled_ = false;
     bool level_estimator_enabled_ = false;
     bool voice_activity_detector_enabled_ = false;
@@ -236,8 +257,14 @@ class AudioProcessingImpl : public AudioProcessing {
   void InitializeLowCutFilter() RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_capture_);
   void InitializeEchoController() RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_capture_);
   void InitializeGainController2() RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_capture_);
+  void InitializePreAmplifier() RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_capture_);
   void InitializePostProcessor() RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_capture_);
   void InitializePreProcessor() RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_render_);
+
+  // Empties and handles the respective RuntimeSetting queues.
+  void HandleCaptureRuntimeSettings()
+      RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_capture_);
+  void HandleRenderRuntimeSettings() RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_render_);
 
   void EmptyQueuedRenderAudio();
   void AllocateRenderQueue()

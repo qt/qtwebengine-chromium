@@ -12,6 +12,7 @@
 
 #include "core/fpdfapi/page/cpdf_clippath.h"
 #include "core/fpdfapi/page/cpdf_graphicstates.h"
+#include "core/fpdfapi/page/cpdf_pageobjectholder.h"
 #include "core/fpdfapi/render/cpdf_renderoptions.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_renderdevice.h"
@@ -48,9 +49,9 @@ class CPDF_RenderStatus {
                   const CPDF_RenderStatus* pParentStatus,
                   const CPDF_GraphicStates* pInitialStates,
                   const CPDF_RenderOptions* pOptions,
-                  int transparency,
+                  const CPDF_Transparency& transparency,
                   bool bDropObjects,
-                  CPDF_Dictionary* pFormResource = nullptr,
+                  const CPDF_Dictionary* pFormResource = nullptr,
                   bool bStdCS = false,
                   CPDF_Type3Char* pType3Char = nullptr,
                   FX_ARGB fill_color = 0,
@@ -71,7 +72,9 @@ class CPDF_RenderStatus {
   bool IsPrint() const { return m_bPrint; }
   bool IsStopped() const { return m_bStopped; }
   CPDF_RenderContext* GetContext() const { return m_pContext.Get(); }
-  CPDF_Dictionary* GetFormResource() const { return m_pFormResource.Get(); }
+  const CPDF_Dictionary* GetFormResource() const {
+    return m_pFormResource.Get();
+  }
   CPDF_Dictionary* GetPageResource() const { return m_pPageResource.Get(); }
   CFX_RenderDevice* GetRenderDevice() const { return m_pDevice; }
   const CPDF_RenderOptions* GetRenderOptions() const { return &m_Options; }
@@ -80,7 +83,8 @@ class CPDF_RenderStatus {
   void DebugVerifyDeviceIsPreMultiplied() const;
 #endif
 
-  RetainPtr<CPDF_TransferFunc> GetTransferFunc(CPDF_Object* pObject) const;
+  RetainPtr<CPDF_TransferFunc> GetTransferFunc(
+      const CPDF_Object* pObject) const;
   FX_ARGB GetFillArgb(CPDF_PageObject* pObj, bool bType3 = false) const;
   void DrawTilingPattern(CPDF_TilingPattern* pPattern,
                          CPDF_PageObject* pPageObj,
@@ -96,7 +100,7 @@ class CPDF_RenderStatus {
                          FX_ARGB mask_argb,
                          int bitmap_alpha,
                          int blend_mode,
-                         int iTransparency);
+                         const CPDF_Transparency& transparency);
 
  private:
   bool ProcessTransparency(CPDF_PageObject* PageObj,
@@ -145,9 +149,13 @@ class CPDF_RenderStatus {
                                       bool bBackAlphaRequired,
                                       int* left,
                                       int* top);
-  RetainPtr<CFX_DIBitmap> LoadSMask(CPDF_Dictionary* pSMaskDict,
+  RetainPtr<CFX_DIBitmap> LoadSMask(const CPDF_Dictionary* pSMaskDict,
                                     FX_RECT* pClipRect,
                                     const CFX_Matrix* pMatrix);
+  // Optionally write the colorspace family value into |pCSFamily|.
+  FX_ARGB GetBackColor(const CPDF_Dictionary* pSMaskDict,
+                       const CPDF_Dictionary* pGroupDict,
+                       int* pCSFamily);
   static RetainPtr<CPDF_Type3Cache> GetCachedType3(CPDF_Type3Font* pFont);
   static std::unique_ptr<CPDF_GraphicStates> CloneObjStates(
       const CPDF_GraphicStates* pPathObj,
@@ -156,31 +164,28 @@ class CPDF_RenderStatus {
   FX_RECT GetObjectClippedRect(const CPDF_PageObject* pObj,
                                const CFX_Matrix* pObj2Device) const;
 
-  static const int kRenderMaxRecursionDepth = 64;
-  static int s_CurrentRecursionDepth;
-
   CPDF_RenderOptions m_Options;
-  UnownedPtr<CPDF_Dictionary> m_pFormResource;
+  UnownedPtr<const CPDF_Dictionary> m_pFormResource;
   UnownedPtr<CPDF_Dictionary> m_pPageResource;
   std::vector<CPDF_Type3Font*> m_Type3FontCache;
   UnownedPtr<CPDF_RenderContext> m_pContext;
-  bool m_bStopped;
-  CFX_RenderDevice* m_pDevice;
+  bool m_bStopped = false;
+  CFX_RenderDevice* m_pDevice = nullptr;
   CFX_Matrix m_DeviceMatrix;
   CPDF_ClipPath m_LastClipPath;
-  const CPDF_PageObject* m_pCurObj;
-  const CPDF_PageObject* m_pStopObj;
+  const CPDF_PageObject* m_pCurObj = nullptr;
+  const CPDF_PageObject* m_pStopObj = nullptr;
   CPDF_GraphicStates m_InitialStates;
   std::unique_ptr<CPDF_ImageRenderer> m_pImageRenderer;
-  bool m_bPrint;
-  int m_iTransparency;
-  bool m_bDropObjects;
-  bool m_bStdCS;
-  uint32_t m_GroupFamily;
-  bool m_bLoadMask;
+  bool m_bPrint = false;
+  CPDF_Transparency m_Transparency;
+  bool m_bDropObjects = false;
+  bool m_bStdCS = false;
+  uint32_t m_GroupFamily = 0;
+  bool m_bLoadMask = false;
   UnownedPtr<CPDF_Type3Char> m_pType3Char;
-  FX_ARGB m_T3FillColor;
-  int m_curBlend;
+  FX_ARGB m_T3FillColor = 0;
+  int m_curBlend = FXDIB_BLEND_NORMAL;
 };
 
 #endif  // CORE_FPDFAPI_RENDER_CPDF_RENDERSTATUS_H_

@@ -20,7 +20,7 @@
 #include "base/trace_event/trace_config.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "components/tracing/common/trace_config_file.h"
+#include "components/tracing/common/trace_startup_config.h"
 #include "content/browser/tracing/file_tracing_provider_impl.h"
 #include "content/browser/tracing/tracing_ui.h"
 #include "content/public/browser/browser_thread.h"
@@ -34,7 +34,7 @@
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "net/base/network_change_notifier.h"
 #include "services/service_manager/public/cpp/connector.h"
-#include "services/tracing/public/cpp/chrome_trace_event_agent.h"
+#include "services/tracing/public/cpp/trace_event_agent.h"
 #include "services/tracing/public/mojom/constants.mojom.h"
 #include "v8/include/v8-version-string.h"
 
@@ -60,6 +60,13 @@
 #if defined(OS_WIN)
 #include "content/browser/tracing/etw_tracing_agent_win.h"
 #endif
+
+#if defined(OS_ANDROID)
+#include "base/debug/elf_reader_linux.h"
+
+// Symbol with virtual address of the start of ELF header of the current binary.
+extern char __ehdr_start;
+#endif  // defined(OS_ANDROID)
 
 namespace content {
 
@@ -146,18 +153,24 @@ void TracingControllerImpl::AddAgents() {
   agents_.push_back(std::make_unique<EtwTracingAgent>(connector));
 #endif
 
-  auto chrome_agent = std::make_unique<tracing::ChromeTraceEventAgent>(
+  auto trace_event_agent = tracing::TraceEventAgent::Create(
       connector, true /* request_clock_sync_marker_on_android */);
+
   // For adding general CPU, network, OS, and other system information to the
   // metadata.
-  chrome_agent->AddMetadataGeneratorFunction(base::BindRepeating(
+  trace_event_agent->AddMetadataGeneratorFunction(base::BindRepeating(
       &TracingControllerImpl::GenerateMetadataDict, base::Unretained(this)));
   if (delegate_) {
-    chrome_agent->AddMetadataGeneratorFunction(
+    trace_event_agent->AddMetadataGeneratorFunction(
         base::BindRepeating(&TracingDelegate::GenerateMetadataDict,
                             base::Unretained(delegate_.get())));
   }
-  agents_.push_back(std::move(chrome_agent));
+  trace_event_agent_ = std::move(trace_event_agent);
+}
+
+tracing::TraceEventAgent* TracingControllerImpl::GetTraceEventAgent() const {
+  DCHECK(trace_event_agent_);
+  return trace_event_agent_.get();
 }
 
 std::unique_ptr<base::DictionaryValue>
@@ -178,6 +191,17 @@ TracingControllerImpl::GenerateMetadataDict() const {
   metadata_dict->SetString("product-version", GetContentClient()->GetProduct());
   metadata_dict->SetString("v8-version", V8_VERSION_STRING);
   metadata_dict->SetString("user-agent", GetContentClient()->GetUserAgent());
+
+#if defined(OS_ANDROID)
+  // The library name is used for symbolizing heap profiles. This cannot be
+  // obtained from process maps since library can be mapped from apk directly.
+  // This is not added as part of memory-infra os dumps since it is special case
+  // only for chrome library.
+  base::Optional<std::string> soname =
+      base::debug::ReadElfLibraryName(&__ehdr_start);
+  if (soname)
+    metadata_dict->SetString("chrome-library-name", soname.value());
+#endif  // defined(OS_ANDROID)
 
   // OS
 #if defined(OS_CHROMEOS)
@@ -326,7 +350,7 @@ bool TracingControllerImpl::StopTracing(
     return false;
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  tracing::TraceConfigFile::GetInstance()->SetDisabled();
+  tracing::TraceStartupConfig::GetInstance()->SetDisabled();
   trace_data_endpoint_ = std::move(trace_data_endpoint);
   is_data_complete_ = false;
   is_metadata_available_ = false;
@@ -406,8 +430,7 @@ void TracingControllerImpl::OnDataComplete() {
     CompleteFlush();
 }
 
-void TracingControllerImpl::OnMetadataAvailable(
-    std::unique_ptr<base::DictionaryValue> metadata) {
+void TracingControllerImpl::OnMetadataAvailable(base::Value metadata) {
   DCHECK(!filtered_metadata_);
   is_metadata_available_ = true;
   MetadataFilterPredicate metadata_filter;
@@ -416,16 +439,15 @@ void TracingControllerImpl::OnMetadataAvailable(
       metadata_filter = delegate_->GetMetadataFilterPredicate();
   }
   if (metadata_filter.is_null()) {
-    filtered_metadata_ = std::move(metadata);
+    filtered_metadata_ = base::DictionaryValue::From(
+        base::Value::ToUniquePtrValue(std::move(metadata)));
   } else {
     filtered_metadata_ = std::make_unique<base::DictionaryValue>();
-    for (base::DictionaryValue::Iterator it(*metadata); !it.IsAtEnd();
-         it.Advance()) {
-      if (metadata_filter.Run(it.key())) {
-        filtered_metadata_->Set(
-            it.key(), std::make_unique<base::Value>(it.value().Clone()));
+    for (auto it : metadata.DictItems()) {
+      if (metadata_filter.Run(it.first)) {
+        filtered_metadata_->SetKey(it.first, std::move(it.second));
       } else {
-        filtered_metadata_->SetString(it.key(), "__stripped__");
+        filtered_metadata_->SetKey(it.first, base::Value("__stripped__"));
       }
     }
   }

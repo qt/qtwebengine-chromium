@@ -99,7 +99,10 @@ MockGpuVideoAcceleratorFactories::CreateGpuMemoryBuffer(
     gfx::BufferUsage /* usage */) {
   if (fail_to_allocate_gpu_memory_buffer_)
     return nullptr;
-  return std::make_unique<GpuMemoryBufferImpl>(size, format);
+  std::unique_ptr<gfx::GpuMemoryBuffer> ret(
+      new GpuMemoryBufferImpl(size, format));
+  created_memory_buffers_.push_back(ret.get());
+  return ret;
 }
 
 std::unique_ptr<base::SharedMemory>
@@ -120,8 +123,8 @@ MockGpuVideoAcceleratorFactories::CreateVideoEncodeAccelerator() {
   return base::WrapUnique(DoCreateVideoEncodeAccelerator());
 }
 
-bool MockGpuVideoAcceleratorFactories::ShouldUseGpuMemoryBuffersForVideoFrames()
-    const {
+bool MockGpuVideoAcceleratorFactories::ShouldUseGpuMemoryBuffersForVideoFrames(
+    bool for_media_stream) const {
   return false;
 }
 

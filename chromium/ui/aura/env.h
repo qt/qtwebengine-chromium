@@ -11,6 +11,7 @@
 #include "base/macros.h"
 #include "base/observer_list.h"
 #include "base/supports_user_data.h"
+#include "mojo/public/cpp/system/buffer.h"
 #include "ui/aura/aura_export.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_factory.h"
 #include "ui/events/event_handler.h"
@@ -44,8 +45,10 @@ class EnvWindowTreeClientSetter;
 class EnvInputStateController;
 class EnvObserver;
 class InputStateLookup;
+class MouseLocationManager;
 class MusMouseLocationUpdater;
 class Window;
+class WindowEventDispatcherObserver;
 class WindowPort;
 class WindowTreeClient;
 class WindowTreeHost;
@@ -66,6 +69,7 @@ class AURA_EXPORT Env : public ui::EventTarget,
 
   ~Env() override;
 
+  // Creates a new Env instance.
   // NOTE: if you pass in Mode::MUS it is expected that you call
   // SetWindowTreeClient() before any windows are created.
   static std::unique_ptr<Env> CreateInstance(Mode mode = Mode::LOCAL);
@@ -79,6 +83,15 @@ class AURA_EXPORT Env : public ui::EventTarget,
 
   void AddObserver(EnvObserver* observer);
   void RemoveObserver(EnvObserver* observer);
+
+  void AddWindowEventDispatcherObserver(
+      WindowEventDispatcherObserver* observer);
+  void RemoveWindowEventDispatcherObserver(
+      WindowEventDispatcherObserver* observer);
+  base::ObserverList<WindowEventDispatcherObserver>&
+  window_event_dispatcher_observers() {
+    return window_event_dispatcher_observers_;
+  }
 
   EnvInputStateController* env_controller() const {
     return env_controller_.get();
@@ -95,9 +108,15 @@ class AURA_EXPORT Env : public ui::EventTarget,
   // Gets/sets the last mouse location seen in a mouse event in the screen
   // coordinates.
   const gfx::Point& last_mouse_location() const;
-  void set_last_mouse_location(const gfx::Point& last_mouse_location) {
-    last_mouse_location_ = last_mouse_location;
-  }
+  void SetLastMouseLocation(const gfx::Point& last_mouse_location);
+
+  // Creates the MouseLocationManager if it hasn't been created yet.
+  void CreateMouseLocationManager();
+
+  // Returns a read-only handle to the shared memory which contains the global
+  // mouse position. Each call returns a new handle. This is only valid if Env
+  // was configured to create a MouseLocationManager.
+  mojo::ScopedSharedBufferHandle GetLastMouseLocationMemory();
 
   // Whether any touch device is currently down.
   bool is_touch_down() const { return is_touch_down_; }
@@ -193,6 +212,12 @@ class AURA_EXPORT Env : public ui::EventTarget,
 
   base::ObserverList<EnvObserver> observers_;
 
+  // Code wanting to observe WindowEventDispatcher typically wants to observe
+  // all WindowEventDispatchers. This is made easier by having Env own all the
+  // observers.
+  base::ObserverList<WindowEventDispatcherObserver>
+      window_event_dispatcher_observers_;
+
   std::unique_ptr<EnvInputStateController> env_controller_;
   int mouse_button_flags_;
   // Location of last mouse event, in screen coordinates.
@@ -219,6 +244,9 @@ class AURA_EXPORT Env : public ui::EventTarget,
 
   static bool initial_throttle_input_on_resize_;
   bool throttle_input_on_resize_ = initial_throttle_input_on_resize_;
+
+  // Only created if CreateMouseLocationManager() was called.
+  std::unique_ptr<MouseLocationManager> mouse_location_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(Env);
 };

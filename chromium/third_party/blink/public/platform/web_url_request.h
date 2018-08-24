@@ -33,6 +33,7 @@
 
 #include <memory>
 #include "base/optional.h"
+#include "base/time/time.h"
 #include "services/network/public/mojom/cors.mojom-shared.h"
 #include "services/network/public/mojom/fetch_api.mojom-shared.h"
 #include "services/network/public/mojom/request_context_frame_type.mojom-shared.h"
@@ -53,6 +54,7 @@ class WebHTTPHeaderVisitor;
 class WebSecurityOrigin;
 class WebString;
 class WebURL;
+struct WebContentSecurityPolicyList;
 
 class WebURLRequest {
  public:
@@ -336,7 +338,7 @@ class WebURLRequest {
   BLINK_PLATFORM_EXPORT network::mojom::CORSPreflightPolicy
   GetCORSPreflightPolicy() const;
 
-  BLINK_PLATFORM_EXPORT void SetNavigationStartTime(double);
+  BLINK_PLATFORM_EXPORT void SetNavigationStartTime(base::TimeTicks);
 
   // PlzNavigate: specify that the request was intended to be loaded as a same
   // document navigation. No network requests should be made and the request
@@ -351,6 +353,11 @@ class WebURLRequest {
   // Returns true if this request is tagged as an ad. This is done using various
   // heuristics so it is not expected to be 100% accurate.
   BLINK_PLATFORM_EXPORT bool IsAdResource() const;
+
+  // This is the navigation relevant CSP to be used during request and response
+  // checks.
+  BLINK_PLATFORM_EXPORT const WebContentSecurityPolicyList& GetNavigationCSP()
+      const;
 
 #if INSIDE_BLINK
   BLINK_PLATFORM_EXPORT ResourceRequest& ToMutableResourceRequest();

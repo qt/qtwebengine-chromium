@@ -4,6 +4,7 @@
 
 module content.mojom;
 
+import "services/viz/public/interfaces/compositing/local_surface_id.mojom";
 import "services/viz/public/interfaces/compositing/selection.mojom";
 import "ui/gfx/geometry/mojo/geometry.mojom";
 
@@ -25,6 +26,32 @@ struct RenderFrameMetadata {
   // Selection region relative to the current viewport. If the selection is
   // empty or otherwise unused, the bound types will indicate such.
   viz.mojom.Selection selection;
+
+  // Determines whether the page is mobile optimized or not, which means at
+  // least one of the following has to be true:
+  // - page has a width=device-width or narrower viewport.
+  // - page prevents zooming in or out (i.e. min and max page scale factors
+  // are the same).
+  bool is_mobile_optimized;
+
+  // The device scale factor used to generate CompositorFrame.
+  float device_scale_factor;
+
+  // The size of the viewport used to generate a CompositorFrame.
+  gfx.mojom.Size viewport_size_in_pixels;
+
+  // The last viz::LocalSurfaceId used to submit a CompositorFrame.
+  viz.mojom.LocalSurfaceId? local_surface_id;
+
+  // Used to position the Android location top bar and page content, whose
+  // precise position is computed by the renderer compositor.
+  float top_controls_height;
+  float top_controls_shown_ratio;
+
+  // Used to position Android bottom bar, whose position is computed by the
+  // renderer compositor.
+  float bottom_controls_height;
+  float bottom_controls_shown_ratio;
 };
 
 // This interface is provided by the renderer. It can optionally enable

@@ -56,6 +56,7 @@
 #include "content/test/test_web_contents.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/test_data_directory.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/frame/sandbox_flags.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -318,8 +319,10 @@ class FakeFullscreenDelegate : public WebContentsDelegate {
   FakeFullscreenDelegate() : fullscreened_contents_(nullptr) {}
   ~FakeFullscreenDelegate() override {}
 
-  void EnterFullscreenModeForTab(WebContents* web_contents,
-                                 const GURL& origin) override {
+  void EnterFullscreenModeForTab(
+      WebContents* web_contents,
+      const GURL& origin,
+      const blink::WebFullscreenOptions& options) override {
     fullscreened_contents_ = web_contents;
   }
 
@@ -836,9 +839,10 @@ TEST_F(WebContentsImplTest, NavigateFromRestoredSitelessUrl) {
   const GURL native_url("non-site-url://stuffandthings");
   std::vector<std::unique_ptr<NavigationEntry>> entries;
   std::unique_ptr<NavigationEntry> new_entry =
-      NavigationControllerImpl::CreateNavigationEntry(
+      NavigationController::CreateNavigationEntry(
           native_url, Referrer(), ui::PAGE_TRANSITION_LINK, false,
-          std::string(), browser_context());
+          std::string(), browser_context(),
+          nullptr /* blob_url_loader_factory */);
   entries.push_back(std::move(new_entry));
   controller().Restore(0, RestoreType::LAST_SESSION_EXITED_CLEANLY, &entries);
   ASSERT_EQ(0u, entries.size());
@@ -883,9 +887,10 @@ TEST_F(WebContentsImplTest, NavigateFromRestoredRegularUrl) {
   const GURL regular_url("http://www.yahoo.com");
   std::vector<std::unique_ptr<NavigationEntry>> entries;
   std::unique_ptr<NavigationEntry> new_entry =
-      NavigationControllerImpl::CreateNavigationEntry(
+      NavigationController::CreateNavigationEntry(
           regular_url, Referrer(), ui::PAGE_TRANSITION_LINK, false,
-          std::string(), browser_context());
+          std::string(), browser_context(),
+          nullptr /* blob_url_loader_factory */);
   entries.push_back(std::move(new_entry));
   controller().Restore(0, RestoreType::LAST_SESSION_EXITED_CLEANLY, &entries);
   ASSERT_EQ(0u, entries.size());
@@ -1487,8 +1492,8 @@ TEST_F(WebContentsImplTest, NavigationExitsFullscreen) {
   // Toggle fullscreen mode on (as if initiated via IPC from renderer).
   EXPECT_FALSE(contents()->IsFullscreenForCurrentTab());
   EXPECT_FALSE(fake_delegate.IsFullscreenForTabOrPending(contents()));
-  orig_rfh->OnMessageReceived(
-      FrameHostMsg_ToggleFullscreen(orig_rfh->GetRoutingID(), true));
+  orig_rfh->OnMessageReceived(FrameHostMsg_EnterFullscreen(
+      orig_rfh->GetRoutingID(), blink::WebFullscreenOptions()));
   EXPECT_TRUE(contents()->IsFullscreenForCurrentTab());
   EXPECT_TRUE(fake_delegate.IsFullscreenForTabOrPending(contents()));
 
@@ -1543,8 +1548,8 @@ TEST_F(WebContentsImplTest, HistoryNavigationExitsFullscreen) {
 
   for (int i = 0; i < 2; ++i) {
     // Toggle fullscreen mode on (as if initiated via IPC from renderer).
-    orig_rfh->OnMessageReceived(
-        FrameHostMsg_ToggleFullscreen(orig_rfh->GetRoutingID(), true));
+    orig_rfh->OnMessageReceived(FrameHostMsg_EnterFullscreen(
+        orig_rfh->GetRoutingID(), blink::WebFullscreenOptions()));
     EXPECT_TRUE(contents()->IsFullscreenForCurrentTab());
     EXPECT_TRUE(fake_delegate.IsFullscreenForTabOrPending(contents()));
 
@@ -1587,8 +1592,8 @@ TEST_F(WebContentsImplTest, CrashExitsFullscreen) {
   // Toggle fullscreen mode on (as if initiated via IPC from renderer).
   EXPECT_FALSE(contents()->IsFullscreenForCurrentTab());
   EXPECT_FALSE(fake_delegate.IsFullscreenForTabOrPending(contents()));
-  main_test_rfh()->OnMessageReceived(FrameHostMsg_ToggleFullscreen(
-      main_test_rfh()->GetRoutingID(), true));
+  main_test_rfh()->OnMessageReceived(FrameHostMsg_EnterFullscreen(
+      main_test_rfh()->GetRoutingID(), blink::WebFullscreenOptions()));
   EXPECT_TRUE(contents()->IsFullscreenForCurrentTab());
   EXPECT_TRUE(fake_delegate.IsFullscreenForTabOrPending(contents()));
 
@@ -2580,7 +2585,7 @@ TEST_F(WebContentsImplTest, CopyStateFromAndPruneSourceInterstitial) {
   // Create another NavigationController.
   GURL url3("http://foo2");
   std::unique_ptr<TestWebContents> other_contents(
-      static_cast<TestWebContents*>(CreateTestWebContents()));
+      static_cast<TestWebContents*>(CreateTestWebContents().release()));
   NavigationControllerImpl& other_controller = other_contents->GetController();
   other_contents->NavigateAndCommit(url3);
   other_contents->ExpectSetHistoryOffsetAndLength(1, 2);
@@ -2605,7 +2610,7 @@ TEST_F(WebContentsImplTest, CopyStateFromAndPruneTargetInterstitial) {
 
   // Create another NavigationController.
   std::unique_ptr<TestWebContents> other_contents(
-      static_cast<TestWebContents*>(CreateTestWebContents()));
+      static_cast<TestWebContents*>(CreateTestWebContents().release()));
   NavigationControllerImpl& other_controller = other_contents->GetController();
 
   // Navigate it to url2.
@@ -2655,7 +2660,7 @@ TEST_F(WebContentsImplTest, FilterURLs) {
 
   // Create and navigate another WebContents.
   std::unique_ptr<TestWebContents> other_contents(
-      static_cast<TestWebContents*>(CreateTestWebContents()));
+      static_cast<TestWebContents*>(CreateTestWebContents().release()));
   TestWebContentsObserver other_observer(other_contents.get());
   other_contents->NavigateAndCommit(url_normalized);
 
@@ -2667,29 +2672,38 @@ TEST_F(WebContentsImplTest, FilterURLs) {
 // Test that if a pending contents is deleted before it is shown, we don't
 // crash.
 TEST_F(WebContentsImplTest, PendingContentsDestroyed) {
-  std::unique_ptr<TestWebContents> other_contents(
-      static_cast<TestWebContents*>(CreateTestWebContents()));
-  contents()->AddPendingContents(other_contents.get());
+  std::unique_ptr<WebContentsImpl> other_contents(
+      static_cast<WebContentsImpl*>(CreateTestWebContents().release()));
+  content::TestWebContents* raw_other_contents =
+      static_cast<TestWebContents*>(other_contents.get());
+  contents()->AddPendingContents(std::move(other_contents));
   RenderWidgetHost* widget =
-      other_contents->GetMainFrame()->GetRenderWidgetHost();
+      raw_other_contents->GetMainFrame()->GetRenderWidgetHost();
   int process_id = widget->GetProcess()->GetID();
   int widget_id = widget->GetRoutingID();
-  other_contents.reset();
+
+  // TODO(erikchen): Fix ownership semantics of WebContents. Nothing should be
+  // able to delete it beside from the owner. https://crbug.com/832879.
+  delete raw_other_contents;
   EXPECT_EQ(nullptr, contents()->GetCreatedWindow(process_id, widget_id));
 }
 
 TEST_F(WebContentsImplTest, PendingContentsShown) {
-  std::unique_ptr<TestWebContents> other_contents(
-      static_cast<TestWebContents*>(CreateTestWebContents()));
-  contents()->AddPendingContents(other_contents.get());
+  std::unique_ptr<WebContents> other_contents(
+      static_cast<WebContents*>(CreateTestWebContents().release()));
+  content::WebContents* raw_other_contents = other_contents.get();
+  content::TestWebContents* test_web_contents =
+      static_cast<content::TestWebContents*>(other_contents.get());
+  contents()->AddPendingContents(std::move(other_contents));
+
   RenderWidgetHost* widget =
-      other_contents->GetMainFrame()->GetRenderWidgetHost();
+      test_web_contents->GetMainFrame()->GetRenderWidgetHost();
   int process_id = widget->GetProcess()->GetID();
   int widget_id = widget->GetRoutingID();
 
   // The first call to GetCreatedWindow pops it off the pending list.
-  EXPECT_EQ(other_contents.get(),
-            contents()->GetCreatedWindow(process_id, widget_id));
+  EXPECT_EQ(raw_other_contents,
+            contents()->GetCreatedWindow(process_id, widget_id).get());
   // A second call should return nullptr, verifying that it's been forgotten.
   EXPECT_EQ(nullptr, contents()->GetCreatedWindow(process_id, widget_id));
 }
@@ -3463,6 +3477,30 @@ TEST_F(WebContentsImplTest, MediaWakeLock) {
   EXPECT_TRUE(has_video_wake_lock());
   EXPECT_FALSE(has_audio_wake_lock());
 
+  viz::SurfaceId surface_id =
+      viz::SurfaceId(viz::FrameSinkId(1, 1),
+                     viz::LocalSurfaceId(
+                         11, base::UnguessableToken::Deserialize(0x111111, 0)));
+
+  // Send the video in Picture-in-Picture mode, power blocker should still be
+  // on.
+  rfh->OnMessageReceived(
+      MediaPlayerDelegateHostMsg_OnPictureInPictureModeStarted(
+          0, kPlayerAudioVideoId, surface_id, gfx::Size(), 0));
+  EXPECT_TRUE(has_video_wake_lock());
+  EXPECT_FALSE(has_audio_wake_lock());
+
+  // Hiding the window should keep the power blocker.
+  contents()->WasHidden();
+  EXPECT_TRUE(has_video_wake_lock());
+  EXPECT_FALSE(has_audio_wake_lock());
+
+  // Leaving Picture-in-Picture should reset the power blocker.
+  rfh->OnMessageReceived(MediaPlayerDelegateHostMsg_OnPictureInPictureModeEnded(
+      0, kPlayerAudioVideoId, 1 /* request_id */));
+  EXPECT_FALSE(has_video_wake_lock());
+  EXPECT_FALSE(has_audio_wake_lock());
+
   // Crash the renderer.
   main_test_rfh()->GetProcess()->SimulateCrash();
 
@@ -3506,8 +3544,22 @@ TEST_F(WebContentsImplTest, ThemeColorChangeDependingOnFirstVisiblePaint) {
   EXPECT_EQ(SK_ColorGREEN, observer.last_theme_color());
 }
 
-TEST_F(WebContentsImplTest, PictureInPictureMediaPlayerIdWasChanged) {
+class PictureInPictureDelegate : public WebContentsDelegate {
+ public:
+  PictureInPictureDelegate() = default;
+
+  MOCK_METHOD2(EnterPictureInPicture,
+               gfx::Size(const viz::SurfaceId&, const gfx::Size&));
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(PictureInPictureDelegate);
+};
+
+TEST_F(WebContentsImplTest, EnterPictureInPicture) {
   const int kPlayerVideoOnlyId = 30; /* arbitrary and used for tests */
+
+  PictureInPictureDelegate delegate;
+  contents()->SetDelegate(&delegate);
 
   MediaWebContentsObserver* observer =
       contents()->media_web_contents_observer();
@@ -3518,18 +3570,27 @@ TEST_F(WebContentsImplTest, PictureInPictureMediaPlayerIdWasChanged) {
   // set.
   EXPECT_FALSE(observer->GetPictureInPictureVideoMediaPlayerId().has_value());
 
+  viz::SurfaceId surface_id =
+      viz::SurfaceId(viz::FrameSinkId(1, 1),
+                     viz::LocalSurfaceId(
+                         11, base::UnguessableToken::Deserialize(0x111111, 0)));
+
+  EXPECT_CALL(delegate, EnterPictureInPicture(surface_id, gfx::Size(42, 42)));
+
   rfh->OnMessageReceived(
-      MediaPlayerDelegateHostMsg_OnPictureInPictureSourceChanged(
-          rfh->GetRoutingID(), kPlayerVideoOnlyId));
+      MediaPlayerDelegateHostMsg_OnPictureInPictureModeStarted(
+          rfh->GetRoutingID(), kPlayerVideoOnlyId, surface_id /* surface_id */,
+          gfx::Size(42, 42) /* natural_size */, 1 /* request_id */));
   EXPECT_TRUE(observer->GetPictureInPictureVideoMediaPlayerId().has_value());
   EXPECT_EQ(kPlayerVideoOnlyId,
             observer->GetPictureInPictureVideoMediaPlayerId()->second);
 
-  // Picture-in-Picture media player id should be reset when the media is
-  // destroyed.
+  // Picture-in-Picture media player id should not be reset when the media is
+  // destroyed (e.g. video stops playing). This allows the Picture-in-Picture
+  // window to continue to control the media.
   rfh->OnMessageReceived(MediaPlayerDelegateHostMsg_OnMediaDestroyed(
       rfh->GetRoutingID(), kPlayerVideoOnlyId));
-  EXPECT_FALSE(observer->GetPictureInPictureVideoMediaPlayerId().has_value());
+  EXPECT_TRUE(observer->GetPictureInPictureVideoMediaPlayerId().has_value());
 }
 
 TEST_F(WebContentsImplTest, ParseDownloadHeaders) {

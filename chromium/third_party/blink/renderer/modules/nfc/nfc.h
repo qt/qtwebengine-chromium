@@ -32,7 +32,7 @@ class NFC final : public ScriptWrappable,
  public:
   static NFC* Create(LocalFrame*);
 
-  virtual ~NFC();
+  ~NFC() override;
 
   void Dispose();
 
@@ -61,7 +61,7 @@ class NFC final : public ScriptWrappable,
 
   // Interface required by garbage collection.
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(const ScriptWrappableVisitor*) const override;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
  private:
   // Returns boolean indicating whether NFC is supported in this context. If

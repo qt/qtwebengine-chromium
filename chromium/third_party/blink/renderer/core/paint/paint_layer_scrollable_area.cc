@@ -44,6 +44,7 @@
 
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 
+#include "base/single_thread_task_runner.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_scroll_into_view_params.h"
@@ -195,8 +196,7 @@ void PaintLayerScrollableArea::Dispose() {
   // destroyed, because LayoutObjectChildList::removeChildNode skips the call to
   // willBeRemovedFromTree,
   // leaving the ScrollAnchor with a stale LayoutObject pointer.
-  if (RuntimeEnabledFeatures::ScrollAnchoringEnabled())
-    scroll_anchor_.Dispose();
+  scroll_anchor_.Dispose();
 
   GetLayoutBox()
       ->GetDocument()
@@ -215,6 +215,16 @@ void PaintLayerScrollableArea::Dispose() {
 
   if (SmoothScrollSequencer* sequencer = GetSmoothScrollSequencer())
     sequencer->DidDisposeScrollableArea(*this);
+
+  {
+    // Here using the stale compositing data is in fact what we want to do
+    // because the graphics layer which hasn't been removed yet may be used in
+    // the meantime to try to deliver scroll related updates.
+    DisableCompositingQueryAsserts disabler;
+    GraphicsLayer* graphics_layer = LayerForScrolling();
+    if (graphics_layer)
+      graphics_layer->ScrollableAreaDisposed();
+  }
 
   layer_ = nullptr;
 }
@@ -246,7 +256,7 @@ void PaintLayerScrollableArea::CalculateScrollbarModes(
   ToLayoutView(GetLayoutBox())->CalculateScrollbarModes(h_mode, v_mode);
 }
 
-PlatformChromeClient* PaintLayerScrollableArea::GetChromeClient() const {
+ChromeClient* PaintLayerScrollableArea::GetChromeClient() const {
   if (HasBeenDisposed())
     return nullptr;
   if (Page* page = GetLayoutBox()->GetFrame()->GetPage())
@@ -482,13 +492,8 @@ void PaintLayerScrollableArea::UpdateScrollOffset(
   InvalidatePaintForScrollOffsetChange(offset_was_zero);
 
   // The scrollOffsetTranslation paint property depends on the scroll offset.
-  // (see: PaintPropertyTreeBuilder.updateProperties(LocalFrameView&,...) and
-  // PaintPropertyTreeBuilder.updateScrollAndScrollTranslation).
-  if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled() && is_root_layer) {
-    frame_view->SetNeedsPaintPropertyUpdate();
-  } else {
-    GetLayoutBox()->SetNeedsPaintPropertyUpdate();
-  }
+  // (see: PaintPropertyTreeBuilder::UpdateScrollAndScrollTranslation).
+  GetLayoutBox()->SetNeedsPaintPropertyUpdate();
 
   // Schedule the scroll DOM event.
   if (GetLayoutBox()->GetNode()) {
@@ -513,8 +518,7 @@ void PaintLayerScrollableArea::UpdateScrollOffset(
     if (scroll_type != kCompositorScroll)
       ShowOverlayScrollbars();
     frame_view->ClearFragmentAnchor();
-    if (RuntimeEnabledFeatures::ScrollAnchoringEnabled())
-      GetScrollAnchor()->Clear();
+    GetScrollAnchor()->Clear();
   }
 
   if (AXObjectCache* cache =
@@ -711,7 +715,7 @@ IntPoint PaintLayerScrollableArea::LastKnownMousePosition() const {
   return GetLayoutBox()->GetFrame() ? GetLayoutBox()
                                           ->GetFrame()
                                           ->GetEventHandler()
-                                          .LastKnownMousePosition()
+                                          .LastKnownMousePositionInRootFrame()
                                     : IntPoint();
 }
 
@@ -855,13 +859,6 @@ int PaintLayerScrollableArea::PixelSnappedScrollHeight() const {
 }
 
 void PaintLayerScrollableArea::UpdateScrollOrigin() {
-  // LayoutView doesn't scroll when RLS is turned off so we should avoid
-  // changing the scroll origin in that case as it can affect coordinate
-  // conversions.
-  if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled() && GetLayoutBox() &&
-      GetLayoutBox()->IsLayoutView())
-    return;
-
   // This should do nothing prior to first layout; the if-clause will catch
   // that.
   if (OverflowRect().IsEmpty())
@@ -1088,8 +1085,7 @@ void PaintLayerScrollableArea::DidChangeGlobalRootScroller() {
 }
 
 bool PaintLayerScrollableArea::ShouldPerformScrollAnchoring() const {
-  return RuntimeEnabledFeatures::ScrollAnchoringEnabled() &&
-         scroll_anchor_.HasScroller() && GetLayoutBox() &&
+  return scroll_anchor_.HasScroller() && GetLayoutBox() &&
          GetLayoutBox()->Style()->OverflowAnchor() != EOverflowAnchor::kNone &&
          !GetLayoutBox()->GetDocument().FinishingOrIsPrinting();
 }
@@ -1113,7 +1109,7 @@ FloatQuad PaintLayerScrollableArea::LocalToVisibleContentQuad(
 
 scoped_refptr<base::SingleThreadTaskRunner>
 PaintLayerScrollableArea::GetTimerTaskRunner() const {
-  return GetLayoutBox()->GetFrame()->GetTaskRunner(TaskType::kUnspecedTimer);
+  return GetLayoutBox()->GetFrame()->GetTaskRunner(TaskType::kInternalDefault);
 }
 
 ScrollBehavior PaintLayerScrollableArea::ScrollBehaviorStyle() const {
@@ -1156,9 +1152,7 @@ bool PaintLayerScrollableArea::HasVerticalOverflow() const {
 // overflow. Currently, we need to avoid producing scrollbars here if they'll be
 // handled externally in the RLC.
 static bool CanHaveOverflowScrollbars(const LayoutBox& box) {
-  return (RuntimeEnabledFeatures::RootLayerScrollingEnabled() ||
-          !box.IsLayoutView()) &&
-         box.GetDocument().ViewportDefiningElement() != box.GetNode();
+  return box.GetDocument().ViewportDefiningElement() != box.GetNode();
 }
 
 void PaintLayerScrollableArea::UpdateAfterStyleChange(
@@ -2095,6 +2089,21 @@ void PaintLayerScrollableArea::UpdateScrollableAreaSet() {
   if (did_scroll_overflow == ScrollsOverflow())
     return;
 
+  if (RuntimeEnabledFeatures::ImplicitRootScrollerEnabled() &&
+      scrolls_overflow_) {
+    if (GetLayoutBox()->IsLayoutView()) {
+      if (Element* owner = GetLayoutBox()->GetDocument().LocalOwner()) {
+        owner->GetDocument().GetRootScrollerController().ConsiderForImplicit(
+            *owner);
+      }
+    } else {
+      GetLayoutBox()
+          ->GetDocument()
+          .GetRootScrollerController()
+          .ConsiderForImplicit(*GetLayoutBox()->GetNode());
+    }
+  }
+
   // The scroll and scroll offset properties depend on |scrollsOverflow| (see:
   // PaintPropertyTreeBuilder::updateScrollAndScrollTranslation).
   GetLayoutBox()->SetNeedsPaintPropertyUpdate();
@@ -2119,7 +2128,7 @@ void PaintLayerScrollableArea::UpdateCompositingLayersAfterScroll() {
     ScrollingCoordinator* scrolling_coordinator = GetScrollingCoordinator();
     bool handled_scroll =
         Layer()->IsRootLayer() && scrolling_coordinator &&
-        scrolling_coordinator->ScrollableAreaScrollLayerDidChange(this);
+        scrolling_coordinator->UpdateCompositedScrollOffset(this);
 
     if (!handled_scroll) {
       Layer()->GetCompositedLayerMapping()->SetNeedsGraphicsLayerUpdate(
@@ -2133,11 +2142,10 @@ void PaintLayerScrollableArea::UpdateCompositingLayersAfterScroll() {
     if (HasStickyDescendants())
       InvalidateAllStickyConstraints();
 
-    // If we have fixed elements and we scroll the root layer in RLS we might
+    // If we have fixed elements and we scroll the root layer we might
     // change compositing since the fixed elements might now overlap a
     // composited layer.
-    if (Layer()->IsRootLayer() &&
-        RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
+    if (Layer()->IsRootLayer()) {
       LocalFrame* frame = GetLayoutBox()->GetFrame();
       if (frame && frame->View() &&
           frame->View()->HasViewportConstrainedObjects()) {
@@ -2293,7 +2301,7 @@ bool PaintLayerScrollableArea::VisualViewportSuppliesScrollbars() const {
 }
 
 bool PaintLayerScrollableArea::ScheduleAnimation() {
-  if (PlatformChromeClient* client = GetChromeClient()) {
+  if (ChromeClient* client = GetChromeClient()) {
     client->ScheduleAnimation(GetLayoutBox()->GetFrame()->View());
     return true;
   }

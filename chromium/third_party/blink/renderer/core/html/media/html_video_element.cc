@@ -36,7 +36,9 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
+#include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
+#include "third_party/blink/renderer/core/fullscreen/fullscreen_options.h"
 #include "third_party/blink/renderer/core/html/media/media_custom_controls_fullscreen_detector.h"
 #include "third_party/blink/renderer/core/html/media/media_remoting_interstitial.h"
 #include "third_party/blink/renderer/core/html/media/picture_in_picture_interstitial.h"
@@ -257,7 +259,7 @@ void HTMLVideoElement::SetDisplayMode(DisplayMode mode) {
 // TODO(zqzhang): this callback could be used to hide native controls instead of
 // using a settings. See `HTMLMediaElement::onMediaControlsEnabledChange`.
 void HTMLVideoElement::OnBecamePersistentVideo(bool value) {
-  is_picture_in_picture_ = value;
+  is_auto_picture_in_picture_ = value;
 
   if (value) {
     // Record the type of video. If it is already fullscreen, it is a video with
@@ -394,8 +396,10 @@ bool HTMLVideoElement::HasAvailableVideoFrame() const {
 }
 
 void HTMLVideoElement::webkitEnterFullscreen() {
-  if (!IsFullscreen())
-    Fullscreen::RequestFullscreen(*this, Fullscreen::RequestType::kPrefixed);
+  if (!IsFullscreen()) {
+    Fullscreen::RequestFullscreen(*this, FullscreenOptions(),
+                                  Fullscreen::RequestType::kPrefixed);
+  }
 }
 
 void HTMLVideoElement::webkitExitFullscreen() {
@@ -495,7 +499,7 @@ IntSize HTMLVideoElement::BitmapSourceSize() const {
 ScriptPromise HTMLVideoElement::CreateImageBitmap(
     ScriptState* script_state,
     EventTarget& event_target,
-    Optional<IntRect> crop_rect,
+    base::Optional<IntRect> crop_rect,
     const ImageBitmapOptions& options) {
   DCHECK(event_target.ToLocalDOMWindow());
   if (getNetworkState() == HTMLMediaElement::kNetworkEmpty) {
@@ -536,15 +540,30 @@ void HTMLVideoElement::MediaRemotingStopped(
 }
 
 bool HTMLVideoElement::SupportsPictureInPicture() const {
-  if (!HasVideo())
-    return false;
-
   return PictureInPictureController::From(GetDocument())
              .IsElementAllowed(*this) ==
          PictureInPictureController::Status::kEnabled;
 }
 
-void HTMLVideoElement::PictureInPictureStarted() {
+void HTMLVideoElement::PictureInPictureStopped() {
+  PictureInPictureController::From(GetDocument())
+      .OnExitedPictureInPicture(nullptr);
+}
+
+WebMediaPlayer::DisplayType HTMLVideoElement::DisplayType() const {
+  if (is_auto_picture_in_picture_ ||
+      PictureInPictureController::From(GetDocument())
+          .IsPictureInPictureElement(this)) {
+    return WebMediaPlayer::DisplayType::kPictureInPicture;
+  }
+  return HTMLMediaElement::DisplayType();
+}
+
+bool HTMLVideoElement::IsInAutoPIP() const {
+  return is_auto_picture_in_picture_;
+}
+
+void HTMLVideoElement::OnEnteredPictureInPicture() {
   if (!picture_in_picture_interstitial_) {
     picture_in_picture_interstitial_ = new PictureInPictureInterstitial(*this);
     ShadowRoot& shadow_root = EnsureUserAgentShadowRoot();
@@ -553,22 +572,31 @@ void HTMLVideoElement::PictureInPictureStarted() {
     HTMLMediaElement::AssertShadowRootChildren(shadow_root);
   }
   picture_in_picture_interstitial_->Show();
+
+  DCHECK(GetWebMediaPlayer());
+  GetWebMediaPlayer()->OnDisplayTypeChanged(DisplayType());
 }
 
-void HTMLVideoElement::PictureInPictureStopped() {
+void HTMLVideoElement::OnExitedPictureInPicture() {
   if (picture_in_picture_interstitial_)
     picture_in_picture_interstitial_->Hide();
+
+  if (GetWebMediaPlayer())
+    GetWebMediaPlayer()->OnDisplayTypeChanged(DisplayType());
 }
 
-bool HTMLVideoElement::IsInPictureInPictureMode() {
-  return picture_in_picture_interstitial_ &&
-         picture_in_picture_interstitial_->IsVisible();
-}
+void HTMLVideoElement::AddedEventListener(
+    const AtomicString& event_type,
+    RegisteredEventListener& registered_listener) {
+  if (event_type == EventTypeNames::enterpictureinpicture) {
+    UseCounter::Count(GetExecutionContext(),
+                      WebFeature::kEnterPictureInPictureEventListener);
+  } else if (event_type == EventTypeNames::leavepictureinpicture) {
+    UseCounter::Count(GetExecutionContext(),
+                      WebFeature::kLeavePictureInPictureEventListener);
+  }
 
-WebMediaPlayer::DisplayType HTMLVideoElement::DisplayType() const {
-  if (is_picture_in_picture_)
-    return WebMediaPlayer::DisplayType::kPictureInPicture;
-  return HTMLMediaElement::DisplayType();
+  HTMLMediaElement::AddedEventListener(event_type, registered_listener);
 }
 
 bool HTMLVideoElement::IsRemotingInterstitialVisible() const {

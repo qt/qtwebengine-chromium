@@ -70,7 +70,6 @@ namespace content {
 class AppCacheNavigationHandleCore;
 class AppCacheService;
 class LoaderDelegate;
-class NavigationURLLoaderImplCore;
 class NavigationUIData;
 class ResourceContext;
 class ResourceDispatcherHostDelegate;
@@ -126,16 +125,6 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   // Cancels the given request if it still exists.
   void CancelRequest(int child_id, int request_id);
-
-  // Marks the request, with its current |response|, as "parked". This
-  // happens if a request is redirected cross-site and needs to be
-  // resumed by a new process.
-  void MarkAsTransferredNavigation(
-      const GlobalRequestID& id,
-      const base::Closure& on_transfer_complete_callback);
-
-  // Resumes the request without transferring it to a new process.
-  void ResumeDeferredNavigation(const GlobalRequestID& id);
 
   // Returns the number of pending requests. This is designed for the unittests
   int pending_requests() const {
@@ -260,7 +249,6 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
       storage::FileSystemContext* upload_file_system_context,
       const NavigationRequestInfo& info,
       std::unique_ptr<NavigationUIData> navigation_ui_data,
-      NavigationURLLoaderImplCore* loader,
       network::mojom::URLLoaderClientPtr url_loader_client,
       network::mojom::URLLoaderRequest url_loader_request,
       ServiceWorkerNavigationHandleCore* service_worker_handle_core,
@@ -341,6 +329,11 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
     return &keepalive_statistics_recorder_;
   }
 
+  // Checks if needs to prompt for login.
+  bool DoNotPromptForLogin(ResourceType resource_type,
+                           const GURL& url,
+                           const GURL& site_for_cookies);
+
  private:
   class ScheduledResourceRequestAdapter;
   friend class ResourceDispatcherHostTest;
@@ -360,7 +353,6 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   FRIEND_TEST_ALL_PREFIXES(ResourceDispatcherHostTest, LoadInfoSamePriority);
   FRIEND_TEST_ALL_PREFIXES(ResourceDispatcherHostTest, LoadInfoUploadProgress);
   FRIEND_TEST_ALL_PREFIXES(ResourceDispatcherHostTest, LoadInfoTwoRenderViews);
-  FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest, UpdateLoadState);
 
   struct OustandingRequestsStats {
     int memory_cost;
@@ -553,26 +545,6 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   bool IsRequestIDInUse(const GlobalRequestID& id) const;
 
-  // Update the ResourceRequestInfo and internal maps when a request is
-  // transferred from one process to another.
-  void UpdateRequestForTransfer(
-      ResourceRequesterInfo* requester_info,
-      int route_id,
-      int request_id,
-      const network::ResourceRequest& request_data,
-      LoaderMap::iterator iter,
-      network::mojom::URLLoaderRequest mojo_request,
-      network::mojom::URLLoaderClientPtr url_loader_client);
-
-  // If |request_data| is for a request being transferred from another process,
-  // then CompleteTransfer method can be used to complete the transfer.
-  void CompleteTransfer(ResourceRequesterInfo* requester_info,
-                        int request_id,
-                        const network::ResourceRequest& request_data,
-                        int route_id,
-                        network::mojom::URLLoaderRequest mojo_request,
-                        network::mojom::URLLoaderClientPtr url_loader_client);
-
   void BeginRequest(ResourceRequesterInfo* requester_info,
                     int request_id,
                     const network::ResourceRequest& request_data,
@@ -625,9 +597,6 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // Wraps |handler| in the standard resource handlers for normal resource
   // loading and navigation requests. This adds MimeTypeResourceHandler and
   // ResourceThrottles.
-  // PlzNavigate: |navigation_loader_core| and |stream_handle| are used to
-  // properly initialized the NavigationResourceHandler placed in navigation
-  // requests. They should be non-null in that case.
   std::unique_ptr<ResourceHandler> AddStandardHandlers(
       net::URLRequest* request,
       ResourceType resource_type,
@@ -637,9 +606,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
       AppCacheService* appcache_service,
       int child_id,
       int route_id,
-      std::unique_ptr<ResourceHandler> handler,
-      NavigationURLLoaderImplCore* navigation_loader_core,
-      std::unique_ptr<StreamHandle> stream_handle);
+      std::unique_ptr<ResourceHandler> handler);
 
   // Creates ResourceRequestInfoImpl for a download or page save.
   // |download| should be true if the request is a file download.
@@ -662,13 +629,6 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   HttpAuthRelationType HttpAuthRelationTypeOf(const GURL& request_url,
                                               const GURL& first_party);
-
-  // Returns whether the URLRequest identified by |transferred_request_id| is
-  // currently in the process of being transferred to a different renderer.
-  // This happens if a request is redirected cross-site and needs to be resumed
-  // by a new process.
-  bool IsTransferredNavigation(
-      const GlobalRequestID& transferred_request_id) const;
 
   ResourceLoader* GetLoader(const GlobalRequestID& id) const;
   ResourceLoader* GetLoader(int child_id, int request_id) const;
@@ -698,6 +658,10 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   void RunAuthRequiredCallback(
       GlobalRequestID request_id,
       const base::Optional<net::AuthCredentials>& credentials);
+
+  static void RecordFetchRequestMode(const GURL& url,
+                                     base::StringPiece method,
+                                     network::mojom::FetchRequestMode mode);
 
   static net::NetworkTrafficAnnotationTag GetTrafficAnnotation();
 
@@ -802,7 +766,9 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // Task runner for the IO thead.
   scoped_refptr<base::SingleThreadTaskRunner> io_thread_task_runner_;
 
-  base::WeakPtrFactory<ResourceDispatcherHostImpl> weak_ptr_factory_;
+  // Used on the IO thread to allow PostTaskAndReply replies to the IO thread
+  // to be abandoned if they run after OnShutdown().
+  base::WeakPtrFactory<ResourceDispatcherHostImpl> weak_factory_on_io_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceDispatcherHostImpl);
 };

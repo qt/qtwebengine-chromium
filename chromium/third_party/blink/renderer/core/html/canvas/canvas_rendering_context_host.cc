@@ -13,18 +13,6 @@ namespace blink {
 
 CanvasRenderingContextHost::CanvasRenderingContextHost() = default;
 
-ScriptPromise CanvasRenderingContextHost::Commit(
-    scoped_refptr<StaticBitmapImage> bitmap_image,
-    const SkIRect& damage_rect,
-    ScriptState* script_state,
-    ExceptionState& exception_state) {
-  exception_state.ThrowDOMException(kInvalidStateError,
-                                    "Commit() was called on a rendering "
-                                    "context that was not created from an "
-                                    "OffscreenCanvas.");
-  return exception_state.Reject(script_state);
-}
-
 scoped_refptr<StaticBitmapImage>
 CanvasRenderingContextHost::CreateTransparentImage(const IntSize& size) const {
   if (!IsValidImageSize(size))
@@ -45,6 +33,12 @@ CanvasRenderingContextHost::CreateTransparentImage(const IntSize& size) const {
 bool CanvasRenderingContextHost::IsPaintable() const {
   return (RenderingContext() && RenderingContext()->IsPaintable()) ||
          IsValidImageSize(Size());
+}
+
+void CanvasRenderingContextHost::RestoreCanvasMatrixClipStack(
+    PaintCanvas* canvas) const {
+  if (RenderingContext())
+    RenderingContext()->RestoreCanvasMatrixClipStack(canvas);
 }
 
 }  // namespace blink

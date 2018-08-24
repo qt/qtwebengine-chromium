@@ -79,14 +79,19 @@ class WebRuntimeFeatures {
   BLINK_PLATFORM_EXPORT static void EnableScrollTopLeftInterop(bool);
   BLINK_PLATFORM_EXPORT static void EnableDatabase(bool);
   BLINK_PLATFORM_EXPORT static void EnableDecodeToYUV(bool);
+  BLINK_PLATFORM_EXPORT static void EnableDisplayCutoutViewportFit(bool);
   BLINK_PLATFORM_EXPORT static void EnableFastMobileScrolling(bool);
   BLINK_PLATFORM_EXPORT static void EnableFileSystem(bool);
   BLINK_PLATFORM_EXPORT static void EnableForceTallerSelectPopup(bool);
   BLINK_PLATFORM_EXPORT static void EnableGamepadExtensions(bool);
+  BLINK_PLATFORM_EXPORT static void EnableGamepadVibration(bool);
   BLINK_PLATFORM_EXPORT static void EnableGenericSensor(bool);
   BLINK_PLATFORM_EXPORT static void EnableGenericSensorExtraClasses(bool);
   BLINK_PLATFORM_EXPORT static void EnableHeapCompaction(bool);
   BLINK_PLATFORM_EXPORT static void EnableInputMultipleFieldsUI(bool);
+  BLINK_PLATFORM_EXPORT static void EnableIntersectionObserverGeometryMapper(
+      bool);
+  BLINK_PLATFORM_EXPORT static void EnableLayeredAPI(bool);
   BLINK_PLATFORM_EXPORT static void EnableLazyFrameLoading(bool);
   BLINK_PLATFORM_EXPORT static void EnableLazyParseCSS(bool);
   BLINK_PLATFORM_EXPORT static void EnableMediaCapture(bool);
@@ -101,7 +106,6 @@ class WebRuntimeFeatures {
   BLINK_PLATFORM_EXPORT static void EnableNotificationConstructor(bool);
   BLINK_PLATFORM_EXPORT static void EnableNotificationContentImage(bool);
   BLINK_PLATFORM_EXPORT static void EnableNotifications(bool);
-  BLINK_PLATFORM_EXPORT static void EnableNotificationsWithMojo(bool);
   BLINK_PLATFORM_EXPORT static void EnableOnDeviceChange(bool);
   BLINK_PLATFORM_EXPORT static void EnableOrientationEvent(bool);
   BLINK_PLATFORM_EXPORT static void EnableOriginManifest(bool);
@@ -126,10 +130,9 @@ class WebRuntimeFeatures {
   BLINK_PLATFORM_EXPORT static void EnableRenderingPipelineThrottling(bool);
   BLINK_PLATFORM_EXPORT static void EnableRequireCSSExtensionForFile(bool);
   BLINK_PLATFORM_EXPORT static void EnableResourceLoadScheduler(bool);
-  BLINK_PLATFORM_EXPORT static void EnableRootLayerScrolling(bool);
   BLINK_PLATFORM_EXPORT static void EnableScriptedSpeech(bool);
-  BLINK_PLATFORM_EXPORT static void EnableScrollAnchoring(bool);
   BLINK_PLATFORM_EXPORT static void EnableScrollAnchorSerialization(bool);
+  BLINK_PLATFORM_EXPORT static void EnableSecMetadata(bool);
   BLINK_PLATFORM_EXPORT static void EnableServiceWorkerScriptFullCodeCache(
       bool);
   BLINK_PLATFORM_EXPORT static void EnableSharedArrayBuffer(bool);
@@ -137,8 +140,6 @@ class WebRuntimeFeatures {
   BLINK_PLATFORM_EXPORT static void EnableSlimmingPaintV2(bool);
   BLINK_PLATFORM_EXPORT static void EnableTouchEventFeatureDetection(bool);
   BLINK_PLATFORM_EXPORT static void EnableTouchpadAndWheelScrollLatching(bool);
-  BLINK_PLATFORM_EXPORT static void
-  EnableTurnOff2DAndOpacityCompositorAnimations(bool);
   BLINK_PLATFORM_EXPORT static void EnableUserActivationV2(bool);
   BLINK_PLATFORM_EXPORT static void EnableV8IdleTasks(bool);
   BLINK_PLATFORM_EXPORT static void EnableWebAssemblyStreaming(bool);
@@ -151,6 +152,7 @@ class WebRuntimeFeatures {
   BLINK_PLATFORM_EXPORT static void EnableWebUsb(bool);
   BLINK_PLATFORM_EXPORT static void EnableWebVR(bool);
   BLINK_PLATFORM_EXPORT static void EnableWebXR(bool);
+  BLINK_PLATFORM_EXPORT static void EnableWebXRHitTest(bool);
   BLINK_PLATFORM_EXPORT static void EnableWebXRGamepadSupport(bool);
   BLINK_PLATFORM_EXPORT static void EnableXSLT(bool);
   BLINK_PLATFORM_EXPORT static void ForceOverlayFullscreenVideo(bool);
@@ -185,10 +187,11 @@ class WebRuntimeFeatures {
   BLINK_PLATFORM_EXPORT static void EnableStopLoadingInBackground(bool);
   BLINK_PLATFORM_EXPORT static void EnableStopNonTimersInBackground(bool);
   BLINK_PLATFORM_EXPORT static void EnablePWAFullCodeCache(bool);
-  BLINK_PLATFORM_EXPORT static void EnableCodeCacheAfterExecute(bool);
-  BLINK_PLATFORM_EXPORT static void EnableUnifiedTouchAdjustment(bool);
   BLINK_PLATFORM_EXPORT static void EnableMojoBlobURLs(bool);
   BLINK_PLATFORM_EXPORT static void EnableOffMainThreadWebSocket(bool);
+  BLINK_PLATFORM_EXPORT static void EnableExperimentalProductivityFeatures(
+      bool);
+  BLINK_PLATFORM_EXPORT static void EnableAutoplayIgnoresWebAudio(bool);
 
  private:
   WebRuntimeFeatures();

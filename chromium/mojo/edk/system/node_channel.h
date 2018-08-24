@@ -21,6 +21,7 @@
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/channel.h"
 #include "mojo/edk/system/ports/name.h"
+#include "mojo/edk/system/scoped_process_handle.h"
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 #include "mojo/edk/system/mach_port_relay.h"
@@ -49,12 +50,14 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
     virtual void OnAddBrokerClient(const ports::NodeName& from_node,
                                    const ports::NodeName& client_name,
                                    base::ProcessHandle process_handle) = 0;
-    virtual void OnBrokerClientAdded(const ports::NodeName& from_node,
-                                     const ports::NodeName& client_name,
-                                     ScopedPlatformHandle broker_channel) = 0;
-    virtual void OnAcceptBrokerClient(const ports::NodeName& from_node,
-                                      const ports::NodeName& broker_name,
-                                      ScopedPlatformHandle broker_channel) = 0;
+    virtual void OnBrokerClientAdded(
+        const ports::NodeName& from_node,
+        const ports::NodeName& client_name,
+        ScopedInternalPlatformHandle broker_channel) = 0;
+    virtual void OnAcceptBrokerClient(
+        const ports::NodeName& from_node,
+        const ports::NodeName& broker_name,
+        ScopedInternalPlatformHandle broker_channel) = 0;
     virtual void OnEventMessage(const ports::NodeName& from_node,
                                 Channel::MessagePtr message) = 0;
     virtual void OnRequestPortMerge(const ports::NodeName& from_node,
@@ -64,7 +67,7 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
                                        const ports::NodeName& name) = 0;
     virtual void OnIntroduce(const ports::NodeName& from_node,
                              const ports::NodeName& name,
-                             ScopedPlatformHandle channel_handle) = 0;
+                             ScopedInternalPlatformHandle channel_handle) = 0;
     virtual void OnBroadcast(const ports::NodeName& from_node,
                              Channel::MessagePtr message) = 0;
 #if defined(OS_WIN) || (defined(OS_MACOSX) && !defined(OS_IOS))
@@ -115,12 +118,9 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
   // Invokes the bad message callback for this channel, if any.
   void NotifyBadMessage(const std::string& error);
 
-  // Note: On Windows, we take ownership of the remote process handle.
-  void SetRemoteProcessHandle(base::ProcessHandle process_handle);
+  void SetRemoteProcessHandle(ScopedProcessHandle process_handle);
   bool HasRemoteProcessHandle();
-  // Note: The returned |ProcessHandle| is owned by the caller and should be
-  // freed if necessary.
-  base::ProcessHandle CopyRemoteProcessHandle();
+  ScopedProcessHandle CloneRemoteProcessHandle();
 
   // Used for context in Delegate calls (via |from_node| arguments.)
   void SetRemoteNodeName(const ports::NodeName& name);
@@ -133,16 +133,16 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
                   const ports::NodeName& token,
                   const ports::PortName& port_name);
   void AddBrokerClient(const ports::NodeName& client_name,
-                       base::ProcessHandle process_handle);
+                       ScopedProcessHandle process_handle);
   void BrokerClientAdded(const ports::NodeName& client_name,
-                         ScopedPlatformHandle broker_channel);
+                         ScopedInternalPlatformHandle broker_channel);
   void AcceptBrokerClient(const ports::NodeName& broker_name,
-                          ScopedPlatformHandle broker_channel);
+                          ScopedInternalPlatformHandle broker_channel);
   void RequestPortMerge(const ports::PortName& connector_port_name,
                         const std::string& token);
   void RequestIntroduction(const ports::NodeName& name);
   void Introduce(const ports::NodeName& name,
-                 ScopedPlatformHandle channel_handle);
+                 ScopedInternalPlatformHandle channel_handle);
   void SendChannelMessage(Channel::MessagePtr message);
   void Broadcast(Channel::MessagePtr message);
 
@@ -175,9 +175,10 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
   ~NodeChannel() override;
 
   // Channel::Delegate:
-  void OnChannelMessage(const void* payload,
-                        size_t payload_size,
-                        std::vector<ScopedPlatformHandle> handles) override;
+  void OnChannelMessage(
+      const void* payload,
+      size_t payload_size,
+      std::vector<ScopedInternalPlatformHandle> handles) override;
   void OnChannelError(Channel::Error error) override;
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
@@ -200,10 +201,7 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
   ports::NodeName remote_node_name_;
 
   base::Lock remote_process_handle_lock_;
-  base::ProcessHandle remote_process_handle_ = base::kNullProcessHandle;
-#if defined(OS_WIN)
-  ScopedPlatformHandle scoped_remote_process_handle_;
-#endif
+  ScopedProcessHandle remote_process_handle_;
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   base::Lock pending_mach_messages_lock_;

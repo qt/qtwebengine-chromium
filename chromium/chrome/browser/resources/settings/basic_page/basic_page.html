@@ -18,6 +18,7 @@
 <link rel="import" href="../android_apps_page/android_apps_browser_proxy.html">
 <link rel="import" href="../android_apps_page/android_apps_page.html">
 <link rel="import" href="../bluetooth_page/bluetooth_page.html">
+<link rel="import" href="../crostini_page/crostini_page.html">
 <link rel="import" href="../device_page/device_page.html">
 <link rel="import" href="../internet_page/internet_page.html">
 <link rel="import" href="../multidevice_page/multidevice_page.html">
@@ -25,10 +26,6 @@
 
 <if expr="not chromeos">
 <link rel="import" href="../default_browser_page/default_browser_page.html">
-</if>
-
-<if expr="_google_chrome and is_win">
-<link rel="import" href="../chrome_cleanup_page/chrome_cleanup_page.html">
 </if>
 
 <!-- TODO(michaelpg): Rename to something better than "basic" now that this page
@@ -43,9 +40,6 @@
       }
 
       #advancedToggle {
-        --paper-button: {
-          text-transform: none;
-        }
         @apply --settings-actionable;
         align-items: center;
         display: flex;
@@ -53,6 +47,7 @@
         margin-top: 12px;  /* Part of a 48px spacer (33px + 12px + 3px). */
         min-height: 32px;
         padding: 0 12px;
+        text-transform: none;
       }
 
       #secondaryUserBanner {
@@ -124,13 +119,6 @@
           </settings-section>
         </template>
 </if>
-<if expr="_google_chrome and is_win">
-        <template is="dom-if" if="[[showChromeCleanup]]" restamp>
-          <settings-section section="chromeCleanup">
-            <settings-chrome-cleanup-page></settings-chrome-cleanup-page>
-          </settings-section>
-        </template>
-</if>
         <template is="dom-if" if="[[showChangePassword]]" restamp>
           <settings-section section="changePassword">
             <settings-change-password-page></settings-change-password-page>
@@ -139,7 +127,9 @@
         <template is="dom-if" if="[[showPage_(pageVisibility.people)]]" restamp>
           <settings-section page-title="$i18n{peoplePageTitle}"
               section="people">
-            <settings-people-page prefs="{{prefs}}"></settings-people-page>
+            <settings-people-page prefs="{{prefs}}"
+                page-visibility="[[pageVisibility]]">
+            </settings-people-page>
           </settings-section>
         </template>
         <template is="dom-if" if="[[showPage_(pageVisibility.appearance)]]"
@@ -175,6 +165,13 @@
           </settings-section>
         </template>
 <if expr="chromeos">
+        <template is="dom-if" if="[[showCrostini]]" restamp>
+          <settings-section page-title="$i18n{crostiniPageTitle}"
+              section="crostini">
+            <settings-crostini-page prefs="{{prefs}}">
+            </settings-crostini-page>
+          </settings-section>
+        </template>
         <template is="dom-if"
             if="[[shouldShowAndroidApps_(showAndroidApps, androidAppsInfo, pageVisibility)]]"
             restamp>
@@ -308,7 +305,7 @@
               restamp>
             <settings-section page-title="$i18n{resetPageTitle}"
                 section="reset">
-              <settings-reset-page></settings-reset-page>
+              <settings-reset-page prefs="{{prefs}}"></settings-reset-page>
             </settings-section>
           </template>
         </div>

@@ -39,8 +39,6 @@
 #include "rtc_base/trace_event.h"
 #include "system_wrappers/include/field_trial.h"
 
-using DegradationPreference = webrtc::VideoSendStream::DegradationPreference;
-
 namespace cricket {
 
 // Hack in order to pass in |receive_stream_id| to legacy clients.
@@ -140,7 +138,6 @@ class NullVideoDecoder : public webrtc::VideoDecoder {
 
   int32_t Decode(const webrtc::EncodedImage& input_image,
                  bool missing_frames,
-                 const webrtc::RTPFragmentationHeader* fragmentation,
                  const webrtc::CodecSpecificInfo* codec_specific_info,
                  int64_t render_time_ms) override {
     RTC_LOG(LS_ERROR) << "The NullVideoDecoder doesn't support decoding.";
@@ -458,34 +455,32 @@ WebRtcVideoChannel::WebRtcVideoSendStream::ConfigureVideoEncoderSettings(
   if (CodecNamesEq(codec.name, kVp9CodecName)) {
     webrtc::VideoCodecVP9 vp9_settings =
         webrtc::VideoEncoder::GetDefaultVp9Settings();
-    if (is_screencast) {
-      // TODO(asapersson): Set to 2 for now since there is a DCHECK in
-      // VideoSendStream::ReconfigureVideoEncoder.
-      vp9_settings.numberOfSpatialLayers = 2;
-      vp9_settings.numberOfTemporalLayers = 1;
-    } else {
-      const size_t default_num_spatial_layers =
-          parameters_.config.rtp.ssrcs.size();
-      const size_t num_spatial_layers =
-          GetVp9SpatialLayersFromFieldTrial().value_or(
-              default_num_spatial_layers);
+    const size_t default_num_spatial_layers =
+        parameters_.config.rtp.ssrcs.size();
+    const size_t num_spatial_layers =
+        GetVp9SpatialLayersFromFieldTrial().value_or(
+            default_num_spatial_layers);
 
-      const size_t default_num_temporal_layers =
-          num_spatial_layers > 1 ? kConferenceDefaultNumTemporalLayers : 1;
-      const size_t num_temporal_layers =
-          GetVp9TemporalLayersFromFieldTrial().value_or(
-              default_num_temporal_layers);
+    const size_t default_num_temporal_layers =
+        num_spatial_layers > 1 ? kConferenceDefaultNumTemporalLayers : 1;
+    const size_t num_temporal_layers =
+        GetVp9TemporalLayersFromFieldTrial().value_or(
+            default_num_temporal_layers);
 
-      vp9_settings.numberOfSpatialLayers = std::min<unsigned char>(
-          num_spatial_layers, kConferenceMaxNumSpatialLayers);
-      vp9_settings.numberOfTemporalLayers = std::min<unsigned char>(
-          num_temporal_layers, kConferenceMaxNumTemporalLayers);
-    }
+    vp9_settings.numberOfSpatialLayers = std::min<unsigned char>(
+        num_spatial_layers, kConferenceMaxNumSpatialLayers);
+    vp9_settings.numberOfTemporalLayers = std::min<unsigned char>(
+        num_temporal_layers, kConferenceMaxNumTemporalLayers);
 
     // VP9 denoising is disabled by default.
     vp9_settings.denoisingOn = codec_default_denoising ? true : denoising;
-    vp9_settings.frameDroppingOn = frame_dropping;
     vp9_settings.automaticResizeOn = automatic_resize;
+    // Ensure frame dropping is always enabled.
+    RTC_DCHECK(vp9_settings.frameDroppingOn);
+    if (!is_screencast) {
+      // Limit inter-layer prediction to key pictures.
+      vp9_settings.interLayerPred = webrtc::InterLayerPredMode::kOnKeyPic;
+    }
     return new rtc::RefCountedObject<
         webrtc::VideoEncoderConfig::Vp9EncoderSpecificSettings>(vp9_settings);
   }
@@ -1064,17 +1059,13 @@ bool WebRtcVideoChannel::SetSend(bool send) {
   return true;
 }
 
-// TODO(nisse): The enable argument was used for mute logic which has
-// been moved to VideoBroadcaster. So remove the argument from this
-// method.
 bool WebRtcVideoChannel::SetVideoSend(
     uint32_t ssrc,
-    bool enable,
     const VideoOptions* options,
     rtc::VideoSourceInterface<webrtc::VideoFrame>* source) {
   TRACE_EVENT0("webrtc", "SetVideoSend");
   RTC_DCHECK(ssrc != 0);
-  RTC_LOG(LS_INFO) << "SetVideoSend (ssrc= " << ssrc << ", enable = " << enable
+  RTC_LOG(LS_INFO) << "SetVideoSend (ssrc= " << ssrc
                    << ", options: "
                    << (options ? options->ToString() : "nullptr")
                    << ", source = " << (source ? "(source)" : "nullptr") << ")";
@@ -1088,7 +1079,7 @@ bool WebRtcVideoChannel::SetVideoSend(
     return false;
   }
 
-  return kv->second->SetVideoSend(enable, options, source);
+  return kv->second->SetVideoSend(options, source);
 }
 
 bool WebRtcVideoChannel::ValidateSendSsrcAvailability(
@@ -1660,21 +1651,15 @@ WebRtcVideoChannel::WebRtcVideoSendStream::~WebRtcVideoSendStream() {
   if (stream_ != NULL) {
     call_->DestroyVideoSendStream(stream_);
   }
-  // Release |allocated_encoder_|.
-  allocated_encoder_.reset();
 }
 
 bool WebRtcVideoChannel::WebRtcVideoSendStream::SetVideoSend(
-    bool enable,
     const VideoOptions* options,
     rtc::VideoSourceInterface<webrtc::VideoFrame>* source) {
   TRACE_EVENT0("webrtc", "WebRtcVideoSendStream::SetVideoSend");
   RTC_DCHECK_RUN_ON(&thread_checker_);
 
-  // Ignore |options| pointer if |enable| is false.
-  bool options_present = enable && options;
-
-  if (options_present) {
+  if (options) {
     VideoOptions old_options = parameters_.options;
     parameters_.options.SetAll(*options);
     if (parameters_.options.is_screencast.value_or(false) !=
@@ -1694,7 +1679,7 @@ bool WebRtcVideoChannel::WebRtcVideoSendStream::SetVideoSend(
   }
 
   if (source_ && stream_) {
-    stream_->SetSource(nullptr, DegradationPreference::kDegradationDisabled);
+    stream_->SetSource(nullptr, webrtc::DegradationPreference::DISABLED);
   }
   // Switch to the new source.
   source_ = source;
@@ -1704,23 +1689,25 @@ bool WebRtcVideoChannel::WebRtcVideoSendStream::SetVideoSend(
   return true;
 }
 
-webrtc::VideoSendStream::DegradationPreference
+webrtc::DegradationPreference
 WebRtcVideoChannel::WebRtcVideoSendStream::GetDegradationPreference() const {
   // Do not adapt resolution for screen content as this will likely
   // result in blurry and unreadable text.
   // |this| acts like a VideoSource to make sure SinkWants are handled on the
   // correct thread.
-  DegradationPreference degradation_preference;
+  webrtc::DegradationPreference degradation_preference;
   if (!enable_cpu_overuse_detection_) {
-    degradation_preference = DegradationPreference::kDegradationDisabled;
+    degradation_preference = webrtc::DegradationPreference::DISABLED;
   } else {
     if (parameters_.options.is_screencast.value_or(false)) {
-      degradation_preference = DegradationPreference::kMaintainResolution;
+      degradation_preference =
+          webrtc::DegradationPreference::MAINTAIN_RESOLUTION;
     } else if (webrtc::field_trial::IsEnabled(
                    "WebRTC-Video-BalancedDegradation")) {
-      degradation_preference = DegradationPreference::kBalanced;
+      degradation_preference = webrtc::DegradationPreference::BALANCED;
     } else {
-      degradation_preference = DegradationPreference::kMaintainFramerate;
+      degradation_preference =
+          webrtc::DegradationPreference::MAINTAIN_FRAMERATE;
     }
   }
   return degradation_preference;
@@ -1736,26 +1723,6 @@ void WebRtcVideoChannel::WebRtcVideoSendStream::SetCodec(
   RTC_DCHECK_RUN_ON(&thread_checker_);
   parameters_.encoder_config = CreateVideoEncoderConfig(codec_settings.codec);
   RTC_DCHECK_GT(parameters_.encoder_config.number_of_streams, 0);
-
-  const webrtc::SdpVideoFormat format(codec_settings.codec.name,
-                                      codec_settings.codec.params);
-
-  // We can't overwrite |allocated_encoder_| immediately, because we
-  // need to release it after the RecreateWebRtcStream() call.
-  std::unique_ptr<webrtc::VideoEncoder> new_encoder =
-      // TODO(nisse): Leave to VideoStreamEncoder.
-      parameters_.config.encoder_settings.encoder_factory->CreateVideoEncoder(
-          format);
-
-  parameters_.config.encoder_settings.encoder = new_encoder.get();
-
-  const webrtc::VideoEncoderFactory::CodecInfo info =
-      parameters_.config.encoder_settings.encoder_factory->QueryVideoEncoder(
-          format);
-  parameters_.config.encoder_settings.full_overuse_time =
-      info.is_hardware_accelerated;
-  parameters_.config.encoder_settings.internal_source =
-      info.has_internal_source;
 
   parameters_.config.rtp.payload_name = codec_settings.codec.name;
   parameters_.config.rtp.payload_type = codec_settings.codec.id;
@@ -1780,9 +1747,10 @@ void WebRtcVideoChannel::WebRtcVideoSendStream::SetCodec(
 
   parameters_.codec_settings = codec_settings;
 
+  // TODO(nisse): Avoid recreation, it should be enough to call
+  // ReconfigureEncoder.
   RTC_LOG(LS_INFO) << "RecreateWebRtcStream (send) because of SetCodec.";
   RecreateWebRtcStream();
-  allocated_encoder_ = std::move(new_encoder);
 }
 
 void WebRtcVideoChannel::WebRtcVideoSendStream::SetSendParameters(
@@ -1915,6 +1883,8 @@ WebRtcVideoChannel::WebRtcVideoSendStream::CreateVideoEncoderConfig(
   RTC_DCHECK_RUN_ON(&thread_checker_);
   webrtc::VideoEncoderConfig encoder_config;
   encoder_config.codec_type = webrtc::PayloadStringToCodecType(codec.name);
+  encoder_config.video_format =
+      webrtc::SdpVideoFormat(codec.name, codec.params);
 
   bool is_screencast = parameters_.options.is_screencast.value_or(false);
   if (is_screencast) {
@@ -2716,7 +2686,11 @@ std::vector<webrtc::VideoStream> EncoderStreamFactory::CreateEncoderStreams(
   layer.width = width;
   layer.height = height;
   layer.max_framerate = max_framerate_;
-  layer.min_bitrate_bps = GetMinVideoBitrateBps();
+  // The min bitrate is hardcoded, but the max_bitrate_bps is set by the
+  // application. In the case that the application sets a max bitrate
+  // that's lower than the min bitrate, we adjust it down (see
+  // bugs.webrtc.org/9141).
+  layer.min_bitrate_bps = std::min(GetMinVideoBitrateBps(), max_bitrate_bps);
   layer.target_bitrate_bps = layer.max_bitrate_bps = max_bitrate_bps;
   layer.max_qp = max_qp_;
   layer.bitrate_priority = encoder_config.bitrate_priority;

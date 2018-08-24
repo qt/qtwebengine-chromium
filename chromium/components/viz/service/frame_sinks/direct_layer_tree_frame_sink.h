@@ -6,6 +6,7 @@
 #define COMPONENTS_VIZ_SERVICE_FRAME_SINKS_DIRECT_LAYER_TREE_FRAME_SINK_H_
 
 #include "base/macros.h"
+#include "base/single_thread_task_runner.h"
 #include "base/threading/thread_checker.h"
 #include "cc/trees/layer_tree_frame_sink.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
@@ -16,14 +17,10 @@
 #include "services/viz/privileged/interfaces/compositing/display_private.mojom.h"
 #include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
 
-namespace cc {
-class LocalSurfaceIdAllocator;
-class FrameSinkManagerImpl;
-}  // namespace cc
-
 namespace viz {
 class CompositorFrameSinkSupportManager;
 class Display;
+class FrameSinkManagerImpl;
 
 // This class submits compositor frames to an in-process Display, with the
 // client's frame being the root surface of the Display.
@@ -45,7 +42,6 @@ class VIZ_SERVICE_EXPORT DirectLayerTreeFrameSink
       scoped_refptr<RasterContextProvider> worker_context_provider,
       scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner,
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
-      SharedBitmapManager* shared_bitmap_manager,
       bool use_viz_hit_test);
   ~DirectLayerTreeFrameSink() override;
 
@@ -65,6 +61,8 @@ class VIZ_SERVICE_EXPORT DirectLayerTreeFrameSink
   void DisplayDidDrawAndSwap() override;
   void DisplayDidReceiveCALayerParams(
       const gfx::CALayerParams& ca_layer_params) override;
+  void DidSwapAfterSnapshotRequestReceived(
+      const std::vector<ui::LatencyInfo>& latency_info) override;
 
  private:
   // mojom::CompositorFrameSinkClient implementation:
@@ -86,8 +84,6 @@ class VIZ_SERVICE_EXPORT DirectLayerTreeFrameSink
   // ContextLostObserver implementation:
   void OnContextLost() override;
 
-  mojom::HitTestRegionListPtr CreateHitTestData(
-      const CompositorFrame& frame) const;
   void DidReceiveCompositorFrameAckInternal(
       const std::vector<ReturnedResource>& resources);
 
@@ -97,7 +93,6 @@ class VIZ_SERVICE_EXPORT DirectLayerTreeFrameSink
   std::unique_ptr<CompositorFrameSinkSupport> support_;
 
   const FrameSinkId frame_sink_id_;
-  LocalSurfaceId local_surface_id_;
   CompositorFrameSinkSupportManager* const support_manager_;
   FrameSinkManagerImpl* frame_sink_manager_;
   ParentLocalSurfaceIdAllocator parent_local_surface_id_allocator_;

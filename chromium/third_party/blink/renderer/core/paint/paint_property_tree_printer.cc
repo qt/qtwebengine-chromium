@@ -34,7 +34,6 @@ class FrameViewPropertyTreePrinter
   using Traits = PropertyTreePrinterTraits<PropertyTreeNode>;
 
   void CollectNodes(const LocalFrameView& frame_view) {
-    Traits::AddFrameViewProperties(frame_view, *this);
     if (LayoutView* layout_view = frame_view.GetLayoutView())
       CollectNodes(*layout_view);
     for (Frame* child = frame_view.GetFrame().Tree().FirstChild(); child;
@@ -57,19 +56,11 @@ class FrameViewPropertyTreePrinter
       CollectNodes(*child);
     }
   }
-
 };
 
 template <>
 class PropertyTreePrinterTraits<TransformPaintPropertyNode> {
  public:
-  static void AddFrameViewProperties(
-      const LocalFrameView& frame_view,
-      PropertyTreePrinter<TransformPaintPropertyNode>& printer) {
-    printer.AddNode(frame_view.PreTranslation());
-    printer.AddNode(frame_view.ScrollTranslation());
-  }
-
   static void AddObjectPaintProperties(
       const LayoutObject& object,
       const ObjectPaintProperties& properties,
@@ -85,33 +76,24 @@ class PropertyTreePrinterTraits<TransformPaintPropertyNode> {
 template <>
 class PropertyTreePrinterTraits<ClipPaintPropertyNode> {
  public:
-  static void AddFrameViewProperties(
-      const LocalFrameView& frame_view,
-      PropertyTreePrinter<ClipPaintPropertyNode>& printer) {
-    printer.AddNode(frame_view.ContentClip());
-  }
-
   static void AddObjectPaintProperties(
       const LayoutObject& object,
       const ObjectPaintProperties& properties,
       PropertyTreePrinter<ClipPaintPropertyNode>& printer) {
     printer.AddNode(properties.FragmentClip());
+    printer.AddNode(properties.ClipPathClip());
     printer.AddNode(properties.MaskClip());
     printer.AddNode(properties.CssClip());
     printer.AddNode(properties.CssClipFixedPosition());
     printer.AddNode(properties.OverflowControlsClip());
     printer.AddNode(properties.InnerBorderRadiusClip());
-    printer.AddNode(OverflowClip(properties));
+    printer.AddNode(properties.OverflowClip());
   }
 };
 
 template <>
 class PropertyTreePrinterTraits<EffectPaintPropertyNode> {
  public:
-  static void AddFrameViewProperties(
-      const LocalFrameView& frame_view,
-      PropertyTreePrinter<EffectPaintPropertyNode>& printer) {}
-
   static void AddObjectPaintProperties(
       const LayoutObject& object,
       const ObjectPaintProperties& properties,
@@ -119,18 +101,13 @@ class PropertyTreePrinterTraits<EffectPaintPropertyNode> {
     printer.AddNode(properties.Effect());
     printer.AddNode(properties.Filter());
     printer.AddNode(properties.Mask());
+    printer.AddNode(properties.ClipPath());
   }
 };
 
 template <>
 class PropertyTreePrinterTraits<ScrollPaintPropertyNode> {
  public:
-  static void AddFrameViewProperties(
-      const LocalFrameView& frame_view,
-      PropertyTreePrinter<ScrollPaintPropertyNode>& printer) {
-    printer.AddNode(frame_view.ScrollNode());
-  }
-
   static void AddObjectPaintProperties(
       const LayoutObject& object,
       const ObjectPaintProperties& properties,
@@ -157,13 +134,6 @@ void SetDebugName(const PropertyTreeNode* node,
 
 namespace PaintPropertyTreePrinter {
 
-void UpdateDebugNames(const LocalFrameView& frame_view) {
-  SetDebugName(frame_view.PreTranslation(), "PreTranslation (FrameView)");
-  SetDebugName(frame_view.ScrollTranslation(), "ScrollTranslation (FrameView)");
-  SetDebugName(frame_view.ContentClip(), "ContentClip (FrameView)");
-  SetDebugName(frame_view.ScrollNode(), "Scroll (FrameView)");
-}
-
 void UpdateDebugNames(const LayoutObject& object,
                       ObjectPaintProperties& properties) {
   SetDebugName(properties.PaintOffsetTranslation(), "PaintOffsetTranslation",
@@ -173,6 +143,7 @@ void UpdateDebugNames(const LayoutObject& object,
   SetDebugName(properties.SvgLocalToBorderBoxTransform(),
                "SvgLocalToBorderBoxTransform", object);
   SetDebugName(properties.ScrollTranslation(), "ScrollTranslation", object);
+
   SetDebugName(properties.FragmentClip(), "FragmentClip", object);
   SetDebugName(properties.ClipPathClip(), "ClipPathClip", object);
   SetDebugName(properties.MaskClip(), "MaskClip", object);
@@ -183,7 +154,8 @@ void UpdateDebugNames(const LayoutObject& object,
                object);
   SetDebugName(properties.InnerBorderRadiusClip(), "InnerBorderRadiusClip",
                object);
-  SetDebugName(OverflowClip(properties), "OverflowClip", object);
+  SetDebugName(properties.OverflowClip(), "OverflowClip", object);
+
   SetDebugName(properties.Effect(), "Effect", object);
   SetDebugName(properties.Filter(), "Filter", object);
   SetDebugName(properties.Mask(), "Mask", object);

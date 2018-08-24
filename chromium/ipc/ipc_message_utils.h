@@ -24,7 +24,11 @@
 #include "base/containers/stack_container.h"
 #include "base/files/file.h"
 #include "base/format_macros.h"
+#include "base/memory/platform_shared_memory_region.h"
+#include "base/memory/read_only_shared_memory_region.h"
 #include "base/memory/shared_memory_handle.h"
+#include "base/memory/unsafe_shared_memory_region.h"
+#include "base/memory/writable_shared_memory_region.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/optional.h"
 #include "base/strings/string16.h"
@@ -34,6 +38,10 @@
 #include "ipc/ipc_message_start.h"
 #include "ipc/ipc_param_traits.h"
 #include "ipc/ipc_sync_message.h"
+
+#if defined(OS_ANDROID)
+#include "base/android/scoped_hardware_buffer_handle.h"
+#endif
 
 namespace base {
 class DictionaryValue;
@@ -519,7 +527,7 @@ struct COMPONENT_EXPORT(IPC) ParamTraits<base::DictionaryValue> {
   static void Log(const param_type& p, std::string* l);
 };
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
 // FileDescriptors may be serialised over IPC channels on POSIX. On the
 // receiving side, the FileDescriptor is a valid duplicate of the file
 // descriptor which was transmitted: *it is not just a copy of the integer like
@@ -544,7 +552,7 @@ struct COMPONENT_EXPORT(IPC) ParamTraits<base::FileDescriptor> {
                    param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
-#endif  // defined(OS_POSIX)
+#endif  // defined(OS_POSIX) || defined(OS_FUCHSIA)
 
 template <>
 struct COMPONENT_EXPORT(IPC) ParamTraits<base::SharedMemoryHandle> {
@@ -558,8 +566,8 @@ struct COMPONENT_EXPORT(IPC) ParamTraits<base::SharedMemoryHandle> {
 
 #if defined(OS_ANDROID)
 template <>
-struct COMPONENT_EXPORT(IPC) ParamTraits<base::SharedMemoryHandle::Type> {
-  typedef base::SharedMemoryHandle::Type param_type;
+struct COMPONENT_EXPORT(IPC) ParamTraits<AHardwareBuffer*> {
+  typedef AHardwareBuffer* param_type;
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -567,6 +575,58 @@ struct COMPONENT_EXPORT(IPC) ParamTraits<base::SharedMemoryHandle::Type> {
   static void Log(const param_type& p, std::string* l);
 };
 #endif
+
+template <>
+struct COMPONENT_EXPORT(IPC) ParamTraits<base::ReadOnlySharedMemoryRegion> {
+  typedef base::ReadOnlySharedMemoryRegion param_type;
+  static void Write(base::Pickle* m, const param_type& p);
+  static bool Read(const base::Pickle* m,
+                   base::PickleIterator* iter,
+                   param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct COMPONENT_EXPORT(IPC) ParamTraits<base::WritableSharedMemoryRegion> {
+  typedef base::WritableSharedMemoryRegion param_type;
+  static void Write(base::Pickle* m, const param_type& p);
+  static bool Read(const base::Pickle* m,
+                   base::PickleIterator* iter,
+                   param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct COMPONENT_EXPORT(IPC) ParamTraits<base::UnsafeSharedMemoryRegion> {
+  typedef base::UnsafeSharedMemoryRegion param_type;
+  static void Write(base::Pickle* m, const param_type& p);
+  static bool Read(const base::Pickle* m,
+                   base::PickleIterator* iter,
+                   param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct COMPONENT_EXPORT(IPC)
+    ParamTraits<base::subtle::PlatformSharedMemoryRegion> {
+  typedef base::subtle::PlatformSharedMemoryRegion param_type;
+  static void Write(base::Pickle* m, const param_type& p);
+  static bool Read(const base::Pickle* m,
+                   base::PickleIterator* iter,
+                   param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct COMPONENT_EXPORT(IPC)
+    ParamTraits<base::subtle::PlatformSharedMemoryRegion::Mode> {
+  typedef base::subtle::PlatformSharedMemoryRegion::Mode param_type;
+  static void Write(base::Pickle* m, const param_type& p);
+  static bool Read(const base::Pickle* m,
+                   base::PickleIterator* iter,
+                   param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
 
 #if defined(OS_WIN)
 template <>

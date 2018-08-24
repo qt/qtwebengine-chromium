@@ -26,6 +26,9 @@ static_library("account_info") {
     "account_info.cc",
     "account_info.h",
   ]
+  deps = [
+    "//components/account_id",
+  ]
 }
 
 # Split into its own target to allow browser clients of the Identity Service to
@@ -125,12 +128,12 @@ static_library("browser") {
     ":signin_buildflags",
     ":signin_metrics",
     "//base",
+    "//components/account_id",
     "//components/content_settings/core/browser",
     "//components/content_settings/core/common",
     "//components/invalidation/public",
     "//components/keyed_service/core",
     "//components/prefs",
-    "//components/signin/core/account_id",
     "//google_apis",
     "//net",
     "//ui/gfx",
@@ -193,6 +196,8 @@ static_library("test_support") {
     "fake_signin_manager.h",
     "scoped_account_consistency.cc",
     "scoped_account_consistency.h",
+    "scoped_unified_consent.cc",
+    "scoped_unified_consent.h",
     "test_signin_client.cc",
     "test_signin_client.h",
   ]

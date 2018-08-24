@@ -18,15 +18,30 @@
 
 #include "gtest/gtest.h"
 #include "perfetto/base/utils.h"
+#include "perfetto/tracing/core/commit_data_request.h"
+#include "perfetto/tracing/core/service.h"
 #include "perfetto/tracing/core/trace_writer.h"
 #include "src/base/test/test_task_runner.h"
 #include "src/tracing/core/shared_memory_arbiter_impl.h"
 #include "src/tracing/test/aligned_buffer_test.h"
 
-#include "protos/trace_packet.pbzero.h"
+#include "perfetto/trace/test_event.pbzero.h"
+#include "perfetto/trace/trace_packet.pbzero.h"
 
 namespace perfetto {
 namespace {
+
+class FakeProducerEndpoint : public Service::ProducerEndpoint {
+  void RegisterDataSource(const DataSourceDescriptor&) override {}
+  void UnregisterDataSource(const std::string&) override {}
+  void CommitData(const CommitDataRequest&, CommitDataCallback) override {}
+  void NotifyFlushComplete(FlushRequestID) override {}
+  SharedMemory* shared_memory() const override { return nullptr; }
+  size_t shared_buffer_page_size_kb() const override { return 0; }
+  std::unique_ptr<TraceWriter> CreateTraceWriter(BufferID) override {
+    return nullptr;
+  }
+};
 
 class TraceWriterImplTest : public AlignedBufferTest {
  public:
@@ -34,10 +49,10 @@ class TraceWriterImplTest : public AlignedBufferTest {
     SharedMemoryArbiterImpl::set_default_layout_for_testing(
         SharedMemoryABI::PageLayout::kPageDiv4);
     AlignedBufferTest::SetUp();
-    auto callback = [](const std::vector<uint32_t>& arg) {};
     task_runner_.reset(new base::TestTaskRunner());
     arbiter_.reset(new SharedMemoryArbiterImpl(buf(), buf_size(), page_size(),
-                                               callback, task_runner_.get()));
+                                               &fake_producer_endpoint_,
+                                               task_runner_.get()));
   }
 
   void TearDown() override {
@@ -45,6 +60,7 @@ class TraceWriterImplTest : public AlignedBufferTest {
     task_runner_.reset();
   }
 
+  FakeProducerEndpoint fake_producer_endpoint_;
   std::unique_ptr<base::TestTaskRunner> task_runner_;
   std::unique_ptr<SharedMemoryArbiterImpl> arbiter_;
   std::function<void(const std::vector<uint32_t>&)> on_pages_complete_;
@@ -56,15 +72,18 @@ INSTANTIATE_TEST_CASE_P(PageSize,
                         ::testing::ValuesIn(kPageSizes));
 
 TEST_P(TraceWriterImplTest, SingleWriter) {
-  const BufferID tgt_buf_id = 42;
-  std::unique_ptr<TraceWriter> writer = arbiter_->CreateTraceWriter(tgt_buf_id);
-  for (int i = 0; i < 32; i++) {
+  const BufferID kBufId = 42;
+  std::unique_ptr<TraceWriter> writer = arbiter_->CreateTraceWriter(kBufId);
+  const size_t kNumPackets = 32;
+  for (size_t i = 0; i < kNumPackets; i++) {
     auto packet = writer->NewTracePacket();
     char str[16];
-    sprintf(str, "foobar %d", i);
-    packet->set_test(str);
+    sprintf(str, "foobar %zu", i);
+    packet->set_for_testing()->set_str(str);
   }
-  writer->NewTracePacket()->set_test("workaround for returing the last chunk");
+
+  // Destroying the TraceWriteImpl should cause the last packet to be finalized
+  // and the chunk to be put back in the kChunkComplete state.
   writer.reset();
 
   SharedMemoryABI* abi = arbiter_->shmem_abi_for_testing();
@@ -73,18 +92,21 @@ TEST_P(TraceWriterImplTest, SingleWriter) {
     uint32_t page_layout = abi->page_layout_dbg(page_idx);
     size_t num_chunks = SharedMemoryABI::GetNumChunksForLayout(page_layout);
     for (size_t chunk_idx = 0; chunk_idx < num_chunks; chunk_idx++) {
-      auto chunk =
-          abi->TryAcquireChunkForReading(page_idx, chunk_idx, tgt_buf_id);
+      auto chunk_state = abi->GetChunkState(page_idx, chunk_idx);
+      ASSERT_TRUE(chunk_state == SharedMemoryABI::kChunkFree ||
+                  chunk_state == SharedMemoryABI::kChunkComplete);
+      auto chunk = abi->TryAcquireChunkForReading(page_idx, chunk_idx);
       if (!chunk.is_valid())
         continue;
-      packets_count += chunk.header()->packets_state.load().count;
+      packets_count += chunk.header()->packets.load().count;
     }
   }
-  EXPECT_EQ(32u, packets_count);
+  EXPECT_EQ(kNumPackets, packets_count);
   // TODO(primiano): check also the content of the packets decoding the protos.
 }
 
 // TODO(primiano): add multi-writer test.
+// TODO(primiano): add Flush() test.
 
 }  // namespace
 }  // namespace perfetto

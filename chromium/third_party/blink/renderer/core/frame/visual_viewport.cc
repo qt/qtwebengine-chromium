@@ -31,10 +31,10 @@
 #include "third_party/blink/renderer/core/frame/visual_viewport.h"
 
 #include <memory>
+
+#include "cc/layers/layer.h"
+#include "cc/layers/scrollbar_layer_interface.h"
 #include "third_party/blink/public/platform/task_type.h"
-#include "third_party/blink/public/platform/web_compositor_support.h"
-#include "third_party/blink/public/platform/web_scrollbar.h"
-#include "third_party/blink/public/platform/web_scrollbar_layer.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
@@ -43,11 +43,11 @@
 #include "third_party/blink/renderer/core/frame/root_frame_viewport.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
+#include "third_party/blink/renderer/core/input/event_handler.h"
 #include "third_party/blink/renderer/core/layout/adjust_for_absolute_zoom.h"
 #include "third_party/blink/renderer/core/layout/text_autosizer.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
-#include "third_party/blink/renderer/core/page/scrolling/scrolling_coordinator.h"
 #include "third_party/blink/renderer/core/paint/compositing/paint_layer_compositor.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/platform/geometry/double_rect.h"
@@ -113,8 +113,9 @@ void VisualViewport::SetSize(const IntSize& size) {
   size_ = size;
 
   if (inner_viewport_container_layer_) {
-    inner_viewport_container_layer_->SetSize(FloatSize(size_));
-    inner_viewport_scroll_layer_->PlatformLayer()->SetScrollable(size_);
+    inner_viewport_container_layer_->SetSize(size_);
+    inner_viewport_scroll_layer_->CcLayer()->SetScrollable(
+        static_cast<gfx::Size>(size_));
 
     // Need to re-compute sizes for the overlay scrollbars.
     InitializeScrollbars();
@@ -147,7 +148,7 @@ void VisualViewport::MainFrameDidChangeSize() {
 
   // In unit tests we may not have initialized the layer tree.
   if (inner_viewport_scroll_layer_)
-    inner_viewport_scroll_layer_->SetSize(FloatSize(ContentsSize()));
+    inner_viewport_scroll_layer_->SetSize(ContentsSize());
 
   ClampToBoundaries();
 }
@@ -307,6 +308,9 @@ bool VisualViewport::DidSetScaleOrLocation(float scale,
   if (!values_changed)
     return false;
 
+  MainFrame()->GetEventHandler().DispatchFakeMouseMoveEventSoon(
+      MouseEventManager::FakeMouseMoveReason::kDuringScroll);
+
   probe::didChangeViewport(MainFrame());
   MainFrame()->Loader().SaveScrollState();
 
@@ -371,9 +375,10 @@ void VisualViewport::CreateLayerTree() {
   // set inner viewport container layer size.
   inner_viewport_container_layer_->SetMasksToBounds(
       GetPage().GetSettings().GetMainFrameClipsContent());
-  inner_viewport_container_layer_->SetSize(FloatSize(size_));
+  inner_viewport_container_layer_->SetSize(size_);
 
-  inner_viewport_scroll_layer_->PlatformLayer()->SetScrollable(size_);
+  inner_viewport_scroll_layer_->CcLayer()->SetScrollable(
+      static_cast<gfx::Size>(size_));
   DCHECK(MainFrame());
   DCHECK(MainFrame()->GetDocument());
   inner_viewport_scroll_layer_->SetElementId(
@@ -415,15 +420,29 @@ void VisualViewport::InitializeScrollbars() {
 
   if (VisualViewportSuppliesScrollbars() &&
       !GetPage().GetSettings().GetHideScrollbars()) {
-    if (!overlay_scrollbar_horizontal_->Parent())
+    if (!overlay_scrollbar_horizontal_->Parent()) {
       inner_viewport_container_layer_->AddChild(
           overlay_scrollbar_horizontal_.get());
-    if (!overlay_scrollbar_vertical_->Parent())
+      if (RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled()) {
+        // TODO(pdr): The viewport overlay scrollbars do not have the correct
+        // paint properties. See: https://crbug.com/836910
+        overlay_scrollbar_horizontal_->SetLayerState(
+            PropertyTreeState(PropertyTreeState::Root()), IntPoint());
+      }
+    }
+    if (!overlay_scrollbar_vertical_->Parent()) {
       inner_viewport_container_layer_->AddChild(
           overlay_scrollbar_vertical_.get());
+      if (RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled()) {
+        // TODO(pdr): The viewport overlay scrollbars do not have the correct
+        // paint properties. See: https://crbug.com/836910
+        overlay_scrollbar_vertical_->SetLayerState(
+            PropertyTreeState(PropertyTreeState::Root()), IntPoint());
+      }
+    }
 
-    SetupScrollbar(WebScrollbar::kHorizontal);
-    SetupScrollbar(WebScrollbar::kVertical);
+    SetupScrollbar(kHorizontalScrollbar);
+    SetupScrollbar(kVerticalScrollbar);
   } else {
     overlay_scrollbar_horizontal_->RemoveFromParent();
     overlay_scrollbar_vertical_->RemoveFromParent();
@@ -437,14 +456,14 @@ void VisualViewport::InitializeScrollbars() {
     frame->View()->VisualViewportScrollbarsChanged();
 }
 
-void VisualViewport::SetupScrollbar(WebScrollbar::Orientation orientation) {
-  bool is_horizontal = orientation == WebScrollbar::kHorizontal;
+void VisualViewport::SetupScrollbar(ScrollbarOrientation orientation) {
+  bool is_horizontal = orientation == kHorizontalScrollbar;
   GraphicsLayer* scrollbar_graphics_layer =
       is_horizontal ? overlay_scrollbar_horizontal_.get()
                     : overlay_scrollbar_vertical_.get();
-  std::unique_ptr<WebScrollbarLayer>& web_scrollbar_layer =
-      is_horizontal ? web_overlay_scrollbar_horizontal_
-                    : web_overlay_scrollbar_vertical_;
+  std::unique_ptr<ScrollingCoordinator::ScrollbarLayerGroup>&
+      scrollbar_layer_group = is_horizontal ? scrollbar_layer_group_horizontal_
+                                            : scrollbar_layer_group_vertical_;
 
   ScrollbarThemeOverlay& theme = ScrollbarThemeOverlay::MobileTheme();
   int thumb_thickness = clampTo<int>(
@@ -457,22 +476,21 @@ void VisualViewport::SetupScrollbar(WebScrollbar::Orientation orientation) {
       std::floor(GetPage().GetChromeClient().WindowToViewportScalar(
           theme.ScrollbarMargin())));
 
-  if (!web_scrollbar_layer) {
+  if (!scrollbar_layer_group) {
     ScrollingCoordinator* coordinator = GetPage().GetScrollingCoordinator();
     DCHECK(coordinator);
-    ScrollbarOrientation webcore_orientation =
-        is_horizontal ? kHorizontalScrollbar : kVerticalScrollbar;
-    web_scrollbar_layer = coordinator->CreateSolidColorScrollbarLayer(
-        webcore_orientation, thumb_thickness, scrollbar_margin, false);
+    scrollbar_layer_group = coordinator->CreateSolidColorScrollbarLayer(
+        orientation, thumb_thickness, scrollbar_margin, false);
 
     // The compositor will control the scrollbar's visibility. Set to invisible
     // by default so scrollbars don't show up in layout tests.
-    web_scrollbar_layer->Layer()->SetOpacity(0);
-    scrollbar_graphics_layer->SetContentsToPlatformLayer(
-        web_scrollbar_layer->Layer());
+    scrollbar_layer_group->layer->SetOpacity(0.f);
+    scrollbar_graphics_layer->SetContentsToCcLayer(
+        scrollbar_layer_group->layer.get(),
+        /*prevent_contents_opaque_changes=*/false);
     scrollbar_graphics_layer->SetDrawsContent(false);
-    web_scrollbar_layer->SetScrollLayer(
-        inner_viewport_scroll_layer_->PlatformLayer());
+    scrollbar_layer_group->scrollbar_layer->SetScrollElementId(
+        inner_viewport_scroll_layer_->CcLayer()->element_id());
   }
 
   int x_position = is_horizontal
@@ -493,7 +511,7 @@ void VisualViewport::SetupScrollbar(WebScrollbar::Orientation orientation) {
 
   // Use the GraphicsLayer to position the scrollbars.
   scrollbar_graphics_layer->SetPosition(IntPoint(x_position, y_position));
-  scrollbar_graphics_layer->SetSize(FloatSize(width, height));
+  scrollbar_graphics_layer->SetSize(IntSize(width, height));
   scrollbar_graphics_layer->SetContentsRect(IntRect(0, 0, width, height));
 }
 
@@ -669,7 +687,7 @@ IntRect VisualViewport::VisibleContentRect(
 
 scoped_refptr<base::SingleThreadTaskRunner> VisualViewport::GetTimerTaskRunner()
     const {
-  return MainFrame()->GetTaskRunner(TaskType::kUnspecedTimer);
+  return MainFrame()->GetTaskRunner(TaskType::kInternalDefault);
 }
 
 void VisualViewport::UpdateScrollOffset(const ScrollOffset& position,
@@ -679,7 +697,7 @@ void VisualViewport::UpdateScrollOffset(const ScrollOffset& position,
   if (IsExplicitScrollType(scroll_type)) {
     NotifyRootFrameViewport();
     if (scroll_type != kCompositorScroll && LayerForScrolling())
-      LayerForScrolling()->PlatformLayer()->ShowScrollbars();
+      LayerForScrolling()->CcLayer()->ShowScrollbars();
   }
 }
 
@@ -716,11 +734,8 @@ LocalFrame* VisualViewport::MainFrame() const {
 }
 
 bool VisualViewport::ScheduleAnimation() {
-  if (PlatformChromeClient* client = GetChromeClient()) {
-    client->ScheduleAnimation(MainFrame()->View());
-    return true;
-  }
-  return false;
+  GetPage().GetChromeClient().ScheduleAnimation(MainFrame()->View());
+  return true;
 }
 
 void VisualViewport::ClampToBoundaries() {

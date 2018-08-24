@@ -113,14 +113,9 @@ void IntersectionGeometry::InitializeTargetRect() {
 }
 
 void IntersectionGeometry::InitializeRootRect() {
-  if (root_->IsLayoutView() &&
-      !RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-    root_rect_ = LayoutRect(root_->GetFrameView()->VisibleContentRect());
-    root_->MapToVisualRectInAncestorSpace(nullptr, root_rect_);
-  } else if (root_->IsLayoutView() && root_->GetDocument().IsInMainFrame()) {
-    // The main frame is a bit special (even after RLS) as the scrolling
-    // viewport can differ in size from the LayoutView itself. There's two
-    // situations this occurs in:
+  if (root_->IsLayoutView() && root_->GetDocument().IsInMainFrame()) {
+    // The main frame is a bit special as the scrolling viewport can differ in
+    // size from the LayoutView itself. There's two situations this occurs in:
     // 1) The ForceZeroLayoutHeight quirk setting is used in Android WebView for
     // compatibility and sets the initial-containing-block's (a.k.a.
     // LayoutView) height to 0. Thus, we can't use its size for intersection
@@ -160,8 +155,12 @@ void IntersectionGeometry::ClipToRoot() {
   LayoutBox* local_ancestor = nullptr;
   if (!RootIsImplicit() || root_->GetDocument().IsInMainFrame())
     local_ancestor = ToLayoutBox(root_);
+  VisualRectFlags flags = static_cast<VisualRectFlags>(
+      RuntimeEnabledFeatures::IntersectionObserverGeometryMapperEnabled()
+          ? (kUseGeometryMapper | kEdgeInclusive)
+          : kEdgeInclusive);
   does_intersect_ = target_->MapToVisualRectInAncestorSpace(
-      local_ancestor, intersection_rect_, kEdgeInclusive);
+      local_ancestor, intersection_rect_, flags);
   if (!does_intersect_ || !local_ancestor)
     return;
   if (local_ancestor->HasOverflowClip())

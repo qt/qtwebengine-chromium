@@ -11,7 +11,6 @@
 #include "components/cbor/cbor_values.h"
 #include "components/cbor/cbor_writer.h"
 #include "content/browser/web_package/signed_exchange_consts.h"
-#include "content/browser/web_package/signed_exchange_utils.h"
 #include "content/public/common/content_paths.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -50,14 +49,14 @@ base::Optional<SignedExchangeHeader> GenerateHeaderAndParse(
   auto serialized = cbor::CBORWriter::Write(cbor::CBORValue(std::move(array)));
   return SignedExchangeHeader::Parse(
       base::make_span(serialized->data(), serialized->size()),
-      signed_exchange_utils::LogCallback());
+      nullptr /* devtools_proxy */);
 }
 
 }  // namespace
 
-TEST(SignedExchangeHeaderTest, ParseHeaderLength) {
+TEST(SignedExchangeHeaderTest, ParseEncodedLength) {
   constexpr struct {
-    uint8_t bytes[SignedExchangeHeader::kEncodedHeaderLengthInBytes];
+    uint8_t bytes[SignedExchangeHeader::kEncodedLengthInBytes];
     size_t expected;
   } kTestCases[] = {
       {{0x00, 0x00, 0x01}, 1u}, {{0x01, 0xe2, 0x40}, 123456u},
@@ -66,14 +65,14 @@ TEST(SignedExchangeHeaderTest, ParseHeaderLength) {
   int test_element_index = 0;
   for (const auto& test_case : kTestCases) {
     SCOPED_TRACE(testing::Message() << "testing case " << test_element_index++);
-    EXPECT_EQ(SignedExchangeHeader::ParseHeadersLength(test_case.bytes),
+    EXPECT_EQ(SignedExchangeHeader::ParseEncodedLength(test_case.bytes),
               test_case.expected);
   }
 }
 
 TEST(SignedExchangeHeaderTest, ParseGoldenFile) {
   base::FilePath test_htxg_path;
-  PathService::Get(content::DIR_TEST_DATA, &test_htxg_path);
+  base::PathService::Get(content::DIR_TEST_DATA, &test_htxg_path);
   test_htxg_path = test_htxg_path.AppendASCII("htxg").AppendASCII(
       "test.example.org_test.htxg");
 
@@ -81,18 +80,17 @@ TEST(SignedExchangeHeaderTest, ParseGoldenFile) {
   ASSERT_TRUE(base::ReadFileToString(test_htxg_path, &contents));
   auto* contents_bytes = reinterpret_cast<const uint8_t*>(contents.data());
 
-  ASSERT_GT(contents.size(), SignedExchangeHeader::kEncodedHeaderLengthInBytes);
-  size_t header_size = SignedExchangeHeader::ParseHeadersLength(base::make_span(
-      contents_bytes, SignedExchangeHeader::kEncodedHeaderLengthInBytes));
+  ASSERT_GT(contents.size(), SignedExchangeHeader::kEncodedLengthInBytes);
+  size_t header_size = SignedExchangeHeader::ParseEncodedLength(base::make_span(
+      contents_bytes, SignedExchangeHeader::kEncodedLengthInBytes));
   ASSERT_GT(contents.size(),
-            SignedExchangeHeader::kEncodedHeaderLengthInBytes + header_size);
+            SignedExchangeHeader::kEncodedLengthInBytes + header_size);
 
   const auto cbor_bytes = base::make_span<const uint8_t>(
-      contents_bytes + SignedExchangeHeader::kEncodedHeaderLengthInBytes,
+      contents_bytes + SignedExchangeHeader::kEncodedLengthInBytes,
       header_size);
   const base::Optional<SignedExchangeHeader> header =
-      SignedExchangeHeader::Parse(cbor_bytes,
-                                  signed_exchange_utils::LogCallback());
+      SignedExchangeHeader::Parse(cbor_bytes, nullptr /* devtools_proxy */);
   ASSERT_TRUE(header.has_value());
   EXPECT_EQ(header->request_url(), GURL("https://test.example.org/test/"));
   EXPECT_EQ(header->request_method(), "GET");

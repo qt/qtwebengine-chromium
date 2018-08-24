@@ -6,6 +6,7 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/test/render_view_test.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/public/platform/web_vector.h"
 #include "third_party/blink/public/web/web_document.h"
@@ -130,7 +131,7 @@ const char kDivTableExample6Expected[] = "";
 
 class FormAutofillUtilsTest : public content::RenderViewTest {
  public:
-  FormAutofillUtilsTest() : content::RenderViewTest() {}
+  FormAutofillUtilsTest() {}
   ~FormAutofillUtilsTest() override {}
 };
 
@@ -262,5 +263,188 @@ TEST_F(FormAutofillUtilsTest, InferLabelSourceTest) {
         form_target, stop_words, &label, &label_source));
     EXPECT_EQ(base::UTF8ToUTF16(kLabelSourceExpectedLabel), label);
     EXPECT_EQ(test_case.label_source, label_source);
+  }
+}
+
+TEST_F(FormAutofillUtilsTest, IsEnabled) {
+  LoadHTML(
+      "<input type='text' id='name1'>"
+      "<input type='password' disabled id='name2'>"
+      "<input type='password' id='name3'>"
+      "<input type='text' id='name4' disabled>");
+
+  const std::vector<blink::WebElement> dummy_fieldsets;
+
+  WebLocalFrame* web_frame = GetMainFrame();
+  ASSERT_TRUE(web_frame);
+  std::vector<blink::WebFormControlElement> control_elements;
+  blink::WebElementCollection inputs =
+      web_frame->GetDocument().GetElementsByHTMLTagName("input");
+  for (blink::WebElement element = inputs.FirstItem(); !element.IsNull();
+       element = inputs.NextItem()) {
+    control_elements.push_back(element.To<blink::WebFormControlElement>());
+  }
+
+  autofill::FormData target;
+  EXPECT_TRUE(
+      autofill::form_util::UnownedPasswordFormElementsAndFieldSetsToFormData(
+          dummy_fieldsets, control_elements, nullptr, web_frame->GetDocument(),
+          nullptr, autofill::form_util::EXTRACT_NONE, &target, nullptr));
+  const struct {
+    const char* const name;
+    bool enabled;
+  } kExpectedFields[] = {
+      {"name1", true}, {"name2", false}, {"name3", true}, {"name4", false},
+  };
+  const size_t number_of_cases = arraysize(kExpectedFields);
+  ASSERT_EQ(number_of_cases, target.fields.size());
+  for (size_t i = 0; i < number_of_cases; ++i) {
+    EXPECT_EQ(base::UTF8ToUTF16(kExpectedFields[i].name),
+              target.fields[i].name);
+    EXPECT_EQ(kExpectedFields[i].enabled, target.fields[i].is_enabled);
+  }
+}
+
+TEST_F(FormAutofillUtilsTest, IsReadonly) {
+  LoadHTML(
+      "<input type='text' id='name1'>"
+      "<input readonly type='password' id='name2'>"
+      "<input type='password' id='name3'>"
+      "<input type='text' id='name4' readonly>");
+
+  const std::vector<blink::WebElement> dummy_fieldsets;
+
+  WebLocalFrame* web_frame = GetMainFrame();
+  ASSERT_TRUE(web_frame);
+  std::vector<blink::WebFormControlElement> control_elements;
+  blink::WebElementCollection inputs =
+      web_frame->GetDocument().GetElementsByHTMLTagName("input");
+  for (blink::WebElement element = inputs.FirstItem(); !element.IsNull();
+       element = inputs.NextItem()) {
+    control_elements.push_back(element.To<blink::WebFormControlElement>());
+  }
+
+  autofill::FormData target;
+  EXPECT_TRUE(
+      autofill::form_util::UnownedPasswordFormElementsAndFieldSetsToFormData(
+          dummy_fieldsets, control_elements, nullptr, web_frame->GetDocument(),
+          nullptr, autofill::form_util::EXTRACT_NONE, &target, nullptr));
+  const struct {
+    const char* const name;
+    bool readonly;
+  } kExpectedFields[] = {
+      {"name1", false}, {"name2", true}, {"name3", false}, {"name4", true},
+  };
+  const size_t number_of_cases = arraysize(kExpectedFields);
+  ASSERT_EQ(number_of_cases, target.fields.size());
+  for (size_t i = 0; i < number_of_cases; ++i) {
+    EXPECT_EQ(base::UTF8ToUTF16(kExpectedFields[i].name),
+              target.fields[i].name);
+    EXPECT_EQ(kExpectedFields[i].readonly, target.fields[i].is_readonly);
+  }
+}
+
+TEST_F(FormAutofillUtilsTest, IsDefault) {
+  LoadHTML(
+      "<input type='text' id='name1' value='123'>"
+      "<input type='password' id='name2'>"
+      "<input type='password' id='name3'>"
+      "<input type='text' id='name4' value='321'>");
+
+  const std::vector<blink::WebElement> dummy_fieldsets;
+
+  WebLocalFrame* web_frame = GetMainFrame();
+  ASSERT_TRUE(web_frame);
+
+  web_frame->GetDocument()
+      .GetElementById("name1")
+      .To<blink::WebInputElement>()
+      .SetAutofillValue("abc");
+  web_frame->GetDocument()
+      .GetElementById("name3")
+      .To<blink::WebInputElement>()
+      .SetAutofillValue("abc");
+
+  std::vector<blink::WebFormControlElement> control_elements;
+  blink::WebElementCollection inputs =
+      web_frame->GetDocument().GetElementsByHTMLTagName("input");
+  for (blink::WebElement element = inputs.FirstItem(); !element.IsNull();
+       element = inputs.NextItem()) {
+    control_elements.push_back(element.To<blink::WebFormControlElement>());
+  }
+
+  autofill::FormData target;
+  EXPECT_TRUE(
+      autofill::form_util::UnownedPasswordFormElementsAndFieldSetsToFormData(
+          dummy_fieldsets, control_elements, nullptr, web_frame->GetDocument(),
+          nullptr, autofill::form_util::EXTRACT_NONE, &target, nullptr));
+  const struct {
+    const char* const name;
+    bool is_default;
+  } kExpectedFields[] = {
+      {"name1", false}, {"name2", true}, {"name3", false}, {"name4", true},
+  };
+  const size_t number_of_cases = arraysize(kExpectedFields);
+  ASSERT_EQ(number_of_cases, target.fields.size());
+  for (size_t i = 0; i < number_of_cases; ++i) {
+    EXPECT_EQ(base::UTF8ToUTF16(kExpectedFields[i].name),
+              target.fields[i].name);
+    EXPECT_EQ(kExpectedFields[i].is_default, target.fields[i].is_default);
+  }
+}
+
+TEST_F(FormAutofillUtilsTest, IsFocusable) {
+  LoadHTML(
+      "<input type='text' id='name1' value='123'>"
+      "<input type='text' id='name2' style='display:none'>");
+
+  const std::vector<blink::WebElement> dummy_fieldsets;
+
+  WebLocalFrame* web_frame = GetMainFrame();
+  ASSERT_TRUE(web_frame);
+
+  std::vector<blink::WebFormControlElement> control_elements;
+  control_elements.push_back(web_frame->GetDocument()
+                                 .GetElementById("name1")
+                                 .To<blink::WebFormControlElement>());
+  control_elements.push_back(web_frame->GetDocument()
+                                 .GetElementById("name2")
+                                 .To<blink::WebFormControlElement>());
+
+  // Computing visibility only happens if causing a layout in Blink is
+  // acceptable. The first block below checks the "layout acceptable"
+  // situation, the one after it the "layout to be avoided" situation.
+  {
+    EXPECT_TRUE(autofill::form_util::IsWebElementVisible(control_elements[0]));
+    EXPECT_FALSE(autofill::form_util::IsWebElementVisible(control_elements[1]));
+
+    autofill::FormData target;
+    EXPECT_TRUE(
+        autofill::form_util::UnownedPasswordFormElementsAndFieldSetsToFormData(
+            dummy_fieldsets, control_elements, nullptr,
+            web_frame->GetDocument(), nullptr,
+            autofill::form_util::EXTRACT_NONE, &target, nullptr));
+    ASSERT_EQ(2u, target.fields.size());
+    EXPECT_EQ(base::UTF8ToUTF16("name1"), target.fields[0].name);
+    EXPECT_TRUE(target.fields[0].is_focusable);
+    EXPECT_EQ(base::UTF8ToUTF16("name2"), target.fields[1].name);
+    EXPECT_FALSE(target.fields[1].is_focusable);
+  }
+  {
+    autofill::form_util::ScopedLayoutPreventer preventer;
+    EXPECT_TRUE(autofill::form_util::IsWebElementVisible(control_elements[0]));
+    EXPECT_TRUE(autofill::form_util::IsWebElementVisible(control_elements[1]));
+
+    autofill::FormData target;
+    EXPECT_TRUE(
+        autofill::form_util::UnownedPasswordFormElementsAndFieldSetsToFormData(
+            dummy_fieldsets, control_elements, nullptr,
+            web_frame->GetDocument(), nullptr,
+            autofill::form_util::EXTRACT_NONE, &target, nullptr));
+    ASSERT_EQ(2u, target.fields.size());
+    EXPECT_EQ(base::UTF8ToUTF16("name1"), target.fields[0].name);
+    EXPECT_TRUE(target.fields[0].is_focusable);
+    EXPECT_EQ(base::UTF8ToUTF16("name2"), target.fields[1].name);
+    EXPECT_TRUE(target.fields[1].is_focusable);
   }
 }

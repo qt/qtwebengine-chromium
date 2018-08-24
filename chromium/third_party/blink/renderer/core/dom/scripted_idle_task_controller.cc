@@ -8,11 +8,11 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/core/dom/idle_request_options.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
@@ -89,7 +89,7 @@ void ScriptedIdleTaskController::V8IdleTask::Trace(blink::Visitor* visitor) {
 }
 
 void ScriptedIdleTaskController::V8IdleTask::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+    ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(callback_);
   ScriptedIdleTaskController::IdleTask::TraceWrappers(visitor);
 }
@@ -115,7 +115,7 @@ void ScriptedIdleTaskController::Trace(blink::Visitor* visitor) {
 }
 
 void ScriptedIdleTaskController::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+    ScriptWrappableVisitor* visitor) const {
   for (const auto& idle_task : idle_tasks_.Values()) {
     visitor->TraceWrappers(idle_task);
   }

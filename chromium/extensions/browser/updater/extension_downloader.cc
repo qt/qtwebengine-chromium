@@ -34,7 +34,6 @@
 #include "extensions/common/extension_updater_uma.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/manifest_url_handlers.h"
-#include "google_apis/gaia/identity_provider.h"
 #include "net/base/backoff_entry.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
@@ -204,13 +203,16 @@ ExtensionDownloader::ExtensionDownloader(
       delegate_(delegate),
       request_context_(request_context),
       connector_(connector),
-      manifests_queue_(&kDefaultBackoffPolicy,
-                       base::Bind(&ExtensionDownloader::CreateManifestFetcher,
-                                  base::Unretained(this))),
-      extensions_queue_(&kDefaultBackoffPolicy,
-                        base::Bind(&ExtensionDownloader::CreateExtensionFetcher,
-                                   base::Unretained(this))),
-      extension_cache_(NULL),
+      manifests_queue_(
+          &kDefaultBackoffPolicy,
+          base::BindRepeating(&ExtensionDownloader::CreateManifestFetcher,
+                              base::Unretained(this))),
+      extensions_queue_(
+          &kDefaultBackoffPolicy,
+          base::BindRepeating(&ExtensionDownloader::CreateExtensionFetcher,
+                              base::Unretained(this))),
+      extension_cache_(nullptr),
+      token_service_(nullptr),
       weak_ptr_factory_(this) {
   DCHECK(delegate_);
   DCHECK(request_context_.get());
@@ -307,9 +309,11 @@ void ExtensionDownloader::StartBlacklistUpdate(
   StartUpdateCheck(std::move(blacklist_fetch));
 }
 
-void ExtensionDownloader::SetWebstoreIdentityProvider(
-    std::unique_ptr<IdentityProvider> identity_provider) {
-  identity_provider_.swap(identity_provider);
+void ExtensionDownloader::SetWebstoreAuthenticationCapabilities(
+    const GetWebstoreAccountCallback& webstore_account_callback,
+    OAuth2TokenService* token_service) {
+  webstore_account_callback_ = webstore_account_callback;
+  token_service_ = token_service;
 }
 
 // static
@@ -806,9 +810,9 @@ void ExtensionDownloader::NotifyDelegateDownloadFinished(
   delegate_->OnExtensionDownloadFinished(
       CRXFileInfo(id, crx_path, package_hash), file_ownership_passed, url,
       version, ping_results_[id], request_ids,
-      from_cache ? base::Bind(&ExtensionDownloader::CacheInstallDone,
-                              weak_ptr_factory_.GetWeakPtr(),
-                              base::Passed(&fetch_data))
+      from_cache ? base::BindRepeating(&ExtensionDownloader::CacheInstallDone,
+                                       weak_ptr_factory_.GetWeakPtr(),
+                                       base::Passed(&fetch_data))
                  : ExtensionDownloaderDelegate::InstallCallback());
   if (!from_cache)
     ping_results_.erase(id);
@@ -882,12 +886,12 @@ void ExtensionDownloader::CreateExtensionFetcher() {
       // We should try OAuth2, but we have no token cached. This
       // ExtensionFetcher will be started once the token fetch is complete,
       // in either OnTokenFetchSuccess or OnTokenFetchFailure.
-      DCHECK(identity_provider_.get());
+      DCHECK(token_service_);
+      DCHECK(!webstore_account_callback_.is_null());
       OAuth2TokenService::ScopeSet webstore_scopes;
       webstore_scopes.insert(kWebstoreOAuth2Scope);
-      access_token_request_ =
-          identity_provider_->GetTokenService()->StartRequest(
-              identity_provider_->GetActiveAccountId(), webstore_scopes, this);
+      access_token_request_ = token_service_->StartRequest(
+          webstore_account_callback_.Run(), webstore_scopes, this);
       return;
     }
     extension_fetcher_->AddExtraRequestHeader(
@@ -923,9 +927,10 @@ void ExtensionDownloader::OnCRXFetchComplete(
       const std::string& expected_hash = fetch_data->package_hash;
       extension_cache_->PutExtension(
           id, expected_hash, crx_path, version,
-          base::Bind(&ExtensionDownloader::NotifyDelegateDownloadFinished,
-                     weak_ptr_factory_.GetWeakPtr(), base::Passed(&fetch_data),
-                     false));
+          base::BindRepeating(
+              &ExtensionDownloader::NotifyDelegateDownloadFinished,
+              weak_ptr_factory_.GetWeakPtr(), base::Passed(&fetch_data),
+              false));
     } else {
       NotifyDelegateDownloadFinished(std::move(fetch_data), false, crx_path,
                                      true);
@@ -999,7 +1004,7 @@ bool ExtensionDownloader::IterateFetchCredentialsAfterFailure(
   // fetch.
   switch (fetch->credentials) {
     case ExtensionFetch::CREDENTIALS_NONE:
-      if (fetch->url.DomainIs(kGoogleDotCom) && identity_provider_) {
+      if (fetch->url.DomainIs(kGoogleDotCom) && token_service_) {
         fetch->credentials = ExtensionFetch::CREDENTIALS_OAUTH2_TOKEN;
       } else {
         fetch->credentials = ExtensionFetch::CREDENTIALS_COOKIES;
@@ -1011,12 +1016,12 @@ bool ExtensionDownloader::IterateFetchCredentialsAfterFailure(
       // should invalidate the token and try again.
       if (response_code == net::HTTP_UNAUTHORIZED &&
           fetch->oauth2_attempt_count <= kMaxOAuth2Attempts) {
-        DCHECK(identity_provider_.get());
+        DCHECK(token_service_);
+        DCHECK(!webstore_account_callback_.is_null());
         OAuth2TokenService::ScopeSet webstore_scopes;
         webstore_scopes.insert(kWebstoreOAuth2Scope);
-        identity_provider_->GetTokenService()->InvalidateAccessToken(
-            identity_provider_->GetActiveAccountId(), webstore_scopes,
-            access_token_);
+        token_service_->InvalidateAccessToken(webstore_account_callback_.Run(),
+                                              webstore_scopes, access_token_);
         access_token_.clear();
         return true;
       }

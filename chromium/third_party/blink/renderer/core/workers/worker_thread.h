@@ -30,6 +30,7 @@
 #include <memory>
 
 #include "base/memory/scoped_refptr.h"
+#include "base/optional.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_annotations.h"
 #include "base/unguessable_token.h"
@@ -44,12 +45,11 @@
 #include "third_party/blink/renderer/core/workers/worker_inspector_proxy.h"
 #include "third_party/blink/renderer/core/workers/worker_thread_lifecycle_context.h"
 #include "third_party/blink/renderer/core/workers/worker_thread_lifecycle_observer.h"
-#include "third_party/blink/renderer/platform/scheduler/child/worker_global_scope_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/child/worker_scheduler.h"
 #include "third_party/blink/renderer/platform/waitable_event.h"
 #include "third_party/blink/renderer/platform/web_task_runner.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 #include "v8/include/v8.h"
 
 namespace blink {
@@ -92,14 +92,14 @@ class CORE_EXPORT WorkerThread : public WebThread::TaskObserver {
 
   // Starts the underlying thread and creates the global scope. Called on the
   // main thread.
-  // Startup data for WorkerBackingThread is WTF::nullopt if |this| doesn't own
+  // Startup data for WorkerBackingThread is base::nullopt if |this| doesn't own
   // the underlying WorkerBackingThread.
   // TODO(nhiroki): We could separate WorkerBackingThread initialization from
   // GlobalScope initialization sequence, that is, InitializeOnWorkerThread().
   // After that, we could remove this startup data for WorkerBackingThread.
   // (https://crbug.com/710364)
   void Start(std::unique_ptr<GlobalScopeCreationParams>,
-             const WTF::Optional<WorkerBackingThreadStartupData>&,
+             const base::Optional<WorkerBackingThreadStartupData>&,
              WorkerInspectorProxy::PauseOnWorkerStart,
              ParentExecutionContextTaskRunners*);
 
@@ -157,7 +157,7 @@ class CORE_EXPORT WorkerThread : public WebThread::TaskObserver {
   // Only callable on the main thread.
   void AppendDebuggerTask(CrossThreadClosure);
 
-  // Only callable on the main thread.
+  // Callable on both the main thread and the worker thread.
   const base::UnguessableToken& GetDevToolsWorkerToken() const {
     return devtools_worker_token_;
   }
@@ -203,7 +203,7 @@ class CORE_EXPORT WorkerThread : public WebThread::TaskObserver {
     return nullptr;
   }
 
-  scheduler::WorkerGlobalScopeScheduler* GetScheduler();
+  scheduler::WorkerScheduler* GetScheduler();
 
   // Returns a task runner bound to the per-global-scope scheduler's task queue.
   // You don't have to care about the lifetime of the associated global scope
@@ -211,7 +211,7 @@ class CORE_EXPORT WorkerThread : public WebThread::TaskObserver {
   // are discarded and PostTask on the returned task runner just fails. This
   // function can be called on both the main thread and the worker thread.
   scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(TaskType type) {
-    return global_scope_scheduler_->GetTaskRunner(type);
+    return worker_scheduler_->GetTaskRunner(type);
   }
 
   void ChildThreadStartedOnWorkerThread(WorkerThread*);
@@ -273,7 +273,7 @@ class CORE_EXPORT WorkerThread : public WebThread::TaskObserver {
   void InitializeSchedulerOnWorkerThread(WaitableEvent*);
   void InitializeOnWorkerThread(
       std::unique_ptr<GlobalScopeCreationParams>,
-      const WTF::Optional<WorkerBackingThreadStartupData>&,
+      const base::Optional<WorkerBackingThreadStartupData>&,
       WorkerInspectorProxy::PauseOnWorkerStart) LOCKS_EXCLUDED(mutex_);
 
   void EvaluateClassicScriptOnWorkerThread(
@@ -310,7 +310,7 @@ class CORE_EXPORT WorkerThread : public WebThread::TaskObserver {
   TimeDelta forcible_termination_delay_;
 
   scoped_refptr<InspectorTaskRunner> inspector_task_runner_;
-  base::UnguessableToken devtools_worker_token_;
+  const base::UnguessableToken devtools_worker_token_;
 
   // Created on the main thread, passed to the worker thread but should kept
   // being accessed only on the main thread.
@@ -323,8 +323,7 @@ class CORE_EXPORT WorkerThread : public WebThread::TaskObserver {
 
   // Tasks managed by this scheduler are canceled when the global scope is
   // closed.
-  std::unique_ptr<scheduler::WorkerGlobalScopeScheduler>
-      global_scope_scheduler_;
+  std::unique_ptr<scheduler::WorkerScheduler> worker_scheduler_;
 
   // This lock protects shared states between the main thread and the worker
   // thread. See thread-safety annotations (e.g., GUARDED_BY) in this header

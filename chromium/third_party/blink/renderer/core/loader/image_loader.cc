@@ -86,8 +86,9 @@ class ImageLoader::Task {
       : loader_(loader),
         should_bypass_main_world_csp_(ShouldBypassMainWorldCSP(loader)),
         update_behavior_(update_behavior),
-        weak_factory_(this),
-        referrer_policy_(referrer_policy) {
+        referrer_policy_(referrer_policy),
+
+        weak_factory_(this) {
     ExecutionContext& context = loader_->GetElement()->GetDocument();
     probe::AsyncTaskScheduled(&context, "Image", this);
     v8::Isolate* isolate = V8PerIsolateData::MainThreadIsolate();
@@ -134,9 +135,9 @@ class ImageLoader::Task {
   BypassMainWorldBehavior should_bypass_main_world_csp_;
   UpdateFromElementBehavior update_behavior_;
   scoped_refptr<ScriptState> script_state_;
-  base::WeakPtrFactory<Task> weak_factory_;
   ReferrerPolicy referrer_policy_;
   KURL request_url_;
+  base::WeakPtrFactory<Task> weak_factory_;
 };
 
 ImageLoader::ImageLoader(Element* element)
@@ -632,11 +633,6 @@ void ImageLoader::ImageNotifyFinished(ImageResourceContent* resource) {
 
   if (image_content_ && image_content_->HasImage()) {
     Image& image = *image_content_->GetImage();
-    if (IsHTMLImageElement(element_)) {
-      Image::RecordCheckerableImageUMA(image, Image::ImageType::kImg);
-    } else if (IsSVGImageElement(element_)) {
-      Image::RecordCheckerableImageUMA(image, Image::ImageType::kSvg);
-    }
 
     if (image.IsSVGImage()) {
       SVGImage& svg_image = ToSVGImage(image);
@@ -660,7 +656,7 @@ void ImageLoader::ImageNotifyFinished(ImageResourceContent* resource) {
   if (resource->ErrorOccurred()) {
     pending_load_event_.Cancel();
 
-    Optional<ResourceError> error = resource->GetResourceError();
+    base::Optional<ResourceError> error = resource->GetResourceError();
     if (error && error->IsAccessCheck())
       CrossSiteOrCSPViolationOccurred(AtomicString(error->FailingURL()));
 

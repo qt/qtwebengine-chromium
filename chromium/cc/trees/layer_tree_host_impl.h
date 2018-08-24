@@ -17,6 +17,7 @@
 #include "base/callback.h"
 #include "base/containers/flat_map.h"
 #include "base/macros.h"
+#include "base/memory/memory_pressure_listener.h"
 #include "base/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "cc/base/synced_property.h"
@@ -41,11 +42,13 @@
 #include "cc/trees/layer_tree_settings.h"
 #include "cc/trees/managed_memory_policy.h"
 #include "cc/trees/mutator_host_client.h"
+#include "cc/trees/render_frame_metadata.h"
 #include "cc/trees/task_runner_provider.h"
 #include "cc/trees/ukm_manager.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/gpu/context_cache_controller.h"
 #include "components/viz/common/quads/render_pass.h"
+#include "components/viz/common/surfaces/child_local_surface_id_allocator.h"
 #include "components/viz/common/surfaces/local_surface_id.h"
 #include "components/viz/common/surfaces/surface_id.h"
 #include "ui/gfx/geometry/rect.h"
@@ -75,7 +78,6 @@ class PendingTreeDurationHistogramTimer;
 class PendingTreeRasterDurationHistogramTimer;
 class RasterTilePriorityQueue;
 class RasterBufferProvider;
-class RenderFrameMetadata;
 class RenderFrameMetadataObserver;
 class RenderingStatsInstrumentation;
 class ResourcePool;
@@ -425,6 +427,7 @@ class CC_EXPORT LayerTreeHostImpl
   void SetExternalTilePriorityConstraints(
       const gfx::Rect& viewport_rect,
       const gfx::Transform& transform) override;
+  base::Optional<viz::HitTestRegionList> BuildHitTestData() override;
   void DidLoseLayerTreeFrameSink() override;
   void DidReceiveCompositorFrameAck() override;
   void DidPresentCompositorFrame(uint32_t presentation_token,
@@ -449,6 +452,7 @@ class CC_EXPORT LayerTreeHostImpl
   LayerTreeFrameSink* layer_tree_frame_sink() const {
     return layer_tree_frame_sink_;
   }
+  int max_texture_size() const { return max_texture_size_; }
   void ReleaseLayerTreeFrameSink();
 
   std::string LayerListAsJson() const;
@@ -531,7 +535,9 @@ class CC_EXPORT LayerTreeHostImpl
   ManagedMemoryPolicy ActualManagedMemoryPolicy() const;
 
   void SetViewportSize(const gfx::Size& device_viewport_size);
-  gfx::Size device_viewport_size() const { return device_viewport_size_; }
+  const gfx::Size& device_viewport_size() const {
+    return device_viewport_size_;
+  }
 
   void SetViewportVisibleRect(const gfx::Rect& visible_rect);
   gfx::Rect viewport_visible_rect() const { return viewport_visible_rect_; }
@@ -595,6 +601,10 @@ class CC_EXPORT LayerTreeHostImpl
   virtual viz::ResourceId ResourceIdForUIResource(UIResourceId uid) const;
 
   virtual bool IsUIResourceOpaque(UIResourceId uid) const;
+
+  // This method gets the scroll offset for a regular scroller, or the combined
+  // visual and layout offsets of the viewport.
+  gfx::ScrollOffset GetVisualScrollOffset(const ScrollNode& scroll_node) const;
 
   bool GetSnapFlingInfo(const gfx::Vector2dF& natural_displacement_in_viewport,
                         gfx::Vector2dF* initial_offset,
@@ -851,6 +861,9 @@ class CC_EXPORT LayerTreeHostImpl
   // active tree.
   void ActivateStateForImages();
 
+  void OnMemoryPressure(
+      base::MemoryPressureListener::MemoryPressureLevel level);
+
   std::unordered_map<UIResourceId, UIResourceData> ui_resource_map_;
   // UIResources are held here once requested to be deleted until they are
   // released from the display compositor, then the backing can be deleted.
@@ -861,7 +874,14 @@ class CC_EXPORT LayerTreeHostImpl
   // associated with them anymore, as that is freed at the time of eviction.
   std::set<UIResourceId> evicted_ui_resources_;
 
-  LayerTreeFrameSink* layer_tree_frame_sink_;
+  // These are valid when has_valid_layer_tree_frame_sink_ is true.
+  //
+  // A pointer used for communicating with and submitting output to the display
+  // compositor.
+  LayerTreeFrameSink* layer_tree_frame_sink_ = nullptr;
+  // The maximum size (either width or height) that any texture can be. Also
+  // holds a reasonable value for software compositing bitmaps.
+  int max_texture_size_ = 0;
 
   // The following scoped variables must not outlive the
   // |layer_tree_frame_sink_|.
@@ -921,7 +941,6 @@ class CC_EXPORT LayerTreeHostImpl
 
   const bool is_synchronous_single_threaded_;
   TileManager tile_manager_;
-  DecodedImageTracker decoded_image_tracker_;
 
   gfx::Vector2dF accumulated_root_overscroll_;
 
@@ -1053,9 +1072,13 @@ class CC_EXPORT LayerTreeHostImpl
   uint32_t last_presentation_token_ = 0u;
 
   viz::LocalSurfaceId last_draw_local_surface_id_;
+  base::Optional<RenderFrameMetadata> last_draw_render_frame_metadata_;
+  viz::ChildLocalSurfaceIdAllocator child_local_surface_id_allocator_;
 
   const int default_color_space_id_;
   const gfx::ColorSpace default_color_space_;
+
+  std::unique_ptr<base::MemoryPressureListener> memory_pressure_listener_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHostImpl);
 };

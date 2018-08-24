@@ -7,6 +7,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/geometry/float_rounded_rect.h"
 #include "third_party/blink/renderer/platform/graphics/paint/clip_paint_property_node.h"
+#include "third_party/blink/renderer/platform/testing/paint_property_test_helpers.h"
 
 namespace blink {
 
@@ -14,13 +15,11 @@ class PaintPropertyNodeTest : public testing::Test {
  protected:
   void SetUp() override {
     root = ClipPaintPropertyNode::Root();
-    node = ClipPaintPropertyNode::Create(root, nullptr, FloatRoundedRect());
-    child1 = ClipPaintPropertyNode::Create(node, nullptr, FloatRoundedRect());
-    child2 = ClipPaintPropertyNode::Create(node, nullptr, FloatRoundedRect());
-    grandchild1 =
-        ClipPaintPropertyNode::Create(child1, nullptr, FloatRoundedRect());
-    grandchild2 =
-        ClipPaintPropertyNode::Create(child2, nullptr, FloatRoundedRect());
+    node = CreateClip(root, nullptr, FloatRoundedRect());
+    child1 = CreateClip(node, nullptr, FloatRoundedRect());
+    child2 = CreateClip(node, nullptr, FloatRoundedRect());
+    grandchild1 = CreateClip(child1, nullptr, FloatRoundedRect());
+    grandchild2 = CreateClip(child2, nullptr, FloatRoundedRect());
 
     //          root
     //           |
@@ -36,7 +35,23 @@ class PaintPropertyNodeTest : public testing::Test {
     grandchild2->ClearChangedToRoot();
   }
 
+  static void Update(scoped_refptr<ClipPaintPropertyNode> node,
+                     scoped_refptr<const ClipPaintPropertyNode> new_parent,
+                     const FloatRoundedRect& new_clip_rect) {
+    node->Update(std::move(new_parent),
+                 ClipPaintPropertyNode::State{nullptr, new_clip_rect});
+  }
+
   void ExpectInitialState() {
+    EXPECT_FALSE(root->Changed(*root));
+    EXPECT_TRUE(node->Changed(*root));
+    EXPECT_TRUE(child1->Changed(*node));
+    EXPECT_TRUE(child2->Changed(*node));
+    EXPECT_TRUE(grandchild1->Changed(*child1));
+    EXPECT_TRUE(grandchild2->Changed(*child2));
+  }
+
+  void ExpectUnchangedState() {
     EXPECT_FALSE(root->Changed(*root));
     EXPECT_FALSE(node->Changed(*root));
     EXPECT_FALSE(child1->Changed(*root));
@@ -74,11 +89,12 @@ TEST_F(PaintPropertyNodeTest, LowestCommonAncestor) {
 TEST_F(PaintPropertyNodeTest, InitialStateAndReset) {
   ExpectInitialState();
   ResetAllChanged();
-  ExpectInitialState();
+  ExpectUnchangedState();
 }
 
 TEST_F(PaintPropertyNodeTest, ChangeNode) {
-  node->Update(root, nullptr, FloatRoundedRect(1, 2, 3, 4));
+  ResetAllChanged();
+  Update(node, root, FloatRoundedRect(1, 2, 3, 4));
   EXPECT_TRUE(node->Changed(*root));
   EXPECT_FALSE(node->Changed(*node));
   EXPECT_TRUE(child1->Changed(*root));
@@ -90,11 +106,12 @@ TEST_F(PaintPropertyNodeTest, ChangeNode) {
   EXPECT_FALSE(grandchild1->Changed(*grandchild2));
 
   ResetAllChanged();
-  ExpectInitialState();
+  ExpectUnchangedState();
 }
 
 TEST_F(PaintPropertyNodeTest, ChangeOneChild) {
-  child1->Update(node, nullptr, FloatRoundedRect(1, 2, 3, 4));
+  ResetAllChanged();
+  Update(child1, node, FloatRoundedRect(1, 2, 3, 4));
   EXPECT_FALSE(node->Changed(*root));
   EXPECT_FALSE(node->Changed(*node));
   EXPECT_TRUE(child1->Changed(*root));
@@ -114,11 +131,12 @@ TEST_F(PaintPropertyNodeTest, ChangeOneChild) {
   EXPECT_TRUE(grandchild2->Changed(*grandchild1));
 
   ResetAllChanged();
-  ExpectInitialState();
+  ExpectUnchangedState();
 }
 
 TEST_F(PaintPropertyNodeTest, Reparent) {
-  child1->Update(child2, nullptr, FloatRoundedRect(1, 2, 3, 4));
+  ResetAllChanged();
+  Update(child1, child2, FloatRoundedRect(1, 2, 3, 4));
   EXPECT_FALSE(node->Changed(*root));
   EXPECT_TRUE(child1->Changed(*node));
   EXPECT_TRUE(child1->Changed(*child2));
@@ -128,7 +146,7 @@ TEST_F(PaintPropertyNodeTest, Reparent) {
   EXPECT_TRUE(grandchild1->Changed(*child2));
 
   ResetAllChanged();
-  ExpectInitialState();
+  ExpectUnchangedState();
 }
 
 }  // namespace blink

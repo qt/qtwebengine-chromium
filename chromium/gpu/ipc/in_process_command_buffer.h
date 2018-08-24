@@ -10,6 +10,7 @@
 
 #include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "base/callback.h"
@@ -29,6 +30,7 @@
 #include "gpu/command_buffer/service/command_buffer_service.h"
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/decoder_client.h"
+#include "gpu/command_buffer/service/decoder_context.h"
 #include "gpu/command_buffer/service/gpu_preferences.h"
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/service_discardable_manager.h"
@@ -160,6 +162,7 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
   bool OnWaitSyncToken(const SyncToken& sync_token) override;
   void OnDescheduleUntilFinished() override;
   void OnRescheduleAfterFinished() override;
+  void OnSwapBuffers(uint64_t swap_id, uint32_t flags) override;
 
 // ImageTransportSurfaceDelegate implementation:
 #if defined(OS_WIN)
@@ -172,10 +175,7 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
   const GpuPreferences& GetGpuPreferences() const override;
 
   void SetSnapshotRequestedCallback(const base::Closure& callback) override;
-  void UpdateVSyncParameters(base::TimeTicks timebase,
-                             base::TimeDelta interval) override;
-  void BufferPresented(uint64_t swap_id,
-                       const gfx::PresentationFeedback& feedback) override;
+  void BufferPresented(const gfx::PresentationFeedback& feedback) override;
 
   void AddFilter(IPC::MessageFilter* message_filter) override;
   int32_t GetRouteID() const override;
@@ -183,25 +183,14 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
   // Upstream this function to GpuControl if needs arise.
   const GpuFeatureInfo& GetGpuFeatureInfo() const;
 
-  using SwapBuffersCompletionCallback =
-      base::RepeatingCallback<void(const SwapBuffersCompleteParams& params)>;
-  void SetSwapBuffersCompletionCallback(
-      const SwapBuffersCompletionCallback& callback);
-
   using UpdateVSyncParametersCallback =
       base::Callback<void(base::TimeTicks timebase, base::TimeDelta interval)>;
   void SetUpdateVSyncParametersCallback(
       const UpdateVSyncParametersCallback& callback);
 
-  using PresentationCallback =
-      base::Callback<void(uint64_t swap_id,
-                          const gfx::PresentationFeedback& feedback)>;
-  void SetPresentationCallback(const PresentationCallback& callback);
-
   void DidSwapBuffersCompleteOnOriginThread(SwapBuffersCompleteParams params);
-  void UpdateVSyncParametersOnOriginThread(base::TimeTicks timebase,
-                                           base::TimeDelta interval);
   void BufferPresentedOnOriginThread(uint64_t swap_id,
+                                     uint32_t flags,
                                      const gfx::PresentationFeedback& feedback);
 
   // Mostly the GpuFeatureInfo from GpuInit will be used to create a gpu thread
@@ -211,9 +200,7 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
   static void InitializeDefaultServiceForTesting(
       const GpuFeatureInfo& gpu_feature_info);
 
-  gpu::ServiceTransferCache* GetTransferCacheForTest() const {
-    return decoder_->GetTransferCacheForTest();
-  }
+  gpu::ServiceTransferCache* GetTransferCacheForTest() const;
 
   static const int kGpuMemoryBufferClientId;
 
@@ -237,7 +224,7 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
     // work.
     virtual void ScheduleDelayedWork(base::OnceClosure task) = 0;
 
-    virtual bool UseVirtualizedGLContexts() = 0;
+    virtual bool ForceVirtualizedGLContexts() = 0;
     virtual SyncPointManager* sync_point_manager() = 0;
     virtual bool BlockThreadOnWaitSyncToken() const = 0;
 
@@ -280,20 +267,20 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
     SurfaceHandle window;
     const ContextCreationAttribs& attribs;
     Capabilities* capabilities;  // Ouptut.
-    InProcessCommandBuffer* context_group;
+    InProcessCommandBuffer* share_command_buffer;
     ImageFactory* image_factory;
 
     InitializeOnGpuThreadParams(bool is_offscreen,
                                 SurfaceHandle window,
                                 const ContextCreationAttribs& attribs,
                                 Capabilities* capabilities,
-                                InProcessCommandBuffer* share_group,
+                                InProcessCommandBuffer* share_command_buffer,
                                 ImageFactory* image_factory)
         : is_offscreen(is_offscreen),
           window(window),
           attribs(attribs),
           capabilities(capabilities),
-          context_group(share_group),
+          share_command_buffer(share_command_buffer),
           image_factory(image_factory) {}
   };
 
@@ -347,7 +334,7 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
 
   scoped_refptr<base::SingleThreadTaskRunner> origin_task_runner_;
   std::unique_ptr<TransferBufferManager> transfer_buffer_manager_;
-  std::unique_ptr<gles2::GLES2Decoder> decoder_;
+  std::unique_ptr<DecoderContext> decoder_;
   scoped_refptr<gl::GLContext> context_;
   scoped_refptr<gl::GLSurface> surface_;
   scoped_refptr<SyncPointOrderData> sync_point_order_data_;
@@ -410,9 +397,16 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
   };
   base::queue<std::unique_ptr<GpuTask>> task_queue_;
 
-  SwapBuffersCompletionCallback swap_buffers_completion_callback_;
   UpdateVSyncParametersCallback update_vsync_parameters_completion_callback_;
-  PresentationCallback presentation_callback_;
+
+  // Params pushed each time we call OnSwapBuffers, and popped when a buffer
+  // is presented or a swap completed.
+  struct SwapBufferParams {
+    uint64_t swap_id;
+    uint32_t flags;
+  };
+  base::circular_deque<SwapBufferParams> pending_presented_params_;
+  base::circular_deque<SwapBufferParams> pending_swap_completed_params_;
 
   base::WeakPtr<InProcessCommandBuffer> client_thread_weak_ptr_;
   base::WeakPtr<InProcessCommandBuffer> gpu_thread_weak_ptr_;

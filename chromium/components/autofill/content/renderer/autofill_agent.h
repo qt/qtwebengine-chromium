@@ -71,7 +71,7 @@ class AutofillAgent : public content::RenderFrameObserver,
   void PreviewForm(int32_t id, const FormData& form) override;
   void FieldTypePredictionsAvailable(
       const std::vector<FormDataPredictions>& forms) override;
-  void ClearForm() override;
+  void ClearSection() override;
   void ClearPreviewedForm() override;
   void FillFieldWithValue(const base::string16& value) override;
   void PreviewFieldWithValue(const base::string16& value) override;
@@ -87,8 +87,6 @@ class AutofillAgent : public content::RenderFrameObserver,
   void SetSecureContextRequired(bool required) override;
   void SetFocusRequiresScroll(bool require) override;
   void SetQueryPasswordSuggestion(bool required) override;
-
-  void ShowNotSecureWarning(const blink::WebInputElement& element);
 
   void FormControlElementClicked(const blink::WebFormControlElement& element,
                                  bool was_focused);

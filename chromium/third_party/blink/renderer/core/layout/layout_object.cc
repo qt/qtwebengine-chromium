@@ -51,6 +51,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
+#include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/html/html_html_element.h"
 #include "third_party/blink/renderer/core/html/html_table_cell_element.h"
@@ -78,6 +79,8 @@
 #include "third_party/blink/renderer/core/layout/layout_theme.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/ng/layout_ng_block_flow.h"
+#include "third_party/blink/renderer/core/layout/ng/layout_ng_flexible_box.h"
+#include "third_party/blink/renderer/core/layout/ng/layout_ng_table_caption.h"
 #include "third_party/blink/renderer/core/layout/ng/layout_ng_table_cell.h"
 #include "third_party/blink/renderer/core/layout/ng/list/layout_ng_list_item.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_block_node.h"
@@ -92,7 +95,6 @@
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/style/content_data.h"
 #include "third_party/blink/renderer/core/style/cursor_data.h"
-#include "third_party/blink/renderer/platform/geometry/transform_state.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
 #include "third_party/blink/renderer/platform/graphics/paint/geometry_mapper.h"
 #include "third_party/blink/renderer/platform/graphics/paint/property_tree_state.h"
@@ -100,6 +102,7 @@
 #include "third_party/blink/renderer/platform/instance_counters.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/traced_value.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/transforms/transform_state.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/partitions.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
@@ -140,7 +143,8 @@ LayoutBlock* FindContainingBlock(LayoutObject* container,
   // LayoutObject::Container() method can actually be used to obtain the inline
   // directly.
   if (container && container->IsInline() && !container->IsAtomicInlineLevel()) {
-    DCHECK(container->Style()->HasInFlowPosition());
+    DCHECK(container->Style()->HasInFlowPosition() ||
+           container->Style()->HasFilter());
     container = container->ContainingBlock(skip_info);
   }
 
@@ -265,6 +269,8 @@ LayoutObject* LayoutObject::CreateObject(Element* element,
         return new LayoutNGTableCell(element);
       return new LayoutTableCell(element);
     case EDisplay::kTableCaption:
+      if (ShouldUseNewLayout(style))
+        return new LayoutNGTableCaption(element);
       return new LayoutTableCaption(element);
     case EDisplay::kWebkitBox:
     case EDisplay::kWebkitInlineBox:
@@ -273,8 +279,7 @@ LayoutObject* LayoutObject::CreateObject(Element* element,
     case EDisplay::kInlineFlex:
       if (RuntimeEnabledFeatures::LayoutNGFlexBoxEnabled() &&
           ShouldUseNewLayout(style)) {
-        // TODO(dgrogan): Change this to new class LayoutNGFlex.
-        return new LayoutNGBlockFlow(element);
+        return new LayoutNGFlexibleBox(element);
       }
       return new LayoutFlexibleBox(element);
     case EDisplay::kGrid:
@@ -1004,6 +1009,11 @@ inline void LayoutObject::InvalidateContainerPreferredLogicalWidths() {
 LayoutObject* LayoutObject::ContainerForAbsolutePosition(
     AncestorSkipInfo* skip_info) const {
   return FindAncestorByPredicate(this, skip_info, [](LayoutObject* candidate) {
+    if (!candidate->CanContainAbsolutePositionObjects() &&
+        candidate->StyleRef().ContainsLayout()) {
+      UseCounter::Count(candidate->GetDocument(),
+                        WebFeature::kCSSContainLayoutPositionedDescendants);
+    }
     return candidate->CanContainAbsolutePositionObjects();
   });
 }
@@ -1012,6 +1022,11 @@ LayoutObject* LayoutObject::ContainerForFixedPosition(
     AncestorSkipInfo* skip_info) const {
   DCHECK(!IsText());
   return FindAncestorByPredicate(this, skip_info, [](LayoutObject* candidate) {
+    if (!candidate->CanContainFixedPositionObjects() &&
+        candidate->StyleRef().ContainsLayout()) {
+      UseCounter::Count(candidate->GetDocument(),
+                        WebFeature::kCSSContainLayoutPositionedDescendants);
+    }
     return candidate->CanContainFixedPositionObjects();
   });
 }
@@ -1211,7 +1226,7 @@ bool LayoutObject::GetUpperLeftCorner(ExpandScrollMargin expand,
     }
 
     if (runner->IsText() && !runner->IsBR()) {
-      const Optional<FloatPoint> maybe_point =
+      const base::Optional<FloatPoint> maybe_point =
           ToLayoutText(runner)->GetUpperLeftCorner();
       if (maybe_point.has_value()) {
         point = runner->LocalToAbsolute(maybe_point.value(), kUseTransforms);
@@ -1560,23 +1575,30 @@ LayoutRect LayoutObject::LocalVisualRectIgnoringVisibility() const {
 bool LayoutObject::MapToVisualRectInAncestorSpaceInternalFastPath(
     const LayoutBoxModelObject* ancestor,
     LayoutRect& rect,
-    VisualRectFlags visual_rect_flags) const {
+    VisualRectFlags visual_rect_flags,
+    bool& intersects) const {
   if (!(visual_rect_flags & kUseGeometryMapper) ||
       !RuntimeEnabledFeatures::SlimmingPaintV175Enabled() ||
-      (visual_rect_flags & kEdgeInclusive) ||
       !FirstFragment().HasLocalBorderBoxProperties() || !ancestor ||
       !ancestor->FirstFragment().HasLocalBorderBoxProperties()) {
+    intersects = true;
     return false;
   }
 
-  if (ancestor == this)
+  if (ancestor == this) {
+    intersects = true;
     return true;
+  }
 
   rect.MoveBy(FirstFragment().PaintOffset());
   FloatClipRect clip_rect((FloatRect(rect)));
-  GeometryMapper::LocalToAncestorVisualRect(
+  intersects = GeometryMapper::LocalToAncestorVisualRect(
       FirstFragment().LocalBorderBoxProperties(),
-      ancestor->FirstFragment().ContentsProperties(), clip_rect);
+      ancestor->FirstFragment().ContentsProperties(), clip_rect,
+      kIgnorePlatformOverlayScrollbarSize,
+      (visual_rect_flags & kEdgeInclusive) ? kInclusiveIntersect
+                                           : kNonInclusiveIntersect);
+
   rect = LayoutRect(clip_rect.Rect());
   rect.MoveBy(-ancestor->FirstFragment().PaintOffset());
 
@@ -1587,17 +1609,18 @@ bool LayoutObject::MapToVisualRectInAncestorSpace(
     const LayoutBoxModelObject* ancestor,
     LayoutRect& rect,
     VisualRectFlags visual_rect_flags) const {
-  if (MapToVisualRectInAncestorSpaceInternalFastPath(ancestor, rect,
-                                                     visual_rect_flags))
-    return !rect.IsEmpty();
+  bool intersects = true;
+  if (MapToVisualRectInAncestorSpaceInternalFastPath(
+          ancestor, rect, visual_rect_flags, intersects))
+    return intersects;
 
   TransformState transform_state(TransformState::kApplyTransformDirection,
                                  FloatQuad(FloatRect(rect)));
-  bool retval = MapToVisualRectInAncestorSpaceInternal(
-      ancestor, transform_state, visual_rect_flags);
+  intersects = MapToVisualRectInAncestorSpaceInternal(ancestor, transform_state,
+                                                      visual_rect_flags);
   transform_state.Flatten();
   rect = LayoutRect(transform_state.LastPlanarQuad().BoundingBox());
-  return retval;
+  return intersects;
 }
 
 bool LayoutObject::MapToVisualRectInAncestorSpaceInternal(
@@ -2115,14 +2138,25 @@ void LayoutObject::StyleWillChange(StyleDifference diff,
   //
   // Since a CSS property cannot be applied directly to a text node, a
   // handler will have already been added for its parent so ignore it.
-  TouchAction old_touch_action =
-      style_ ? style_->GetTouchAction() : TouchAction::kTouchActionAuto;
+  //
+  // Elements may inherit touch action from parent frame, so we need to report
+  // touchstart handler if the root layout object has non-auto effective touch
+  // action.
+  TouchAction old_touch_action = TouchAction::kTouchActionAuto;
+  bool is_document_element = GetNode() && IsDocumentElement();
+  if (style_) {
+    old_touch_action = is_document_element ? style_->GetEffectiveTouchAction()
+                                           : style_->GetTouchAction();
+  }
+  TouchAction new_touch_action = is_document_element
+                                     ? new_style.GetEffectiveTouchAction()
+                                     : new_style.GetTouchAction();
   if (GetNode() && !GetNode()->IsTextNode() &&
       (old_touch_action == TouchAction::kTouchActionAuto) !=
-          (new_style.GetTouchAction() == TouchAction::kTouchActionAuto)) {
+          (new_touch_action == TouchAction::kTouchActionAuto)) {
     EventHandlerRegistry& registry =
-        GetDocument().GetPage()->GetEventHandlerRegistry();
-    if (new_style.GetTouchAction() != TouchAction::kTouchActionAuto) {
+        GetDocument().GetFrame()->GetEventHandlerRegistry();
+    if (new_touch_action != TouchAction::kTouchActionAuto) {
       registry.DidAddEventHandler(*GetNode(),
                                   EventHandlerRegistry::kTouchAction);
     } else {
@@ -2307,18 +2341,6 @@ void LayoutObject::SetStyleWithWritingModeOfParent(
   SetStyleWithWritingModeOf(std::move(style), Parent());
 }
 
-void LayoutObject::AddChildWithWritingModeOfParent(LayoutObject* new_child,
-                                                   LayoutObject* before_child) {
-  const WritingMode old_writing_mode =
-      new_child->MutableStyleRef().GetWritingMode();
-  const WritingMode new_writing_mode = StyleRef().GetWritingMode();
-  if (old_writing_mode != new_writing_mode && new_child->IsBoxModelObject()) {
-    new_child->MutableStyleRef().SetWritingMode(new_writing_mode);
-    new_child->SetHorizontalWritingMode(IsHorizontalWritingMode());
-  }
-  AddChild(new_child, before_child);
-}
-
 void LayoutObject::UpdateFillImages(const FillLayer* old_layers,
                                     const FillLayer& new_layers) {
   // Optimize the common case
@@ -2446,8 +2468,8 @@ void LayoutObject::MapLocalToAncestor(const LayoutBoxModelObject* ancestor,
     }
   }
 
-  LayoutSize container_offset = OffsetFromContainer(container);
-
+  LayoutSize container_offset =
+      OffsetFromContainer(container, mode & kIgnoreScrollOffset);
   // TODO(smcgruer): This is inefficient. Instead we should avoid including
   // offsetForInFlowPosition in offsetFromContainer when ignoring sticky.
   if (mode & kIgnoreStickyOffset && IsStickyPositioned()) {
@@ -2695,11 +2717,32 @@ TransformationMatrix LayoutObject::LocalToAncestorTransform(
   return transform_state.AccumulatedTransform();
 }
 
-LayoutSize LayoutObject::OffsetFromContainer(const LayoutObject* o) const {
+LayoutSize LayoutObject::OffsetFromContainer(const LayoutObject* o,
+                                             bool ignore_scroll_offset) const {
+  return OffsetFromContainerInternal(o, ignore_scroll_offset);
+}
+
+LayoutSize LayoutObject::OffsetFromContainerInternal(
+    const LayoutObject* o,
+    bool ignore_scroll_offset) const {
   DCHECK_EQ(o, Container());
   return o->HasOverflowClip()
-             ? LayoutSize(-ToLayoutBox(o)->ScrolledContentOffset())
+             ? OffsetFromScrollableContainer(o, ignore_scroll_offset)
              : LayoutSize();
+}
+
+LayoutSize LayoutObject::OffsetFromScrollableContainer(
+    const LayoutObject* container,
+    bool ignore_scroll_offset) const {
+  DCHECK(container->HasOverflowClip());
+  const LayoutBox* box = ToLayoutBox(container);
+  if (!ignore_scroll_offset)
+    return -LayoutSize(box->ScrolledContentOffset());
+
+  // ScrollOrigin accounts for other writing modes whose content's origin is not
+  // at the top-left.
+  return LayoutSize(ToIntSize(box->GetScrollableArea()->ScrollOrigin()) -
+                    box->OriginAdjustmentForScrollbars());
 }
 
 LayoutSize LayoutObject::OffsetFromAncestorContainer(
@@ -2792,7 +2835,7 @@ void LayoutObject::AddLayerHitTestRects(
   // tracking those rects outweighs the benefit of doing compositor thread hit
   // testing.
   // FIXME: This limit needs to be low due to the O(n^2) algorithm in
-  // WebLayer::setTouchEventHandlerRegion - crbug.com/300282.
+  // ScrollingCoordinator::SetTouchEventTargetRects() - crbug.com/300282.
   const size_t kMaxRectsPerLayer = 100;
 
   LayerHitTestRects::iterator iter = layer_rects.find(current_layer);
@@ -2981,7 +3024,7 @@ void LayoutObject::WillBeDestroyed() {
   if (GetNode() && !GetNode()->IsTextNode() && style_ &&
       style_->GetTouchAction() != TouchAction::kTouchActionAuto) {
     EventHandlerRegistry& registry =
-        GetDocument().GetPage()->GetEventHandlerRegistry();
+        GetDocument().GetFrame()->GetEventHandlerRegistry();
     if (registry.EventHandlerTargets(EventHandlerRegistry::kTouchAction)
             ->Contains(GetNode())) {
       registry.DidRemoveEventHandler(*GetNode(),
@@ -3127,8 +3170,7 @@ void LayoutObject::WillBeRemovedFromTree() {
   if (Parent()->IsSVG())
     Parent()->SetNeedsBoundariesUpdate();
 
-  if (RuntimeEnabledFeatures::ScrollAnchoringEnabled() &&
-      bitfields_.IsScrollAnchorObject()) {
+  if (bitfields_.IsScrollAnchorObject()) {
     // Clear the bit first so that anchor.clear() doesn't recurse into
     // findReferencingScrollAnchors.
     bitfields_.SetIsScrollAnchorObject(false);
@@ -3392,8 +3434,6 @@ static scoped_refptr<ComputedStyle> FirstLineStyleForCachedUncachedType(
       if (type == kCached) {
         // A first-line style is in effect. Cache a first-line style for
         // ourselves.
-        layout_object_for_first_line_style->MutableStyleRef().SetHasPseudoStyle(
-            kPseudoIdFirstLineInherited);
         return layout_object_for_first_line_style->GetCachedPseudoStyle(
             kPseudoIdFirstLineInherited, parent_style);
       }
@@ -3813,7 +3853,8 @@ void LayoutObject::ClearPaintInvalidationFlags() {
 #if DCHECK_IS_ON()
   DCHECK(!ShouldCheckForPaintInvalidation() || PaintInvalidationStateIsDirty());
 #endif
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
+  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled() ||
+      !RuntimeEnabledFeatures::PartialRasterInvalidationEnabled())
     fragment_.SetPartialInvalidationRect(LayoutRect());
 
   ClearShouldDoFullPaintInvalidation();

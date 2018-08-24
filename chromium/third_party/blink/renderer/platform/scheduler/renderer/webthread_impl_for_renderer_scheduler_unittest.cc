@@ -15,8 +15,8 @@
 #include "base/test/simple_test_tick_clock.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/renderer/platform/scheduler/base/test/task_queue_manager_for_test.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.h"
-#include "third_party/blink/renderer/platform/scheduler/test/task_queue_manager_for_test.h"
 
 namespace blink {
 namespace scheduler {
@@ -43,10 +43,10 @@ class WebThreadImplForRendererSchedulerTest : public testing::Test {
   void SetUp() override {
     clock_.Advance(base::TimeDelta::FromMicroseconds(5000));
     scheduler_.reset(new MainThreadSchedulerImpl(
-        TaskQueueManagerForTest::Create(&message_loop_,
-                                        message_loop_.task_runner(), &clock_),
+        base::sequence_manager::TaskQueueManagerForTest::Create(
+            &message_loop_, message_loop_.task_runner(), &clock_),
         base::nullopt));
-    default_task_runner_ = scheduler_->DefaultTaskQueue();
+    default_task_runner_ = scheduler_->DefaultTaskRunner();
     thread_ = scheduler_->CreateMainThread();
   }
 

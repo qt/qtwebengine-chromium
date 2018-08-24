@@ -33,11 +33,13 @@
 #include "third_party/blink/renderer/core/dom/ax_object_cache.h"
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
 #include "third_party/blink/renderer/core/editing/inline_box_position.h"
-#include "third_party/blink/renderer/core/editing/rendered_position.h"
+#include "third_party/blink/renderer/core/editing/ng_flat_tree_shorthands.h"
 #include "third_party/blink/renderer/core/editing/visible_position.h"
 #include "third_party/blink/renderer/core/layout/api/line_layout_block_flow.h"
 #include "third_party/blink/renderer/core/layout/line/inline_text_box.h"
 #include "third_party/blink/renderer/core/layout/line/root_inline_box.h"
+#include "third_party/blink/renderer/core/layout/ng/inline/ng_line_utils.h"
+#include "third_party/blink/renderer/core/layout/ng/inline/ng_offset_mapping.h"
 
 namespace blink {
 
@@ -170,9 +172,8 @@ PositionWithAffinityTemplate<Strategy> StartPositionForLine(
   if (c.IsNull())
     return PositionWithAffinityTemplate<Strategy>();
 
-  const RootInlineBox* root_box =
-      RenderedPosition(c.GetPosition(), c.Affinity()).RootBox();
-  if (!root_box) {
+  const InlineBox* inline_box = ComputeInlineBoxPosition(c).inline_box;
+  if (!inline_box) {
     // There are VisiblePositions at offset 0 in blocks without
     // RootInlineBoxes, like empty editable blocks and bordered blocks.
     PositionTemplate<Strategy> p = c.GetPosition();
@@ -184,11 +185,13 @@ PositionWithAffinityTemplate<Strategy> StartPositionForLine(
     return PositionWithAffinityTemplate<Strategy>();
   }
 
-  const auto& node_and_box = Ordering::StartNodeAndBoxOf(*root_box);
-  Node* const start_node = std::get<Node*>(node_and_box);
-  InlineBox* const start_box = std::get<InlineBox*>(node_and_box);
-  if (!start_node)
+  const RootInlineBox& root_box = inline_box->Root();
+  const InlineBox* const start_box = Ordering::StartNonPseudoBoxOf(root_box);
+  if (!start_box)
     return PositionWithAffinityTemplate<Strategy>();
+
+  const Node* const start_node = start_box->GetLineLayoutItem().NonPseudoNode();
+  DCHECK(start_node);
   return PositionWithAffinityTemplate<Strategy>(
       start_node->IsTextNode()
           ? PositionTemplate<Strategy>(ToText(start_node),
@@ -199,30 +202,19 @@ PositionWithAffinityTemplate<Strategy> StartPositionForLine(
 // Provides start and end of line in logical order for implementing Home and End
 // keys.
 struct LogicalOrdering {
-  static std::pair<Node*, InlineBox*> StartNodeAndBoxOf(
-      const RootInlineBox& root_box) {
-    InlineBox* start_box;
-    Node* const start_node = root_box.GetLogicalStartBoxWithNode(start_box);
-    if (!start_node)
-      return {nullptr, nullptr};
-    return {start_node, start_box};
+  static const InlineBox* StartNonPseudoBoxOf(const RootInlineBox& root_box) {
+    return root_box.GetLogicalStartNonPseudoBox();
   }
 
-  static std::pair<Node*, InlineBox*> EndNodeAndBoxOf(
-      const RootInlineBox& root_box) {
-    InlineBox* end_box;
-    Node* const end_node = root_box.GetLogicalEndBoxWithNode(end_box);
-    if (!end_node)
-      return {nullptr, nullptr};
-    return {end_node, end_box};
+  static const InlineBox* EndNonPseudoBoxOf(const RootInlineBox& root_box) {
+    return root_box.GetLogicalEndNonPseudoBox();
   }
 };
 
 // Provides start end end of line in visual order for implementing expanding
 // selection in line granularity.
 struct VisualOrdering {
-  static std::pair<Node*, InlineBox*> StartNodeAndBoxOf(
-      const RootInlineBox& root_box) {
+  static const InlineBox* StartNonPseudoBoxOf(const RootInlineBox& root_box) {
     // Generated content (e.g. list markers and CSS :before and :after
     // pseudoelements) have no corresponding DOM element, and so cannot be
     // represented by a VisiblePosition. Use whatever follows instead.
@@ -231,13 +223,12 @@ struct VisualOrdering {
     for (InlineBox* inline_box = root_box.FirstLeafChild(); inline_box;
          inline_box = inline_box->NextLeafChild()) {
       if (inline_box->GetLineLayoutItem().NonPseudoNode())
-        return {inline_box->GetLineLayoutItem().NonPseudoNode(), inline_box};
+        return inline_box;
     }
-    return {nullptr, nullptr};
+    return nullptr;
   }
 
-  static std::pair<Node*, InlineBox*> EndNodeAndBoxOf(
-      const RootInlineBox& root_box) {
+  static const InlineBox* EndNonPseudoBoxOf(const RootInlineBox& root_box) {
     // Generated content (e.g. list markers and CSS :before and :after
     // pseudo elements) have no corresponding DOM element, and so cannot be
     // represented by a VisiblePosition. Use whatever precedes instead.
@@ -246,9 +237,9 @@ struct VisualOrdering {
     for (InlineBox* inline_box = root_box.LastLeafChild(); inline_box;
          inline_box = inline_box->PrevLeafChild()) {
       if (inline_box->GetLineLayoutItem().NonPseudoNode())
-        return {inline_box->GetLineLayoutItem().NonPseudoNode(), inline_box};
+        return inline_box;
     }
-    return {nullptr, nullptr};
+    return nullptr;
   }
 };
 
@@ -427,9 +418,8 @@ static PositionWithAffinityTemplate<Strategy> EndPositionForLine(
   if (c.IsNull())
     return PositionWithAffinityTemplate<Strategy>();
 
-  const RootInlineBox* root_box =
-      RenderedPosition(c.GetPosition(), c.Affinity()).RootBox();
-  if (!root_box) {
+  const InlineBox* inline_box = ComputeInlineBoxPosition(c).inline_box;
+  if (!inline_box) {
     // There are VisiblePositions at offset 0 in blocks without
     // RootInlineBoxes, like empty editable blocks and bordered blocks.
     const PositionTemplate<Strategy> p = c.GetPosition();
@@ -440,19 +430,20 @@ static PositionWithAffinityTemplate<Strategy> EndPositionForLine(
     return PositionWithAffinityTemplate<Strategy>();
   }
 
-  const auto& node_and_box = Ordering::EndNodeAndBoxOf(*root_box);
-  Node* const end_node = std::get<Node*>(node_and_box);
-  InlineBox* const end_box = std::get<InlineBox*>(node_and_box);
-  if (!end_node)
+  const RootInlineBox& root_box = inline_box->Root();
+  const InlineBox* const end_box = Ordering::EndNonPseudoBoxOf(root_box);
+  if (!end_box)
     return PositionWithAffinityTemplate<Strategy>();
 
+  const Node* const end_node = end_box->GetLineLayoutItem().NonPseudoNode();
+  DCHECK(end_node);
   if (IsHTMLBRElement(*end_node)) {
     return PositionWithAffinityTemplate<Strategy>(
         PositionTemplate<Strategy>::BeforeNode(*end_node),
         TextAffinity::kUpstreamIfPossible);
   }
   if (end_box->IsInlineTextBox() && end_node->IsTextNode()) {
-    InlineTextBox* end_text_box = ToInlineTextBox(end_box);
+    const InlineTextBox* end_text_box = ToInlineTextBox(end_box);
     int end_offset = end_text_box->Start();
     if (!end_text_box->IsLineBreak())
       end_offset += end_text_box->Len();
@@ -594,6 +585,23 @@ static bool InSameLineAlgorithm(
   DCHECK_EQ(position1.GetDocument(), position2.GetDocument());
   DCHECK(!position1.GetDocument()->NeedsLayoutTreeUpdate());
 
+  if (RuntimeEnabledFeatures::LayoutNGEnabled()) {
+    const LayoutBlockFlow* block1 =
+        NGInlineFormattingContextOf(position1.GetPosition());
+    const LayoutBlockFlow* block2 =
+        NGInlineFormattingContextOf(position2.GetPosition());
+    if (block1 || block2) {
+      if (block1 != block2)
+        return false;
+      // TODO(editing-dev): We may incorrectly return false if a position is in
+      // an empty NG block with height, in which case there is no line box. We
+      // must handle this case when enabling Layout NG for contenteditable.
+      return InSameNGLineBox(position1, position2);
+    }
+
+    // Neither positions are in LayoutNG. Fall through to legacy handling.
+  }
+
   PositionWithAffinityTemplate<Strategy> start_of_line1 =
       StartOfLine(position1);
   PositionWithAffinityTemplate<Strategy> start_of_line2 =
@@ -705,10 +713,16 @@ VisiblePosition PreviousLinePosition(const VisiblePosition& visible_position,
     Position position = PreviousRootInlineBoxCandidatePosition(
         node, visible_position, editable_type);
     if (position.IsNotNull()) {
-      RenderedPosition rendered_position((CreateVisiblePosition(position)));
-      root = rendered_position.RootBox();
-      if (!root)
-        return CreateVisiblePosition(position);
+      const VisiblePosition candidate = CreateVisiblePosition(position);
+      const InlineBox* inline_box =
+          candidate.IsNotNull() ? ComputeInlineBoxPosition(candidate).inline_box
+                                : nullptr;
+      if (!inline_box) {
+        // TODO(editing-dev): Investigate if this is correct for null
+        // |candidate|.
+        return candidate;
+      }
+      root = &inline_box->Root();
     }
   }
 
@@ -769,10 +783,16 @@ VisiblePosition NextLinePosition(const VisiblePosition& visible_position,
     Position position = NextRootInlineBoxCandidatePosition(
         node, visible_position, editable_type);
     if (position.IsNotNull()) {
-      RenderedPosition rendered_position((CreateVisiblePosition(position)));
-      root = rendered_position.RootBox();
-      if (!root)
-        return CreateVisiblePosition(position);
+      const VisiblePosition candidate = CreateVisiblePosition(position);
+      const InlineBox* inline_box =
+          candidate.IsNotNull() ? ComputeInlineBoxPosition(candidate).inline_box
+                                : nullptr;
+      if (!inline_box) {
+        // TODO(editing-dev): Investigate if this is correct for null
+        // |candidate|.
+        return candidate;
+      }
+      root = &inline_box->Root();
     }
   }
 

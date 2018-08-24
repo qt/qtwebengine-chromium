@@ -161,7 +161,7 @@ class TurnPortTest : public testing::Test,
     // Some code uses "last received time == 0" to represent "nothing received
     // so far", so we need to start the fake clock at a nonzero time...
     // TODO(deadbeef): Fix this.
-    fake_clock_.AdvanceTime(rtc::TimeDelta::FromSeconds(1));
+    fake_clock_.AdvanceTime(webrtc::TimeDelta::seconds(1));
   }
 
   virtual void OnMessage(rtc::Message* msg) {
@@ -220,7 +220,7 @@ class TurnPortTest : public testing::Test,
   }
 
   rtc::AsyncSocket* CreateServerSocket(const SocketAddress addr) {
-    rtc::AsyncSocket* socket = ss_->CreateAsyncSocket(SOCK_STREAM);
+    rtc::AsyncSocket* socket = ss_->CreateAsyncSocket(AF_INET, SOCK_STREAM);
     EXPECT_GE(socket->Bind(addr), 0);
     EXPECT_GE(socket->Listen(5), 0);
     return socket;
@@ -530,7 +530,7 @@ class TurnPortTest : public testing::Test,
     // Make a socket and bind it to the local port, to make extra sure no
     // packet is sent to this address.
     std::unique_ptr<rtc::Socket> loopback_socket(ss_->CreateSocket(
-        protocol_type == PROTO_UDP ? SOCK_DGRAM : SOCK_STREAM));
+        AF_INET, protocol_type == PROTO_UDP ? SOCK_DGRAM : SOCK_STREAM));
     ASSERT_NE(nullptr, loopback_socket.get());
     ASSERT_EQ(0, loopback_socket->Bind(loopback_address));
     if (protocol_type == PROTO_TCP) {

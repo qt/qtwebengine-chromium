@@ -45,16 +45,14 @@
 #include "content/public/common/content_descriptors.h"
 #endif  // defined(HEADLESS_USE_BREAKPAD)
 
-#if BUILDFLAG(ENABLE_BASIC_PRINTING) && !defined(CHROME_MULTIPLE_DLL_CHILD)
+#if BUILDFLAG(ENABLE_PRINTING) && !defined(CHROME_MULTIPLE_DLL_CHILD)
 #include "base/strings/utf_string_conversions.h"
-#include "components/printing/service/public/interfaces/pdf_compositor.mojom.h"
+#include "components/services/pdf_compositor/public/interfaces/pdf_compositor.mojom.h"
 #endif
 
 namespace headless {
 
 namespace {
-const char kCapabilityPath[] =
-    "interface_provider_specs.navigation:frame.provides.renderer";
 
 #if defined(HEADLESS_USE_BREAKPAD)
 breakpad::CrashHandlerHostLinux* CreateCrashHandlerHost(
@@ -62,7 +60,7 @@ breakpad::CrashHandlerHostLinux* CreateCrashHandlerHost(
     const HeadlessBrowser::Options& options) {
   base::FilePath dumps_path = options.crash_dumps_dir;
   if (dumps_path.empty()) {
-    bool ok = PathService::Get(base::DIR_MODULE, &dumps_path);
+    bool ok = base::PathService::Get(base::DIR_MODULE, &dumps_path);
     DCHECK(ok);
   }
 
@@ -163,7 +161,7 @@ HeadlessContentBrowserClient::GetServiceManifestOverlay(
 
 void HeadlessContentBrowserClient::RegisterOutOfProcessServices(
     OutOfProcessServiceMap* services) {
-#if BUILDFLAG(ENABLE_BASIC_PRINTING) && !defined(CHROME_MULTIPLE_DLL_CHILD)
+#if BUILDFLAG(ENABLE_PRINTING) && !defined(CHROME_MULTIPLE_DLL_CHILD)
   (*services)[printing::mojom::kServiceName] =
       base::ASCIIToUTF16("PDF Compositor Service");
 #endif
@@ -174,21 +172,7 @@ HeadlessContentBrowserClient::GetBrowserServiceManifestOverlay() {
   base::StringPiece manifest_template =
       ui::ResourceBundle::GetSharedInstance().GetRawDataResource(
           IDR_HEADLESS_BROWSER_MANIFEST_OVERLAY);
-  std::unique_ptr<base::Value> manifest =
-      base::JSONReader::Read(manifest_template);
-
-  // Add mojo_service_names to renderer capability specified in options.
-  base::DictionaryValue* manifest_dictionary = nullptr;
-  CHECK(manifest->GetAsDictionary(&manifest_dictionary));
-
-  base::ListValue* capability_list = nullptr;
-  CHECK(manifest_dictionary->GetList(kCapabilityPath, &capability_list));
-
-  for (std::string service_name : browser_->options()->mojo_service_names) {
-    capability_list->AppendString(service_name);
-  }
-
-  return manifest;
+  return base::JSONReader::Read(manifest_template);
 }
 
 std::unique_ptr<base::Value>
@@ -228,7 +212,7 @@ void HeadlessContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
 #if defined(HEADLESS_USE_BREAKPAD)
   int crash_signal_fd = GetCrashSignalFD(command_line, *browser_->options());
   if (crash_signal_fd >= 0)
-    mappings->Share(kCrashDumpSignal, crash_signal_fd);
+    mappings->Share(service_manager::kCrashDumpSignal, crash_signal_fd);
 #endif  // defined(HEADLESS_USE_BREAKPAD)
 }
 #endif  // defined(OS_POSIX) && !defined(OS_MACOSX)
@@ -264,14 +248,6 @@ void HeadlessContentBrowserClient::AppendExtraCommandLineSwitches(
       HeadlessBrowserContextImpl* headless_browser_context_impl =
           HeadlessBrowserContextImpl::From(
               render_process_host->GetBrowserContext());
-
-      if (headless_browser_context_impl->options()->initial_virtual_time()) {
-        command_line->AppendSwitchASCII(
-            ::switches::kInitialVirtualTime,
-            base::NumberToString(headless_browser_context_impl->options()
-                                     ->initial_virtual_time()
-                                     ->ToDoubleT()));
-      }
 
       std::vector<base::StringPiece> languages = base::SplitStringPiece(
           headless_browser_context_impl->options()->accept_language(), ",",

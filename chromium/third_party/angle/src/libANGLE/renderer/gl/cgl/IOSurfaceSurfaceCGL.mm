@@ -65,14 +65,11 @@ int FindIOSurfaceFormatIndex(GLenum internalFormat, GLenum type)
 }  // anonymous namespace
 
 IOSurfaceSurfaceCGL::IOSurfaceSurfaceCGL(const egl::SurfaceState &state,
-                                         RendererGL *renderer,
-                                         DisplayCGL *display,
+                                         CGLContextObj cglContext,
                                          EGLClientBuffer buffer,
                                          const egl::AttributeMap &attribs)
-    : SurfaceGL(state, renderer),
-      mDisplay(display),
-      mRenderer(renderer),
-      mStateManager(renderer->getStateManager()),
+    : SurfaceGL(state),
+      mCGLContext(cglContext),
       mIOSurface(nullptr),
       mWidth(0),
       mHeight(0),
@@ -136,16 +133,20 @@ egl::Error IOSurfaceSurfaceCGL::querySurfacePointerANGLE(EGLint attribute, void 
     return egl::NoError();
 }
 
-egl::Error IOSurfaceSurfaceCGL::bindTexImage(gl::Texture *texture, EGLint buffer)
+egl::Error IOSurfaceSurfaceCGL::bindTexImage(const gl::Context *context,
+                                             gl::Texture *texture,
+                                             EGLint buffer)
 {
+    StateManagerGL *stateManager = GetStateManagerGL(context);
+
     const TextureGL *textureGL = GetImplAs<TextureGL>(texture);
     GLuint textureID           = textureGL->getTextureID();
-    mStateManager->bindTexture(gl::TextureType::Rectangle, textureID);
+    stateManager->bindTexture(gl::TextureType::Rectangle, textureID);
 
     const auto &format = kIOSurfaceFormats[mFormatIndex];
-    auto error         = CGLTexImageIOSurface2D(
-        mDisplay->getCGLContext(), GL_TEXTURE_RECTANGLE, format.nativeFormat, mWidth, mHeight,
-        format.nativeInternalFormat, format.nativeType, mIOSurface, mPlane);
+    auto error = CGLTexImageIOSurface2D(mCGLContext, GL_TEXTURE_RECTANGLE, format.nativeFormat,
+                                        mWidth, mHeight, format.nativeInternalFormat,
+                                        format.nativeType, mIOSurface, mPlane);
 
     if (error != kCGLNoError)
     {
@@ -155,13 +156,10 @@ egl::Error IOSurfaceSurfaceCGL::bindTexImage(gl::Texture *texture, EGLint buffer
     return egl::NoError();
 }
 
-egl::Error IOSurfaceSurfaceCGL::releaseTexImage(EGLint buffer)
+egl::Error IOSurfaceSurfaceCGL::releaseTexImage(const gl::Context *context, EGLint buffer)
 {
-    gl::Error error = mRenderer->flush();
-    if (error.isError())
-    {
-        return egl::EglContextLost();
-    }
+    const FunctionsGL *functions = GetFunctionsGL(context);
+    functions->flush();
     return egl::NoError();
 }
 

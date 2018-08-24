@@ -7,24 +7,52 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback_helpers.h"
+#include "base/feature_list.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/unguessable_token.h"
+#include "build/build_config.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/demuxer_stream.h"
+#include "media/base/media_switches.h"
 #include "media/base/overlay_info.h"
 #include "media/base/video_frame.h"
 #include "media/mojo/common/media_type_converters.h"
 #include "media/mojo/common/mojo_decoder_buffer_converter.h"
 #include "media/mojo/interfaces/media_types.mojom.h"
 #include "media/video/gpu_video_accelerator_factories.h"
+#include "media/video/video_decode_accelerator.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
 
 namespace media {
+
+namespace {
+
+bool IsSupportedConfig(
+    const VideoDecodeAccelerator::SupportedProfiles& supported_profiles,
+    const VideoDecoderConfig& config) {
+  for (const auto& supported_profile : supported_profiles) {
+    if (config.profile() == supported_profile.profile &&
+        (!supported_profile.encrypted_only || config.is_encrypted()) &&
+        config.coded_size().width() >=
+            supported_profile.min_resolution.width() &&
+        config.coded_size().width() <=
+            supported_profile.max_resolution.width() &&
+        config.coded_size().height() >=
+            supported_profile.min_resolution.height() &&
+        config.coded_size().height() <=
+            supported_profile.max_resolution.height()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+}  // namespace
 
 // Provides a thread-safe channel for VideoFrame destruction events.
 class MojoVideoFrameHandleReleaser
@@ -76,7 +104,8 @@ MojoVideoDecoder::MojoVideoDecoder(
     GpuVideoAcceleratorFactories* gpu_factories,
     MediaLog* media_log,
     mojom::VideoDecoderPtr remote_decoder,
-    const RequestOverlayInfoCB& request_overlay_info_cb)
+    const RequestOverlayInfoCB& request_overlay_info_cb,
+    const gfx::ColorSpace& target_color_space)
     : task_runner_(task_runner),
       remote_decoder_info_(remote_decoder.PassInterface()),
       gpu_factories_(gpu_factories),
@@ -86,8 +115,10 @@ MojoVideoDecoder::MojoVideoDecoder(
       media_log_service_(media_log),
       media_log_binding_(&media_log_service_),
       request_overlay_info_cb_(request_overlay_info_cb),
+      target_color_space_(target_color_space),
       weak_factory_(this) {
   DVLOG(1) << __func__;
+  weak_this_ = weak_factory_.GetWeakPtr();
 }
 
 MojoVideoDecoder::~MojoVideoDecoder() {
@@ -110,25 +141,39 @@ void MojoVideoDecoder::Initialize(
   DVLOG(1) << __func__;
   DCHECK(task_runner_->BelongsToCurrentThread());
 
-  if (!weak_this_)
-    weak_this_ = weak_factory_.GetWeakPtr();
+  // Fail immediately if we know that the remote side cannot support |config|.
+  //
+  // TODO(sandersd): Implement a generic mechanism for communicating supported
+  // profiles. https://crbug.com/839951
+  if (gpu_factories_) {
+    VideoDecodeAccelerator::Capabilities capabilities =
+        gpu_factories_->GetVideoDecodeAcceleratorCapabilities();
+    if (!base::FeatureList::IsEnabled(kD3D11VideoDecoder) &&
+        !IsSupportedConfig(capabilities.supported_profiles, config)) {
+      task_runner_->PostTask(FROM_HERE, base::BindRepeating(init_cb, false));
+      return;
+    }
+  }
+
+  int cdm_id =
+      cdm_context ? cdm_context->GetCdmId() : CdmContext::kInvalidCdmId;
+
+  // Fail immediately if the stream is encrypted but |cdm_id| is invalid.
+  // This check is needed to avoid unnecessary IPC to the remote process.
+  // Note that we do not support unsetting a CDM, so it should never happen
+  // that a valid CDM ID is available on first initialization but an invalid
+  // is passed for reinitialization.
+  if (config.is_encrypted() && CdmContext::kInvalidCdmId == cdm_id) {
+    DVLOG(1) << __func__ << ": Invalid CdmContext.";
+    task_runner_->PostTask(FROM_HERE, base::Bind(init_cb, false));
+    return;
+  }
 
   if (!remote_decoder_bound_)
     BindRemoteDecoder();
 
   if (has_connection_error_) {
-    task_runner_->PostTask(FROM_HERE, base::Bind(init_cb, false));
-    return;
-  }
-
-  // Fail immediately if the stream is encrypted but |cdm_context| is invalid.
-  int cdm_id = (config.is_encrypted() && cdm_context)
-                   ? cdm_context->GetCdmId()
-                   : CdmContext::kInvalidCdmId;
-
-  if (config.is_encrypted() && CdmContext::kInvalidCdmId == cdm_id) {
-    DVLOG(1) << __func__ << ": Invalid CdmContext.";
-    task_runner_->PostTask(FROM_HERE, base::Bind(init_cb, false));
+    task_runner_->PostTask(FROM_HERE, base::BindRepeating(init_cb, false));
     return;
   }
 
@@ -143,7 +188,7 @@ void MojoVideoDecoder::Initialize(
 void MojoVideoDecoder::OnInitializeDone(bool status,
                                         bool needs_bitstream_conversion,
                                         int32_t max_decode_requests) {
-  DVLOG(1) << __func__;
+  DVLOG(1) << __func__ << ": status = " << status;
   DCHECK(task_runner_->BelongsToCurrentThread());
   initialized_ = status;
   needs_bitstream_conversion_ = needs_bitstream_conversion;
@@ -153,7 +198,7 @@ void MojoVideoDecoder::OnInitializeDone(bool status,
 
 void MojoVideoDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
                               const DecodeCB& decode_cb) {
-  DVLOG(2) << __func__;
+  DVLOG(3) << __func__ << ": " << buffer->AsHumanReadableString();
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   if (has_connection_error_) {
@@ -181,7 +226,7 @@ void MojoVideoDecoder::OnVideoFrameDecoded(
     const scoped_refptr<VideoFrame>& frame,
     bool can_read_without_stalling,
     const base::Optional<base::UnguessableToken>& release_token) {
-  DVLOG(2) << __func__;
+  DVLOG(3) << __func__;
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   // TODO(sandersd): Prove that all paths read this value again after running
@@ -199,7 +244,7 @@ void MojoVideoDecoder::OnVideoFrameDecoded(
 }
 
 void MojoVideoDecoder::OnDecodeDone(uint64_t decode_id, DecodeStatus status) {
-  DVLOG(2) << __func__;
+  DVLOG(3) << __func__;
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   auto it = pending_decodes_.find(decode_id);
@@ -214,7 +259,7 @@ void MojoVideoDecoder::OnDecodeDone(uint64_t decode_id, DecodeStatus status) {
 }
 
 void MojoVideoDecoder::Reset(const base::Closure& reset_cb) {
-  DVLOG(1) << __func__;
+  DVLOG(2) << __func__;
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   if (has_connection_error_) {
@@ -228,7 +273,7 @@ void MojoVideoDecoder::Reset(const base::Closure& reset_cb) {
 }
 
 void MojoVideoDecoder::OnResetDone() {
-  DVLOG(1) << __func__;
+  DVLOG(2) << __func__;
   DCHECK(task_runner_->BelongsToCurrentThread());
   base::ResetAndReturn(&reset_cb_).Run();
 }
@@ -294,10 +339,11 @@ void MojoVideoDecoder::BindRemoteDecoder() {
     }
   }
 
-  remote_decoder_->Construct(
-      std::move(client_ptr_info), std::move(media_log_ptr_info),
-      std::move(video_frame_handle_releaser_request),
-      std::move(remote_consumer_handle), std::move(command_buffer_id));
+  remote_decoder_->Construct(std::move(client_ptr_info),
+                             std::move(media_log_ptr_info),
+                             std::move(video_frame_handle_releaser_request),
+                             std::move(remote_consumer_handle),
+                             std::move(command_buffer_id), target_color_space_);
 }
 
 void MojoVideoDecoder::RequestOverlayInfo(bool restart_for_transitions) {
@@ -306,8 +352,8 @@ void MojoVideoDecoder::RequestOverlayInfo(bool restart_for_transitions) {
   overlay_info_requested_ = true;
   request_overlay_info_cb_.Run(
       restart_for_transitions,
-      BindToCurrentLoop(base::Bind(&MojoVideoDecoder::OnOverlayInfoChanged,
-                                   weak_factory_.GetWeakPtr())));
+      BindToCurrentLoop(base::BindRepeating(
+          &MojoVideoDecoder::OnOverlayInfoChanged, weak_this_)));
 }
 
 void MojoVideoDecoder::OnOverlayInfoChanged(const OverlayInfo& overlay_info) {

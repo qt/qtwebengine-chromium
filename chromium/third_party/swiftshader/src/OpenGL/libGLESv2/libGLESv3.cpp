@@ -353,7 +353,7 @@ GL_APICALL void GL_APIENTRY glTexImage3D(GLenum target, GLint level, GLint inter
 		return error(GL_INVALID_VALUE);
 	}
 
-	const GLsizei maxSize3D = es2::IMPLEMENTATION_MAX_TEXTURE_SIZE >> level;
+	const GLsizei maxSize3D = es2::IMPLEMENTATION_MAX_3D_TEXTURE_SIZE >> level;
 	if((width < 0) || (height < 0) || (depth < 0) || (width > maxSize3D) || (height > maxSize3D) || (depth > maxSize3D))
 	{
 		return error(GL_INVALID_VALUE);
@@ -523,7 +523,7 @@ GL_APICALL void GL_APIENTRY glCompressedTexImage3D(GLenum target, GLint level, G
 		return error(GL_INVALID_VALUE);
 	}
 
-	const GLsizei maxSize3D = es2::IMPLEMENTATION_MAX_TEXTURE_SIZE >> level;
+	const GLsizei maxSize3D = es2::IMPLEMENTATION_MAX_3D_TEXTURE_SIZE >> level;
 	if((width < 0) || (height < 0) || (depth < 0) || (width > maxSize3D) || (height > maxSize3D) || (depth > maxSize3D) || (border != 0) || (imageSize < 0))
 	{
 		return error(GL_INVALID_VALUE);
@@ -1235,12 +1235,22 @@ GL_APICALL void GL_APIENTRY glFramebufferTextureLayer(GLenum target, GLenum atta
 				return error(GL_INVALID_OPERATION);
 			}
 
+			if(level >= es2::IMPLEMENTATION_MAX_TEXTURE_LEVELS)
+			{
+				return error(GL_INVALID_VALUE);
+			}
+
 			textarget = textureObject->getTarget();
 			switch(textarget)
 			{
 			case GL_TEXTURE_3D:
+				if(layer >= es2::IMPLEMENTATION_MAX_3D_TEXTURE_SIZE)
+				{
+					return error(GL_INVALID_VALUE);
+				}
+				break;
 			case GL_TEXTURE_2D_ARRAY:
-				if(layer >= es2::IMPLEMENTATION_MAX_TEXTURE_SIZE || (level >= es2::IMPLEMENTATION_MAX_TEXTURE_LEVELS))
+				if(layer >= es2::IMPLEMENTATION_MAX_ARRAY_TEXTURE_LAYERS)
 				{
 					return error(GL_INVALID_VALUE);
 				}
@@ -1469,6 +1479,11 @@ GL_APICALL void GL_APIENTRY glBindVertexArray(GLuint array)
 	}
 }
 
+GL_APICALL void GL_APIENTRY glBindVertexArrayOES(GLuint array)
+{
+	glBindVertexArray(array);
+}
+
 GL_APICALL void GL_APIENTRY glDeleteVertexArrays(GLsizei n, const GLuint *arrays)
 {
 	TRACE("(GLsizei n = %d, const GLuint *arrays = %p)", n, arrays);
@@ -1489,6 +1504,11 @@ GL_APICALL void GL_APIENTRY glDeleteVertexArrays(GLsizei n, const GLuint *arrays
 	}
 }
 
+GL_APICALL void GL_APIENTRY glDeleteVertexArraysOES(GLsizei n, const GLuint *arrays)
+{
+	glDeleteVertexArrays(n, arrays);
+}
+
 GL_APICALL void GL_APIENTRY glGenVertexArrays(GLsizei n, GLuint *arrays)
 {
 	TRACE("(GLsizei n = %d, const GLuint *arrays = %p)", n, arrays);
@@ -1507,6 +1527,11 @@ GL_APICALL void GL_APIENTRY glGenVertexArrays(GLsizei n, GLuint *arrays)
 			arrays[i] = context->createVertexArray();
 		}
 	}
+}
+
+GL_APICALL void GL_APIENTRY glGenVertexArraysOES(GLsizei n, GLuint *arrays)
+{
+	glGenVertexArrays(n, arrays);
 }
 
 GL_APICALL GLboolean GL_APIENTRY glIsVertexArray(GLuint array)
@@ -1531,6 +1556,11 @@ GL_APICALL GLboolean GL_APIENTRY glIsVertexArray(GLuint array)
 	}
 
 	return GL_FALSE;
+}
+
+GL_APICALL GLboolean GL_APIENTRY glIsVertexArrayOES(GLuint array)
+{
+	return glIsVertexArray(array);
 }
 
 GL_APICALL void GL_APIENTRY glGetIntegeri_v(GLenum target, GLuint index, GLint *data)

@@ -17,6 +17,9 @@
 
 namespace views {
 
+////////////////////////////////////////////////////////////////////////////////
+// DesktopWindowTreeHostPlatform:
+
 DesktopWindowTreeHostPlatform::DesktopWindowTreeHostPlatform(
     internal::NativeWidgetDelegate* native_widget_delegate,
     DesktopNativeWidgetAura* desktop_native_widget_aura)
@@ -33,15 +36,13 @@ void DesktopWindowTreeHostPlatform::SetBoundsInDIP(
     const gfx::Rect& bounds_in_dip) {
   DCHECK_NE(0, device_scale_factor());
   SetBoundsInPixels(
-      gfx::ConvertRectToPixel(device_scale_factor(), bounds_in_dip));
+      gfx::ConvertRectToPixel(device_scale_factor(), bounds_in_dip),
+      viz::LocalSurfaceId());
 }
 
 void DesktopWindowTreeHostPlatform::Init(const Widget::InitParams& params) {
   CreateAndSetDefaultPlatformWindow();
-  // TODO(sky): this should be |params.force_software_compositing|, figure out
-  // why it has to be true now.
-  const bool use_software_compositing = true;
-  CreateCompositor(viz::FrameSinkId(), use_software_compositing);
+  CreateCompositor(viz::FrameSinkId(), params.force_software_compositing);
   aura::WindowTreeHost::OnAcceleratedWidgetAvailable();
   InitHost();
   if (!params.bounds.IsEmpty())
@@ -76,7 +77,9 @@ void DesktopWindowTreeHostPlatform::Close() {
     return;
 
   // Hide while waiting for the close.
-  platform_window()->Hide();
+  // Please note that it's better to call WindowTreeHost::Hide, which also calls
+  // PlatformWindow::Hide and Compositor::SetVisible(false).
+  Hide();
 
   waiting_for_close_now_ = true;
   base::ThreadTaskRunnerHandle::Get()->PostTask(
@@ -257,15 +260,13 @@ void DesktopWindowTreeHostPlatform::Restore() {
 }
 
 bool DesktopWindowTreeHostPlatform::IsMaximized() const {
-  // TODO: needs PlatformWindow support.
-  NOTIMPLEMENTED_LOG_ONCE();
-  return false;
+  return platform_window()->GetPlatformWindowState() ==
+         ui::PlatformWindowState::PLATFORM_WINDOW_STATE_MAXIMIZED;
 }
 
 bool DesktopWindowTreeHostPlatform::IsMinimized() const {
-  // TODO: needs PlatformWindow support.
-  NOTIMPLEMENTED_LOG_ONCE();
-  return false;
+  return platform_window()->GetPlatformWindowState() ==
+         ui::PlatformWindowState::PLATFORM_WINDOW_STATE_MINIMIZED;
 }
 
 bool DesktopWindowTreeHostPlatform::HasCapture() const {
@@ -340,14 +341,13 @@ bool DesktopWindowTreeHostPlatform::ShouldWindowContentsBeTransparent() const {
 void DesktopWindowTreeHostPlatform::FrameTypeChanged() {}
 
 void DesktopWindowTreeHostPlatform::SetFullscreen(bool fullscreen) {
-  // TODO: needs PlatformWindow support.
-  NOTIMPLEMENTED_LOG_ONCE();
+  if (IsFullscreen() != fullscreen)
+    platform_window()->ToggleFullscreen();
 }
 
 bool DesktopWindowTreeHostPlatform::IsFullscreen() const {
-  // TODO: needs PlatformWindow support.
-  NOTIMPLEMENTED_LOG_ONCE();
-  return false;
+  return platform_window()->GetPlatformWindowState() ==
+         ui::PlatformWindowState::PLATFORM_WINDOW_STATE_FULLSCREEN;
 }
 
 void DesktopWindowTreeHostPlatform::SetOpacity(float opacity) {
@@ -409,8 +409,29 @@ void DesktopWindowTreeHostPlatform::OnClosed() {
   desktop_native_widget_aura_->OnHostClosed();
 }
 
+void DesktopWindowTreeHostPlatform::OnWindowStateChanged(
+    ui::PlatformWindowState new_state) {
+  // Propagate minimization/restore to compositor to avoid drawing 'blank'
+  // frames that could be treated as previews, which show content even if a
+  // window is minimized.
+  bool visible =
+      new_state != ui::PlatformWindowState::PLATFORM_WINDOW_STATE_MINIMIZED;
+  if (visible != compositor()->IsVisible()) {
+    compositor()->SetVisible(visible);
+    native_widget_delegate_->OnNativeWidgetVisibilityChanged(visible);
+  }
+
+  // It might require relayouting when state property has been changed.
+  if (visible)
+    Relayout();
+}
+
 void DesktopWindowTreeHostPlatform::OnCloseRequest() {
   GetWidget()->Close();
+}
+
+void DesktopWindowTreeHostPlatform::OnAcceleratedWidgetDestroying() {
+  native_widget_delegate_->OnNativeWidgetDestroying();
 }
 
 void DesktopWindowTreeHostPlatform::OnActivationChanged(bool active) {
@@ -419,8 +440,30 @@ void DesktopWindowTreeHostPlatform::OnActivationChanged(bool active) {
   desktop_native_widget_aura_->HandleActivationChanged(active);
 }
 
+void DesktopWindowTreeHostPlatform::Relayout() {
+  Widget* widget = native_widget_delegate_->AsWidget();
+  NonClientView* non_client_view = widget->non_client_view();
+  // non_client_view may be NULL, especially during creation.
+  if (non_client_view) {
+    non_client_view->client_view()->InvalidateLayout();
+    non_client_view->InvalidateLayout();
+  }
+  widget->GetRootView()->Layout();
+}
+
 Widget* DesktopWindowTreeHostPlatform::GetWidget() {
   return native_widget_delegate_->AsWidget();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// DesktopWindowTreeHost:
+
+// static
+DesktopWindowTreeHost* DesktopWindowTreeHost::Create(
+    internal::NativeWidgetDelegate* native_widget_delegate,
+    DesktopNativeWidgetAura* desktop_native_widget_aura) {
+  return new DesktopWindowTreeHostPlatform(native_widget_delegate,
+                                           desktop_native_widget_aura);
 }
 
 }  // namespace views

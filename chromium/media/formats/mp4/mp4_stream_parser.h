@@ -28,6 +28,8 @@ namespace media {
 namespace mp4 {
 
 struct Movie;
+struct MovieHeader;
+struct TrackHeader;
 class BoxReader;
 
 class MEDIA_EXPORT MP4StreamParser : public StreamParser {
@@ -47,6 +49,10 @@ class MEDIA_EXPORT MP4StreamParser : public StreamParser {
             MediaLog* media_log) override;
   void Flush() override;
   bool Parse(const uint8_t* buf, int size) override;
+
+  // Calculates the rotation value from the track header display matricies.
+  VideoRotation CalculateRotation(const TrackHeader& track,
+                                  const MovieHeader& movie);
 
  private:
   enum State {
@@ -134,7 +140,6 @@ class MEDIA_EXPORT MP4StreamParser : public StreamParser {
   const std::set<int> audio_object_types_;
   const bool has_sbr_;
   const bool has_flac_;
-  std::map<uint32_t, bool> is_track_encrypted_;
 
   // Tracks the number of MEDIA_LOGS for skipping empty trun samples.
   int num_empty_samples_skipped_;

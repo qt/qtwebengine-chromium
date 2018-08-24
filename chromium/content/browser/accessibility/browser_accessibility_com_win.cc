@@ -1724,7 +1724,10 @@ void BrowserAccessibilityComWin::ComputeStylesIfNeeded() {
       // style span.
       std::vector<base::string16> previous_attributes =
           attributes_map.rbegin()->second;
-      if (!std::equal(attributes.begin(), attributes.end(),
+      // Must check the size, otherwise if attributes is a subset of
+      // prev_attributes, they would appear to be equal.
+      if (attributes.size() != previous_attributes.size() ||
+          !std::equal(attributes.begin(), attributes.end(),
                       previous_attributes.begin())) {
         attributes_map[start_offset] = attributes;
       }
@@ -1913,6 +1916,52 @@ void BrowserAccessibilityComWin::Init(ui::AXPlatformNodeDelegate* delegate) {
   AXPlatformNodeWin::Init(delegate);
 }
 
+base::string16 BrowserAccessibilityComWin::GetInvalidValue() const {
+  const BrowserAccessibilityWin* target = owner();
+  // The aria-invalid=spelling/grammar need to be exposed as text attributes for
+  // a range matching the visual underline representing the error.
+  if (static_cast<ax::mojom::InvalidState>(
+          target->GetIntAttribute(ax::mojom::IntAttribute::kInvalidState)) ==
+          ax::mojom::InvalidState::kNone &&
+      target->IsTextOnlyObject() && target->PlatformGetParent()) {
+    // Text nodes need to reflect the invalid state of their parent object,
+    // otherwise spelling and grammar errors communicated through aria-invalid
+    // won't be reflected in text attributes.
+    target = static_cast<BrowserAccessibilityWin*>(target->PlatformGetParent());
+  }
+
+  base::string16 invalid_value;
+  // Note: spelling+grammar errors case is disallowed and not supported. It
+  // could possibly arise with aria-invalid on the ancestor of a spelling error,
+  // but this is not currently described in any spec and no real-world use cases
+  // have been found.
+  switch (static_cast<ax::mojom::InvalidState>(
+      target->GetIntAttribute(ax::mojom::IntAttribute::kInvalidState))) {
+    case ax::mojom::InvalidState::kNone:
+    case ax::mojom::InvalidState::kFalse:
+      break;
+    case ax::mojom::InvalidState::kTrue:
+      return invalid_value = L"true";
+    case ax::mojom::InvalidState::kSpelling:
+      return invalid_value = L"spelling";
+    case ax::mojom::InvalidState::kGrammar:
+      return base::ASCIIToUTF16("grammar");
+    case ax::mojom::InvalidState::kOther: {
+      base::string16 aria_invalid_value;
+      if (target->GetString16Attribute(
+              ax::mojom::StringAttribute::kAriaInvalidValue,
+              &aria_invalid_value)) {
+        SanitizeStringAttributeForIA2(aria_invalid_value, &aria_invalid_value);
+        invalid_value = aria_invalid_value;
+      } else {
+        // Set the attribute to L"true", since we cannot be more specific.
+        invalid_value = L"true";
+      }
+    }
+  }
+  return invalid_value;
+}
+
 std::vector<base::string16> BrowserAccessibilityComWin::ComputeTextAttributes()
     const {
   std::vector<base::string16> attributes;
@@ -1922,38 +1971,37 @@ std::vector<base::string16> BrowserAccessibilityComWin::ComputeTextAttributes()
   // TODO(nektar): Compute what objects are auto-generated in Blink.
   if (owner()->GetRole() == ax::mojom::Role::kListMarker)
     attributes.push_back(L"auto-generated:true");
-  else
-    attributes.push_back(L"auto-generated:false");
 
   int color;
-  base::string16 color_value(L"transparent");
   if (owner()->GetIntAttribute(ax::mojom::IntAttribute::kBackgroundColor,
                                &color)) {
     unsigned int alpha = SkColorGetA(color);
     unsigned int red = SkColorGetR(color);
     unsigned int green = SkColorGetG(color);
     unsigned int blue = SkColorGetB(color);
-    if (alpha) {
-      color_value = L"rgb(" + base::UintToString16(red) + L',' +
-                    base::UintToString16(green) + L',' +
-                    base::UintToString16(blue) + L')';
+    // Don't expose default value of pure white.
+    if (alpha && (red != 255 || green != 255 || blue != 255)) {
+      base::string16 color_value = L"rgb(" + base::UintToString16(red) + L',' +
+                                   base::UintToString16(green) + L',' +
+                                   base::UintToString16(blue) + L')';
+      SanitizeStringAttributeForIA2(color_value, &color_value);
+      attributes.push_back(L"background-color:" + color_value);
     }
   }
-  SanitizeStringAttributeForIA2(color_value, &color_value);
-  attributes.push_back(L"background-color:" + color_value);
 
   if (owner()->GetIntAttribute(ax::mojom::IntAttribute::kColor, &color)) {
     unsigned int red = SkColorGetR(color);
     unsigned int green = SkColorGetG(color);
     unsigned int blue = SkColorGetB(color);
-    color_value = L"rgb(" + base::UintToString16(red) + L',' +
-                  base::UintToString16(green) + L',' +
-                  base::UintToString16(blue) + L')';
-  } else {
-    color_value = L"rgb(0,0,0)";
+    // Don't expose default value of black.
+    if (red || green || blue) {
+      base::string16 color_value = L"rgb(" + base::UintToString16(red) + L',' +
+                                   base::UintToString16(green) + L',' +
+                                   base::UintToString16(blue) + L')';
+      SanitizeStringAttributeForIA2(color_value, &color_value);
+      attributes.push_back(L"color:" + color_value);
+    }
   }
-  SanitizeStringAttributeForIA2(color_value, &color_value);
-  attributes.push_back(L"color:" + color_value);
 
   base::string16 font_family(owner()->GetInheritedString16Attribute(
       ax::mojom::StringAttribute::kFontFamily));
@@ -1975,117 +2023,56 @@ std::vector<base::string16> BrowserAccessibilityComWin::ComputeTextAttributes()
                          L"pt");
   }
 
+  // TODO(nektar): Add Blink support for the following attributes:
+  // text-line-through-mode, text-line-through-width, text-outline:false,
+  // text-position:baseline, text-shadow:none, text-underline-mode:continuous.
+
   int32_t text_style =
       owner()->GetIntAttribute(ax::mojom::IntAttribute::kTextStyle);
-  if (text_style == static_cast<int32_t>(ax::mojom::TextStyle::kNone)) {
-    attributes.push_back(L"font-style:normal");
-    attributes.push_back(L"font-weight:normal");
-  } else {
+  if (text_style != static_cast<int32_t>(ax::mojom::TextStyle::kNone)) {
     if (text_style &
         static_cast<int32_t>(ax::mojom::TextStyle::kTextStyleItalic)) {
       attributes.push_back(L"font-style:italic");
-    } else {
-      attributes.push_back(L"font-style:normal");
     }
 
     if (text_style &
         static_cast<int32_t>(ax::mojom::TextStyle::kTextStyleBold)) {
       attributes.push_back(L"font-weight:bold");
-    } else {
-      attributes.push_back(L"font-weight:normal");
+    }
+
+    if (text_style &
+        static_cast<int32_t>(ax::mojom::TextStyle::kTextStyleLineThrough)) {
+      // TODO(nektar): Figure out a more specific value.
+      attributes.push_back(L"text-line-through-style:solid");
+    }
+
+    if (text_style &
+        static_cast<int32_t>(ax::mojom::TextStyle::kTextStyleUnderline)) {
+      // TODO(nektar): Figure out a more specific value.
+      attributes.push_back(L"text-underline-style:solid");
     }
   }
 
-  int32_t invalid_state =
-      owner()->GetIntAttribute(ax::mojom::IntAttribute::kInvalidState);
-  switch (static_cast<ax::mojom::InvalidState>(invalid_state)) {
-    case ax::mojom::InvalidState::kNone:
-    case ax::mojom::InvalidState::kFalse:
-      attributes.push_back(L"invalid:false");
-      break;
-    case ax::mojom::InvalidState::kTrue:
-      attributes.push_back(L"invalid:true");
-      break;
-    case ax::mojom::InvalidState::kSpelling:
-    case ax::mojom::InvalidState::kGrammar: {
-      base::string16 spelling_grammar_value;
-      if (invalid_state &
-          static_cast<int32_t>(ax::mojom::InvalidState::kSpelling))
-        spelling_grammar_value = L"spelling";
-      else if (invalid_state &
-               static_cast<int32_t>(ax::mojom::InvalidState::kGrammar))
-        spelling_grammar_value = L"grammar";
-      else
-        spelling_grammar_value = L"spelling,grammar";
-      attributes.push_back(L"invalid:" + spelling_grammar_value);
-      break;
-    }
-    case ax::mojom::InvalidState::kOther: {
-      base::string16 aria_invalid_value;
-      if (owner()->GetString16Attribute(
-              ax::mojom::StringAttribute::kAriaInvalidValue,
-              &aria_invalid_value)) {
-        SanitizeStringAttributeForIA2(aria_invalid_value, &aria_invalid_value);
-        attributes.push_back(L"invalid:" + aria_invalid_value);
-      } else {
-        // Set the attribute to L"true", since we cannot be more specific.
-        attributes.push_back(L"invalid:true");
-      }
-      break;
-    }
-  }
+  // Screen readers look at the text attributes to determine if something is
+  // misspelled, so we need to propagate any spelling attributes from immediate
+  // parents of text-only objects.
+  base::string16 invalid_value = GetInvalidValue();
+  if (!invalid_value.empty())
+    attributes.push_back(L"invalid:" + invalid_value);
 
   base::string16 language(owner()->GetInheritedString16Attribute(
       ax::mojom::StringAttribute::kLanguage));
-  // Default value should be L"en-US".
-  if (language.empty()) {
-    attributes.push_back(L"language:en-US");
-  } else {
+  // Don't expose default value should of L"en-US".
+  if (!language.empty() && language != L"en-US") {
     SanitizeStringAttributeForIA2(language, &language);
     attributes.push_back(L"language:" + language);
   }
-
-  // TODO(nektar): Add Blink support for the following attributes.
-  // Currently set to their default values as dictated by the IA2 Spec.
-  attributes.push_back(L"text-line-through-mode:continuous");
-  if (text_style &
-      static_cast<int32_t>(ax::mojom::TextStyle::kTextStyleLineThrough)) {
-    // TODO(nektar): Figure out a more specific value.
-    attributes.push_back(L"text-line-through-style:solid");
-  } else {
-    attributes.push_back(L"text-line-through-style:none");
-  }
-  // Default value must be the empty string.
-  attributes.push_back(L"text-line-through-text:");
-  if (text_style &
-      static_cast<int32_t>(ax::mojom::TextStyle::kTextStyleLineThrough)) {
-    // TODO(nektar): Figure out a more specific value.
-    attributes.push_back(L"text-line-through-type:single");
-  } else {
-    attributes.push_back(L"text-line-through-type:none");
-  }
-  attributes.push_back(L"text-line-through-width:auto");
-  attributes.push_back(L"text-outline:false");
-  attributes.push_back(L"text-position:baseline");
-  attributes.push_back(L"text-shadow:none");
-  attributes.push_back(L"text-underline-mode:continuous");
-  if (text_style &
-      static_cast<int32_t>(ax::mojom::TextStyle::kTextStyleUnderline)) {
-    // TODO(nektar): Figure out a more specific value.
-    attributes.push_back(L"text-underline-style:solid");
-    attributes.push_back(L"text-underline-type:single");
-  } else {
-    attributes.push_back(L"text-underline-style:none");
-    attributes.push_back(L"text-underline-type:none");
-  }
-  attributes.push_back(L"text-underline-width:auto");
 
   auto text_direction = static_cast<ax::mojom::TextDirection>(
       owner()->GetIntAttribute(ax::mojom::IntAttribute::kTextDirection));
   switch (text_direction) {
     case ax::mojom::TextDirection::kNone:
     case ax::mojom::TextDirection::kLtr:
-      attributes.push_back(L"writing-mode:lr");
       break;
     case ax::mojom::TextDirection::kRtl:
       attributes.push_back(L"writing-mode:rl");
@@ -2096,6 +2083,19 @@ std::vector<base::string16> BrowserAccessibilityComWin::ComputeTextAttributes()
     case ax::mojom::TextDirection::kBtt:
       // Not listed in the IA2 Spec.
       attributes.push_back(L"writing-mode:bt");
+      break;
+  }
+
+  auto text_position = static_cast<ax::mojom::TextPosition>(
+      owner()->GetIntAttribute(ax::mojom::IntAttribute::kTextPosition));
+  switch (text_position) {
+    case ax::mojom::TextPosition::kNone:
+      break;
+    case ax::mojom::TextPosition::kSubscript:
+      attributes.push_back(L"text-position:sub");
+      break;
+    case ax::mojom::TextPosition::kSuperscript:
+      attributes.push_back(L"text-position:super");
       break;
   }
 
@@ -2125,10 +2125,8 @@ BrowserAccessibilityComWin::GetSpellingAttributes() {
       int end_offset = marker_ends[i];
       std::vector<base::string16> start_attributes;
       start_attributes.push_back(L"invalid:spelling");
-      std::vector<base::string16> end_attributes;
-      end_attributes.push_back(L"invalid:false");
       spelling_attributes[start_offset] = start_attributes;
-      spelling_attributes[end_offset] = end_attributes;
+      spelling_attributes[end_offset] = std::vector<base::string16>();
     }
   }
   if (owner()->IsPlainTextField()) {
@@ -2193,6 +2191,16 @@ HRESULT BrowserAccessibilityComWin::GetStringAttributeAsBstr(
   return S_OK;
 }
 
+// Pass in prefix with ":" included at the end, e.g. "invalid:".
+bool HasAttribute(std::vector<base::string16>& existing_attributes,
+                  base::string16 prefix) {
+  for (base::string16& attr : existing_attributes) {
+    if (base::StartsWith(attr, prefix, base::CompareCase::SENSITIVE))
+      return true;
+  }
+  return false;
+}
+
 // static
 void BrowserAccessibilityComWin::MergeSpellingIntoTextAttributes(
     const std::map<int, std::vector<base::string16>>& spelling_attributes,
@@ -2212,16 +2220,14 @@ void BrowserAccessibilityComWin::MergeSpellingIntoTextAttributes(
       std::vector<base::string16>& existing_attributes = iterator->second;
       // There might be a spelling attribute already in the list of text
       // attributes, originating from "aria-invalid", that is being overwritten
-      // by a spelling marker.
-      auto existing_spelling_attribute =
-          std::find(existing_attributes.begin(), existing_attributes.end(),
-                    L"invalid:false");
-      if (existing_spelling_attribute != existing_attributes.end())
-        existing_attributes.erase(existing_spelling_attribute);
-
-      existing_attributes.insert(existing_attributes.end(),
-                                 spelling_attribute.second.begin(),
-                                 spelling_attribute.second.end());
+      // by a spelling marker. If it already exists, prefer it over this
+      // automatically computed attribute.
+      if (!HasAttribute(existing_attributes, L"invalid:")) {
+        // Does not exist -- insert our own.
+        existing_attributes.insert(existing_attributes.end(),
+                                   spelling_attribute.second.begin(),
+                                   spelling_attribute.second.end());
+      }
     }
   }
 }

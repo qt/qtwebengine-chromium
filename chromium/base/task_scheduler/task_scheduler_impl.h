@@ -23,7 +23,6 @@
 #include "base/task_scheduler/task_scheduler.h"
 #include "base/task_scheduler/task_tracker.h"
 #include "base/task_scheduler/task_traits.h"
-#include "base/threading/thread.h"
 #include "build/build_config.h"
 
 #if defined(OS_POSIX) && !defined(OS_NACL_SFI)
@@ -37,6 +36,7 @@
 namespace base {
 
 class HistogramBase;
+class Thread;
 
 namespace internal {
 
@@ -61,7 +61,8 @@ class BASE_EXPORT TaskSchedulerImpl : public TaskScheduler {
   ~TaskSchedulerImpl() override;
 
   // TaskScheduler:
-  void Start(const TaskScheduler::InitParams& init_params) override;
+  void Start(const TaskScheduler::InitParams& init_params,
+             SchedulerWorkerObserver* scheduler_worker_observer) override;
   void PostDelayedTaskWithTraits(const Location& from_here,
                                  const TaskTraits& traits,
                                  OnceClosure task,
@@ -95,8 +96,8 @@ class BASE_EXPORT TaskSchedulerImpl : public TaskScheduler {
   // |all_tasks_user_blocking_| is set.
   TaskTraits SetUserBlockingPriorityIfNeeded(const TaskTraits& traits) const;
 
-  Thread service_thread_;
   const std::unique_ptr<TaskTrackerImpl> task_tracker_;
+  std::unique_ptr<Thread> service_thread_;
   DelayedTaskManager delayed_task_manager_;
   SchedulerSingleThreadTaskRunnerManager single_thread_task_runner_manager_;
 

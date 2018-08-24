@@ -5,8 +5,9 @@
 #ifndef CONTENT_RENDERER_MEDIA_MOCK_AUDIO_DEVICE_FACTORY_H_
 #define CONTENT_RENDERER_MEDIA_MOCK_AUDIO_DEVICE_FACTORY_H_
 
-#include "content/renderer/media/audio_device_factory.h"
+#include <string>
 
+#include "content/renderer/media/audio_device_factory.h"
 #include "media/base/audio_capturer_source.h"
 #include "media/base/audio_renderer_sink.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -17,13 +18,14 @@ namespace content {
 class MockCapturerSource : public media::AudioCapturerSource {
  public:
   MockCapturerSource();
-  MOCK_METHOD3(Initialize, void(const media::AudioParameters& params,
-                                CaptureCallback* callback,
-                                int session_id));
+  MOCK_METHOD2(Initialize,
+               void(const media::AudioParameters& params,
+                    CaptureCallback* callback));
   MOCK_METHOD0(Start, void());
   MOCK_METHOD0(Stop, void());
   MOCK_METHOD1(SetAutomaticGainControl, void(bool enable));
   void SetVolume(double volume) override;
+  void SetOutputDeviceForAec(const std::string& output_device_id) override;
 
  protected:
   ~MockCapturerSource() override;
@@ -44,26 +46,23 @@ class MockAudioDeviceFactory : public AudioDeviceFactory {
 
   // These methods are just mocked because tests currently don't need them to be
   // implemented.
-  MOCK_METHOD4(CreateFinalAudioRendererSink,
-               scoped_refptr<media::AudioRendererSink>(
-                   int render_frame_id,
-                   int sesssion_id,
-                   const std::string& device_id,
-                   const url::Origin& security_origin));
-  MOCK_METHOD5(CreateAudioRendererSink,
-               scoped_refptr<media::AudioRendererSink>(
-                   SourceType source_type,
-                   int render_frame_id,
-                   int sesssion_id,
-                   const std::string& device_id,
-                   const url::Origin& security_origin));
-  MOCK_METHOD5(CreateSwitchableAudioRendererSink,
+  MOCK_METHOD3(
+      CreateFinalAudioRendererSink,
+      scoped_refptr<media::AudioRendererSink>(int render_frame_id,
+                                              int sesssion_id,
+                                              const std::string& device_id));
+  MOCK_METHOD4(
+      CreateAudioRendererSink,
+      scoped_refptr<media::AudioRendererSink>(SourceType source_type,
+                                              int render_frame_id,
+                                              int sesssion_id,
+                                              const std::string& device_id));
+  MOCK_METHOD4(CreateSwitchableAudioRendererSink,
                scoped_refptr<media::SwitchableAudioRendererSink>(
                    SourceType source_type,
                    int render_frame_id,
                    int sesssion_id,
-                   const std::string& device_id,
-                   const url::Origin& security_origin));
+                   const std::string& device_id));
 
   // Returns mock_capturer_source_ once. If called a second time, the process
   // will crash.
@@ -79,4 +78,4 @@ class MockAudioDeviceFactory : public AudioDeviceFactory {
 
 }  // namespace content
 
-#endif  // CONTENT_RENDERER_MEDIA_AUDIO_DEVICE_FACTORY_H_
+#endif  // CONTENT_RENDERER_MEDIA_MOCK_AUDIO_DEVICE_FACTORY_H_

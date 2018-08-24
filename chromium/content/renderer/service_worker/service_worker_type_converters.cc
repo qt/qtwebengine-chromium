@@ -14,8 +14,7 @@ TypeConverter<blink::WebCanMakePaymentEventData,
     Convert(const payments::mojom::CanMakePaymentEventDataPtr& input) {
   blink::WebCanMakePaymentEventData output;
 
-  output.top_level_origin =
-      blink::WebString::FromUTF8(input->top_level_origin.spec());
+  output.top_origin = blink::WebString::FromUTF8(input->top_origin.spec());
   output.payment_request_origin =
       blink::WebString::FromUTF8(input->payment_request_origin.spec());
 
@@ -42,8 +41,7 @@ TypeConverter<blink::WebPaymentRequestEventData,
     Convert(const payments::mojom::PaymentRequestEventDataPtr& input) {
   blink::WebPaymentRequestEventData output;
 
-  output.top_level_origin =
-      blink::WebString::FromUTF8(input->top_level_origin.spec());
+  output.top_origin = blink::WebString::FromUTF8(input->top_origin.spec());
   output.payment_request_origin =
       blink::WebString::FromUTF8(input->payment_request_origin.spec());
   output.payment_request_id =
@@ -106,7 +104,6 @@ TypeConverter<blink::WebPaymentCurrencyAmount,
   blink::WebPaymentCurrencyAmount output;
   output.currency = blink::WebString::FromUTF8(input->currency);
   output.value = blink::WebString::FromUTF8(input->value);
-  output.currency_system = blink::WebString::FromUTF8(input->currency_system);
   return output;
 }
 

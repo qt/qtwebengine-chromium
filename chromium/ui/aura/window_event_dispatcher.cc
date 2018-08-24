@@ -22,12 +22,14 @@
 #include "ui/aura/mus/mus_mouse_location_updater.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_event_dispatcher_observer.h"
 #include "ui/aura/window_targeter.h"
 #include "ui/aura/window_tracker.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/compositor/dip_util.h"
+#include "ui/display/screen.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/gestures/gesture_recognizer.h"
@@ -75,6 +77,23 @@ void ConvertEventLocationToTarget(ui::EventTarget* event_target,
 }
 
 }  // namespace
+
+WindowEventDispatcher::ObserverNotifier::ObserverNotifier(
+    WindowEventDispatcher* dispatcher,
+    const ui::Event& event)
+    : dispatcher_(dispatcher) {
+  for (WindowEventDispatcherObserver& observer :
+       Env::GetInstance()->window_event_dispatcher_observers()) {
+    observer.OnWindowEventDispatcherStartedProcessing(dispatcher, event);
+  }
+}
+
+WindowEventDispatcher::ObserverNotifier::~ObserverNotifier() {
+  for (WindowEventDispatcherObserver& observer :
+       Env::GetInstance()->window_event_dispatcher_observers()) {
+    observer.OnWindowEventDispatcherFinishedProcessingEvent(dispatcher_);
+  }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // WindowEventDispatcher, public:
@@ -227,10 +246,7 @@ void WindowEventDispatcher::ReleasePointerMoves() {
 
 gfx::Point WindowEventDispatcher::GetLastMouseLocationInRoot() const {
   gfx::Point location = Env::GetInstance()->last_mouse_location();
-  client::ScreenPositionClient* client =
-      client::GetScreenPositionClient(window());
-  if (client)
-    client->ConvertPointFromScreen(window(), &location);
+  ConvertPointFromScreen(&location);
   return location;
 }
 
@@ -264,6 +280,13 @@ const Window* WindowEventDispatcher::window() const {
   return host_->window();
 }
 
+void WindowEventDispatcher::ConvertPointFromScreen(gfx::Point* point) const {
+  client::ScreenPositionClient* client =
+      client::GetScreenPositionClient(window());
+  if (client)
+    client->ConvertPointFromScreen(window(), point);
+}
+
 void WindowEventDispatcher::TransformEventForDeviceScaleFactor(
     ui::LocatedEvent* event) {
   event->UpdateForRootTransform(
@@ -293,7 +316,7 @@ ui::EventDispatchDetails WindowEventDispatcher::DispatchMouseEnterOrExit(
     ui::EventType type) {
   Env::GetInstance()->env_controller()->UpdateStateForMouseEvent(window(),
                                                                  event);
-  if (!mouse_moved_handler_ || !mouse_moved_handler_->delegate() ||
+  if (!mouse_moved_handler_ || !mouse_moved_handler_->HasTargetHandler() ||
       !window()->Contains(mouse_moved_handler_))
     return DispatchDetails();
 
@@ -531,11 +554,14 @@ void WindowEventDispatcher::OnEventProcessingStarted(ui::Event* event) {
 
   if (mus_mouse_location_updater_)
     mus_mouse_location_updater_->OnEventProcessingStarted(*event);
+
+  observer_notifiers_.push(std::make_unique<ObserverNotifier>(this, *event));
 }
 
 void WindowEventDispatcher::OnEventProcessingFinished(ui::Event* event) {
   if (mus_mouse_location_updater_)
     mus_mouse_location_updater_->OnEventProcessingFinished();
+  observer_notifiers_.pop();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -860,10 +886,14 @@ ui::EventDispatchDetails WindowEventDispatcher::SynthesizeMouseMoveEvent() {
   if (Env::GetInstance()->mouse_button_flags())
     return details;
 
-  gfx::Point root_mouse_location = GetLastMouseLocationInRoot();
-  if (!window()->bounds().Contains(root_mouse_location))
+  // Do not use GetLastMouseLocationInRoot here because it's not updated when
+  // the mouse is not over the window or when the window is minimized.
+  gfx::Point mouse_location =
+      display::Screen::GetScreen()->GetCursorScreenPoint();
+  ConvertPointFromScreen(&mouse_location);
+  if (!window()->bounds().Contains(mouse_location))
     return details;
-  gfx::Point host_mouse_location = root_mouse_location;
+  gfx::Point host_mouse_location = mouse_location;
   host_->ConvertDIPToPixels(&host_mouse_location);
   ui::MouseEvent event(ui::ET_MOUSE_MOVED, host_mouse_location,
                        host_mouse_location, ui::EventTimeForNow(),

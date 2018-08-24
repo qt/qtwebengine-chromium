@@ -109,6 +109,7 @@ _NAMED_TYPE_INFO = {
     ],
     'invalid': [
       'gfx::BufferUsage::SCANOUT_CAMERA_READ_WRITE',
+      'gfx::BufferUsage::CAMERA_AND_CPU_READ_WRITE',
     ],
   },
   'viz::ResourceFormat': {
@@ -312,6 +313,20 @@ _FUNCTION_INFO = {
   'OrderingBarrierCHROMIUM': {
     'type': 'NoCommand',
   },
+  'TraceBeginCHROMIUM': {
+    'type': 'Custom',
+    'impl_func': False,
+    'client_test': False,
+    'cmd_args': 'GLuint category_bucket_id, GLuint name_bucket_id',
+    'extension': 'CHROMIUM_trace_marker',
+  },
+  'TraceEndCHROMIUM': {
+    'impl_func': False,
+    'client_test': False,
+    'decoder_func': 'DoTraceEndCHROMIUM',
+    'unit_test': False,
+    'extension': 'CHROMIUM_trace_marker',
+  },
   'InsertFenceSyncCHROMIUM': {
     'type': 'Custom',
     'internal': True,
@@ -367,15 +382,20 @@ _FUNCTION_INFO = {
     'unit_test': False,
   },
   'RasterCHROMIUM': {
-    'type': 'Data',
-    'internal': True,
     'decoder_func': 'DoRasterCHROMIUM',
-    'data_transfer_methods': ['shm'],
+    'internal': True,
+    'impl_func': True,
+    'cmd_args': 'GLuint raster_shm_id, GLuint raster_shm_offset,'
+                'GLsizeiptr raster_shm_size, GLuint font_shm_id,'
+                'GLuint font_shm_offset, GLsizeiptr font_shm_size',
+    'extension': 'CHROMIUM_raster_transport',
+    'extension_flag': 'chromium_raster_transport',
   },
   'EndRasterCHROMIUM': {
     'decoder_func': 'DoEndRasterCHROMIUM',
-    'impl_func': True,
+    'impl_func': False,
     'unit_test': False,
+    'client_test': False,
   },
   'CreateTransferCacheEntryINTERNAL': {
     'decoder_func': 'DoCreateTransferCacheEntryINTERNAL',
@@ -456,38 +476,24 @@ def main(argv):
 
   os.chdir(base_dir)
 
-  # TODO(backer): Uncomment once the output looks good.
   gen.WriteCommandIds("gpu/command_buffer/common/raster_cmd_ids_autogen.h")
   gen.WriteFormat("gpu/command_buffer/common/raster_cmd_format_autogen.h")
   gen.WriteFormatTest(
     "gpu/command_buffer/common/raster_cmd_format_test_autogen.h")
   gen.WriteGLES2InterfaceHeader(
     "gpu/command_buffer/client/raster_interface_autogen.h")
-  # gen.WriteGLES2InterfaceStub(
-  #   "gpu/command_buffer/client/raster_interface_stub_autogen.h")
-  # gen.WriteGLES2InterfaceStubImpl(
-  #     "gpu/command_buffer/client/raster_interface_stub_impl_autogen.h")
   gen.WriteGLES2ImplementationHeader(
     "gpu/command_buffer/client/raster_implementation_autogen.h")
   gen.WriteGLES2Implementation(
     "gpu/command_buffer/client/raster_implementation_impl_autogen.h")
   gen.WriteGLES2ImplementationUnitTests(
     "gpu/command_buffer/client/raster_implementation_unittest_autogen.h")
-  # gen.WriteGLES2TraceImplementationHeader(
-  #     "gpu/command_buffer/client/raster_trace_implementation_autogen.h")
-  # gen.WriteGLES2TraceImplementation(
-  #     "gpu/command_buffer/client/raster_trace_implementation_impl_autogen.h")
-  # gen.WriteGLES2CLibImplementation(
-  #   "gpu/command_buffer/client/raster_c_lib_autogen.h")
   gen.WriteCmdHelperHeader(
      "gpu/command_buffer/client/raster_cmd_helper_autogen.h")
   gen.WriteServiceImplementation(
     "gpu/command_buffer/service/raster_decoder_autogen.h")
   gen.WriteServiceUnitTests(
     "gpu/command_buffer/service/raster_decoder_unittest_%d_autogen.h")
-  # gen.WriteServiceUnitTestsForExtensions(
-  #   "gpu/command_buffer/service/"
-  #   "raster_cmd_decoder_unittest_extensions_autogen.h")
   gen.WriteServiceUtilsHeader(
     "gpu/command_buffer/service/raster_cmd_validation_autogen.h")
   gen.WriteServiceUtilsImplementation(

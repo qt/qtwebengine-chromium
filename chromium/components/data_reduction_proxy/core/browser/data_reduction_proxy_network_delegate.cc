@@ -26,6 +26,7 @@
 #include "components/data_reduction_proxy/core/common/lofi_decider.h"
 #include "net/base/load_flags.h"
 #include "net/base/mime_util.h"
+#include "net/base/network_change_notifier.h"
 #include "net/base/proxy_server.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
@@ -358,8 +359,8 @@ void DataReductionProxyNetworkDelegate::OnBeforeSendHeadersInternal(
     using_data_reduction_proxy = false;
   } else if (proxy_info.proxy_server().host_port_pair().IsEmpty()) {
     using_data_reduction_proxy = false;
-  } else if (!data_reduction_proxy_config_->IsDataReductionProxy(
-                 proxy_info.proxy_server(), nullptr)) {
+  } else if (!data_reduction_proxy_config_->FindConfiguredDataReductionProxy(
+                 proxy_info.proxy_server())) {
     using_data_reduction_proxy = false;
   }
 
@@ -391,6 +392,8 @@ void DataReductionProxyNetworkDelegate::OnBeforeSendHeadersInternal(
                                                 ->network_quality_estimator()
                                                 ->GetEffectiveConnectionType());
       }
+      data->set_connection_type(
+          net::NetworkChangeNotifier::GetConnectionType());
       // Generate a page ID for main frame requests that don't already have one.
       // TODO(ryansturm): remove LOAD_MAIN_FRAME_DEPRECATED from d_r_p.
       // crbug.com/709621
@@ -614,7 +617,7 @@ void DataReductionProxyNetworkDelegate::RecordContentLength(
 
   if (data_reduction_proxy_io_data_ && data_reduction_proxy_bypass_stats_) {
     // Record BypassedBytes histograms for the request.
-    data_reduction_proxy_bypass_stats_->RecordBytesHistograms(
+    data_reduction_proxy_bypass_stats_->RecordBypassedBytesHistograms(
         request, data_reduction_proxy_io_data_->IsEnabled(),
         configurator_->GetProxyConfig());
   }
@@ -633,8 +636,8 @@ bool DataReductionProxyNetworkDelegate::WasEligibleWithoutHoldback(
     const net::ProxyRetryInfoMap& proxy_retry_info) const {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(proxy_info.is_empty() || proxy_info.is_direct() ||
-         !data_reduction_proxy_config_->IsDataReductionProxy(
-             proxy_info.proxy_server(), nullptr));
+         !data_reduction_proxy_config_->FindConfiguredDataReductionProxy(
+             proxy_info.proxy_server()));
   if (!util::EligibleForDataReductionProxy(proxy_info, request.url(),
                                            request.method())) {
     return false;
@@ -655,8 +658,8 @@ void DataReductionProxyNetworkDelegate::MaybeAddBrotliToAcceptEncodingHeader(
 
   // This method should be called only when the resolved proxy was a data
   // saver proxy.
-  DCHECK(data_reduction_proxy_config_->IsDataReductionProxy(
-      proxy_info.proxy_server(), nullptr));
+  DCHECK(data_reduction_proxy_config_->FindConfiguredDataReductionProxy(
+      proxy_info.proxy_server()));
   DCHECK(request.url().is_valid());
   DCHECK(!request.url().SchemeIsCryptographic());
   DCHECK(request.url().SchemeIsHTTPOrHTTPS());

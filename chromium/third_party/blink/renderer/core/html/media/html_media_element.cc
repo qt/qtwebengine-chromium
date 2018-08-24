@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <limits>
 
+#include "base/auto_reset.h"
 #include "base/memory/ptr_util.h"
 #include "third_party/blink/public/platform/modules/remoteplayback/web_remote_playback_availability.h"
 #include "third_party/blink/public/platform/modules/remoteplayback/web_remote_playback_client.h"
@@ -99,7 +100,6 @@
 #include "third_party/blink/renderer/platform/network/parsed_content_type.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/cstring.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
@@ -445,20 +445,21 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tag_name,
                                    Document& document)
     : HTMLElement(tag_name, document),
       PausableObject(&document),
-      load_timer_(document.GetTaskRunner(TaskType::kUnthrottled),
+      load_timer_(document.GetTaskRunner(TaskType::kInternalMedia),
                   this,
                   &HTMLMediaElement::LoadTimerFired),
-      progress_event_timer_(document.GetTaskRunner(TaskType::kUnthrottled),
-                            this,
-                            &HTMLMediaElement::ProgressEventTimerFired),
-      playback_progress_timer_(document.GetTaskRunner(TaskType::kUnthrottled),
+      progress_event_timer_(
+          document.GetTaskRunner(TaskType::kMediaElementEvent),
+          this,
+          &HTMLMediaElement::ProgressEventTimerFired),
+      playback_progress_timer_(document.GetTaskRunner(TaskType::kInternalMedia),
                                this,
                                &HTMLMediaElement::PlaybackProgressTimerFired),
-      audio_tracks_timer_(document.GetTaskRunner(TaskType::kUnthrottled),
+      audio_tracks_timer_(document.GetTaskRunner(TaskType::kInternalMedia),
                           this,
                           &HTMLMediaElement::AudioTracksTimerFired),
       check_viewport_intersection_timer_(
-          document.GetTaskRunner(TaskType::kUnthrottled),
+          document.GetTaskRunner(TaskType::kInternalMedia),
           this,
           &HTMLMediaElement::CheckViewportIntersectionTimerFired),
       played_time_ranges_(),
@@ -477,10 +478,10 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tag_name,
       default_playback_start_position_(0),
       load_state_(kWaitingForSource),
       deferred_load_state_(kNotDeferred),
-      deferred_load_timer_(document.GetTaskRunner(TaskType::kUnthrottled),
+      deferred_load_timer_(document.GetTaskRunner(TaskType::kInternalMedia),
                            this,
                            &HTMLMediaElement::DeferredLoadTimerFired),
-      web_layer_(nullptr),
+      cc_layer_(nullptr),
       display_mode_(kUnknown),
       official_playback_position_(0),
       official_playback_position_needs_update_(true),
@@ -550,17 +551,17 @@ void HTMLMediaElement::DidMoveToNewDocument(Document& old_document) {
   BLINK_MEDIA_LOG << "didMoveToNewDocument(" << (void*)this << ")";
 
   load_timer_.MoveToNewTaskRunner(
-      GetDocument().GetTaskRunner(TaskType::kUnthrottled));
+      GetDocument().GetTaskRunner(TaskType::kInternalMedia));
   progress_event_timer_.MoveToNewTaskRunner(
-      GetDocument().GetTaskRunner(TaskType::kUnthrottled));
+      GetDocument().GetTaskRunner(TaskType::kInternalMedia));
   playback_progress_timer_.MoveToNewTaskRunner(
-      GetDocument().GetTaskRunner(TaskType::kUnthrottled));
+      GetDocument().GetTaskRunner(TaskType::kInternalMedia));
   audio_tracks_timer_.MoveToNewTaskRunner(
-      GetDocument().GetTaskRunner(TaskType::kUnthrottled));
+      GetDocument().GetTaskRunner(TaskType::kInternalMedia));
   check_viewport_intersection_timer_.MoveToNewTaskRunner(
-      GetDocument().GetTaskRunner(TaskType::kUnthrottled));
+      GetDocument().GetTaskRunner(TaskType::kInternalMedia));
   deferred_load_timer_.MoveToNewTaskRunner(
-      GetDocument().GetTaskRunner(TaskType::kUnthrottled));
+      GetDocument().GetTaskRunner(TaskType::kInternalMedia));
 
   autoplay_policy_->DidMoveToNewDocument(old_document);
 
@@ -1532,13 +1533,16 @@ void HTMLMediaElement::WaitForSourceChange() {
     GetLayoutObject()->UpdateFromElement();
 }
 
-void HTMLMediaElement::NoneSupported(const String& message) {
-  BLINK_MEDIA_LOG << "NoneSupported(" << (void*)this << ", message='" << message
-                  << "')";
+void HTMLMediaElement::NoneSupported(const String& input_message) {
+  BLINK_MEDIA_LOG << "NoneSupported(" << (void*)this << ", message='"
+                  << input_message << "')";
 
   StopPeriodicTimers();
   load_state_ = kWaitingForSource;
   current_source_node_ = nullptr;
+
+  String empty_string;
+  const String& message = MediaShouldBeOpaque() ? empty_string : input_message;
 
   // 4.8.12.5
   // The dedicated media source failure steps are the following steps:
@@ -1615,10 +1619,16 @@ void HTMLMediaElement::NetworkStateChanged() {
 }
 
 void HTMLMediaElement::MediaLoadingFailed(WebMediaPlayer::NetworkState error,
-                                          const String& message) {
+                                          const String& input_message) {
   BLINK_MEDIA_LOG << "MediaLoadingFailed(" << (void*)this << ", "
-                  << static_cast<int>(error) << ", message='" << message
+                  << static_cast<int>(error) << ", message='" << input_message
                   << "')";
+
+  bool should_be_opaque = MediaShouldBeOpaque();
+  if (should_be_opaque)
+    error = WebMediaPlayer::kNetworkStateNetworkError;
+  String empty_string;
+  const String& message = should_be_opaque ? empty_string : input_message;
 
   StopPeriodicTimers();
 
@@ -1722,12 +1732,14 @@ void HTMLMediaElement::SetNetworkState(WebMediaPlayer::NetworkState state) {
 void HTMLMediaElement::ChangeNetworkStateFromLoadingToIdle() {
   progress_event_timer_.Stop();
 
-  // Schedule one last progress event so we guarantee that at least one is fired
-  // for files that load very quickly.
-  if (GetWebMediaPlayer() && GetWebMediaPlayer()->DidLoadingProgress())
-    ScheduleEvent(EventTypeNames::progress);
-  ScheduleEvent(EventTypeNames::suspend);
-  SetNetworkState(kNetworkIdle);
+  if (!MediaShouldBeOpaque()) {
+    // Schedule one last progress event so we guarantee that at least one is
+    // fired for files that load very quickly.
+    if (GetWebMediaPlayer() && GetWebMediaPlayer()->DidLoadingProgress())
+      ScheduleEvent(EventTypeNames::progress);
+    ScheduleEvent(EventTypeNames::suspend);
+    SetNetworkState(kNetworkIdle);
+  }
 }
 
 void HTMLMediaElement::ReadyStateChanged() {
@@ -1893,6 +1905,13 @@ void HTMLMediaElement::SetReadyState(ReadyState state) {
 
 void HTMLMediaElement::ProgressEventTimerFired(TimerBase*) {
   if (network_state_ != kNetworkLoading)
+    return;
+
+  // If this is an cross-origin request, and we haven't discovered whether
+  // the media is actually playable yet, don't fire any progress events as
+  // those may let the page know information about the resource that it's
+  // not supposed to know.
+  if (MediaShouldBeOpaque())
     return;
 
   double time = WTF::CurrentTime();
@@ -2286,7 +2305,8 @@ WebMediaPlayer::Preload HTMLMediaElement::PreloadType() const {
   // If the source scheme is requires network, force preload to 'none' on Data
   // Saver and for low end devices.
   if (GetDocument().GetSettings() &&
-      (GetNetworkStateNotifier().SaveDataEnabled() ||
+      ((GetNetworkStateNotifier().SaveDataEnabled() &&
+        !GetDocument().GetSettings()->GetDataSaverHoldbackMediaApi()) ||
        GetDocument().GetSettings()->GetForcePreloadNoneForMediaElements()) &&
       (current_src_.Protocol() != "blob" && current_src_.Protocol() != "data" &&
        current_src_.Protocol() != "file")) {
@@ -2353,7 +2373,7 @@ ScriptPromise HTMLMediaElement::playForBindings(ScriptState* script_state) {
   ScriptPromise promise = resolver->Promise();
   play_promise_resolvers_.push_back(resolver);
 
-  Optional<ExceptionCode> code = Play();
+  base::Optional<ExceptionCode> code = Play();
   if (code) {
     DCHECK(!play_promise_resolvers_.IsEmpty());
     play_promise_resolvers_.pop_back();
@@ -2379,17 +2399,18 @@ ScriptPromise HTMLMediaElement::playForBindings(ScriptState* script_state) {
   return promise;
 }
 
-Optional<ExceptionCode> HTMLMediaElement::Play() {
+base::Optional<ExceptionCode> HTMLMediaElement::Play() {
   BLINK_MEDIA_LOG << "play(" << (void*)this << ")";
 
-  Optional<ExceptionCode> exception_code = autoplay_policy_->RequestPlay();
+  base::Optional<ExceptionCode> exception_code =
+      autoplay_policy_->RequestPlay();
 
   if (exception_code == kNotAllowedError) {
     // If we're already playing, then this play would do nothing anyway.
     // Call playInternal to handle scheduling the promise resolution.
     if (!paused_) {
       PlayInternal();
-      return WTF::nullopt;
+      return base::nullopt;
     }
     return exception_code;
   }
@@ -2403,7 +2424,7 @@ Optional<ExceptionCode> HTMLMediaElement::Play() {
 
   PlayInternal();
 
-  return WTF::nullopt;
+  return base::nullopt;
 }
 
 void HTMLMediaElement::PlayInternal() {
@@ -2482,6 +2503,16 @@ void HTMLMediaElement::RequestRemotePlaybackControl() {
 void HTMLMediaElement::RequestRemotePlaybackStop() {
   if (GetWebMediaPlayer())
     GetWebMediaPlayer()->RequestRemotePlaybackStop();
+}
+
+void HTMLMediaElement::FlingingStarted() {
+  if (GetWebMediaPlayer())
+    GetWebMediaPlayer()->FlingingStarted();
+}
+
+void HTMLMediaElement::FlingingStopped() {
+  if (GetWebMediaPlayer())
+    GetWebMediaPlayer()->FlingingStopped();
 }
 
 void HTMLMediaElement::CloseMediaSource() {
@@ -2596,9 +2627,16 @@ void HTMLMediaElement::setMuted(bool muted) {
   autoplay_policy_->StopAutoplayMutedWhenVisible();
 }
 
-void HTMLMediaElement::enterPictureInPicture() {
+void HTMLMediaElement::enterPictureInPicture(
+    WebMediaPlayer::PipWindowOpenedCallback callback) {
   if (GetWebMediaPlayer())
-    GetWebMediaPlayer()->EnterPictureInPicture();
+    GetWebMediaPlayer()->EnterPictureInPicture(std::move(callback));
+}
+
+void HTMLMediaElement::exitPictureInPicture(
+    WebMediaPlayer::PipWindowClosedCallback callback) {
+  if (GetWebMediaPlayer())
+    GetWebMediaPlayer()->ExitPictureInPicture(std::move(callback));
 }
 
 double HTMLMediaElement::EffectiveMediaVolume() const {
@@ -3323,8 +3361,8 @@ bool HTMLMediaElement::IsAutoplayingMuted() {
 
 // MediaPlayerPresentation methods
 void HTMLMediaElement::Repaint() {
-  if (web_layer_)
-    web_layer_->Invalidate();
+  if (cc_layer_)
+    cc_layer_->SetNeedsDisplay();
 
   UpdateDisplayState();
   if (GetLayoutObject())
@@ -3552,7 +3590,8 @@ bool HTMLMediaElement::HasPendingActivity() const {
     // Disable potential updating of playback position, as that will
     // require v8 allocations; not allowed while GCing
     // (hasPendingActivity() is called during a v8 GC.)
-    AutoReset<bool> scope(&official_playback_position_needs_update_, false);
+    base::AutoReset<bool> scope(&official_playback_position_needs_update_,
+                                false);
 
     // When playing or if playback may continue, timeupdate events may be fired.
     if (CouldPlayIfEnoughData())
@@ -3612,8 +3651,8 @@ void HTMLMediaElement::DidExitFullscreen() {
   in_overlay_fullscreen_video_ = false;
 }
 
-WebLayer* HTMLMediaElement::PlatformLayer() const {
-  return web_layer_;
+cc::Layer* HTMLMediaElement::CcLayer() const {
+  return cc_layer_;
 }
 
 bool HTMLMediaElement::HasClosedCaptions() const {
@@ -3903,20 +3942,20 @@ WebMediaPlayer::CORSMode HTMLMediaElement::CorsMode() const {
   return WebMediaPlayer::kCORSModeAnonymous;
 }
 
-void HTMLMediaElement::SetWebLayer(WebLayer* web_layer) {
-  if (web_layer == web_layer_)
+void HTMLMediaElement::SetCcLayer(cc::Layer* cc_layer) {
+  if (cc_layer == cc_layer_)
     return;
 
   // If either of the layers is null we need to enable or disable compositing.
   // This is done by triggering a style recalc.
-  if (!web_layer_ || !web_layer)
+  if (!cc_layer_ || !cc_layer)
     SetNeedsCompositingUpdate();
 
-  if (web_layer_)
-    GraphicsLayer::UnregisterContentsLayer(web_layer_);
-  web_layer_ = web_layer;
-  if (web_layer_)
-    GraphicsLayer::RegisterContentsLayer(web_layer_);
+  if (cc_layer_)
+    GraphicsLayer::UnregisterContentsLayer(cc_layer_);
+  cc_layer_ = cc_layer;
+  if (cc_layer_)
+    GraphicsLayer::RegisterContentsLayer(cc_layer_);
 }
 
 void HTMLMediaElement::MediaSourceOpened(WebMediaSource* web_media_source) {
@@ -3956,8 +3995,7 @@ void HTMLMediaElement::Trace(blink::Visitor* visitor) {
   PausableObject::Trace(visitor);
 }
 
-void HTMLMediaElement::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+void HTMLMediaElement::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(video_tracks_);
   visitor->TraceWrappers(audio_tracks_);
   visitor->TraceWrappers(text_tracks_);
@@ -4220,6 +4258,11 @@ gfx::ColorSpace HTMLMediaElement::TargetColorSpace() {
 
 bool HTMLMediaElement::WasAutoplayInitiated() {
   return autoplay_policy_->WasAutoplayInitiated();
+}
+
+bool HTMLMediaElement::MediaShouldBeOpaque() const {
+  return !IsMediaDataCORSSameOrigin(GetDocument().GetSecurityOrigin()) &&
+         ready_state_ < kHaveMetadata && !FastGetAttribute(srcAttr).IsEmpty();
 }
 
 void HTMLMediaElement::CheckViewportIntersectionTimerFired(TimerBase*) {

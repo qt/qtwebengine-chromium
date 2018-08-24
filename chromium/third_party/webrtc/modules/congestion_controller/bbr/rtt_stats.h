@@ -16,7 +16,8 @@
 #include <algorithm>
 #include <cstdint>
 
-#include "modules/congestion_controller/network_control/include/network_units.h"
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
 #include "rtc_base/constructormagic.h"
 #include "rtc_base/logging.h"
 

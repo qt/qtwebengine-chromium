@@ -7,11 +7,13 @@
 
 #include <map>
 #include <memory>
+#include <vector>
 
 #include "base/compiler_specific.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/macros.h"
+#include "base/optional.h"
 #include "build/build_config.h"
 #include "content/browser/devtools/devtools_agent_host_impl.h"
 #include "content/common/content_export.h"
@@ -26,12 +28,20 @@
 #include "ui/android/view_android.h"
 #endif  // OS_ANDROID
 
+namespace base {
+class UnguessableToken;
+}
+
 namespace network {
 struct ResourceResponse;
 }
 
 namespace viz {
 class CompositorFrameMetadata;
+}
+
+namespace net {
+class SSLInfo;
 }
 
 namespace content {
@@ -43,6 +53,7 @@ class NavigationHandleImpl;
 class NavigationRequest;
 class NavigationThrottle;
 class RenderFrameHostImpl;
+class SignedExchangeHeader;
 
 class CONTENT_EXPORT RenderFrameDevToolsAgentHost
     : public DevToolsAgentHostImpl,
@@ -73,6 +84,7 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   static bool WillCreateURLLoaderFactory(
       RenderFrameHostImpl* rfh,
       bool is_navigation,
+      bool is_download,
       network::mojom::URLLoaderFactoryRequest* loader_factory_request);
 
   static void OnNavigationRequestWillBeSent(
@@ -80,8 +92,34 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   static void OnNavigationResponseReceived(
       const NavigationRequest& nav_request,
       const network::ResourceResponse& response);
-  static void OnNavigationRequestFailed(const NavigationRequest& nav_request,
-                                        int error_code);
+  static void OnNavigationRequestFailed(
+      const NavigationRequest& nav_request,
+      const network::URLLoaderCompletionStatus& status);
+
+  static void OnSignedExchangeReceived(
+      FrameTreeNode* frame_tree_node,
+      base::Optional<const base::UnguessableToken> devtools_navigation_token,
+      const GURL& outer_request_url,
+      const network::ResourceResponseHead& outer_response,
+      const base::Optional<SignedExchangeHeader>& header,
+      const base::Optional<net::SSLInfo>& ssl_info,
+      const std::vector<std::string>& error_messages);
+  static void OnSignedExchangeCertificateRequestSent(
+      FrameTreeNode* frame_tree_node,
+      const base::UnguessableToken& request_id,
+      const base::UnguessableToken& loader_id,
+      const network::ResourceRequest& request,
+      const GURL& signed_exchange_url);
+  static void OnSignedExchangeCertificateResponseReceived(
+      FrameTreeNode* frame_tree_node,
+      const base::UnguessableToken& request_id,
+      const base::UnguessableToken& loader_id,
+      const GURL& url,
+      const network::ResourceResponseHead& head);
+  static void OnSignedExchangeCertificateRequestCompleted(
+      FrameTreeNode* frame_tree_node,
+      const base::UnguessableToken& request_id,
+      const network::URLLoaderCompletionStatus& status);
 
   static std::vector<std::unique_ptr<NavigationThrottle>>
   CreateNavigationThrottles(NavigationHandleImpl* navigation_handle);

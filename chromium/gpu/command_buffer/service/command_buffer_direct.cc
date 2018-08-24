@@ -156,6 +156,8 @@ void CommandBufferDirect::OnRescheduleAfterFinished() {
   service_.SetScheduled(true);
 }
 
+void CommandBufferDirect::OnSwapBuffers(uint64_t swap_id, uint32_t flags) {}
+
 gpu::CommandBufferNamespace CommandBufferDirect::GetNamespaceID() const {
   return gpu::CommandBufferNamespace::IN_PROCESS;
 }

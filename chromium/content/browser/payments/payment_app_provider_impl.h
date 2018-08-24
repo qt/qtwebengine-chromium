@@ -44,6 +44,11 @@ class CONTENT_EXPORT PaymentAppProviderImpl : public PaymentAppProvider {
                     PaymentEventResultCallback callback) override;
   void SetOpenedWindow(WebContents* web_contents) override;
   void CloseOpenedWindow(BrowserContext* browser_context) override;
+  void OnClosingOpenedWindow(BrowserContext* browser_context) override;
+  bool IsValidInstallablePaymentApp(const GURL& manifest_url,
+                                    const GURL& sw_js_url,
+                                    const GURL& sw_scope,
+                                    std::string* error_message) override;
 
  private:
   PaymentAppProviderImpl();

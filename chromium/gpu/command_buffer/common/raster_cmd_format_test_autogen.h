@@ -207,50 +207,12 @@ TEST_F(RasterFormatTest, UnpremultiplyAndDitherCopyCHROMIUM) {
   CheckBytesWrittenMatchesExpectedSize(next_cmd, sizeof(cmd));
 }
 
-TEST_F(RasterFormatTest, InitializeDiscardableTextureCHROMIUM) {
-  cmds::InitializeDiscardableTextureCHROMIUM& cmd =
-      *GetBufferAs<cmds::InitializeDiscardableTextureCHROMIUM>();
-  void* next_cmd =
-      cmd.Set(&cmd, static_cast<GLuint>(11), static_cast<uint32_t>(12),
-              static_cast<uint32_t>(13));
-  EXPECT_EQ(
-      static_cast<uint32_t>(cmds::InitializeDiscardableTextureCHROMIUM::kCmdId),
-      cmd.header.command);
-  EXPECT_EQ(sizeof(cmd), cmd.header.size * 4u);
-  EXPECT_EQ(static_cast<GLuint>(11), cmd.texture_id);
-  EXPECT_EQ(static_cast<uint32_t>(12), cmd.shm_id);
-  EXPECT_EQ(static_cast<uint32_t>(13), cmd.shm_offset);
-  CheckBytesWrittenMatchesExpectedSize(next_cmd, sizeof(cmd));
-}
-
-TEST_F(RasterFormatTest, UnlockDiscardableTextureCHROMIUM) {
-  cmds::UnlockDiscardableTextureCHROMIUM& cmd =
-      *GetBufferAs<cmds::UnlockDiscardableTextureCHROMIUM>();
-  void* next_cmd = cmd.Set(&cmd, static_cast<GLuint>(11));
-  EXPECT_EQ(
-      static_cast<uint32_t>(cmds::UnlockDiscardableTextureCHROMIUM::kCmdId),
-      cmd.header.command);
-  EXPECT_EQ(sizeof(cmd), cmd.header.size * 4u);
-  EXPECT_EQ(static_cast<GLuint>(11), cmd.texture_id);
-  CheckBytesWrittenMatchesExpectedSize(next_cmd, sizeof(cmd));
-}
-
-TEST_F(RasterFormatTest, LockDiscardableTextureCHROMIUM) {
-  cmds::LockDiscardableTextureCHROMIUM& cmd =
-      *GetBufferAs<cmds::LockDiscardableTextureCHROMIUM>();
-  void* next_cmd = cmd.Set(&cmd, static_cast<GLuint>(11));
-  EXPECT_EQ(static_cast<uint32_t>(cmds::LockDiscardableTextureCHROMIUM::kCmdId),
-            cmd.header.command);
-  EXPECT_EQ(sizeof(cmd), cmd.header.size * 4u);
-  EXPECT_EQ(static_cast<GLuint>(11), cmd.texture_id);
-  CheckBytesWrittenMatchesExpectedSize(next_cmd, sizeof(cmd));
-}
-
 TEST_F(RasterFormatTest, BeginRasterCHROMIUM) {
   cmds::BeginRasterCHROMIUM& cmd = *GetBufferAs<cmds::BeginRasterCHROMIUM>();
-  void* next_cmd = cmd.Set(&cmd, static_cast<GLuint>(11),
-                           static_cast<GLuint>(12), static_cast<GLuint>(13),
-                           static_cast<GLboolean>(14), static_cast<GLint>(15));
+  void* next_cmd =
+      cmd.Set(&cmd, static_cast<GLuint>(11), static_cast<GLuint>(12),
+              static_cast<GLuint>(13), static_cast<GLboolean>(14),
+              static_cast<GLint>(15), static_cast<GLuint>(16));
   EXPECT_EQ(static_cast<uint32_t>(cmds::BeginRasterCHROMIUM::kCmdId),
             cmd.header.command);
   EXPECT_EQ(sizeof(cmd), cmd.header.size * 4u);
@@ -259,20 +221,25 @@ TEST_F(RasterFormatTest, BeginRasterCHROMIUM) {
   EXPECT_EQ(static_cast<GLuint>(13), cmd.msaa_sample_count);
   EXPECT_EQ(static_cast<GLboolean>(14), cmd.can_use_lcd_text);
   EXPECT_EQ(static_cast<GLint>(15), cmd.color_type);
+  EXPECT_EQ(static_cast<GLuint>(16), cmd.color_space_transfer_cache_id);
   CheckBytesWrittenMatchesExpectedSize(next_cmd, sizeof(cmd));
 }
 
 TEST_F(RasterFormatTest, RasterCHROMIUM) {
   cmds::RasterCHROMIUM& cmd = *GetBufferAs<cmds::RasterCHROMIUM>();
   void* next_cmd =
-      cmd.Set(&cmd, static_cast<GLsizeiptr>(11), static_cast<uint32_t>(12),
-              static_cast<uint32_t>(13));
+      cmd.Set(&cmd, static_cast<GLuint>(11), static_cast<GLuint>(12),
+              static_cast<GLsizeiptr>(13), static_cast<GLuint>(14),
+              static_cast<GLuint>(15), static_cast<GLsizeiptr>(16));
   EXPECT_EQ(static_cast<uint32_t>(cmds::RasterCHROMIUM::kCmdId),
             cmd.header.command);
   EXPECT_EQ(sizeof(cmd), cmd.header.size * 4u);
-  EXPECT_EQ(static_cast<GLsizeiptr>(11), cmd.size);
-  EXPECT_EQ(static_cast<uint32_t>(12), cmd.list_shm_id);
-  EXPECT_EQ(static_cast<uint32_t>(13), cmd.list_shm_offset);
+  EXPECT_EQ(static_cast<GLuint>(11), cmd.raster_shm_id);
+  EXPECT_EQ(static_cast<GLuint>(12), cmd.raster_shm_offset);
+  EXPECT_EQ(static_cast<GLsizeiptr>(13), cmd.raster_shm_size);
+  EXPECT_EQ(static_cast<GLuint>(14), cmd.font_shm_id);
+  EXPECT_EQ(static_cast<GLuint>(15), cmd.font_shm_offset);
+  EXPECT_EQ(static_cast<GLsizeiptr>(16), cmd.font_shm_size);
   CheckBytesWrittenMatchesExpectedSize(next_cmd, sizeof(cmd));
 }
 
@@ -511,6 +478,27 @@ TEST_F(RasterFormatTest, CopySubTexture) {
   EXPECT_EQ(static_cast<GLint>(16), cmd.y);
   EXPECT_EQ(static_cast<GLsizei>(17), cmd.width);
   EXPECT_EQ(static_cast<GLsizei>(18), cmd.height);
+  CheckBytesWrittenMatchesExpectedSize(next_cmd, sizeof(cmd));
+}
+
+TEST_F(RasterFormatTest, TraceBeginCHROMIUM) {
+  cmds::TraceBeginCHROMIUM& cmd = *GetBufferAs<cmds::TraceBeginCHROMIUM>();
+  void* next_cmd =
+      cmd.Set(&cmd, static_cast<GLuint>(11), static_cast<GLuint>(12));
+  EXPECT_EQ(static_cast<uint32_t>(cmds::TraceBeginCHROMIUM::kCmdId),
+            cmd.header.command);
+  EXPECT_EQ(sizeof(cmd), cmd.header.size * 4u);
+  EXPECT_EQ(static_cast<GLuint>(11), cmd.category_bucket_id);
+  EXPECT_EQ(static_cast<GLuint>(12), cmd.name_bucket_id);
+  CheckBytesWrittenMatchesExpectedSize(next_cmd, sizeof(cmd));
+}
+
+TEST_F(RasterFormatTest, TraceEndCHROMIUM) {
+  cmds::TraceEndCHROMIUM& cmd = *GetBufferAs<cmds::TraceEndCHROMIUM>();
+  void* next_cmd = cmd.Set(&cmd);
+  EXPECT_EQ(static_cast<uint32_t>(cmds::TraceEndCHROMIUM::kCmdId),
+            cmd.header.command);
+  EXPECT_EQ(sizeof(cmd), cmd.header.size * 4u);
   CheckBytesWrittenMatchesExpectedSize(next_cmd, sizeof(cmd));
 }
 

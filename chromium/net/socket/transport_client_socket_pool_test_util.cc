@@ -52,7 +52,8 @@ class MockConnectClientSocket : public TransportClientSocket {
     NOTREACHED();
     return ERR_FAILED;
   }
-  int Connect(const CompletionCallback& callback) override {
+  // StreamSocket implementation.
+  int Connect(CompletionOnceCallback callback) override {
     connected_ = true;
     return OK;
   }
@@ -75,8 +76,6 @@ class MockConnectClientSocket : public TransportClientSocket {
   }
   const NetLogWithSource& NetLog() const override { return net_log_; }
 
-  void SetSubresourceSpeculation() override {}
-  void SetOmniboxSpeculation() override {}
   bool WasEverUsed() const override { return false; }
   void EnableTCPFastOpenIfSupported() override {}
   bool WasAlpnNegotiated() const override { return false; }
@@ -96,12 +95,12 @@ class MockConnectClientSocket : public TransportClientSocket {
   // Socket implementation.
   int Read(IOBuffer* buf,
            int buf_len,
-           const CompletionCallback& callback) override {
+           CompletionOnceCallback callback) override {
     return ERR_FAILED;
   }
   int Write(IOBuffer* buf,
             int buf_len,
-            const CompletionCallback& callback,
+            CompletionOnceCallback callback,
             const NetworkTrafficAnnotationTag& traffic_annotation) override {
     return ERR_FAILED;
   }
@@ -128,7 +127,8 @@ class MockFailingClientSocket : public TransportClientSocket {
     return ERR_FAILED;
   }
 
-  int Connect(const CompletionCallback& callback) override {
+  // StreamSocket implementation.
+  int Connect(CompletionOnceCallback callback) override {
     return ERR_CONNECTION_FAILED;
   }
 
@@ -144,8 +144,6 @@ class MockFailingClientSocket : public TransportClientSocket {
   }
   const NetLogWithSource& NetLog() const override { return net_log_; }
 
-  void SetSubresourceSpeculation() override {}
-  void SetOmniboxSpeculation() override {}
   bool WasEverUsed() const override { return false; }
   void EnableTCPFastOpenIfSupported() override {}
   bool WasAlpnNegotiated() const override { return false; }
@@ -167,13 +165,13 @@ class MockFailingClientSocket : public TransportClientSocket {
   // Socket implementation.
   int Read(IOBuffer* buf,
            int buf_len,
-           const CompletionCallback& callback) override {
+           CompletionOnceCallback callback) override {
     return ERR_FAILED;
   }
 
   int Write(IOBuffer* buf,
             int buf_len,
-            const CompletionCallback& callback,
+            CompletionOnceCallback callback,
             const NetworkTrafficAnnotationTag& traffic_annotation) override {
     return ERR_FAILED;
   }
@@ -252,9 +250,10 @@ class MockTriggerableClientSocket : public TransportClientSocket {
     return ERR_FAILED;
   }
 
-  int Connect(const CompletionCallback& callback) override {
+  // StreamSocket implementation.
+  int Connect(CompletionOnceCallback callback) override {
     DCHECK(callback_.is_null());
-    callback_ = callback;
+    callback_ = std::move(callback);
     return ERR_IO_PENDING;
   }
 
@@ -277,8 +276,6 @@ class MockTriggerableClientSocket : public TransportClientSocket {
   }
   const NetLogWithSource& NetLog() const override { return net_log_; }
 
-  void SetSubresourceSpeculation() override {}
-  void SetOmniboxSpeculation() override {}
   bool WasEverUsed() const override { return false; }
   void EnableTCPFastOpenIfSupported() override {}
   bool WasAlpnNegotiated() const override { return false; }
@@ -301,13 +298,13 @@ class MockTriggerableClientSocket : public TransportClientSocket {
   // Socket implementation.
   int Read(IOBuffer* buf,
            int buf_len,
-           const CompletionCallback& callback) override {
+           CompletionOnceCallback callback) override {
     return ERR_FAILED;
   }
 
   int Write(IOBuffer* buf,
             int buf_len,
-            const CompletionCallback& callback,
+            CompletionOnceCallback callback,
             const NetworkTrafficAnnotationTag& traffic_annotation) override {
     return ERR_FAILED;
   }
@@ -317,14 +314,14 @@ class MockTriggerableClientSocket : public TransportClientSocket {
  private:
   void DoCallback() {
     is_connected_ = should_connect_;
-    callback_.Run(is_connected_ ? OK : ERR_CONNECTION_FAILED);
+    std::move(callback_).Run(is_connected_ ? OK : ERR_CONNECTION_FAILED);
   }
 
   bool should_connect_;
   bool is_connected_;
   const AddressList addrlist_;
   NetLogWithSource net_log_;
-  CompletionCallback callback_;
+  CompletionOnceCallback callback_;
   ConnectionAttempts connection_attempts_;
 
   base::WeakPtrFactory<MockTriggerableClientSocket> weak_factory_;
@@ -455,6 +452,21 @@ MockTransportClientSocketFactory::CreateSSLClientSocket(
     const SSLClientSocketContext& context) {
   NOTIMPLEMENTED();
   return std::unique_ptr<SSLClientSocket>();
+}
+
+std::unique_ptr<ProxyClientSocket>
+MockTransportClientSocketFactory::CreateProxyClientSocket(
+    std::unique_ptr<ClientSocketHandle> transport_socket,
+    const std::string& user_agent,
+    const HostPortPair& endpoint,
+    HttpAuthController* http_auth_controller,
+    bool tunnel,
+    bool using_spdy,
+    NextProto negotiated_protocol,
+    bool is_https_proxy,
+    const NetworkTrafficAnnotationTag& traffic_annotation) {
+  NOTIMPLEMENTED();
+  return nullptr;
 }
 
 void MockTransportClientSocketFactory::ClearSSLSessionCache() {

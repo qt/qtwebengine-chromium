@@ -22,6 +22,7 @@
 #include "components/viz/host/host_frame_sink_manager.h"
 #include "content/browser/compositor/image_transport_factory.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
+#include "gpu/vulkan/buildflags.h"
 #include "services/ui/public/cpp/gpu/command_buffer_metrics.h"
 #include "ui/compositor/compositor.h"
 
@@ -36,6 +37,7 @@ class SurfaceManager;
 
 namespace gpu {
 class GpuChannelEstablishFactory;
+class VulkanImplementation;
 }
 
 namespace ui {
@@ -105,17 +107,14 @@ class GpuProcessTransportFactory : public ui::ContextFactory,
   ui::ContextFactoryPrivate* GetContextFactoryPrivate() override;
   viz::FrameSinkManagerImpl* GetFrameSinkManager() override;
   viz::GLHelper* GetGLHelper() override;
-#if defined(OS_MACOSX)
-  void SetCompositorSuspendedForRecycle(ui::Compositor* compositor,
-                                        bool suspended) override;
-#endif
 
  private:
   struct PerCompositorData;
 
   PerCompositorData* CreatePerCompositorData(ui::Compositor* compositor);
   std::unique_ptr<viz::SoftwareOutputDevice> CreateSoftwareOutputDevice(
-      gfx::AcceleratedWidget widget);
+      gfx::AcceleratedWidget widget,
+      scoped_refptr<base::SequencedTaskRunner> task_runner);
   void EstablishedGpuChannel(
       base::WeakPtr<ui::Compositor> compositor,
       bool use_gpu_compositing,
@@ -125,8 +124,10 @@ class GpuProcessTransportFactory : public ui::ContextFactory,
 
   void OnLostMainThreadSharedContext();
 
+#if BUILDFLAG(ENABLE_VULKAN)
   scoped_refptr<viz::VulkanInProcessContextProvider>
   SharedVulkanContextProvider();
+#endif
 
   // viz::ContextLostObserver implementation.
   void OnContextLost() override;
@@ -149,6 +150,10 @@ class GpuProcessTransportFactory : public ui::ContextFactory,
   std::unique_ptr<viz::OutputDeviceBacking> software_backing_;
 #endif
 
+#if BUILDFLAG(ENABLE_VULKAN)
+  std::unique_ptr<gpu::VulkanImplementation> vulkan_implementation_;
+#endif
+
   // Depends on SurfaceManager.
   typedef std::map<ui::Compositor*, std::unique_ptr<PerCompositorData>>
       PerCompositorDataMap;
@@ -163,11 +168,13 @@ class GpuProcessTransportFactory : public ui::ContextFactory,
   scoped_refptr<viz::RasterContextProvider> shared_worker_context_provider_;
 
   bool is_gpu_compositing_disabled_ = false;
-  bool disable_display_vsync_ = false;
+  bool disable_frame_rate_limit_ = false;
   bool wait_for_all_pipeline_stages_before_draw_ = false;
+#if BUILDFLAG(ENABLE_VULKAN)
   bool shared_vulkan_context_provider_initialized_ = false;
   scoped_refptr<viz::VulkanInProcessContextProvider>
       shared_vulkan_context_provider_;
+#endif
 
   gpu::GpuChannelEstablishFactory* const gpu_channel_factory_;
   // Service-side impl that controls the compositing mode based on what mode the

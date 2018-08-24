@@ -15,13 +15,13 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/sys_info.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/gpu_fence.h"
 #include "ui/gl/angle_platform_impl.h"
 #include "ui/gl/egl_util.h"
 #include "ui/gl/gl_context.h"
@@ -474,6 +474,15 @@ EGLConfig ChooseConfig(GLSurfaceFormat format, bool surfaceless) {
   return nullptr;
 }
 
+void AddInitDisplay(std::vector<DisplayType>* init_displays,
+                    DisplayType display_type) {
+  // Make sure to not add the same display type twice.
+  if (std::find(init_displays->begin(), init_displays->end(), display_type) ==
+      init_displays->end()) {
+    init_displays->push_back(display_type);
+  }
+}
+
 }  // namespace
 
 void GetEGLInitDisplays(bool supports_angle_d3d,
@@ -484,7 +493,7 @@ void GetEGLInitDisplays(bool supports_angle_d3d,
   // SwiftShader does not use the platform extensions
   if (command_line->GetSwitchValueASCII(switches::kUseGL) ==
       kGLImplementationSwiftShaderForWebGLName) {
-    init_displays->push_back(SWIFT_SHADER);
+    AddInitDisplay(init_displays, SWIFT_SHADER);
     return;
   }
 
@@ -497,41 +506,51 @@ void GetEGLInitDisplays(bool supports_angle_d3d,
 
   if (supports_angle_null &&
       requested_renderer == kANGLEImplementationNullName) {
-    init_displays->push_back(ANGLE_NULL);
+    AddInitDisplay(init_displays, ANGLE_NULL);
     return;
+  }
+
+  // If no display has been explicitly requested and the DefaultANGLEOpenGL
+  // experiment is enabled, try creating OpenGL displays first.
+  // TODO(oetuaho@nvidia.com): Only enable this path on specific GPUs with a
+  // blacklist entry. http://crbug.com/693090
+  if (supports_angle_opengl && use_angle_default &&
+      base::FeatureList::IsEnabled(features::kDefaultANGLEOpenGL)) {
+    AddInitDisplay(init_displays, ANGLE_OPENGL);
+    AddInitDisplay(init_displays, ANGLE_OPENGLES);
   }
 
   if (supports_angle_d3d) {
     if (use_angle_default) {
       // Default mode for ANGLE - try D3D11, else try D3D9
       if (!command_line->HasSwitch(switches::kDisableD3D11)) {
-        init_displays->push_back(ANGLE_D3D11);
+        AddInitDisplay(init_displays, ANGLE_D3D11);
       }
-      init_displays->push_back(ANGLE_D3D9);
+      AddInitDisplay(init_displays, ANGLE_D3D9);
     } else {
       if (requested_renderer == kANGLEImplementationD3D11Name) {
-        init_displays->push_back(ANGLE_D3D11);
+        AddInitDisplay(init_displays, ANGLE_D3D11);
       } else if (requested_renderer == kANGLEImplementationD3D9Name) {
-        init_displays->push_back(ANGLE_D3D9);
+        AddInitDisplay(init_displays, ANGLE_D3D9);
       } else if (requested_renderer == kANGLEImplementationD3D11NULLName) {
-        init_displays->push_back(ANGLE_D3D11_NULL);
+        AddInitDisplay(init_displays, ANGLE_D3D11_NULL);
       }
     }
   }
 
   if (supports_angle_opengl) {
     if (use_angle_default && !supports_angle_d3d) {
-      init_displays->push_back(ANGLE_OPENGL);
-      init_displays->push_back(ANGLE_OPENGLES);
+      AddInitDisplay(init_displays, ANGLE_OPENGL);
+      AddInitDisplay(init_displays, ANGLE_OPENGLES);
     } else {
       if (requested_renderer == kANGLEImplementationOpenGLName) {
-        init_displays->push_back(ANGLE_OPENGL);
+        AddInitDisplay(init_displays, ANGLE_OPENGL);
       } else if (requested_renderer == kANGLEImplementationOpenGLESName) {
-        init_displays->push_back(ANGLE_OPENGLES);
+        AddInitDisplay(init_displays, ANGLE_OPENGLES);
       } else if (requested_renderer == kANGLEImplementationOpenGLNULLName) {
-        init_displays->push_back(ANGLE_OPENGL_NULL);
+        AddInitDisplay(init_displays, ANGLE_OPENGL_NULL);
       } else if (requested_renderer == kANGLEImplementationOpenGLESNULLName) {
-        init_displays->push_back(ANGLE_OPENGLES_NULL);
+        AddInitDisplay(init_displays, ANGLE_OPENGLES_NULL);
       }
     }
   }
@@ -858,15 +877,7 @@ EGLDisplay GLSurfaceEGL::InitializeDisplay(
 NativeViewGLSurfaceEGL::NativeViewGLSurfaceEGL(
     EGLNativeWindowType window,
     std::unique_ptr<gfx::VSyncProvider> vsync_provider)
-    : window_(window),
-      size_(1, 1),
-      enable_fixed_size_angle_(true),
-      surface_(NULL),
-      supports_post_sub_buffer_(false),
-      supports_swap_buffer_with_damage_(false),
-      flips_vertically_(false),
-      vsync_provider_external_(std::move(vsync_provider)),
-      use_egl_timestamps_(false) {
+    : window_(window), vsync_provider_external_(std::move(vsync_provider)) {
 #if defined(OS_ANDROID)
   if (window)
     ANativeWindow_acquire(window);
@@ -1091,6 +1102,18 @@ gfx::SwapResult NativeViewGLSurfaceEGL::SwapBuffers(
   } else if (use_egl_timestamps_) {
     UpdateSwapEvents(newFrameId, newFrameIdIsValid);
   }
+
+#if defined(USE_X11)
+  // We need to restore the background pixel that we set to WhitePixel on
+  // views::DesktopWindowTreeHostX11::InitX11Window back to None for the
+  // XWindow associated to this surface after the first SwapBuffers has
+  // happened, to avoid showing a weird white background while resizing.
+  if (g_native_display && !has_swapped_buffers_) {
+    XSetWindowBackgroundPixmap(g_native_display, window_, 0);
+    has_swapped_buffers_ = true;
+  }
+#endif
+
   return scoped_swap_buffers.result();
 }
 
@@ -1231,15 +1254,7 @@ bool NativeViewGLSurfaceEGL::Resize(const gfx::Size& size,
 
   size_ = size;
 
-  std::unique_ptr<ui::ScopedMakeCurrent> scoped_make_current;
-  GLContext* current_context = GLContext::GetCurrent();
-  bool was_current =
-      current_context && current_context->IsCurrent(this);
-  if (was_current) {
-    scoped_make_current.reset(
-        new ui::ScopedMakeCurrent(current_context, this));
-    current_context->ReleaseCurrent(this);
-  }
+  ui::ScopedReleaseCurrent release_current;
 
   Destroy();
 
@@ -1248,15 +1263,33 @@ bool NativeViewGLSurfaceEGL::Resize(const gfx::Size& size,
     return false;
   }
 
+  if (!release_current.Restore()) {
+    LOG(ERROR) << "Could not MakeCurrent after Resize";
+    return false;
+  }
+
+  SetVSyncEnabled(vsync_enabled_);
+
   return true;
 }
 
 bool NativeViewGLSurfaceEGL::Recreate() {
+  ui::ScopedReleaseCurrent release_current;
+
   Destroy();
+
   if (!Initialize(format_)) {
     LOG(ERROR) << "Failed to create surface.";
     return false;
   }
+
+  if (!release_current.Restore()) {
+    LOG(ERROR) << "Failed to MakeCurrent after Recreate";
+    return false;
+  }
+
+  SetVSyncEnabled(vsync_enabled_);
+
   return true;
 }
 
@@ -1357,19 +1390,30 @@ gfx::VSyncProvider* NativeViewGLSurfaceEGL::GetVSyncProvider() {
                                   : vsync_provider_internal_.get();
 }
 
+void NativeViewGLSurfaceEGL::SetVSyncEnabled(bool enabled) {
+  DCHECK(GLContext::GetCurrent() && GLContext::GetCurrent()->IsCurrent(this));
+  vsync_enabled_ = enabled;
+  if (!eglSwapInterval(GetDisplay(), enabled ? 1 : 0)) {
+    LOG(ERROR) << "eglSwapInterval failed with error "
+               << GetLastEGLErrorString();
+  }
+}
+
 bool NativeViewGLSurfaceEGL::ScheduleOverlayPlane(
     int z_order,
     gfx::OverlayTransform transform,
     GLImage* image,
     const gfx::Rect& bounds_rect,
     const gfx::RectF& crop_rect,
-    bool enable_blend) {
+    bool enable_blend,
+    std::unique_ptr<gfx::GpuFence> gpu_fence) {
 #if !defined(OS_ANDROID)
   NOTIMPLEMENTED();
   return false;
 #else
   pending_overlays_.push_back(GLSurfaceOverlay(z_order, transform, image,
-                                               bounds_rect, crop_rect, true));
+                                               bounds_rect, crop_rect, true,
+                                               std::move(gpu_fence)));
   return true;
 #endif
 }
@@ -1490,19 +1534,17 @@ bool PbufferGLSurfaceEGL::Resize(const gfx::Size& size,
   if (size == size_)
     return true;
 
-  std::unique_ptr<ui::ScopedMakeCurrent> scoped_make_current;
-  GLContext* current_context = GLContext::GetCurrent();
-  bool was_current =
-      current_context && current_context->IsCurrent(this);
-  if (was_current) {
-    scoped_make_current.reset(
-        new ui::ScopedMakeCurrent(current_context, this));
-  }
-
   size_ = size;
+
+  ui::ScopedReleaseCurrent release_current;
 
   if (!Initialize(format_)) {
     LOG(ERROR) << "Failed to resize pbuffer.";
+    return false;
+  }
+
+  if (!release_current.Restore()) {
+    LOG(ERROR) << "Failed to MakeCurrent after Resize";
     return false;
   }
 

@@ -32,6 +32,7 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/script/script.h"
 #include "third_party/blink/renderer/core/script/script_element_base.h"
+#include "third_party/blink/renderer/core/script/script_scheduling_type.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
@@ -51,7 +52,7 @@ class CORE_EXPORT PendingScriptClient : public GarbageCollectedMixin {
   // streaming finishes.
   virtual void PendingScriptFinished(PendingScript*) = 0;
 
-  virtual void Trace(blink::Visitor* visitor) {}
+  void Trace(blink::Visitor* visitor) override {}
 };
 
 // A container for an script after "prepare a script" until it is executed.
@@ -83,13 +84,8 @@ class CORE_EXPORT PendingScript
   virtual ScriptType GetScriptType() const = 0;
 
   virtual void Trace(blink::Visitor*);
-  void TraceWrappers(const ScriptWrappableVisitor*) const override {}
+  void TraceWrappers(ScriptWrappableVisitor*) const override {}
   const char* NameInHeapSnapshot() const override { return "PendingScript"; }
-
-  // Returns false if the script should not be run due to MIME type check.
-  // Should be called just before GetSource().
-  virtual bool CheckMIMETypeBeforeRunScript(
-      Document* context_document) const = 0;
 
   virtual Script* GetSource(const KURL& document_url,
                             bool& error_occurred) const = 0;
@@ -118,6 +114,30 @@ class CORE_EXPORT PendingScript
 
   void Dispose();
 
+  ScriptSchedulingType GetSchedulingType() const {
+    DCHECK_NE(scheduling_type_, ScriptSchedulingType::kNotSet);
+    return scheduling_type_;
+  }
+  bool IsControlledByScriptRunner() const;
+  void SetSchedulingType(ScriptSchedulingType scheduling_type) {
+    DCHECK_EQ(scheduling_type_, ScriptSchedulingType::kNotSet);
+    scheduling_type_ = scheduling_type;
+  }
+  Document* OriginalContextDocument() const {
+    return original_context_document_;
+  }
+
+  bool WasCreatedDuringDocumentWrite() {
+    return created_during_document_write_;
+  }
+
+  // https://html.spec.whatwg.org/multipage/scripting.html#execute-the-script-block
+  // The single entry point of script execution.
+  // PendingScript::Dispose() is called in ExecuteScriptBlock().
+  //
+  // This is virtual only for testing.
+  virtual void ExecuteScriptBlock(const KURL&);
+
  protected:
   PendingScript(ScriptElementBase*, const TextPosition& starting_position);
 
@@ -129,6 +149,15 @@ class CORE_EXPORT PendingScript
   virtual void CheckState() const = 0;
 
  private:
+  static void ExecuteScriptBlockInternal(Script*,
+                                         bool error_occurred,
+                                         ScriptElementBase*,
+                                         bool was_canceled,
+                                         bool is_external,
+                                         bool created_during_document_write,
+                                         double parser_blocking_load_start_time,
+                                         bool is_controlled_by_script_runner);
+
   // |m_element| must points to the corresponding ScriptLoader's
   // ScriptElementBase and thus must be non-null before dispose() is called
   // (except for unit tests).
@@ -137,8 +166,18 @@ class CORE_EXPORT PendingScript
   TextPosition starting_position_;  // Only used for inline script tags.
   double parser_blocking_load_start_time_;
 
+  ScriptSchedulingType scheduling_type_ = ScriptSchedulingType::kNotSet;
+
   WebScopedVirtualTimePauser virtual_time_pauser_;
   Member<PendingScriptClient> client_;
+
+  // The context document at the time when PrepareScript() is executed.
+  // This is only used to check whether the script element is moved between
+  // documents and thus doesn't retain a strong reference.
+  WeakMember<Document> original_context_document_;
+
+  const bool created_during_document_write_;
+
   DISALLOW_COPY_AND_ASSIGN(PendingScript);
 };
 

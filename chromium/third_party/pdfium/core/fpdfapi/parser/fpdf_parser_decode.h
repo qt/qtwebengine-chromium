@@ -17,8 +17,6 @@ class CPDF_Dictionary;
 // Indexed by 8-bit char code, contains unicode code points.
 extern const uint16_t PDFDocEncoding[256];
 
-ByteString PDF_NameDecode(const ByteStringView& orig);
-ByteString PDF_NameEncode(const ByteString& orig);
 ByteString PDF_EncodeString(const ByteString& src, bool bHex);
 WideString PDF_DecodeText(const uint8_t* pData, uint32_t size);
 WideString PDF_DecodeText(const ByteString& bstr);
@@ -29,14 +27,6 @@ bool FlateEncode(const uint8_t* src_buf,
                  uint32_t src_size,
                  uint8_t** dest_buf,
                  uint32_t* dest_size);
-
-// This used to have more parameters like the predictor and bpc, but there was
-// only one caller, so the interface has been simplified, the values are hard
-// coded, and dead code has been removed.
-bool PngEncode(const uint8_t* src_buf,
-               uint32_t src_size,
-               uint8_t** dest_buf,
-               uint32_t* dest_size);
 
 uint32_t FlateDecode(const uint8_t* src_buf,
                      uint32_t src_size,

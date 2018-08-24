@@ -313,6 +313,21 @@ TEST_F(FontRenderParamsTest, ForceSubpixelPositioning) {
     EXPECT_TRUE(params.subpixel_positioning);
     SetFontRenderParamsDeviceScaleFactor(1.0f);
   }
+  ClearFontRenderParamsCacheForTest();
+  SetFontRenderParamsDeviceScaleFactor(2.f);
+  // Subpixel positioning should be forced on non-Chrome-OS.
+  {
+    FontRenderParams params =
+        GetFontRenderParams(FontRenderParamsQuery(), nullptr);
+    EXPECT_TRUE(params.antialiasing);
+#if !defined(OS_CHROMEOS)
+    EXPECT_TRUE(params.subpixel_positioning);
+#else
+    // Integral scale factor does not require subpixel positioning.
+    EXPECT_FALSE(params.subpixel_positioning);
+#endif  // !defined(OS_CHROMEOS)
+    SetFontRenderParamsDeviceScaleFactor(1.0f);
+  }
 }
 
 TEST_F(FontRenderParamsTest, OnlySetConfiguredValues) {

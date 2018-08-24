@@ -6,9 +6,9 @@
 
 #include "printing/buildflags/buildflags.h"
 
-#if BUILDFLAG(ENABLE_BASIC_PRINTING)
-#include "components/printing/service/public/cpp/pdf_compositor_service_factory.h"
-#include "components/printing/service/public/interfaces/pdf_compositor.mojom.h"
+#if BUILDFLAG(ENABLE_PRINTING)
+#include "components/services/pdf_compositor/public/cpp/pdf_compositor_service_factory.h"
+#include "components/services/pdf_compositor/public/interfaces/pdf_compositor.mojom.h"
 #endif
 
 namespace headless {
@@ -21,7 +21,7 @@ HeadlessContentUtilityClient::~HeadlessContentUtilityClient() = default;
 
 void HeadlessContentUtilityClient::RegisterServices(
     HeadlessContentUtilityClient::StaticServiceMap* services) {
-#if BUILDFLAG(ENABLE_BASIC_PRINTING) && !defined(CHROME_MULTIPLE_DLL_BROWSER)
+#if BUILDFLAG(ENABLE_PRINTING) && !defined(CHROME_MULTIPLE_DLL_BROWSER)
   service_manager::EmbeddedServiceInfo pdf_compositor_info;
   pdf_compositor_info.factory =
       base::Bind(&printing::CreatePdfCompositorService, user_agent_);

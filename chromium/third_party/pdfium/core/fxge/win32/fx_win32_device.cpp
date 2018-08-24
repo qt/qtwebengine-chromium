@@ -25,7 +25,6 @@
 #include "core/fxge/fx_freetype.h"
 #include "core/fxge/systemfontinfo_iface.h"
 #include "core/fxge/win32/cfx_windowsdib.h"
-#include "core/fxge/win32/dwrite_int.h"
 #include "core/fxge/win32/win32_int.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
@@ -672,7 +671,7 @@ bool CFX_Win32FontInfo::GetFontCharset(void* hFont, int* charset) {
 
 }  // namespace
 
-int g_pdfium_print_mode = WindowsPrintMode::kModeEmf;
+WindowsPrintMode g_pdfium_print_mode = WindowsPrintMode::kModeEmf;
 
 std::unique_ptr<SystemFontInfoIface> SystemFontInfoIface::CreateDefault(
     const char** pUnused) {
@@ -1362,8 +1361,5 @@ RenderDeviceDriverIface* CFX_WindowsRenderDevice::CreateDriver(HDC hDC) {
   if (g_pdfium_print_mode == WindowsPrintMode::kModeTextOnly)
     return new CTextOnlyPrinterDriver(hDC);
 
-  // Should be PostScript
-  ASSERT(g_pdfium_print_mode == WindowsPrintMode::kModePostScript2 ||
-         g_pdfium_print_mode == WindowsPrintMode::kModePostScript3);
   return new CPSPrinterDriver(hDC, g_pdfium_print_mode, false);
 }

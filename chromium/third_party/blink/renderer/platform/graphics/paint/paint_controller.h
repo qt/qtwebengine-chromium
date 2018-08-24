@@ -75,8 +75,8 @@ class PLATFORM_EXPORT PaintController {
   // Provide a new set of paint chunk properties to apply to recorded display
   // items, for Slimming Paint v175+.
   void UpdateCurrentPaintChunkProperties(
-      const Optional<PaintChunk::Id>& id,
-      const PaintChunkProperties& properties) {
+      const base::Optional<PaintChunk::Id>& id,
+      const PropertyTreeState& properties) {
     if (id) {
       PaintChunk::Id id_with_fragment(*id, current_fragment_);
       UpdateCurrentPaintChunkPropertiesUsingIdWithFragment(id_with_fragment,
@@ -85,13 +85,19 @@ class PLATFORM_EXPORT PaintController {
       CheckDuplicatePaintChunkId(id_with_fragment);
 #endif
     } else {
-      new_paint_chunks_.UpdateCurrentPaintChunkProperties(WTF::nullopt,
+      new_paint_chunks_.UpdateCurrentPaintChunkProperties(base::nullopt,
                                                           properties);
     }
   }
 
-  const PaintChunkProperties& CurrentPaintChunkProperties() const {
+  const PropertyTreeState& CurrentPaintChunkProperties() const {
     return new_paint_chunks_.CurrentPaintChunkProperties();
+  }
+
+  void ForceNewChunk(const DisplayItemClient& client, DisplayItem::Type type) {
+    new_paint_chunks_.ForceNewChunk();
+    new_paint_chunks_.UpdateCurrentPaintChunkProperties(
+        PaintChunk::Id(client, type), CurrentPaintChunkProperties());
   }
 
   template <typename DisplayItemClass, typename... Args>
@@ -158,6 +164,11 @@ class PLATFORM_EXPORT PaintController {
 
   // Must be called when a painting is finished.
   void CommitNewDisplayItems();
+
+  // Called when the caller finishes updating a full document life cycle.
+  // The PaintController will cleanup data that will no longer be used for the
+  // next cycle, and update status to be ready for the next cycle.
+  void FinishCycle();
 
   // Returns the approximate memory usage, excluding memory likely to be
   // shared with the embedder after copying to WebPaintController.
@@ -295,7 +306,7 @@ class PLATFORM_EXPORT PaintController {
 
   void UpdateCurrentPaintChunkPropertiesUsingIdWithFragment(
       const PaintChunk::Id& id_with_fragment,
-      const PaintChunkProperties& properties) {
+      const PropertyTreeState& properties) {
     new_paint_chunks_.UpdateCurrentPaintChunkProperties(id_with_fragment,
                                                         properties);
   }

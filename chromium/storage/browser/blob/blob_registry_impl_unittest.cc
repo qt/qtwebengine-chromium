@@ -10,6 +10,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/rand_util.h"
 #include "base/run_loop.h"
+#include "base/sequenced_task_runner.h"
 #include "base/task_scheduler/post_task.h"
 #include "base/test/bind_test_util.h"
 #include "base/test/scoped_task_environment.h"
@@ -32,7 +33,7 @@ namespace {
 
 const size_t kTestBlobStorageIPCThresholdBytes = 5;
 const size_t kTestBlobStorageMaxSharedMemoryBytes = 20;
-const size_t kTestBlobStorageMaxBytesDataItemSize = 13;
+const size_t kTestBlobStorageMaxBytesDataItemSize = 23;
 
 const size_t kTestBlobStorageMaxBlobMemorySize = 400;
 const uint64_t kTestBlobStorageMaxDiskSpace = 4000;
@@ -99,7 +100,8 @@ class BlobRegistryImplTest : public testing::Test {
         std::vector<std::unique_ptr<FileSystemBackend>>(),
         std::vector<URLRequestAutoMountHandler>(), data_dir_.GetPath(),
         FileSystemOptions(FileSystemOptions::PROFILE_MODE_INCOGNITO,
-                          std::vector<std::string>(), nullptr));
+                          false /* force_in_memory */,
+                          std::vector<std::string>()));
     registry_impl_ = std::make_unique<BlobRegistryImpl>(context_->AsWeakPtr(),
                                                         file_system_context_);
     auto delegate = std::make_unique<MockBlobRegistryDelegate>();

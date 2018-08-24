@@ -19,6 +19,7 @@
 #include "pdf/pdfium/pdfium_api_string_buffer_adapter.h"
 #include "pdf/pdfium/pdfium_engine.h"
 #include "printing/units.h"
+#include "third_party/pdfium/public/cpp/fpdf_scopers.h"
 #include "third_party/pdfium/public/fpdf_annot.h"
 
 using printing::ConvertUnitDouble;
@@ -36,10 +37,12 @@ pp::FloatRect FloatPageRectToPixelRect(FPDF_PAGE page,
   int min_y;
   int max_x;
   int max_y;
-  FPDF_PageToDevice(page, 0, 0, output_width, output_height, 0, input.x(),
-                    input.y(), &min_x, &min_y);
-  FPDF_PageToDevice(page, 0, 0, output_width, output_height, 0, input.right(),
-                    input.bottom(), &max_x, &max_y);
+  FPDF_BOOL ret = FPDF_PageToDevice(page, 0, 0, output_width, output_height, 0,
+                                    input.x(), input.y(), &min_x, &min_y);
+  DCHECK(ret);
+  ret = FPDF_PageToDevice(page, 0, 0, output_width, output_height, 0,
+                          input.right(), input.bottom(), &max_x, &max_y);
+  DCHECK(ret);
 
   if (max_x < min_x)
     std::swap(min_x, max_x);
@@ -87,15 +90,11 @@ PDFiumPage::PDFiumPage(PDFiumEngine* engine,
                        const pp::Rect& r,
                        bool available)
     : engine_(engine),
-      page_(nullptr),
-      text_page_(nullptr),
       index_(i),
-      loading_count_(0),
       rect_(r),
-      calculated_links_(false),
       available_(available) {}
 
-PDFiumPage::PDFiumPage(const PDFiumPage& that) = default;
+PDFiumPage::PDFiumPage(PDFiumPage&& that) = default;
 
 PDFiumPage::~PDFiumPage() {
   DCHECK_EQ(0, loading_count_);
@@ -106,17 +105,13 @@ void PDFiumPage::Unload() {
   if (loading_count_)
     return;
 
-  if (text_page_) {
-    FPDFText_ClosePage(text_page_);
-    text_page_ = nullptr;
-  }
+  text_page_.reset();
 
   if (page_) {
     if (engine_->form()) {
-      FORM_OnBeforeClosePage(page_, engine_->form());
+      FORM_OnBeforeClosePage(page(), engine_->form());
     }
-    FPDF_ClosePage(page_);
-    page_ = nullptr;
+    page_.reset();
   }
 }
 
@@ -127,12 +122,12 @@ FPDF_PAGE PDFiumPage::GetPage() {
     return nullptr;
   if (!page_) {
     ScopedLoadCounter scoped_load(this);
-    page_ = FPDF_LoadPage(engine_->doc(), index_);
+    page_.reset(FPDF_LoadPage(engine_->doc(), index_));
     if (page_ && engine_->form()) {
-      FORM_OnAfterLoadPage(page_, engine_->form());
+      FORM_OnAfterLoadPage(page(), engine_->form());
     }
   }
-  return page_;
+  return page();
 }
 
 FPDF_PAGE PDFiumPage::GetPrintPage() {
@@ -142,9 +137,9 @@ FPDF_PAGE PDFiumPage::GetPrintPage() {
     return nullptr;
   if (!page_) {
     ScopedLoadCounter scoped_load(this);
-    page_ = FPDF_LoadPage(engine_->doc(), index_);
+    page_.reset(FPDF_LoadPage(engine_->doc(), index_));
   }
-  return page_;
+  return page();
 }
 
 void PDFiumPage::ClosePrintPage() {
@@ -152,10 +147,7 @@ void PDFiumPage::ClosePrintPage() {
   if (loading_count_)
     return;
 
-  if (page_) {
-    FPDF_ClosePage(page_);
-    page_ = nullptr;
-  }
+  page_.reset();
 }
 
 FPDF_TEXTPAGE PDFiumPage::GetTextPage() {
@@ -163,9 +155,9 @@ FPDF_TEXTPAGE PDFiumPage::GetTextPage() {
     return nullptr;
   if (!text_page_) {
     ScopedLoadCounter scoped_load(this);
-    text_page_ = FPDFText_LoadPage(GetPage());
+    text_page_.reset(FPDFText_LoadPage(GetPage()));
   }
-  return text_page_;
+  return text_page();
 }
 
 void PDFiumPage::GetTextRunInfo(int start_char_index,
@@ -248,8 +240,10 @@ PDFiumPage::Area PDFiumPage::GetCharIndex(const pp::Point& point,
   pp::Point point2 = point - rect_.point();
   double new_x;
   double new_y;
-  FPDF_DeviceToPage(GetPage(), 0, 0, rect_.width(), rect_.height(), rotation,
-                    point2.x(), point2.y(), &new_x, &new_y);
+  FPDF_BOOL ret =
+      FPDF_DeviceToPage(GetPage(), 0, 0, rect_.width(), rect_.height(),
+                        rotation, point2.x(), point2.y(), &new_x, &new_y);
+  DCHECK(ret);
 
   // hit detection tolerance, in points.
   constexpr double kTolerance = 20.0;
@@ -553,14 +547,16 @@ pp::Rect PDFiumPage::PageToScreen(const pp::Point& offset,
   int new_top;
   int new_right;
   int new_bottom;
-  FPDF_PageToDevice(page_, static_cast<int>(start_x), static_cast<int>(start_y),
-                    static_cast<int>(ceil(size_x)),
-                    static_cast<int>(ceil(size_y)), rotation, left, top,
-                    &new_left, &new_top);
-  FPDF_PageToDevice(page_, static_cast<int>(start_x), static_cast<int>(start_y),
-                    static_cast<int>(ceil(size_x)),
-                    static_cast<int>(ceil(size_y)), rotation, right, bottom,
-                    &new_right, &new_bottom);
+  FPDF_BOOL ret = FPDF_PageToDevice(
+      page(), static_cast<int>(start_x), static_cast<int>(start_y),
+      static_cast<int>(ceil(size_x)), static_cast<int>(ceil(size_y)), rotation,
+      left, top, &new_left, &new_top);
+  DCHECK(ret);
+  ret = FPDF_PageToDevice(
+      page(), static_cast<int>(start_x), static_cast<int>(start_y),
+      static_cast<int>(ceil(size_x)), static_cast<int>(ceil(size_y)), rotation,
+      right, bottom, &new_right, &new_bottom);
+  DCHECK(ret);
 
   // If the PDF is rotated, the horizontal/vertical coordinates could be
   // flipped.  See
@@ -596,10 +592,9 @@ const PDFEngine::PageFeatures* PDFiumPage::GetPageFeatures() {
   page_features_.index = index_;
   int annotation_count = FPDFPage_GetAnnotCount(page);
   for (int i = 0; i < annotation_count; ++i) {
-    FPDF_ANNOTATION annotation = FPDFPage_GetAnnot(page, i);
-    FPDF_ANNOTATION_SUBTYPE subtype = FPDFAnnot_GetSubtype(annotation);
+    ScopedFPDFAnnotation annotation(FPDFPage_GetAnnot(page, i));
+    FPDF_ANNOTATION_SUBTYPE subtype = FPDFAnnot_GetSubtype(annotation.get());
     page_features_.annotation_types.insert(subtype);
-    FPDFPage_CloseAnnot(annotation);
   }
 
   return &page_features_;

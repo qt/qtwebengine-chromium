@@ -39,7 +39,7 @@ class MockObserver : public GaiaCookieManagerService::Observer {
     helper_->AddObserver(this);
   }
 
-  ~MockObserver() { helper_->RemoveObserver(this); }
+  ~MockObserver() override { helper_->RemoveObserver(this); }
 
   MOCK_METHOD2(OnAddAccountToCookieCompleted,
                void(const std::string&, const GoogleServiceAuthError&));
@@ -94,7 +94,7 @@ class InstrumentedGaiaCookieManagerService : public GaiaCookieManagerService {
     total++;
   }
 
-  virtual ~InstrumentedGaiaCookieManagerService() { total--; }
+  ~InstrumentedGaiaCookieManagerService() override { total--; }
 
   MOCK_METHOD0(StartFetchingUbertoken, void());
   MOCK_METHOD0(StartFetchingListAccounts, void());
@@ -249,7 +249,7 @@ TEST_F(GaiaCookieManagerServiceTest, MergeSessionRetried) {
   DCHECK(helper.is_running());
   // Transient error incurs a retry after 1 second.
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-      FROM_HERE, base::MessageLoop::QuitWhenIdleClosure(),
+      FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated(),
       base::TimeDelta::FromMilliseconds(1100));
   base::RunLoop().Run();
   SimulateMergeSessionSuccess(&helper, "token");
@@ -273,7 +273,7 @@ TEST_F(GaiaCookieManagerServiceTest, MergeSessionRetriedTwice) {
   EXPECT_LT(helper.GetBackoffEntry()->GetTimeUntilRelease(),
       base::TimeDelta::FromMilliseconds(1100));
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-      FROM_HERE, base::MessageLoop::QuitWhenIdleClosure(),
+      FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated(),
       base::TimeDelta::FromMilliseconds(1100));
   base::RunLoop().Run();
   SimulateMergeSessionFailure(&helper, canceled());
@@ -282,7 +282,7 @@ TEST_F(GaiaCookieManagerServiceTest, MergeSessionRetriedTwice) {
   EXPECT_LT(helper.GetBackoffEntry()->GetTimeUntilRelease(),
       base::TimeDelta::FromMilliseconds(3100));
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-      FROM_HERE, base::MessageLoop::QuitWhenIdleClosure(),
+      FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated(),
       base::TimeDelta::FromMilliseconds(3100));
   base::RunLoop().Run();
   SimulateMergeSessionSuccess(&helper, "token");

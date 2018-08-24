@@ -203,31 +203,39 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #define SK_SUPPORT_LEGACY_TILED_BITMAPS
 #endif
 
+// The matrix image filter imperceptibly alters the following two layout tests:
+//   fast/css/transformed-mask.html
+//   fast/reflections/opacity-reflection-transform.html
+// and changes the following cc_unittests:
+//   LayerTreeHostCommonTest.VisibleRectWithScalingClippingAndFilters
+//   LayerTreeHostCommonTest.VisibleRectWithClippingAndFilters
+// Landing the fix in Skia behind this flag will allow those all to be updated
+// together in Chrome (along with the removal of this flag).
+#ifndef SK_IGNORE_MATRIX_IMAGE_FILTER_FIX
+#define SK_IGNORE_MATRIX_IMAGE_FILTER_FIX
+#endif
+
 // remove after rebaselining svg layout tests
 #ifndef SK_SUPPORT_LEGACY_SVG_ARC_TO
 #define SK_SUPPORT_LEGACY_SVG_ARC_TO
-#endif
-
-// Remove after M66 branch to use new read/writePixels implementations
-#ifndef SK_LEGACY_GPU_PIXEL_OPS
-#define SK_LEGACY_GPU_PIXEL_OPS
 #endif
 
 #ifndef SK_SUPPORT_LEGACY_YUV_COLORSPACE
 #define SK_SUPPORT_LEGACY_YUV_COLORSPACE
 #endif
 
-#ifndef SK_SUPPORT_LEGACY_BACKEND_OBJECTS
-#define SK_SUPPORT_LEGACY_BACKEND_OBJECTS
-#endif
-
 // Max. verb count for paths rendered by the edge-AA tessellating path renderer.
 #define GR_AA_TESSELLATOR_MAX_VERB_COUNT 10
 
+#define SK_DISABLE_LOWP_BILERP_CLAMP_CLAMP_STAGE
 
-#ifndef SK_SUPPORT_LEGACY_PATH_DAA_BIT
-#define SK_SUPPORT_LEGACY_PATH_DAA_BIT
+
+#ifndef SK_SUPPORT_LEGACY_THREADED_DAA_BUGS
+#define SK_SUPPORT_LEGACY_THREADED_DAA_BUGS
 #endif
+
+#define SK_DONT_OPTIMIZE_SRC_PROFILES_FOR_SPEED
+#define SK_DONT_OPTIMIZE_DST_PROFILES_FOR_SPEED
 
 ///////////////////////// Imported from BUILD.gn and skia_common.gypi
 

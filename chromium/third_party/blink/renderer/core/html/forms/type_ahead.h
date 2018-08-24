@@ -26,6 +26,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_HTML_FORMS_TYPE_AHEAD_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_HTML_FORMS_TYPE_AHEAD_H_
 
+#include "base/optional.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
@@ -45,7 +46,7 @@ class CORE_EXPORT TypeAheadDataSource {
   virtual String OptionAtIndex(int index) const = 0;
 };
 
-class TypeAhead {
+class CORE_EXPORT TypeAhead {
   DISALLOW_NEW();
 
  public:
@@ -66,7 +67,7 @@ class TypeAhead {
  private:
   TypeAheadDataSource* data_source_;
   // platform timestamp of last keyboard event in seconds
-  TimeTicks last_type_time_;
+  base::Optional<TimeTicks> last_type_time_;
   UChar repeating_char_;
   StringBuilder buffer_;
 };

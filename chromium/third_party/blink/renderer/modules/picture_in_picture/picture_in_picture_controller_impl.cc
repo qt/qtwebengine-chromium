@@ -5,6 +5,8 @@
 #include "third_party/blink/renderer/modules/picture_in_picture/picture_in_picture_controller_impl.h"
 
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/dom/dom_exception.h"
+#include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/modules/picture_in_picture/picture_in_picture_window.h"
@@ -65,19 +67,90 @@ PictureInPictureControllerImpl::IsElementAllowed(
   if (status != Status::kEnabled)
     return status;
 
+  if (element.getReadyState() == HTMLMediaElement::kHaveNothing)
+    return Status::kMetadataNotLoaded;
+
+  if (!element.HasVideo())
+    return Status::kVideoTrackNotAvailable;
+
   if (element.FastHasAttribute(HTMLNames::disablepictureinpictureAttr))
     return Status::kDisabledByAttribute;
 
   return Status::kEnabled;
 }
 
-void PictureInPictureControllerImpl::SetPictureInPictureElement(
-    HTMLVideoElement& element) {
-  picture_in_picture_element_ = &element;
+void PictureInPictureControllerImpl::EnterPictureInPicture(
+    HTMLVideoElement* element,
+    ScriptPromiseResolver* resolver) {
+  element->enterPictureInPicture(WTF::Bind(
+      &PictureInPictureControllerImpl::OnEnteredPictureInPicture,
+      WrapPersistent(this), WrapPersistent(element), WrapPersistent(resolver)));
 }
 
-void PictureInPictureControllerImpl::UnsetPictureInPictureElement() {
-  picture_in_picture_element_ = nullptr;
+void PictureInPictureControllerImpl::OnEnteredPictureInPicture(
+    HTMLVideoElement* element,
+    ScriptPromiseResolver* resolver,
+    const WebSize& picture_in_picture_window_size) {
+  if (IsElementAllowed(*element) == Status::kDisabledByAttribute) {
+    if (resolver)
+      resolver->Reject(DOMException::Create(kInvalidStateError, ""));
+    // TODO(crbug.com/806249): Test that WMPI sends the message.
+    element->exitPictureInPicture(base::DoNothing());
+    return;
+  }
+
+  picture_in_picture_element_ = element;
+
+  picture_in_picture_element_->OnEnteredPictureInPicture();
+
+  picture_in_picture_element_->DispatchEvent(
+      Event::CreateBubble(EventTypeNames::enterpictureinpicture));
+
+  // Closes the current Picture-in-Picture window if any.
+  if (picture_in_picture_window_)
+    picture_in_picture_window_->OnClose();
+
+  picture_in_picture_window_ = new PictureInPictureWindow(
+      GetSupplementable(), picture_in_picture_window_size);
+
+  element->GetWebMediaPlayer()->RegisterPictureInPictureWindowResizeCallback(
+      WTF::BindRepeating(&PictureInPictureWindow::OnResize,
+                         WrapPersistent(picture_in_picture_window_.Get())));
+
+  if (resolver)
+    resolver->Resolve(picture_in_picture_window_);
+}
+
+void PictureInPictureControllerImpl::ExitPictureInPicture(
+    HTMLVideoElement* element,
+    ScriptPromiseResolver* resolver) {
+  element->exitPictureInPicture(
+      WTF::Bind(&PictureInPictureControllerImpl::OnExitedPictureInPicture,
+                WrapPersistent(this), WrapPersistent(resolver)));
+}
+
+void PictureInPictureControllerImpl::OnExitedPictureInPicture(
+    ScriptPromiseResolver* resolver) {
+  DCHECK(GetSupplementable());
+
+  // Bail out if document is not active.
+  if (!GetSupplementable()->IsActive())
+    return;
+
+  if (picture_in_picture_window_)
+    picture_in_picture_window_->OnClose();
+
+  if (picture_in_picture_element_) {
+    HTMLVideoElement* element = picture_in_picture_element_;
+    picture_in_picture_element_ = nullptr;
+
+    element->OnExitedPictureInPicture();
+    element->DispatchEvent(
+        Event::CreateBubble(EventTypeNames::leavepictureinpicture));
+  }
+
+  if (resolver)
+    resolver->Resolve();
 }
 
 Element* PictureInPictureControllerImpl::PictureInPictureElement(
@@ -88,22 +161,11 @@ Element* PictureInPictureControllerImpl::PictureInPictureElement(
   return scope.AdjustedElement(*picture_in_picture_element_);
 }
 
-PictureInPictureWindow*
-PictureInPictureControllerImpl::CreatePictureInPictureWindow(int width,
-                                                             int height) {
-  if (picture_in_picture_window_)
-    picture_in_picture_window_->OnClose();
-
-  picture_in_picture_window_ =
-      new PictureInPictureWindow(GetSupplementable(), width, height);
-  return picture_in_picture_window_;
-}
-
-void PictureInPictureControllerImpl::OnClosePictureInPictureWindow() {
-  if (!picture_in_picture_window_)
-    return;
-
-  picture_in_picture_window_->OnClose();
+bool PictureInPictureControllerImpl::IsPictureInPictureElement(
+    const Element* element) const {
+  if (!element)
+    return false;
+  return element == picture_in_picture_element_;
 }
 
 void PictureInPictureControllerImpl::Trace(blink::Visitor* visitor) {

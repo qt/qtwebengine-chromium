@@ -8,11 +8,12 @@
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_physical_line_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_absolute_utils.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_block_node.h"
-#include "third_party/blink/renderer/core/layout/ng/ng_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_constraint_space_builder.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_fragment_builder.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_layout_result.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_length_utils.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_out_of_flow_positioned_descendant.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_physical_fragment.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 
@@ -299,8 +300,8 @@ scoped_refptr<NGLayoutResult> NGOutOfFlowLayoutPart::LayoutDescendant(
           .SetAvailableSize(container_info.content_size)
           .SetPercentageResolutionSize(container_info.content_size)
           .ToConstraintSpace(descendant_writing_mode);
-  Optional<MinMaxSize> min_max_size;
-  Optional<LayoutUnit> block_estimate;
+  base::Optional<MinMaxSize> min_max_size;
+  base::Optional<LayoutUnit> block_estimate;
 
   scoped_refptr<NGLayoutResult> layout_result = nullptr;
 
@@ -311,11 +312,11 @@ scoped_refptr<NGLayoutResult> NGOutOfFlowLayoutPart::LayoutDescendant(
     // This is a new formatting context, so whatever happened on the outside
     // doesn't concern us.
     MinMaxSizeInput zero_input;
-    min_max_size =
-        node.ComputeMinMaxSize(zero_input, descendant_constraint_space.get());
+    min_max_size = node.ComputeMinMaxSize(descendant_writing_mode, zero_input,
+                                          descendant_constraint_space.get());
   }
 
-  Optional<NGLogicalSize> replaced_size;
+  base::Optional<NGLogicalSize> replaced_size;
   if (descendant.node.IsReplaced()) {
     replaced_size = ComputeReplacedSize(
         descendant.node, *descendant_constraint_space, min_max_size);
@@ -396,7 +397,7 @@ bool NGOutOfFlowLayoutPart::IsContainingBlockForDescendant(
 scoped_refptr<NGLayoutResult> NGOutOfFlowLayoutPart::GenerateFragment(
     NGBlockNode descendant,
     const ContainingBlockInfo& container_info,
-    const Optional<LayoutUnit>& block_estimate,
+    const base::Optional<LayoutUnit>& block_estimate,
     const NGAbsolutePhysicalPosition node_position) {
   // As the block_estimate is always in the descendant's writing mode, we build
   // the constraint space in the descendant's writing mode.

@@ -636,14 +636,18 @@ TextEditor.CodeMirrorTextEditor = class extends UI.VBox {
   }
 
   /**
+   * @param {number} generation
    * @return {boolean}
    */
-  isClean() {
-    return this._codeMirror.isClean();
+  isClean(generation) {
+    return this._codeMirror.isClean(generation);
   }
 
+  /**
+   * @return {number}
+   */
   markClean() {
-    this._codeMirror.markClean();
+    return this._codeMirror.changeGeneration(true);
   }
 
   /**
@@ -1163,15 +1167,16 @@ TextEditor.CodeMirrorTextEditor = class extends UI.VBox {
   /**
    * @override
    * @param {!TextUtils.TextRange} textRange
+   * @param {boolean=} dontScroll
    */
-  setSelection(textRange) {
+  setSelection(textRange, dontScroll) {
     this._lastSelection = textRange;
     if (!this._editorSizeInSync) {
       this._selectionSetScheduled = true;
       return;
     }
     const pos = TextEditor.CodeMirrorUtils.toPos(textRange);
-    this._codeMirror.setSelection(pos.start, pos.end);
+    this._codeMirror.setSelection(pos.start, pos.end, {scroll: !dontScroll});
   }
 
   /**
@@ -1215,6 +1220,9 @@ TextEditor.CodeMirrorTextEditor = class extends UI.VBox {
       this._enableLongLinesMode();
     else
       this._disableLongLinesMode();
+
+    if (!this.isShowing())
+      this.refresh();
   }
 
   /**
@@ -1227,6 +1235,16 @@ TextEditor.CodeMirrorTextEditor = class extends UI.VBox {
       return this._codeMirror.getValue(this._lineSeparator);
     const pos = TextEditor.CodeMirrorUtils.toPos(textRange.normalize());
     return this._codeMirror.getRange(pos.start, pos.end, this._lineSeparator);
+  }
+
+  /**
+   * @override
+   * @return {string}
+   */
+  textWithCurrentSuggestion() {
+    if (!this._autocompleteController)
+      return this.text();
+    return this._autocompleteController.textWithCurrentSuggestion();
   }
 
   /**

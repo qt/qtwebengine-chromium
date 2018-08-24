@@ -6,7 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_DEVICE_ORIENTATION_DEVICE_ORIENTATION_INSPECTOR_AGENT_H_
 
 #include "base/macros.h"
-#include "third_party/blink/renderer/core/inspector/InspectorBaseAgent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_base_agent.h"
 #include "third_party/blink/renderer/core/inspector/protocol/DeviceOrientation.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
 
@@ -14,13 +14,14 @@ namespace blink {
 
 class DeviceOrientationController;
 class InspectedFrames;
+class SensorInspectorAgent;
 
 class MODULES_EXPORT DeviceOrientationInspectorAgent final
     : public InspectorBaseAgent<protocol::DeviceOrientation::Metainfo> {
  public:
   explicit DeviceOrientationInspectorAgent(InspectedFrames*);
   ~DeviceOrientationInspectorAgent() override;
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
   // Protocol methods.
   protocol::Response setDeviceOrientationOverride(double,
@@ -36,6 +37,7 @@ class MODULES_EXPORT DeviceOrientationInspectorAgent final
   DeviceOrientationController* Controller();
 
   Member<InspectedFrames> inspected_frames_;
+  Member<SensorInspectorAgent> sensor_agent_;
 
   DISALLOW_COPY_AND_ASSIGN(DeviceOrientationInspectorAgent);
 };

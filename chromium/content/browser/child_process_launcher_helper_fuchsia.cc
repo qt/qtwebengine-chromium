@@ -11,6 +11,7 @@
 #include "content/public/browser/child_process_launcher_utils.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "mojo/edk/embedder/platform_channel_pair.h"
+#include "services/service_manager/embedder/result_codes.h"
 
 namespace content {
 namespace internal {
@@ -23,11 +24,13 @@ void ChildProcessLauncherHelper::SetProcessPriorityOnLauncherThread(
   NOTIMPLEMENTED();
 }
 
-base::TerminationStatus ChildProcessLauncherHelper::GetTerminationStatus(
+ChildProcessTerminationInfo ChildProcessLauncherHelper::GetTerminationInfo(
     const ChildProcessLauncherHelper::Process& process,
-    bool known_dead,
-    int* exit_code) {
-  return base::GetTerminationStatus(process.process.Handle(), exit_code);
+    bool known_dead) {
+  ChildProcessTerminationInfo info;
+  info.status =
+      base::GetTerminationStatus(process.process.Handle(), &info.exit_code);
+  return info;
 }
 
 // static
@@ -54,13 +57,13 @@ void ChildProcessLauncherHelper::BeforeLaunchOnClientThread() {
   DCHECK_CURRENTLY_ON(client_thread_id_);
 }
 
-mojo::edk::ScopedPlatformHandle
+mojo::edk::ScopedInternalPlatformHandle
 ChildProcessLauncherHelper::PrepareMojoPipeHandlesOnClientThread() {
   DCHECK_CURRENTLY_ON(client_thread_id_);
 
   // By doing nothing here, StartLaunchOnClientThread() will construct a channel
   // pair instead.
-  return mojo::edk::ScopedPlatformHandle();
+  return mojo::edk::ScopedInternalPlatformHandle();
 }
 
 std::unique_ptr<FileMappedForLaunch>
@@ -114,7 +117,7 @@ void ChildProcessLauncherHelper::AfterLaunchOnLauncherThread(
 void ChildProcessLauncherHelper::ForceNormalProcessTerminationSync(
     ChildProcessLauncherHelper::Process process) {
   DCHECK(CurrentlyOnProcessLauncherTaskRunner());
-  process.process.Terminate(RESULT_CODE_NORMAL_EXIT, true);
+  process.process.Terminate(service_manager::RESULT_CODE_NORMAL_EXIT, true);
 }
 
 }  // namespace internal

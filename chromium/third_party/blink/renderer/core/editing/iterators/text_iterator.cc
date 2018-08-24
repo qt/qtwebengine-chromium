@@ -219,9 +219,7 @@ template <typename Strategy>
 TextIteratorAlgorithm<Strategy>::~TextIteratorAlgorithm() {
   if (!handle_shadow_root_)
     return;
-  Document* document = OwnerDocument();
-  if (!document)
-    return;
+  const Document& document = OwnerDocument();
   if (behavior_.ForInnerText())
     UseCounter::Count(document, WebFeature::kInnerTextWithShadowTree);
   if (behavior_.ForSelectionToString())
@@ -251,7 +249,7 @@ bool TextIteratorAlgorithm<Strategy>::HandleRememberedProgress() {
     // iteration, instead of using m_needsAnotherNewline.
     Node* last_child = Strategy::LastChild(*node_);
     const Node* base_node = last_child ? last_child : node_.Get();
-    SpliceBuffer('\n', Strategy::Parent(*base_node), base_node, 1, 1);
+    EmitChar16AfterNode('\n', *base_node);
     needs_another_newline_ = false;
     return true;
   }
@@ -510,15 +508,13 @@ void TextIteratorAlgorithm<Strategy>::HandleReplacedElement() {
   }
 
   if (EmitsObjectReplacementCharacter()) {
-    SpliceBuffer(kObjectReplacementCharacter, Strategy::Parent(*node_), node_,
-                 0, 1);
+    EmitChar16AsNode(kObjectReplacementCharacter, *node_);
     return;
   }
 
   DCHECK_EQ(last_text_node_, text_node_handler_.GetNode());
   if (last_text_node_) {
-    if (text_node_handler_.FixLeadingWhiteSpaceForReplacedElement(
-            Strategy::Parent(*last_text_node_))) {
+    if (text_node_handler_.FixLeadingWhiteSpaceForReplacedElement()) {
       needs_handle_replaced_element_ = true;
       return;
     }
@@ -533,17 +529,18 @@ void TextIteratorAlgorithm<Strategy>::HandleReplacedElement() {
     // We want replaced elements to behave like punctuation for boundary
     // finding, and to simply take up space for the selection preservation
     // code in moveParagraphs, so we use a comma.
-    SpliceBuffer(',', Strategy::Parent(*node_), node_, 0, 1);
+    EmitChar16AsNode(',', *node_);
     return;
   }
 
-  text_state_.UpdateForReplacedElement(node_);
-
   if (EmitsImageAltText() && TextIterator::SupportsAltText(*node_)) {
-    text_state_.EmitAltText(node_);
-    if (text_state_.length())
-      return;
+    text_state_.EmitAltText(ToHTMLElement(*node_));
+    return;
   }
+  // TODO(editing-dev): We can remove |UpdateForReplacedElement()| call when
+  // we address layout test failures (text diff by newlines only) and unit
+  // tests, e.g. TextIteratorTest.IgnoreAltTextInTextControls.
+  text_state_.UpdateForReplacedElement(*node_);
 }
 
 template <typename Strategy>
@@ -578,6 +575,8 @@ static bool ShouldEmitNewlinesBeforeAndAfterNode(const Node& node) {
   // a newline both before and after the element.
   LayoutObject* r = node.GetLayoutObject();
   if (!r) {
+    if (HasDisplayContents(node))
+      return false;
     return (node.HasTagName(blockquoteTag) || node.HasTagName(ddTag) ||
             node.HasTagName(divTag) || node.HasTagName(dlTag) ||
             node.HasTagName(dtTag) || node.HasTagName(h1Tag) ||
@@ -729,6 +728,8 @@ template <typename Strategy>
 void TextIteratorAlgorithm<Strategy>::RepresentNodeOffsetZero() {
   // Emit a character to show the positioning of m_node.
 
+  // TODO(editing-dev): We should rewrite this below code fragment to utilize
+  // early-return style.
   // When we haven't been emitting any characters,
   // shouldRepresentNodeOffsetZero() can create VisiblePositions, which is
   // expensive. So, we perform the inexpensive checks on m_node to see if it
@@ -736,23 +737,23 @@ void TextIteratorAlgorithm<Strategy>::RepresentNodeOffsetZero() {
   // encountering shouldRepresentNodeOffsetZero()s worse case behavior.
   if (ShouldEmitTabBeforeNode(*node_)) {
     if (ShouldRepresentNodeOffsetZero())
-      SpliceBuffer('\t', Strategy::Parent(*node_), node_, 0, 0);
+      EmitChar16BeforeNode('\t', *node_);
   } else if (ShouldEmitNewlineBeforeNode(*node_)) {
     if (ShouldRepresentNodeOffsetZero())
-      SpliceBuffer('\n', Strategy::Parent(*node_), node_, 0, 0);
+      EmitChar16BeforeNode('\n', *node_);
   } else if (ShouldEmitSpaceBeforeAndAfterNode(*node_)) {
     if (ShouldRepresentNodeOffsetZero())
-      SpliceBuffer(kSpaceCharacter, Strategy::Parent(*node_), node_, 0, 0);
+      EmitChar16BeforeNode(kSpaceCharacter, *node_);
   }
 }
 
 template <typename Strategy>
 void TextIteratorAlgorithm<Strategy>::HandleNonTextNode() {
   if (ShouldEmitNewlineForNode(*node_, EmitsOriginalText()))
-    SpliceBuffer('\n', Strategy::Parent(*node_), node_, 0, 1);
+    EmitChar16AsNode('\n', *node_);
   else if (EmitsCharactersBetweenAllVisiblePositions() &&
            node_->GetLayoutObject() && node_->GetLayoutObject()->IsHR())
-    SpliceBuffer(kSpaceCharacter, Strategy::Parent(*node_), node_, 0, 1);
+    EmitChar16AsNode(kSpaceCharacter, *node_);
   else
     RepresentNodeOffsetZero();
 }
@@ -786,32 +787,39 @@ void TextIteratorAlgorithm<Strategy>::ExitNode() {
     // contain a VisiblePosition when doing selection preservation.
     if (text_state_.LastCharacter() != '\n') {
       // insert a newline with a position following this block's contents.
-      SpliceBuffer(kNewlineCharacter, Strategy::Parent(*base_node), base_node,
-                   1, 1);
+      EmitChar16AfterNode(kNewlineCharacter, *base_node);
       // remember whether to later add a newline for the current node
       DCHECK(!needs_another_newline_);
       needs_another_newline_ = add_newline;
     } else if (add_newline) {
       // insert a newline with a position following this block's contents.
-      SpliceBuffer(kNewlineCharacter, Strategy::Parent(*base_node), base_node,
-                   1, 1);
+      EmitChar16AfterNode(kNewlineCharacter, *base_node);
     }
   }
 
   // If nothing was emitted, see if we need to emit a space.
   if (!text_state_.PositionNode() && ShouldEmitSpaceBeforeAndAfterNode(*node_))
-    SpliceBuffer(kSpaceCharacter, Strategy::Parent(*base_node), base_node, 1,
-                 1);
+    EmitChar16AfterNode(kSpaceCharacter, *base_node);
 }
 
 template <typename Strategy>
-void TextIteratorAlgorithm<Strategy>::SpliceBuffer(UChar c,
-                                                   const Node* text_node,
-                                                   const Node* offset_base_node,
-                                                   unsigned text_start_offset,
-                                                   unsigned text_end_offset) {
-  text_state_.SpliceBuffer(c, text_node, offset_base_node, text_start_offset,
-                           text_end_offset);
+void TextIteratorAlgorithm<Strategy>::EmitChar16AfterNode(UChar code_unit,
+                                                          const Node& node) {
+  text_state_.EmitChar16AfterNode(code_unit, node);
+  text_node_handler_.ResetCollapsedWhiteSpaceFixup();
+}
+
+template <typename Strategy>
+void TextIteratorAlgorithm<Strategy>::EmitChar16AsNode(UChar code_unit,
+                                                       const Node& node) {
+  text_state_.EmitChar16AsNode(code_unit, node);
+  text_node_handler_.ResetCollapsedWhiteSpaceFixup();
+}
+
+template <typename Strategy>
+void TextIteratorAlgorithm<Strategy>::EmitChar16BeforeNode(UChar code_unit,
+                                                           const Node& node) {
+  text_state_.EmitChar16BeforeNode(code_unit, node);
   text_node_handler_.ResetCollapsedWhiteSpaceFixup();
 }
 
@@ -825,74 +833,128 @@ EphemeralRangeTemplate<Strategy> TextIteratorAlgorithm<Strategy>::Range()
   }
 
   // otherwise, return the end of the overall range we were given
-  if (end_container_)
-    return EphemeralRangeTemplate<Strategy>(
-        PositionTemplate<Strategy>(end_container_, end_offset_));
-
-  return EphemeralRangeTemplate<Strategy>();
+  return EphemeralRangeTemplate<Strategy>(
+      PositionTemplate<Strategy>(end_container_, end_offset_));
 }
 
 template <typename Strategy>
-Document* TextIteratorAlgorithm<Strategy>::OwnerDocument() const {
-  if (text_state_.PositionNode())
-    return &text_state_.PositionNode()->GetDocument();
-  if (end_container_)
-    return &end_container_->GetDocument();
-  return nullptr;
+const Document& TextIteratorAlgorithm<Strategy>::OwnerDocument() const {
+  return end_container_->GetDocument();
 }
 
 template <typename Strategy>
 const Node* TextIteratorAlgorithm<Strategy>::GetNode() const {
-  if (text_state_.PositionNode() || end_container_) {
-    const Node* node = CurrentContainer();
-    if (node->IsCharacterDataNode())
-      return node;
-    return Strategy::ChildAt(*node, StartOffsetInCurrentContainer());
-  }
-  return nullptr;
+  const Node& node = CurrentContainer();
+  if (node.IsCharacterDataNode())
+    return &node;
+  return Strategy::ChildAt(node, StartOffsetInCurrentContainer());
 }
 
 template <typename Strategy>
 int TextIteratorAlgorithm<Strategy>::StartOffsetInCurrentContainer() const {
-  if (text_state_.PositionNode()) {
-    text_state_.FlushPositionOffsets();
-    return text_state_.PositionStartOffset();
-  }
-  DCHECK(end_container_);
-  return end_offset_;
+  if (!text_state_.PositionNode())
+    return end_offset_;
+  EnsurePositionContainer();
+  return text_state_.PositionStartOffset();
 }
 
 template <typename Strategy>
 int TextIteratorAlgorithm<Strategy>::EndOffsetInCurrentContainer() const {
-  if (text_state_.PositionNode()) {
-    text_state_.FlushPositionOffsets();
-    return text_state_.PositionEndOffset();
-  }
-  DCHECK(end_container_);
-  return end_offset_;
+  if (!text_state_.PositionNode())
+    return end_offset_;
+  EnsurePositionContainer();
+  return text_state_.PositionEndOffset();
 }
 
 template <typename Strategy>
-const Node* TextIteratorAlgorithm<Strategy>::CurrentContainer() const {
-  if (text_state_.PositionNode()) {
-    return text_state_.PositionNode();
+const Node& TextIteratorAlgorithm<Strategy>::CurrentContainer() const {
+  if (!text_state_.PositionNode())
+    return *end_container_;
+  EnsurePositionContainer();
+  return *text_state_.PositionContainerNode();
+}
+
+template <typename Strategy>
+void TextIteratorAlgorithm<Strategy>::EnsurePositionContainer() const {
+  DCHECK(text_state_.PositionNode());
+  if (text_state_.PositionContainerNode())
+    return;
+  const Node& node = *text_state_.PositionNode();
+  const ContainerNode* parent = Strategy::Parent(node);
+  DCHECK(parent);
+  text_state_.UpdatePositionOffsets(*parent, Strategy::Index(node));
+}
+
+template <typename Strategy>
+PositionTemplate<Strategy> TextIteratorAlgorithm<Strategy>::GetPositionBefore(
+    int char16_offset) const {
+  if (AtEnd()) {
+    DCHECK_EQ(char16_offset, 0);
+    return PositionTemplate<Strategy>(CurrentContainer(),
+                                      StartOffsetInCurrentContainer());
   }
-  DCHECK(end_container_);
-  return end_container_;
+  DCHECK_GE(char16_offset, 0);
+  DCHECK_LT(char16_offset, length());
+  DCHECK_GE(length(), 1);
+  const Node& node = *text_state_.PositionNode();
+  if (text_state_.IsInTextNode() || text_state_.IsBeforeCharacter()) {
+    return PositionTemplate<Strategy>(
+        node, text_state_.PositionStartOffset() + char16_offset);
+  }
+  if (node.IsTextNode()) {
+    if (text_state_.IsAfterPositionNode())
+      return PositionTemplate<Strategy>(node, ToText(node).length());
+    return PositionTemplate<Strategy>(node, 0);
+  }
+  if (text_state_.IsAfterPositionNode())
+    return PositionTemplate<Strategy>::AfterNode(node);
+  DCHECK(!text_state_.IsBeforeChildren());
+  return PositionTemplate<Strategy>::BeforeNode(node);
+}
+
+template <typename Strategy>
+PositionTemplate<Strategy> TextIteratorAlgorithm<Strategy>::GetPositionAfter(
+    int char16_offset) const {
+  if (AtEnd()) {
+    DCHECK_EQ(char16_offset, 0);
+    return PositionTemplate<Strategy>(CurrentContainer(),
+                                      EndOffsetInCurrentContainer());
+  }
+  DCHECK_GE(char16_offset, 0);
+  DCHECK_LT(char16_offset, length());
+  DCHECK_GE(length(), 1);
+  const Node& node = *text_state_.PositionNode();
+  if (text_state_.IsBeforeCharacter()) {
+    return PositionTemplate<Strategy>(
+        node, text_state_.PositionStartOffset() + char16_offset);
+  }
+  if (text_state_.IsInTextNode()) {
+    return PositionTemplate<Strategy>(
+        node, text_state_.PositionStartOffset() + char16_offset + 1);
+  }
+  if (node.IsTextNode()) {
+    if (text_state_.IsBeforePositionNode())
+      return PositionTemplate<Strategy>(node, 0);
+    return PositionTemplate<Strategy>(node, ToText(node).length());
+  }
+  if (text_state_.IsBeforePositionNode())
+    return PositionTemplate<Strategy>::BeforeNode(node);
+  DCHECK(!text_state_.IsBeforeChildren());
+  return PositionTemplate<Strategy>::AfterNode(node);
 }
 
 template <typename Strategy>
 PositionTemplate<Strategy>
 TextIteratorAlgorithm<Strategy>::StartPositionInCurrentContainer() const {
   return PositionTemplate<Strategy>::EditingPositionOf(
-      CurrentContainer(), StartOffsetInCurrentContainer());
+      &CurrentContainer(), StartOffsetInCurrentContainer());
 }
 
 template <typename Strategy>
 PositionTemplate<Strategy>
 TextIteratorAlgorithm<Strategy>::EndPositionInCurrentContainer() const {
   return PositionTemplate<Strategy>::EditingPositionOf(
-      CurrentContainer(), EndOffsetInCurrentContainer());
+      &CurrentContainer(), EndOffsetInCurrentContainer());
 }
 
 template <typename Strategy>

@@ -11,6 +11,7 @@
 #define LIBANGLE_RENDERER_GL_CGL_IOSURFACESURFACECGL_H_
 
 #include "libANGLE/renderer/gl/SurfaceGL.h"
+#include "libANGLE/renderer/gl/cgl/DisplayCGL.h"
 
 struct __IOSurface;
 typedef __IOSurface *IOSurfaceRef;
@@ -31,8 +32,7 @@ class IOSurfaceSurfaceCGL : public SurfaceGL
 {
   public:
     IOSurfaceSurfaceCGL(const egl::SurfaceState &state,
-                        RendererGL *renderer,
-                        DisplayCGL *display,
+                        CGLContextObj cglContext,
                         EGLClientBuffer buffer,
                         const egl::AttributeMap &attribs);
     ~IOSurfaceSurfaceCGL() override;
@@ -47,8 +47,10 @@ class IOSurfaceSurfaceCGL : public SurfaceGL
                              EGLint width,
                              EGLint height) override;
     egl::Error querySurfacePointerANGLE(EGLint attribute, void **value) override;
-    egl::Error bindTexImage(gl::Texture *texture, EGLint buffer) override;
-    egl::Error releaseTexImage(EGLint buffer) override;
+    egl::Error bindTexImage(const gl::Context *context,
+                            gl::Texture *texture,
+                            EGLint buffer) override;
+    egl::Error releaseTexImage(const gl::Context *context, EGLint buffer) override;
     void setSwapInterval(EGLint interval) override;
 
     EGLint getWidth() const override;
@@ -60,9 +62,7 @@ class IOSurfaceSurfaceCGL : public SurfaceGL
     static bool validateAttributes(EGLClientBuffer buffer, const egl::AttributeMap &attribs);
 
   private:
-    DisplayCGL *mDisplay;
-    RendererGL *mRenderer;
-    StateManagerGL *mStateManager;
+    CGLContextObj mCGLContext;
     IOSurfaceRef mIOSurface;
     int mWidth;
     int mHeight;

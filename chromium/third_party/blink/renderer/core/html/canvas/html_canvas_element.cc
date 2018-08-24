@@ -52,6 +52,7 @@
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_context_creation_attributes_core.h"
+#include "third_party/blink/renderer/core/html/canvas/canvas_draw_listener.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_font_cache.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context_factory.h"
@@ -79,7 +80,7 @@
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
 #include "third_party/blink/renderer/platform/graphics/image_data_buffer.h"
-#include "third_party/blink/renderer/platform/graphics/offscreen_canvas_frame_dispatcher_impl.h"
+#include "third_party/blink/renderer/platform/graphics/offscreen_canvas_frame_dispatcher.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_canvas.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/image-encoders/image_encoder_utils.h"
@@ -147,9 +148,8 @@ intptr_t HTMLCanvasElement::global_gpu_memory_usage_ = 0;
 unsigned HTMLCanvasElement::global_accelerated_context_count_ = 0;
 
 HTMLCanvasElement::~HTMLCanvasElement() {
-  if (surface_layer_bridge_ && surface_layer_bridge_->GetWebLayer()) {
-    GraphicsLayer::UnregisterContentsLayer(
-        surface_layer_bridge_->GetWebLayer());
+  if (surface_layer_bridge_ && surface_layer_bridge_->GetCcLayer()) {
+    GraphicsLayer::UnregisterContentsLayer(surface_layer_bridge_->GetCcLayer());
   }
   v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(
       -externally_allocated_memory_);
@@ -315,12 +315,11 @@ CanvasRenderingContext* HTMLCanvasElement::GetCanvasRenderingContext(
       OriginTrials::lowLatencyCanvasEnabled(&GetDocument())) {
     CreateLayer();
     SetNeedsUnbufferedInputEvents(true);
-    // TODO: rename to CanvasFrameDispatcherImpl
-    frame_dispatcher_ = std::make_unique<OffscreenCanvasFrameDispatcherImpl>(
+    // TODO(fserb): rename to CanvasFrameDispatcher
+    frame_dispatcher_ = std::make_unique<OffscreenCanvasFrameDispatcher>(
         nullptr, surface_layer_bridge_->GetFrameSinkId().client_id(),
         surface_layer_bridge_->GetFrameSinkId().sink_id(),
-        OffscreenCanvasFrameDispatcherImpl::kInvalidPlaceholderCanvasId,
-        size_.Width(), size_.Height());
+        OffscreenCanvasFrameDispatcher::kInvalidPlaceholderCanvasId, size_);
   }
 
   SetNeedsCompositingUpdate();
@@ -472,12 +471,6 @@ void HTMLCanvasElement::DisableAcceleration(
   SetNeedsCompositingUpdate();
 }
 
-void HTMLCanvasElement::RestoreCanvasMatrixClipStack(
-    PaintCanvas* canvas) const {
-  if (context_)
-    context_->RestoreCanvasMatrixClipStack(canvas);
-}
-
 void HTMLCanvasElement::SetNeedsCompositingUpdate() {
   Element::SetNeedsCompositingUpdate();
 }
@@ -516,8 +509,8 @@ void HTMLCanvasElement::DoDeferredPaintInvalidation() {
     }
   }
 
-  if (context_ && HasImageBitmapContext() && context_->PlatformLayer()) {
-    context_->PlatformLayer()->Invalidate();
+  if (context_ && HasImageBitmapContext() && context_->CcLayer()) {
+    context_->CcLayer()->SetNeedsDisplay();
   }
 
   NotifyListenersCanvasChanged();
@@ -763,7 +756,7 @@ void HTMLCanvasElement::SetSurfaceSize(const IntSize& size) {
     context_->DidSetSurfaceSize();
   }
   if (frame_dispatcher_)
-    frame_dispatcher_->Reshape(size_.Width(), size_.Height());
+    frame_dispatcher_->Reshape(size_);
 }
 
 const AtomicString HTMLCanvasElement::ImageSourceURL() const {
@@ -823,7 +816,7 @@ String HTMLCanvasElement::ToDataURLInternal(
   String encoding_mime_type = ImageEncoderUtils::ToEncodingMimeType(
       mime_type, ImageEncoderUtils::kEncodeReasonToDataURL);
 
-  Optional<ScopedUsHistogramTimer> timer;
+  base::Optional<ScopedUsHistogramTimer> timer;
   if (encoding_mime_type == "image/png") {
     DEFINE_THREAD_SAFE_STATIC_LOCAL(
         CustomCountHistogram, scoped_us_counter_png,
@@ -1100,7 +1093,7 @@ void HTMLCanvasElement::CreateCanvas2DLayerBridgeInternal(
     SetNeedsCompositingUpdate();
 }
 
-void HTMLCanvasElement::NotifySurfaceInvalid() {
+void HTMLCanvasElement::NotifyGpuContextLost() {
   if (Is2d())
     context_->LoseContext(CanvasRenderingContext::kRealLostContext);
 }
@@ -1113,8 +1106,7 @@ void HTMLCanvasElement::Trace(blink::Visitor* visitor) {
   HTMLElement::Trace(visitor);
 }
 
-void HTMLCanvasElement::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+void HTMLCanvasElement::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(context_);
   HTMLElement::TraceWrappers(visitor);
 }
@@ -1142,7 +1134,10 @@ HTMLCanvasElement::GetOrCreateCanvasResourceProviderForWebGL() {
     resource_provider_is_clear_ = true;
     if (IsValidImageSize(Size())) {
       webgl_resource_provider_ = CanvasResourceProvider::Create(
-          size_, CanvasResourceProvider::kAcceleratedResourceUsage,
+          size_,
+          Platform::Current()->IsGpuCompositingDisabled()
+              ? CanvasResourceProvider::kSoftwareResourceUsage
+              : CanvasResourceProvider::kAcceleratedResourceUsage,
           SharedGpuContext::ContextProviderWrapper(), 0, ColorParams());
     }
     if (!webgl_resource_provider_) {
@@ -1356,7 +1351,7 @@ IntSize HTMLCanvasElement::BitmapSourceSize() const {
 ScriptPromise HTMLCanvasElement::CreateImageBitmap(
     ScriptState* script_state,
     EventTarget& event_target,
-    Optional<IntRect> crop_rect,
+    base::Optional<IntRect> crop_rect,
     const ImageBitmapOptions& options) {
   DCHECK(event_target.ToLocalDOMWindow());
 
@@ -1463,9 +1458,7 @@ void HTMLCanvasElement::CreateLayer() {
   DCHECK(!surface_layer_bridge_);
   LocalFrame* frame = GetDocument().GetFrame();
   WebLayerTreeView* layer_tree_view = nullptr;
-  // TODO(xlai): Ensure OffscreenCanvas commit() is still functional when a
-  // frame-less HTML canvas's document is reparenting under another frame.
-  // See crbug.com/683172.
+  // We do not design transferControlToOffscreen() for frame-less HTML canvas.
   if (frame) {
     layer_tree_view =
         frame->GetPage()->GetChromeClient().GetWebLayerTreeView(frame);
@@ -1480,12 +1473,12 @@ void HTMLCanvasElement::OnWebLayerUpdated() {
   SetNeedsCompositingUpdate();
 }
 
-void HTMLCanvasElement::RegisterContentsLayer(WebLayer* web_layer) {
-  GraphicsLayer::RegisterContentsLayer(web_layer);
+void HTMLCanvasElement::RegisterContentsLayer(cc::Layer* layer) {
+  GraphicsLayer::RegisterContentsLayer(layer);
 }
 
-void HTMLCanvasElement::UnregisterContentsLayer(WebLayer* web_layer) {
-  GraphicsLayer::UnregisterContentsLayer(web_layer);
+void HTMLCanvasElement::UnregisterContentsLayer(cc::Layer* layer) {
+  GraphicsLayer::UnregisterContentsLayer(layer);
 }
 
 FontSelector* HTMLCanvasElement::GetFontSelector() {
@@ -1512,7 +1505,9 @@ void HTMLCanvasElement::UpdateMemoryUsage() {
   if (Is3d()) {
     if (webgl_resource_provider_) {
       non_gpu_buffer_count++;
-      gpu_buffer_count += 2;
+      if (webgl_resource_provider_->IsAccelerated()) {
+        gpu_buffer_count += 2;
+      }
     }
     non_gpu_buffer_count += context_->ExternallyAllocatedBufferCountPerPixel();
   }

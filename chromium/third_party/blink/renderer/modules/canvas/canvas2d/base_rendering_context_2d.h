@@ -7,6 +7,8 @@
 
 #include "third_party/blink/renderer/bindings/modules/v8/canvas_image_source.h"
 #include "third_party/blink/renderer/bindings/modules/v8/string_or_canvas_gradient_or_canvas_pattern.h"
+#include "third_party/blink/renderer/core/geometry/dom_matrix.h"
+#include "third_party/blink/renderer/core/geometry/dom_matrix_2d_init.h"
 #include "third_party/blink/renderer/core/html/canvas/image_data.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_gradient.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_path.h"
@@ -25,7 +27,6 @@ class CanvasImageSource;
 class Color;
 class Image;
 class Path2D;
-class SVGMatrixTearOff;
 
 typedef CSSImageValueOrHTMLImageElementOrSVGImageElementOrHTMLVideoElementOrHTMLCanvasElementOrImageBitmapOrOffscreenCanvas
     CanvasImageSourceUnion;
@@ -87,9 +88,6 @@ class MODULES_EXPORT BaseRenderingContext2D : public GarbageCollectedMixin,
   void save();
   void restore();
 
-  SVGMatrixTearOff* currentTransform() const;
-  void setCurrentTransform(SVGMatrixTearOff*);
-
   void scale(double sx, double sy);
   void rotate(double angle_in_radians);
   void translate(double tx, double ty);
@@ -105,6 +103,8 @@ class MODULES_EXPORT BaseRenderingContext2D : public GarbageCollectedMixin,
                     double m22,
                     double dx,
                     double dy);
+  void setTransform(DOMMatrix2DInit&, ExceptionState&);
+  DOMMatrix* getTransform();
   void resetTransform();
 
   void beginPath();
@@ -266,7 +266,7 @@ class MODULES_EXPORT BaseRenderingContext2D : public GarbageCollectedMixin,
   String textBaseline() const;
   void setTextBaseline(const String&);
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
   enum DrawCallType {
     kStrokePath = 0,

@@ -12,7 +12,6 @@
 #include "build/build_config.h"
 #include "components/autofill/core/browser/autofill_wallet_data_type_controller.h"
 #include "components/autofill/core/browser/webdata/autocomplete_sync_bridge.h"
-#include "components/autofill/core/browser/webdata/autofill_data_type_controller.h"
 #include "components/autofill/core/browser/webdata/autofill_profile_data_type_controller.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/browser/webdata/web_data_model_type_controller.h"
@@ -67,6 +66,18 @@ syncer::ModelTypeSet GetDisabledTypesFromCommandLine(
 
   disabled_types = syncer::ModelTypeSetFromString(disabled_types_str);
   return disabled_types;
+}
+
+// This helper function only wraps
+// autofill::AutocompleteSyncBridge::FromWebDataService(). This way, it
+// simplifies life for the compiler which cannot directly cast
+// "WeakPtr<ModelTypeSyncBridge> (AutofillWebDataService*)" to
+// "WeakPtr<ModelTypeControllerDelegate> (AutofillWebDataService*)".
+base::WeakPtr<syncer::ModelTypeControllerDelegate> DelegateFromDataService(
+    autofill::AutofillWebDataService* service) {
+  return autofill::AutocompleteSyncBridge::FromWebDataService(service)
+      ->change_processor()
+      ->GetControllerDelegateOnUIThread();
 }
 
 }  // namespace
@@ -128,8 +139,7 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
       sync_service->RegisterDataTypeController(
           std::make_unique<autofill::WebDataModelTypeController>(
               syncer::AUTOFILL, sync_client_, db_thread_, web_data_service_,
-              base::Bind(
-                  &autofill::AutocompleteSyncBridge::FromWebDataService)));
+              base::Bind(&DelegateFromDataService)));
     }
 
     // Autofill sync is enabled by default.  Register unless explicitly
@@ -198,11 +208,17 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
     if (!disabled_types.Has(syncer::PROXY_TABS)) {
       sync_service->RegisterDataTypeController(
           std::make_unique<ProxyDataTypeController>(syncer::PROXY_TABS));
-      sync_service->RegisterDataTypeController(
-          std::make_unique<SessionDataTypeController>(
-              error_callback, sync_client_,
-              sync_service->GetLocalDeviceInfoProvider(),
-              history_disabled_pref_));
+      if (FeatureList::IsEnabled(switches::kSyncUSSSessions)) {
+        sync_service->RegisterDataTypeController(
+            std::make_unique<ModelTypeController>(syncer::SESSIONS,
+                                                  sync_client_, ui_thread_));
+      } else {
+        sync_service->RegisterDataTypeController(
+            std::make_unique<SessionDataTypeController>(
+                error_callback, sync_client_,
+                sync_service->GetLocalDeviceInfoProvider(),
+                history_disabled_pref_));
+      }
     }
 
     // Favicon sync is enabled by default. Register unless explicitly disabled.
@@ -282,7 +298,8 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
   }
 }
 
-DataTypeManager* ProfileSyncComponentsFactoryImpl::CreateDataTypeManager(
+std::unique_ptr<DataTypeManager>
+ProfileSyncComponentsFactoryImpl::CreateDataTypeManager(
     syncer::ModelTypeSet initial_types,
     const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>&
         debug_info_listener,
@@ -290,18 +307,19 @@ DataTypeManager* ProfileSyncComponentsFactoryImpl::CreateDataTypeManager(
     const syncer::DataTypeEncryptionHandler* encryption_handler,
     syncer::ModelTypeConfigurer* configurer,
     DataTypeManagerObserver* observer) {
-  return new DataTypeManagerImpl(sync_client_, initial_types,
-                                 debug_info_listener, controllers,
-                                 encryption_handler, configurer, observer);
+  return std::make_unique<DataTypeManagerImpl>(
+      sync_client_, initial_types, debug_info_listener, controllers,
+      encryption_handler, configurer, observer);
 }
 
-syncer::SyncEngine* ProfileSyncComponentsFactoryImpl::CreateSyncEngine(
+std::unique_ptr<syncer::SyncEngine>
+ProfileSyncComponentsFactoryImpl::CreateSyncEngine(
     const std::string& name,
     invalidation::InvalidationService* invalidator,
     const base::WeakPtr<syncer::SyncPrefs>& sync_prefs,
     const base::FilePath& sync_data_folder) {
-  return new syncer::SyncBackendHostImpl(name, sync_client_, invalidator,
-                                         sync_prefs, sync_data_folder);
+  return std::make_unique<syncer::SyncBackendHostImpl>(
+      name, sync_client_, invalidator, sync_prefs, sync_data_folder);
 }
 
 std::unique_ptr<syncer::LocalDeviceInfoProvider>

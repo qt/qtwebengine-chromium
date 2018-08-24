@@ -599,7 +599,7 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, BlockHeaders) {
   // Make sure the test covers all the safelisted headers known to the product
   // code.
   for (const std::string& safelisted_header :
-       CrossSiteDocumentResourceHandler::GetCorsSafelistedHeadersForTesting()) {
+       network::CrossOriginReadBlocking::GetCorsSafelistedHeadersForTesting()) {
     EXPECT_TRUE(
         interceptor.response_head().headers->HasHeader(safelisted_header));
 
@@ -806,9 +806,12 @@ class CrossSiteDocumentBlockingKillSwitchTest
     : public CrossSiteDocumentBlockingTest {
  public:
   CrossSiteDocumentBlockingKillSwitchTest() {
-    // Simulate flipping the kill switch.
-    scoped_feature_list_.InitAndDisableFeature(
-        features::kCrossSiteDocumentBlockingIfIsolating);
+    // Simulate flipping both of the kill switches.
+    std::vector<base::Feature> disabled_features = {
+        features::kCrossSiteDocumentBlockingAlways,
+        features::kCrossSiteDocumentBlockingIfIsolating,
+    };
+    scoped_feature_list_.InitWithFeatures({}, disabled_features);
   }
 
   ~CrossSiteDocumentBlockingKillSwitchTest() override {}
@@ -891,13 +894,10 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingDisableVsFeatureTest,
   EXPECT_FALSE(was_blocked);
 }
 
-// Without any Site Isolation (in the base test class), there should be no
-// document blocking.
+// Even without any Site Isolation, document blocking should be turned on by
+// default.
 IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingBaseTest,
-                       DontBlockDocumentsByDefault) {
-  if (AreAllSitesIsolatedForTesting())
-    return;
-
+                       BlockDocumentsByDefault) {
   // Load a page that issues illegal cross-site document requests to bar.com.
   GURL foo_url("http://foo.com/cross_site_document_blocking/request.html");
   EXPECT_TRUE(NavigateToURL(shell(), foo_url));
@@ -905,7 +905,7 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingBaseTest,
   bool was_blocked;
   ASSERT_TRUE(ExecuteScriptAndExtractBool(
       shell(), "sendRequest(\"valid.html\");", &was_blocked));
-  EXPECT_FALSE(was_blocked);
+  EXPECT_TRUE(was_blocked);
 }
 
 // Test class to verify that documents are blocked for isolated origins as well.

@@ -12,6 +12,7 @@
 #include "base/bind_helpers.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_current.h"
 #include "base/pending_task.h"
 #include "base/threading/platform_thread.h"
 #include "third_party/blink/public/platform/scheduler/single_thread_idle_task_runner.h"
@@ -67,23 +68,24 @@ void WebThreadBase::RemoveTaskObserver(TaskObserver* observer) {
   task_observer_map_.erase(iter);
 }
 
-void WebThreadBase::AddTaskTimeObserver(TaskTimeObserver* task_time_observer) {
+void WebThreadBase::AddTaskTimeObserver(
+    base::sequence_manager::TaskTimeObserver* task_time_observer) {
   AddTaskTimeObserverInternal(task_time_observer);
 }
 
 void WebThreadBase::RemoveTaskTimeObserver(
-    TaskTimeObserver* task_time_observer) {
+    base::sequence_manager::TaskTimeObserver* task_time_observer) {
   RemoveTaskTimeObserverInternal(task_time_observer);
 }
 
 void WebThreadBase::AddTaskObserverInternal(
     base::MessageLoop::TaskObserver* observer) {
-  base::MessageLoop::current()->AddTaskObserver(observer);
+  base::MessageLoopCurrent::Get()->AddTaskObserver(observer);
 }
 
 void WebThreadBase::RemoveTaskObserverInternal(
     base::MessageLoop::TaskObserver* observer) {
-  base::MessageLoop::current()->RemoveTaskObserver(observer);
+  base::MessageLoopCurrent::Get()->RemoveTaskObserver(observer);
 }
 
 // static
@@ -118,7 +120,8 @@ class WebThreadForCompositor : public WebThreadImplForWorkerScheduler {
   std::unique_ptr<blink::scheduler::NonMainThreadScheduler>
   CreateNonMainThreadScheduler() override {
     return std::make_unique<CompositorThreadScheduler>(
-        GetThread(), TaskQueueManager::TakeOverCurrentThread());
+        GetThread(),
+        base::sequence_manager::TaskQueueManager::TakeOverCurrentThread());
   }
 
   DISALLOW_COPY_AND_ASSIGN(WebThreadForCompositor);

@@ -9,6 +9,7 @@
 #include "build/build_config.h"
 #include "content/browser/media/audible_metrics.h"
 #include "content/browser/media/audio_stream_monitor.h"
+#include "content/browser/picture_in_picture/picture_in_picture_window_controller_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/media/media_player_delegate_messages.h"
 #include "content/public/browser/render_frame_host.h"
@@ -134,10 +135,13 @@ bool MediaWebContentsObserver::OnMessageReceived(
     IPC_MESSAGE_HANDLER(MediaPlayerDelegateHostMsg_OnMediaSizeChanged,
                         OnMediaSizeChanged)
     IPC_MESSAGE_HANDLER(
-        MediaPlayerDelegateHostMsg_OnPictureInPictureSourceChanged,
-        OnPictureInPictureSourceChanged)
+        MediaPlayerDelegateHostMsg_OnPictureInPictureModeStarted,
+        OnPictureInPictureModeStarted)
     IPC_MESSAGE_HANDLER(MediaPlayerDelegateHostMsg_OnPictureInPictureModeEnded,
                         OnPictureInPictureModeEnded)
+    IPC_MESSAGE_HANDLER(
+        MediaPlayerDelegateHostMsg_OnPictureInPictureSurfaceChanged,
+        OnPictureInPictureSurfaceChanged)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -145,23 +149,7 @@ bool MediaWebContentsObserver::OnMessageReceived(
 
 void MediaWebContentsObserver::OnVisibilityChanged(
     content::Visibility visibility) {
-  if (visibility == content::Visibility::HIDDEN) {
-    // If there are entities capturing screenshots or video (e.g., mirroring),
-    // don't release the wake lock.
-    if (!web_contents()->IsBeingCaptured()) {
-      GetVideoWakeLock()->CancelWakeLock();
-      has_video_wake_lock_for_testing_ = false;
-    }
-  } else {
-    // TODO(ke.he@intel.com): Determine whether a tab should be allowed to
-    // request the wake lock when it's occluded.
-    DCHECK(visibility == content::Visibility::VISIBLE ||
-           visibility == content::Visibility::OCCLUDED);
-
-    // Restore wake lock if there are active video players running.
-    if (!active_video_players_.empty())
-      LockVideo();
-  }
+  UpdateVideoLock();
 }
 
 void MediaWebContentsObserver::RequestPersistentVideo(bool value) {
@@ -184,15 +172,20 @@ bool MediaWebContentsObserver::IsPlayerActive(
   return MediaPlayerEntryExists(player_id, active_audio_players_);
 }
 
+void MediaWebContentsObserver::OnPictureInPictureWindowResize(
+    const gfx::Size& window_size) {
+  DCHECK(pip_player_.has_value());
+
+  RenderFrameHost* frame = pip_player_->first;
+  int delegate_id = pip_player_->second;
+  frame->Send(new MediaPlayerDelegateMsg_OnPictureInPictureWindowResize(
+      frame->GetRoutingID(), delegate_id, window_size));
+}
+
 void MediaWebContentsObserver::OnMediaDestroyed(
     RenderFrameHost* render_frame_host,
     int delegate_id) {
   OnMediaPaused(render_frame_host, delegate_id, true);
-
-  if (pip_player_ &&
-      pip_player_ == MediaPlayerId(render_frame_host, delegate_id)) {
-    pip_player_.reset();
-  }
 }
 
 void MediaWebContentsObserver::OnMediaPaused(RenderFrameHost* render_frame_host,
@@ -203,7 +196,8 @@ void MediaWebContentsObserver::OnMediaPaused(RenderFrameHost* render_frame_host,
       RemoveMediaPlayerEntry(player_id, &active_audio_players_);
   const bool removed_video =
       RemoveMediaPlayerEntry(player_id, &active_video_players_);
-  MaybeCancelVideoLock();
+
+  UpdateVideoLock();
 
   if (removed_audio || removed_video) {
     // Notify observers the player has been "paused".
@@ -241,9 +235,7 @@ void MediaWebContentsObserver::OnMediaPlaying(
   if (has_video) {
     AddMediaPlayerEntry(id, &active_video_players_);
 
-    // If we're not hidden and have just created a player, create a wakelock.
-    if (!web_contents_impl()->IsHidden())
-      LockVideo();
+    UpdateVideoLock();
   }
 
   if (!session_controllers_manager_.RequestPlay(
@@ -296,16 +288,61 @@ void MediaWebContentsObserver::OnMediaSizeChanged(
   web_contents_impl()->MediaResized(size, id);
 }
 
-void MediaWebContentsObserver::OnPictureInPictureSourceChanged(
+void MediaWebContentsObserver::OnPictureInPictureModeStarted(
     RenderFrameHost* render_frame_host,
-    int delegate_id) {
+    int delegate_id,
+    const viz::SurfaceId& surface_id,
+    const gfx::Size& natural_size,
+    int request_id) {
+  DCHECK(surface_id.is_valid());
   pip_player_ = MediaPlayerId(render_frame_host, delegate_id);
+
+  UpdateVideoLock();
+
+  gfx::Size window_size =
+      web_contents_impl()->EnterPictureInPicture(surface_id, natural_size);
+
+  render_frame_host->Send(
+      new MediaPlayerDelegateMsg_OnPictureInPictureModeStarted_ACK(
+          render_frame_host->GetRoutingID(), delegate_id, request_id,
+          window_size));
 }
 
 void MediaWebContentsObserver::OnPictureInPictureModeEnded(
     RenderFrameHost* render_frame_host,
-    int delegate_id) {
-  pip_player_.reset();
+    int delegate_id,
+    int request_id) {
+  // TODO(mlamouri): must be a DCHECK but can't at the moment because we do not
+  // correctly notify players when switching PIP video in the same tab.
+  if (pip_player_) {
+    web_contents_impl()->ExitPictureInPicture();
+
+    // Reset must happen after notifying the WebContents because it may interact
+    // with it.
+    pip_player_.reset();
+
+    UpdateVideoLock();
+  }
+
+  render_frame_host->Send(
+      new MediaPlayerDelegateMsg_OnPictureInPictureModeEnded_ACK(
+          render_frame_host->GetRoutingID(), delegate_id, request_id));
+}
+
+void MediaWebContentsObserver::OnPictureInPictureSurfaceChanged(
+    RenderFrameHost* render_frame_host,
+    int delegate_id,
+    const viz::SurfaceId& surface_id,
+    const gfx::Size& natural_size) {
+  DCHECK(surface_id.is_valid());
+  DCHECK(pip_player_);
+
+  PictureInPictureWindowControllerImpl* pip_controller =
+      PictureInPictureWindowControllerImpl::FromWebContents(
+          web_contents_impl());
+  DCHECK(pip_controller);
+
+  pip_controller->EmbedSurface(surface_id, natural_size);
 }
 
 void MediaWebContentsObserver::ClearWakeLocks(
@@ -322,7 +359,7 @@ void MediaWebContentsObserver::ClearWakeLocks(
                  audio_players.begin(), audio_players.end(),
                  std::inserter(removed_players, removed_players.end()));
 
-  MaybeCancelVideoLock();
+  UpdateVideoLock();
 
   // Notify all observers the player has been "paused".
   for (const auto& id : removed_players) {
@@ -379,21 +416,25 @@ void MediaWebContentsObserver::CancelAudioLock() {
   has_audio_wake_lock_for_testing_ = false;
 }
 
-void MediaWebContentsObserver::LockVideo() {
-  DCHECK(!active_video_players_.empty());
+void MediaWebContentsObserver::UpdateVideoLock() {
+  if (active_video_players_.empty() ||
+      (web_contents()->GetVisibility() == Visibility::HIDDEN &&
+       !web_contents()->IsBeingCaptured() && !pip_player_.has_value())) {
+    // Need to release a wake lock if one is held.
+    if (!has_video_wake_lock_)
+      return;
+
+    GetVideoWakeLock()->CancelWakeLock();
+    has_video_wake_lock_ = false;
+    return;
+  }
+
+  // Need to take a wake lock if not already done.
+  if (has_video_wake_lock_)
+    return;
+
   GetVideoWakeLock()->RequestWakeLock();
-  has_video_wake_lock_for_testing_ = true;
-}
-
-void MediaWebContentsObserver::CancelVideoLock() {
-  GetVideoWakeLock()->CancelWakeLock();
-  has_video_wake_lock_for_testing_ = false;
-}
-
-void MediaWebContentsObserver::MaybeCancelVideoLock() {
-  // If there are no more video players, cancel the video wake lock.
-  if (active_video_players_.empty())
-    CancelVideoLock();
+  has_video_wake_lock_ = true;
 }
 
 void MediaWebContentsObserver::OnMediaMutedStatusChanged(

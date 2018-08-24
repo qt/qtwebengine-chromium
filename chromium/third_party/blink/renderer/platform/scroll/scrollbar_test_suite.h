@@ -6,13 +6,14 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCROLL_SCROLLBAR_TEST_SUITE_H_
 
 #include <memory>
+#include "base/single_thread_task_runner.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
 #include "third_party/blink/public/platform/web_thread.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/platform_chrome_client.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/scroll/scrollable_area.h"
 #include "third_party/blink/renderer/platform/scroll/scrollbar.h"
 #include "third_party/blink/renderer/platform/scroll/scrollbar_theme_mock.h"
@@ -27,16 +28,7 @@ class MockPlatformChromeClient : public PlatformChromeClient {
 
   void SetIsPopup(bool is_popup) { is_popup_ = is_popup; }
 
-  void InvalidateRect(const IntRect&) override {}
-
-  IntRect ViewportToScreen(const IntRect&,
-                           const PlatformFrameView*) const override {
-    return IntRect();
-  }
-
   float WindowToViewportScalar(const float) const override { return 0; }
-
-  void ScheduleAnimation(const PlatformFrameView*) override {}
 
  private:
   bool is_popup_;
@@ -90,7 +82,7 @@ class MockScrollableArea : public GarbageCollectedFinalized<MockScrollableArea>,
   }
   bool ScrollAnimatorEnabled() const override { return false; }
   int PageStep(ScrollbarOrientation) const override { return 0; }
-  void ScrollControlWasSetNeedsPaintInvalidation() {}
+  void ScrollControlWasSetNeedsPaintInvalidation() override {}
   void SetScrollOrigin(const IntPoint& origin) {
     ScrollableArea::SetScrollOrigin(origin);
   }
@@ -114,7 +106,7 @@ class MockScrollableArea : public GarbageCollectedFinalized<MockScrollableArea>,
   using ScrollableArea::VerticalScrollbarNeedsPaintInvalidation;
   using ScrollableArea::ClearNeedsPaintInvalidationForScrollControls;
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(chrome_client_);
     ScrollableArea::Trace(visitor);
   }

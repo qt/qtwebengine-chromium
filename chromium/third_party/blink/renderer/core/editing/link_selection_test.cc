@@ -146,7 +146,7 @@ class LinkSelectionTest : public LinkSelectionTestBase {
     ASSERT_NE(nullptr, link_to_select);
     // We get larger range that we actually want to select, because we need a
     // slightly larger rect to include the last character to the selection.
-    const auto range_to_select =
+    auto* const range_to_select =
         Range::Create(*document, link_to_select, 5, link_to_select, 16);
 
     const auto& selection_rect = range_to_select->BoundingBox();
@@ -159,7 +159,7 @@ class LinkSelectionTest : public LinkSelectionTestBase {
     right_point_in_link_.Move(-2, 0);
   }
 
-  void TearDown() {
+  void TearDown() override {
     // Manually reset since |test_frame_client_| won't outlive |helper_|.
     helper_.Reset();
   }

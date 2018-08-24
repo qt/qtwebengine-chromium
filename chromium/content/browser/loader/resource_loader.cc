@@ -51,6 +51,18 @@ using base::TimeTicks;
 namespace content {
 namespace {
 
+// Copies selected fields from |in| to the returned SSLInfo. To avoid sending
+// unnecessary data into the renderer, this only copies the fields that the
+// renderer cares about.
+net::SSLInfo SelectSSLInfoFields(const net::SSLInfo& in) {
+  net::SSLInfo out;
+  out.connection_status = in.connection_status;
+  out.key_exchange_group = in.key_exchange_group;
+  out.signed_certificate_timestamps = in.signed_certificate_timestamps;
+  out.cert = in.cert;
+  return out;
+}
+
 void PopulateResourceResponse(
     ResourceRequestInfoImpl* info,
     net::URLRequest* request,
@@ -117,8 +129,8 @@ void PopulateResourceResponse(
          net::IsCertStatusMinorError(response->head.cert_status)) &&
         net::IsLegacySymantecCert(request->ssl_info().public_key_hashes);
 
-    if (info->ShouldReportRawHeaders())
-      response->head.ssl_info = request->ssl_info();
+    if (info->ShouldReportSecurityInfo())
+      response->head.ssl_info = SelectSSLInfoFields(request->ssl_info());
   } else {
     // We should not have any SSL state.
     DCHECK(!request->ssl_info().cert_status);
@@ -215,7 +227,6 @@ ResourceLoader::ResourceLoader(std::unique_ptr<net::URLRequest> request,
       request_(std::move(request)),
       handler_(std::move(handler)),
       delegate_(delegate),
-      is_transferring_(false),
       times_cancelled_before_request_start_(0),
       started_request_(false),
       times_cancelled_after_request_start_(0),
@@ -272,46 +283,6 @@ void ResourceLoader::CancelWithError(int error_code) {
   TRACE_EVENT_WITH_FLOW0("loading", "ResourceLoader::CancelWithError", this,
                          TRACE_EVENT_FLAG_FLOW_IN);
   CancelRequestInternal(error_code, false);
-}
-
-void ResourceLoader::MarkAsTransferring(
-    const base::Closure& on_transfer_complete_callback) {
-  CHECK(IsResourceTypeFrame(GetRequestInfo()->GetResourceType()))
-      << "Can only transfer for navigations";
-  is_transferring_ = true;
-  on_transfer_complete_callback_ = on_transfer_complete_callback;
-
-  int child_id = GetRequestInfo()->GetChildID();
-  AppCacheInterceptor::PrepareForCrossSiteTransfer(request(), child_id);
-  ServiceWorkerRequestHandler* handler =
-      ServiceWorkerRequestHandler::GetHandler(request());
-  if (handler)
-    handler->PrepareForCrossSiteTransfer(child_id);
-}
-
-void ResourceLoader::CompleteTransfer() {
-  // Although NavigationResourceThrottle defers at WillProcessResponse
-  // (DEFERRED_READ), it may be seeing a replay of events via
-  // MimeTypeResourceHandler, and so the request itself is actually deferred at
-  // a later read stage.
-  DCHECK(DEFERRED_READ == deferred_stage_ ||
-         DEFERRED_RESPONSE_COMPLETE == deferred_stage_);
-  DCHECK(is_transferring_);
-  DCHECK(!on_transfer_complete_callback_.is_null());
-
-  // In some cases, a process transfer doesn't really happen and the
-  // request is resumed in the original process. Real transfers to a new process
-  // are completed via ResourceDispatcherHostImpl::UpdateRequestForTransfer.
-  int child_id = GetRequestInfo()->GetChildID();
-  AppCacheInterceptor::MaybeCompleteCrossSiteTransferInOldProcess(
-      request(), child_id);
-  ServiceWorkerRequestHandler* handler =
-      ServiceWorkerRequestHandler::GetHandler(request());
-  if (handler)
-    handler->MaybeCompleteCrossSiteTransferInOldProcess(child_id);
-
-  is_transferring_ = false;
-  base::ResetAndReturn(&on_transfer_complete_callback_).Run();
 }
 
 ResourceRequestInfoImpl* ResourceLoader::GetRequestInfo() {
@@ -545,8 +516,6 @@ void ResourceLoader::CancelCertificateSelection() {
 }
 
 void ResourceLoader::Resume(bool called_from_resource_controller) {
-  DCHECK(!is_transferring_);
-
   DeferredStage stage = deferred_stage_;
   deferred_stage_ = DEFERRED_NONE;
   switch (stage) {

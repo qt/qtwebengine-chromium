@@ -71,7 +71,7 @@ class ImageEventListener : public EventListener {
 
   bool operator==(const EventListener& other) const override;
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(doc_);
     EventListener::Trace(visitor);
   }
@@ -80,7 +80,7 @@ class ImageEventListener : public EventListener {
   ImageEventListener(ImageDocument* document)
       : EventListener(kImageEventListenerType), doc_(document) {}
 
-  virtual void handleEvent(ExecutionContext*, Event*);
+  void handleEvent(ExecutionContext*, Event*) override;
 
   Member<ImageDocument> doc_;
 };
@@ -100,7 +100,7 @@ class ImageDocumentParser : public RawDataDocumentParser {
       : RawDataDocumentParser(document) {}
 
   void AppendBytes(const char*, size_t) override;
-  virtual void Finish();
+  void Finish() override;
 };
 
 // --------
@@ -153,7 +153,7 @@ void ImageDocumentParser::Finish() {
     DocumentLoader* loader = GetDocument()->Loader();
     cached_image->SetResponse(loader->GetResponse());
     cached_image->Finish(
-        TimeTicksInSeconds(loader->GetTiming().ResponseEnd()),
+        loader->GetTiming().ResponseEnd(),
         GetDocument()->GetTaskRunner(TaskType::kInternalLoading).get());
 
     // Report the natural image size in the page title, regardless of zoom

@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/paint/svg_container_painter.h"
 
+#include "base/optional.h"
 #include "third_party/blink/renderer/core/layout/layout_box_model_object.h"
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_container.h"
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_foreign_object.h"
@@ -15,7 +16,6 @@
 #include "third_party/blink/renderer/core/paint/svg_foreign_object_painter.h"
 #include "third_party/blink/renderer/core/paint/svg_paint_context.h"
 #include "third_party/blink/renderer/core/svg/svg_svg_element.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 
 namespace blink {
 
@@ -47,8 +47,8 @@ void SVGContainerPainter::Paint(const PaintInfo& paint_info) {
       paint_info_before_filtering, layout_svg_container_,
       layout_svg_container_.LocalToSVGParentTransform());
   {
-    Optional<FloatClipRecorder> clip_recorder;
-    Optional<ScopedPaintChunkProperties> scoped_paint_chunk_properties;
+    base::Optional<FloatClipRecorder> clip_recorder;
+    base::Optional<ScopedPaintChunkProperties> scoped_paint_chunk_properties;
     if (layout_svg_container_.IsSVGViewportContainer() &&
         SVGLayoutSupport::IsOverflowHidden(layout_svg_container_)) {
       if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
@@ -60,11 +60,11 @@ void SVGContainerPainter::Paint(const PaintInfo& paint_info) {
         // TODO(crbug.com/814815): The condition should be a DCHECK, but for now
         // we may paint the object for filters during PrePaint before the
         // properties are ready.
-        if (properties && properties->OverflowOrInnerBorderRadiusClip()) {
+        if (properties && properties->OverflowClip()) {
           scoped_paint_chunk_properties.emplace(
               paint_info.context.GetPaintController(),
-              properties->OverflowOrInnerBorderRadiusClip(),
-              layout_svg_container_, paint_info.DisplayItemTypeForClipping());
+              properties->OverflowClip(), layout_svg_container_,
+              paint_info.DisplayItemTypeForClipping());
         }
       } else {
         FloatRect viewport =

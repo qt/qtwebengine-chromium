@@ -14,7 +14,7 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
-#include "base/message_loop/message_loop.h"
+#include "base/rand_util.h"
 #include "base/stl_util.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
@@ -29,6 +29,7 @@
 #include "components/download/public/common/download_stats.h"
 #include "components/download/public/common/download_task_runner.h"
 #include "components/download/public/common/download_ukm_helper.h"
+#include "components/download/public/common/download_utils.h"
 #include "components/filename_generation/filename_generation.h"
 #include "components/url_formatter/url_formatter.h"
 #include "content/browser/bad_message.h"
@@ -85,7 +86,7 @@ const int32_t kMaxFileOrdinalNumber = 9999;
 // is less than MAX_PATH
 #if defined(OS_WIN)
 const uint32_t kMaxFilePathLength = MAX_PATH - 1;
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
 const uint32_t kMaxFilePathLength = PATH_MAX - 1;
 #endif
 
@@ -255,6 +256,12 @@ void SavePackage::InternalInit() {
   DCHECK(download_manager_);
 
   download::RecordSavePackageEvent(download::SAVE_PACKAGE_STARTED);
+
+  ukm_source_id_ = ukm::UkmRecorder::GetNewSourceID();
+  ukm_download_id_ = download::GetUniqueDownloadId();
+  download::DownloadUkmHelper::RecordDownloadStarted(
+      ukm_download_id_, ukm_source_id_, download::DownloadContent::TEXT,
+      download::DownloadSource::UNKNOWN);
 }
 
 bool SavePackage::Init(
@@ -277,11 +284,8 @@ bool SavePackage::Init(
   std::unique_ptr<download::DownloadRequestHandleInterface> request_handle(
       new SavePackageRequestHandle(AsWeakPtr()));
 
-  // The download manager keeps ownership but adds us as an observer.
-  ukm::SourceId ukm_source_id = ukm::UkmRecorder::GetNewSourceID();
-
   download::DownloadUkmHelper::UpdateSourceURL(
-      ukm::UkmRecorder::Get(), ukm_source_id,
+      ukm::UkmRecorder::Get(), ukm_source_id_,
       web_contents()->GetLastCommittedURL());
   RenderFrameHost* frame_host = web_contents()->GetMainFrame();
   download_manager_->CreateSavePackageDownloadItem(
@@ -289,7 +293,7 @@ bool SavePackage::Init(
       ((save_type_ == SAVE_PAGE_TYPE_AS_MHTML) ? "multipart/related"
                                                : "text/html"),
       frame_host->GetProcess()->GetID(), frame_host->GetRoutingID(),
-      std::move(request_handle), std::move(ukm_source_id),
+      std::move(request_handle),
       base::Bind(&SavePackage::InitWithDownloadItem, AsWeakPtr(),
                  download_created_callback));
   return true;
@@ -356,12 +360,12 @@ void SavePackage::OnMHTMLGenerated(int64_t size) {
 // '/path/to/save_dir' + '/' + NAME_MAX.
 uint32_t SavePackage::GetMaxPathLengthForDirectory(
     const base::FilePath& base_dir) {
-#if defined(OS_POSIX)
+#if defined(OS_WIN)
+  return kMaxFilePathLength;
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   return std::min(
       kMaxFilePathLength,
       static_cast<uint32_t>(base_dir.value().length()) + NAME_MAX + 1);
-#else
-  return kMaxFilePathLength;
 #endif
 }
 
@@ -692,6 +696,10 @@ void SavePackage::Finish() {
 
   // Record finish.
   download::RecordSavePackageEvent(download::SAVE_PACKAGE_FINISHED);
+
+  // TODO(qinmin): report the actual file size and duration for the download.
+  download::DownloadUkmHelper::RecordDownloadCompleted(ukm_download_id_, 1,
+                                                       base::TimeDelta(), 0);
 
   // Record any errors that occurred.
   if (wrote_to_completed_file_)

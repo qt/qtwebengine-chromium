@@ -67,6 +67,7 @@
 #include "third_party/blink/renderer/core/exported/web_document_loader_impl.h"
 #include "third_party/blink/renderer/core/exported/web_plugin_container_impl.h"
 #include "third_party/blink/renderer/core/exported/web_view_impl.h"
+#include "third_party/blink/renderer/core/fileapi/public_url_manager.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
@@ -382,7 +383,7 @@ void LocalFrameClientImpl::
   }
 }
 
-void LocalFrameClientImpl::DispatchDidNavigateWithinPage(
+void LocalFrameClientImpl::DidFinishSameDocumentNavigation(
     HistoryItem* item,
     HistoryCommitType commit_type,
     bool content_initiated) {
@@ -390,7 +391,7 @@ void LocalFrameClientImpl::DispatchDidNavigateWithinPage(
   // TODO(dglazkov): Does this need to be called for subframes?
   web_frame_->ViewImpl()->DidCommitLoad(should_create_history_entry, true);
   if (web_frame_->Client()) {
-    web_frame_->Client()->DidNavigateWithinPage(
+    web_frame_->Client()->DidFinishSameDocumentNavigation(
         WebHistoryItem(item), static_cast<WebHistoryCommitType>(commit_type),
         content_initiated);
   }
@@ -638,7 +639,15 @@ void LocalFrameClientImpl::DownloadURL(const ResourceRequest& request) {
   if (!web_frame_->Client())
     return;
   DCHECK(web_frame_->GetFrame()->GetDocument());
-  web_frame_->Client()->DownloadURL(WrappedResourceRequest(request));
+  mojom::blink::BlobURLTokenPtr blob_url_token;
+  if (request.Url().ProtocolIs("blob") &&
+      RuntimeEnabledFeatures::MojoBlobURLsEnabled()) {
+    web_frame_->GetFrame()->GetDocument()->GetPublicURLManager().Resolve(
+        request.Url(), MakeRequest(&blob_url_token));
+  }
+  web_frame_->Client()->DownloadURL(
+      WrappedResourceRequest(request),
+      blob_url_token.PassInterface().PassHandle());
 }
 
 void LocalFrameClientImpl::LoadErrorPage(int reason) {
@@ -795,22 +804,13 @@ LocalFrame* LocalFrameClientImpl::CreateFrame(
   return web_frame_->CreateChildFrame(name, owner_element);
 }
 
-bool LocalFrameClientImpl::CanCreatePluginWithoutRenderer(
-    const String& mime_type) const {
-  if (!web_frame_->Client())
-    return false;
-
-  return web_frame_->Client()->CanCreatePluginWithoutRenderer(mime_type);
-}
-
 WebPluginContainerImpl* LocalFrameClientImpl::CreatePlugin(
     HTMLPlugInElement& element,
     const KURL& url,
     const Vector<String>& param_names,
     const Vector<String>& param_values,
     const String& mime_type,
-    bool load_manually,
-    DetachedPluginPolicy policy) {
+    bool load_manually) {
   if (!web_frame_->Client())
     return nullptr;
 
@@ -832,7 +832,7 @@ WebPluginContainerImpl* LocalFrameClientImpl::CreatePlugin(
   if (!web_plugin->Initialize(container))
     return nullptr;
 
-  if (policy != kAllowDetachedPlugin && !element.GetLayoutObject())
+  if (!element.GetLayoutObject())
     return nullptr;
 
   return container;
@@ -1053,7 +1053,7 @@ WebTextCheckClient* LocalFrameClientImpl::GetTextCheckerClient() const {
 
 std::unique_ptr<blink::WebURLLoaderFactory>
 LocalFrameClientImpl::CreateURLLoaderFactory() {
-  return web_frame_->CreateURLLoaderFactory();
+  return web_frame_->Client()->CreateURLLoaderFactory();
 }
 
 service_manager::InterfaceProvider*
@@ -1083,6 +1083,13 @@ void LocalFrameClientImpl::ScrollRectToVisibleInParentFrame(
     const WebScrollIntoViewParams& params) {
   web_frame_->Client()->ScrollRectToVisibleInParentFrame(rect_to_scroll,
                                                          params);
+}
+
+void LocalFrameClientImpl::BubbleLogicalScrollInParentFrame(
+    ScrollDirection direction,
+    ScrollGranularity granularity) {
+  web_frame_->Client()->BubbleLogicalScrollInParentFrame(direction,
+                                                         granularity);
 }
 
 void LocalFrameClientImpl::SetVirtualTimePauser(
@@ -1121,6 +1128,10 @@ Frame* LocalFrameClientImpl::FindFrame(const AtomicString& name) const {
 void LocalFrameClientImpl::FrameRectsChanged(const IntRect& frame_rect) {
   DCHECK(web_frame_->Client());
   web_frame_->Client()->FrameRectsChanged(frame_rect);
+}
+
+void LocalFrameClientImpl::SetMouseCapture(bool capture) {
+  web_frame_->Client()->SetMouseCapture(capture);
 }
 
 }  // namespace blink

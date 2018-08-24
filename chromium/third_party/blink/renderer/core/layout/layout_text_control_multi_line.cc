@@ -88,17 +88,6 @@ LayoutUnit LayoutTextControlMultiLine::BaselinePosition(
                                      line_position_mode);
 }
 
-scoped_refptr<ComputedStyle> LayoutTextControlMultiLine::CreateInnerEditorStyle(
-    const ComputedStyle& start_style) const {
-  scoped_refptr<ComputedStyle> text_block_style = ComputedStyle::Create();
-  text_block_style->InheritFrom(start_style);
-  AdjustInnerEditorStyle(*text_block_style);
-  text_block_style->SetDisplay(EDisplay::kBlock);
-  text_block_style->SetUnique();
-
-  return text_block_style;
-}
-
 LayoutObject* LayoutTextControlMultiLine::LayoutSpecialExcludedChild(
     bool relayout_children,
     SubtreeLayoutScope& layout_scope) {
@@ -110,9 +99,6 @@ LayoutObject* LayoutTextControlMultiLine::LayoutSpecialExcludedChild(
   if (!placeholder_layout_object->IsBox())
     return placeholder_layout_object;
   LayoutBox* placeholder_box = ToLayoutBox(placeholder_layout_object);
-  placeholder_box->MutableStyleRef().SetLogicalWidth(Length(
-      ContentLogicalWidth() - placeholder_box->BorderAndPaddingLogicalWidth(),
-      kFixed));
   placeholder_box->LayoutIfNeeded();
   placeholder_box->SetX(BorderLeft() + PaddingLeft());
   placeholder_box->SetY(BorderTop() + PaddingTop());

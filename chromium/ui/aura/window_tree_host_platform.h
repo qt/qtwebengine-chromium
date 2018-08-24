@@ -15,6 +15,11 @@
 #include "ui/platform_window/platform_window.h"
 #include "ui/platform_window/platform_window_delegate.h"
 
+namespace ui {
+enum class DomCode;
+class KeyboardHook;
+}  // namespace ui
+
 namespace aura {
 
 class WindowPort;
@@ -33,7 +38,8 @@ class AURA_EXPORT WindowTreeHostPlatform : public WindowTreeHost,
   void ShowImpl() override;
   void HideImpl() override;
   gfx::Rect GetBoundsInPixels() const override;
-  void SetBoundsInPixels(const gfx::Rect& bounds) override;
+  void SetBoundsInPixels(const gfx::Rect& bounds,
+                         const viz::LocalSurfaceId& local_surface_id) override;
   gfx::Point GetLocationOnScreenInPixels() const override;
   void SetCapture() override;
   void ReleaseCapture() override;
@@ -68,18 +74,32 @@ class AURA_EXPORT WindowTreeHostPlatform : public WindowTreeHost,
   void OnLostCapture() override;
   void OnAcceleratedWidgetAvailable(gfx::AcceleratedWidget widget,
                                     float device_pixel_ratio) override;
+  void OnAcceleratedWidgetDestroying() override;
   void OnAcceleratedWidgetDestroyed() override;
   void OnActivationChanged(bool active) override;
+
+  // Overridden from aura::WindowTreeHost:
   bool CaptureSystemKeyEventsImpl(
-      base::Optional<base::flat_set<int>> native_key_codes) override;
+      base::Optional<base::flat_set<ui::DomCode>> dom_codes) override;
   void ReleaseSystemKeyEventCapture() override;
-  bool IsKeyLocked(int native_key_code) override;
+  bool IsKeyLocked(ui::DomCode dom_code) override;
+  base::flat_map<std::string, std::string> GetKeyboardLayoutMap() override;
 
  private:
   gfx::AcceleratedWidget widget_;
   std::unique_ptr<ui::PlatformWindow> platform_window_;
   gfx::NativeCursor current_cursor_;
   gfx::Rect bounds_;
+
+  std::unique_ptr<ui::KeyboardHook> keyboard_hook_;
+
+  // |pending_local_surface_id_| and |pending_size_| are set when the
+  // PlatformWindow instance is requested to adopt a new size (in
+  // SetBoundsInPixels()). When the platform confirms the new size (by way of
+  // OnBoundsChanged() callback), the LocalSurfaceId is set on the compositor,
+  // by WindowTreeHost.
+  viz::LocalSurfaceId pending_local_surface_id_;
+  gfx::Size pending_size_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowTreeHostPlatform);
 };

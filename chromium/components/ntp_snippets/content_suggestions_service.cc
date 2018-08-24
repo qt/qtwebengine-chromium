@@ -18,6 +18,7 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/default_clock.h"
 #include "base/values.h"
+#include "components/favicon/core/favicon_server_fetcher_params.h"
 #include "components/favicon/core/large_icon_service.h"
 #include "components/favicon_base/fallback_icon_style.h"
 #include "components/favicon_base/favicon_types.h"
@@ -295,7 +296,8 @@ void ContentSuggestionsService::OnGetFaviconFromCacheFinished(
         })");
   large_icon_service_
       ->GetLargeIconOrFallbackStyleFromGoogleServerSkippingLocalCache(
-          publisher_url, minimum_size_in_pixel, desired_size_in_pixel,
+          favicon::FaviconServerFetcherParams::CreateForMobile(
+              publisher_url, minimum_size_in_pixel, desired_size_in_pixel),
           /*may_page_url_be_private=*/false, traffic_annotation,
           base::Bind(
               &ContentSuggestionsService::OnGetFaviconFromGoogleServerFinished,
@@ -532,16 +534,13 @@ void ContentSuggestionsService::OnPrimaryAccountCleared(
 // history::HistoryServiceObserver implementation.
 void ContentSuggestionsService::OnURLsDeleted(
     history::HistoryService* history_service,
-    bool all_history,
-    bool expired,
-    const history::URLRows& deleted_rows,
-    const std::set<GURL>& favicon_urls) {
+    const history::DeletionInfo& deletion_info) {
   // We don't care about expired entries.
-  if (expired) {
+  if (deletion_info.is_from_expiration()) {
     return;
   }
 
-  if (all_history) {
+  if (deletion_info.IsAllHistory()) {
     base::Callback<bool(const GURL& url)> filter =
         base::Bind([](const GURL& url) { return true; });
     ClearHistory(base::Time(), base::Time::Max(), filter);
@@ -552,11 +551,11 @@ void ContentSuggestionsService::OnURLsDeleted(
     // basis. However this depends on the provider's details and thus cannot be
     // done here. Introduce a OnURLsDeleted() method on the providers to move
     // this decision further down.
-    if (deleted_rows.size() < 2) {
+    if (deletion_info.deleted_rows().size() < 2) {
       return;
     }
     std::set<GURL> deleted_urls;
-    for (const history::URLRow& row : deleted_rows) {
+    for (const history::URLRow& row : deletion_info.deleted_rows()) {
       deleted_urls.insert(row.url());
     }
     base::Callback<bool(const GURL& url)> filter =

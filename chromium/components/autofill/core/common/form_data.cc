@@ -77,6 +77,7 @@ FormData::FormData(const FormData& data)
       main_frame_origin(data.main_frame_origin),
       is_form_tag(data.is_form_tag),
       is_formless_checkout(data.is_formless_checkout),
+      unique_renderer_id(data.unique_renderer_id),
       fields(data.fields) {}
 
 FormData::~FormData() {
@@ -110,6 +111,7 @@ bool FormData::SimilarFormAs(const FormData& form) const {
 
 bool FormData::operator==(const FormData& form) const {
   return name == form.name && origin == form.origin && action == form.action &&
+         unique_renderer_id == form.unique_renderer_id &&
          is_form_tag == form.is_form_tag &&
          is_formless_checkout == form.is_formless_checkout &&
          fields == form.fields;

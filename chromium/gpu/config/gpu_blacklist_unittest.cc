@@ -46,6 +46,8 @@ class GpuBlacklistTest : public testing::Test {
             nullptr,                               // driver info
             nullptr,                               // GL strings
             nullptr,                               // machine model info
+            0,                                     // gpu_series size
+            nullptr,                               // gpu_series
             nullptr,                               // more conditions
         },
         0,        // exceptions count
@@ -104,6 +106,9 @@ GPU_BLACKLIST_FEATURE_TEST(GpuRasterization,
 
 GPU_BLACKLIST_FEATURE_TEST(WebGL2,
                            GPU_FEATURE_TYPE_ACCELERATED_WEBGL2)
+
+GPU_BLACKLIST_FEATURE_TEST(ProtectedVideoDecode,
+                           GPU_FEATURE_TYPE_PROTECTED_VIDEO_DECODE)
 
 // Test for invariant "Assume the newly last added entry has the largest ID".
 // See GpuControlList::GpuControlList.

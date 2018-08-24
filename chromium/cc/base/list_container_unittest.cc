@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <vector>
-#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace cc {
@@ -103,6 +102,7 @@ class SimpleDerivedElementConstructMagicNumberOne
   SimpleDerivedElementConstructMagicNumberOne() {
     set_value(kMagicNumberToUseForSimpleDerivedElementOne);
   }
+  ~SimpleDerivedElementConstructMagicNumberOne() override = default;
 };
 
 class SimpleDerivedElementConstructMagicNumberTwo
@@ -111,6 +111,7 @@ class SimpleDerivedElementConstructMagicNumberTwo
   SimpleDerivedElementConstructMagicNumberTwo() {
     set_value(kMagicNumberToUseForSimpleDerivedElementTwo);
   }
+  ~SimpleDerivedElementConstructMagicNumberTwo() override = default;
 };
 
 class SimpleDerivedElementConstructMagicNumberThree
@@ -119,12 +120,40 @@ class SimpleDerivedElementConstructMagicNumberThree
   SimpleDerivedElementConstructMagicNumberThree() {
     set_value(kMagicNumberToUseForSimpleDerivedElementThree);
   }
+  ~SimpleDerivedElementConstructMagicNumberThree() override = default;
 };
 
+// This class' instances are moved by ListContainer via memcpy(). This behavior
+// is not supported by gmock's FunctionMocker, so this class must roll its own
+// mocking code.
 class MockDerivedElement : public SimpleDerivedElementConstructMagicNumberOne {
  public:
-  ~MockDerivedElement() override { Destruct(); }
-  MOCK_METHOD0(Destruct, void());
+  ~MockDerivedElement() override {
+    DestructorCalled();
+    CheckDestructExpectation();
+  }
+
+  void SetExpectedDestructorCalls(size_t expected_calls) {
+    expected_destructor_calls_ = expected_calls;
+    has_expected_destructor_calls_ = true;
+  }
+
+ private:
+  void DestructorCalled() { ++destructor_calls_; }
+
+  void CheckDestructExpectation() {
+    if (!has_expected_destructor_calls_)
+      return;
+    EXPECT_EQ(expected_destructor_calls_, destructor_calls_)
+        << "element destructor called the wrong number of times";
+  }
+
+  // Not using base::Optional<size_t> here in order to get a precise destructor
+  // behavior. The tests below need the ability to catch multiple destructor
+  // calls, and base::Optional's destructor might make has_value() return false.
+  size_t expected_destructor_calls_;
+  bool has_expected_destructor_calls_ = false;
+  size_t destructor_calls_ = 0;
 };
 
 class MockDerivedElementSubclass : public MockDerivedElement {
@@ -164,7 +193,7 @@ TEST(ListContainerTest, DestructorCalled) {
   size_t size = 1;
   MockDerivedElement* de_1 = list.AllocateAndConstruct<MockDerivedElement>();
 
-  EXPECT_CALL(*de_1, Destruct());
+  de_1->SetExpectedDestructorCalls(1);
   EXPECT_EQ(size, list.size());
   EXPECT_EQ(de_1, list.front());
 }
@@ -178,18 +207,10 @@ TEST(ListContainerTest, DestructorCalledOnceWhenClear) {
   EXPECT_EQ(size, list.size());
   EXPECT_EQ(de_1, list.front());
 
-  // Make sure destructor is called once during clear, and won't be called
-  // again.
-  testing::MockFunction<void()> separator;
-  {
-    testing::InSequence s;
-    EXPECT_CALL(*de_1, Destruct());
-    EXPECT_CALL(separator, Call());
-    EXPECT_CALL(*de_1, Destruct()).Times(0);
-  }
+  // Make sure destructor is called exactly once during clear.
+  de_1->SetExpectedDestructorCalls(1);
 
   list.clear();
-  separator.Call();
 }
 
 TEST(ListContainerTest, ClearDoesNotMalloc) {
@@ -235,21 +256,12 @@ TEST(ListContainerTest, ReplaceExistingElement) {
   EXPECT_EQ(size, list.size());
   EXPECT_EQ(de_1, list.front());
 
-  // Make sure destructor is called once during clear, and won't be called
-  // again.
-  testing::MockFunction<void()> separator;
-  {
-    testing::InSequence s;
-    EXPECT_CALL(*de_1, Destruct());
-    EXPECT_CALL(separator, Call());
-    EXPECT_CALL(*de_1, Destruct()).Times(0);
-  }
+  // Make sure destructor is called exactly once during clear.
+  de_1->SetExpectedDestructorCalls(1);
 
   list.ReplaceExistingElement<MockDerivedElementSubclass>(list.begin());
   EXPECT_EQ(kMagicNumberToUseForSimpleDerivedElementTwo, de_1->get_value());
-  separator.Call();
 
-  EXPECT_CALL(*de_1, Destruct());
   list.clear();
 }
 
@@ -262,18 +274,10 @@ TEST(ListContainerTest, DestructorCalledOnceWhenErase) {
   EXPECT_EQ(size, list.size());
   EXPECT_EQ(de_1, list.front());
 
-  // Make sure destructor is called once during clear, and won't be called
-  // again.
-  testing::MockFunction<void()> separator;
-  {
-    testing::InSequence s;
-    EXPECT_CALL(*de_1, Destruct());
-    EXPECT_CALL(separator, Call());
-    EXPECT_CALL(*de_1, Destruct()).Times(0);
-  }
+  // Make sure destructor is called exactly once during clear.
+  de_1->SetExpectedDestructorCalls(1);
 
   list.EraseAndInvalidateAllPointers(list.begin());
-  separator.Call();
 }
 
 TEST(ListContainerTest, SimpleIndexAccessNonDerivedElement) {
@@ -1019,158 +1023,6 @@ TEST(ListContainerTest, RemoveLastIteration) {
   pop();
   ASSERT_TRUE(list.empty());
   check_equal();  // Empty.
-}
-
-TEST(ListContainerTest, AppendByMovingSameList) {
-  ListContainer<SimpleDerivedElement> list(
-      kCurrentLargestDerivedElementAlign, kCurrentLargestDerivedElementSize, 0);
-  list.AllocateAndConstruct<SimpleDerivedElementConstructMagicNumberOne>();
-
-  list.AppendByMoving(list.front());
-  EXPECT_EQ(kMagicNumberToUseForSimpleDerivedElementOne,
-            list.back()->get_value());
-  EXPECT_EQ(2u, list.size());
-
-  list.front()->set_value(kMagicNumberToUseForSimpleDerivedElementTwo);
-  EXPECT_EQ(kMagicNumberToUseForSimpleDerivedElementTwo,
-            list.front()->get_value());
-  list.AppendByMoving(list.front());
-  EXPECT_EQ(kMagicNumberToUseForSimpleDerivedElementTwo,
-            list.back()->get_value());
-  EXPECT_EQ(3u, list.size());
-}
-
-TEST(ListContainerTest, AppendByMovingDoesNotDestruct) {
-  ListContainer<DerivedElement> list_1(kCurrentLargestDerivedElementAlign,
-                                       kCurrentLargestDerivedElementSize, 0);
-  ListContainer<DerivedElement> list_2(kCurrentLargestDerivedElementAlign,
-                                       kCurrentLargestDerivedElementSize, 0);
-  MockDerivedElement* mde_1 = list_1.AllocateAndConstruct<MockDerivedElement>();
-
-  // Make sure destructor isn't called during AppendByMoving.
-  list_2.AppendByMoving(mde_1);
-  EXPECT_CALL(*mde_1, Destruct()).Times(0);
-  testing::Mock::VerifyAndClearExpectations(mde_1);
-  mde_1 = static_cast<MockDerivedElement*>(list_2.back());
-  EXPECT_CALL(*mde_1, Destruct());
-}
-
-TEST(ListContainerTest, AppendByMovingReturnsMovedPointer) {
-  ListContainer<SimpleDerivedElement> list_1(
-      kCurrentLargestDerivedElementAlign, kCurrentLargestDerivedElementSize, 0);
-  ListContainer<SimpleDerivedElement> list_2(
-      kCurrentLargestDerivedElementAlign, kCurrentLargestDerivedElementSize, 0);
-  SimpleDerivedElement* simple_element =
-      list_1.AllocateAndConstruct<SimpleDerivedElement>();
-
-  SimpleDerivedElement* moved_1 = list_2.AppendByMoving(simple_element);
-  EXPECT_EQ(list_2.back(), moved_1);
-
-  SimpleDerivedElement* moved_2 = list_1.AppendByMoving(moved_1);
-  EXPECT_EQ(list_1.back(), moved_2);
-  EXPECT_NE(moved_1, moved_2);
-}
-
-TEST(ListContainerTest, AppendByMovingReplacesSourceWithNewDerivedElement) {
-  ListContainer<SimpleDerivedElementConstructMagicNumberOne> list_1(
-      kCurrentLargestDerivedElementAlign, kCurrentLargestDerivedElementSize, 0);
-  ListContainer<SimpleDerivedElementConstructMagicNumberTwo> list_2(
-      kCurrentLargestDerivedElementAlign, kCurrentLargestDerivedElementSize, 0);
-
-  list_1.AllocateAndConstruct<SimpleDerivedElementConstructMagicNumberOne>();
-  EXPECT_EQ(kMagicNumberToUseForSimpleDerivedElementOne,
-            list_1.front()->get_value());
-
-  list_2.AppendByMoving(list_1.front());
-  EXPECT_EQ(kMagicNumberToUseForSimpleDerivedElementOne,
-            list_1.front()->get_value());
-  EXPECT_EQ(kMagicNumberToUseForSimpleDerivedElementOne,
-            list_2.front()->get_value());
-
-  // Change the value of list_2.front() to ensure the value is actually moved.
-  list_2.back()->set_value(kMagicNumberToUseForSimpleDerivedElementThree);
-
-  list_1.AppendByMoving(list_2.back());
-  EXPECT_EQ(kMagicNumberToUseForSimpleDerivedElementOne,
-            list_1.front()->get_value());
-  EXPECT_EQ(kMagicNumberToUseForSimpleDerivedElementThree,
-            list_1.back()->get_value());
-  EXPECT_EQ(kMagicNumberToUseForSimpleDerivedElementTwo,
-            list_2.back()->get_value());
-
-  // AppendByMoving replaces the source element with a new derived element so
-  // we do not expect sizes to shrink after AppendByMoving is called.
-  EXPECT_EQ(2u, list_1.size());  // One direct allocation, one AppendByMoving.
-  EXPECT_EQ(1u, list_2.size());  // One AppendByMoving.
-}
-
-const size_t kLongCountForLongSimpleDerivedElement = 5;
-
-class LongSimpleDerivedElement : public SimpleDerivedElement {
- public:
-  ~LongSimpleDerivedElement() override = default;
-  void SetAllValues(unsigned long value) {
-    for (size_t i = 0; i < kLongCountForLongSimpleDerivedElement; i++)
-      values[i] = value;
-  }
-  bool AreAllValuesEqualTo(size_t value) const {
-    for (size_t i = 1; i < kLongCountForLongSimpleDerivedElement; i++) {
-      if (values[i] != values[0])
-        return false;
-    }
-    return true;
-  }
-
- private:
-  unsigned long values[kLongCountForLongSimpleDerivedElement];
-};
-
-const unsigned long kMagicNumberToUseForLongSimpleDerivedElement = 2718ul;
-
-class LongSimpleDerivedElementConstructMagicNumber
-    : public LongSimpleDerivedElement {
- public:
-  LongSimpleDerivedElementConstructMagicNumber() {
-    SetAllValues(kMagicNumberToUseForLongSimpleDerivedElement);
-  }
-};
-
-TEST(ListContainerTest, AppendByMovingLongAndSimpleDerivedElements) {
-  static_assert(sizeof(LongSimpleDerivedElement) > sizeof(SimpleDerivedElement),
-                "LongSimpleDerivedElement should be larger than "
-                "SimpleDerivedElement's size.");
-  static_assert(sizeof(LongSimpleDerivedElement) <= kLargestDerivedElementSize,
-                "LongSimpleDerivedElement should be smaller than the maximum "
-                "DerivedElement size.");
-
-  ListContainer<SimpleDerivedElement> list(
-      kCurrentLargestDerivedElementAlign, kCurrentLargestDerivedElementSize, 0);
-  list.AllocateAndConstruct<LongSimpleDerivedElementConstructMagicNumber>();
-  list.AllocateAndConstruct<SimpleDerivedElementConstructMagicNumberOne>();
-
-  EXPECT_TRUE(
-      static_cast<LongSimpleDerivedElement*>(list.front())
-          ->AreAllValuesEqualTo(kMagicNumberToUseForLongSimpleDerivedElement));
-  EXPECT_EQ(kMagicNumberToUseForSimpleDerivedElementOne,
-            list.back()->get_value());
-
-  // Test that moving a simple derived element actually moves enough data so
-  // that the LongSimpleDerivedElement at this location is entirely moved.
-  SimpleDerivedElement* simple_element = list.back();
-  list.AppendByMoving(list.front());
-  EXPECT_TRUE(
-      static_cast<LongSimpleDerivedElement*>(list.back())
-          ->AreAllValuesEqualTo(kMagicNumberToUseForLongSimpleDerivedElement));
-  EXPECT_EQ(kMagicNumberToUseForSimpleDerivedElementOne,
-            simple_element->get_value());
-
-  LongSimpleDerivedElement* long_element =
-      static_cast<LongSimpleDerivedElement*>(list.back());
-  list.AppendByMoving(simple_element);
-  EXPECT_TRUE(long_element->AreAllValuesEqualTo(
-      kMagicNumberToUseForLongSimpleDerivedElement));
-  EXPECT_EQ(kMagicNumberToUseForSimpleDerivedElementOne,
-            list.back()->get_value());
 }
 
 TEST(ListContainerTest, Swap) {

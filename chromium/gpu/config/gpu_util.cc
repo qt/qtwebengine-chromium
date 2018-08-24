@@ -11,6 +11,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
+#include "build/build_config.h"
 #include "gpu/config/gpu_blacklist.h"
 #include "gpu/config/gpu_crash_keys.h"
 #include "gpu/config/gpu_driver_bug_list.h"
@@ -20,6 +21,7 @@
 #include "gpu/config/gpu_info_collector.h"
 #include "gpu/config/gpu_switches.h"
 #include "ui/gl/extension_set.h"
+#include "ui/gl/gl_features.h"
 #include "ui/gl/gl_switches.h"
 
 #if defined(OS_ANDROID)
@@ -147,6 +149,17 @@ GpuFeatureStatus GetGpuCompositingFeatureStatus(
   return kGpuFeatureStatusEnabled;
 }
 
+GpuFeatureStatus GetProtectedVideoDecodeFeatureStatus(
+    const std::set<int>& blacklisted_features,
+    const GPUInfo& gpu_info,
+    bool use_swift_shader) {
+  if (use_swift_shader)
+    return kGpuFeatureStatusDisabled;
+  if (blacklisted_features.count(GPU_FEATURE_TYPE_PROTECTED_VIDEO_DECODE))
+    return kGpuFeatureStatusBlacklisted;
+  return kGpuFeatureStatusEnabled;
+}
+
 void AppendWorkaroundsToCommandLine(const GpuFeatureInfo& gpu_feature_info,
                                     base::CommandLine* command_line) {
   if (gpu_feature_info.IsWorkaroundEnabled(DISABLE_D3D11)) {
@@ -194,6 +207,8 @@ GpuFeatureInfo ComputeGpuFeatureInfoWithHardwareAccelerationDisabled() {
       kGpuFeatureStatusDisabled;
   gpu_feature_info.status_values[GPU_FEATURE_TYPE_ACCELERATED_WEBGL2] =
       kGpuFeatureStatusSoftware;
+  gpu_feature_info.status_values[GPU_FEATURE_TYPE_PROTECTED_VIDEO_DECODE] =
+      kGpuFeatureStatusDisabled;
 #if DCHECK_IS_ON()
   for (int ii = 0; ii < NUMBER_OF_GPU_FEATURE_TYPES; ++ii) {
     DCHECK_NE(kGpuFeatureStatusUndefined, gpu_feature_info.status_values[ii]);
@@ -221,6 +236,8 @@ GpuFeatureInfo ComputeGpuFeatureInfoWithNoGpu() {
   gpu_feature_info.status_values[GPU_FEATURE_TYPE_GPU_RASTERIZATION] =
       kGpuFeatureStatusDisabled;
   gpu_feature_info.status_values[GPU_FEATURE_TYPE_ACCELERATED_WEBGL2] =
+      kGpuFeatureStatusDisabled;
+  gpu_feature_info.status_values[GPU_FEATURE_TYPE_PROTECTED_VIDEO_DECODE] =
       kGpuFeatureStatusDisabled;
 #if DCHECK_IS_ON()
   for (int ii = 0; ii < NUMBER_OF_GPU_FEATURE_TYPES; ++ii) {
@@ -250,6 +267,8 @@ GpuFeatureInfo ComputeGpuFeatureInfoForSwiftShader() {
       kGpuFeatureStatusDisabled;
   gpu_feature_info.status_values[GPU_FEATURE_TYPE_ACCELERATED_WEBGL2] =
       kGpuFeatureStatusSoftware;
+  gpu_feature_info.status_values[GPU_FEATURE_TYPE_PROTECTED_VIDEO_DECODE] =
+      kGpuFeatureStatusDisabled;
 #if DCHECK_IS_ON()
   for (int ii = 0; ii < NUMBER_OF_GPU_FEATURE_TYPES; ++ii) {
     DCHECK_NE(kGpuFeatureStatusUndefined, gpu_feature_info.status_values[ii]);
@@ -319,6 +338,9 @@ GpuFeatureInfo ComputeGpuFeatureInfo(const GPUInfo& gpu_info,
                                              use_swift_shader);
   gpu_feature_info.status_values[GPU_FEATURE_TYPE_GPU_COMPOSITING] =
       GetGpuCompositingFeatureStatus(blacklisted_features, use_swift_shader);
+  gpu_feature_info.status_values[GPU_FEATURE_TYPE_PROTECTED_VIDEO_DECODE] =
+      GetProtectedVideoDecodeFeatureStatus(blacklisted_features, gpu_info,
+                                           use_swift_shader);
 #if DCHECK_IS_ON()
   for (int ii = 0; ii < NUMBER_OF_GPU_FEATURE_TYPES; ++ii) {
     DCHECK_NE(kGpuFeatureStatusUndefined, gpu_feature_info.status_values[ii]);
@@ -480,5 +502,28 @@ bool InitializeGLThreadSafe(base::CommandLine* command_line,
   return true;
 }
 #endif  // OS_ANDROID
+
+bool ShouldEnableSwiftShader(base::CommandLine* command_line,
+                             const GpuFeatureInfo& gpu_feature_info,
+                             bool disable_software_rasterizer,
+                             bool blacklist_needs_more_info) {
+#if BUILDFLAG(ENABLE_SWIFTSHADER)
+  if (disable_software_rasterizer)
+    return false;
+  // Don't overwrite user preference.
+  if (command_line->HasSwitch(switches::kUseGL))
+    return false;
+  if (!blacklist_needs_more_info &&
+      gpu_feature_info.status_values[GPU_FEATURE_TYPE_ACCELERATED_WEBGL] !=
+          kGpuFeatureStatusEnabled) {
+    command_line->AppendSwitchASCII(
+        switches::kUseGL, gl::kGLImplementationSwiftShaderForWebGLName);
+    return true;
+  }
+  return false;
+#else
+  return false;
+#endif
+}
 
 }  // namespace gpu

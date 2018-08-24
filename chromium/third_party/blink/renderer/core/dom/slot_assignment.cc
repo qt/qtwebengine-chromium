@@ -218,6 +218,9 @@ void SlotAssignment::RecalcAssignment() {
 
   if (!needs_assignment_recalc_)
     return;
+#if DCHECK_IS_ON()
+  DCHECK(!owner_->GetDocument().IsSlotAssignmentRecalcForbidden());
+#endif
   needs_assignment_recalc_ = false;
 
   for (Member<HTMLSlotElement> slot : Slots())

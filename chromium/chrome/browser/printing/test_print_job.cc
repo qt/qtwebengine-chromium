@@ -9,23 +9,25 @@
 #include "base/memory/ref_counted_memory.h"
 #include "build/build_config.h"
 #include "chrome/browser/printing/print_job_worker.h"
-#include "chrome/browser/printing/print_job_worker_owner.h"
+#include "chrome/browser/printing/printer_query.h"
 #include "chrome/browser/printing/test_print_job.h"
 #include "printing/printed_document.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace printing {
 
-void TestPrintJob::Initialize(PrintJobWorkerOwner* job,
+void TestPrintJob::Initialize(PrinterQuery* query,
                               const base::string16& name,
                               int page_count) {
   // Since we do not actually print in these tests, just let this get destroyed
   // when this function exits.
-  std::unique_ptr<PrintJobWorker> worker = job->DetachWorker(this);
-  set_settings(job->settings());
+  std::unique_ptr<PrintJobWorker> worker = query->DetachWorker();
+
+  set_settings(query->settings());
 
   scoped_refptr<PrintedDocument> new_doc =
-      base::MakeRefCounted<PrintedDocument>(settings(), name, job->cookie());
+      base::MakeRefCounted<PrintedDocument>(query->settings(), name,
+                                            query->cookie());
 
   new_doc->set_page_count(page_count);
   UpdatePrintedDocument(new_doc.get());
@@ -51,8 +53,7 @@ bool TestPrintJob::FlushJob(base::TimeDelta timeout) {
 void TestPrintJob::StartPdfToEmfConversion(
     const scoped_refptr<base::RefCountedMemory>& bytes,
     const gfx::Size& page_size,
-    const gfx::Rect& content_area,
-    bool print_text_with_gdi) {
+    const gfx::Rect& content_area) {
   page_size_ = page_size;
   content_area_ = content_area;
   type_ = PrintSettings::PrinterType::TYPE_NONE;
@@ -61,10 +62,10 @@ void TestPrintJob::StartPdfToEmfConversion(
 void TestPrintJob::StartPdfToPostScriptConversion(
     const scoped_refptr<base::RefCountedMemory>& bytes,
     const gfx::Rect& content_area,
-    const gfx::Point& physical_offset,
+    const gfx::Point& physical_offsets,
     bool ps_level2) {
   content_area_ = content_area;
-  offsets_ = physical_offset;
+  physical_offsets_ = physical_offsets;
   type_ = ps_level2 ? PrintSettings::PrinterType::TYPE_POSTSCRIPT_LEVEL2
                     : PrintSettings::PrinterType::TYPE_POSTSCRIPT_LEVEL3;
 }

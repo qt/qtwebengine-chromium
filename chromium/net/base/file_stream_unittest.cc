@@ -11,9 +11,10 @@
 #include "base/files/file.h"
 #include "base/files/file_util.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_current.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
+#include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/test_timeouts.h"
@@ -25,6 +26,7 @@
 #include "net/base/test_completion_callback.h"
 #include "net/log/test_net_log.h"
 #include "net/test/gtest_util.h"
+#include "net/test/test_with_scoped_task_environment.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
@@ -40,8 +42,8 @@ namespace net {
 
 namespace {
 
-const char kTestData[] = "0123456789";
-const int kTestDataSize = arraysize(kTestData) - 1;
+constexpr char kTestData[] = "0123456789";
+constexpr int kTestDataSize = base::size(kTestData) - 1;
 
 // Creates an IOBufferWithSize that contains the kTestDataSize.
 IOBufferWithSize* CreateTestDataBuffer() {
@@ -52,7 +54,7 @@ IOBufferWithSize* CreateTestDataBuffer() {
 
 }  // namespace
 
-class FileStreamTest : public PlatformTest {
+class FileStreamTest : public PlatformTest, public WithScopedTaskEnvironment {
  public:
   void SetUp() override {
     PlatformTest::SetUp();
@@ -521,8 +523,7 @@ class TestWriteReadCompletionCallback {
       scoped_refptr<IOBufferWithSize> buf = new IOBufferWithSize(4);
       rv = stream_->Read(buf.get(), buf->size(), callback.callback());
       if (rv == ERR_IO_PENDING) {
-        base::MessageLoop::ScopedNestableTaskAllower allow(
-            base::MessageLoop::current());
+        base::MessageLoopCurrent::ScopedNestableTaskAllower allow;
         rv = callback.WaitForResult();
       }
       EXPECT_LE(0, rv);
@@ -559,8 +560,7 @@ class TestWriteReadCompletionCallback {
       EXPECT_THAT(stream_->Seek(0, callback64.callback()),
                   IsError(ERR_IO_PENDING));
       {
-        base::MessageLoop::ScopedNestableTaskAllower allow(
-            base::MessageLoop::current());
+        base::MessageLoopCurrent::ScopedNestableTaskAllower allow;
         EXPECT_LE(0, callback64.WaitForResult());
       }
     }
@@ -808,7 +808,7 @@ TEST_F(FileStreamTest, ReadError) {
 #if defined(OS_ANDROID)
 TEST_F(FileStreamTest, ContentUriRead) {
   base::FilePath test_dir;
-  PathService::Get(base::DIR_SOURCE_ROOT, &test_dir);
+  base::PathService::Get(base::DIR_SOURCE_ROOT, &test_dir);
   test_dir = test_dir.AppendASCII("net");
   test_dir = test_dir.AppendASCII("data");
   test_dir = test_dir.AppendASCII("file_stream_unittest");

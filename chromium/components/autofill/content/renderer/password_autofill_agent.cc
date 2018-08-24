@@ -13,10 +13,11 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/containers/flat_set.h"
 #include "base/i18n/case_conversion.h"
 #include "base/memory/linked_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/no_destructor.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -79,6 +80,66 @@ bool FillDataContainsFillableUsername(const PasswordFormFillData& fill_data) {
           !fill_data.username_field.value.empty());
 }
 
+// Checks if the prefilled value of the username element is one of the known
+// values possibly used as placeholders. The list of possible placeholder
+// values comes from popular sites exhibiting this issue.
+// TODO(crbug.com/832622): Remove this once a stable solution is in place.
+bool PossiblePrefilledUsernameValue(const std::string& username_value) {
+  // Explicitly create a |StringFlatSet| when constructing
+  // kPrefilledUsernameValues to work around GCC bug 84849, which causes the
+  // initializer list not to be properly forwarded to base::flat_set's
+  // constructor.
+  using StringFlatSet = base::flat_set<std::string, std::less<>>;
+  static base::NoDestructor<StringFlatSet> kPrefilledUsernameValues(
+      StringFlatSet({"3~15个字符,中文字符7个以内",
+                     "Benutzername",
+                     "Digite seu CPF ou e-mail",
+                     "DS Logon Username",
+                     "Email Address",
+                     "email address",
+                     "Email masih kosong",
+                     "Email/手機號碼",
+                     "Enter User Name",
+                     "Identifiant",
+                     "Kullanıcı Adı",
+                     "Kunden-ID",
+                     "Nick",
+                     "Nom Utilisateur",
+                     "Rut",
+                     "Siret",
+                     "this is usually your email address",
+                     "UID/用戶名/Email",
+                     "User Id",
+                     "User Name",
+                     "Username",
+                     "username",
+                     "username or email",
+                     "Username or email:",
+                     "Username/Email",
+                     "Usuario",
+                     "Your email address",
+                     "Имя",
+                     "Логин",
+                     "Логин...",
+                     "כתובת דוא''ל",
+                     "اسم العضو",
+                     "اسم المستخدم",
+                     "الاسم",
+                     "نام کاربری",
+                     "メールアドレス",
+                     "用户名",
+                     "用户名/Email",
+                     "請輸入身份證字號",
+                     "请用微博帐号登录",
+                     "请输入手机号或邮箱",
+                     "请输入邮箱或手机号",
+                     "邮箱/手机/展位号"}));
+
+  return kPrefilledUsernameValues->find(
+             base::TrimWhitespaceASCII(username_value, base::TRIM_ALL)) !=
+         kPrefilledUsernameValues->end();
+}
+
 // Returns true if password form has username and password fields with either
 // same or no name and id attributes supplied.
 bool DoesFormContainAmbiguousOrEmptyNames(
@@ -106,10 +167,12 @@ bool HasPasswordWithAutocompleteAttribute(
 
     const blink::WebInputElement input_element =
         control_element.ToConst<blink::WebInputElement>();
+    const AutocompleteFlag flag = AutocompleteFlagForElement(input_element);
     if (input_element.IsPasswordFieldForAutofill() &&
-        (HasAutocompleteAttributeValue(input_element, "current-password") ||
-         HasAutocompleteAttributeValue(input_element, "new-password")))
+        (flag == AutocompleteFlag::CURRENT_PASSWORD ||
+         flag == AutocompleteFlag::NEW_PASSWORD)) {
       return true;
+    }
   }
 
   return false;
@@ -171,7 +234,8 @@ bool FindFormInputElement(
     // set. Also make sure we avoid keeping password fields having
     // |autocomplete='new-password'| attribute set.
     if (ambiguous_and_multiple_password_fields_with_autocomplete &&
-        !HasAutocompleteAttributeValue(input_element, "current-password")) {
+        AutocompleteFlagForElement(input_element) !=
+            AutocompleteFlag::CURRENT_PASSWORD) {
       continue;
     }
 
@@ -296,15 +360,6 @@ bool IsUsernameAmendable(const blink::WebInputElement& username_element,
           username_element.Value().IsEmpty());
 }
 
-// Return true if either password_value or new_password_value is not empty and
-// not default.
-bool FormContainsNonDefaultPasswordValue(const PasswordForm& password_form) {
-  return (!password_form.password_value.empty() &&
-          !password_form.password_value_is_default) ||
-      (!password_form.new_password_value.empty() &&
-       !password_form.new_password_value_is_default);
-}
-
 // Log a message including the name, method and action of |form|.
 void LogHTMLForm(SavePasswordProgressLogger* logger,
                  SavePasswordProgressLogger::StringID message_id,
@@ -321,17 +376,6 @@ bool CanShowSuggestion(const PasswordFormFillData& fill_data,
                        const base::string16& current_username,
                        bool show_all) {
   base::string16 current_username_lower = base::i18n::ToLower(current_username);
-  for (const auto& usernames : fill_data.other_possible_usernames) {
-    for (size_t i = 0; i < usernames.second.size(); ++i) {
-      if (show_all ||
-          base::StartsWith(
-              base::i18n::ToLower(base::string16(usernames.second[i])),
-              current_username_lower, base::CompareCase::SENSITIVE)) {
-        return true;
-      }
-    }
-  }
-
   if (show_all ||
       base::StartsWith(base::i18n::ToLower(fill_data.username_field.value),
                        current_username_lower, base::CompareCase::SENSITIVE)) {
@@ -414,22 +458,6 @@ void FindMatchesByUsername(const PasswordFormFillData& fill_data,
     if (logger) {
       logger->LogBoolean(Logger::STRING_MATCH_IN_ADDITIONAL,
                          !(username->empty() && password->empty()));
-    }
-
-    // Check possible usernames.
-    if (username->empty() && password->empty()) {
-      for (const auto& it : fill_data.other_possible_usernames) {
-        for (size_t i = 0; i < it.second.size(); ++i) {
-          if (DoUsernamesMatch(it.second[i], current_username,
-                               exact_username_match)) {
-            *username = it.second[i];
-            *password = it.first.password;
-            break;
-          }
-        }
-        if (!password->empty())
-          break;
-      }
     }
   }
 }
@@ -566,7 +594,7 @@ bool ShouldShowStandaloneManuallFallback(const blink::WebInputElement& element,
   return (
       element.IsPasswordFieldForAutofill() &&
       !IsCreditCardVerificationPasswordField(element) &&
-      !HasCreditCardAutocompleteAttributes(element) &&
+      AutocompleteFlagForElement(element) != AutocompleteFlag::CREDIT_CARD &&
       !base::StartsWith(url.scheme(), "chrome", base::CompareCase::SENSITIVE) &&
       !url.SchemeIs(url::kAboutScheme) &&
       base::FeatureList::IsEnabled(
@@ -601,7 +629,6 @@ PasswordAutofillAgent::PasswordAutofillAgent(
     content::RenderFrame* render_frame,
     service_manager::BinderRegistry* registry)
     : content::RenderFrameObserver(render_frame),
-      web_input_to_password_info_(),
       last_supplied_password_info_iter_(web_input_to_password_info_.end()),
       logging_state_active_(false),
       was_username_autofilled_(false),
@@ -671,8 +698,10 @@ void PasswordAutofillAgent::PasswordValueGatekeeper::Reset() {
 
 void PasswordAutofillAgent::PasswordValueGatekeeper::ShowValue(
     blink::WebInputElement* element) {
-  if (!element->IsNull() && !element->SuggestedValue().IsEmpty())
+  if (!element->IsNull() && !element->SuggestedValue().IsEmpty()) {
     element->SetAutofillValue(element->SuggestedValue());
+    element->SetAutofilled(true);
+  }
 }
 
 bool PasswordAutofillAgent::TextDidChangeInTextField(
@@ -887,16 +916,6 @@ bool PasswordAutofillAgent::FindPasswordInfoForElement(
   return true;
 }
 
-bool PasswordAutofillAgent::ShouldShowNotSecureWarning(
-    const blink::WebInputElement& element) {
-  // Do not show a warning if the feature is disabled or the context is secure.
-  return security_state::IsHttpWarningInFormEnabled() &&
-         !content::IsOriginSecure(
-             url::Origin(
-                 render_frame()->GetWebFrame()->Top()->GetSecurityOrigin())
-                 .GetURL());
-}
-
 bool PasswordAutofillAgent::IsUsernameOrPasswordField(
     const blink::WebInputElement& element) {
   // Note: A site may use a Password field to collect a CVV or a Credit Card
@@ -906,7 +925,7 @@ bool PasswordAutofillAgent::IsUsernameOrPasswordField(
     return true;
 
   // If a field declares itself a username input, show the warning.
-  if (HasAutocompleteAttributeValue(element, "username"))
+  if (AutocompleteFlagForElement(element) == AutocompleteFlag::USERNAME)
     return true;
 
   // Otherwise, analyze the form and return true if this input element seems
@@ -955,13 +974,6 @@ bool PasswordAutofillAgent::ShowSuggestions(
           ShowManualFallbackSuggestion(element)) {
         return true;
       }
-
-      if (ShouldShowNotSecureWarning(element)) {
-        AutofillAgent* agent = autofill_agent_.get();
-        if (agent)
-          agent->ShowNotSecureWarning(element);
-        return true;
-      }
     }
     return false;
   }
@@ -1004,16 +1016,6 @@ bool PasswordAutofillAgent::ShowSuggestions(
   return ShowSuggestionPopup(*password_info, element,
                              show_all && !element.IsPasswordFieldForAutofill(),
                              element.IsPasswordFieldForAutofill());
-}
-
-void PasswordAutofillAgent::ShowNotSecureWarning(
-    const blink::WebInputElement& element) {
-  FormData form;
-  FormFieldData field;
-  form_util::FindFormAndFieldForFormControlElement(element, &form, &field);
-  GetPasswordManagerDriver()->ShowNotSecureWarning(
-      field.text_direction,
-      render_frame()->GetRenderView()->ElementBoundsInWindow(element));
 }
 
 bool PasswordAutofillAgent::FrameCanAccessPasswordManager() {
@@ -1104,16 +1106,6 @@ void PasswordAutofillAgent::SendPasswordForms(bool only_visible) {
 
   std::vector<PasswordForm> password_forms;
   for (const blink::WebFormElement& form : forms) {
-    if (IsGaiaReauthenticationForm(form)) {
-      // Bail if this is a GAIA passwords site reauthentication form, so that
-      // page will be ignored.
-      return;
-    }
-    if (IsGaiaWithSkipSavePasswordForm(form)) {
-      // Bail if this is a GAIA enable Chrome sync flow, so that page will be
-      // ignored.
-      return;
-    }
     if (only_visible) {
       bool is_form_visible = form_util::AreFormContentsVisible(form);
       if (logger) {
@@ -1356,51 +1348,6 @@ void PasswordAutofillAgent::OnProbablyFormSubmitted() {
     GetPasswordManagerDriver()->PasswordFormSubmitted(
         provisionally_saved_form_.password_form());
     provisionally_saved_form_.Reset();
-  } else {
-    std::vector<std::unique_ptr<PasswordForm>> possible_submitted_forms;
-    // Loop through the forms on the page looking for one that has been
-    // filled out. If one exists, try and save the credentials.
-    blink::WebVector<blink::WebFormElement> forms;
-    render_frame()->GetWebFrame()->GetDocument().Forms(forms);
-
-    bool password_forms_found = false;
-    for (const auto& form_element : forms) {
-      if (logger) {
-        LogHTMLForm(logger.get(), Logger::STRING_FORM_FOUND_ON_PAGE,
-                    form_element);
-      }
-      std::unique_ptr<PasswordForm> form =
-          GetPasswordFormFromWebForm(form_element);
-      if (form) {
-        form->submission_event = PasswordForm::SubmissionIndicatorEvent::
-            FILLED_FORM_ON_START_PROVISIONAL_LOAD;
-        possible_submitted_forms.push_back(std::move(form));
-      }
-    }
-
-    std::unique_ptr<PasswordForm> form =
-        GetPasswordFormFromUnownedInputElements();
-    if (form) {
-      form->submission_event = PasswordForm::SubmissionIndicatorEvent::
-          FILLED_INPUT_ELEMENTS_ON_START_PROVISIONAL_LOAD;
-      possible_submitted_forms.push_back(std::move(form));
-    }
-
-    for (const auto& password_form : possible_submitted_forms) {
-      if (password_form && !password_form->username_value.empty() &&
-          FormContainsNonDefaultPasswordValue(*password_form)) {
-        password_forms_found = true;
-        if (logger) {
-          logger->LogPasswordForm(Logger::STRING_PASSWORD_FORM_FOUND_ON_PAGE,
-                                  *password_form);
-        }
-        GetPasswordManagerDriver()->PasswordFormSubmitted(*password_form);
-        break;
-      }
-    }
-
-    if (!password_forms_found && logger)
-      logger->LogMessage(Logger::STRING_PASSWORD_FORM_NOT_FOUND_ON_PAGE);
   }
 }
 
@@ -1754,18 +1701,29 @@ bool PasswordAutofillAgent::FillUserNameAndPassword(
 
   // |current_username| is the username for credentials that are going to be
   // autofilled. It is selected according to the algorithm:
-  // 1. If the page already contain a non-empty value in |username_element|,
+  // 1. If the page already contains a non-empty value in |username_element|
+  // that is not found in the list of values known to be used as placeholders,
   // this is adopted and not overridden.
   // 2. Default username from |fill_data| if the username field is
   // autocompletable.
   // 3. Empty if username field doesn't exist or if username field is empty and
   // not autocompletable (no username case).
   base::string16 current_username;
+
+  // Whether the username element was prefilled with content that was not on a
+  // list of known placeholder texts (e.g. "username or email").
+  bool prefilled_not_placeholder_username = false;
+
   if (!username_element->IsNull()) {
-    if (!username_element->Value().IsEmpty())
+    if (!username_element->Value().IsEmpty() &&
+        !PossiblePrefilledUsernameValue(username_element->Value().Utf8())) {
+      // Username is filled with content that was not on a list of known
+      // placeholder texts (e.g. "username or email").
       current_username = username_element->Value().Utf16();
-    else if (IsElementAutocompletable(*username_element))
+      prefilled_not_placeholder_username = true;
+    } else if (IsElementAutocompletable(*username_element)) {
       current_username = fill_data.username_field.value;
+    }
   }
 
   // username and password will contain the match found if any.
@@ -1775,8 +1733,13 @@ bool PasswordAutofillAgent::FillUserNameAndPassword(
   FindMatchesByUsername(fill_data, current_username, exact_username_match,
                         logger, &username, &password);
 
-  if (password.empty())
+  if (password.empty()) {
+    if (prefilled_not_placeholder_username) {
+      LogPrefilledUsernameFillOutcome(
+          PrefilledUsernameFillOutcome::kPrefilledUsernameNotOverridden);
+    }
     return false;
+  }
 
   // Call OnFieldAutofilled before WebInputElement::SetAutofilled which may
   // cause frame closing.
@@ -1786,11 +1749,23 @@ bool PasswordAutofillAgent::FillUserNameAndPassword(
   // Input matches the username, fill in required values.
   if (!username_element->IsNull() &&
       IsElementAutocompletable(*username_element)) {
-    // Fill username only when it's not empty and not set by the page.
-    if (!username.empty() && username_element->Value().IsEmpty()) {
-      username_element->SetSuggestedValue(
-          blink::WebString::FromUTF16(username));
-      registration_callback.Run(username_element);
+    // Fill a non-empty username if it is safe to override the value of the
+    // username element. It is safe to override if the value is empty or a known
+    // placeholder value.
+    if (!username.empty()) {
+      if (username_element->Value().IsEmpty()) {
+        username_element->SetSuggestedValue(
+            blink::WebString::FromUTF16(username));
+        registration_callback.Run(username_element);
+      } else if (PossiblePrefilledUsernameValue(
+                     username_element->Value().Utf8())) {
+        username_element->SetSuggestedValue(
+            blink::WebString::FromUTF16(username));
+        registration_callback.Run(username_element);
+        LogPrefilledUsernameFillOutcome(
+            PrefilledUsernameFillOutcome::
+                kPrefilledPlaceholderUsernameOverridden);
+      }
     }
     UpdateFieldValueAndPropertiesMaskMap(*username_element, &username,
                                          FieldPropertiesFlags::AUTOFILLED,
@@ -1820,6 +1795,15 @@ bool PasswordAutofillAgent::FillUserNameAndPassword(
   if (logger)
     logger->LogElementName(Logger::STRING_PASSWORD_FILLED, *password_element);
   return true;
+}
+
+void PasswordAutofillAgent::LogPrefilledUsernameFillOutcome(
+    PrefilledUsernameFillOutcome outcome) {
+  if (prefilled_username_metrics_logged_)
+    return;
+  prefilled_username_metrics_logged_ = true;
+  UMA_HISTOGRAM_ENUMERATION("PasswordManager.PrefilledUsernameFillOutcome",
+                            outcome);
 }
 
 bool PasswordAutofillAgent::FillFormOnPasswordReceived(

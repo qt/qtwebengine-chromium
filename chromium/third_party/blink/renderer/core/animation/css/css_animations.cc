@@ -249,8 +249,10 @@ void CSSAnimations::CalculateCompositorAnimationUpdate(
   ElementAnimations* element_animations =
       animating_element ? animating_element->GetElementAnimations() : nullptr;
 
-  // We only update compositor animations in response to changes in the base
-  // style.
+  // If the change in style is only due to the Blink-side animation update, we
+  // do not need to update the compositor-side animations. The compositor is
+  // already changing the same properties and as such this update would provide
+  // no new information.
   if (!element_animations || element_animations->IsAnimationStyleChange())
     return;
 
@@ -268,12 +270,14 @@ void CSSAnimations::CalculateCompositorAnimationUpdate(
     if (!keyframe_effect)
       continue;
 
-    bool update_compositor_keyframes = false;
     if ((transform_zoom_changed || was_viewport_resized) &&
         (keyframe_effect->Affects(PropertyHandle(GetCSSPropertyTransform())) ||
-         keyframe_effect->Affects(PropertyHandle(GetCSSPropertyTranslate()))) &&
-        keyframe_effect->SnapshotAllCompositorKeyframes(element, style,
-                                                        parent_style)) {
+         keyframe_effect->Affects(PropertyHandle(GetCSSPropertyTranslate()))))
+      keyframe_effect->InvalidateCompositorKeyframesSnapshot();
+
+    bool update_compositor_keyframes = false;
+    if (keyframe_effect->SnapshotAllCompositorKeyframesIfNecessary(
+            element, style, parent_style)) {
       update_compositor_keyframes = true;
     } else if (keyframe_effect->HasSyntheticKeyframes() &&
                keyframe_effect->SnapshotNeutralCompositorKeyframes(
@@ -370,10 +374,15 @@ void CSSAnimations::CalculateAnimationUpdate(CSSAnimationUpdate& update,
 
         Animation* animation = existing_animation->animation.Get();
 
+        const bool was_paused =
+            CSSTimingData::GetRepeated(existing_animation->play_state_list,
+                                       i) == EAnimPlayState::kPaused;
+
         if (keyframes_rule != existing_animation->style_rule ||
             keyframes_rule->Version() !=
                 existing_animation->style_rule_version ||
-            existing_animation->specified_timing != specified_timing) {
+            existing_animation->specified_timing != specified_timing ||
+            is_paused != was_paused) {
           DCHECK(!is_animation_style_change);
           update.UpdateAnimation(
               existing_animation_index, animation,
@@ -382,12 +391,10 @@ void CSSAnimations::CalculateAnimationUpdate(CSSAnimationUpdate& update,
                                             element, &style, parent_style, name,
                                             keyframe_timing_function.get(), i),
                   timing, is_paused, animation->UnlimitedCurrentTimeInternal()),
-              specified_timing, keyframes_rule);
-        }
-
-        if (is_paused != animation->Paused()) {
-          DCHECK(!is_animation_style_change);
-          update.ToggleAnimationIndexPaused(existing_animation_index);
+              specified_timing, keyframes_rule,
+              animation_data->PlayStateList());
+          if (is_paused != was_paused)
+            update.ToggleAnimationIndexPaused(existing_animation_index);
         }
       } else {
         DCHECK(!is_animation_style_change);
@@ -398,7 +405,7 @@ void CSSAnimations::CalculateAnimationUpdate(CSSAnimationUpdate& update,
                                           &style, parent_style, name,
                                           keyframe_timing_function.get(), i),
                 timing, is_paused, 0),
-            specified_timing, keyframes_rule);
+            specified_timing, keyframes_rule, animation_data->PlayStateList());
       }
     }
   }
@@ -423,9 +430,10 @@ void CSSAnimations::SnapshotCompositorKeyframes(
                           parent_style](const AnimationEffect* effect) {
     const KeyframeEffectModelBase* keyframe_effect =
         GetKeyframeEffectModelBase(effect);
-    if (keyframe_effect && keyframe_effect->NeedsCompositorKeyframesSnapshot())
-      keyframe_effect->SnapshotAllCompositorKeyframes(element, style,
-                                                      parent_style);
+    if (keyframe_effect) {
+      keyframe_effect->SnapshotAllCompositorKeyframesIfNecessary(element, style,
+                                                                 parent_style);
+    }
   };
 
   ElementAnimations* element_animations = element.GetElementAnimations();
@@ -706,7 +714,8 @@ void CSSAnimations::CalculateTransitionUpdateForProperty(
     return;
   }
 
-  CSSInterpolationTypesMap map(registry);
+  CSSInterpolationTypesMap map(registry,
+                               state.animating_element->GetDocument());
   CSSInterpolationEnvironment old_environment(map, state.old_style);
   CSSInterpolationEnvironment new_environment(map, state.style);
   InterpolationValue start = nullptr;
@@ -751,7 +760,7 @@ void CSSAnimations::CalculateTransitionUpdateForProperty(
   const ComputedStyle* reversing_adjusted_start_value = &state.old_style;
   double reversing_shortening_factor = 1;
   if (interrupted_transition) {
-    const WTF::Optional<double> interrupted_progress =
+    const base::Optional<double> interrupted_progress =
         interrupted_transition->animation->effect()->Progress();
     if (interrupted_progress) {
       reversing_adjusted_start_value = interrupted_transition->to.get();
@@ -1107,8 +1116,10 @@ void CSSAnimations::AnimationEventDelegate::MaybeDispatch(
     const AtomicString& event_name,
     double elapsed_time) {
   if (animation_target_->GetDocument().HasListenerType(listener_type)) {
-    AnimationEvent* event =
-        AnimationEvent::Create(event_name, name_, elapsed_time);
+    String pseudo_element_name = PseudoElement::PseudoElementNameForEvents(
+        animation_target_->GetPseudoId());
+    AnimationEvent* event = AnimationEvent::Create(
+        event_name, name_, elapsed_time, pseudo_element_name);
     event->SetTarget(GetEventTarget());
     GetDocument().EnqueueAnimationFrameEvent(event);
   }

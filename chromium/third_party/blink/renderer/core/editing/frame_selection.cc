@@ -554,6 +554,14 @@ bool FrameSelection::Contains(const LayoutPoint& point) {
   if (!GetDocument().GetLayoutView())
     return false;
 
+  // This is a workaround of the issue that we sometimes get null from
+  // ComputeVisibleSelectionInDOMTree(), but non-null from flat tree.
+  // By running this, in case we get null, we also set the cached result in flat
+  // tree into null, so that this function can return false correctly.
+  // See crbug.com/846527 for details.
+  // TODO(editing-dev): Fix the inconsistency and then remove this call.
+  ComputeVisibleSelectionInDOMTree();
+
   // Treat a collapsed selection like no selection.
   const VisibleSelectionInFlatTree& visible_selection =
       ComputeVisibleSelectionInFlatTree();
@@ -1209,10 +1217,10 @@ void FrameSelection::ClearDocumentCachedRange() {
   selection_editor_->ClearDocumentCachedRange();
 }
 
-WTF::Optional<unsigned> FrameSelection::LayoutSelectionStart() const {
+base::Optional<unsigned> FrameSelection::LayoutSelectionStart() const {
   return layout_selection_->SelectionStart();
 }
-WTF::Optional<unsigned> FrameSelection::LayoutSelectionEnd() const {
+base::Optional<unsigned> FrameSelection::LayoutSelectionEnd() const {
   return layout_selection_->SelectionEnd();
 }
 
@@ -1220,9 +1228,9 @@ void FrameSelection::ClearLayoutSelection() {
   layout_selection_->ClearSelection();
 }
 
-std::pair<unsigned, unsigned> FrameSelection::LayoutSelectionStartEndForNG(
-    const NGPhysicalTextFragment& text_fragment) const {
-  return layout_selection_->SelectionStartEndForNG(text_fragment);
+LayoutSelectionStatus FrameSelection::ComputeLayoutSelectionStatus(
+    const NGPaintFragment& text_fragment) const {
+  return layout_selection_->ComputeSelectionStatus(text_fragment);
 }
 
 bool FrameSelection::IsDirectional() const {

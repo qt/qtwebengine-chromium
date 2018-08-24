@@ -68,8 +68,8 @@
   // Describes the purpose of an $(ref:automation.AutomationNode).
   enum RoleType {
     abbr,
-    alertDialog,
     alert,
+    alertDialog,
     anchor,
     annotation,
     application,
@@ -85,8 +85,8 @@
     checkBox,
     client,
     colorWell,
-    columnHeader,
     column,
+    columnHeader,
     comboBoxGrouping,
     comboBoxMenuButton,
     complementary,
@@ -94,14 +94,58 @@
     date,
     dateTime,
     definition,
-    descriptionListDetail,
     descriptionList,
+    descriptionListDetail,
     descriptionListTerm,
     desktop,
     details,
     dialog,
     directory,
     disclosureTriangle,
+    // --------------------------------------------------------------
+    // DPub Roles:
+    // https://www.w3.org/TR/dpub-aam-1.0/#mapping_role_table
+    docAbstract,
+    docAcknowledgments,
+    docAfterword,
+    docAppendix,
+    docBackLink,
+    docBiblioEntry,
+    docBibliography,
+    docBiblioRef,
+    docChapter,
+    docColophon,
+    docConclusion,
+    docCover,
+    docCredit,
+    docCredits,
+    docDedication,
+    docEndnote,
+    docEndnotes,
+    docEpigraph,
+    docEpilogue,
+    docErrata,
+    docExample,
+    docFootnote,
+    docForeword,
+    docGlossary,
+    docGlossRef,
+    docIndex,
+    docIntroduction,
+    docNoteRef,
+    docNotice,
+    docPageBreak,
+    docPageList,
+    docPart,
+    docPreface,
+    docPrologue,
+    docPullquote,
+    docQna,
+    docSubtitle,
+    docTip,
+    docToc,
+    // End DPub roles.
+    // --------------------------------------------------------------
     document,
     embeddedObject,
     feed,
@@ -110,14 +154,22 @@
     footer,
     form,
     genericContainer,
+    // --------------------------------------------------------------
+    // ARIA Graphics module roles:
+    // https://rawgit.com/w3c/graphics-aam/master/#mapping_role_table
+    graphicsDocument,
+    graphicsObject,
+    graphicsSymbol,
+    // End ARIA Graphics module roles.
+    // --------------------------------------------------------------
     grid,
     group,
     heading,
     iframe,
     iframePresentational,
     ignored,
-    imageMap,
     image,
+    imageMap,
     inlineTextBox,
     inputTime,
     labelText,
@@ -128,17 +180,18 @@
     legend,
     lineBreak,
     link,
-    listBoxOption,
+    list,
     listBox,
+    listBoxOption,
     listItem,
     listMarker,
-    list,
     locationBar,
     log,
     main,
     mark,
     marquee,
     math,
+    menu,
     menuBar,
     menuButton,
     menuItem,
@@ -146,7 +199,6 @@
     menuItemRadio,
     menuListOption,
     menuListPopup,
-    menu,
     meter,
     navigation,
     note,
@@ -160,26 +212,26 @@
     radioGroup,
     region,
     rootWebArea,
-    rowHeader,
     row,
+    rowHeader,
     ruby,
-    svgRoot,
     scrollBar,
+    scrollView,
     search,
     searchBox,
     slider,
     sliderThumb,
-    spinButtonPart,
     spinButton,
     splitter,
     staticText,
     status,
+    svgRoot,
     switch,
+    tab,
     tabList,
     tabPanel,
-    tab,
-    tableHeaderContainer,
     table,
+    tableHeaderContainer,
     term,
     textField,
     textFieldWithComboBox,
@@ -188,11 +240,11 @@
     titleBar,
     toggleButton,
     toolbar,
+    tooltip,
+    tree,
     treeGrid,
     treeItem,
-    tree,
     unknown,
-    tooltip,
     video,
     webArea,
     webView,
@@ -207,7 +259,7 @@
     expanded,
     focusable,
     focused,
-    haspopup,
+    hasPopup,
     horizontal,
     hovered,
     ignored,
@@ -226,6 +278,7 @@
   // All possible actions that can be performed on automation nodes.
   enum ActionType {
     blur,
+    clearAccessibilityFocus,
     customAction,
     decrement,
     doDefault,
@@ -243,6 +296,7 @@
     scrollToMakeVisible,
     scrollToPoint,
     scrollUp,
+    setAccessibilityFocus,
     setScrollOffset,
     setSelection,
     setSequentialFocusNavigationStartingPoint,
@@ -284,7 +338,11 @@
     /**
      * This node was removed.
      */
-    nodeRemoved
+    nodeRemoved,
+    /**
+     * This subtree has finished an update.
+     */
+    subtreeUpdateEnd
   };
 
   // Where the node's name is from.
@@ -302,6 +360,16 @@
   enum Restriction {
     disabled,
     readOnly
+  };
+
+  // Indicates the availability and type of interactive popup element
+  enum HasPopup {
+    true,
+    menu,
+    listbox,
+    tree,
+    grid,
+    dialog
   };
 
   // Describes possible actions when performing a do default action.
@@ -756,6 +824,15 @@
     // The language code for this subtree.
     DOMString? language;
 
+    // Indicates the availability and type of interactive popup element
+    // true - the popup is a menu
+    // menu - the popup is a menu
+    // listbox - the popup is a listbox
+    // tree - the popup is a tree
+    // grid - the popup is a grid
+    // dialog - the popup is a dialog
+    DOMString? hasPopup;
+
     // Input restriction, if any, such as readonly or disabled:
     // undefined - enabled control or other object that is not disabled
     // Restriction.DISABLED - disallows input in itself + any descendants
@@ -774,6 +851,12 @@
 
     // The RGBA color of an input element whose value is a color.
     long? colorValue;
+
+    // Indicates node text is subscript.
+    boolean subscript;
+
+    // Indicates node text is superscript.
+    boolean superscript;
 
     // Indicates node text is bold.
     boolean bold;
@@ -864,7 +947,7 @@
 
     // Sets the value of a text field.
     static void setValue(DOMString value);
-    
+
     // Show the context menu for this element, as if the user right-clicked.
     static void showContextMenu();
 

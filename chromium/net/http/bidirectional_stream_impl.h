@@ -21,18 +21,21 @@ namespace base {
 class Timer;
 }  // namespace base
 
+namespace spdy {
+class SpdyHeaderBlock;
+}  // namespace spdy
+
 namespace net {
 
 class IOBuffer;
 class NetLogWithSource;
-class SpdyHeaderBlock;
 struct BidirectionalStreamRequestInfo;
 struct NetErrorDetails;
 
 // Exposes an interface to do HTTP/2 bidirectional streaming.
 // Note that only one ReadData or SendData should be in flight until the
 // operation completes synchronously or asynchronously.
-// BidirectionalStreamImpl once created by HttpStreamFactoryImpl should be owned
+// BidirectionalStreamImpl once created by HttpStreamFactory should be owned
 // by BidirectionalStream.
 class NET_EXPORT_PRIVATE BidirectionalStreamImpl {
  public:
@@ -56,7 +59,8 @@ class NET_EXPORT_PRIVATE BidirectionalStreamImpl {
     // The delegate may call BidirectionalStreamImpl::ReadData to start
     // reading, call BidirectionalStreamImpl::SendData to send data,
     // or call BidirectionalStreamImpl::Cancel to cancel the stream.
-    virtual void OnHeadersReceived(const SpdyHeaderBlock& response_headers) = 0;
+    virtual void OnHeadersReceived(
+        const spdy::SpdyHeaderBlock& response_headers) = 0;
 
     // Called when read is completed asynchronously. |bytes_read| specifies how
     // much data is available.
@@ -76,7 +80,7 @@ class NET_EXPORT_PRIVATE BidirectionalStreamImpl {
     // are received, which can happen before a read completes.
     // The delegate is able to continue reading if there is no pending read and
     // EOF has not been received, or to send data if there is no pending send.
-    virtual void OnTrailersReceived(const SpdyHeaderBlock& trailers) = 0;
+    virtual void OnTrailersReceived(const spdy::SpdyHeaderBlock& trailers) = 0;
 
     // Called when an error occurred. Do not call into the stream after this
     // point. No other delegate functions will be called after this.

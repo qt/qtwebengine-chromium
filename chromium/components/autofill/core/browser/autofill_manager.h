@@ -34,6 +34,7 @@
 #include "components/autofill/core/browser/payments/full_card_request.h"
 #include "components/autofill/core/browser/payments/payments_client.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
+#include "components/autofill/core/browser/popup_types.h"
 #include "components/autofill/core/common/form_data.h"
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
@@ -93,8 +94,8 @@ class AutofillManager : public AutofillHandler,
   virtual bool ShouldShowScanCreditCard(const FormData& form,
                                         const FormFieldData& field);
 
-  // Whether the |field| belongs to CREDIT_CARD |FieldTypeGroup|.
-  virtual bool IsCreditCardPopup(const FormData& form,
+  // Returns the type of the popup being shown.
+  virtual PopupType GetPopupType(const FormData& form,
                                  const FormFieldData& field);
 
   // Whether we should show the signin promo, based on the triggered |field|
@@ -161,11 +162,12 @@ class AutofillManager : public AutofillHandler,
 
   // Will send an upload based on the |form_structure| data and the local
   // Autofill profile data. |observed_submission| is specified if the upload
-  // follows an observed submission event.
-  // return false if the upload couldn't start.
-  virtual bool StartUploadProcess(std::unique_ptr<FormStructure> form_structure,
-                                  const base::TimeTicks& timestamp,
-                                  bool observed_submission);
+  // follows an observed submission event. Returns false if the upload couldn't
+  // start.
+  virtual bool MaybeStartVoteUploadProcess(
+      std::unique_ptr<FormStructure> form_structure,
+      const base::TimeTicks& timestamp,
+      bool observed_submission);
 
   // Update the pending form with |form|, possibly processing the current
   // pending form for upload.
@@ -200,6 +202,9 @@ class AutofillManager : public AutofillHandler,
   // server. It verifies that uploading is allowed and |form| meets conditions
   // to be uploadable. Exposed for testing.
   bool ShouldUploadForm(const FormStructure& form);
+
+  // Returns the number of forms this Autofill Manager is aware of.
+  size_t NumFormsDetected() const { return form_structures_.size(); }
 
  protected:
   // Test code should prefer to use this constructor.
@@ -240,7 +245,7 @@ class AutofillManager : public AutofillHandler,
                        std::string* profile_backend_id) const;
 
   // AutofillHandler:
-  bool OnFormSubmittedImpl(const FormData& form,
+  void OnFormSubmittedImpl(const FormData& form,
                            bool known_success,
                            SubmissionSource source,
                            base::TimeTicks timestamp) override;
@@ -402,6 +407,10 @@ class AutofillManager : public AutofillHandler,
                                   const FormFieldData& field)
       WARN_UNUSED_RESULT;
 
+  // Returns true if any form in the field corresponds to an address
+  // |FieldTypeGroup|.
+  bool FormHasAddressField(const FormData& form) WARN_UNUSED_RESULT;
+
   // Re-parses |live_form| and adds the result to |form_structures_|.
   // |cached_form| should be a pointer to the existing version of the form, or
   // NULL if no cached version exists.  The updated form is then written into
@@ -430,8 +439,13 @@ class AutofillManager : public AutofillHandler,
   // Parses the forms using heuristic matching and querying the Autofill server.
   void ParseForms(const std::vector<FormData>& forms);
 
-  // Parses the form and adds it to |form_structures_|.
-  bool ParseForm(const FormData& form, FormStructure** parsed_form_structure);
+  // Parses the |form| with the server data retrieved from the |cached_form|
+  // (if any), and writes it to the |parse_form_structure|. Adds the
+  // |parse_form_structure| to the |form_structures_|. Returns true if the form
+  // is parsed.
+  bool ParseForm(const FormData& form,
+                 const FormStructure* cached_form,
+                 FormStructure** parsed_form_structure);
 
   // If |initial_interaction_timestamp_| is unset or is set to a later time than
   // |interaction_timestamp|, updates the cached timestamp.  The latter check is
@@ -598,7 +612,10 @@ class AutofillManager : public AutofillHandler,
 
   friend class AutofillManagerTest;
   friend class FormStructureBrowserTest;
+  friend class GetMatchingTypesTest;
   friend class SaveCardBubbleViewsBrowserTestBase;
+  FRIEND_TEST_ALL_PREFIXES(ProfileMatchingTypesTest,
+                           DeterminePossibleFieldTypesForUpload);
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,
                            DeterminePossibleFieldTypesForUpload);
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,
@@ -606,6 +623,8 @@ class AutofillManager : public AutofillHandler,
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest, DisambiguateUploadTypes);
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,
                            DisabledAutofillDispatchesError);
+  FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,
+                           DetermineHeuristicsWithOverallPrediction);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, AddressFilledFormEvents);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, AddressSubmittedFormEvents);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, AddressWillSubmitFormEvents);
@@ -651,6 +670,7 @@ class AutofillManager : public AutofillHandler,
                            QualityMetrics_LoggedCorrecltyForRationalizationBad);
 
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, SaneMetricsWithCacheMismatch);
+  FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, DynamicFormMetrics);
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest, TestExternalDelegate);
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,
                            TestTabContentsWithExternalDelegate);

@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include <memory>
+#include <vector>
 
 #include "base/callback.h"
 #include "base/component_export.h"
@@ -30,24 +31,27 @@
 
 namespace net {
 class HttpResponseHeaders;
-class URLRequestContextGetter;
+class URLRequestContext;
 }
 
 namespace network {
 
 class NetToMojoPendingBuffer;
+class NetworkUsageAccumulator;
 class KeepaliveStatisticsRecorder;
 struct ResourceResponse;
 
 class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
     : public mojom::URLLoader,
-      public net::URLRequest::Delegate {
+      public net::URLRequest::Delegate,
+      public mojom::AuthChallengeResponder {
  public:
   using DeleteCallback = base::OnceCallback<void(URLLoader* url_loader)>;
 
   // |delete_callback| tells the URLLoader's owner to destroy the URLLoader.
+  // The URLLoader must be destroyed before the |url_request_context|.
   URLLoader(
-      scoped_refptr<net::URLRequestContextGetter> url_request_context_getter,
+      net::URLRequestContext* url_request_context,
       mojom::NetworkServiceClient* network_service_client,
       DeleteCallback delete_callback,
       mojom::URLLoaderRequest url_loader_request,
@@ -56,14 +60,16 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
       bool report_raw_headers,
       mojom::URLLoaderClientPtr url_loader_client,
       const net::NetworkTrafficAnnotationTag& traffic_annotation,
-      uint32_t process_id,
+      const mojom::URLLoaderFactoryParams* factory_params,
       uint32_t request_id,
       scoped_refptr<ResourceSchedulerClient> resource_scheduler_client,
-      base::WeakPtr<KeepaliveStatisticsRecorder> keepalive_statistics_recorder);
+      base::WeakPtr<KeepaliveStatisticsRecorder> keepalive_statistics_recorder,
+      base::WeakPtr<NetworkUsageAccumulator> network_usage_accumulator);
   ~URLLoader() override;
 
   // mojom::URLLoader implementation:
-  void FollowRedirect() override;
+  void FollowRedirect(const base::Optional<net::HttpRequestHeaders>&
+                          modified_request_headers) override;
   void ProceedWithResponse() override;
   void SetPriority(net::RequestPriority priority,
                    int32_t intra_priority_value) override;
@@ -84,6 +90,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
   void OnResponseStarted(net::URLRequest* url_request, int net_error) override;
   void OnReadCompleted(net::URLRequest* url_request, int bytes_read) override;
 
+  // mojom::AuthChallengeResponder:
+  void OnAuthCredentials(
+      const base::Optional<net::AuthCredentials>& credentials) override;
+
   net::LoadState GetLoadStateForTesting() const;
 
  private:
@@ -93,8 +103,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
   void OnConnectionError();
   void OnResponseBodyStreamConsumerClosed(MojoResult result);
   void OnResponseBodyStreamReady(MojoResult result);
-  void CloseResponseBodyStreamProducer();
-  void DeleteIfNeeded();
+  void DeleteSelf();
   void SendResponseToClient();
   void CompletePendingWrite();
   void SetRawResponseHeaders(scoped_refptr<const net::HttpResponseHeaders>);
@@ -107,26 +116,30 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
       const std::vector<uint16_t>& algorithm_preferences,
       mojom::SSLPrivateKeyPtr ssl_private_key,
       bool cancel_certificate_selection);
-  void OnAuthRequiredResponse(
-      const base::Optional<net::AuthCredentials>& credentials);
   bool HasDataPipe() const;
   void RecordBodyReadFromNetBeforePausedIfNeeded();
   void ResumeStart();
 
-  scoped_refptr<net::URLRequestContextGetter> url_request_context_getter_;
+  net::URLRequestContext* url_request_context_;
   mojom::NetworkServiceClient* network_service_client_;
   DeleteCallback delete_callback_;
 
   int32_t options_;
   int resource_type_;
   bool is_load_timing_enabled_;
-  uint32_t process_id_;
+
+  // URLLoaderFactory is guaranteed to outlive URLLoader, so it is safe to store
+  // a raw pointer to mojom::URLLoaderFactoryParams.
+  const mojom::URLLoaderFactoryParams* const factory_params_;
+
   uint32_t render_frame_id_;
   uint32_t request_id_;
-  bool connected_;
   const bool keepalive_;
+  const bool do_not_prompt_for_login_;
   std::unique_ptr<net::URLRequest> url_request_;
   mojo::Binding<mojom::URLLoader> binding_;
+  mojo::Binding<mojom::AuthChallengeResponder>
+      auth_challenge_responder_binding_;
   mojom::URLLoaderClientPtr url_loader_client_;
   int64_t total_written_bytes_ = 0;
 
@@ -174,6 +187,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
   mojom::SSLPrivateKeyPtr ssl_private_key_;
 
   base::WeakPtr<KeepaliveStatisticsRecorder> keepalive_statistics_recorder_;
+
+  base::WeakPtr<NetworkUsageAccumulator> network_usage_accumulator_;
 
   bool first_auth_attempt_;
 

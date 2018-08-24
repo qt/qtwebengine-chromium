@@ -33,7 +33,7 @@
 
 #include "third_party/blink/renderer/core/svg/graphics/svg_image.h"
 #include "third_party/blink/renderer/platform/graphics/image_observer.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
@@ -91,7 +91,7 @@ void SVGImageChromeClient::ResumeAnimation() {
   ScheduleAnimation(nullptr);
 }
 
-void SVGImageChromeClient::ScheduleAnimation(const PlatformFrameView*) {
+void SVGImageChromeClient::ScheduleAnimation(const LocalFrameView*) {
   // Because a single SVGImage can be shared by multiple pages, we can't key
   // our svg image layout on the page's real animation frame. Therefore, we
   // run this fake animation timer to trigger layout in SVGImages. The name,
@@ -130,7 +130,7 @@ void SVGImageChromeClient::AnimationTimerFired(TimerBase*) {
   if (!image_->GetImageObserver())
     return;
 
-  image_->ServiceAnimations(CurrentTimeTicksInSeconds());
+  image_->ServiceAnimations(CurrentTimeTicks());
 }
 
 }  // namespace blink

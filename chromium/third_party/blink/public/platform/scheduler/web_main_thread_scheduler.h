@@ -8,7 +8,6 @@
 #include <memory>
 
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/optional.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread.h"
@@ -43,7 +42,8 @@ namespace scheduler {
 enum class RendererProcessType;
 class WebRenderWidgetSchedulingState;
 
-class BLINK_PLATFORM_EXPORT WebMainThreadScheduler : public WebThreadScheduler {
+class BLINK_PLATFORM_EXPORT WebMainThreadScheduler
+    : virtual public WebThreadScheduler {
  public:
   class BLINK_PLATFORM_EXPORT RAILModeObserver {
    public:
@@ -114,10 +114,6 @@ class BLINK_PLATFORM_EXPORT WebMainThreadScheduler : public WebThreadScheduler {
       const WebInputEvent& web_input_event,
       WebInputEventResult result) = 0;
 
-  // Returns the most recently reported expected queueing time, computed over
-  // the past 1 second window.
-  virtual base::TimeDelta MostRecentExpectedQueueingTime() = 0;
-
   // Tells the scheduler that the system is displaying an input animation (e.g.
   // a fling). Called by the compositor (impl) thread.
   virtual void DidAnimateForInputOnCompositorThread() = 0;
@@ -172,18 +168,6 @@ class BLINK_PLATFORM_EXPORT WebMainThreadScheduler : public WebThreadScheduler {
   virtual std::unique_ptr<RendererPauseHandle> PauseRenderer()
       WARN_UNUSED_RESULT = 0;
 
-  enum class NavigatingFrameType { kMainFrame, kChildFrame };
-
-  // Tells the scheduler that a navigation task is pending. While any main-frame
-  // navigation tasks are pending, the scheduler will ensure that loading tasks
-  // are not blocked even if they are expensive. Must be called on the main
-  // thread.
-  virtual void AddPendingNavigation(NavigatingFrameType type) = 0;
-
-  // Tells the scheduler that a navigation task is no longer pending.
-  // Must be called on the main thread.
-  virtual void RemovePendingNavigation(NavigatingFrameType type) = 0;
-
   // Returns true if the scheduler has reason to believe that high priority work
   // may soon arrive on the main thread, e.g., if gesture events were observed
   // recently.
@@ -192,7 +176,7 @@ class BLINK_PLATFORM_EXPORT WebMainThreadScheduler : public WebThreadScheduler {
 
   // Sets whether to allow suspension of tasks after the backgrounded signal is
   // received via SetRendererBackgrounded(true). Defaults to disabled.
-  virtual void SetStoppingWhenBackgroundedEnabled(bool enabled) = 0;
+  virtual void SetFreezingWhenBackgroundedEnabled(bool enabled) = 0;
 
   // Sets the default blame context to which top level work should be
   // attributed in this renderer. |blame_context| must outlive this scheduler.
@@ -205,12 +189,6 @@ class BLINK_PLATFORM_EXPORT WebMainThreadScheduler : public WebThreadScheduler {
   // [1]
   // https://developers.google.com/web/tools/chrome-devtools/profile/evaluate-performance/rail
   virtual void SetRAILModeObserver(RAILModeObserver* observer) = 0;
-
-  // Returns whether or not the main thread appears unresponsive, based on the
-  // length and frequency of recent main thread tasks. To be called from the
-  // compositor thread.
-  virtual bool MainThreadSeemsUnresponsive(
-      base::TimeDelta main_thread_responsiveness_threshold) = 0;
 
   // Sets the kind of renderer process. Should be called on the main thread
   // once.

@@ -46,7 +46,7 @@ class MockMemoryTracker : public gles2::MemoryTracker {
   uint64_t ShareGroupTracingGUID() const override { return 0; }
 
  private:
-  virtual ~MockMemoryTracker() = default;
+  ~MockMemoryTracker() override = default;
 };
 
 }  // namespace
@@ -54,14 +54,6 @@ class MockMemoryTracker : public gles2::MemoryTracker {
 class RasterDecoderTest : public RasterDecoderTestBase {
  public:
   RasterDecoderTest() = default;
-};
-
-class RasterDecoderManualInitTest : public RasterDecoderTestBase {
- public:
-  RasterDecoderManualInitTest() = default;
-
-  // Override default setup so nothing gets setup.
-  void SetUp() override {}
 };
 
 INSTANTIATE_TEST_CASE_P(Service, RasterDecoderTest, ::testing::Bool());
@@ -251,7 +243,10 @@ TEST_P(RasterDecoderTest, TexStorage2D) {
 }
 
 TEST_P(RasterDecoderManualInitTest, TexStorage2DWithEXTTextureStorage) {
-  InitDecoderWithWorkarounds({"GL_ARB_sync", "GL_EXT_texture_storage"});
+  InitState init;
+  init.extensions.push_back("GL_EXT_texture_storage");
+  InitDecoder(init);
+
   DoTexStorage2D(client_texture_id_, 2 /* levels */, kWidth, kHeight);
 
   gles2::TextureRef* texture_ref =
@@ -277,7 +272,8 @@ TEST_P(RasterDecoderManualInitTest, TexStorage2DWithEXTTextureStorage) {
 TEST_P(RasterDecoderManualInitTest, TexStorage2DOutOfMemory) {
   scoped_refptr<MockMemoryTracker> memory_tracker = new MockMemoryTracker();
   set_memory_tracker(memory_tracker.get());
-  InitDecoderWithWorkarounds({"GL_ARB_sync"});
+
+  InitDecoder(InitState());
 
   EXPECT_CALL(*memory_tracker.get(), EnsureGPUMemoryAvailable(_))
       .WillOnce(Return(false))

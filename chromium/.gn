@@ -86,6 +86,7 @@ check_targets = [
   "//chrome/app_shim/*",
   "//chrome/browser/chromeos/*",
   "//chrome/browser/extensions/*",
+  "//chrome/browser/resource_coordinator/*",
   "//chrome/browser/ui/*",
   "//chrome/common/*",
   "//chrome/installer/*",
@@ -150,6 +151,7 @@ check_targets = [
 
   #"//third_party/*",  # May not ever want this.
   #"//third_party/breakpad/*",  # Small errors.
+  "//third_party/boringssl/*",
   "//third_party/brotli/*",
   "//third_party/hunspell/*",
   "//third_party/leveldatabase/*",

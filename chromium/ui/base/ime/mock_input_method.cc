@@ -105,6 +105,10 @@ bool MockInputMethod::IsCandidatePopupOpen() const {
   return false;
 }
 
+bool MockInputMethod::GetClientShouldDoLearning() {
+  return false;
+}
+
 void MockInputMethod::ShowImeIfNeeded() {
   for (InputMethodObserver& observer : observer_list_)
     observer.OnShowImeIfNeeded();
@@ -116,6 +120,11 @@ void MockInputMethod::AddObserver(InputMethodObserver* observer) {
 
 void MockInputMethod::RemoveObserver(InputMethodObserver* observer) {
   observer_list_.RemoveObserver(observer);
+}
+
+InputMethodKeyboardController*
+MockInputMethod::GetInputMethodKeyboardController() {
+  return &keyboard_controller_;
 }
 
 const std::vector<std::unique_ptr<ui::KeyEvent>>&

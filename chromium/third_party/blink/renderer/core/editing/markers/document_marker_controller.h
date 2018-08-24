@@ -125,7 +125,7 @@ class CORE_EXPORT DocumentMarkerController final
   void InvalidateRectsForAllTextMatchMarkers();
   void InvalidateRectsForTextMatchMarkersInNode(const Node&);
 
-  void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
 #ifndef NDEBUG
   void ShowMarkers() const;
@@ -143,7 +143,7 @@ class CORE_EXPORT DocumentMarkerController final
   void AddMarkerInternal(
       const EphemeralRange&,
       std::function<DocumentMarker*(int, int)> create_marker_from_offsets);
-  void AddMarkerToNode(const Node*, DocumentMarker*);
+  void AddMarkerToNode(const Node&, DocumentMarker*);
 
   using MarkerLists = HeapVector<Member<DocumentMarkerList>,
                                  DocumentMarker::kMarkerTypeIndexesCount>;
@@ -153,7 +153,7 @@ class CORE_EXPORT DocumentMarkerController final
   bool PossiblyHasMarkers(DocumentMarker::MarkerTypes);
   void RemoveMarkersFromList(MarkerMap::iterator, DocumentMarker::MarkerTypes);
   void RemoveMarkers(TextIterator&, DocumentMarker::MarkerTypes);
-  void RemoveMarkersInternal(const Node*,
+  void RemoveMarkersInternal(const Node&,
                              unsigned start_offset,
                              int length,
                              DocumentMarker::MarkerTypes);

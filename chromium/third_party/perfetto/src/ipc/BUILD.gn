@@ -13,9 +13,15 @@
 # limitations under the License.
 
 import("../../gn/perfetto.gni")
-
 import("../../gn/ipc_library.gni")
 import("../../gn/proto_library.gni")
+
+# For use_libfuzzer.
+if (!build_with_chromium) {
+  import("//gn/standalone/sanitizers/vars.gni")
+} else {
+  import("//build/config/sanitizers/sanitizers.gni")
+}
 
 source_set("ipc") {
   public_configs = [ "../../gn:default_config" ]
@@ -36,10 +42,25 @@ source_set("ipc") {
     "service_proxy.cc",
     "unix_socket.cc",
     "unix_socket.h",
+    "virtual_destructors.cc",
   ]
 }
 
-source_set("perfetto_ipc_unittests") {
+if (use_libfuzzer && !build_with_chromium) {
+  executable("buffered_frame_deserializer_fuzzer") {
+    sources = [
+      "buffered_frame_deserializer_fuzzer.cc",
+    ]
+    deps = [
+      ":ipc",
+      ":wire_protocol",
+      "../../gn:default_deps",
+    ]
+    configs += [ "../../gn:fuzzer_config" ]
+  }
+}
+
+source_set("unittests") {
   testonly = true
   deps = [
     ":ipc",
@@ -61,11 +82,12 @@ source_set("perfetto_ipc_unittests") {
 }
 
 proto_library("wire_protocol") {
+  generate_python = false
   sources = [
     "wire_protocol.proto",
   ]
   proto_in_dir = perfetto_root_path
-  proto_out_dir = "protos_lite"
+  proto_out_dir = perfetto_root_path
 }
 
 ipc_library("test_messages") {
@@ -75,4 +97,5 @@ ipc_library("test_messages") {
     "test/greeter_service.proto",
   ]
   proto_in_dir = perfetto_root_path
+  proto_out_dir = perfetto_root_path
 }

@@ -10,27 +10,29 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_idle_request_callback.h"
 #include "third_party/blink/renderer/core/dom/idle_request_options.h"
 #include "third_party/blink/renderer/core/testing/null_execution_context.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/testing/testing_platform_support.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
 namespace {
 
-class MockScriptedIdleTaskControllerScheduler final : public WebScheduler {
+class MockScriptedIdleTaskControllerScheduler final : public ThreadScheduler {
  public:
   MockScriptedIdleTaskControllerScheduler(bool should_yield)
       : should_yield_(should_yield) {}
   ~MockScriptedIdleTaskControllerScheduler() override = default;
 
-  // WebScheduler implementation:
-  base::SingleThreadTaskRunner* CompositorTaskRunner() override {
+  // ThreadScheduler implementation:
+  scoped_refptr<base::SingleThreadTaskRunner> CompositorTaskRunner() override {
     return nullptr;
   }
-  base::SingleThreadTaskRunner* V8TaskRunner() override { return nullptr; }
+  scoped_refptr<base::SingleThreadTaskRunner> V8TaskRunner() override {
+    return nullptr;
+  }
   void Shutdown() override {}
   bool ShouldYieldForHighPriorityWork() override { return should_yield_; }
-  bool CanExceedIdleDeadlineIfRequired() override { return false; }
+  bool CanExceedIdleDeadlineIfRequired() const override { return false; }
   void PostIdleTask(const base::Location&,
                     WebThread::IdleTask idle_task) override {
     idle_task_ = std::move(idle_task);
@@ -44,13 +46,19 @@ class MockScriptedIdleTaskControllerScheduler final : public WebScheduler {
   std::unique_ptr<RendererPauseHandle> PauseScheduler() override {
     return nullptr;
   }
-  void AddPendingNavigation(
-      scheduler::WebMainThreadScheduler::NavigatingFrameType) override {}
-  void RemovePendingNavigation(
-      scheduler::WebMainThreadScheduler::NavigatingFrameType) override {}
 
-  base::TimeTicks MonotonicallyIncreasingVirtualTime() const override {
+  base::TimeTicks MonotonicallyIncreasingVirtualTime() override {
     return base::TimeTicks();
+  }
+
+  void AddTaskObserver(
+      base::MessageLoop::TaskObserver* task_observer) override {}
+
+  void RemoveTaskObserver(
+      base::MessageLoop::TaskObserver* task_observer) override {}
+
+  scheduler::NonMainThreadScheduler* AsNonMainThreadScheduler() override {
+    return nullptr;
   }
 
   void RunIdleTask() { std::move(idle_task_).Run(0); }
@@ -69,7 +77,7 @@ class MockScriptedIdleTaskControllerThread final : public WebThread {
       : scheduler_(should_yield) {}
   ~MockScriptedIdleTaskControllerThread() override = default;
   bool IsCurrentThread() const override { return true; }
-  WebScheduler* Scheduler() const override { return &scheduler_; }
+  ThreadScheduler* Scheduler() const override { return &scheduler_; }
 
   void RunIdleTask() { scheduler_.RunIdleTask(); }
   bool HasIdleTask() const { return scheduler_.HasIdleTask(); }

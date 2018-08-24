@@ -246,7 +246,7 @@ Error InitializeRenderPassFromDesc(VkDevice device,
 // RenderPassDesc implementation.
 RenderPassDesc::RenderPassDesc()
 {
-    UNUSED_VARIABLE(mPadding);
+    ANGLE_UNUSED_VARIABLE(mPadding);
     memset(this, 0, sizeof(RenderPassDesc));
 }
 
@@ -631,14 +631,14 @@ const ShaderStageInfo &PipelineDesc::getShaderStageInfo() const
     return mShaderStageInfo;
 }
 
-void PipelineDesc::updateShaders(ProgramVk *programVk)
+void PipelineDesc::updateShaders(Serial vertexSerial, Serial fragmentSerial)
 {
-    ASSERT(programVk->getVertexModuleSerial() < std::numeric_limits<uint32_t>::max());
-    mShaderStageInfo[0].moduleSerial =
-        static_cast<uint32_t>(programVk->getVertexModuleSerial().getValue());
-    ASSERT(programVk->getFragmentModuleSerial() < std::numeric_limits<uint32_t>::max());
-    mShaderStageInfo[1].moduleSerial =
-        static_cast<uint32_t>(programVk->getFragmentModuleSerial().getValue());
+    ASSERT(vertexSerial < std::numeric_limits<uint32_t>::max());
+    mShaderStageInfo[ShaderType::VertexShader].moduleSerial =
+        static_cast<uint32_t>(vertexSerial.getValue());
+    ASSERT(fragmentSerial < std::numeric_limits<uint32_t>::max());
+    mShaderStageInfo[ShaderType::FragmentShader].moduleSerial =
+        static_cast<uint32_t>(fragmentSerial.getValue());
 }
 
 void PipelineDesc::updateViewport(const gl::Rectangle &viewport, float nearPlane, float farPlane)
@@ -647,8 +647,15 @@ void PipelineDesc::updateViewport(const gl::Rectangle &viewport, float nearPlane
     mViewport.y        = static_cast<float>(viewport.y);
     mViewport.width    = static_cast<float>(viewport.width);
     mViewport.height   = static_cast<float>(viewport.height);
-    mViewport.minDepth = nearPlane;
-    mViewport.maxDepth = farPlane;
+    updateDepthRange(nearPlane, farPlane);
+}
+
+void PipelineDesc::updateDepthRange(float nearPlane, float farPlane)
+{
+    // GLES2.0 Section 2.12.1: Each of n and f are clamped to lie within [0, 1], as are all
+    // arguments of type clampf.
+    mViewport.minDepth = gl::clamp01(nearPlane);
+    mViewport.maxDepth = gl::clamp01(farPlane);
 }
 
 void PipelineDesc::updateVertexInputInfo(const VertexInputBindings &bindings,
@@ -720,16 +727,13 @@ void PipelineDesc::updateBlendFuncs(const gl::BlendState &blendState)
     }
 }
 
-void PipelineDesc::updateColorWriteMask(const gl::BlendState &blendState)
+void PipelineDesc::updateColorWriteMask(VkColorComponentFlags colorComponentFlags)
 {
-    for (auto &blendAttachmentState : mColorBlendStateInfo.attachments)
-    {
-        int colorMask = blendState.colorMaskRed ? VK_COLOR_COMPONENT_R_BIT : 0;
-        colorMask |= blendState.colorMaskGreen ? VK_COLOR_COMPONENT_G_BIT : 0;
-        colorMask |= blendState.colorMaskBlue ? VK_COLOR_COMPONENT_B_BIT : 0;
-        colorMask |= blendState.colorMaskAlpha ? VK_COLOR_COMPONENT_A_BIT : 0;
+    uint8_t colorMask = static_cast<uint8_t>(colorComponentFlags);
 
-        blendAttachmentState.colorWriteMask = static_cast<uint8_t>(colorMask);
+    for (PackedColorBlendAttachmentState &blendAttachmentState : mColorBlendStateInfo.attachments)
+    {
+        blendAttachmentState.colorWriteMask = colorMask;
     }
 }
 

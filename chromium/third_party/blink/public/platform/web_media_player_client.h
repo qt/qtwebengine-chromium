@@ -36,10 +36,13 @@
 #include "third_party/blink/public/platform/web_media_player.h"
 #include "ui/gfx/color_space.h"
 
+namespace cc {
+class Layer;
+}
+
 namespace blink {
 
 class WebInbandTextTrack;
-class WebLayer;
 class WebMediaSource;
 class WebRemotePlaybackClient;
 
@@ -74,7 +77,7 @@ class BLINK_PLATFORM_EXPORT WebMediaPlayerClient {
   virtual void DurationChanged() = 0;
   virtual void SizeChanged() = 0;
   virtual void PlaybackStateChanged() = 0;
-  virtual void SetWebLayer(WebLayer*) = 0;
+  virtual void SetCcLayer(cc::Layer*) = 0;
   virtual WebMediaPlayer::TrackId AddAudioTrack(const WebString& id,
                                                 AudioTrackKind,
                                                 const WebString& label,
@@ -129,14 +132,8 @@ class BLINK_PLATFORM_EXPORT WebMediaPlayerClient {
   // to a localized string that explains the reason as user-readable text.
   virtual void MediaRemotingStopped(WebLocalizedString::Name error_msg) = 0;
 
-  // Informs that Picture-in-Picture mode has started for the media element.
-  virtual void PictureInPictureStarted() = 0;
-
   // Informs that Picture-in-Picture mode has stopped for the media element.
   virtual void PictureInPictureStopped() = 0;
-
-  // Returns whether the media element is in Picture-in-Picture mode.
-  virtual bool IsInPictureInPictureMode() = 0;
 
   // Returns whether the media element has native controls. It does not mean
   // that the controls are currently visible.
@@ -166,6 +163,10 @@ class BLINK_PLATFORM_EXPORT WebMediaPlayerClient {
   // Returns true if playback would start if the ready state was at least
   // WebMediaPlayer::kReadyStateHaveFutureData.
   virtual bool CouldPlayIfEnoughData() const = 0;
+
+  // Returns whether the playback is in auto-pip mode which does not have th
+  // behavior as regular Picture-in-Picture.
+  virtual bool IsInAutoPIP() const = 0;
 
  protected:
   ~WebMediaPlayerClient() = default;

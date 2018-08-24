@@ -26,13 +26,6 @@
 #include "third_party/base/logging.h"
 #include "third_party/base/ptr_util.h"
 
-#ifdef PDF_ENABLE_XFA
-#include "core/fxcodec/codec/ccodec_bmpmodule.h"
-#include "core/fxcodec/codec/ccodec_gifmodule.h"
-#include "core/fxcodec/codec/ccodec_pngmodule.h"
-#include "core/fxcodec/codec/ccodec_tiffmodule.h"
-#endif  // PDF_ENABLE_XFA
-
 namespace {
 
 const uint8_t g_CMYK[81 * 81 * 3] = {
@@ -1364,25 +1357,6 @@ CCodec_ModuleMgr::CCodec_ModuleMgr()
 
 CCodec_ModuleMgr::~CCodec_ModuleMgr() {}
 
-#ifdef PDF_ENABLE_XFA
-void CCodec_ModuleMgr::SetBmpModule(std::unique_ptr<CCodec_BmpModule> module) {
-  m_pBmpModule = std::move(module);
-}
-
-void CCodec_ModuleMgr::SetGifModule(std::unique_ptr<CCodec_GifModule> module) {
-  m_pGifModule = std::move(module);
-}
-
-void CCodec_ModuleMgr::SetPngModule(std::unique_ptr<CCodec_PngModule> module) {
-  m_pPngModule = std::move(module);
-}
-
-void CCodec_ModuleMgr::SetTiffModule(
-    std::unique_ptr<CCodec_TiffModule> module) {
-  m_pTiffModule = std::move(module);
-}
-#endif  // PDF_ENABLE_XFA
-
 bool CCodec_BasicModule::RunLengthEncode(const uint8_t* src_buf,
                                          uint32_t src_size,
                                          uint8_t** dest_buf,
@@ -1535,16 +1509,7 @@ bool CCodec_BasicModule::A85Encode(const uint8_t* src_buf,
 }
 
 #ifdef PDF_ENABLE_XFA
-CFX_DIBAttribute::CFX_DIBAttribute()
-    : m_nXDPI(-1),
-      m_nYDPI(-1),
-      m_fAspectRatio(-1.0f),
-      m_wDPIUnit(0),
-      m_nGifLeft(0),
-      m_nGifTop(0),
-      m_pGifLocalPalette(nullptr),
-      m_nGifLocalPalNum(0),
-      m_nBmpCompressType(0) {}
+CFX_DIBAttribute::CFX_DIBAttribute() {}
 
 CFX_DIBAttribute::~CFX_DIBAttribute() {
   for (const auto& pair : m_Exif)
@@ -1838,4 +1803,22 @@ std::tuple<float, float, float> AdobeCMYK_to_sRGB(float c,
   // Multiply by a constant rather than dividing because division is much
   // more expensive.
   return std::make_tuple(r * (1.0f / 255), g * (1.0f / 255), b * (1.0f / 255));
+}
+
+FX_SAFE_UINT32 CalculatePitch8(uint32_t bpc, uint32_t components, int width) {
+  FX_SAFE_UINT32 pitch = bpc;
+  pitch *= components;
+  pitch *= width;
+  pitch += 7;
+  pitch /= 8;
+  return pitch;
+}
+
+FX_SAFE_UINT32 CalculatePitch32(int bpp, int width) {
+  FX_SAFE_UINT32 pitch = bpp;
+  pitch *= width;
+  pitch += 31;
+  pitch /= 32;  // quantized to number of 32-bit words.
+  pitch *= 4;   // and then back to bytes, (not just /8 in one step).
+  return pitch;
 }

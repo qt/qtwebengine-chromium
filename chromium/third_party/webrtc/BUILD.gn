@@ -139,10 +139,7 @@ config("common_inherited_config") {
     defines += [ "WEBRTC_FUCHSIA" ]
   }
   if (is_win) {
-    defines += [
-      "WEBRTC_WIN",
-      "_CRT_SECURE_NO_WARNINGS",  # Suppress warnings about _vsnprinf
-    ]
+    defines += [ "WEBRTC_WIN" ]
   }
   if (is_android) {
     defines += [
@@ -262,6 +259,13 @@ config("common_config") {
         cflags += [ "-Wunused-lambda-capture" ]
       }
     }
+
+    if (is_win && !is_clang) {
+      # MSVC warning suppressions (needed to use Abseil).
+      # TODO(bugs.webrtc.org/9274): Remove these warnings as soon as MSVC allows
+      # external headers warning suppression (or fix them upstream).
+      cflags += [ "/wd4702" ]  # unreachable code
+    }
   }
 
   if (current_cpu == "arm64") {
@@ -348,7 +352,7 @@ if (!build_with_chromium) {
 
     if (build_with_mozilla) {
       deps += [
-        "api:video_frame_api",
+        "api/video:video_frame",
         "system_wrappers:field_trial_default",
         "system_wrappers:metrics_default",
       ]
@@ -384,6 +388,7 @@ rtc_static_library("webrtc_common") {
     ":typedefs",
     "api:array_view",
     "api:optional",
+    "api/video:video_bitrate_allocation",
     "rtc_base:checks",
     "rtc_base:deprecation",
     "rtc_base:stringutils",
@@ -425,7 +430,9 @@ if (rtc_include_tests) {
     deps = [
       ":webrtc_common",
       "api:rtc_api_unittests",
+      "api/audio/test:audio_api_unittests",
       "api/audio_codecs/test:audio_codecs_api_unittests",
+      "api/video_codecs/test:builtin_video_codec_factory_unittests",
       "p2p:libstunprober_unittests",
       "p2p:rtc_p2p_unittests",
       "rtc_base:rtc_base_approved_unittests",
@@ -436,6 +443,7 @@ if (rtc_include_tests) {
       "rtc_base:rtc_task_queue_unittests",
       "rtc_base:sequenced_task_checker_unittests",
       "rtc_base:weak_ptr_unittests",
+      "rtc_base/experiments:experiments_unittests",
       "system_wrappers:metrics_default",
       "system_wrappers:runtime_enabled_features_default",
     ]
@@ -574,6 +582,7 @@ if (rtc_include_tests) {
         "examples/androidjunit/src/org/appspot/apprtc/DirectRTCClientTest.java",
         "examples/androidjunit/src/org/appspot/apprtc/TCPChannelClientTest.java",
         "sdk/android/tests/src/org/webrtc/CameraEnumerationTest.java",
+        "sdk/android/tests/src/org/webrtc/ScalingSettingsTest.java",
       ]
 
       deps = [
@@ -583,4 +592,19 @@ if (rtc_include_tests) {
       ]
     }
   }
+}
+
+# ---- Poisons ----
+#
+# Here is one empty dummy target for each poison type (needed because
+# "being poisonous with poison type foo" is implemented as "depends on
+# //:poison_foo").
+#
+# The set of poison_* targets needs to be kept in sync with the
+# `all_poison_types` list in webrtc.gni.
+#
+group("poison_audio_codecs") {
+}
+
+group("poison_software_video_codecs") {
 }

@@ -90,8 +90,8 @@ enum Event {
 enum Role {
   kNone,
   kAbbr,
-  kAlertDialog,
   kAlert,
+  kAlertDialog,
   kAnchor,
   kAnnotation,
   kApplication,
@@ -107,8 +107,8 @@ enum Role {
   kCheckBox,
   kClient,
   kColorWell,
-  kColumnHeader,
   kColumn,
+  kColumnHeader,
   kComboBoxGrouping,
   kComboBoxMenuButton,
   kComplementary,
@@ -116,14 +116,58 @@ enum Role {
   kDate,
   kDateTime,
   kDefinition,
-  kDescriptionListDetail,
   kDescriptionList,
+  kDescriptionListDetail,
   kDescriptionListTerm,
   kDesktop,  // internal
   kDetails,
   kDialog,
   kDirectory,
   kDisclosureTriangle,
+  // --------------------------------------------------------------
+  // DPub Roles:
+  // https://www.w3.org/TR/dpub-aam-1.0/#mapping_role_table
+  kDocAbstract,
+  kDocAcknowledgments,
+  kDocAfterword,
+  kDocAppendix,
+  kDocBackLink,
+  kDocBiblioEntry,
+  kDocBibliography,
+  kDocBiblioRef,
+  kDocChapter,
+  kDocColophon,
+  kDocConclusion,
+  kDocCover,
+  kDocCredit,
+  kDocCredits,
+  kDocDedication,
+  kDocEndnote,
+  kDocEndnotes,
+  kDocEpigraph,
+  kDocEpilogue,
+  kDocErrata,
+  kDocExample,
+  kDocFootnote,
+  kDocForeword,
+  kDocGlossary,
+  kDocGlossRef,
+  kDocIndex,
+  kDocIntroduction,
+  kDocNoteRef,
+  kDocNotice,
+  kDocPageBreak,
+  kDocPageList,
+  kDocPart,
+  kDocPreface,
+  kDocPrologue,
+  kDocPullquote,
+  kDocQna,
+  kDocSubtitle,
+  kDocTip,
+  kDocToc,
+  // End DPub roles.
+  // --------------------------------------------------------------
   kDocument,
   kEmbeddedObject,
   kFeed,
@@ -132,14 +176,22 @@ enum Role {
   kFooter,
   kForm,
   kGenericContainer,
+  // --------------------------------------------------------------
+  // ARIA Graphics module roles:
+  // https://rawgit.com/w3c/graphics-aam/master/#mapping_role_table
+  kGraphicsDocument,
+  kGraphicsObject,
+  kGraphicsSymbol,
+  // End ARIA Graphics module roles.
+  // --------------------------------------------------------------
   kGrid,
   kGroup,
   kHeading,
   kIframe,
   kIframePresentational,
   kIgnored,
-  kImageMap,
   kImage,
+  kImageMap,
   kInlineTextBox,
   kInputTime,
   kLabelText,
@@ -150,11 +202,11 @@ enum Role {
   kLegend,
   kLineBreak,
   kLink,
-  kListBoxOption,
+  kList,
   kListBox,
+  kListBoxOption,
   kListItem,
   kListMarker,
-  kList,
   kLocationBar,
   kLog,
   kMain,
@@ -182,26 +234,26 @@ enum Role {
   kRadioGroup,
   kRegion,
   kRootWebArea,
-  kRowHeader,
   kRow,
+  kRowHeader,
   kRuby,
-  kSvgRoot,
   kScrollBar,
+  kScrollView,
   kSearch,
   kSearchBox,
   kSlider,
   kSliderThumb,
-  kSpinButtonPart,
   kSpinButton,
   kSplitter,
   kStaticText,
   kStatus,
+  kSvgRoot,
   kSwitch,
+  kTab,
   kTabList,
   kTabPanel,
-  kTab,
-  kTableHeaderContainer,
   kTable,
+  kTableHeaderContainer,
   kTerm,
   kTextField,
   kTextFieldWithComboBox,
@@ -210,11 +262,11 @@ enum Role {
   kTitleBar,
   kToggleButton,
   kToolbar,
+  kTooltip,
+  kTree,
   kTreeGrid,
   kTreeItem,
-  kTree,
   kUnknown,
-  kTooltip,
   kVideo,
   kWebArea,
   kWebView,
@@ -228,7 +280,7 @@ enum State {
   kEditable,
   kExpanded,
   kFocusable,
-  kHaspopup,
+  kHasPopup,
    // Grows horizontally, e.g. most toolbars and separators.
   kHorizontal,
   kHovered,
@@ -252,6 +304,11 @@ enum State {
 enum Action {
   kNone,
   kBlur,
+
+  // Notifies a node that it no longer has accessibility focus.
+  // Currently used only on Android and only internally, it's not
+  // exposed to the open web. See kSetAccessibilityFocus, below.
+  kClearAccessibilityFocus,
 
   kCustomAction,
 
@@ -299,6 +356,11 @@ enum Action {
    // Scroll the given object to a specified point on the screen in
    // global screen coordinates. Pass a point in AXActionData.target_point.
   kScrollToPoint,
+
+  // Notifies a node that it has accessibility focus.
+  // Currently used only on Android and only internally, it's not
+  // exposed to the open web. See kClearAccessibilityFocus, above.
+  kSetAccessibilityFocus,
 
   kSetScrollOffset,
   kSetSelection,
@@ -471,6 +533,8 @@ enum IntAttribute {
   kBackgroundColor,
   kColor,
 
+  kHasPopup,
+
    // Indicates if a form control has invalid input or
    // if an element has an aria-invalid attribute.
   kInvalidState,
@@ -480,6 +544,9 @@ enum IntAttribute {
 
    // Specifies the direction of the text, e.g., right-to-left.
   kTextDirection,
+
+   // Specifies the position of the text, e.g., subscript.
+  kTextPosition,
 
    // Bold, italic, underline, etc.
   kTextStyle,
@@ -574,15 +641,6 @@ enum IntListAttribute {
   kMarkerStarts,
   kMarkerEnds,
 
-   // For a table, the cell ids in row-major order, with duplicate entries
-   // when there's a rowspan or colspan, and with -1 for missing cells.
-   // There are always exactly rows * columns entries.
-  kCellIds,
-
-   // For a table, the unique cell ids in row-major order of their first
-   // occurrence.
-  kUniqueCellIds,
-
    // For inline text. This is the pixel position of the end of this
    // character within the bounding rectangle of this object, in the
    // direction given by StringAttribute::kTextDirection. For example,
@@ -665,6 +723,12 @@ enum TextDirection {
   kBtt,
 };
 
+enum TextPosition {
+  kNone,
+  kSubscript,
+  kSuperscript,
+};
+
  // A Java counterpart will be generated for this enum.
  // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.ui.accessibility
 enum TextStyle {
@@ -697,6 +761,17 @@ enum AriaCurrentState {
   kUnclippedLocation,
   kDate,
   kTime,
+};
+
+enum HasPopup {
+  kFalse = 0,
+  kTrue,
+  kMenu,
+  kListbox,
+  kTree,
+  kGrid,
+  kDialog,
+  kLast = kDialog,
 };
 
 enum InvalidState {
@@ -781,6 +856,8 @@ enum Gesture {
   kSwipeRight4,
   kSwipeDown4,
   kTap2,
+  kTap3,
+  kTap4,
 };
 
 enum TextAffinity {

@@ -13,12 +13,14 @@
 #include "ui/aura/env_observer.h"
 #include "ui/aura/input_state_lookup.h"
 #include "ui/aura/local/window_port_local.h"
+#include "ui/aura/mouse_location_manager.h"
 #include "ui/aura/mus/mus_types.h"
 #include "ui/aura/mus/os_exchange_data_provider_mus.h"
 #include "ui/aura/mus/system_input_injector_mus.h"
 #include "ui/aura/mus/window_port_mus.h"
 #include "ui/aura/mus/window_tree_client.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher_observer.h"
 #include "ui/aura/window_port_for_shutdown.h"
 #include "ui/events/event_target_iterator.h"
 #include "ui/events/platform/platform_event_source.h"
@@ -114,6 +116,16 @@ void Env::RemoveObserver(EnvObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
+void Env::AddWindowEventDispatcherObserver(
+    WindowEventDispatcherObserver* observer) {
+  window_event_dispatcher_observers_.AddObserver(observer);
+}
+
+void Env::RemoveWindowEventDispatcherObserver(
+    WindowEventDispatcherObserver* observer) {
+  window_event_dispatcher_observers_.RemoveObserver(observer);
+}
+
 bool Env::IsMouseButtonDown() const {
   return input_state_lookup_.get() ? input_state_lookup_->IsMouseButtonDown() :
       mouse_button_flags_ != 0;
@@ -131,6 +143,22 @@ const gfx::Point& Env::last_mouse_location() const {
   if (window_tree_client_)
     last_mouse_location_ = window_tree_client_->GetCursorScreenPoint();
   return last_mouse_location_;
+}
+
+void Env::SetLastMouseLocation(const gfx::Point& last_mouse_location) {
+  last_mouse_location_ = last_mouse_location;
+  if (mouse_location_manager_)
+    mouse_location_manager_->SetMouseLocation(last_mouse_location);
+}
+
+void Env::CreateMouseLocationManager() {
+  if (!mouse_location_manager_)
+    mouse_location_manager_ = std::make_unique<MouseLocationManager>();
+}
+
+mojo::ScopedSharedBufferHandle Env::GetLastMouseLocationMemory() {
+  DCHECK(mouse_location_manager_);
+  return mouse_location_manager_->GetMouseLocationMemory();
 }
 
 void Env::SetWindowTreeClient(WindowTreeClient* window_tree_client) {

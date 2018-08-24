@@ -28,9 +28,9 @@ void ScrollHitTestDisplayItem::Replay(GraphicsContext&) const {
   NOTREACHED();
 }
 
-void ScrollHitTestDisplayItem::AppendToWebDisplayItemList(
+void ScrollHitTestDisplayItem::AppendToDisplayItemList(
     const FloatSize&,
-    WebDisplayItemList*) const {
+    cc::DisplayItemList&) const {
   NOTREACHED();
 }
 
@@ -57,8 +57,8 @@ void ScrollHitTestDisplayItem::Record(
 
   // The scroll hit test should be in the non-scrolled transform space and
   // therefore should not be scrolled by the associated scroll offset.
-  DCHECK(paint_controller.CurrentPaintChunkProperties()
-             .property_tree_state.Transform() != scroll_offset_node);
+  DCHECK_NE(paint_controller.CurrentPaintChunkProperties().Transform(),
+            scroll_offset_node.get());
 
   if (paint_controller.DisplayItemConstructionIsDisabled())
     return;

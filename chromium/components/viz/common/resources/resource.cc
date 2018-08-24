@@ -6,22 +6,16 @@
 
 #include "build/build_config.h"
 #include "components/viz/common/quads/shared_bitmap.h"
-#include "ui/gfx/gpu_memory_buffer.h"
 
 namespace viz {
 namespace internal {
 
 Resource::Resource(const gfx::Size& size,
-                   Origin origin,
-                   ResourceTextureHint hint,
                    ResourceType type,
                    ResourceFormat format,
                    const gfx::ColorSpace& color_space)
-    : locked_for_write(false),
-      locked_for_external_use(false),
-      lost(false),
+    : locked_for_external_use(false),
       marked_for_deletion(false),
-      allocated(false),
       read_lock_fences_enabled(false),
       has_shared_bitmap_id(false),
       is_overlay_candidate(false),
@@ -30,8 +24,6 @@ Resource::Resource(const gfx::Size& size,
       wants_promotion_hint(false),
 #endif
       size(size),
-      origin(origin),
-      hint(hint),
       type(type),
       format(format),
       color_space(color_space) {
@@ -44,7 +36,6 @@ Resource& Resource::operator=(Resource&& other) = default;
 void Resource::SetSharedBitmap(SharedBitmap* bitmap) {
   DCHECK(bitmap);
   DCHECK(bitmap->pixels());
-  allocated = true;
   shared_bitmap = bitmap;
   pixels = bitmap->pixels();
   has_shared_bitmap_id = true;
@@ -74,14 +65,6 @@ int8_t* Resource::GetSyncTokenData() {
 
 bool Resource::ShouldWaitSyncToken() const {
   return synchronization_state_ == NEEDS_WAIT;
-}
-
-void Resource::SetGenerateMipmap() {
-  DCHECK(is_gpu_resource_type());
-  DCHECK_EQ(target, static_cast<GLenum>(GL_TEXTURE_2D));
-  DCHECK(hint & ResourceTextureHint::kMipmap);
-  DCHECK(!gpu_memory_buffer);
-  mipmap_state = GENERATE;
 }
 
 }  // namespace internal

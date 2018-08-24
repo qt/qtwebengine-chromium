@@ -13,6 +13,7 @@
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/geometry/float_rect.h"
 #include "third_party/blink/renderer/platform/geometry/int_size.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_resource_host.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 
 namespace blink {
@@ -22,17 +23,21 @@ class FontSelector;
 class StaticBitmapImage;
 class KURL;
 
-class CORE_EXPORT CanvasRenderingContextHost : public GarbageCollectedMixin {
+class CORE_EXPORT CanvasRenderingContextHost : public CanvasResourceHost,
+                                               public GarbageCollectedMixin {
  public:
   CanvasRenderingContextHost();
 
   virtual void DetachContext() = 0;
 
-  virtual void DidDraw(const FloatRect& rect) {}
-  virtual void DidDraw() {}
+  virtual void DidDraw(const FloatRect& rect) = 0;
+  virtual void DidDraw() = 0;
 
   virtual void FinalizeFrame() = 0;
-
+  virtual void PushFrame(scoped_refptr<StaticBitmapImage> image,
+                         const SkIRect& damage_rect) {
+    NOTIMPLEMENTED();
+  }
   virtual bool OriginClean() const = 0;
   virtual void SetOriginTainted() = 0;
   virtual const IntSize& Size() const = 0;
@@ -41,11 +46,6 @@ class CORE_EXPORT CanvasRenderingContextHost : public GarbageCollectedMixin {
   virtual ExecutionContext* GetTopExecutionContext() const = 0;
   virtual DispatchEventResult HostDispatchEvent(Event*) = 0;
   virtual const KURL& GetExecutionContextUrl() const = 0;
-
-  virtual ScriptPromise Commit(scoped_refptr<StaticBitmapImage>,
-                               const SkIRect& damage_rect,
-                               ScriptState*,
-                               ExceptionState&);
 
   virtual void DiscardResourceProvider() = 0;
 
@@ -63,10 +63,20 @@ class CORE_EXPORT CanvasRenderingContextHost : public GarbageCollectedMixin {
   // TODO(fserb): remove this.
   virtual bool IsOffscreenCanvas() const { return false; }
 
+  virtual void Commit(scoped_refptr<StaticBitmapImage> bitmap_image,
+                      const SkIRect& damage_rect) {
+    NOTIMPLEMENTED();
+  }
+
   bool IsPaintable() const;
 
+  virtual void RegisterContextToDispatch(CanvasRenderingContext*) {}
+
+  // Partial CanvasResourceHost implementation
+  void RestoreCanvasMatrixClipStack(PaintCanvas*) const final;
+
  protected:
-  virtual ~CanvasRenderingContextHost() {}
+  ~CanvasRenderingContextHost() override {}
 
   scoped_refptr<StaticBitmapImage> CreateTransparentImage(const IntSize&) const;
 };

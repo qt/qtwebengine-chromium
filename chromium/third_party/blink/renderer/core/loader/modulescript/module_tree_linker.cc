@@ -7,39 +7,51 @@
 #include "third_party/blink/renderer/bindings/core/v8/script_module.h"
 #include "third_party/blink/renderer/core/loader/modulescript/module_script_fetch_request.h"
 #include "third_party/blink/renderer/core/loader/modulescript/module_tree_linker_registry.h"
+#include "third_party/blink/renderer/core/script/layered_api.h"
 #include "third_party/blink/renderer/core/script/module_script.h"
 #include "third_party/blink/renderer/platform/bindings/v8_throw_exception.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loading_log.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "v8/include/v8.h"
 
 namespace blink {
 
 ModuleTreeLinker* ModuleTreeLinker::Fetch(
-    const ModuleScriptFetchRequest& request,
+    const KURL& url,
+    const KURL& base_url,
+    WebURLRequest::RequestContext destination,
+    const ScriptFetchOptions& options,
     Modulator* modulator,
     ModuleTreeLinkerRegistry* registry,
     ModuleTreeClient* client) {
-  ModuleTreeLinker* fetcher = new ModuleTreeLinker(modulator, registry, client);
-  fetcher->FetchRoot(request);
+  ModuleTreeLinker* fetcher =
+      new ModuleTreeLinker(destination, modulator, registry, client);
+  fetcher->FetchRoot(url, base_url, options);
   return fetcher;
 }
 
 ModuleTreeLinker* ModuleTreeLinker::FetchDescendantsForInlineScript(
     ModuleScript* module_script,
+    WebURLRequest::RequestContext destination,
     Modulator* modulator,
     ModuleTreeLinkerRegistry* registry,
     ModuleTreeClient* client) {
   DCHECK(module_script);
-  ModuleTreeLinker* fetcher = new ModuleTreeLinker(modulator, registry, client);
+  ModuleTreeLinker* fetcher =
+      new ModuleTreeLinker(destination, modulator, registry, client);
   fetcher->FetchRootInline(module_script);
   return fetcher;
 }
 
-ModuleTreeLinker::ModuleTreeLinker(Modulator* modulator,
+ModuleTreeLinker::ModuleTreeLinker(WebURLRequest::RequestContext destination,
+                                   Modulator* modulator,
                                    ModuleTreeLinkerRegistry* registry,
                                    ModuleTreeClient* client)
-    : modulator_(modulator), registry_(registry), client_(client) {
+    : destination_(destination),
+      modulator_(modulator),
+      registry_(registry),
+      client_(client) {
   CHECK(modulator);
   CHECK(registry);
   CHECK(client);
@@ -53,8 +65,7 @@ void ModuleTreeLinker::Trace(blink::Visitor* visitor) {
   SingleModuleClient::Trace(visitor);
 }
 
-void ModuleTreeLinker::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+void ModuleTreeLinker::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(result_);
   SingleModuleClient::TraceWrappers(visitor);
 }
@@ -128,20 +139,50 @@ void ModuleTreeLinker::AdvanceState(State new_state) {
   }
 }
 
-void ModuleTreeLinker::FetchRoot(const ModuleScriptFetchRequest& request) {
-  // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-module-script-tree
+// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-module-script-tree
+void ModuleTreeLinker::FetchRoot(const KURL& original_url,
+                                 const KURL& base_url,
+                                 const ScriptFetchOptions& options) {
 #if DCHECK_IS_ON()
-  url_ = request.Url();
+  original_url_ = original_url;
   root_is_inline_ = false;
 #endif
 
   AdvanceState(State::kFetchingSelf);
 
+  KURL url = original_url;
+  // <spec
+  // href="https://github.com/drufball/layered-apis/blob/master/spec.md#fetch-a-module-script-graph"
+  // step="1">Set url to the layered API fetching URL given url and the current
+  // settings object's API base URL.</spec>
+  if (RuntimeEnabledFeatures::LayeredAPIEnabled())
+    url = blink::layered_api::ResolveFetchingURL(url, base_url);
+
+#if DCHECK_IS_ON()
+  url_ = url;
+#endif
+
+  // <spec
+  // href="https://github.com/drufball/layered-apis/blob/master/spec.md#fetch-a-module-script-graph"
+  // step="2">If url is failure, asynchronously complete this algorithm with
+  // null.</spec>
+  if (!url.IsValid()) {
+    result_ = nullptr;
+    modulator_->TaskRunner()->PostTask(
+        FROM_HERE, WTF::Bind(&ModuleTreeLinker::AdvanceState,
+                             WrapPersistent(this), State::kFinished));
+    return;
+  }
+
   // Step 1. Let visited set be << url >>.
-  visited_set_.insert(request.Url());
+  visited_set_.insert(url);
 
   // Step 2. Perform the internal module script graph fetching procedure given
   // ... with the top-level module fetch flag set. ...
+  ModuleScriptFetchRequest request(
+      url, destination_, options, Referrer::NoReferrer(),
+      modulator_->GetReferrerPolicy(), TextPosition::MinimumPosition());
+
   InitiateInternalModuleScriptGraphFetching(
       request, ModuleGraphLevel::kTopLevelModuleFetch);
 }
@@ -150,7 +191,8 @@ void ModuleTreeLinker::FetchRootInline(ModuleScript* module_script) {
   // Top-level entry point for [FDaI] for an inline module script.
   DCHECK(module_script);
 #if DCHECK_IS_ON()
-  url_ = module_script->BaseURL();
+  original_url_ = module_script->BaseURL();
+  url_ = original_url_;
   root_is_inline_ = true;
 #endif
 
@@ -328,7 +370,7 @@ void ModuleTreeLinker::FetchDescendants(ModuleScript* module_script) {
     // [FD] Step 7. ... perform the internal module script graph fetching
     // procedure given ... with the top-level module fetch flag unset. ...
     ModuleScriptFetchRequest request(
-        urls[i], options, module_script->BaseURL().GetString(),
+        urls[i], destination_, options, module_script->BaseURL().GetString(),
         modulator_->GetReferrerPolicy(), positions[i]);
     InitiateInternalModuleScriptGraphFetching(
         request, ModuleGraphLevel::kDependentModuleFetch);
@@ -483,6 +525,7 @@ ScriptValue ModuleTreeLinker::FindFirstParseError(
 #if DCHECK_IS_ON()
 std::ostream& operator<<(std::ostream& stream, const ModuleTreeLinker& linker) {
   stream << "ModuleTreeLinker[" << &linker
+         << ", original_url=" << linker.original_url_.GetString()
          << ", url=" << linker.url_.GetString()
          << ", inline=" << linker.root_is_inline_ << "]";
   return stream;

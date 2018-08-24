@@ -19,6 +19,10 @@ if (is_fuchsia) {
   import("//build/config/fuchsia/package.gni")
 }
 
+if (is_chromeos) {
+  import("//build/config/chromeos/rules.gni")
+}
+
 # Define a test as an executable (or apk on Android) with the "testonly" flag
 # set.
 # Variable:
@@ -130,7 +134,10 @@ template("test") {
 
         if (!defined(invoker.use_default_launcher) ||
             invoker.use_default_launcher) {
-          deps += [ "//testing/android/native_test:native_test_native_code" ]
+          deps += [
+            "//build/config:exe_and_shlib_deps",
+            "//testing/android/native_test:native_test_native_code",
+          ]
         }
       }
       unittest_apk(_apk_target) {
@@ -268,12 +275,7 @@ template("test") {
     # Makes the script which invokes the executable.
     test_runner_script(_gen_runner_target) {
       forward_variables_from(invoker, [ "use_test_server" ])
-      deps = [
-        ":$_exec_target",
-      ]
       test_name = _output_name
-      exe_path =
-          "$root_out_dir/exe.unstripped/" + get_label_info(_exec_target, "name")
       package_name = _output_name
     }
 
@@ -287,6 +289,7 @@ template("test") {
     package(_pkg_target) {
       testonly = true
       package_name = _output_name
+      sandbox_policy = "//build/config/fuchsia/testing_sandbox_policy"
       binary = get_label_info(_exec_target, "name")
       deps = [
         ":$_exec_target",
@@ -344,9 +347,44 @@ template("test") {
       }
       bundle_deps += [ ":$_resources_bundle_data" ]
     }
+  } else if (is_chromeos && cros_board != "") {
+    # When the arg cros_board is set, assume we're in the cros chrome-sdk
+    # building simplechrome.
+
+    _gen_runner_target = "${target_name}__runner"
+    _runtime_deps_file =
+        "$root_out_dir/gen.runtime/" + get_label_info(target_name, "dir") +
+        "/" + get_label_info(target_name, "name") + ".runtime_deps"
+
+    generate_vm_runner_script(_gen_runner_target) {
+      testonly = true
+      generated_script = "$root_build_dir/bin/run_" + invoker.target_name
+      test_exe = "$root_out_dir/" + get_label_info(invoker.target_name, "name")
+      runtime_deps_file = _runtime_deps_file
+    }
+
+    executable(target_name) {
+      forward_variables_from(invoker, "*")
+      if (!defined(deps)) {
+        deps = []
+      }
+      if (!defined(data)) {
+        data = []
+      }
+
+      testonly = true
+      output_name = target_name
+      write_runtime_deps = _runtime_deps_file
+      data += [ _runtime_deps_file ]
+      deps += [
+        ":$_gen_runner_target",
+        "//build/config:exe_and_shlib_deps",
+      ]
+    }
   } else {
     executable(target_name) {
       deps = []
+
       forward_variables_from(invoker, "*")
 
       testonly = true

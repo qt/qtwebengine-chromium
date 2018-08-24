@@ -51,7 +51,7 @@ class PLATFORM_EXPORT MediaStreamDescriptorClient
   virtual void StreamEnded() = 0;
   virtual void AddTrackByComponent(MediaStreamComponent*) = 0;
   virtual void RemoveTrackByComponent(MediaStreamComponent*) = 0;
-  virtual void Trace(blink::Visitor* visitor) {}
+  void Trace(blink::Visitor* visitor) override {}
 };
 
 class PLATFORM_EXPORT MediaStreamDescriptor final
@@ -102,7 +102,7 @@ class PLATFORM_EXPORT MediaStreamDescriptor final
   void RemoveRemoteTrack(MediaStreamComponent*);
 
   bool Active() const { return active_; }
-  void SetActive(bool active) { active_ = active; }
+  void SetActive(bool active);
 
   void AddObserver(WebMediaStreamObserver*);
   void RemoveObserver(WebMediaStreamObserver*);

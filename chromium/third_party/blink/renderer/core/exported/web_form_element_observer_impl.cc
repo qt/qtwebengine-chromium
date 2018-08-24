@@ -29,7 +29,7 @@ class WebFormElementObserverImpl::ObserverCallback
 
   void Disconnect();
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   Member<HTMLElement> element_;
@@ -84,9 +84,8 @@ void WebFormElementObserverImpl::ObserverCallback::Deliver(
       }
     } else {
       // Either "style" or "class" was modified. Check the computed style.
-      HTMLElement& element = *ToHTMLElement(record->target());
       CSSComputedStyleDeclaration* style =
-          CSSComputedStyleDeclaration::Create(&element);
+          CSSComputedStyleDeclaration::Create(record->target());
       if (style->GetPropertyValue(CSSPropertyDisplay) == "none") {
         callback_->ElementWasHiddenOrRemoved();
         Disconnect();

@@ -54,30 +54,30 @@
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/web_frame_widget_base.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
-#include "third_party/blink/renderer/core/inspector/InspectorAnimationAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorApplicationCacheAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorAuditsAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorCSSAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorDOMAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorDOMDebuggerAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorDOMSnapshotAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorEmulationAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorIOAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorLayerTreeAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorLogAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorMemoryAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorNetworkAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorOverlayAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorPageAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorPerformanceAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorTracingAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorWorkerAgent.h"
 #include "third_party/blink/renderer/core/inspector/dev_tools_emulator.h"
 #include "third_party/blink/renderer/core/inspector/inspected_frames.h"
+#include "third_party/blink/renderer/core/inspector/inspector_animation_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_application_cache_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_audits_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_css_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_dom_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_dom_debugger_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_dom_snapshot_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_emulation_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_io_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_layer_tree_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_log_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_memory_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_network_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_overlay_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_page_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_performance_agent.h"
 #include "third_party/blink/renderer/core/inspector/inspector_resource_container.h"
 #include "third_party/blink/renderer/core/inspector/inspector_resource_content_loader.h"
 #include "third_party/blink/renderer/core/inspector/inspector_session.h"
 #include "third_party/blink/renderer/core/inspector/inspector_task_runner.h"
+#include "third_party/blink/renderer/core/inspector/inspector_tracing_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_worker_agent.h"
 #include "third_party/blink/renderer/core/inspector/main_thread_debugger.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/page/focus_controller.h"
@@ -160,7 +160,7 @@ class ClientMessageLoopAdapter : public MainThreadDebugger::ClientMessageLoop {
 
     // 1. Disable input events.
     WebFrameWidgetBase::SetIgnoreInputEvents(true);
-    for (const auto view : WebViewImpl::AllInstances())
+    for (auto* const view : WebViewImpl::AllInstances())
       view->GetChromeClient().NotifyPopupOpeningObservers();
 
     // 2. Disable active objects
@@ -233,7 +233,9 @@ class WebDevToolsAgentImpl::Session : public GarbageCollectedFinalized<Session>,
                             int call_id,
                             const String& response,
                             const String& state) override;
-  void SendProtocolNotification(int session_id, const String& message) override;
+  void SendProtocolNotification(int session_id,
+                                const String& message,
+                                const String& state) override;
 
   void DispatchProtocolCommandInternal(int call_id,
                                        const String& method,
@@ -366,8 +368,9 @@ void WebDevToolsAgentImpl::Session::SendProtocolResponse(int session_id,
 
 void WebDevToolsAgentImpl::Session::SendProtocolNotification(
     int session_id,
-    const String& message) {
-  host_ptr_->DispatchProtocolNotification(message);
+    const String& message,
+    const String& state) {
+  host_ptr_->DispatchProtocolNotification(message, state);
 }
 
 void WebDevToolsAgentImpl::Session::DispatchProtocolCommand(
@@ -438,9 +441,10 @@ void WebDevToolsAgentImpl::Session::InitializeInspectorSession(
   inspector_session_->Append(
       InspectorApplicationCacheAgent::Create(inspected_frames));
 
-  inspector_session_->Append(new InspectorWorkerAgent(inspected_frames));
+  inspector_session_->Append(
+      new InspectorWorkerAgent(inspected_frames, nullptr));
 
-  tracing_agent_ = new InspectorTracingAgent(agent_, inspected_frames);
+  tracing_agent_ = new InspectorTracingAgent(inspected_frames);
   inspector_session_->Append(tracing_agent_);
 
   page_agent_ = InspectorPageAgent::Create(
@@ -580,7 +584,7 @@ void WebDevToolsAgentImpl::InspectElement(const WebPoint& point_in_local_root) {
   HitTestRequest request(hit_type);
   WebMouseEvent dummy_event(WebInputEvent::kMouseDown,
                             WebInputEvent::kNoModifiers,
-                            WTF::CurrentTimeTicksInSeconds());
+                            WTF::CurrentTimeTicks());
   dummy_event.SetPositionInWidget(point.x, point.y);
   IntPoint transformed_point = FlooredIntPoint(
       TransformWebMouseEvent(web_local_frame_impl_->GetFrameView(), dummy_event)
@@ -627,21 +631,6 @@ bool WebDevToolsAgentImpl::ScreencastEnabled() {
       return true;
   }
   return false;
-}
-
-void WebDevToolsAgentImpl::RootLayerCleared() {
-  for (auto& session : sessions_)
-    session->tracing_agent()->RootLayerCleared();
-}
-
-void WebDevToolsAgentImpl::ShowReloadingBlanket() {
-  for (auto& session : sessions_)
-    session->overlay_agent()->ShowReloadingBlanket();
-}
-
-void WebDevToolsAgentImpl::HideReloadingBlanket() {
-  for (auto& session : sessions_)
-    session->overlay_agent()->HideReloadingBlanket();
 }
 
 void WebDevToolsAgentImpl::PageLayoutInvalidated(bool resized) {

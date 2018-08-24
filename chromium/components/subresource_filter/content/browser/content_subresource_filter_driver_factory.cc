@@ -7,8 +7,8 @@
 #include <utility>
 
 #include "base/metrics/histogram_macros.h"
-#include "base/rand_util.h"
 #include "base/time/time.h"
+#include "components/subresource_filter/content/browser/navigation_console_logger.h"
 #include "components/subresource_filter/content/browser/page_load_statistics.h"
 #include "components/subresource_filter/content/browser/subresource_filter_client.h"
 #include "components/subresource_filter/content/browser/subresource_filter_observer_manager.h"
@@ -32,14 +32,6 @@ namespace {
 
 // Returns true with a probability given by |performance_measurement_rate| if
 // ThreadTicks is supported, otherwise returns false.
-bool ShouldMeasurePerformanceForPageLoad(double performance_measurement_rate) {
-  if (!base::ThreadTicks::IsSupported())
-    return false;
-  return performance_measurement_rate == 1 ||
-         (performance_measurement_rate > 0 &&
-          base::RandDouble() < performance_measurement_rate);
-}
-
 }  // namespace
 
 // static
@@ -82,9 +74,12 @@ void ContentSubresourceFilterDriverFactory::NotifyPageActivationComputed(
   matched_configuration_ = matched_configuration;
   DCHECK_NE(activation_decision_, ActivationDecision::UNKNOWN);
 
+  ActivationLevel effective_activation_level =
+      matched_configuration_.activation_options.activation_level;
+
   // ACTIVATION_DISABLED implies DISABLED activation level.
   DCHECK(activation_decision_ != ActivationDecision::ACTIVATION_DISABLED ||
-         activation_options().activation_level == ActivationLevel::DISABLED);
+         effective_activation_level == ActivationLevel::DISABLED);
 
   // Ensure the matched config is in our config list. If it wasn't then this
   // must be a forced activation via devtools.
@@ -95,48 +90,30 @@ void ContentSubresourceFilterDriverFactory::NotifyPageActivationComputed(
          forced_activation_via_devtools)
       << matched_configuration;
 
-  ActivationState state =
-      ActivationState(activation_options().activation_level);
-  state.measure_performance = ShouldMeasurePerformanceForPageLoad(
-      activation_options().performance_measurement_rate);
+  if (warning && effective_activation_level == ActivationLevel::ENABLED) {
+    NavigationConsoleLogger::LogMessageOnCommit(
+        navigation_handle, content::CONSOLE_MESSAGE_LEVEL_WARNING,
+        kActivationWarningConsoleMessage);
 
-  // This bit keeps track of BAS enforcement-style logging, not warning logging.
-  state.enable_logging =
-      activation_options().activation_level == ActivationLevel::ENABLED &&
-      !activation_options().should_suppress_notifications &&
-      matched_configuration != Configuration::MakeForForcedActivation() &&
-      base::FeatureList::IsEnabled(
-          kSafeBrowsingSubresourceFilterExperimentalUI);
-
-  if (warning &&
-      activation_options().activation_level == ActivationLevel::ENABLED) {
-    DCHECK(on_commit_warning_messages_.empty());
-    SetOnCommitWarningMessages();
     // Do not disallow enforcement if activated via devtools.
     if (!forced_activation_via_devtools) {
       activation_decision_ = ActivationDecision::ACTIVATION_DISABLED;
-      state.activation_level = ActivationLevel::DISABLED;
-      matched_configuration_.activation_options.activation_level =
-          ActivationLevel::DISABLED;
+      effective_activation_level = ActivationLevel::DISABLED;
     }
   }
 
+  matched_configuration_.activation_options.activation_level =
+      effective_activation_level;
   SubresourceFilterObserverManager::FromWebContents(web_contents())
       ->NotifyPageActivationComputed(navigation_handle, activation_decision_,
-                                     state);
+                                     matched_configuration_.GetActivationState(
+                                         effective_activation_level));
 }
 
 void ContentSubresourceFilterDriverFactory::OnFirstSubresourceLoadDisallowed() {
   if (matched_configuration_.activation_conditions.forced_activation) {
     UMA_HISTOGRAM_BOOLEAN(
         "SubresourceFilter.PageLoad.ForcedActivation.DisallowedLoad", true);
-    return;
-  }
-  if (activation_options().should_suppress_notifications)
-    return;
-  // This shouldn't happen normally, but in the rare case that an IPC from a
-  // previous page arrives late we should guard against it.
-  if (activation_options().activation_level != ActivationLevel::ENABLED) {
     return;
   }
   client_->ShowNotification();
@@ -154,38 +131,14 @@ void ContentSubresourceFilterDriverFactory::DidStartNavigation(
 void ContentSubresourceFilterDriverFactory::DidFinishNavigation(
     content::NavigationHandle* navigation_handle) {
   if (!navigation_handle->IsInMainFrame() ||
-      navigation_handle->IsSameDocument()) {
+      navigation_handle->IsSameDocument() ||
+      !navigation_handle->HasCommitted()) {
     return;
   }
-
-  std::vector<std::string> log_messages =
-      std::move(on_commit_warning_messages_);
-
-  if (!navigation_handle->HasCommitted())
-    return;
-
-  DCHECK(on_commit_warning_messages_.empty());
 
   if (activation_decision_ == ActivationDecision::UNKNOWN) {
     activation_decision_ = ActivationDecision::ACTIVATION_DISABLED;
     matched_configuration_ = Configuration();
-    return;
-  }
-
-  content::RenderFrameHost* frame_host =
-      navigation_handle->GetRenderFrameHost();
-  for (auto& warning_message : log_messages) {
-    frame_host->AddMessageToConsole(content::CONSOLE_MESSAGE_LEVEL_WARNING,
-                                    warning_message);
-  }
-}
-
-void ContentSubresourceFilterDriverFactory::SetOnCommitWarningMessages() {
-  DCHECK_EQ(ActivationLevel::ENABLED, activation_options().activation_level);
-  // If the matched configuration *would have* triggered resource blocking,
-  // log a warning.
-  if (!activation_options().should_suppress_notifications) {
-    on_commit_warning_messages_.push_back(kActivationWarningConsoleMessage);
   }
 }
 

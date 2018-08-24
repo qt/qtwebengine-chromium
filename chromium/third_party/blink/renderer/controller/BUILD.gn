@@ -36,13 +36,21 @@ component("controller") {
   sources = [
     "blink_initializer.cc",
     "blink_initializer.h",
+    "blink_leak_detector.cc",
+    "blink_leak_detector.h",
+    "bloated_renderer_detector.cc",
+    "bloated_renderer_detector.h",
     "controller_export.h",
     "dev_tools_frontend_impl.cc",
     "dev_tools_frontend_impl.h",
-    "oom_intervention_impl.cc",
-    "oom_intervention_impl.h",
   ]
 
+  if (is_android) {
+    sources += [
+      "oom_intervention_impl.cc",
+      "oom_intervention_impl.h",
+    ]
+  }
   if (is_mac) {
     libs = [
       "AppKit.framework",
@@ -84,16 +92,48 @@ test("webkit_unit_tests") {
   }
 }
 
+test("blink_perf_tests") {
+  deps = [
+    ":blink_perf_tests_sources",
+  ]
+}
+
+jumbo_source_set("blink_perf_tests_sources") {
+  visibility = []  # Allow re-assignment of list.
+  visibility = [ "*" ]
+  testonly = true
+
+  sources = [
+    "tests/run_all_tests.cc",
+  ]
+
+  deps = [
+    ":controller",
+    "//base",
+    "//content/test:test_support",
+    "//third_party/blink/renderer/core:perf_tests",
+  ]
+
+  configs += [
+    "//third_party/blink/renderer:config",
+    "//third_party/blink/renderer:inside_blink",
+    "//third_party/blink/renderer/core:blink_core_pch",
+  ]
+}
+
 jumbo_source_set("webkit_unit_tests_sources") {
   visibility = []  # Allow re-assignment of list.
   visibility = [ "*" ]
   testonly = true
 
   sources = [
-    "oom_intervention_impl_test.cc",
+    "bloated_renderer_detector_test.cc",
     "tests/run_all_tests.cc",
   ]
   sources += bindings_unittest_files
+  if (is_android) {
+    sources += [ "oom_intervention_impl_test.cc" ]
+  }
 
   deps = [
     ":controller",

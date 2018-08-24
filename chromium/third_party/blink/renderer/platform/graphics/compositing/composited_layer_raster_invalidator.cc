@@ -10,7 +10,7 @@
 
 #include "third_party/blink/renderer/platform/graphics/compositing/paint_chunks_to_cc_layer.h"
 #include "third_party/blink/renderer/platform/graphics/paint/geometry_mapper.h"
-#include "third_party/blink/renderer/platform/graphics/paint/paint_chunk_subset.h"
+#include "third_party/blink/renderer/platform/graphics/paint/paint_artifact.h"
 
 namespace blink {
 
@@ -24,7 +24,7 @@ void CompositedLayerRasterInvalidator::SetTracksRasterInvalidations(
       tracking_info_->old_client_debug_names.Set(&info.id.client,
                                                  info.id.client.DebugName());
     }
-  } else if (!RuntimeEnabledFeatures::PaintUnderInvalidationCheckingEnabled()) {
+  } else if (!RasterInvalidationTracking::ShouldAlwaysTrack()) {
     tracking_info_ = nullptr;
   } else if (tracking_info_) {
     tracking_info_->tracking.ClearInvalidations();
@@ -56,13 +56,10 @@ static bool ApproximatelyEqual(const SkMatrix& a, const SkMatrix& b) {
 
 PaintInvalidationReason
 CompositedLayerRasterInvalidator::ChunkPropertiesChanged(
+    const RefCountedPropertyTreeState& new_chunk_state,
     const PaintChunkInfo& new_chunk,
     const PaintChunkInfo& old_chunk,
     const PropertyTreeState& layer_state) const {
-  if (new_chunk.properties.backface_hidden !=
-      old_chunk.properties.backface_hidden)
-    return PaintInvalidationReason::kPaintProperty;
-
   // Special case for transform changes because we may create or delete some
   // transform nodes when no raster invalidation is needed. For example, when
   // a composited layer previously not transformed now gets transformed.
@@ -74,9 +71,7 @@ CompositedLayerRasterInvalidator::ChunkPropertiesChanged(
   // Treat the chunk property as changed if the effect node pointer is
   // different, or the effect node's value changed between the layer state and
   // the chunk state.
-  const auto& new_chunk_state = new_chunk.properties.property_tree_state;
-  const auto& old_chunk_state = old_chunk.properties.property_tree_state;
-  if (new_chunk_state.Effect() != old_chunk_state.Effect() ||
+  if (new_chunk_state.Effect() != old_chunk.effect_state ||
       new_chunk_state.Effect()->Changed(*layer_state.Effect()))
     return PaintInvalidationReason::kPaintProperty;
 
@@ -95,7 +90,7 @@ CompositedLayerRasterInvalidator::ChunkPropertiesChanged(
   // Otherwise treat the chunk property as changed if the clip node pointer is
   // different, or the clip node's value changed between the layer state and the
   // chunk state.
-  if (new_chunk_state.Clip() != old_chunk_state.Clip() ||
+  if (new_chunk_state.Clip() != old_chunk.clip_state ||
       new_chunk_state.Clip()->Changed(*layer_state.Clip()))
     return PaintInvalidationReason::kPaintProperty;
 
@@ -113,6 +108,7 @@ CompositedLayerRasterInvalidator::ChunkPropertiesChanged(
 // common cases that most of the chunks can be matched in-order, the complexity
 // is slightly larger than O(n).
 void CompositedLayerRasterInvalidator::GenerateRasterInvalidations(
+    const PaintArtifact& paint_artifact,
     const PaintChunkSubset& new_chunks,
     const PropertyTreeState& layer_state,
     const FloatSize& visual_rect_subpixel_offset,
@@ -138,7 +134,7 @@ void CompositedLayerRasterInvalidator::GenerateRasterInvalidations(
     if (matched_old_index == kNotFound) {
       // The new chunk doesn't match any old chunk.
       FullyInvalidateNewChunk(new_chunk_info,
-                              PaintInvalidationReason::kAppeared);
+                              PaintInvalidationReason::kChunkAppeared);
       continue;
     }
 
@@ -153,8 +149,8 @@ void CompositedLayerRasterInvalidator::GenerateRasterInvalidations(
     PaintInvalidationReason reason =
         matched_old_index < max_matched_old_index
             ? PaintInvalidationReason::kChunkReordered
-            : ChunkPropertiesChanged(new_chunk_info, old_chunk_info,
-                                     layer_state);
+            : ChunkPropertiesChanged(new_chunk.properties, new_chunk_info,
+                                     old_chunk_info, layer_state);
 
     if (IsFullPaintInvalidationReason(reason)) {
       // Invalidate both old and new bounds of the chunk if the chunk's paint
@@ -175,7 +171,7 @@ void CompositedLayerRasterInvalidator::GenerateRasterInvalidations(
         IncrementallyInvalidateChunk(old_chunk_info, new_chunk_info);
 
       // Add the raster invalidations found by PaintController within the chunk.
-      AddDisplayItemRasterInvalidations(new_chunk, mapper);
+      AddDisplayItemRasterInvalidations(paint_artifact, new_chunk, mapper);
     }
 
     old_index = matched_old_index + 1;
@@ -190,30 +186,30 @@ void CompositedLayerRasterInvalidator::GenerateRasterInvalidations(
       continue;
     FullyInvalidateOldChunk(paint_chunks_info_[i],
                             paint_chunks_info_[i].is_cacheable
-                                ? PaintInvalidationReason::kDisappeared
+                                ? PaintInvalidationReason::kChunkDisappeared
                                 : PaintInvalidationReason::kChunkUncacheable);
   }
 }
 
 void CompositedLayerRasterInvalidator::AddDisplayItemRasterInvalidations(
+    const PaintArtifact& paint_artifact,
     const PaintChunk& chunk,
     const ChunkToLayerMapper& mapper) {
-  DCHECK(chunk.raster_invalidation_tracking.IsEmpty() ||
-         chunk.raster_invalidation_rects.size() ==
-             chunk.raster_invalidation_tracking.size());
-
-  if (chunk.raster_invalidation_rects.IsEmpty())
+  const auto* rects = paint_artifact.GetRasterInvalidationRects(chunk);
+  if (!rects || rects->IsEmpty())
     return;
 
-  for (size_t i = 0; i < chunk.raster_invalidation_rects.size(); ++i) {
-    auto rect = ClipByLayerBounds(
-        mapper.MapVisualRect(chunk.raster_invalidation_rects[i]));
+  const auto* tracking = paint_artifact.GetRasterInvalidationTracking(chunk);
+  DCHECK(!tracking || tracking->IsEmpty() || tracking->size() == rects->size());
+
+  for (size_t i = 0; i < rects->size(); ++i) {
+    auto rect = ClipByLayerBounds(mapper.MapVisualRect((*rects)[i]));
     if (rect.IsEmpty())
       continue;
     raster_invalidation_function_(rect);
 
-    if (!chunk.raster_invalidation_tracking.IsEmpty()) {
-      const auto& info = chunk.raster_invalidation_tracking[i];
+    if (tracking && !tracking->IsEmpty()) {
+      const auto& info = (*tracking)[i];
       tracking_info_->tracking.AddInvalidation(
           info.client, info.client_debug_name, rect, info.reason);
     }
@@ -277,14 +273,24 @@ RasterInvalidationTracking& CompositedLayerRasterInvalidator::EnsureTracking() {
 }
 
 void CompositedLayerRasterInvalidator::Generate(
+    const PaintArtifact& paint_artifact,
     const gfx::Rect& layer_bounds,
+    const PropertyTreeState& layer_state,
+    const FloatSize& visual_rect_subpixel_offset) {
+  Generate(paint_artifact, paint_artifact.PaintChunks(), layer_bounds,
+           layer_state, visual_rect_subpixel_offset);
+}
+
+void CompositedLayerRasterInvalidator::Generate(
+    const PaintArtifact& paint_artifact,
     const PaintChunkSubset& paint_chunks,
+    const gfx::Rect& layer_bounds,
     const PropertyTreeState& layer_state,
     const FloatSize& visual_rect_subpixel_offset) {
   if (RuntimeEnabledFeatures::DisableRasterInvalidationEnabled())
     return;
 
-  if (RuntimeEnabledFeatures::PaintUnderInvalidationCheckingEnabled())
+  if (RasterInvalidationTracking::ShouldAlwaysTrack())
     EnsureTracking();
 
   if (tracking_info_) {
@@ -311,7 +317,7 @@ void CompositedLayerRasterInvalidator::Generate(
       new_chunks_info.emplace_back(*this, mapper, chunk);
     }
   } else {
-    GenerateRasterInvalidations(paint_chunks, layer_state,
+    GenerateRasterInvalidations(paint_artifact, paint_chunks, layer_state,
                                 visual_rect_subpixel_offset, new_chunks_info);
   }
 
@@ -320,12 +326,6 @@ void CompositedLayerRasterInvalidator::Generate(
   if (tracking_info_) {
     tracking_info_->old_client_debug_names =
         std::move(tracking_info_->new_client_debug_names);
-  }
-
-  for (const auto& chunk : paint_chunks) {
-    chunk.client_is_just_created = false;
-    chunk.raster_invalidation_rects.clear();
-    chunk.raster_invalidation_tracking.clear();
   }
 }
 

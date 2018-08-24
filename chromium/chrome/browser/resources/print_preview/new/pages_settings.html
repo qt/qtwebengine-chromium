@@ -7,6 +7,7 @@
 <link rel="import" href="print_preview_shared_css.html">
 <link rel="import" href="settings_behavior.html">
 <link rel="import" href="settings_section.html">
+<link rel="import" href="strings.html">
 
 <dom-module id="print-preview-pages-settings">
   <template>
@@ -42,7 +43,7 @@
             <input id="pageSettingsCustomInput" class="user-value" type="text"
                 checked="{{customSelected_::change}}" data-timeout-delay="500"
                 disabled$="[[getDisabled_(disabled, settings.pages.valid)]]"
-                pattern="([0-9]*(-)?[0-9]*(,)( )?)*([0-9]*(-)?[0-9]*(,)?( )?)?"
+                pattern="[[inputPattern_]]"
                 on-focus="onCustomInputFocus_" on-blur="onCustomInputBlur_"
                 placeholder="$i18n{examplePageRangeText}"
                 aria-label="$i18n{examplePageRangeText}">

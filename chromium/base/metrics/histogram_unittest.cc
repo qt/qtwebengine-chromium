@@ -13,8 +13,10 @@
 #include <string>
 #include <vector>
 
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/bucket_ranges.h"
+#include "base/metrics/dummy_histogram.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/metrics_hashes.h"
 #include "base/metrics/persistent_histogram_allocator.h"
@@ -76,8 +78,6 @@ class HistogramTest : public testing::TestWithParam<bool> {
   void InitializeStatisticsRecorder() {
     DCHECK(!statistics_recorder_);
     statistics_recorder_ = StatisticsRecorder::CreateTemporaryForTesting();
-    auto record_checker = std::make_unique<TestRecordHistogramChecker>();
-    StatisticsRecorder::SetRecordChecker(std::move(record_checker));
   }
 
   void UninitializeStatisticsRecorder() {
@@ -93,6 +93,10 @@ class HistogramTest : public testing::TestWithParam<bool> {
   void DestroyPersistentHistogramAllocator() {
     allocator_ = nullptr;
     GlobalHistogramAllocator::ReleaseForTesting();
+  }
+
+  std::unique_ptr<SampleVector> SnapshotAllSamples(Histogram* h) {
+    return h->SnapshotAllSamples();
   }
 
   const bool use_persistent_histogram_allocator_;
@@ -291,10 +295,10 @@ TEST_P(HistogramTest, LinearRangesTest) {
   EXPECT_TRUE(ranges2.Equals(histogram2->bucket_ranges()));
 }
 
-TEST_P(HistogramTest, ArrayToCustomRangesTest) {
+TEST_P(HistogramTest, ArrayToCustomEnumRangesTest) {
   const HistogramBase::Sample ranges[3] = {5, 10, 20};
   std::vector<HistogramBase::Sample> ranges_vec =
-      CustomHistogram::ArrayToCustomRanges(ranges, 3);
+      CustomHistogram::ArrayToCustomEnumRanges(ranges);
   ASSERT_EQ(6u, ranges_vec.size());
   EXPECT_EQ(5, ranges_vec[0]);
   EXPECT_EQ(6, ranges_vec[1]);
@@ -657,10 +661,10 @@ TEST_P(HistogramTest, BadConstruction) {
   // Try to get the same histogram name with different arguments.
   HistogramBase* bad_histogram = Histogram::FactoryGet(
       "BadConstruction", 0, 100, 7, HistogramBase::kNoFlags);
-  EXPECT_EQ(nullptr, bad_histogram);
+  EXPECT_EQ(DummyHistogram::GetInstance(), bad_histogram);
   bad_histogram = Histogram::FactoryGet(
       "BadConstruction", 0, 99, 8, HistogramBase::kNoFlags);
-  EXPECT_EQ(nullptr, bad_histogram);
+  EXPECT_EQ(DummyHistogram::GetInstance(), bad_histogram);
 
   HistogramBase* linear_histogram = LinearHistogram::FactoryGet(
       "BadConstructionLinear", 0, 100, 8, HistogramBase::kNoFlags);
@@ -669,10 +673,10 @@ TEST_P(HistogramTest, BadConstruction) {
   // Try to get the same histogram name with different arguments.
   bad_histogram = LinearHistogram::FactoryGet(
       "BadConstructionLinear", 0, 100, 7, HistogramBase::kNoFlags);
-  EXPECT_EQ(nullptr, bad_histogram);
+  EXPECT_EQ(DummyHistogram::GetInstance(), bad_histogram);
   bad_histogram = LinearHistogram::FactoryGet(
       "BadConstructionLinear", 10, 100, 8, HistogramBase::kNoFlags);
-  EXPECT_EQ(nullptr, bad_histogram);
+  EXPECT_EQ(DummyHistogram::GetInstance(), bad_histogram);
 }
 
 TEST_P(HistogramTest, FactoryTime) {
@@ -737,6 +741,41 @@ TEST_P(HistogramTest, FactoryTime) {
           << "ns each.";
 }
 
+TEST_P(HistogramTest, ScaledLinearHistogram) {
+  ScaledLinearHistogram scaled("SLH", 1, 5, 6, 100, HistogramBase::kNoFlags);
+
+  scaled.AddScaledCount(0, 1);
+  scaled.AddScaledCount(1, 49);
+  scaled.AddScaledCount(2, 50);
+  scaled.AddScaledCount(3, 101);
+  scaled.AddScaledCount(4, 160);
+  scaled.AddScaledCount(5, 130);
+  scaled.AddScaledCount(6, 140);
+
+  std::unique_ptr<SampleVector> samples =
+      SnapshotAllSamples(scaled.histogram());
+  EXPECT_EQ(0, samples->GetCountAtIndex(0));
+  EXPECT_EQ(0, samples->GetCountAtIndex(1));
+  EXPECT_EQ(1, samples->GetCountAtIndex(2));
+  EXPECT_EQ(1, samples->GetCountAtIndex(3));
+  EXPECT_EQ(2, samples->GetCountAtIndex(4));
+  EXPECT_EQ(3, samples->GetCountAtIndex(5));
+
+  // Make sure the macros compile properly. This can only be run when
+  // there is no persistent allocator which can be discarded and leave
+  // dangling pointers.
+  if (!use_persistent_histogram_allocator_) {
+    enum EnumWithMax {
+      kA = 0,
+      kB = 1,
+      kC = 2,
+      kMaxValue = kC,
+    };
+    UMA_HISTOGRAM_SCALED_EXACT_LINEAR("h1", 1, 5000, 5, 100);
+    UMA_HISTOGRAM_SCALED_ENUMERATION("h2", kB, 5000, 100);
+  }
+}
+
 // For Histogram, LinearHistogram and CustomHistogram, the minimum for a
 // declared range is 1, while the maximum is (HistogramBase::kSampleType_MAX -
 // 1). But we accept ranges exceeding those limits, and silently clamped to
@@ -785,6 +824,9 @@ TEST(HistogramDeathTest, BadRangesTest) {
 }
 
 TEST_P(HistogramTest, ExpiredHistogramTest) {
+  auto record_checker = std::make_unique<TestRecordHistogramChecker>();
+  StatisticsRecorder::SetRecordChecker(std::move(record_checker));
+
   HistogramBase* expired = Histogram::FactoryGet(kExpiredHistogramName, 1, 1000,
                                                  10, HistogramBase::kNoFlags);
   ASSERT_TRUE(expired);

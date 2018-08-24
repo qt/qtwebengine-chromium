@@ -31,19 +31,16 @@ class AdjustPaintOffsetScope {
       : old_paint_info_(paint_info) {
     DCHECK(fragment.GetLayoutObject());
     const LayoutBox& box = ToLayoutBox(*fragment.GetLayoutObject());
-    if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled() ||
-        !AdjustPaintOffset(box)) {
-      if (!box.HasFlippedBlocksWritingMode()) {
-        adjusted_paint_offset_ =
-            paint_offset + fragment.Offset().ToLayoutPoint();
-      } else {
-        // fragment.Offset() is in physical coordinate, not a flipped physical
-        // coordinate, but BlockPainter::PaintChild() has already incorporated
-        // flipping and assume child painters accumulate flipped offset.
-        // NGBlockNode::CopyFragmentDataToLayoutBox() already computed flipped
-        // fragment.Offset() and stored to LayoutBox, so use it.
-        adjusted_paint_offset_ = paint_offset + box.Location();
-      }
+    if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
+        AdjustPaintOffset(box))
+      return;
+    if (UNLIKELY(box.HasSelfPaintingLayer())) {
+      //   There is no containing block here, we are painting from origin.
+      //   paint_offset is 0,0
+      //   box.Location is offset from Layer()
+      adjusted_paint_offset_ = paint_offset + box.Location();
+    } else {
+      adjusted_paint_offset_ = paint_offset + fragment.Offset().ToLayoutPoint();
     }
   }
 
@@ -59,14 +56,17 @@ class AdjustPaintOffsetScope {
 
   LayoutPoint AdjustedPaintOffset() const { return adjusted_paint_offset_; }
 
+  // True if child will use LayoutObject::Location to compute adjusted_offset.
+  static bool WillUseLegacyLocation(const LayoutBox* child);
+
  private:
   // Returns true if paint info and offset has been adjusted.
   bool AdjustPaintOffset(const LayoutBox&);
 
   const PaintInfo& old_paint_info_;
   LayoutPoint adjusted_paint_offset_;
-  Optional<PaintInfo> new_paint_info_;
-  Optional<ScopedPaintChunkProperties> contents_properties_;
+  base::Optional<PaintInfo> new_paint_info_;
+  base::Optional<ScopedPaintChunkProperties> contents_properties_;
 };
 
 }  // namespace blink

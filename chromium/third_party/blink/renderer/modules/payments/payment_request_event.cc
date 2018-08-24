@@ -40,8 +40,8 @@ const AtomicString& PaymentRequestEvent::InterfaceName() const {
   return EventNames::PaymentRequestEvent;
 }
 
-const String& PaymentRequestEvent::topLevelOrigin() const {
-  return top_level_origin_;
+const String& PaymentRequestEvent::topOrigin() const {
+  return top_origin_;
 }
 
 const String& PaymentRequestEvent::paymentRequestOrigin() const {
@@ -75,6 +75,13 @@ ScriptPromise PaymentRequestEvent::openWindow(ScriptState* script_state,
   ScriptPromise promise = resolver->Promise();
   ExecutionContext* context = ExecutionContext::From(script_state);
 
+  if (!isTrusted()) {
+    resolver->Reject(DOMException::Create(
+        kInvalidStateError,
+        "Cannot open a window when the event is not trusted"));
+    return promise;
+  }
+
   KURL parsed_url_to_open = context->CompleteURL(url);
   if (!parsed_url_to_open.IsValid()) {
     resolver->Reject(V8ThrowException::CreateTypeError(
@@ -89,8 +96,9 @@ ScriptPromise PaymentRequestEvent::openWindow(ScriptState* script_state,
   }
 
   if (!context->IsWindowInteractionAllowed()) {
-    resolver->Reject(DOMException::Create(kInvalidAccessError,
-                                          "Not allowed to open a window."));
+    resolver->Reject(DOMException::Create(
+        kNotAllowedError,
+        "Not allowed to open a window without user activation"));
     return promise;
   }
   context->ConsumeWindowInteraction();
@@ -103,6 +111,13 @@ ScriptPromise PaymentRequestEvent::openWindow(ScriptState* script_state,
 void PaymentRequestEvent::respondWith(ScriptState* script_state,
                                       ScriptPromise script_promise,
                                       ExceptionState& exception_state) {
+  if (!isTrusted()) {
+    exception_state.ThrowDOMException(
+        kInvalidStateError,
+        "Cannot respond with data when the event is not trusted");
+    return;
+  }
+
   stopImmediatePropagation();
   if (observer_) {
     observer_->RespondWith(script_state, script_promise, exception_state);
@@ -122,7 +137,7 @@ PaymentRequestEvent::PaymentRequestEvent(
     RespondWithObserver* respond_with_observer,
     WaitUntilObserver* wait_until_observer)
     : ExtendableEvent(type, initializer, wait_until_observer),
-      top_level_origin_(initializer.topLevelOrigin()),
+      top_origin_(initializer.topOrigin()),
       payment_request_origin_(initializer.paymentRequestOrigin()),
       payment_request_id_(initializer.paymentRequestId()),
       method_data_(std::move(initializer.methodData())),

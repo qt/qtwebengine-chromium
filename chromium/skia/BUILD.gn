@@ -19,7 +19,7 @@ if (current_cpu == "mipsel" || current_cpu == "mips64el") {
 }
 
 skia_support_gpu = !is_ios
-skia_support_pdf = !is_ios && (enable_basic_printing || enable_print_preview)
+skia_support_pdf = !is_ios && enable_basic_printing
 
 declare_args() {
   skia_whitelist_serialized_typefaces = false
@@ -73,6 +73,11 @@ config("skia_config") {
       "SKIA_DLL",
       "GR_GL_IGNORE_ES3_MSAA=0",
     ]
+    if (is_win) {
+      defines += [ "SKCMS_API=__declspec(dllexport)" ]
+    } else {
+      defines += [ "SKCMS_API=__attribute__((visibility(\"default\")))" ]
+    }
   }
 
   if (skia_support_gpu) {
@@ -80,10 +85,11 @@ config("skia_config") {
       "//third_party/skia/src/gpu",
       "//third_party/skia/src/sksl",
     ]
-    if (enable_vulkan) {
-      include_dirs += [ "//third_party/skia/include/gpu/vk/" ]
-    }
-    defines += [ "SK_SUPPORT_GPU=1" ]
+    workaround_header = "gpu/config/gpu_driver_bug_workaround_autogen.h"
+    defines += [
+      "SK_SUPPORT_GPU=1",
+      "SK_GPU_WORKAROUNDS_HEADER=\"$workaround_header\"",
+    ]
   } else {
     defines += [ "SK_SUPPORT_GPU=0" ]
   }
@@ -140,7 +146,7 @@ config("skia_library_config") {
   # TODO: remove after Skia shader relocation (https://skia-review.googlesource.com/c/17927)
   include_dirs += [ "//third_party/skia/src/effects/gradients" ]
 
-  defines = []
+  defines = [ "SK_USE_SKCMS" ]
 
   if (!is_ios && !use_system_freetype) {
     defines += [ "SK_FREETYPE_MINIMUM_RUNTIME_VERSION=(((FREETYPE_MAJOR) * 0x01000000) | ((FREETYPE_MINOR) * 0x00010000) | ((FREETYPE_PATCH) * 0x00000100))" ]
@@ -221,7 +227,30 @@ config("skia_library_config") {
   }
 }
 
+import("//third_party/skia/third_party/skcms/skcms.gni")
+config("skcms_public") {
+  include_dirs = [ "//third_party/skia/third_party/skcms" ]
+}
+source_set("skcms") {
+  public_configs = [ ":skcms_public" ]
+
+  cflags = []
+  if (!is_win || is_clang) {
+    cflags += [
+      "-w",
+      "-std=c11",
+    ]
+  }
+
+  public = [
+    "//third_party/skia/third_party/skcms/skcms.h",
+  ]
+  sources =
+      rebase_path(skcms_sources, ".", "//third_party/skia/third_party/skcms")
+}
+
 component("skia") {
+  deps = []
   sources = [
     # Chrome sources.
     "config/SkUserConfig.h",
@@ -348,6 +377,7 @@ component("skia") {
     if (enable_vulkan) {
       sources += skia_vk_sources
     }
+    deps += [ "//gpu/config:workaround_list" ]
   }
 
   # Remove unused util sources.
@@ -475,7 +505,7 @@ component("skia") {
   ]
   public_configs = [ ":skia_config" ]
 
-  deps = [
+  deps += [
     ":skia_opts",
     "//base",
     "//base/third_party/dynamic_annotations",
@@ -545,6 +575,10 @@ component("skia") {
   if (is_fuchsia) {
     deps += [ "//third_party/expat" ]
   }
+
+  # skcms
+  deps += [ ":skcms" ]
+  sources += [ "//third_party/skia/src/core/SkColorSpaceXform_skcms.cpp" ]
 }
 
 # Template for things that are logically part of :skia, but need to be split out
@@ -586,6 +620,11 @@ skia_source_set("skia_core_and_effects") {
   defines = skia_core_defines
   sources = skia_core_sources
   sources += skia_effects_sources
+  if (skia_support_gpu) {
+    deps = [
+      "//gpu/config:workaround_list",
+    ]
+  }
 
   visibility = [ ":skia" ]
 }

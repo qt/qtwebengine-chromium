@@ -10,7 +10,7 @@
 
 #include <iostream>
 
-#include "logging/rtc_event_log/rtc_event_log_parser.h"
+#include "logging/rtc_event_log/rtc_event_log_parser_new.h"
 #include "rtc_base/flags.h"
 #include "rtc_tools/event_log_visualizer/analyzer.h"
 #include "rtc_tools/event_log_visualizer/plot_base.h"
@@ -112,9 +112,7 @@ DEFINE_bool(plot_audio_encoder_dtx, false, "Plot the audio encoder DTX.");
 DEFINE_bool(plot_audio_encoder_num_channels,
             false,
             "Plot the audio encoder number of channels.");
-DEFINE_bool(plot_audio_jitter_buffer,
-            false,
-            "Plot the audio jitter buffer delay profile.");
+DEFINE_bool(plot_neteq_stats, false, "Plot the NetEq statistics.");
 DEFINE_bool(plot_ice_candidate_pair_config,
             false,
             "Plot the ICE candidate pair config events.");
@@ -143,10 +141,15 @@ DEFINE_bool(show_alr_state,
             false,
             "Show the state ALR state on the total bitrate graph");
 
-DEFINE_bool(
-    print_triage_notifications,
-    false,
-    "Print triage notifications, i.e. a list of suspicious looking events.");
+DEFINE_bool(parse_unconfigured_header_extensions,
+            true,
+            "Attempt to parse unconfigured header extensions using the default "
+            "WebRTC mapping. This can give very misleading results if the "
+            "application negotiates a different mapping.");
+
+DEFINE_bool(print_triage_alerts,
+            false,
+            "Print triage alerts, i.e. a list of potential problems.");
 
 void SetAllPlotFlags(bool setting);
 
@@ -209,7 +212,13 @@ int main(int argc, char* argv[]) {
 
   std::string filename = argv[1];
 
-  webrtc::ParsedRtcEventLog parsed_log;
+  webrtc::ParsedRtcEventLogNew::UnconfiguredHeaderExtensions header_extensions =
+      webrtc::ParsedRtcEventLogNew::UnconfiguredHeaderExtensions::kDontParse;
+  if (FLAG_parse_unconfigured_header_extensions) {
+    header_extensions = webrtc::ParsedRtcEventLogNew::
+        UnconfiguredHeaderExtensions::kAttemptWebrtcDefaultConfig;
+  }
+  webrtc::ParsedRtcEventLogNew parsed_log(header_extensions);
 
   if (!parsed_log.ParseFile(filename)) {
     std::cerr << "Could not parse the entire log file." << std::endl;
@@ -218,31 +227,34 @@ int main(int argc, char* argv[]) {
               << std::endl;
   }
 
-  webrtc::plotting::EventLogAnalyzer analyzer(parsed_log);
-  std::unique_ptr<webrtc::plotting::PlotCollection> collection(
-      new webrtc::plotting::PythonPlotCollection());
+  webrtc::EventLogAnalyzer analyzer(parsed_log);
+  std::unique_ptr<webrtc::PlotCollection> collection(
+      new webrtc::PythonPlotCollection());
 
   if (FLAG_plot_incoming_packet_sizes) {
-    analyzer.CreatePacketGraph(webrtc::PacketDirection::kIncomingPacket,
+    analyzer.CreatePacketGraph(webrtc::kIncomingPacket,
                                collection->AppendNewPlot());
   }
   if (FLAG_plot_outgoing_packet_sizes) {
-    analyzer.CreatePacketGraph(webrtc::PacketDirection::kOutgoingPacket,
+    analyzer.CreatePacketGraph(webrtc::kOutgoingPacket,
                                collection->AppendNewPlot());
   }
   if (FLAG_plot_incoming_packet_count) {
-    analyzer.CreateAccumulatedPacketsGraph(
-        webrtc::PacketDirection::kIncomingPacket, collection->AppendNewPlot());
+    analyzer.CreateAccumulatedPacketsGraph(webrtc::kIncomingPacket,
+                                           collection->AppendNewPlot());
   }
   if (FLAG_plot_outgoing_packet_count) {
-    analyzer.CreateAccumulatedPacketsGraph(
-        webrtc::PacketDirection::kOutgoingPacket, collection->AppendNewPlot());
+    analyzer.CreateAccumulatedPacketsGraph(webrtc::kOutgoingPacket,
+                                           collection->AppendNewPlot());
   }
   if (FLAG_plot_audio_playout) {
     analyzer.CreatePlayoutGraph(collection->AppendNewPlot());
   }
   if (FLAG_plot_audio_level) {
-    analyzer.CreateAudioLevelGraph(collection->AppendNewPlot());
+    analyzer.CreateAudioLevelGraph(webrtc::kIncomingPacket,
+                                   collection->AppendNewPlot());
+    analyzer.CreateAudioLevelGraph(webrtc::kOutgoingPacket,
+                                   collection->AppendNewPlot());
   }
   if (FLAG_plot_incoming_sequence_number_delta) {
     analyzer.CreateSequenceNumberGraph(collection->AppendNewPlot());
@@ -257,23 +269,19 @@ int main(int argc, char* argv[]) {
     analyzer.CreateIncomingPacketLossGraph(collection->AppendNewPlot());
   }
   if (FLAG_plot_incoming_bitrate) {
-    analyzer.CreateTotalBitrateGraph(webrtc::PacketDirection::kIncomingPacket,
-                                     collection->AppendNewPlot(),
-                                     FLAG_show_detector_state,
-                                     FLAG_show_alr_state);
+    analyzer.CreateTotalIncomingBitrateGraph(collection->AppendNewPlot());
   }
   if (FLAG_plot_outgoing_bitrate) {
-    analyzer.CreateTotalBitrateGraph(webrtc::PacketDirection::kOutgoingPacket,
-                                     collection->AppendNewPlot(),
-                                     FLAG_show_detector_state,
-                                     FLAG_show_alr_state);
+    analyzer.CreateTotalOutgoingBitrateGraph(collection->AppendNewPlot(),
+                                             FLAG_show_detector_state,
+                                             FLAG_show_alr_state);
   }
   if (FLAG_plot_incoming_stream_bitrate) {
-    analyzer.CreateStreamBitrateGraph(webrtc::PacketDirection::kIncomingPacket,
+    analyzer.CreateStreamBitrateGraph(webrtc::kIncomingPacket,
                                       collection->AppendNewPlot());
   }
   if (FLAG_plot_outgoing_stream_bitrate) {
-    analyzer.CreateStreamBitrateGraph(webrtc::PacketDirection::kOutgoingPacket,
+    analyzer.CreateStreamBitrateGraph(webrtc::kOutgoingPacket,
                                       collection->AppendNewPlot());
   }
   if (FLAG_plot_simulated_receiveside_bwe) {
@@ -289,7 +297,10 @@ int main(int argc, char* argv[]) {
     analyzer.CreateFractionLossGraph(collection->AppendNewPlot());
   }
   if (FLAG_plot_timestamps) {
-    analyzer.CreateTimestampGraph(collection->AppendNewPlot());
+    analyzer.CreateTimestampGraph(webrtc::kIncomingPacket,
+                                  collection->AppendNewPlot());
+    analyzer.CreateTimestampGraph(webrtc::kOutgoingPacket,
+                                  collection->AppendNewPlot());
   }
   if (FLAG_plot_pacer_delay) {
     analyzer.CreatePacerDelayGraph(collection->AppendNewPlot());
@@ -312,7 +323,7 @@ int main(int argc, char* argv[]) {
   if (FLAG_plot_audio_encoder_num_channels) {
     analyzer.CreateAudioEncoderNumChannelsGraph(collection->AppendNewPlot());
   }
-  if (FLAG_plot_audio_jitter_buffer) {
+  if (FLAG_plot_neteq_stats) {
     std::string wav_path;
     if (FLAG_wav_filename[0] != '\0') {
       wav_path = FLAG_wav_filename;
@@ -320,8 +331,33 @@ int main(int argc, char* argv[]) {
       wav_path = webrtc::test::ResourcePath(
           "audio_processing/conversational_speech/EN_script2_F_sp2_B1", "wav");
     }
-    analyzer.CreateAudioJitterBufferGraph(wav_path, 48000,
+    auto neteq_stats = analyzer.SimulateNetEq(wav_path, 48000);
+    analyzer.CreateAudioJitterBufferGraph(neteq_stats,
                                           collection->AppendNewPlot());
+    analyzer.CreateNetEqStatsGraph(
+        neteq_stats,
+        [](const webrtc::NetEqNetworkStatistics& stats) {
+          return stats.expand_rate / 16384.f;
+        },
+        "Expand rate", collection->AppendNewPlot());
+    analyzer.CreateNetEqStatsGraph(
+        neteq_stats,
+        [](const webrtc::NetEqNetworkStatistics& stats) {
+          return stats.speech_expand_rate / 16384.f;
+        },
+        "Speech expand rate", collection->AppendNewPlot());
+    analyzer.CreateNetEqStatsGraph(
+        neteq_stats,
+        [](const webrtc::NetEqNetworkStatistics& stats) {
+          return stats.accelerate_rate / 16384.f;
+        },
+        "Accelerate rate", collection->AppendNewPlot());
+    analyzer.CreateNetEqStatsGraph(
+        neteq_stats,
+        [](const webrtc::NetEqNetworkStatistics& stats) {
+          return stats.packet_loss_rate / 16384.f;
+        },
+        "Packet loss rate", collection->AppendNewPlot());
   }
 
   if (FLAG_plot_ice_candidate_pair_config) {
@@ -333,7 +369,7 @@ int main(int argc, char* argv[]) {
 
   collection->Draw();
 
-  if (FLAG_print_triage_notifications) {
+  if (FLAG_print_triage_alerts) {
     analyzer.CreateTriageNotifications();
     analyzer.PrintNotifications(stderr);
   }
@@ -368,7 +404,7 @@ void SetAllPlotFlags(bool setting) {
   FLAG_plot_audio_encoder_fec = setting;
   FLAG_plot_audio_encoder_dtx = setting;
   FLAG_plot_audio_encoder_num_channels = setting;
-  FLAG_plot_audio_jitter_buffer = setting;
+  FLAG_plot_neteq_stats = setting;
   FLAG_plot_ice_candidate_pair_config = setting;
   FLAG_plot_ice_connectivity_check = setting;
 }

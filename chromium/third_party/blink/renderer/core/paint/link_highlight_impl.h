@@ -27,8 +27,8 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_PAINT_LINK_HIGHLIGHT_IMPL_H_
 
 #include <memory>
-#include "third_party/blink/public/platform/web_content_layer.h"
-#include "third_party/blink/public/platform/web_content_layer_client.h"
+
+#include "cc/layers/content_layer_client.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/platform/animation/compositor_animation.h"
 #include "third_party/blink/renderer/platform/animation/compositor_animation_client.h"
@@ -39,32 +39,37 @@
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 
+namespace cc {
+class Layer;
+class PictureLayer;
+}
+
 namespace blink {
 
 class GraphicsLayer;
 class LayoutBoxModelObject;
 class Node;
-class WebContentLayer;
-class WebLayer;
 class WebViewImpl;
 
 class CORE_EXPORT LinkHighlightImpl final : public LinkHighlight,
-                                            public WebContentLayerClient,
+                                            public cc::ContentLayerClient,
                                             public CompositorAnimationDelegate,
                                             public CompositorAnimationClient {
  public:
   static std::unique_ptr<LinkHighlightImpl> Create(Node*, WebViewImpl*);
   ~LinkHighlightImpl() override;
 
-  WebContentLayer* ContentLayer();
-  WebLayer* ClipLayer();
+  cc::PictureLayer* ContentLayer();
+  cc::Layer* ClipLayer();
   void StartHighlightAnimationIfNeeded();
   void UpdateGeometry();
 
-  // WebContentLayerClient implementation.
+  // cc::ContentLayerClient implementation.
   gfx::Rect PaintableRegion() override;
-  void PaintContents(WebDisplayItemList*,
-                     WebContentLayerClient::PaintingControlSetting) override;
+  scoped_refptr<cc::DisplayItemList> PaintContentsToDisplayList(
+      PaintingControlSetting painting_control) override;
+  bool FillsBoundsCompletely() const override { return false; }
+  size_t GetApproximateUnsharedMemoryUsage() const override { return 0; }
 
   // CompositorAnimationDelegate implementation.
   void NotifyAnimationStarted(double monotonic_time, int group) override;
@@ -73,7 +78,7 @@ class CORE_EXPORT LinkHighlightImpl final : public LinkHighlight,
 
   // LinkHighlight implementation.
   void Invalidate() override;
-  WebLayer* Layer() override;
+  cc::Layer* Layer() override;
   void ClearCurrentGraphicsLayer() override;
 
   // CompositorAnimationClient implementation.
@@ -96,8 +101,8 @@ class CORE_EXPORT LinkHighlightImpl final : public LinkHighlight,
   // changed size since the last call to this function.
   bool ComputeHighlightLayerPathAndPosition(const LayoutBoxModelObject&);
 
-  std::unique_ptr<WebContentLayer> content_layer_;
-  std::unique_ptr<WebLayer> clip_layer_;
+  scoped_refptr<cc::PictureLayer> content_layer_;
+  scoped_refptr<cc::Layer> clip_layer_;
   Path path_;
 
   Persistent<Node> node_;

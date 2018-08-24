@@ -13,6 +13,7 @@ import("//build/config/chrome_build.gni")
 import("//build/config/nacl/config.gni")
 import("//components/nacl/features.gni")
 import("//third_party/jinja2/jinja2.gni")
+import("//tools/ipc_fuzzer/ipc_fuzzer.gni")
 
 declare_args() {
   # Indicates whether typemapping should be supported in this build
@@ -930,6 +931,9 @@ template("mojom") {
       output_target_type = "source_set"
     }
 
+    js_data_deps_target_name = target_name + "_js_data_deps"
+    not_needed([ "js_data_deps_target_name" ])
+
     target("jumbo_" + output_target_type, "${target_name}${variant_suffix}") {
       if (defined(bindings_configuration.for_blink) &&
           bindings_configuration.for_blink &&
@@ -1033,6 +1037,11 @@ template("mojom") {
           bindings_configuration.for_blink) {
         public_deps += [ "//mojo/public/cpp/bindings:wtf_support" ]
       }
+
+      if (enable_ipc_fuzzer) {
+        # Generate JS bindings by default if IPC fuzzer is enabled.
+        public_deps += [ ":$js_data_deps_target_name" ]
+      }
     }
 
     if (!cpp_only && is_android) {
@@ -1128,7 +1137,7 @@ template("mojom") {
     }
   }
 
-  if (!defined(invoker.cpp_only) || !invoker.cpp_only) {
+  if (enable_ipc_fuzzer || !defined(invoker.cpp_only) || !invoker.cpp_only) {
     if (defined(invoker.sources)) {
       generator_js_target_name = "${target_name}_js__generator"
       generator_js_outputs = [
@@ -1170,6 +1179,10 @@ template("mojom") {
           inputs += message_scrambling_inputs
           args += message_scrambling_args
         }
+
+        if (enable_ipc_fuzzer) {
+          args += [ "--generate_fuzzing" ]
+        }
       }
     }
 
@@ -1186,7 +1199,6 @@ template("mojom") {
       }
     }
 
-    js_data_deps_target_name = target_name + "_js_data_deps"
     group(js_data_deps_target_name) {
       deps = []
       if (defined(invoker.sources)) {

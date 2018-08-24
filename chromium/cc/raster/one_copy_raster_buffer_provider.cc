@@ -74,7 +74,7 @@ class OneCopyRasterBufferProvider::OneCopyGpuBacking
 
 OneCopyRasterBufferProvider::RasterBufferImpl::RasterBufferImpl(
     OneCopyRasterBufferProvider* client,
-    LayerTreeResourceProvider* resource_provider,
+    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
     const ResourcePool::InUsePoolResource& in_use_resource,
     OneCopyGpuBacking* backing,
     uint64_t previous_content_id)
@@ -127,15 +127,15 @@ OneCopyRasterBufferProvider::OneCopyRasterBufferProvider(
     scoped_refptr<base::SequencedTaskRunner> task_runner,
     viz::ContextProvider* compositor_context_provider,
     viz::RasterContextProvider* worker_context_provider,
-    LayerTreeResourceProvider* resource_provider,
+    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
     int max_copy_texture_chromium_size,
     bool use_partial_raster,
     bool use_gpu_memory_buffer_resources,
     int max_staging_buffer_usage_in_bytes,
-    viz::ResourceFormat preferred_tile_format)
+    viz::ResourceFormat tile_format)
     : compositor_context_provider_(compositor_context_provider),
       worker_context_provider_(worker_context_provider),
-      resource_provider_(resource_provider),
+      gpu_memory_buffer_manager_(gpu_memory_buffer_manager),
       max_bytes_per_copy_operation_(
           max_copy_texture_chromium_size
               ? std::min(kMaxBytesPerCopyOperation,
@@ -144,10 +144,9 @@ OneCopyRasterBufferProvider::OneCopyRasterBufferProvider(
       use_partial_raster_(use_partial_raster),
       use_gpu_memory_buffer_resources_(use_gpu_memory_buffer_resources),
       bytes_scheduled_since_last_flush_(0),
-      preferred_tile_format_(preferred_tile_format),
+      tile_format_(tile_format),
       staging_pool_(std::move(task_runner),
                     worker_context_provider,
-                    resource_provider,
                     use_partial_raster,
                     max_staging_buffer_usage_in_bytes) {
   DCHECK(compositor_context_provider);
@@ -188,8 +187,8 @@ OneCopyRasterBufferProvider::AcquireBufferForRaster(
       static_cast<OneCopyGpuBacking*>(resource.gpu_backing());
   // TODO(danakj): If resource_content_id != 0, we only need to copy/upload
   // the dirty rect.
-  return std::make_unique<RasterBufferImpl>(this, resource_provider_, resource,
-                                            backing, previous_content_id);
+  return std::make_unique<RasterBufferImpl>(
+      this, gpu_memory_buffer_manager_, resource, backing, previous_content_id);
 }
 
 void OneCopyRasterBufferProvider::Flush() {
@@ -201,24 +200,15 @@ void OneCopyRasterBufferProvider::Flush() {
   compositor_context_provider_->ContextSupport()->FlushPendingWork();
 }
 
-viz::ResourceFormat OneCopyRasterBufferProvider::GetResourceFormat(
-    bool must_support_alpha) const {
-  if (resource_provider_->IsTextureFormatSupported(preferred_tile_format_) &&
-      (DoesResourceFormatSupportAlpha(preferred_tile_format_) ||
-       !must_support_alpha)) {
-    return preferred_tile_format_;
-  }
-
-  return resource_provider_->best_texture_format();
+viz::ResourceFormat OneCopyRasterBufferProvider::GetResourceFormat() const {
+  return tile_format_;
 }
 
-bool OneCopyRasterBufferProvider::IsResourceSwizzleRequired(
-    bool must_support_alpha) const {
-  return ResourceFormatRequiresSwizzle(GetResourceFormat(must_support_alpha));
+bool OneCopyRasterBufferProvider::IsResourceSwizzleRequired() const {
+  return !viz::PlatformColor::SameComponentOrder(GetResourceFormat());
 }
 
-bool OneCopyRasterBufferProvider::IsResourcePremultiplied(
-    bool must_support_alpha) const {
+bool OneCopyRasterBufferProvider::IsResourcePremultiplied() const {
   // TODO(ericrk): Handle unpremultiply/dither in one-copy case as well.
   // https://crbug.com/789153
   return true;
@@ -323,7 +313,7 @@ void OneCopyRasterBufferProvider::PlaybackToStagingBuffer(
   // must allocate a buffer with BufferUsage CPU_READ_WRITE_PERSISTENT.
   if (!staging_buffer->gpu_memory_buffer) {
     staging_buffer->gpu_memory_buffer =
-        resource_provider_->gpu_memory_buffer_manager()->CreateGpuMemoryBuffer(
+        gpu_memory_buffer_manager_->CreateGpuMemoryBuffer(
             staging_buffer->size, BufferFormat(format), StagingBufferUsage(),
             gpu::kNullSurfaceHandle);
   }
@@ -364,7 +354,7 @@ void OneCopyRasterBufferProvider::PlaybackToStagingBuffer(
     RasterBufferProvider::PlaybackToMemory(
         buffer->memory(0), format, staging_buffer->size, buffer->stride(0),
         raster_source, raster_full_rect, playback_rect, transform,
-        dst_color_space, playback_settings);
+        dst_color_space, /*gpu_compositing=*/true, playback_settings);
     buffer->Unmap();
     staging_buffer->content_id = new_content_id;
   }
@@ -438,7 +428,7 @@ gpu::SyncToken OneCopyRasterBufferProvider::CopyOnWorkerThread(
   // TODO(vmiura): Need a way to ensure we don't hold onto bindings?
   // ri->BindTexture(image_target, 0);
 
-  if (resource_provider_->use_sync_query()) {
+  if (worker_context_provider_->ContextCapabilities().sync_query) {
     if (!staging_buffer->query_id)
       ri->GenQueriesEXT(1, &staging_buffer->query_id);
 
@@ -485,7 +475,7 @@ gpu::SyncToken OneCopyRasterBufferProvider::CopyOnWorkerThread(
     }
   }
 
-  if (resource_provider_->use_sync_query()) {
+  if (worker_context_provider_->ContextCapabilities().sync_query) {
 #if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
     ri->EndQueryEXT(GL_COMMANDS_ISSUED_CHROMIUM);
 #else

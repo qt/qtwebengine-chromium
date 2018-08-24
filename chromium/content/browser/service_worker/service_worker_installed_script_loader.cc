@@ -40,7 +40,7 @@ ServiceWorkerInstalledScriptLoader::~ServiceWorkerInstalledScriptLoader() =
 
 void ServiceWorkerInstalledScriptLoader::OnStarted(
     std::string encoding,
-    std::unordered_map<std::string, std::string> headers,
+    base::flat_map<std::string, std::string> headers,
     mojo::ScopedDataPipeConsumerHandle body_handle,
     uint64_t body_size,
     mojo::ScopedDataPipeConsumerHandle metadata_handle,
@@ -110,7 +110,8 @@ void ServiceWorkerInstalledScriptLoader::OnFinished(FinishedReason reason) {
   client_->OnComplete(network::URLLoaderCompletionStatus(net_error));
 }
 
-void ServiceWorkerInstalledScriptLoader::FollowRedirect() {
+void ServiceWorkerInstalledScriptLoader::FollowRedirect(
+    const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
   // This class never returns a redirect response to its client, so should never
   // be asked to follow one.
   NOTREACHED();

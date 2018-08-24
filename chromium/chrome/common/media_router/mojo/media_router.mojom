@@ -199,7 +199,7 @@ struct SinkSearchCriteria {
 // - RouteRequestResult::ResultCode in route_request_result.h
 // - MediaRouteProviderResult enum in tools/metrics/histograms.xml.
 // - mr.RouteRequestResultCode in route_request_error.js
-// - RouteRequestResultCodeFromMojo in media_router_type_converters.cc
+// - media_router_struct_traits.h
 enum RouteRequestResultCode {
   UNKNOWN_ERROR,
   OK,
@@ -209,7 +209,8 @@ enum RouteRequestResultCode {
   INVALID_ORIGIN,
   INCOGNITO_MISMATCH,
   NO_SUPPORTED_PROVIDER,
-  CANCELLED
+  CANCELLED,
+  ROUTE_ALREADY_EXISTS
 // New values must be added here.
 };
 
@@ -413,7 +414,13 @@ interface MediaRouteProvider {
   // already a firewall rule for mDNS.
   EnableMdnsDiscovery();
 
-  // Updates media sinks capable of displaying |media_source|.
+  // Requests the MediaRouteProvider to update the list of media sinks capable
+  // of displaying |media_source|. This call is made when a user gesture is
+  // detected, so MediaRouteProvider may treat this as a signal to take actions
+  // to become more responsive, e.g., initiate a one-off round of device
+  // discovery.
+  // TODO(https://crbug.com/698940): Rename this to OnUserGesture and remove the
+  // |media_source| parameter.
   UpdateMediaSinks(string media_source);
 
   // Indicates that the Media Router is interested in finding a sink that
@@ -466,7 +473,7 @@ interface MediaRouter {
     AVAILABLE
   };
 
-  // Keep in sync with content/public/common/presentation_info.h.
+  // TODO(crbug.com/831416): Remove and use presentation.mojom type instead.
   enum PresentationConnectionState {
     CONNECTING,
     CONNECTED,
@@ -474,7 +481,7 @@ interface MediaRouter {
     TERMINATED
   };
 
-  // Keep in sync with content/public/common/presentation_info.h.
+  // TODO(crbug.com/831416): Remove and use presentation.mojom type instead.
   enum PresentationConnectionCloseReason {
     CONNECTION_ERROR,
     CLOSED,

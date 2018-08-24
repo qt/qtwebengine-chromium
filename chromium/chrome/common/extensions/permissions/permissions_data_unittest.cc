@@ -32,6 +32,7 @@
 #include "extensions/common/value_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 using base::UTF16ToUTF8;
 using content::SocketPermissionRequest;
@@ -89,22 +90,18 @@ void CheckRestrictedUrls(const Extension* extension,
   const GURL invalid_url("chrome-debugger://foo/bar.html");
 
   std::string error;
-  EXPECT_EQ(block_chrome_urls,
-            PermissionsData::IsRestrictedUrl(
-                chrome_settings_url,
-                extension,
-                &error)) << name;
+  EXPECT_EQ(block_chrome_urls, extension->permissions_data()->IsRestrictedUrl(
+                                   chrome_settings_url, &error))
+      << name;
   if (block_chrome_urls)
     EXPECT_EQ(manifest_errors::kCannotAccessChromeUrl, error) << name;
   else
     EXPECT_TRUE(error.empty()) << name;
 
   error.clear();
-  EXPECT_EQ(block_chrome_urls,
-            PermissionsData::IsRestrictedUrl(
-                chrome_extension_url,
-                extension,
-                &error)) << name;
+  EXPECT_EQ(block_chrome_urls, extension->permissions_data()->IsRestrictedUrl(
+                                   chrome_extension_url, &error))
+      << name;
   if (block_chrome_urls)
     EXPECT_EQ(manifest_errors::kCannotAccessExtensionUrl, error) << name;
   else
@@ -112,24 +109,25 @@ void CheckRestrictedUrls(const Extension* extension,
 
   // Google should never be a restricted url.
   error.clear();
-  EXPECT_FALSE(PermissionsData::IsRestrictedUrl(
-      google_url, extension, &error)) << name;
+  EXPECT_FALSE(
+      extension->permissions_data()->IsRestrictedUrl(google_url, &error))
+      << name;
   EXPECT_TRUE(error.empty()) << name;
 
   // We should always be able to access our own extension pages.
   error.clear();
-  EXPECT_FALSE(PermissionsData::IsRestrictedUrl(
-      self_url, extension, &error)) << name;
+  EXPECT_FALSE(extension->permissions_data()->IsRestrictedUrl(self_url, &error))
+      << name;
   EXPECT_TRUE(error.empty()) << name;
 
   // We should only allow other schemes for extensions when it's a whitelisted
   // extension.
   error.clear();
-  bool allow_on_other_schemes =
-      PermissionsData::CanExecuteScriptEverywhere(extension);
+  bool allow_on_other_schemes = PermissionsData::CanExecuteScriptEverywhere(
+      extension->id(), extension->location());
   EXPECT_EQ(!allow_on_other_schemes,
-            PermissionsData::IsRestrictedUrl(
-                invalid_url, extension, &error)) << name;
+            extension->permissions_data()->IsRestrictedUrl(invalid_url, &error))
+      << name;
   if (!allow_on_other_schemes) {
     EXPECT_EQ(ErrorUtils::FormatErrorMessage(
                   manifest_errors::kCannotAccessPage,
@@ -326,23 +324,6 @@ TEST(PermissionsDataTest, GetPermissionMessages_ManyHosts) {
       "Read and change your data on encrypted.google.com and www.google.com"));
 }
 
-TEST(PermissionsDataTest, ExternalFiles) {
-  GURL external_file("externalfile:abc");
-  scoped_refptr<const Extension> extension;
-
-  // A regular extension shouldn't get access to externalfile: scheme URLs
-  // even with <all_urls> specified.
-  extension = GetExtensionWithHostPermission(
-      "regular_extension", "<all_urls>", Manifest::UNPACKED);
-  ASSERT_FALSE(extension->permissions_data()->HasHostPermission(external_file));
-
-  // Component extensions should get access to externalfile: scheme URLs when
-  // <all_urls> is specified.
-  extension = GetExtensionWithHostPermission(
-      "component_extension", "<all_urls>", Manifest::COMPONENT);
-  ASSERT_TRUE(extension->permissions_data()->HasHostPermission(external_file));
-}
-
 TEST(PermissionsDataTest, ExtensionScheme) {
   GURL external_file(
       "chrome-extension://abcdefghijklmnopabcdefghijklmnop/index.html");
@@ -410,7 +391,7 @@ class ExtensionScriptAndCaptureVisibleTest : public testing::Test {
                                 int tab_id) {
     bool allowed_script = IsAllowedScript(extension, url, tab_id);
     bool allowed_capture = extension->permissions_data()->CanCaptureVisiblePage(
-        url, extension, tab_id, nullptr);
+        url, tab_id, nullptr);
 
     if (allowed_script && allowed_capture)
       return ALLOWED_SCRIPT_AND_CAPTURE;
@@ -469,8 +450,7 @@ class ExtensionScriptAndCaptureVisibleTest : public testing::Test {
   bool IsAllowedScript(const Extension* extension,
                        const GURL& url,
                        int tab_id) {
-    return extension->permissions_data()->CanAccessPage(extension, url, tab_id,
-                                                        nullptr);
+    return extension->permissions_data()->CanAccessPage(url, tab_id, nullptr);
   }
 
   // The set of all URLs above.
@@ -555,7 +535,8 @@ TEST_F(ExtensionScriptAndCaptureVisibleTest, Permissions) {
   EXPECT_EQ(DISALLOWED, GetExtensionAccess(extension.get(), settings_url));
   EXPECT_EQ(DISALLOWED, GetExtensionAccess(extension.get(), favicon_url));
 
-  // Component extensions with <all_urls> should get everything.
+  // Component extensions with <all_urls> should get everything except for
+  // "chrome" scheme URLs.
   extension = LoadManifest("script_and_capture", "extension_component_all.json",
       Manifest::COMPONENT, Extension::NO_FLAGS);
   EXPECT_EQ(ALLOWED_SCRIPT_AND_CAPTURE,
@@ -563,12 +544,9 @@ TEST_F(ExtensionScriptAndCaptureVisibleTest, Permissions) {
   EXPECT_EQ(ALLOWED_SCRIPT_AND_CAPTURE,
             GetExtensionAccess(extension.get(), https_url));
   EXPECT_EQ(ALLOWED_SCRIPT_AND_CAPTURE,
-            GetExtensionAccess(extension.get(), settings_url));
-  EXPECT_EQ(ALLOWED_SCRIPT_AND_CAPTURE,
-            GetExtensionAccess(extension.get(), about_flags_url));
-  EXPECT_EQ(ALLOWED_SCRIPT_AND_CAPTURE,
             GetExtensionAccess(extension.get(), favicon_url));
   EXPECT_TRUE(extension->permissions_data()->HasHostPermission(favicon_url));
+  EXPECT_EQ(DISALLOWED, GetExtensionAccess(extension.get(), settings_url));
 
   // Component extensions should only get access to what they ask for.
   extension = LoadManifest("script_and_capture",
@@ -664,7 +642,8 @@ TEST_F(ExtensionScriptAndCaptureVisibleTest, PermissionsWithChromeURLsEnabled) {
   EXPECT_EQ(DISALLOWED, GetExtensionAccess(extension.get(), settings_url));
   EXPECT_EQ(DISALLOWED, GetExtensionAccess(extension.get(), favicon_url));
 
-  // Component extensions with <all_urls> should get everything.
+  // Component extensions with <all_urls> should get everything except for
+  // "chrome" scheme URLs.
   extension = LoadManifest("script_and_capture", "extension_component_all.json",
                            Manifest::COMPONENT, Extension::NO_FLAGS);
   EXPECT_EQ(ALLOWED_SCRIPT_AND_CAPTURE,
@@ -672,12 +651,9 @@ TEST_F(ExtensionScriptAndCaptureVisibleTest, PermissionsWithChromeURLsEnabled) {
   EXPECT_EQ(ALLOWED_SCRIPT_AND_CAPTURE,
             GetExtensionAccess(extension.get(), https_url));
   EXPECT_EQ(ALLOWED_SCRIPT_AND_CAPTURE,
-            GetExtensionAccess(extension.get(), settings_url));
-  EXPECT_EQ(ALLOWED_SCRIPT_AND_CAPTURE,
-            GetExtensionAccess(extension.get(), about_flags_url));
-  EXPECT_EQ(ALLOWED_SCRIPT_AND_CAPTURE,
             GetExtensionAccess(extension.get(), favicon_url));
   EXPECT_TRUE(extension->permissions_data()->HasHostPermission(favicon_url));
+  EXPECT_EQ(DISALLOWED, GetExtensionAccess(extension.get(), settings_url));
 
   // Component extensions should only get access to what they ask for.
   extension =
@@ -881,21 +857,20 @@ TEST(PermissionsDataTest, ChromeWebstoreUrl) {
     extension->permissions_data()->UpdateTabSpecificPermissions(
         kTabId, tab_permissions);
     for (const GURL& url : kWebstoreUrls) {
-      EXPECT_EQ(PermissionsData::ACCESS_DENIED,
-                extension->permissions_data()->GetPageAccess(extension, url, -1,
-                                                             &error))
+      EXPECT_EQ(PermissionsData::PageAccess::kDenied,
+                extension->permissions_data()->GetPageAccess(url, -1, &error))
           << extension->name() << ": " << url;
-      EXPECT_EQ(PermissionsData::ACCESS_DENIED,
+      EXPECT_EQ(PermissionsData::PageAccess::kDenied,
+                extension->permissions_data()->GetContentScriptAccess(url, -1,
+                                                                      &error))
+          << extension->name() << ": " << url;
+      EXPECT_EQ(
+          PermissionsData::PageAccess::kDenied,
+          extension->permissions_data()->GetPageAccess(url, kTabId, &error))
+          << extension->name() << ": " << url;
+      EXPECT_EQ(PermissionsData::PageAccess::kDenied,
                 extension->permissions_data()->GetContentScriptAccess(
-                    extension, url, -1, &error))
-          << extension->name() << ": " << url;
-      EXPECT_EQ(PermissionsData::ACCESS_DENIED,
-                extension->permissions_data()->GetPageAccess(extension, url,
-                                                             kTabId, &error))
-          << extension->name() << ": " << url;
-      EXPECT_EQ(PermissionsData::ACCESS_DENIED,
-                extension->permissions_data()->GetContentScriptAccess(
-                    extension, url, kTabId, &error))
+                    url, kTabId, &error))
           << extension->name() << ": " << url;
     }
   }
@@ -1064,7 +1039,7 @@ TEST_F(ExtensionScriptAndCaptureVisibleTest, PolicyHostRestrictions) {
   EXPECT_EQ(DISALLOWED, GetExtensionAccess(extension.get(), settings_url));
 
   // Component extensions with <all_urls> should get everything regardless of
-  // policy.
+  // policy, except for chrome scheme URLs.
   extension = LoadManifest("script_and_capture", "extension_component_all.json",
                            Manifest::COMPONENT, Extension::NO_FLAGS);
   extension->permissions_data()->SetDefaultPolicyHostRestrictions(
@@ -1080,12 +1055,200 @@ TEST_F(ExtensionScriptAndCaptureVisibleTest, PolicyHostRestrictions) {
   EXPECT_EQ(ALLOWED_SCRIPT_AND_CAPTURE,
             GetExtensionAccess(extension.get(), sample_example_com));
   EXPECT_EQ(ALLOWED_SCRIPT_AND_CAPTURE,
-            GetExtensionAccess(extension.get(), settings_url));
-  EXPECT_EQ(ALLOWED_SCRIPT_AND_CAPTURE,
-            GetExtensionAccess(extension.get(), about_flags_url));
-  EXPECT_EQ(ALLOWED_SCRIPT_AND_CAPTURE,
             GetExtensionAccess(extension.get(), favicon_url));
   EXPECT_TRUE(extension->permissions_data()->HasHostPermission(favicon_url));
+  EXPECT_EQ(DISALLOWED, GetExtensionAccess(extension.get(), settings_url));
+}
+
+class CaptureVisiblePageTest : public testing::Test {
+ public:
+  CaptureVisiblePageTest() = default;
+  ~CaptureVisiblePageTest() override = default;
+
+  bool CanCapture(const Extension& extension, const GURL& url) {
+    return extension.permissions_data()->CanCaptureVisiblePage(
+        url, kTabId, nullptr /*error*/);
+  }
+
+  void GrantActiveTab(const GURL& url) {
+    APIPermissionSet tab_api_permissions;
+    tab_api_permissions.insert(APIPermission::kTab);
+    URLPatternSet tab_hosts;
+    tab_hosts.AddOrigin(UserScript::ValidUserScriptSchemes(),
+                        url::Origin::Create(url).GetURL());
+    PermissionSet tab_permissions(tab_api_permissions, ManifestPermissionSet(),
+                                  tab_hosts, tab_hosts);
+    active_tab_->permissions_data()->UpdateTabSpecificPermissions(
+        kTabId, tab_permissions);
+  }
+
+  void ClearActiveTab() {
+    active_tab_->permissions_data()->ClearTabSpecificPermissions(kTabId);
+  }
+
+  const Extension& all_urls() { return *all_urls_; }
+
+  const Extension& active_tab() { return *active_tab_; }
+
+  static constexpr int kTabId = 42;
+
+ private:
+  void SetUp() override {
+    all_urls_ = ExtensionBuilder("all urls")
+                    .AddPermission("<all_urls>")
+                    .SetID(std::string(32, 'a'))
+                    .Build();
+    active_tab_ = ExtensionBuilder("active tab")
+                      .AddPermission("activeTab")
+                      .SetID(std::string(32, 'b'))
+                      .Build();
+  }
+
+  void TearDown() override {
+    all_urls_ = nullptr;
+    active_tab_ = nullptr;
+  }
+
+  scoped_refptr<const Extension> all_urls_;
+  scoped_refptr<const Extension> active_tab_;
+
+  DISALLOW_COPY_AND_ASSIGN(CaptureVisiblePageTest);
+};
+
+TEST_F(CaptureVisiblePageTest, URLsCapturableWithEitherActiveTabOrAllURLs) {
+  const GURL test_urls[] = {
+      // Normal web page.
+      GURL("https://example.com"),
+
+      // TODO(https://crbug.com/853064): IPv6 pages should behave like normal
+      // web pages.
+      // GURL("http://[2607:f8b0:4005:805::200e]"),
+
+      // filesystem: urls with web origins should behave like normal web pages.
+      // TODO(https://crbug.com/853392): filesystem: URLs don't work with
+      // activeTab.
+      // GURL("filesystem:http://example.com/foo"),
+
+      // blob: urls with web origins should behave like normal web pages.
+      // TODO(https://crbug.com/853392): blob: URLs don't work with activeTab.
+      // GURL("blob:http://example.com/bar"),
+  };
+
+  for (const GURL& url : test_urls) {
+    SCOPED_TRACE(url.spec());
+    EXPECT_TRUE(CanCapture(all_urls(), url));
+
+    EXPECT_FALSE(CanCapture(active_tab(), url));
+    GrantActiveTab(url);
+    EXPECT_TRUE(CanCapture(active_tab(), url));
+    ClearActiveTab();
+    EXPECT_FALSE(CanCapture(active_tab(), url));
+  }
+}
+
+TEST_F(CaptureVisiblePageTest, URLsCapturableOnlyWithActiveTab) {
+  // The following URLs are origins that extensions are able to capture only if
+  // they have activeTab granted. We require explicit user action for a higher
+  // bar, since normally these pages are completely restricted to extensions at
+  // all.
+  const GURL test_urls[] = {
+      // Another extension's URL.
+      GURL("chrome-extension://cccccccccccccccccccccccccccccccc/foo.html"),
+
+      // filesystem: urls behave like the underlying origin.
+      // https://crbug.com/853392: filesystem: URLs don't work with activeTab.
+      // GURL("filesystem:chrome-extension://cccccccccccccccccccccccccccccccc/foo"),
+
+      // blob: urls behave like the underlying origin.
+      // https://crbug.com/853392: blob: URLs don't work with activeTab.
+      // GURL("blob:chrome-extension://cccccccccccccccccccccccccccccccc/bar"),
+
+      // data: urls have no associated origin, so are more restricted.
+      GURL("data:text/html;charset=utf-8,<html>Hello!</html>"),
+
+      // A chrome:-scheme page.
+      GURL("chrome://settings"),
+
+      // The NTP.
+      GURL("chrome://newtab"),
+  };
+
+  for (const GURL& url : test_urls) {
+    SCOPED_TRACE(url.spec());
+    EXPECT_FALSE(CanCapture(all_urls(), url));
+
+    EXPECT_FALSE(CanCapture(active_tab(), url));
+    GrantActiveTab(url);
+    EXPECT_TRUE(CanCapture(active_tab(), url));
+    ClearActiveTab();
+    EXPECT_FALSE(CanCapture(active_tab(), url));
+  }
+}
+
+TEST_F(CaptureVisiblePageTest, SelfExtensionURLs) {
+  auto get_filesystem_url_for_extension = [](const Extension& extension) {
+    return GURL(base::StringPrintf("filesystem:chrome-extension://%s/foo",
+                                   extension.id().c_str()));
+  };
+  auto get_blob_url_for_extension = [](const Extension& extension) {
+    return GURL(base::StringPrintf("blob:chrome-extension://%s/foo",
+                                   extension.id().c_str()));
+  };
+
+  // Extensions should be allowed to capture their own pages with either
+  // activeTab or <all_urls>. We still require one of the two because there may
+  // be other web content within the extension page, so we can't auto-grant
+  // access.
+
+  {
+    EXPECT_TRUE(CanCapture(all_urls(), all_urls().GetResourceURL("foo.html")));
+    EXPECT_TRUE(
+        CanCapture(all_urls(), get_filesystem_url_for_extension(all_urls())));
+    EXPECT_TRUE(CanCapture(all_urls(), get_blob_url_for_extension(all_urls())));
+  }
+
+  const GURL active_tab_extension_urls[] = {
+      active_tab().GetResourceURL("foo.html"),
+      // https://crbug.com/853392: filesystem: URLs don't work with activeTab.
+      // get_filesystem_url_for_extension(active_tab()),
+      // https://crbug.com/853392: blob: URLs don't work with activeTab.
+      // get_blob_url_for_extension(active_tab()),
+  };
+
+  for (const GURL& url : active_tab_extension_urls) {
+    SCOPED_TRACE(url);
+
+    EXPECT_FALSE(CanCapture(active_tab(), url));
+    GrantActiveTab(url);
+    EXPECT_TRUE(CanCapture(active_tab(), url));
+    ClearActiveTab();
+    EXPECT_FALSE(CanCapture(active_tab(), url));
+  }
+}
+
+TEST_F(CaptureVisiblePageTest, PolicyBlockedURLs) {
+  {
+    URLPattern example_com(URLPattern::SCHEME_ALL, "https://example.com/*");
+    URLPattern chrome_settings(URLPattern::SCHEME_ALL, "chrome://settings/*");
+    URLPatternSet blocked_patterns({example_com, chrome_settings});
+    PermissionsData::SetDefaultPolicyHostRestrictions(blocked_patterns,
+                                                      URLPatternSet());
+  }
+
+  const GURL test_urls[] = {
+      GURL("https://example.com"), GURL("chrome://settings/"),
+  };
+
+  for (const GURL& url : test_urls) {
+    SCOPED_TRACE(url);
+    EXPECT_FALSE(CanCapture(all_urls(), url));
+
+    EXPECT_FALSE(CanCapture(active_tab(), url));
+    GrantActiveTab(url);
+    EXPECT_FALSE(CanCapture(active_tab(), url));
+    ClearActiveTab();
+    EXPECT_FALSE(CanCapture(active_tab(), url));
+  }
 }
 
 }  // namespace extensions

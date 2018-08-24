@@ -176,8 +176,7 @@ void WorkerOrWorkletGlobalScope::SetModulator(Modulator* modulator) {
   modulator_ = modulator;
 }
 
-scheduler::WorkerGlobalScopeScheduler*
-WorkerOrWorkletGlobalScope::GetScheduler() {
+scheduler::WorkerScheduler* WorkerOrWorkletGlobalScope::GetScheduler() {
   DCHECK(IsContextThread());
   return GetThread()->GetScheduler();
 }
@@ -204,6 +203,7 @@ void WorkerOrWorkletGlobalScope::ApplyContentSecurityPolicyFromVector(
 
 void WorkerOrWorkletGlobalScope::FetchModuleScript(
     const KURL& module_url_record,
+    WebURLRequest::RequestContext destination,
     network::mojom::FetchCredentialsMode credentials_mode,
     ModuleTreeClient* client) {
   // Step 2: "Let options be a script fetch options whose cryptographic nonce is
@@ -219,9 +219,7 @@ void WorkerOrWorkletGlobalScope::FetchModuleScript(
 
   Modulator* modulator = Modulator::From(ScriptController()->GetScriptState());
   // Step 3. "Perform the internal module script graph fetching procedure ..."
-  ModuleScriptFetchRequest module_request(
-      module_url_record, modulator->GetReferrerPolicy(), options);
-  modulator->FetchTree(module_request, client);
+  modulator->FetchTree(module_url_record, destination, options, client);
 }
 
 void WorkerOrWorkletGlobalScope::Trace(blink::Visitor* visitor) {
@@ -236,7 +234,7 @@ void WorkerOrWorkletGlobalScope::Trace(blink::Visitor* visitor) {
 }
 
 void WorkerOrWorkletGlobalScope::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+    ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(modulator_);
   EventTargetWithInlineData::TraceWrappers(visitor);
   ExecutionContext::TraceWrappers(visitor);

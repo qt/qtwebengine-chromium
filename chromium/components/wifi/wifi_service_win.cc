@@ -21,7 +21,6 @@
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string16.h"
@@ -1000,7 +999,7 @@ void WiFiServiceImpl::SortNetworks(NetworkList* networks) {
 DWORD WiFiServiceImpl::LoadWlanLibrary() {
   // Use an absolute path to load the DLL to avoid DLL preloading attacks.
   base::FilePath path;
-  if (!PathService::Get(base::DIR_SYSTEM, &path)) {
+  if (!base::PathService::Get(base::DIR_SYSTEM, &path)) {
     LOG(ERROR) << "Unable to get system path.";
     return ERROR_NOT_FOUND;
   }

@@ -21,8 +21,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 // Most of these tests have been lifted right out of timer_unittest.cc with only
-// cosmetic changes (like replacing calls to MessageLoop::current()->Run() with
-// a RunLoop).  We want the AlarmTimer to be a drop-in replacement for the
+// cosmetic changes. We want the AlarmTimer to be a drop-in replacement for the
 // regular Timer so it should pass the same tests as the Timer class.
 namespace timers {
 namespace {
@@ -44,7 +43,7 @@ class OneShotAlarmTimerTester {
     *did_run_ = true;
 
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
+        FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated());
   }
 
   bool* did_run_;
@@ -72,7 +71,7 @@ class OneShotSelfDeletingAlarmTimerTester {
     timer_.reset();
 
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
+        FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated());
   }
 
   bool* did_run_;
@@ -101,7 +100,7 @@ class RepeatingAlarmTimerTester {
       timer_->Stop();
 
       base::ThreadTaskRunnerHandle::Get()->PostTask(
-          FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
+          FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated());
     }
   }
 
@@ -371,13 +370,13 @@ void ClearAllCallbackHappened() {
 void SetCallbackHappened1() {
   g_callback_happened1 = true;
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
+      FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated());
 }
 
 void SetCallbackHappened2() {
   g_callback_happened2 = true;
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
+      FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated());
 }
 
 TEST(AlarmTimerTest, ContinuationStopStart) {

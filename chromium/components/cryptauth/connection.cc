@@ -14,15 +14,15 @@
 
 namespace cryptauth {
 
-Connection::Connection(const RemoteDevice& remote_device)
+Connection::Connection(RemoteDeviceRef remote_device)
     : remote_device_(remote_device),
-      status_(DISCONNECTED),
+      status_(Status::DISCONNECTED),
       is_sending_message_(false) {}
 
 Connection::~Connection() {}
 
 bool Connection::IsConnected() const {
-  return status_ == CONNECTED;
+  return status_ == Status::CONNECTED;
 }
 
 void Connection::SendMessage(std::unique_ptr<WireMessage> message) {
@@ -48,10 +48,6 @@ void Connection::AddObserver(ConnectionObserver* observer) {
 
 void Connection::RemoveObserver(ConnectionObserver* observer) {
   observers_.RemoveObserver(observer);
-}
-
-std::string Connection::GetDeviceAddress() {
-  return remote_device_.bluetooth_address;
 }
 
 void Connection::SetStatus(Status status) {
@@ -118,6 +114,23 @@ std::string Connection::GetDeviceInfoLogString() {
   ss << "{id: \"" << remote_device().GetTruncatedDeviceIdForLogs()
      << "\", addr: \"" << GetDeviceAddress() << "\"}";
   return ss.str();
+}
+
+std::ostream& operator<<(std::ostream& stream,
+                         const Connection::Status& status) {
+  switch (status) {
+    case Connection::Status::DISCONNECTED:
+      stream << "[disconnected]";
+      break;
+    case Connection::Status::IN_PROGRESS:
+      stream << "[in progress]";
+      break;
+    case Connection::Status::CONNECTED:
+      stream << "[connected]";
+      break;
+  }
+
+  return stream;
 }
 
 }  // namespace cryptauth

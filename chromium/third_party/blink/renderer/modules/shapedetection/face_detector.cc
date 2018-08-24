@@ -16,6 +16,8 @@
 #include "third_party/blink/renderer/modules/shapedetection/detected_face.h"
 #include "third_party/blink/renderer/modules/shapedetection/face_detector_options.h"
 #include "third_party/blink/renderer/modules/shapedetection/landmark.h"
+#include "third_party/blink/renderer/modules/shapedetection/shape_detection_type_converter.h"
+#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
 
@@ -71,20 +73,17 @@ void FaceDetector::OnDetectFaces(
   for (const auto& face : face_detection_results) {
     HeapVector<Landmark> landmarks;
     for (const auto& landmark : face->landmarks) {
-      Point2D location;
-      location.setX(landmark->location.x);
-      location.setY(landmark->location.y);
       HeapVector<Point2D> locations;
-      locations.push_back(location);
+      for (const auto& location : landmark->locations) {
+        Point2D web_location;
+        web_location.setX(location.x);
+        web_location.setY(location.y);
+        locations.push_back(web_location);
+      }
 
       Landmark web_landmark;
       web_landmark.setLocations(locations);
-      if (landmark->type == shape_detection::mojom::blink::LandmarkType::EYE) {
-        web_landmark.setType("eye");
-      } else if (landmark->type ==
-                 shape_detection::mojom::blink::LandmarkType::MOUTH) {
-        web_landmark.setType("mouth");
-      }
+      web_landmark.setType(mojo::ConvertTo<String>(landmark->type));
       landmarks.push_back(web_landmark);
     }
 

@@ -10,8 +10,11 @@
 #include <string>
 
 #include "base/component_export.h"
+#include "base/containers/unique_ptr_adapters.h"
 #include "base/macros.h"
+#include "base/memory/scoped_refptr.h"
 #include "mojo/public/cpp/bindings/binding.h"
+#include "net/log/net_log.h"
 #include "services/network/keepalive_statistics_recorder.h"
 #include "services/network/network_change_manager.h"
 #include "services/network/network_service.h"
@@ -23,14 +26,20 @@
 namespace net {
 class HostResolver;
 class LoggingNetworkChangeObserver;
-class NetLog;
 class NetworkQualityEstimator;
 class URLRequestContext;
 }  // namespace net
 
+namespace certificate_transparency {
+class STHDistributor;
+class STHReporter;
+}  // namespace certificate_transparency
+
 namespace network {
 
 class NetworkContext;
+class NetworkUsageAccumulator;
+class MojoNetLog;
 class URLRequestContextBuilderMojo;
 
 class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
@@ -82,8 +91,15 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
 
   // These are called by NetworkContexts as they are being created and
   // destroyed.
+  // TODO(mmenke):  Remove once all NetworkContexts are owned by the
+  // NetworkService.
   void RegisterNetworkContext(NetworkContext* network_context);
   void DeregisterNetworkContext(NetworkContext* network_context);
+
+  // Invokes net::CreateNetLogEntriesForActiveObjects(observer) on all
+  // URLRequestContext's known to |this|.
+  void CreateNetLogEntriesForActiveObjects(
+      net::NetLog::ThreadSafeObserver* observer);
 
   // mojom::NetworkService implementation:
   void SetClient(mojom::NetworkServiceClientPtr client) override;
@@ -93,6 +109,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
   void SetRawHeadersAccess(uint32_t process_id, bool allow) override;
   void GetNetworkChangeManager(
       mojom::NetworkChangeManagerRequest request) override;
+  void GetTotalNetworkUsages(
+      mojom::NetworkService::GetTotalNetworkUsagesCallback callback) override;
+  void UpdateSignedTreeHead(const net::ct::SignedTreeHead& sth) override;
 
   bool quic_disabled() const { return quic_disabled_; }
   bool HasRawHeadersAccess(uint32_t process_id) const;
@@ -106,14 +125,21 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
     return &keepalive_statistics_recorder_;
   }
   net::HostResolver* host_resolver() { return host_resolver_.get(); }
+  NetworkUsageAccumulator* network_usage_accumulator() {
+    return network_usage_accumulator_.get();
+  }
+
+  certificate_transparency::STHReporter* sth_reporter();
 
  private:
-  class MojoNetLog;
-
   // service_manager::Service implementation.
   void OnBindInterface(const service_manager::BindSourceInfo& source_info,
                        const std::string& interface_name,
                        mojo::ScopedMessagePipeHandle interface_pipe) override;
+
+  // Called by a NetworkContext when its mojo pipe is closed. Deletes the
+  // context.
+  void OnNetworkContextConnectionClosed(NetworkContext* network_context);
 
   std::unique_ptr<MojoNetLog> owned_net_log_;
   // TODO(https://crbug.com/767450): Remove this, once Chrome no longer creates
@@ -139,14 +165,31 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
 
   std::unique_ptr<net::HostResolver> host_resolver_;
 
-  // NetworkContexts register themselves with the NetworkService so that they
-  // can be cleaned up when the NetworkService goes away. This is needed as
-  // NetworkContexts share global state with the NetworkService, so must be
-  // destroyed first.
+  std::unique_ptr<NetworkUsageAccumulator> network_usage_accumulator_;
+
+  // NetworkContexts created by CreateNetworkContext(). They call into the
+  // NetworkService when their connection is closed so that it can delete
+  // them.  It will also delete them when the NetworkService itself is torn
+  // down, as NetworkContexts share global state owned by the NetworkService, so
+  // must be destroyed first.
+  //
+  // NetworkContexts created by CreateNetworkContextWithBuilder() are not owned
+  // by the NetworkService, and must be destroyed by their owners before the
+  // NetworkService itself is.
+  std::set<std::unique_ptr<NetworkContext>, base::UniquePtrComparator>
+      owned_network_contexts_;
+
+  // List of all NetworkContexts that are associated with the NetworkService,
+  // including ones it does not own.
+  // TODO(mmenke): Once the NetworkService always owns NetworkContexts, merge
+  // this with |owned_network_contexts_|.
   std::set<NetworkContext*> network_contexts_;
+
   std::set<uint32_t> processes_with_raw_headers_access_;
 
   bool quic_disabled_ = false;
+
+  std::unique_ptr<certificate_transparency::STHDistributor> sth_distributor_;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkService);
 };

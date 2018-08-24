@@ -22,6 +22,7 @@
 #include "core/fpdfdoc/cpdf_interform.h"
 #include "core/fpdfdoc/cpvt_generateap.h"
 #include "core/fxge/cfx_color.h"
+#include "fpdfsdk/cpdf_annotcontext.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 
 namespace {
@@ -141,45 +142,6 @@ static_assert(static_cast<int>(CPDF_Object::Type::REFERENCE) ==
                   FPDF_OBJECT_REFERENCE,
               "CPDF_Object::REFERENCE value mismatch");
 
-class CPDF_AnnotContext {
- public:
-  CPDF_AnnotContext(CPDF_Dictionary* pAnnotDict,
-                    CPDF_Page* pPage,
-                    CPDF_Stream* pStream)
-      : m_pAnnotDict(pAnnotDict), m_pPage(pPage) {
-    SetForm(pStream);
-  }
-  ~CPDF_AnnotContext() {}
-
-  bool HasForm() const { return !!m_pAnnotForm; }
-
-  void SetForm(CPDF_Stream* pStream) {
-    if (!pStream)
-      return;
-
-    // Reset the annotation matrix to be the identity matrix, since the
-    // appearance stream already takes matrix into account.
-    pStream->GetDict()->SetMatrixFor("Matrix", CFX_Matrix());
-
-    m_pAnnotForm = pdfium::MakeUnique<CPDF_Form>(
-        m_pPage->m_pDocument.Get(), m_pPage->m_pResources.Get(), pStream);
-    m_pAnnotForm->ParseContent();
-  }
-
-  CPDF_Form* GetForm() const { return m_pAnnotForm.get(); }
-  CPDF_Dictionary* GetAnnotDict() const { return m_pAnnotDict.Get(); }
-  CPDF_Page* GetPage() const { return m_pPage.Get(); }
-
- private:
-  std::unique_ptr<CPDF_Form> m_pAnnotForm;
-  UnownedPtr<CPDF_Dictionary> m_pAnnotDict;
-  UnownedPtr<CPDF_Page> m_pPage;
-};
-
-CPDF_AnnotContext* CPDFAnnotContextFromFPDFAnnotation(FPDF_ANNOTATION annot) {
-  return static_cast<CPDF_AnnotContext*>(annot);
-}
-
 bool HasAPStream(const CPDF_Dictionary* pAnnotDict) {
   return !!FPDFDOC_GetAnnotAP(pAnnotDict, CPDF_Annot::AppearanceMode::Normal);
 }
@@ -192,6 +154,51 @@ void UpdateContentStream(CPDF_Form* pForm, CPDF_Stream* pStream) {
   std::ostringstream buf;
   generator.ProcessPageObjects(&buf);
   pStream->SetDataAndRemoveFilter(&buf);
+}
+
+void SetQuadPointsAtIndex(CPDF_Array* array,
+                          size_t quad_index,
+                          const FS_QUADPOINTSF* quad_points) {
+  ASSERT(array);
+  ASSERT(quad_points);
+  ASSERT(IsValidQuadPointsIndex(array, quad_index));
+
+  size_t nIndex = quad_index * 8;
+  array->SetNewAt<CPDF_Number>(nIndex, quad_points->x1);
+  array->SetNewAt<CPDF_Number>(++nIndex, quad_points->y1);
+  array->SetNewAt<CPDF_Number>(++nIndex, quad_points->x2);
+  array->SetNewAt<CPDF_Number>(++nIndex, quad_points->y2);
+  array->SetNewAt<CPDF_Number>(++nIndex, quad_points->x3);
+  array->SetNewAt<CPDF_Number>(++nIndex, quad_points->y3);
+  array->SetNewAt<CPDF_Number>(++nIndex, quad_points->x4);
+  array->SetNewAt<CPDF_Number>(++nIndex, quad_points->y4);
+}
+
+void AppendQuadPoints(CPDF_Array* array, const FS_QUADPOINTSF* quad_points) {
+  ASSERT(quad_points);
+  ASSERT(array);
+
+  array->AddNew<CPDF_Number>(quad_points->x1);
+  array->AddNew<CPDF_Number>(quad_points->y1);
+  array->AddNew<CPDF_Number>(quad_points->x2);
+  array->AddNew<CPDF_Number>(quad_points->y2);
+  array->AddNew<CPDF_Number>(quad_points->x3);
+  array->AddNew<CPDF_Number>(quad_points->y3);
+  array->AddNew<CPDF_Number>(quad_points->x4);
+  array->AddNew<CPDF_Number>(quad_points->y4);
+}
+
+void UpdateBBox(const CPDF_Dictionary* annot_dict) {
+  // Update BBox entry in appearance stream based on the bounding rectangle
+  // of the annotation's quadpoints.
+  CPDF_Stream* pStream =
+      FPDFDOC_GetAnnotAP(annot_dict, CPDF_Annot::AppearanceMode::Normal);
+  if (pStream) {
+    CFX_FloatRect boundingRect =
+        CPDF_Annot::BoundingRectFromQuadPoints(annot_dict);
+    if (boundingRect.Contains(pStream->GetDict()->GetRectFor("BBox")))
+      pStream->GetDict()->SetRectFor("BBox", boundingRect);
+  }
 }
 
 }  // namespace
@@ -214,7 +221,7 @@ FPDFPage_CreateAnnot(FPDF_PAGE page, FPDF_ANNOTATION_SUBTYPE subtype) {
     return nullptr;
 
   auto pDict = pdfium::MakeUnique<CPDF_Dictionary>(
-      pPage->m_pDocument->GetByteStringPool());
+      pPage->GetDocument()->GetByteStringPool());
   pDict->SetNewFor<CPDF_Name>("Type", "Annot");
   pDict->SetNewFor<CPDF_Name>("Subtype",
                               CPDF_Annot::AnnotSubtypeToString(
@@ -222,46 +229,49 @@ FPDFPage_CreateAnnot(FPDF_PAGE page, FPDF_ANNOTATION_SUBTYPE subtype) {
   auto pNewAnnot =
       pdfium::MakeUnique<CPDF_AnnotContext>(pDict.get(), pPage, nullptr);
 
-  CPDF_Array* pAnnotList = pPage->m_pFormDict->GetArrayFor("Annots");
+  CPDF_Array* pAnnotList = pPage->GetFormDict()->GetArrayFor("Annots");
   if (!pAnnotList)
-    pAnnotList = pPage->m_pFormDict->SetNewFor<CPDF_Array>("Annots");
-
+    pAnnotList = pPage->GetFormDict()->SetNewFor<CPDF_Array>("Annots");
   pAnnotList->Add(std::move(pDict));
-  return pNewAnnot.release();
+
+  // Caller takes ownership.
+  return FPDFAnnotationFromCPDFAnnotContext(pNewAnnot.release());
 }
 
 FPDF_EXPORT int FPDF_CALLCONV FPDFPage_GetAnnotCount(FPDF_PAGE page) {
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
-  if (!pPage || !pPage->m_pFormDict)
+  if (!pPage || !pPage->GetFormDict())
     return 0;
 
-  CPDF_Array* pAnnots = pPage->m_pFormDict->GetArrayFor("Annots");
+  CPDF_Array* pAnnots = pPage->GetFormDict()->GetArrayFor("Annots");
   return pAnnots ? pAnnots->GetCount() : 0;
 }
 
 FPDF_EXPORT FPDF_ANNOTATION FPDF_CALLCONV FPDFPage_GetAnnot(FPDF_PAGE page,
                                                             int index) {
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
-  if (!pPage || !pPage->m_pFormDict || index < 0)
+  if (!pPage || !pPage->GetFormDict() || index < 0)
     return nullptr;
 
-  CPDF_Array* pAnnots = pPage->m_pFormDict->GetArrayFor("Annots");
+  CPDF_Array* pAnnots = pPage->GetFormDict()->GetArrayFor("Annots");
   if (!pAnnots || static_cast<size_t>(index) >= pAnnots->GetCount())
     return nullptr;
 
   CPDF_Dictionary* pDict = ToDictionary(pAnnots->GetDirectObjectAt(index));
   auto pNewAnnot = pdfium::MakeUnique<CPDF_AnnotContext>(pDict, pPage, nullptr);
-  return pNewAnnot.release();
+
+  // Caller takes ownership.
+  return FPDFAnnotationFromCPDFAnnotContext(pNewAnnot.release());
 }
 
 FPDF_EXPORT int FPDF_CALLCONV FPDFPage_GetAnnotIndex(FPDF_PAGE page,
                                                      FPDF_ANNOTATION annot) {
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   CPDF_AnnotContext* pAnnot = CPDFAnnotContextFromFPDFAnnotation(annot);
-  if (!pPage || !pPage->m_pFormDict || !pAnnot || !pAnnot->GetAnnotDict())
+  if (!pPage || !pPage->GetFormDict() || !pAnnot || !pAnnot->GetAnnotDict())
     return -1;
 
-  CPDF_Array* pAnnots = pPage->m_pFormDict->GetArrayFor("Annots");
+  CPDF_Array* pAnnots = pPage->GetFormDict()->GetArrayFor("Annots");
   if (!pAnnots)
     return -1;
 
@@ -285,10 +295,10 @@ FPDF_EXPORT void FPDF_CALLCONV FPDFPage_CloseAnnot(FPDF_ANNOTATION annot) {
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFPage_RemoveAnnot(FPDF_PAGE page,
                                                          int index) {
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
-  if (!pPage || !pPage->m_pFormDict || index < 0)
+  if (!pPage || !pPage->GetFormDict() || index < 0)
     return false;
 
-  CPDF_Array* pAnnots = pPage->m_pFormDict->GetArrayFor("Annots");
+  CPDF_Array* pAnnots = pPage->GetFormDict()->GetArrayFor("Annots");
   if (!pAnnots || static_cast<size_t>(index) >= pAnnots->GetCount())
     return false;
 
@@ -336,7 +346,7 @@ FPDFAnnot_UpdateObject(FPDF_ANNOTATION annot, FPDF_PAGEOBJECT obj) {
 
   // Check that the object is already in this annotation's object list.
   CPDF_Form* pForm = pAnnot->GetForm();
-  CPDF_PageObjectList* pObjList = pForm->GetPageObjectList();
+  const CPDF_PageObjectList* pObjList = pForm->GetPageObjectList();
   auto it =
       std::find_if(pObjList->begin(), pObjList->end(),
                    [pObj](const std::unique_ptr<CPDF_PageObject>& candidate) {
@@ -370,7 +380,7 @@ FPDFAnnot_AppendObject(FPDF_ANNOTATION annot, FPDF_PAGEOBJECT obj) {
   CPDF_Stream* pStream = FPDFDOC_GetAnnotAP(pAnnot->GetAnnotDict(),
                                             CPDF_Annot::AppearanceMode::Normal);
   if (!pStream) {
-    CPVT_GenerateAP::GenerateEmptyAP(pPage->m_pDocument.Get(), pAnnotDict);
+    CPVT_GenerateAP::GenerateEmptyAP(pPage->GetDocument(), pAnnotDict);
     pStream =
         FPDFDOC_GetAnnotAP(pAnnotDict, CPDF_Annot::AppearanceMode::Normal);
     if (!pStream)
@@ -387,7 +397,7 @@ FPDFAnnot_AppendObject(FPDF_ANNOTATION annot, FPDF_PAGEOBJECT obj) {
   // Note that an object that came from a different annotation must not be
   // passed here, since an object cannot belong to more than one annotation.
   CPDF_Form* pForm = pAnnot->GetForm();
-  CPDF_PageObjectList* pObjList = pForm->GetPageObjectList();
+  const CPDF_PageObjectList* pObjList = pForm->GetPageObjectList();
   auto it =
       std::find_if(pObjList->begin(), pObjList->end(),
                    [pObj](const std::unique_ptr<CPDF_PageObject>& candidate) {
@@ -397,8 +407,7 @@ FPDFAnnot_AppendObject(FPDF_ANNOTATION annot, FPDF_PAGEOBJECT obj) {
     return false;
 
   // Append the object to the object list.
-  std::unique_ptr<CPDF_PageObject> pPageObjHolder(pObj);
-  pObjList->push_back(std::move(pPageObjHolder));
+  pForm->AppendPageObject(pdfium::WrapUnique(pObj));
 
   // Set the content stream data in the annotation's AP stream.
   UpdateContentStream(pForm, pStream);
@@ -436,7 +445,8 @@ FPDFAnnot_GetObject(FPDF_ANNOTATION annot, int index) {
     pAnnot->SetForm(pStream);
   }
 
-  return pAnnot->GetForm()->GetPageObjectList()->GetPageObjectByIndex(index);
+  return FPDFPageObjectFromCPDFPageObject(
+      pAnnot->GetForm()->GetPageObjectByIndex(index));
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
@@ -456,11 +466,9 @@ FPDFAnnot_RemoveObject(FPDF_ANNOTATION annot, int index) {
   if (!pStream)
     return false;
 
-  CPDF_PageObjectList* pObjList = pAnnot->GetForm()->GetPageObjectList();
-  if (static_cast<size_t>(index) >= pObjList->size())
+  if (!pAnnot->GetForm()->ErasePageObjectAtIndex(index))
     return false;
 
-  pObjList->erase(pObjList->begin() + index);
   UpdateContentStream(pAnnot->GetForm(), pStream);
   return true;
 }
@@ -582,42 +590,35 @@ FPDFAnnot_HasAttachmentPoints(FPDF_ANNOTATION annot) {
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFAnnot_SetAttachmentPoints(FPDF_ANNOTATION annot,
+                              size_t quad_index,
                               const FS_QUADPOINTSF* quad_points) {
   if (!FPDFAnnot_HasAttachmentPoints(annot) || !quad_points)
     return false;
 
   CPDF_Dictionary* pAnnotDict =
       CPDFAnnotContextFromFPDFAnnotation(annot)->GetAnnotDict();
-  if (!pAnnotDict)
+  CPDF_Array* pQuadPointsArray = GetQuadPointsArrayFromDictionary(pAnnotDict);
+  if (!IsValidQuadPointsIndex(pQuadPointsArray, quad_index))
     return false;
 
-  // Update the "QuadPoints" entry in the annotation dictionary.
-  CPDF_Array* pQuadPoints = pAnnotDict->GetArrayFor("QuadPoints");
-  if (pQuadPoints)
-    pQuadPoints->Clear();
-  else
-    pQuadPoints = pAnnotDict->SetNewFor<CPDF_Array>("QuadPoints");
+  SetQuadPointsAtIndex(pQuadPointsArray, quad_index, quad_points);
+  UpdateBBox(pAnnotDict);
+  return true;
+}
 
-  pQuadPoints->AddNew<CPDF_Number>(quad_points->x1);
-  pQuadPoints->AddNew<CPDF_Number>(quad_points->y1);
-  pQuadPoints->AddNew<CPDF_Number>(quad_points->x2);
-  pQuadPoints->AddNew<CPDF_Number>(quad_points->y2);
-  pQuadPoints->AddNew<CPDF_Number>(quad_points->x3);
-  pQuadPoints->AddNew<CPDF_Number>(quad_points->y3);
-  pQuadPoints->AddNew<CPDF_Number>(quad_points->x4);
-  pQuadPoints->AddNew<CPDF_Number>(quad_points->y4);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_AppendAttachmentPoints(FPDF_ANNOTATION annot,
+                                 const FS_QUADPOINTSF* quad_points) {
+  if (!FPDFAnnot_HasAttachmentPoints(annot) || !quad_points)
+    return false;
 
-  // If the annotation's appearance stream is defined, and the new quadpoints
-  // defines a bigger bounding box than the appearance stream currently
-  // specifies, then update the "BBox" entry in the AP dictionary too, since it
-  // comes from annotation dictionary's "QuadPoints" entry.
-  CPDF_Stream* pStream =
-      FPDFDOC_GetAnnotAP(pAnnotDict, CPDF_Annot::AppearanceMode::Normal);
-  if (pStream) {
-    CFX_FloatRect newRect = CPDF_Annot::BoundingRectFromQuadPoints(pAnnotDict);
-    if (newRect.Contains(pStream->GetDict()->GetRectFor("BBox")))
-      pStream->GetDict()->SetRectFor("BBox", newRect);
-  }
+  CPDF_Dictionary* pAnnotDict =
+      CPDFAnnotContextFromFPDFAnnotation(annot)->GetAnnotDict();
+  CPDF_Array* pQuadPointsArray = GetQuadPointsArrayFromDictionary(pAnnotDict);
+  if (!pQuadPointsArray)
+    pQuadPointsArray = AddQuadPointsArrayToDictionary(pAnnotDict);
+  AppendQuadPoints(pQuadPointsArray, quad_points);
+  UpdateBBox(pAnnotDict);
   return true;
 }
 
@@ -634,13 +635,21 @@ FPDFAnnot_CountAttachmentPoints(FPDF_ANNOTATION annot) {
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFAnnot_GetAttachmentPoints(FPDF_ANNOTATION annot,
+                              size_t quad_index,
                               FS_QUADPOINTSF* quad_points) {
   if (!FPDFAnnot_HasAttachmentPoints(annot) || !quad_points)
     return false;
 
-  return GetQuadPointsFromDictionary(
-      CPDFAnnotContextFromFPDFAnnotation(annot)->GetAnnotDict(), 0,
-      quad_points);
+  CPDF_Dictionary* pAnnotDict =
+      CPDFAnnotContextFromFPDFAnnotation(annot)->GetAnnotDict();
+  if (!pAnnotDict)
+    return false;
+
+  const CPDF_Array* pArray = GetQuadPointsArrayFromDictionary(pAnnotDict);
+  if (!pArray)
+    return false;
+
+  return GetQuadPointsAtIndex(pArray, quad_index, quad_points);
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_SetRect(FPDF_ANNOTATION annot,
@@ -825,7 +834,9 @@ FPDFAnnot_GetLinkedAnnot(FPDF_ANNOTATION annot, FPDF_BYTESTRING key) {
 
   auto pLinkedAnnot = pdfium::MakeUnique<CPDF_AnnotContext>(
       pLinkedDict, pAnnot->GetPage(), nullptr);
-  return pLinkedAnnot.release();
+
+  // Caller takes ownership.
+  return FPDFAnnotationFromCPDFAnnotContext(pLinkedAnnot.release());
 }
 
 FPDF_EXPORT int FPDF_CALLCONV FPDFAnnot_GetFlags(FPDF_ANNOTATION annot) {
@@ -862,7 +873,7 @@ FPDFAnnot_GetFormFieldFlags(FPDF_PAGE page, FPDF_ANNOTATION annot) {
   if (!pAnnotDict)
     return FPDF_FORMFLAG_NONE;
 
-  CPDF_InterForm interform(pPage->m_pDocument.Get());
+  CPDF_InterForm interform(pPage->GetDocument());
   CPDF_FormField* pFormField = interform.GetFieldByDict(pAnnotDict);
   return pFormField ? pFormField->GetFieldFlags() : FPDF_FORMFLAG_NONE;
 }
@@ -876,7 +887,7 @@ FPDFAnnot_GetFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
   if (!hHandle || !pPage)
     return nullptr;
 
-  CPDF_InterForm interform(pPage->m_pDocument.Get());
+  CPDF_InterForm interform(pPage->GetDocument());
   int annot_index = -1;
   CPDF_FormControl* pFormCtrl = interform.GetControlAtPoint(
       pPage, CFX_PointF(static_cast<float>(page_x), static_cast<float>(page_y)),

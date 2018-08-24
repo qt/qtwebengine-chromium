@@ -8,7 +8,8 @@
 
 #include "base/macros.h"
 #include "content/common/service_worker/service_worker_messages.h"
-#include "content/renderer/service_worker/service_worker_dispatcher.h"
+#include "content/renderer/service_worker/service_worker_context_client.h"
+#include "content/renderer/service_worker/service_worker_provider_context.h"
 #include "content/renderer/service_worker/web_service_worker_provider_impl.h"
 #include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_proxy.h"
 #include "third_party/blink/public/platform/web_runtime_features.h"
@@ -45,27 +46,24 @@ void OnTerminated(
 // static
 scoped_refptr<WebServiceWorkerImpl>
 WebServiceWorkerImpl::CreateForServiceWorkerGlobalScope(
-    blink::mojom::ServiceWorkerObjectInfoPtr info,
-    scoped_refptr<base::SingleThreadTaskRunner> io_task_runner) {
+    blink::mojom::ServiceWorkerObjectInfoPtr info) {
   scoped_refptr<WebServiceWorkerImpl> impl =
-      new WebServiceWorkerImpl(std::move(info));
-  impl->host_for_global_scope_ =
-      blink::mojom::ThreadSafeServiceWorkerObjectHostAssociatedPtr::Create(
-          std::move(impl->info_->host_ptr_info), io_task_runner);
+      new WebServiceWorkerImpl(std::move(info), nullptr /* provider_context */);
   return impl;
 }
 
 // static
 scoped_refptr<WebServiceWorkerImpl>
 WebServiceWorkerImpl::CreateForServiceWorkerClient(
-    blink::mojom::ServiceWorkerObjectInfoPtr info) {
+    blink::mojom::ServiceWorkerObjectInfoPtr info,
+    base::WeakPtr<ServiceWorkerProviderContext> provider_context) {
+  DCHECK(provider_context);
   scoped_refptr<WebServiceWorkerImpl> impl =
-      new WebServiceWorkerImpl(std::move(info));
-  impl->host_for_client_.Bind(std::move(impl->info_->host_ptr_info));
+      new WebServiceWorkerImpl(std::move(info), std::move(provider_context));
   return impl;
 }
 
-void WebServiceWorkerImpl::OnStateChanged(
+void WebServiceWorkerImpl::StateChanged(
     blink::mojom::ServiceWorkerState new_state) {
   state_ = new_state;
 
@@ -93,12 +91,12 @@ blink::mojom::ServiceWorkerState WebServiceWorkerImpl::GetState() const {
 
 void WebServiceWorkerImpl::PostMessageToServiceWorker(
     blink::TransferableMessage message) {
-  GetObjectHost()->PostMessageToServiceWorker(std::move(message));
+  host_->PostMessageToServiceWorker(std::move(message));
 }
 
 void WebServiceWorkerImpl::TerminateForTesting(
     std::unique_ptr<TerminateForTestingCallback> callback) {
-  GetObjectHost()->TerminateForTesting(
+  host_->TerminateForTesting(
       base::BindOnce(&OnTerminated, std::move(callback)));
 }
 
@@ -111,29 +109,37 @@ WebServiceWorkerImpl::CreateHandle(scoped_refptr<WebServiceWorkerImpl> worker) {
 }
 
 WebServiceWorkerImpl::WebServiceWorkerImpl(
-    blink::mojom::ServiceWorkerObjectInfoPtr info)
-    : info_(std::move(info)), state_(info_->state), proxy_(nullptr) {
-  DCHECK_NE(blink::mojom::kInvalidServiceWorkerHandleId, info_->handle_id);
-  ServiceWorkerDispatcher* dispatcher =
-      ServiceWorkerDispatcher::GetThreadSpecificInstance();
-  DCHECK(dispatcher);
-  dispatcher->AddServiceWorker(info_->handle_id, this);
+    blink::mojom::ServiceWorkerObjectInfoPtr info,
+    base::WeakPtr<ServiceWorkerProviderContext> provider_context)
+    : binding_(this),
+      info_(std::move(info)),
+      state_(info_->state),
+      proxy_(nullptr),
+      is_for_client_(provider_context),
+      context_for_client_(std::move(provider_context)) {
+  DCHECK_NE(blink::mojom::kInvalidServiceWorkerVersionId, info_->version_id);
+  host_.Bind(std::move(info_->host_ptr_info));
+  binding_.Bind(std::move(info_->request));
+
+  if (is_for_client_) {
+    context_for_client_->AddServiceWorkerObject(info_->version_id, this);
+  } else {
+    ServiceWorkerContextClient::ThreadSpecificInstance()
+        ->AddServiceWorkerObject(info_->version_id, this);
+  }
 }
 
 WebServiceWorkerImpl::~WebServiceWorkerImpl() {
-  ServiceWorkerDispatcher* dispatcher =
-      ServiceWorkerDispatcher::GetThreadSpecificInstance();
-  if (dispatcher)
-    dispatcher->RemoveServiceWorker(info_->handle_id);
-}
-
-blink::mojom::ServiceWorkerObjectHost* WebServiceWorkerImpl::GetObjectHost() {
-  if (host_for_client_)
-    return host_for_client_.get();
-  if (host_for_global_scope_)
-    return host_for_global_scope_->get();
-  NOTREACHED();
-  return nullptr;
+  if (is_for_client_) {
+    if (context_for_client_) {
+      context_for_client_->RemoveServiceWorkerObject(info_->version_id);
+    }
+  } else {
+    if (ServiceWorkerContextClient::ThreadSpecificInstance()) {
+      ServiceWorkerContextClient::ThreadSpecificInstance()
+          ->RemoveServiceWorkerObject(info_->version_id);
+    }
+  }
 }
 
 }  // namespace content

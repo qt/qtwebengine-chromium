@@ -72,8 +72,6 @@ target(link_target_type, "child") {
     "service_factory.h",
     "thread_safe_sender.cc",
     "thread_safe_sender.h",
-    "webfallbackthemeengine_impl.cc",
-    "webfallbackthemeengine_impl.h",
     "webthemeengine_impl_android.cc",
     "webthemeengine_impl_android.h",
     "webthemeengine_impl_default.cc",
@@ -106,7 +104,6 @@ target(link_target_type, "child") {
     "//gpu/command_buffer/client",
     "//media",
     "//media/blink",
-    "//mojo/common",
     "//mojo/edk",
     "//net",
     "//services/device/public/cpp:device_features",
@@ -146,6 +143,10 @@ target(link_target_type, "child") {
 
   if (is_android) {
     deps += [ "//third_party/android_tools:cpu_features" ]
+  }
+
+  if (is_linux) {
+    deps += [ "//services/service_manager/zygote" ]
   }
 
   if (is_win) {

@@ -81,9 +81,7 @@ class WebGLRenderingContext final : public WebGLRenderingContextBase {
   void SetCanvasGetContextResult(RenderingContext&) final;
   void SetOffscreenCanvasGetContextResult(OffscreenRenderingContext&) final;
 
-  virtual void Trace(blink::Visitor*);
-
-  virtual void TraceWrappers(const ScriptWrappableVisitor*) const;
+  void Trace(blink::Visitor*) override;
 
  private:
   WebGLRenderingContext(CanvasRenderingContextHost*,
@@ -109,7 +107,6 @@ class WebGLRenderingContext final : public WebGLRenderingContextBase {
   Member<OESVertexArrayObject> oes_vertex_array_object_;
   Member<WebGLColorBufferFloat> webgl_color_buffer_float_;
   Member<WebGLCompressedTextureASTC> webgl_compressed_texture_astc_;
-  Member<WebGLCompressedTextureATC> webgl_compressed_texture_atc_;
   Member<WebGLCompressedTextureETC> webgl_compressed_texture_etc_;
   Member<WebGLCompressedTextureETC1> webgl_compressed_texture_etc1_;
   Member<WebGLCompressedTexturePVRTC> webgl_compressed_texture_pvrtc_;

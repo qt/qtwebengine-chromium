@@ -4,8 +4,8 @@
 
 #include "third_party/blink/renderer/core/workers/worklet_module_responses_map.h"
 
+#include "base/optional.h"
 #include "third_party/blink/renderer/core/loader/modulescript/document_module_script_fetcher.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 
 namespace blink {
 
@@ -37,7 +37,7 @@ class WorkletModuleResponsesMap::Entry final
   State GetState() const { return state_; }
   const ModuleScriptCreationParams& GetParams() const { return *params_; }
 
-  void AddClient(WorkerOrWorkletModuleFetchCoordinator::Client* client) {
+  void AddClient(WorkletModuleResponsesMap::Client* client) {
     // Clients can be added only while a module script is being fetched.
     DCHECK(state_ == State::kInitial || state_ == State::kFetching);
     clients_.push_back(client);
@@ -49,7 +49,7 @@ class WorkletModuleResponsesMap::Entry final
   // "fetch a worklet script" algorithm:
   // https://drafts.css-houdini.org/worklets/#fetch-a-worklet-script
   void NotifyFetchFinished(
-      const WTF::Optional<ModuleScriptCreationParams>& params,
+      const base::Optional<ModuleScriptCreationParams>& params,
       const HeapVector<Member<ConsoleMessage>>& error_messages) override {
     // The entry can be disposed of during the resource fetch.
     if (state_ == State::kFailed)
@@ -68,7 +68,7 @@ class WorkletModuleResponsesMap::Entry final
     // Step 8: "Set the value of the entry in cache whose key is url to
     // response, and asynchronously complete this algorithm with response."
     params_.emplace(*params);
-    for (WorkerOrWorkletModuleFetchCoordinator::Client* client : clients_)
+    for (WorkletModuleResponsesMap::Client* client : clients_)
       client->OnFetched(*params);
     clients_.clear();
     module_fetcher_.Clear();
@@ -76,7 +76,7 @@ class WorkletModuleResponsesMap::Entry final
 
   void NotifyFailure() {
     AdvanceState(State::kFailed);
-    for (WorkerOrWorkletModuleFetchCoordinator::Client* client : clients_)
+    for (WorkletModuleResponsesMap::Client* client : clients_)
       client->OnFailed();
     clients_.clear();
     module_fetcher_.Clear();
@@ -108,8 +108,8 @@ class WorkletModuleResponsesMap::Entry final
 
   Member<DocumentModuleScriptFetcher> module_fetcher_;
 
-  WTF::Optional<ModuleScriptCreationParams> params_;
-  HeapVector<Member<WorkerOrWorkletModuleFetchCoordinator::Client>> clients_;
+  base::Optional<ModuleScriptCreationParams> params_;
+  HeapVector<Member<WorkletModuleResponsesMap::Client>> clients_;
 };
 
 WorkletModuleResponsesMap::WorkletModuleResponsesMap(ResourceFetcher* fetcher)

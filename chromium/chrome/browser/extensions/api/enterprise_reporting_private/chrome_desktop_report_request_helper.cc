@@ -11,11 +11,17 @@
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/policy/chrome_browser_policy_connector.h"
 #include "chrome/browser/policy/policy_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/channel_info.h"
+#include "chrome/common/pref_names.h"
+#include "components/policy/core/common/cloud/cloud_policy_client.h"
 #include "components/policy/core/common/cloud/cloud_policy_util.h"
+#include "components/policy/core/common/cloud/machine_level_user_cloud_policy_manager.h"
 #include "components/policy/proto/device_management_backend.pb.h"
+#include "components/prefs/pref_service.h"
 #include "components/version_info/channel.h"
 #include "components/version_info/version_info.h"
 
@@ -24,18 +30,19 @@ namespace em = enterprise_management;
 namespace extensions {
 namespace {
 
-// JSON key in extension arguments.
-const char kMachineName[] = "machineName";
-const char kOSInfo[] = "osInfo";
-const char kOSUser[] = "osUser";
+// JSON keys in the extension arguments.
 const char kBrowserReport[] = "browserReport";
 const char kChromeUserProfileReport[] = "chromeUserProfileReport";
 const char kChromeSignInUser[] = "chromeSignInUser";
 const char kExtensionData[] = "extensionData";
 const char kPlugins[] = "plugins";
+const char kSafeBrowsingWarnings[] = "safeBrowsingWarnings";
+const char kSafeBrowsingWarningsClickThrough[] =
+    "safeBrowsingWarningsClickThrough";
 
-// JSON key in the os_info field.
+// JSON keys in the os_info field.
 const char kOS[] = "os";
+const char kOSArch[] = "arch";
 const char kOSVersion[] = "os_version";
 
 const char kDefaultDictionary[] = "{}";
@@ -54,6 +61,17 @@ std::string GetChromePath() {
 
 std::string GetProfileId(const Profile* profile) {
   return profile->GetOriginalProfile()->GetPath().AsUTF8Unsafe();
+}
+
+// Returns last policy fetch timestamp of machine level user cloud policy if
+// it exists. Otherwise, returns zero.
+int64_t GetMachineLevelUserCloudPolicyFetchTimestamp() {
+  policy::MachineLevelUserCloudPolicyManager* manager =
+      g_browser_process->browser_policy_connector()
+          ->GetMachineLevelUserCloudPolicyManager();
+  if (!manager || !manager->IsClientRegistered())
+    return 0;
+  return manager->core()->client()->last_policy_timestamp().ToJavaTime();
 }
 
 void AppendAdditionalBrowserInformation(em::ChromeDesktopReportRequest* request,
@@ -76,11 +94,24 @@ void AppendAdditionalBrowserInformation(em::ChromeDesktopReportRequest* request,
   request->mutable_browser_report()
       ->mutable_chrome_user_profile_reports(0)
       ->set_id(GetProfileId(profile));
+
   // Set policy data of the first profile. Extension will report this data in
   // the future.
   request->mutable_browser_report()
       ->mutable_chrome_user_profile_reports(0)
       ->set_policy_data(policy::GetAllPolicyValuesAsJSON(profile, true));
+
+  int64_t timestamp = GetMachineLevelUserCloudPolicyFetchTimestamp();
+  if (timestamp > 0) {
+    request->mutable_browser_report()
+        ->mutable_chrome_user_profile_reports(0)
+        ->set_policy_fetched_timestamp(timestamp);
+  }
+
+  // Set the profile name
+  request->mutable_browser_report()
+      ->mutable_chrome_user_profile_reports(0)
+      ->set_name(profile->GetPrefs()->GetString(prefs::kProfileName));
 }
 
 bool UpdateJSONEncodedStringEntry(const base::Value& dict_value,
@@ -103,17 +134,23 @@ bool UpdateJSONEncodedStringEntry(const base::Value& dict_value,
   return true;
 }
 
-bool UpdateOSInfoEntry(const base::Value& report, std::string* os_info_string) {
-  base::Value writable_os_info(base::Value::Type::DICTIONARY);
-  if (const base::Value* os_info = report.FindKey(kOSInfo)) {
-    if (!os_info->is_dict())
-      return false;
-    writable_os_info = os_info->Clone();
-  }
-  writable_os_info.SetKey(kOS, base::Value(policy::GetOSPlatform()));
-  writable_os_info.SetKey(kOSVersion, base::Value(policy::GetOSVersion()));
-  base::JSONWriter::Write(writable_os_info, os_info_string);
-  return true;
+void AppendPlatformInformation(em::ChromeDesktopReportRequest* request) {
+  const char kComputerName[] = "computername";
+  const char kUsername[] = "username";
+
+  base::Value os_info = base::Value(base::Value::Type::DICTIONARY);
+  os_info.SetKey(kOS, base::Value(policy::GetOSPlatform()));
+  os_info.SetKey(kOSVersion, base::Value(policy::GetOSVersion()));
+  os_info.SetKey(kOSArch, base::Value(policy::GetOSArchitecture()));
+  base::JSONWriter::Write(os_info, request->mutable_os_info());
+
+  base::Value machine_name = base::Value(base::Value::Type::DICTIONARY);
+  machine_name.SetKey(kComputerName, base::Value(policy::GetMachineName()));
+  base::JSONWriter::Write(machine_name, request->mutable_machine_name());
+
+  base::Value os_user = base::Value(base::Value::Type::DICTIONARY);
+  os_user.SetKey(kUsername, base::Value(policy::GetOSUsername()));
+  base::JSONWriter::Write(os_user, request->mutable_os_user());
 }
 
 std::unique_ptr<em::ChromeUserProfileReport>
@@ -134,6 +171,20 @@ GenerateChromeUserProfileReportRequest(const base::Value& profile_report) {
     return nullptr;
   }
 
+  if (const base::Value* count =
+          profile_report.FindKey(kSafeBrowsingWarnings)) {
+    if (!count->is_int())
+      return nullptr;
+    request->set_safe_browsing_warnings(count->GetInt());
+  }
+
+  if (const base::Value* count =
+          profile_report.FindKey(kSafeBrowsingWarningsClickThrough)) {
+    if (!count->is_int())
+      return nullptr;
+    request->set_safe_browsing_warnings_click_through(count->GetInt());
+  }
+
   return request;
 }
 
@@ -145,13 +196,7 @@ GenerateChromeDesktopReportRequest(const base::DictionaryValue& report,
   std::unique_ptr<em::ChromeDesktopReportRequest> request =
       std::make_unique<em::ChromeDesktopReportRequest>();
 
-  if (!UpdateJSONEncodedStringEntry(
-          report, kMachineName, request->mutable_machine_name(), DICTIONARY) ||
-      !UpdateJSONEncodedStringEntry(report, kOSUser, request->mutable_os_user(),
-                                    DICTIONARY) ||
-      !UpdateOSInfoEntry(report, request->mutable_os_info())) {
-    return nullptr;
-  }
+  AppendPlatformInformation(request.get());
 
   if (const base::Value* browser_report =
           report.FindKeyOfType(kBrowserReport, base::Value::Type::DICTIONARY)) {

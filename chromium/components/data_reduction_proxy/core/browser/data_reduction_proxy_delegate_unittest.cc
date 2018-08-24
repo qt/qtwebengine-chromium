@@ -216,7 +216,7 @@ class DataReductionProxyDelegateTest : public testing::Test {
     net::MockRead reads[] = {net::MockRead(response_headers.c_str()),
                              net::MockRead(response_body.c_str()),
                              net::MockRead(net::SYNCHRONOUS, net::OK)};
-    net::StaticSocketDataProvider socket(reads, arraysize(reads), nullptr, 0);
+    net::StaticSocketDataProvider socket(reads, base::span<net::MockWrite>());
     mock_socket_factory_.AddSocketDataProvider(&socket);
 
     net::TestDelegate delegate;
@@ -707,7 +707,7 @@ TEST_F(DataReductionProxyDelegateTest, OnCompletedSizeFor200) {
 
     std::unique_ptr<net::URLRequest> request =
         FetchURLRequest(GURL("http://example.com/path/"), nullptr,
-                        test.DrpResponseHeaders.c_str(), 1000);
+                        test.DrpResponseHeaders, 1000);
 
     EXPECT_EQ(request->GetTotalReceivedBytes(),
               total_received_bytes() - baseline_received_bytes);
@@ -721,56 +721,6 @@ TEST_F(DataReductionProxyDelegateTest, OnCompletedSizeFor200) {
 
     histogram_tester.ExpectUniqueSample(
         "DataReductionProxy.ConfigService.HTTPRequests", 1, 1);
-  }
-}
-
-TEST_F(DataReductionProxyDelegateTest, TimeToFirstHttpDataSaverRequest) {
-  base::SimpleTestTickClock tick_clock;
-  proxy_delegate()->SetTickClockForTesting(&tick_clock);
-
-  const char kResponseHeaders[] =
-      "HTTP/1.1 200 OK\r\n"
-      "Via: 1.1 Chrome-Compression-Proxy-Suffix\r\n"
-      "Content-Length: 10\r\n\r\n";
-
-  params()->UseNonSecureProxiesForHttp();
-  {
-    base::HistogramTester histogram_tester;
-    base::TimeDelta advance_time(base::TimeDelta::FromSeconds(1));
-    tick_clock.Advance(advance_time);
-
-    FetchURLRequest(GURL("http://example.com/path/"), nullptr, kResponseHeaders,
-                    10);
-    histogram_tester.ExpectUniqueSample(
-        "DataReductionProxy.TimeToFirstDataSaverRequest",
-        advance_time.InMilliseconds(), 1);
-
-    // Second request should not result in recording of UMA.
-    FetchURLRequest(GURL("http://example.com/path/"), nullptr, kResponseHeaders,
-                    10);
-    histogram_tester.ExpectTotalCount(
-        "DataReductionProxy.TimeToFirstDataSaverRequest", 1);
-  }
-
-  {
-    base::HistogramTester histogram_tester;
-    // Third request should result in recording of UMA due to change in IP.
-    base::TimeDelta advance_time(base::TimeDelta::FromSeconds(2));
-    net::NetworkChangeNotifier::NotifyObserversOfIPAddressChangeForTests();
-    base::RunLoop().RunUntilIdle();
-
-    tick_clock.Advance(advance_time);
-    FetchURLRequest(GURL("http://example.com/path/"), nullptr, kResponseHeaders,
-                    10);
-    histogram_tester.ExpectUniqueSample(
-        "DataReductionProxy.TimeToFirstDataSaverRequest",
-        advance_time.InMilliseconds(), 1);
-
-    // Fourth request should not result in recording of UMA.
-    FetchURLRequest(GURL("http://example.com/path/"), nullptr, kResponseHeaders,
-                    10);
-    histogram_tester.ExpectTotalCount(
-        "DataReductionProxy.TimeToFirstDataSaverRequest", 1);
   }
 }
 
@@ -827,9 +777,8 @@ TEST_F(DataReductionProxyDelegateTest, OnCompletedSizeFor304) {
     int64_t baseline_received_bytes = total_received_bytes();
     int64_t baseline_original_received_bytes = total_original_received_bytes();
 
-    std::unique_ptr<net::URLRequest> request =
-        FetchURLRequest(GURL("http://example.com/path/"), nullptr,
-                        test.DrpResponseHeaders.c_str(), 0);
+    std::unique_ptr<net::URLRequest> request = FetchURLRequest(
+        GURL("http://example.com/path/"), nullptr, test.DrpResponseHeaders, 0);
 
     EXPECT_EQ(request->GetTotalReceivedBytes(),
               total_received_bytes() - baseline_received_bytes);
@@ -852,7 +801,7 @@ TEST_F(DataReductionProxyDelegateTest, OnCompletedSizeForWriteError) {
       net::MockWrite("GET http://example.com/path/ HTTP/1.1\r\n"
                      "Host: example.com\r\n"),
       net::MockWrite(net::ASYNC, net::ERR_ABORTED)};
-  net::StaticSocketDataProvider socket(nullptr, 0, writes, arraysize(writes));
+  net::StaticSocketDataProvider socket(base::span<net::MockRead>(), writes);
   mock_socket_factory()->AddSocketDataProvider(&socket);
 
   net::TestDelegate delegate;
@@ -875,7 +824,7 @@ TEST_F(DataReductionProxyDelegateTest, OnCompletedSizeForReadError) {
   params()->UseNonSecureProxiesForHttp();
   net::MockRead reads[] = {net::MockRead("HTTP/1.1 "),
                            net::MockRead(net::ASYNC, net::ERR_ABORTED)};
-  net::StaticSocketDataProvider socket(reads, arraysize(reads), nullptr, 0);
+  net::StaticSocketDataProvider socket(reads, base::span<net::MockWrite>());
   mock_socket_factory()->AddSocketDataProvider(&socket);
 
   net::TestDelegate delegate;
@@ -981,7 +930,7 @@ TEST_F(DataReductionProxyDelegateTest, PartialRangeSavings) {
                       test.response_headers.size()),
         net::MockRead(net::ASYNC, response_body.data(), response_body.size()),
         net::MockRead(net::SYNCHRONOUS, net::ERR_ABORTED)};
-    net::StaticSocketDataProvider socket(reads, arraysize(reads), nullptr, 0);
+    net::StaticSocketDataProvider socket(reads, base::span<net::MockWrite>());
     mock_socket_factory()->AddSocketDataProvider(&socket);
 
     net::TestDelegate test_delegate;

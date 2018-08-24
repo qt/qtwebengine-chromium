@@ -116,6 +116,8 @@ const char kChromeUIPrintURL[] = "chrome://print/";
 const char kChromeUIQuitHost[] = "quit";
 const char kChromeUIQuitURL[] = "chrome://quit/";
 const char kChromeUIQuotaInternalsHost[] = "quota-internals";
+const char kChromeUIResetPasswordHost[] = "reset-password";
+const char kChromeUIResetPasswordURL[] = "chrome://reset-password/";
 const char kChromeUIRestartHost[] = "restart";
 const char kChromeUIRestartURL[] = "chrome://restart/";
 const char kChromeUISettingsHost[] = "settings";
@@ -136,6 +138,8 @@ const char kChromeUISupervisedUserPassphrasePageHost[] =
     "managed-user-passphrase";
 const char kChromeUISyncConfirmationHost[] = "sync-confirmation";
 const char kChromeUISyncConfirmationURL[] = "chrome://sync-confirmation/";
+const char kChromeUISyncConsentBumpURL[] =
+    "chrome://sync-confirmation/?consent-bump";
 const char kChromeUISyncFileSystemInternalsHost[] = "syncfs-internals";
 const char kChromeUISyncHost[] = "sync";
 const char kChromeUISyncInternalsHost[] = "sync-internals";
@@ -252,9 +256,7 @@ const char kChromeUITabModalConfirmDialogHost[] = "tab-modal-confirm-dialog";
 const char kChromeUIPrintHost[] = "print";
 #endif
 
-#if BUILDFLAG(ENABLE_WEBRTC)
 const char kChromeUIWebRtcLogsHost[] = "webrtc-logs";
-#endif
 
 // Settings sub pages.
 
@@ -286,6 +288,7 @@ const char kHelpSubPage[] = "help";
 const char kInternetSubPage[] = "internet";
 const char kNetworkDetailSubPage[] = "networkDetail";
 const char kPowerSubPage[] = "power";
+const char kSmbSharesPage[] = "smbShares";
 const char kStylusSubPage[] = "stylus";
 #else
 const char kCreateProfileSubPage[] = "createProfile";
@@ -415,9 +418,7 @@ const char* const kChromeHostURLs[] = {
 #if BUILDFLAG(ENABLE_SERVICE_DISCOVERY)
     kChromeUIDevicesHost,
 #endif
-#if BUILDFLAG(ENABLE_WEBRTC)
     kChromeUIWebRtcLogsHost,
-#endif
 };
 const size_t kNumberOfChromeHostURLs = arraysize(kChromeHostURLs);
 

@@ -38,9 +38,11 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
+#include "third_party/blink/renderer/platform/heap/address_cache.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/heap/heap.h"
 #include "third_party/blink/renderer/platform/heap/heap_linked_stack.h"
+#include "third_party/blink/renderer/platform/heap/heap_stats_collector.h"
 #include "third_party/blink/renderer/platform/heap/heap_terminated_array_builder.h"
 #include "third_party/blink/renderer/platform/heap/heap_test_utilities.h"
 #include "third_party/blink/renderer/platform/heap/marking_visitor.h"
@@ -364,6 +366,7 @@ class TestGCMarkingScope : public TestGCCollectGarbageScope {
       : TestGCCollectGarbageScope(state),
         atomic_pause_scope_(ThreadState::Current()),
         persistent_lock_(ProcessHeap::CrossThreadPersistentMutex()) {
+    ThreadState::Current()->Heap().stats_collector()->Start(BlinkGC::kTesting);
     ThreadState::Current()->MarkPhasePrologue(state, BlinkGC::kAtomicMarking,
                                               BlinkGC::kPreciseGC);
   }
@@ -631,11 +634,9 @@ class ThreadedWeaknessTester : public ThreadedTesterBase {
       {
         Persistent<HeapHashMap<ThreadMarker, WeakMember<IntWrapper>>> weak_map =
             new HeapHashMap<ThreadMarker, WeakMember<IntWrapper>>;
-        PersistentHeapHashMap<ThreadMarker, WeakMember<IntWrapper>> weak_map2;
 
         for (int i = 0; i < kNumberOfAllocations; i++) {
           weak_map->insert(static_cast<unsigned>(i), IntWrapper::Create(0));
-          weak_map2.insert(static_cast<unsigned>(i), IntWrapper::Create(0));
           test::YieldCurrentThread();
         }
 
@@ -652,7 +653,6 @@ class ThreadedWeaknessTester : public ThreadedTesterBase {
         //                            BlinkGC::TakeSnapshot, BlinkGC::ForcedGC);
         PreciselyCollectGarbage();
         EXPECT_TRUE(weak_map->IsEmpty());
-        EXPECT_TRUE(weak_map2.IsEmpty());
       }
       test::YieldCurrentThread();
     }
@@ -866,7 +866,7 @@ class Foo : public Bar {
 
   static Foo* Create(Foo* foo) { return new Foo(foo); }
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     if (points_to_foo_)
       visitor->Trace(static_cast<Foo*>(bar_));
     else
@@ -888,7 +888,7 @@ class Bars : public Bar {
  public:
   static Bars* Create() { return new Bars(); }
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     for (unsigned i = 0; i < width_; i++)
       visitor->Trace(bars_[i]);
   }
@@ -1036,7 +1036,7 @@ class Weak : public Bar {
  public:
   static Weak* Create(Bar* strong, Bar* weak) { return new Weak(strong, weak); }
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(strong_bar_);
     visitor->template RegisterWeakMembers<Weak, &Weak::ZapWeakMembers>(this);
   }
@@ -1065,7 +1065,7 @@ class WithWeakMember : public Bar {
     return new WithWeakMember(strong, weak);
   }
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(strong_bar_);
     visitor->Trace(weak_bar_);
   }
@@ -1162,7 +1162,7 @@ class PreFinalizerMixin : public GarbageCollectedMixin {
 
  public:
   ~PreFinalizerMixin() { was_destructed_ = true; }
-  virtual void Trace(blink::Visitor* visitor) {}
+  void Trace(blink::Visitor* visitor) override {}
   void Dispose() {
     EXPECT_FALSE(g_dispose_was_called_for_pre_finalizer_base);
     EXPECT_TRUE(g_dispose_was_called_for_pre_finalizer_sub_class);
@@ -1182,8 +1182,8 @@ class PreFinalizerSubClass : public PreFinalizerBase, public PreFinalizerMixin {
 
  public:
   static PreFinalizerSubClass* Create() { return new PreFinalizerSubClass(); }
-  ~PreFinalizerSubClass() { was_destructed_ = true; }
-  virtual void Trace(blink::Visitor* visitor) {}
+  ~PreFinalizerSubClass() override { was_destructed_ = true; }
+  void Trace(blink::Visitor* visitor) override {}
   void Dispose() {
     EXPECT_FALSE(g_dispose_was_called_for_pre_finalizer_base);
     EXPECT_FALSE(g_dispose_was_called_for_pre_finalizer_sub_class);
@@ -1352,7 +1352,7 @@ class SubClass : public SuperClass {
 
   ~SubClass() override { --alive_count_; }
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(data_);
     SuperClass::Trace(visitor);
   }
@@ -1373,7 +1373,7 @@ int SubClass::alive_count_ = 0;
 
 class Mixin : public GarbageCollectedMixin {
  public:
-  virtual void Trace(blink::Visitor* visitor) {}
+  void Trace(blink::Visitor* visitor) override {}
 
   virtual char GetPayload(int i) { return padding_[i]; }
 
@@ -1387,7 +1387,7 @@ class UseMixin : public SimpleObject, public Mixin {
   static UseMixin* Create() { return new UseMixin(); }
 
   static int trace_count_;
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     SimpleObject::Trace(visitor);
     Mixin::Trace(visitor);
     ++trace_count_;
@@ -2367,9 +2367,21 @@ TEST(HeapTest, LargeHeapObjects) {
   PreciselyCollectGarbage();
 }
 
-TEST(HeapTest, LargeHashMap) {
+// This test often fails on Android (https://crbug.com/843032).
+// We run out of memory on Android devices because ReserveCapacityForSize
+// actually allocates a much larger backing than specified (in this case 400MB).
+#if defined(OS_ANDROID)
+#define MAYBE_LargeHashMap DISABLED_LargeHashMap
+#else
+#define MAYBE_LargeHashMap LargeHashMap
+#endif
+TEST(HeapTest, MAYBE_LargeHashMap) {
   ClearOutOldGarbage();
-  size_t size = (1 << 27) / sizeof(Member<IntWrapper>);
+
+  // Try to allocate a HashTable larger than kMaxHeapObjectSize
+  // (crbug.com/597953).
+  size_t size = kMaxHeapObjectSize /
+                sizeof(HeapHashMap<int, Member<IntWrapper>>::ValueType);
   Persistent<HeapHashMap<int, Member<IntWrapper>>> map =
       new HeapHashMap<int, Member<IntWrapper>>();
   map->ReserveCapacityForSize(size);
@@ -2379,7 +2391,9 @@ TEST(HeapTest, LargeHashMap) {
 TEST(HeapTest, LargeVector) {
   ClearOutOldGarbage();
 
-  size_t size = (1 << 27) / sizeof(int);
+  // Try to allocate a HeapVectors larger than kMaxHeapObjectSize
+  // (crbug.com/597953).
+  size_t size = kMaxHeapObjectSize / sizeof(int);
   Persistent<HeapVector<int>> vector = new HeapVector<int>(size);
   EXPECT_LE(size, vector->capacity());
 }
@@ -4010,7 +4024,8 @@ TEST(HeapTest, CheckAndMarkPointer) {
     TestGCScope scope(BlinkGC::kHeapPointersOnStack);
     MarkingVisitor visitor(ThreadState::Current(),
                            MarkingVisitor::kGlobalMarking);
-    heap.FlushHeapDoesNotContainCache();
+    heap.address_cache()->EnableLookup();
+    heap.address_cache()->Flush();
     for (size_t i = 0; i < object_addresses.size(); i++) {
       EXPECT_TRUE(heap.CheckAndMarkPointer(&visitor, object_addresses[i],
                                            ReportMarkedPointer));
@@ -4034,7 +4049,8 @@ TEST(HeapTest, CheckAndMarkPointer) {
     TestGCScope scope(BlinkGC::kHeapPointersOnStack);
     MarkingVisitor visitor(ThreadState::Current(),
                            MarkingVisitor::kGlobalMarking);
-    heap.FlushHeapDoesNotContainCache();
+    heap.address_cache()->EnableLookup();
+    heap.address_cache()->Flush();
     for (size_t i = 0; i < object_addresses.size(); i++) {
       // We would like to assert that checkAndMarkPointer returned false
       // here because the pointers no longer point into a valid object
@@ -4721,7 +4737,7 @@ TEST(HeapTest, DestructorsCalled) {
 class MixinA : public GarbageCollectedMixin {
  public:
   MixinA() : obj_(IntWrapper::Create(100)) {}
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     trace_count_++;
     visitor->Trace(obj_);
   }
@@ -4736,7 +4752,7 @@ int MixinA::trace_count_ = 0;
 class MixinB : public GarbageCollectedMixin {
  public:
   MixinB() : obj_(IntWrapper::Create(101)) {}
-  virtual void Trace(blink::Visitor* visitor) { visitor->Trace(obj_); }
+  void Trace(blink::Visitor* visitor) override { visitor->Trace(obj_); }
   Member<IntWrapper> obj_;
 };
 
@@ -4747,7 +4763,7 @@ class MultipleMixins : public GarbageCollected<MultipleMixins>,
 
  public:
   MultipleMixins() : obj_(IntWrapper::Create(102)) {}
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(obj_);
     MixinA::Trace(visitor);
     MixinB::Trace(visitor);
@@ -4759,7 +4775,7 @@ class DerivedMultipleMixins : public MultipleMixins {
  public:
   DerivedMultipleMixins() : obj_(IntWrapper::Create(103)) {}
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     trace_called_++;
     visitor->Trace(obj_);
     MultipleMixins::Trace(visitor);
@@ -5772,7 +5788,7 @@ class ClassWithGarbageCollectingMixinConstructor
       : trace_counter_(TraceCounter::Create()),
         wrapper_(IntWrapper::Create(32)) {}
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     trace_called_++;
     visitor->Trace(trace_counter_);
     visitor->Trace(wrapper_);
@@ -6338,7 +6354,7 @@ class TestMixinAllocationA : public GarbageCollected<TestMixinAllocationA>,
     DCHECK(ThreadState::Current()->IsGCForbidden());
   }
 
-  virtual void Trace(blink::Visitor* visitor) {}
+  void Trace(blink::Visitor* visitor) override {}
 };
 
 class TestMixinAllocationB : public TestMixinAllocationA {
@@ -6354,7 +6370,7 @@ class TestMixinAllocationB : public TestMixinAllocationA {
     DCHECK(ThreadState::Current()->IsGCForbidden());
   }
 
-  void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(a_);
     TestMixinAllocationA::Trace(visitor);
   }
@@ -6369,7 +6385,9 @@ class TestMixinAllocationC final : public TestMixinAllocationB {
  public:
   TestMixinAllocationC() { DCHECK(!ThreadState::Current()->IsGCForbidden()); }
 
-  void Trace(blink::Visitor* visitor) { TestMixinAllocationB::Trace(visitor); }
+  void Trace(blink::Visitor* visitor) override {
+    TestMixinAllocationB::Trace(visitor);
+  }
 };
 
 TEST(HeapTest, NestedMixinConstruction) {
@@ -6405,7 +6423,7 @@ class TestMixinAllocatingObject final
     return new TestMixinAllocatingObject(member);
   }
 
-  void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(trace_counter_);
     TestMixinAllocationB::Trace(visitor);
   }
@@ -6602,11 +6620,11 @@ class ThreadedClearOnShutdownTester : public ThreadedTesterBase {
   class HeapObject;
   friend class HeapObject;
 
-  using WeakHeapObjectSet = PersistentHeapHashSet<WeakMember<HeapObject>>;
+  using WeakHeapObjectSet = HeapHashSet<WeakMember<HeapObject>>;
 
   static WeakHeapObjectSet& GetWeakHeapObjectSet();
 
-  using HeapObjectSet = PersistentHeapHashSet<Member<HeapObject>>;
+  using HeapObjectSet = HeapHashSet<Member<HeapObject>>;
   static HeapObjectSet& GetHeapObjectSet();
 
   static IntWrapper& ThreadSpecificIntWrapper() {
@@ -6655,21 +6673,26 @@ class ThreadedClearOnShutdownTester::HeapObject final
 
 ThreadedClearOnShutdownTester::WeakHeapObjectSet&
 ThreadedClearOnShutdownTester::GetWeakHeapObjectSet() {
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<WeakHeapObjectSet>, singleton,
-                                  ());
-  if (!singleton.IsSet())
-    singleton->RegisterAsStaticReference();
-
-  return *singleton;
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<Persistent<WeakHeapObjectSet>>,
+                                  singleton, ());
+  Persistent<WeakHeapObjectSet>& singleton_persistent = *singleton;
+  if (!singleton_persistent) {
+    singleton_persistent = new WeakHeapObjectSet();
+    singleton_persistent.RegisterAsStaticReference();
+  }
+  return *singleton_persistent;
 }
 
 ThreadedClearOnShutdownTester::HeapObjectSet&
 ThreadedClearOnShutdownTester::GetHeapObjectSet() {
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<HeapObjectSet>, singleton, ());
-  if (!singleton.IsSet())
-    singleton->RegisterAsStaticReference();
-
-  return *singleton;
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<Persistent<HeapObjectSet>>,
+                                  singleton, ());
+  Persistent<HeapObjectSet>& singleton_persistent = *singleton;
+  if (!singleton_persistent) {
+    singleton_persistent = new HeapObjectSet();
+    singleton_persistent.RegisterAsStaticReference();
+  }
+  return *singleton_persistent;
 }
 
 void ThreadedClearOnShutdownTester::RunWhileAttached() {
@@ -6846,6 +6869,15 @@ TEST(HeapTest, HeapDoublyLinkedList) {
   container->list_.RemoveHead();
   PreciselyCollectGarbage();
   EXPECT_EQ(DoublyLinkedListNodeImpl::destructor_calls_, 2);
+}
+
+TEST(HeapTest, PersistentHeapVectorCopyAssignment) {
+  PersistentHeapVector<Member<IntWrapper>> vector1;
+  {
+    PersistentHeapVector<Member<IntWrapper>> vector2;
+    vector1 = vector2;
+  }
+  PreciselyCollectGarbage();
 }
 
 }  // namespace blink

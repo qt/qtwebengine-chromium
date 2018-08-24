@@ -265,7 +265,7 @@ static void PreconnectIfNeeded(
   }
 }
 
-WTF::Optional<Resource::Type> LinkLoader::GetResourceTypeFromAsAttribute(
+base::Optional<Resource::Type> LinkLoader::GetResourceTypeFromAsAttribute(
     const String& as) {
   DCHECK_EQ(as.DeprecatedLower(), as);
   if (as == "image") {
@@ -285,7 +285,7 @@ WTF::Optional<Resource::Type> LinkLoader::GetResourceTypeFromAsAttribute(
   } else if (as == "fetch") {
     return Resource::kRaw;
   }
-  return WTF::nullopt;
+  return base::nullopt;
 }
 
 Resource* LinkLoader::GetResourceForTesting() {
@@ -349,7 +349,7 @@ static Resource* PreloadIfNeeded(const LinkLoadParameters& params,
   if (!document.Loader() || !params.rel.IsLinkPreload())
     return nullptr;
 
-  Optional<Resource::Type> resource_type =
+  base::Optional<Resource::Type> resource_type =
       LinkLoader::GetResourceTypeFromAsAttribute(params.as);
 
   MediaValues* media_values = nullptr;
@@ -386,7 +386,7 @@ static Resource* PreloadIfNeeded(const LinkLoadParameters& params,
 
   if (caller == kLinkCalledFromHeader)
     UseCounter::Count(document, WebFeature::kLinkHeaderPreload);
-  if (resource_type == WTF::nullopt) {
+  if (resource_type == base::nullopt) {
     document.AddConsoleMessage(ConsoleMessage::Create(
         kOtherMessageSource, kWarningMessageLevel,
         String("<link rel=preload> must have a valid `as` value")));
@@ -463,6 +463,8 @@ static void ModulePreloadIfNeeded(const LinkLoadParameters& params,
       link_loader->DispatchLinkLoadingErroredAsync();
     return;
   }
+  WebURLRequest::RequestContext destination =
+      WebURLRequest::kRequestContextScript;
 
   // Step 4. "Parse the URL given by the href attribute, relative to the
   // element's node document. If that fails, then return. Otherwise, let url be
@@ -523,9 +525,11 @@ static void ModulePreloadIfNeeded(const LinkLoadParameters& params,
   // metadata is "not-parser-inserted", and credentials mode is credentials
   // mode." [spec text]
   ModuleScriptFetchRequest request(
-      params.href, params.referrer_policy,
+      params.href, destination,
       ScriptFetchOptions(params.nonce, integrity_metadata, params.integrity,
-                         kNotParserInserted, credentials_mode));
+                         kNotParserInserted, credentials_mode),
+      Referrer::NoReferrer(), params.referrer_policy,
+      TextPosition::MinimumPosition());
 
   // Step 10. "Fetch a single module script given url, settings object,
   // destination, options, settings object, "client", and with the top-level
@@ -560,7 +564,7 @@ static Resource* PrefetchIfNeeded(const LinkLoadParameters& params,
 
     ResourceLoaderOptions options;
     options.initiator_info.name = FetchInitiatorTypeNames::link;
-    auto service = document.GetFrame()->PrefetchURLLoaderService();
+    auto* service = document.GetFrame()->PrefetchURLLoaderService();
     if (service) {
       network::mojom::blink::URLLoaderFactoryPtr prefetch_url_loader_factory;
       service->GetFactory(mojo::MakeRequest(&prefetch_url_loader_factory));

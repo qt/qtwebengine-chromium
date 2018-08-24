@@ -9,6 +9,7 @@
 #include "base/logging.h"
 #include "base/trace_event/trace_event.h"
 #include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_context.h"
 #include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_wgl_api_implementation.h"
 
@@ -310,8 +311,19 @@ gfx::SwapResult NativeViewGLSurfaceWGL::SwapBuffers(
   }
 
   DCHECK(device_context_);
-  return ::SwapBuffers(device_context_) == TRUE ? gfx::SwapResult::SWAP_ACK
-                                                : gfx::SwapResult::SWAP_FAILED;
+  if (::SwapBuffers(device_context_) == TRUE) {
+    // TODO(penghuang): Provide more accurate values for presentation feedback.
+    constexpr int64_t kRefreshIntervalInMicroseconds =
+        base::Time::kMicrosecondsPerSecond / 60;
+    callback.Run(gfx::PresentationFeedback(
+        base::TimeTicks::Now(),
+        base::TimeDelta::FromMicroseconds(kRefreshIntervalInMicroseconds),
+        0 /* flags */));
+    return gfx::SwapResult::SWAP_ACK;
+  } else {
+    callback.Run(gfx::PresentationFeedback());
+    return gfx::SwapResult::SWAP_FAILED;
+  }
 }
 
 gfx::Size NativeViewGLSurfaceWGL::GetSize() {
@@ -327,6 +339,20 @@ void* NativeViewGLSurfaceWGL::GetHandle() {
 
 GLSurfaceFormat NativeViewGLSurfaceWGL::GetFormat() {
   return GLSurfaceFormat();
+}
+
+bool NativeViewGLSurfaceWGL::SupportsPresentationCallback() {
+  return true;
+}
+
+void NativeViewGLSurfaceWGL::SetVSyncEnabled(bool enabled) {
+  DCHECK(GLContext::GetCurrent() && GLContext::GetCurrent()->IsCurrent(this));
+  if (g_driver_wgl.ext.b_WGL_EXT_swap_control) {
+    wglSwapIntervalEXT(enabled ? 1 : 0);
+  } else {
+    LOG(WARNING) << "Could not disable vsync: driver does not "
+                    "support WGL_EXT_swap_control";
+  }
 }
 
 PbufferGLSurfaceWGL::PbufferGLSurfaceWGL(const gfx::Size& size)

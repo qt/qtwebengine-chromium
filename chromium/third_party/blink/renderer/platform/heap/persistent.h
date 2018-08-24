@@ -581,6 +581,13 @@ class PersistentHeapCollectionBase : public Collection {
 
   ~PersistentHeapCollectionBase() { Uninitialize(); }
 
+  // Override so we don't copy persistent_node_.
+  PersistentHeapCollectionBase& operator=(
+      const PersistentHeapCollectionBase& other) {
+    Collection::operator=(other);
+    return *this;
+  }
+
   // See PersistentBase::registerAsStaticReference() comment.
   PersistentHeapCollectionBase* RegisterAsStaticReference() {
     if (persistent_node_) {
@@ -611,6 +618,9 @@ class PersistentHeapCollectionBase : public Collection {
 
   NO_SANITIZE_ADDRESS
   void Initialize() {
+    CHECK(IsMainThread()) << "Persistent heap collections are disabled on "
+                             "non-main threads. Put the heap collection in a "
+                             "Persistent instead.";
     // FIXME: Derive affinity based on the collection.
     ThreadState* state = ThreadState::Current();
     DCHECK(state->CheckThread());

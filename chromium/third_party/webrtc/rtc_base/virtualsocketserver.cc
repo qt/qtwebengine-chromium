@@ -590,16 +590,8 @@ void VirtualSocketServer::SetSendingBlocked(bool blocked) {
   }
 }
 
-Socket* VirtualSocketServer::CreateSocket(int type) {
-  return CreateSocket(AF_INET, type);
-}
-
 Socket* VirtualSocketServer::CreateSocket(int family, int type) {
   return CreateSocketInternal(family, type);
-}
-
-AsyncSocket* VirtualSocketServer::CreateAsyncSocket(int type) {
-  return CreateAsyncSocket(AF_INET, type);
 }
 
 AsyncSocket* VirtualSocketServer::CreateAsyncSocket(int family, int type) {
@@ -650,7 +642,7 @@ bool VirtualSocketServer::ProcessMessagesUntilIdle() {
     if (fake_clock_) {
       // If using a fake clock, advance it in millisecond increments until the
       // queue is empty.
-      fake_clock_->AdvanceTime(rtc::TimeDelta::FromMilliseconds(1));
+      fake_clock_->AdvanceTime(webrtc::TimeDelta::ms(1));
     } else {
       // Otherwise, run a normal message loop.
       Message msg;

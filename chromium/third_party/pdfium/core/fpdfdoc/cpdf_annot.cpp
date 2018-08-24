@@ -53,9 +53,9 @@ CPDF_Form* AnnotGetMatrix(const CPDF_Page* pPage,
   if (!pForm)
     return nullptr;
 
-  CFX_Matrix form_matrix = pForm->m_pFormDict->GetMatrixFor("Matrix");
+  CFX_Matrix form_matrix = pForm->GetFormDict()->GetMatrixFor("Matrix");
   CFX_FloatRect form_bbox =
-      form_matrix.TransformRect(pForm->m_pFormDict->GetRectFor("BBox"));
+      form_matrix.TransformRect(pForm->GetFormDict()->GetRectFor("BBox"));
   matrix->MatchRect(pAnnot->GetRect(), form_bbox);
   matrix->Concat(*pUser2Device);
   return pForm;
@@ -198,7 +198,7 @@ CPDF_Form* CPDF_Annot::GetAPForm(const CPDF_Page* pPage, AppearanceMode mode) {
 
   auto pNewForm = pdfium::MakeUnique<CPDF_Form>(
       m_pDocument.Get(), pPage->m_pResources.Get(), pStream);
-  pNewForm->ParseContent();
+  pNewForm->ParseContent(nullptr, nullptr, nullptr, nullptr);
 
   CPDF_Form* pResult = pNewForm.get();
   m_APMap[pStream] = std::move(pNewForm);
@@ -229,7 +229,7 @@ CFX_FloatRect CPDF_Annot::RectFromQuadPointsArray(const CPDF_Array* pArray,
 
 // static
 CFX_FloatRect CPDF_Annot::BoundingRectFromQuadPoints(
-    CPDF_Dictionary* pAnnotDict) {
+    const CPDF_Dictionary* pAnnotDict) {
   CPDF_Array* pArray = pAnnotDict->GetArrayFor("QuadPoints");
   if (!pArray)
     return CFX_FloatRect();

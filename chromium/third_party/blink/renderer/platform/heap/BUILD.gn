@@ -8,16 +8,14 @@ import("//third_party/blink/renderer/platform/platform.gni")
 import("//testing/test.gni")
 
 declare_args() {
-  # Enables incremental marking in Oilpan.
+  # Build Blink with incremental marking infrastructure for Oilpan.
   #
-  # Note: Incremental marking is currently considered experimental and also
-  # enables 'enable_blink_heap_incremental_marking'. See default value below.
-  enable_blink_heap_incremental_marking = false
-}
+  # To turn on incremental marking also use
+  #   --enable-blink-features=HeapIncrementalMarking
+  enable_blink_heap_incremental_marking = true
 
-declare_args() {
   # Enables heap verification.
-  enable_blink_heap_verification = enable_blink_heap_incremental_marking
+  enable_blink_heap_verification = false
 }
 
 buildflag_header("blink_heap_buildflags") {
@@ -32,9 +30,12 @@ buildflag_header("blink_heap_buildflags") {
 
 blink_platform_sources("heap") {
   sources = [
+    "address_cache.cc",
+    "address_cache.h",
     "blink_gc.h",
     "blink_gc_memory_dump_provider.cc",
     "blink_gc_memory_dump_provider.h",
+    "finalizer_traits.h",
     "garbage_collected.h",
     "gc_info.cc",
     "gc_info.h",
@@ -49,6 +50,8 @@ blink_platform_sources("heap") {
     "heap_linked_stack.h",
     "heap_page.cc",
     "heap_page.h",
+    "heap_stats_collector.cc",
+    "heap_stats_collector.h",
     "heap_terminated_array.h",
     "heap_terminated_array_builder.h",
     "heap_traits.h",
@@ -56,6 +59,7 @@ blink_platform_sources("heap") {
     "marking_visitor.cc",
     "marking_visitor.h",
     "member.h",
+    "name_traits.h",
     "page_memory.cc",
     "page_memory.h",
     "page_pool.cc",
@@ -106,8 +110,11 @@ test("blink_heap_unittests") {
 jumbo_source_set("blink_heap_unittests_sources") {
   testonly = true
   sources = [
+    "address_cache_test.cc",
     "blink_gc_memory_dump_provider_test.cc",
+    "gc_info_test.cc",
     "heap_compact_test.cc",
+    "heap_stats_collector_test.cc",
     "heap_test.cc",
     "heap_test_utilities.cc",
     "heap_test_utilities.h",

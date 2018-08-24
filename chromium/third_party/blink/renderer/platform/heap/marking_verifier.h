@@ -15,14 +15,15 @@ namespace blink {
 class MarkingVerifier final : public Visitor {
  public:
   explicit MarkingVerifier(ThreadState* state) : Visitor(state) {}
-  virtual ~MarkingVerifier() {}
+  ~MarkingVerifier() override {}
 
   void VerifyObject(HeapObjectHeader* header) {
     // Verify only non-free marked objects.
     if (header->IsFree() || !header->IsMarked())
       return;
 
-    const GCInfo* info = ThreadHeap::GcInfo(header->GcInfoIndex());
+    const GCInfo* info =
+        GCInfoTable::Get().GCInfoFromIndex(header->GcInfoIndex());
     const bool can_verify =
         !info->HasVTable() || blink::VTableInitialized(header->Payload());
     if (can_verify) {
@@ -54,6 +55,10 @@ class MarkingVerifier final : public Visitor {
   void VisitBackingStoreOnly(void*, void**) final {}
   void RegisterBackingStoreCallback(void*, MovingObjectCallback, void*) final {}
   void RegisterWeakCallback(void*, WeakCallback) final {}
+  void Visit(const TraceWrapperV8Reference<v8::Value>&) final {}
+  void Visit(DOMWrapperMap<ScriptWrappable>*,
+             const ScriptWrappable* key) final {}
+  void Visit(void*, TraceWrapperDescriptor) final {}
 
  private:
   void VerifyChild(void* base_object_payload) {

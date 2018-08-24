@@ -9,7 +9,7 @@
 namespace fileManagerPrivate {
 // Type of the mounted volume.
 enum VolumeType { drive, downloads, removable, archive, provided, mtp,
-                  media_view, testing };
+                  media_view, crostini, android_files, testing };
 
 // Device type. Available if this is removable volume.
 enum DeviceType { usb, sd, optical, mobile, unknown };
@@ -175,7 +175,9 @@ enum EntryPropertyName {
   sharedWithMe,
   shared,
   starred,
-  externalFileUrl
+  externalFileUrl,
+  alternateUrl,
+  shareUrl
 };
 
 // Entry property visibility for setEntryTag();
@@ -301,8 +303,15 @@ dictionary EntryProperties {
   // True if the entry is starred by the user.
   boolean? starred;
 
-  // External file URL to open the file in browser.
+  // externalfile:// URL to open the file in browser.
   DOMString? externalFileUrl;
+
+  // https:// URL to open the file or folder in the Drive website.
+  DOMString? alternateUrl;
+
+  // https:// URL to open the file or folder in the Drive website with the
+  // sharing dialog open.
+  DOMString? shareUrl;
 };
 
 // Information about total and remaining size on the mount point.
@@ -1068,6 +1077,14 @@ interface Functions {
   [nocompile]
   static void getRecentFiles(SourceRestriction restriction,
                              GetRecentFilesCallback callback);
+
+  // Returns true if crostini is enabled.
+  // |callback|
+  static void isCrostiniEnabled(BooleanCallback callback);
+
+  // Starts and mounts crostini container.
+  // |callback|
+  static void mountCrostiniContainer(SimpleCallback callback);
 };
 
 interface Events {

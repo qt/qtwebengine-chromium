@@ -9,7 +9,6 @@
 #include "third_party/blink/renderer/core/layout/min_max_size.h"
 #include "third_party/blink/renderer/core/layout/ng/geometry/ng_logical_size.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_node.h"
-#include "third_party/blink/renderer/core/layout/ng/list/layout_ng_list_marker.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_block_node.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_layout_result.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
@@ -42,7 +41,8 @@ void AppendNodeToString(NGLayoutInputNode node,
   }
 
   if (node.IsInline()) {
-    for (const NGInlineItem& inline_item : ToNGInlineNode(node).Items()) {
+    const auto& items = ToNGInlineNode(node).ItemsData(false).items;
+    for (const NGInlineItem& inline_item : items) {
       string_builder->Append(indent_builder.ToString());
       string_builder->Append(inline_item.ToString());
       string_builder->Append("\n");
@@ -95,6 +95,10 @@ bool NGLayoutInputNode::IsListMarker() const {
   return IsBlock() && box_->IsLayoutNGListMarker();
 }
 
+bool NGLayoutInputNode::IsAnonymous() const {
+  return box_->IsAnonymous();
+}
+
 bool NGLayoutInputNode::IsQuirkyContainer() const {
   return box_->GetDocument().InQuirksMode() &&
          (box_->IsBody() || box_->IsTableCell());
@@ -128,16 +132,18 @@ scoped_refptr<NGLayoutResult> NGLayoutInputNode::Layout(
 }
 
 MinMaxSize NGLayoutInputNode::ComputeMinMaxSize(
+    WritingMode writing_mode,
     const MinMaxSizeInput& input,
     const NGConstraintSpace* space) {
   return IsInline() ? ToNGInlineNode(*this).ComputeMinMaxSize(input)
-                    : ToNGBlockNode(*this).ComputeMinMaxSize(input, space);
+                    : ToNGBlockNode(*this).ComputeMinMaxSize(writing_mode,
+                                                             input, space);
 }
 
 void NGLayoutInputNode::IntrinsicSize(
     NGLogicalSize* default_intrinsic_size,
-    Optional<LayoutUnit>* computed_inline_size,
-    Optional<LayoutUnit>* computed_block_size,
+    base::Optional<LayoutUnit>* computed_inline_size,
+    base::Optional<LayoutUnit>* computed_block_size,
     NGLogicalSize* aspect_ratio) const {
   DCHECK(IsReplaced());
 

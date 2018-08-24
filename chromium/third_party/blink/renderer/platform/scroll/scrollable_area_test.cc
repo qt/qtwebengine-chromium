@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/platform/scroll/scrollable_area.h"
 
+#include "base/message_loop/message_loop.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -29,7 +30,7 @@ class ScrollbarThemeWithMockInvalidation : public ScrollbarThemeMock {
  public:
   MOCK_CONST_METHOD0(ShouldRepaintAllPartsOnInvalidation, bool());
   MOCK_CONST_METHOD3(InvalidateOnThumbPositionChange,
-                     ScrollbarPart(const ScrollbarThemeClient&, float, float));
+                     ScrollbarPart(const Scrollbar&, float, float));
 };
 
 }  // namespace
@@ -103,7 +104,7 @@ TEST_F(ScrollableAreaTest, ScrollbarGraphicsLayerInvalidation) {
   graphics_layer_client.SetIsTrackingRasterInvalidations(true);
   FakeGraphicsLayer graphics_layer(graphics_layer_client);
   graphics_layer.SetDrawsContent(true);
-  graphics_layer.SetSize(FloatSize(111, 222));
+  graphics_layer.SetSize(IntSize(111, 222));
 
   EXPECT_CALL(*scrollable_area, LayerForHorizontalScrollbar())
       .WillRepeatedly(Return(&graphics_layer));
@@ -187,10 +188,10 @@ TEST_F(ScrollableAreaTest, InvalidatesCompositedScrollbarsIfPartsNeedRepaint) {
   graphics_layer_client.SetIsTrackingRasterInvalidations(true);
   FakeGraphicsLayer layer_for_horizontal_scrollbar(graphics_layer_client);
   layer_for_horizontal_scrollbar.SetDrawsContent(true);
-  layer_for_horizontal_scrollbar.SetSize(FloatSize(10, 10));
+  layer_for_horizontal_scrollbar.SetSize(IntSize(10, 10));
   FakeGraphicsLayer layer_for_vertical_scrollbar(graphics_layer_client);
   layer_for_vertical_scrollbar.SetDrawsContent(true);
-  layer_for_vertical_scrollbar.SetSize(FloatSize(10, 10));
+  layer_for_vertical_scrollbar.SetSize(IntSize(10, 10));
   EXPECT_CALL(*scrollable_area, LayerForHorizontalScrollbar())
       .WillRepeatedly(Return(&layer_for_horizontal_scrollbar));
   EXPECT_CALL(*scrollable_area, LayerForVerticalScrollbar())

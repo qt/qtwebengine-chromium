@@ -21,11 +21,6 @@ unit tests.
 - foaf.me.chromium-test-cert.der : A client certificate for a FOAF.ME identity
      created for testing.
 
-- www_us_army_mil_cert.der
-- dod_ca_17_cert.der
-- dod_root_ca_2_cert.der :
-     A certificate chain used for testing certificate imports
-
 - unosoft_hu_cert : Certificate used by X509CertificateTest.UnoSoftCertParsing.
 
 - google_diginotar.pem
@@ -58,8 +53,9 @@ unit tests.
      All files are from the src/test/testdada directory in
      https://code.google.com/p/certificate-transparency/
 
-- twitter-chain.pem : A certificate chain for twitter.com which should be
-     valid albeit expired.
+- daltonridgeapts.com-chain.pem : A long-lived (39 month), BR compliant,
+     non-EV certificate, issued by a public trust anchor, and valid for the
+     domain daltonridgeapts.com.
 
 - gms.hongleong.com.my-verisign-chain.pem: A certificate chain for
   gms.hongleong.com.my issued by VeriSign Class 3 Public Primary Certification
@@ -194,6 +190,11 @@ unit tests.
    properly gated on the issuance date. See
    https://g.co/chrome/symantecpkicerts. (Note, however, that the leaf and
    root do not actually form a chain.)
+
+- may_2018.pem
+   An 825-day certificate issued on May 1, 2018, the official start of
+   enforcement requiring Certificate Transparency for new certificates. This
+   certificate does not have any embedded SCTs.
 
 - tls_feature_extension.pem
   A certificate that contains the TLS Feature Extension.
@@ -333,7 +334,22 @@ unit tests.
      the form expected of certificates discovered via AIA.
 
 ===== From net/data/ssl/scripts/generate-self-signed-certs.sh
- - self-signed-invalid-name.pem
- - self-signed-invalid-sig.pem
+- self-signed-invalid-name.pem
+- self-signed-invalid-sig.pem
      Two "self-signed" certificates with mismatched names or an invalid
      signature, respectively.
+
+===== From net/data/ssl/scripts/generate-key-usage-certs.sh
+- key_usage_rsa_no_extension.pem
+- key_usage_rsa_keyencipherment.pem
+- key_usage_rsa_digitalsignature.pem
+- key_usage_rsa_both.pem
+     Self-signed RSA certificates with various combinations of keyUsage
+     flags. Their private key is key_usage_rsa.key.
+
+- key_usage_p256_no_extension.pem
+- key_usage_p256_keyagreement.pem
+- key_usage_p256_digitalsignature.pem
+- key_usage_p256_both.pem
+     Self-signed P-256 certificates with various combinations of keyUsage
+     flags. Their private key is key_usage_p256.key.

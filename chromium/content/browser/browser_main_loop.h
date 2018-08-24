@@ -13,11 +13,16 @@
 #include "base/memory/ref_counted.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
+#include "content/browser/browser_process_sub_thread.h"
 #include "content/public/browser/browser_main_runner.h"
 #include "media/media_buildflags.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "services/viz/public/interfaces/compositing/compositing_mode_watcher.mojom.h"
 #include "ui/base/ui_features.h"
+
+#if defined(OS_CHROMEOS)
+#include "content/browser/media/keyboard_mic_registration.h"
+#endif
 
 #if defined(USE_AURA)
 namespace aura {
@@ -91,7 +96,6 @@ class HostFrameSinkManager;
 namespace content {
 class BrowserMainParts;
 class BrowserOnlineStateObserver;
-class BrowserProcessSubThread;
 class BrowserThreadImpl;
 class LoaderDelegateImpl;
 class MediaStreamManager;
@@ -125,7 +129,10 @@ class CONTENT_EXPORT BrowserMainLoop {
   explicit BrowserMainLoop(const MainFunctionParams& parameters);
   virtual ~BrowserMainLoop();
 
-  void Init();
+  // |service_manager_thread| is optional. If set, it will be registered as
+  // BrowserThread::IO in CreateThreads() instead of creating a brand new
+  // thread.
+  void Init(std::unique_ptr<BrowserProcessSubThread> service_manager_thread);
 
   // Return value is exit status. Anything other than RESULT_CODE_NORMAL_EXIT
   // is considered an error.
@@ -153,12 +160,11 @@ class CONTENT_EXPORT BrowserMainLoop {
   // through stopping threads to PostDestroyThreads.
   void ShutdownThreadsAndCleanUp();
 
-  void InitializeIOThreadForTesting();
-
   int GetResultCode() const { return result_code_; }
 
-  media::AudioManager* audio_manager() const { return audio_manager_.get(); }
+  media::AudioManager* audio_manager() const;
   base::SequencedTaskRunner* audio_service_runner();
+  bool AudioServiceOutOfProcess() const;
   media::AudioSystem* audio_system() const { return audio_system_.get(); }
   MediaStreamManager* media_stream_manager() const {
     return media_stream_manager_.get();
@@ -166,15 +172,20 @@ class CONTENT_EXPORT BrowserMainLoop {
   media::UserInputMonitor* user_input_monitor() const {
     return user_input_monitor_.get();
   }
+
+#if defined(OS_CHROMEOS)
+  KeyboardMicRegistration* keyboard_mic_registration() {
+    return &keyboard_mic_registration_;
+  }
+#endif
+
   discardable_memory::DiscardableSharedMemoryManager*
   discardable_shared_memory_manager() const {
     return discardable_shared_memory_manager_.get();
   }
   midi::MidiService* midi_service() const { return midi_service_.get(); }
 
-  bool is_tracing_startup_for_duration() const {
-    return is_tracing_startup_for_duration_;
-  }
+  base::FilePath GetStartupTraceFileName() const;
 
   const base::FilePath& startup_trace_file() const {
     return startup_trace_file_;
@@ -243,17 +254,11 @@ class CONTENT_EXPORT BrowserMainLoop {
 
   void MainMessageLoopRun();
 
-  // Initializes |io_thread_|. It will not be promoted to BrowserThread::IO
-  // until CreateThreads().
-  void InitializeIOThread();
-
   void InitializeMojo();
-  base::FilePath GetStartupTraceFileName(
-      const base::CommandLine& command_line) const;
-  void InitStartupTracingForDuration(const base::CommandLine& command_line);
+  void InitStartupTracingForDuration();
   void EndStartupTracing();
 
-  void CreateAudioManager();
+  void InitializeAudio();
 
   bool UsingInProcessGpu() const;
 
@@ -282,7 +287,6 @@ class CONTENT_EXPORT BrowserMainLoop {
   const base::CommandLine& parsed_command_line_;
   int result_code_;
   bool created_threads_;  // True if the non-UI threads were created.
-  bool is_tracing_startup_for_duration_;
 
   // Members initialized in |MainMessageLoopStart()| ---------------------------
   std::unique_ptr<base::MessageLoop> main_message_loop_;
@@ -345,9 +349,19 @@ class CONTENT_EXPORT BrowserMainLoop {
 
   // |user_input_monitor_| has to outlive |audio_manager_|, so declared first.
   std::unique_ptr<media::UserInputMonitor> user_input_monitor_;
+
+  // |audio_manager_| is not instantiated when the audio service runs out of
+  // process.
   std::unique_ptr<media::AudioManager> audio_manager_;
+
+  // Task runner for the audio service when it runs in the browser process.
   scoped_refptr<base::DeferredSequencedTaskRunner> audio_service_runner_;
+
   std::unique_ptr<media::AudioSystem> audio_system_;
+
+#if defined(OS_CHROMEOS)
+  KeyboardMicRegistration keyboard_mic_registration_;
+#endif
 
   std::unique_ptr<midi::MidiService> midi_service_;
 

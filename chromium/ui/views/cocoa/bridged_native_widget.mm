@@ -467,7 +467,13 @@ void BridgedNativeWidget::SetVisibilityState(WindowVisibilityState new_state) {
     // See http://crbug.com/667602. Alternatives: call -setAlphaValue:0 and
     // -setIgnoresMouseEvents:YES on the NSWindow, or dismiss the sheet before
     // hiding.
-    DCHECK(![window_ attachedSheet]);
+    //
+    // TODO(ellyjones): Sort this entire situation out. This DCHECK doesn't
+    // trigger in shipped builds, but it does trigger when the browser exits
+    // "abnormally" (not via one of the UI paths to exiting), such as in browser
+    // tests, so this breaks a slew of browser tests in MacViews mode. See also
+    // https://crbug.com/834926.
+    // DCHECK(![window_ attachedSheet]);
 
     [window_ orderOut:nil];
     DCHECK(!window_visible_);
@@ -528,8 +534,9 @@ void BridgedNativeWidget::SetVisibilityState(WindowVisibilityState new_state) {
     // duration of the animation, but would keep it smooth. The window also
     // hasn't yet received a frame from the compositor at this stage, so it is
     // fully transparent until the GPU sends a frame swap IPC. For the blocking
-    // option, the animation needs to wait until AcceleratedWidgetSwapCompleted
-    // has been called at least once, otherwise it will animate nothing.
+    // option, the animation needs to wait until
+    // AcceleratedWidgetCALayerParamsUpdated has been called at least once,
+    // otherwise it will animate nothing.
     [show_animation_ setAnimationBlockingMode:NSAnimationNonblocking];
     [show_animation_ startAnimation];
   }
@@ -616,7 +623,7 @@ void BridgedNativeWidget::OnWindowWillClose() {
   Widget* widget = native_widget_mac_->GetWidget();
   if (DialogDelegate* dialog = widget->widget_delegate()->AsDialogDelegate())
     dialog->RemoveObserver(this);
-  widget->OnNativeWidgetDestroying();
+  native_widget_mac_->WindowDestroying();
 
   // Ensure BridgedNativeWidget does not have capture, otherwise
   // OnMouseCaptureLost() may reference a deleted |native_widget_mac_| when
@@ -636,7 +643,7 @@ void BridgedNativeWidget::OnWindowWillClose() {
   DCHECK(!show_animation_);
 
   [window_ setDelegate:nil];
-  native_widget_mac_->OnWindowDestroyed();
+  native_widget_mac_->WindowDestroyed();
   // Note: |this| is deleted here.
 }
 
@@ -723,14 +730,6 @@ void BridgedNativeWidget::OnSizeChanged() {
     if ([window_ inLiveResize])
       MaybeWaitForFrame(new_size);
   }
-
-  // 10.9 is unable to generate a window shadow from the composited CALayer, so
-  // use Quartz.
-  // We don't update the window mask during a live resize, instead it is done
-  // after the resize is completed in viewDidEndLiveResize: in
-  // BridgedContentView.
-  if (base::mac::IsOS10_9() && ![window_ inLiveResize])
-    [bridged_view_ updateWindowMask];
 }
 
 void BridgedNativeWidget::OnPositionChanged() {
@@ -1038,18 +1037,18 @@ NSView* BridgedNativeWidget::AcceleratedWidgetGetNSView() const {
   return compositor_superview_;
 }
 
-void BridgedNativeWidget::AcceleratedWidgetGetVSyncParameters(
-  base::TimeTicks* timebase, base::TimeDelta* interval) const {
-  // TODO(tapted): Add vsync support.
-  *timebase = base::TimeTicks();
-  *interval = base::TimeDelta();
-}
-
-void BridgedNativeWidget::AcceleratedWidgetSwapCompleted() {
+void BridgedNativeWidget::AcceleratedWidgetCALayerParamsUpdated() {
   // Ignore frames arriving "late" for an old size. A frame at the new size
   // should arrive soon.
   if (!compositor_widget_->HasFrameOfSize(GetClientAreaSize()))
     return;
+
+  // Update the DisplayCALayerTree with the most recent CALayerParams, to make
+  // the content display on-screen.
+  const gfx::CALayerParams* ca_layer_params =
+      compositor_widget_->GetCALayerParams();
+  if (ca_layer_params)
+    display_ca_layer_tree_->UpdateCALayerTree(*ca_layer_params);
 
   if (initial_visibility_suppressed_) {
     initial_visibility_suppressed_ = false;
@@ -1241,11 +1240,11 @@ void BridgedNativeWidget::AddCompositorSuperview() {
     [compositor_superview_ setWantsBestResolutionOpenGLSurface:YES];
   }
 
+  // Set the layer first to create a layer-hosting view (not layer-backed), and
+  // set the compositor output to go to that layer.
   base::scoped_nsobject<CALayer> background_layer([[CALayer alloc] init]);
-  [background_layer
-      setAutoresizingMask:kCALayerWidthSizable | kCALayerHeightSizable];
-
-  // Set the layer first to create a layer-hosting view (not layer-backed).
+  display_ca_layer_tree_ =
+      std::make_unique<ui::DisplayCALayerTree>(background_layer.get());
   [compositor_superview_ setLayer:background_layer];
   [compositor_superview_ setWantsLayer:YES];
 

@@ -468,8 +468,11 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
   target_tree->elastic_overscroll()->PushPendingToActive();
 
   target_tree->set_content_source_id(content_source_id());
+  target_tree->set_request_presentation_time(request_presentation_time());
 
-  target_tree->set_local_surface_id(local_surface_id());
+  if (TakeNewLocalSurfaceIdRequest())
+    target_tree->RequestNewLocalSurfaceId();
+  target_tree->SetLocalSurfaceIdFromParent(local_surface_id_from_parent());
 
   target_tree->pending_page_scale_animation_ =
       std::move(pending_page_scale_animation_);
@@ -963,6 +966,21 @@ void LayerTreeImpl::SetDeviceScaleFactor(float device_scale_factor) {
   host_impl_->SetNeedUpdateGpuRasterizationStatus();
 }
 
+void LayerTreeImpl::SetLocalSurfaceIdFromParent(
+    const viz::LocalSurfaceId& local_surface_id_from_parent) {
+  local_surface_id_from_parent_ = local_surface_id_from_parent;
+}
+
+void LayerTreeImpl::RequestNewLocalSurfaceId() {
+  new_local_surface_id_request_ = true;
+}
+
+bool LayerTreeImpl::TakeNewLocalSurfaceIdRequest() {
+  bool new_local_surface_id_request = new_local_surface_id_request_;
+  new_local_surface_id_request_ = false;
+  return new_local_surface_id_request;
+}
+
 void LayerTreeImpl::SetRasterColorSpace(
     int raster_color_space_id,
     const gfx::ColorSpace& raster_color_space) {
@@ -1085,7 +1103,7 @@ bool LayerTreeImpl::UpdateDrawProperties(
         device_scale_factor(), current_page_scale_factor(), PageScaleLayer(),
         InnerViewportScrollLayer(), OuterViewportScrollLayer(),
         elastic_overscroll()->Current(IsActiveTree()),
-        OverscrollElasticityLayer(), resource_provider()->max_texture_size(),
+        OverscrollElasticityLayer(), max_texture_size(),
         settings().layer_transforms_should_scale_layer_contents,
         &render_surface_list_, &property_trees_);
     LayerTreeHostCommon::CalculateDrawProperties(&inputs);
@@ -1376,6 +1394,10 @@ LayerTreeFrameSink* LayerTreeImpl::layer_tree_frame_sink() {
   return host_impl_->layer_tree_frame_sink();
 }
 
+int LayerTreeImpl::max_texture_size() const {
+  return host_impl_->max_texture_size();
+}
+
 const LayerTreeSettings& LayerTreeImpl::settings() const {
   return host_impl_->settings();
 }
@@ -1386,10 +1408,6 @@ const LayerTreeDebugState& LayerTreeImpl::debug_state() const {
 
 viz::ContextProvider* LayerTreeImpl::context_provider() const {
   return host_impl_->layer_tree_frame_sink()->context_provider();
-}
-
-viz::SharedBitmapManager* LayerTreeImpl::shared_bitmap_manager() const {
-  return host_impl_->layer_tree_frame_sink()->shared_bitmap_manager();
 }
 
 LayerTreeResourceProvider* LayerTreeImpl::resource_provider() const {

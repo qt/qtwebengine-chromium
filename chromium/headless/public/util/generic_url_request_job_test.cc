@@ -11,6 +11,7 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_current.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
@@ -23,7 +24,6 @@
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/http/http_response_headers.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
-#include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -79,9 +79,9 @@ class MockFetcher : public URLFetcher {
       on_request_callback_->Run(request);
 
     // Record the request.
-    std::string url = request->GetURLRequest()->url().spec();
+    std::string url = request->GetURL().spec();
     fetch_request_->SetString("url", url);
-    fetch_request_->SetString("method", request->GetURLRequest()->method());
+    fetch_request_->SetString("method", request->GetMethod());
     std::unique_ptr<base::DictionaryValue> headers(new base::DictionaryValue);
     for (net::HttpRequestHeaders::Iterator it(request->GetHttpRequestHeaders());
          it.GetNext();) {
@@ -251,7 +251,6 @@ class GenericURLRequestJobTest : public testing::Test {
 };
 
 TEST_F(GenericURLRequestJobTest, BasicGetRequestParams) {
-  net::StaticHttpUserAgentSettings user_agent_settings("en-UK", "TestBrowser");
 
   json_fetch_reply_map_["https://example.com/"] = R"(
       {
@@ -262,7 +261,6 @@ TEST_F(GenericURLRequestJobTest, BasicGetRequestParams) {
         }
       })";
 
-  url_request_context_.set_http_user_agent_settings(&user_agent_settings);
   std::unique_ptr<net::URLRequest> request(url_request_context_.CreateRequest(
       GURL("https://example.com"), net::DEFAULT_PRIORITY, &request_delegate_,
       TRAFFIC_ANNOTATION_FOR_TESTS));
@@ -276,10 +274,8 @@ TEST_F(GenericURLRequestJobTest, BasicGetRequestParams) {
         "url": "https://example.com/",
         "method": "GET",
         "headers": {
-          "Accept-Language": "en-UK",
           "Extra-Header": "Value",
-          "Referer": "https://referrer.example.com/",
-          "User-Agent": "TestBrowser"
+          "Referer": "https://referrer.example.com/"
         }
       })";
 
@@ -646,7 +642,7 @@ class ByteAtATimeUploadElementReader : public net::UploadElementReader {
     if (!BytesRemaining())
       return net::OK;
 
-    base::MessageLoop::current()->task_runner()->PostTask(
+    base::MessageLoopCurrent::Get()->task_runner()->PostTask(
         FROM_HERE,
         base::BindOnce(&ByteAtATimeUploadElementReader::ReadImpl,
                        base::Unretained(this), base::WrapRefCounted(buf),

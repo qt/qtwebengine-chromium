@@ -5,7 +5,6 @@
 #ifndef NGInlineBoxState_h
 #define NGInlineBoxState_h
 
-#include "third_party/blink/renderer/core/layout/ng/geometry/ng_border_edges.h"
 #include "third_party/blink/renderer/core/layout/ng/geometry/ng_logical_size.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_line_box_fragment_builder.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_line_height_metrics.h"
@@ -140,9 +139,12 @@ class CORE_EXPORT NGInlineLayoutStateStack {
   // reordering.
   void UpdateAfterReorder(NGLineBoxFragmentBuilder::ChildList*);
 
-  // Compute inline positions of fragments. Also creates box fragments if
-  // needed.
+  // Compute inline positions of fragments and boxes.
   LayoutUnit ComputeInlinePositions(NGLineBoxFragmentBuilder::ChildList*);
+
+  // Create box fragments. This function turns a flat list of children into
+  // a box tree.
+  void CreateBoxFragments(NGLineBoxFragmentBuilder::ChildList*);
 
  private:
   // End of a box state, either explicitly by close tag, or implicitly at the

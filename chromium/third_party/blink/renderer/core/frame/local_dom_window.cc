@@ -79,8 +79,8 @@
 #include "third_party/blink/renderer/core/html/custom/custom_element_registry.h"
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/layout/adjust_for_absolute_zoom.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/loader/appcache/application_cache.h"
@@ -143,7 +143,7 @@ class PostMessageTimer final
   // Eager finalization is needed to promptly stop this timer object.
   // (see DOMTimer comment for more.)
   EAGERLY_FINALIZE();
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(event_);
     visitor->Trace(window_);
     PausableTimer::Trace(visitor);
@@ -254,7 +254,7 @@ static void UntrackAllBeforeUnloadEventListeners(LocalDOMWindow* dom_window) {
 LocalDOMWindow::LocalDOMWindow(LocalFrame& frame)
     : DOMWindow(frame),
       visualViewport_(DOMVisualViewport::Create(this)),
-      unused_preloads_timer_(frame.GetTaskRunner(TaskType::kUnspecedTimer),
+      unused_preloads_timer_(frame.GetTaskRunner(TaskType::kInternalDefault),
                              this,
                              &LocalDOMWindow::WarnUnusedPreloads),
       should_print_when_finished_loading_(false) {}
@@ -1116,29 +1116,6 @@ ScriptPromise LocalDOMWindow::getComputedAccessibleNode(
   return promise;
 }
 
-CSSRuleList* LocalDOMWindow::getMatchedCSSRules(
-    Element* element,
-    const String& pseudo_element) const {
-  if (!element)
-    return nullptr;
-
-  if (!IsCurrentlyDisplayedInFrame())
-    return nullptr;
-
-  unsigned colon_start =
-      pseudo_element[0] == ':' ? (pseudo_element[1] == ':' ? 2 : 1) : 0;
-  CSSSelector::PseudoType pseudo_type = CSSSelector::ParsePseudoType(
-      AtomicString(pseudo_element.Substring(colon_start)), false);
-  if (pseudo_type == CSSSelector::kPseudoUnknown && !pseudo_element.IsEmpty())
-    return nullptr;
-
-  unsigned rules_to_include = StyleResolver::kAuthorCSSRules;
-  PseudoId pseudo_id = CSSSelector::GetPseudoId(pseudo_type);
-  element->GetDocument().UpdateStyleAndLayoutTree();
-  return document()->EnsureStyleResolver().PseudoCSSRulesForElement(
-      element, pseudo_id, rules_to_include);
-}
-
 double LocalDOMWindow::devicePixelRatio() const {
   if (!GetFrame())
     return 0.0;
@@ -1412,9 +1389,10 @@ void LocalDOMWindow::AddedEventListener(
     const AtomicString& event_type,
     RegisteredEventListener& registered_listener) {
   DOMWindow::AddedEventListener(event_type, registered_listener);
-  if (GetFrame() && GetFrame()->GetPage())
-    GetFrame()->GetPage()->GetEventHandlerRegistry().DidAddEventHandler(
+  if (auto* frame = GetFrame()) {
+    frame->GetEventHandlerRegistry().DidAddEventHandler(
         *this, event_type, registered_listener.Options());
+  }
 
   if (Document* document = this->document())
     document->AddListenerTypeIfNeeded(event_type, *this);
@@ -1444,9 +1422,10 @@ void LocalDOMWindow::RemovedEventListener(
     const AtomicString& event_type,
     const RegisteredEventListener& registered_listener) {
   DOMWindow::RemovedEventListener(event_type, registered_listener);
-  if (GetFrame() && GetFrame()->GetPage())
-    GetFrame()->GetPage()->GetEventHandlerRegistry().DidRemoveEventHandler(
+  if (auto* frame = GetFrame()) {
+    frame->GetEventHandlerRegistry().DidRemoveEventHandler(
         *this, event_type, registered_listener.Options());
+  }
 
   for (auto& it : event_listener_observers_) {
     it->DidRemoveEventListener(this, event_type);
@@ -1534,9 +1513,8 @@ void LocalDOMWindow::RemoveAllEventListeners() {
     it->DidRemoveAllEventListeners(this);
   }
 
-  if (GetFrame() && GetFrame()->GetPage())
-    GetFrame()->GetPage()->GetEventHandlerRegistry().DidRemoveAllEventHandlers(
-        *this);
+  if (GetFrame())
+    GetFrame()->GetEventHandlerRegistry().DidRemoveAllEventHandlers(*this);
 
   UntrackAllUnloadEventListeners(this);
   UntrackAllBeforeUnloadEventListeners(this);
@@ -1664,8 +1642,7 @@ void LocalDOMWindow::Trace(blink::Visitor* visitor) {
   Supplementable<LocalDOMWindow>::Trace(visitor);
 }
 
-void LocalDOMWindow::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+void LocalDOMWindow::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(custom_elements_);
   visitor->TraceWrappers(document_);
   visitor->TraceWrappers(modulator_);

@@ -41,7 +41,7 @@ class NavigatorLocksImpl final : public GarbageCollected<NavigatorLocksImpl<T>>,
     return lock_manager_.Get();
   }
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(lock_manager_);
     Supplement<T>::Trace(visitor);
   }
@@ -49,7 +49,7 @@ class NavigatorLocksImpl final : public GarbageCollected<NavigatorLocksImpl<T>>,
   // Wrapper tracing is needed for callbacks. The reference chain is
   // NavigatorLocksImpl -> LockManager -> LockRequestImpl ->
   // V8LockGrantedCallback.
-  void TraceWrappers(const ScriptWrappableVisitor* visitor) const override {
+  void TraceWrappers(ScriptWrappableVisitor* visitor) const override {
     visitor->TraceWrappers(lock_manager_);
   }
 

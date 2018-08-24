@@ -33,12 +33,13 @@
 #include <memory>
 #include <utility>
 
+#include "base/auto_reset.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
+#include "cc/layers/layer.h"
 #include "third_party/blink/public/mojom/page/page_visibility_state.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_composite_and_readback_async_callback.h"
-#include "third_party/blink/public/platform/web_compositor_support.h"
 #include "third_party/blink/public/platform/web_float_point.h"
 #include "third_party/blink/public/platform/web_gesture_curve.h"
 #include "third_party/blink/public/platform/web_image.h"
@@ -146,8 +147,6 @@
 #include "third_party/blink/renderer/core/timing/dom_window_performance.h"
 #include "third_party/blink/renderer/core/timing/window_performance.h"
 #include "third_party/blink/renderer/platform/animation/compositor_animation_host.h"
-#include "third_party/blink/renderer/platform/context_menu.h"
-#include "third_party/blink/renderer/platform/context_menu_item.h"
 #include "third_party/blink/renderer/platform/cursor.h"
 #include "third_party/blink/renderer/platform/exported/web_active_gesture_animation.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
@@ -155,7 +154,6 @@
 #include "third_party/blink/renderer/platform/graphics/color.h"
 #include "third_party/blink/renderer/platform/graphics/compositor_mutator_client.h"
 #include "third_party/blink/renderer/platform/graphics/compositor_mutator_impl.h"
-#include "third_party/blink/renderer/platform/graphics/first_paint_invalidation_tracking.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/drawing_buffer.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/image.h"
@@ -166,11 +164,10 @@
 #include "third_party/blink/renderer/platform/keyboard_codes.h"
 #include "third_party/blink/renderer/platform/loader/fetch/unique_identifier.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/public/page_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/scroll/scrollbar_theme.h"
 #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 
 #if defined(WTF_USE_DEFAULT_RENDER_THEME)
@@ -273,22 +270,22 @@ class EmptyEventListener final : public EventListener {
 
 class ColorOverlay final : public PageOverlay::Delegate {
  public:
-  explicit ColorOverlay(WebColor color) : color_(color) {}
+  explicit ColorOverlay(SkColor color) : color_(color) {}
 
  private:
   void PaintPageOverlay(const PageOverlay& page_overlay,
                         GraphicsContext& graphics_context,
-                        const WebSize& size) const override {
+                        const IntSize& size) const override {
     if (DrawingRecorder::UseCachedDrawingIfPossible(
             graphics_context, page_overlay, DisplayItem::kPageOverlay))
       return;
-    FloatRect rect(0, 0, size.width, size.height);
+    FloatRect rect(0, 0, size.Width(), size.Height());
     DrawingRecorder recorder(graphics_context, page_overlay,
                              DisplayItem::kPageOverlay);
     graphics_context.FillRect(rect, color_);
   }
 
-  WebColor color_;
+  SkColor color_;
 };
 
 }  // namespace
@@ -781,12 +778,12 @@ void RecordTapDisambiguation(TapDisambiguationResult result) {
 
 }  // namespace
 
-void WebViewImpl::ResolveTapDisambiguation(double timestamp_seconds,
+void WebViewImpl::ResolveTapDisambiguation(base::TimeTicks timestamp,
                                            WebPoint tap_viewport_offset,
                                            bool is_long_press) {
   WebGestureEvent event(is_long_press ? WebInputEvent::kGestureLongPress
                                       : WebInputEvent::kGestureTap,
-                        WebInputEvent::kNoModifiers, timestamp_seconds,
+                        WebInputEvent::kNoModifiers, timestamp,
                         blink::kWebGestureDeviceTouchscreen);
 
   event.SetPositionInWidget(FloatPoint(tap_viewport_offset));
@@ -824,7 +821,7 @@ WebInputEventResult WebViewImpl::HandleSyntheticWheelFromTouchpadPinchEvent(
   WebMouseWheelEvent wheel_event(
       WebInputEvent::kMouseWheel,
       pinch_event.GetModifiers() | WebInputEvent::kControlKey,
-      pinch_event.TimeStampSeconds());
+      pinch_event.TimeStamp());
   wheel_event.SetPositionInWidget(pinch_event.PositionInWidget().x,
                                   pinch_event.PositionInWidget().y);
   wheel_event.SetPositionInScreen(pinch_event.PositionInScreen().x,
@@ -907,7 +904,6 @@ void WebViewImpl::SetShowPaintRects(bool show) {
     TRACE_EVENT0("blink", "WebViewImpl::setShowPaintRects");
     layer_tree_view_->SetShowPaintRects(show);
   }
-  FirstPaintInvalidationTracking::SetEnabledForShowPaintRects(show);
 }
 
 void WebViewImpl::SetShowDebugBorders(bool show) {
@@ -1467,19 +1463,6 @@ WebInputEventResult WebViewImpl::SendContextMenuEvent() {
 }
 #endif
 
-void WebViewImpl::ShowContextMenuAtPoint(float x,
-                                         float y,
-                                         ContextMenuProvider* menu_provider) {
-  if (!GetPage()->MainFrame()->IsLocalFrame())
-    return;
-  {
-    ContextMenuAllowedScope scope;
-    GetPage()->GetContextMenuController().ClearContextMenu();
-    GetPage()->GetContextMenuController().ShowContextMenuAtPoint(
-        GetPage()->DeprecatedLocalMainFrame(), x, y, menu_provider);
-  }
-}
-
 void WebViewImpl::ShowContextMenuForElement(WebElement element) {
   if (!GetPage())
     return;
@@ -1681,7 +1664,7 @@ void WebViewImpl::DidUpdateBrowserControls() {
 }
 
 void WebViewImpl::SetOverscrollBehavior(
-    const WebOverscrollBehavior& overscroll_behavior) {
+    const cc::OverscrollBehavior& overscroll_behavior) {
   if (layer_tree_view_)
     layer_tree_view_->SetOverscrollBehavior(overscroll_behavior);
 }
@@ -1804,20 +1787,20 @@ void WebViewImpl::SetSuppressFrameRequestsWorkaroundFor704763Only(
   page_->Animator().SetSuppressFrameRequestsWorkaroundFor704763Only(
       suppress_frame_requests);
 }
-void WebViewImpl::BeginFrame(double last_frame_time_monotonic) {
+void WebViewImpl::BeginFrame(base::TimeTicks last_frame_time) {
   TRACE_EVENT1("blink", "WebViewImpl::beginFrame", "frameTime",
-               last_frame_time_monotonic);
-  DCHECK(last_frame_time_monotonic);
+               last_frame_time);
+  DCHECK(!last_frame_time.is_null());
 
   if (!MainFrameImpl())
     return;
 
   if (WebFrameWidgetBase* widget = MainFrameImpl()->FrameWidgetImpl())
-    widget->UpdateGestureAnimation(last_frame_time_monotonic);
+    widget->UpdateGestureAnimation(last_frame_time);
 
   DocumentLifecycle::AllowThrottlingScope throttling_scope(
       MainFrameImpl()->GetFrame()->GetDocument()->Lifecycle());
-  PageWidgetDelegate::Animate(*page_, last_frame_time_monotonic);
+  PageWidgetDelegate::Animate(*page_, last_frame_time);
   if (auto* client = GetValidationMessageClient())
     client->LayoutOverlay();
 }
@@ -1881,6 +1864,11 @@ void WebViewImpl::UpdateAllLifecyclePhasesAndCompositeForTesting() {
     layer_tree_view_->SynchronouslyCompositeNoRasterForTesting();
 }
 
+void WebViewImpl::CompositeWithRasterForTesting() {
+  // This should not be called directly on WebViewImpl.
+  NOTREACHED();
+}
+
 void WebViewImpl::Paint(WebCanvas* canvas, const WebRect& rect) {
   // This should only be used when compositing is not being used for this
   // WebView, and it is painting into the recording of its parent.
@@ -1900,14 +1888,13 @@ void WebViewImpl::PaintIgnoringCompositing(WebCanvas* canvas,
 }
 #endif
 
-void WebViewImpl::LayoutAndPaintAsync(
-    WebLayoutAndPaintAsyncCallback* callback) {
-  layer_tree_view_->LayoutAndPaintAsync(callback);
+void WebViewImpl::LayoutAndPaintAsync(base::OnceClosure callback) {
+  layer_tree_view_->LayoutAndPaintAsync(std::move(callback));
 }
 
 void WebViewImpl::CompositeAndReadbackAsync(
-    WebCompositeAndReadbackAsyncCallback* callback) {
-  layer_tree_view_->CompositeAndReadbackAsync(callback);
+    base::OnceCallback<void(const SkBitmap&)> callback) {
+  layer_tree_view_->CompositeAndReadbackAsync(std::move(callback));
 }
 
 void WebViewImpl::ThemeChanged() {
@@ -1921,8 +1908,9 @@ void WebViewImpl::ThemeChanged() {
   view->InvalidateRect(damaged_rect);
 }
 
-void WebViewImpl::EnterFullscreen(LocalFrame& frame) {
-  fullscreen_controller_->EnterFullscreen(frame);
+void WebViewImpl::EnterFullscreen(LocalFrame& frame,
+                                  const FullscreenOptions& options) {
+  fullscreen_controller_->EnterFullscreen(frame, options);
 }
 
 void WebViewImpl::ExitFullscreen(LocalFrame& frame) {
@@ -1994,7 +1982,7 @@ WebInputEventResult WebViewImpl::HandleInputEvent(
   if (WebFrameWidgetBase::IgnoreInputEvents())
     return WebInputEventResult::kNotHandled;
 
-  AutoReset<const WebInputEvent*> current_event_change(
+  base::AutoReset<const WebInputEvent*> current_event_change(
       &CurrentInputEvent::current_input_event_, &input_event);
   UIEventWithKeyState::ClearNewTabModifierSetFromIsolatedWorld();
 
@@ -2022,8 +2010,7 @@ WebInputEventResult WebViewImpl::HandleInputEvent(
     InteractiveDetector* interactive_detector(
         InteractiveDetector::From(main_frame_document));
     if (interactive_detector) {
-      interactive_detector->OnInvalidatingInputEvent(
-          TimeTicksFromSeconds(input_event.TimeStampSeconds()));
+      interactive_detector->OnInvalidatingInputEvent(input_event.TimeStamp());
     }
   }
 
@@ -2217,7 +2204,7 @@ bool WebViewImpl::SelectionBounds(WebRect& anchor_web,
   return true;
 }
 
-WebColor WebViewImpl::BackgroundColor() const {
+SkColor WebViewImpl::BackgroundColor() const {
   if (background_color_override_enabled_)
     return background_color_override_;
   if (!page_)
@@ -2237,7 +2224,7 @@ WebPagePopupImpl* WebViewImpl::GetPagePopup() const {
 }
 
 bool WebViewImpl::IsAcceleratedCompositingActive() const {
-  return root_layer_;
+  return !!root_layer_;
 }
 
 void WebViewImpl::WillCloseLayerTreeView() {
@@ -2985,13 +2972,6 @@ WebSize WebViewImpl::ContentsPreferredMinimumSize() {
   int width_scaled = document->GetLayoutView()
                          ->MinPreferredLogicalWidth()
                          .Round();  // Already accounts for zoom.
-  if (Scrollbar* scrollbar =
-          MainFrameImpl()->GetFrameView()->VerticalScrollbar()) {
-    DCHECK(!RuntimeEnabledFeatures::RootLayerScrollingEnabled());
-    // For RLS, this occurs in LayoutBlock::ComputeIntrinsicLogicalWidths.
-    if (!scrollbar->IsOverlayScrollbar())
-      width_scaled += scrollbar->ScrollbarThickness();
-  }
   int height_scaled =
       document->documentElement()->GetLayoutBox()->ScrollHeight().Round();
   return IntSize(width_scaled, height_scaled);
@@ -3199,16 +3179,8 @@ void WebViewImpl::DisableDeviceEmulation() {
 }
 
 void WebViewImpl::PerformCustomContextMenuAction(unsigned action) {
-  if (!page_)
-    return;
-  ContextMenu* menu = page_->GetContextMenuController().GetContextMenu();
-  if (!menu)
-    return;
-  const ContextMenuItem* item = menu->ItemWithAction(
-      static_cast<ContextMenuAction>(kContextMenuItemBaseCustomTag + action));
-  if (item)
-    page_->GetContextMenuController().ContextMenuItemSelected(item);
-  page_->GetContextMenuController().ClearContextMenu();
+  if (page_)
+    page_->GetContextMenuController().CustomContextMenuItemSelected(action);
 }
 
 void WebViewImpl::ShowContextMenu(WebMenuSourceType source_type) {
@@ -3243,7 +3215,7 @@ Color WebViewImpl::BaseBackgroundColor() const {
              : base_background_color_;
 }
 
-void WebViewImpl::SetBaseBackgroundColor(WebColor color) {
+void WebViewImpl::SetBaseBackgroundColor(SkColor color) {
   if (base_background_color_ == color)
     return;
 
@@ -3251,7 +3223,7 @@ void WebViewImpl::SetBaseBackgroundColor(WebColor color) {
   UpdateBaseBackgroundColor();
 }
 
-void WebViewImpl::SetBaseBackgroundColorOverride(WebColor color) {
+void WebViewImpl::SetBaseBackgroundColorOverride(SkColor color) {
   if (base_background_color_override_enabled_ &&
       base_background_color_override_ == color) {
     return;
@@ -3408,7 +3380,7 @@ void WebViewImpl::MainFrameScrollOffsetChanged() {
   dev_tools_emulator_->MainFrameScrollOrScaleChanged();
 }
 
-void WebViewImpl::SetBackgroundColorOverride(WebColor color) {
+void WebViewImpl::SetBackgroundColorOverride(SkColor color) {
   background_color_override_enabled_ = true;
   background_color_override_ = color;
   UpdateLayerTreeBackgroundColor();
@@ -3424,7 +3396,7 @@ void WebViewImpl::SetZoomFactorOverride(float zoom_factor) {
   SetZoomLevel(ZoomLevel());
 }
 
-void WebViewImpl::SetPageOverlayColor(WebColor color) {
+void WebViewImpl::SetPageOverlayColor(SkColor color) {
   if (page_color_overlay_)
     page_color_overlay_.reset();
 
@@ -3480,7 +3452,7 @@ WebHitTestResult WebViewImpl::HitTestResultForTap(
 
   WebGestureEvent tap_event(
       WebInputEvent::kGestureTap, WebInputEvent::kNoModifiers,
-      WTF::CurrentTimeTicksInSeconds(), kWebGestureDeviceTouchscreen);
+      WTF::CurrentTimeTicks(), kWebGestureDeviceTouchscreen);
   // GestureTap is only ever from a touchscreen.
   tap_event.SetPositionInWidget(FloatPoint(tap_point_window_pos));
   tap_event.data.tap.tap_count = 1;
@@ -3522,32 +3494,29 @@ void WebViewImpl::RegisterViewportLayersWithCompositor() {
   // Get the outer viewport scroll layers.
   GraphicsLayer* layout_viewport_container_layer =
       GetPage()->GlobalRootScrollerController().RootContainerLayer();
-  WebLayer* layout_viewport_container_web_layer =
+  cc::Layer* layout_viewport_container_cc_layer =
       layout_viewport_container_layer
-          ? layout_viewport_container_layer->PlatformLayer()
+          ? layout_viewport_container_layer->CcLayer()
           : nullptr;
 
   GraphicsLayer* layout_viewport_scroll_layer =
       GetPage()->GlobalRootScrollerController().RootScrollerLayer();
-  WebLayer* layout_viewport_scroll_web_layer =
-      layout_viewport_scroll_layer
-          ? layout_viewport_scroll_layer->PlatformLayer()
-          : nullptr;
+  cc::Layer* layout_viewport_scroll_cc_layer =
+      layout_viewport_scroll_layer ? layout_viewport_scroll_layer->CcLayer()
+                                   : nullptr;
 
   VisualViewport& visual_viewport = GetPage()->GetVisualViewport();
 
   WebLayerTreeView::ViewportLayers viewport_layers;
   viewport_layers.overscroll_elasticity =
-      visual_viewport.OverscrollElasticityLayer()->PlatformLayer();
-  viewport_layers.page_scale =
-      visual_viewport.PageScaleLayer()->PlatformLayer();
+      visual_viewport.OverscrollElasticityLayer()->CcLayer();
+  viewport_layers.page_scale = visual_viewport.PageScaleLayer()->CcLayer();
   viewport_layers.inner_viewport_container =
-      visual_viewport.ContainerLayer()->PlatformLayer();
-  viewport_layers.outer_viewport_container =
-      layout_viewport_container_web_layer;
+      visual_viewport.ContainerLayer()->CcLayer();
+  viewport_layers.outer_viewport_container = layout_viewport_container_cc_layer;
   viewport_layers.inner_viewport_scroll =
-      visual_viewport.ScrollLayer()->PlatformLayer();
-  viewport_layers.outer_viewport_scroll = layout_viewport_scroll_web_layer;
+      visual_viewport.ScrollLayer()->CcLayer();
+  viewport_layers.outer_viewport_scroll = layout_viewport_scroll_cc_layer;
 
   layer_tree_view_->RegisterViewportLayers(viewport_layers);
 }
@@ -3564,9 +3533,9 @@ void WebViewImpl::SetRootGraphicsLayer(GraphicsLayer* graphics_layer) {
   if (graphics_layer) {
     root_graphics_layer_ = visual_viewport.RootGraphicsLayer();
     visual_viewport_container_layer_ = visual_viewport.ContainerLayer();
-    root_layer_ = root_graphics_layer_->PlatformLayer();
+    root_layer_ = root_graphics_layer_->CcLayer();
     UpdateDeviceEmulationTransform();
-    layer_tree_view_->SetRootLayer(*root_layer_);
+    layer_tree_view_->SetRootLayer(root_layer_);
     // We register viewport layers here since there may not be a layer
     // tree view prior to this point.
     RegisterViewportLayersWithCompositor();
@@ -3586,18 +3555,16 @@ void WebViewImpl::SetRootGraphicsLayer(GraphicsLayer* graphics_layer) {
     layer_tree_view_->SetDeferCommits(true);
     layer_tree_view_->ClearRootLayer();
     layer_tree_view_->ClearViewportLayers();
-    if (WebDevToolsAgentImpl* dev_tools = MainFrameDevToolsAgentImpl())
-      dev_tools->RootLayerCleared();
   }
 }
 
-void WebViewImpl::SetRootLayer(WebLayer* layer) {
+void WebViewImpl::SetRootLayer(scoped_refptr<cc::Layer> layer) {
   if (!layer_tree_view_)
     return;
 
   if (layer) {
     root_layer_ = layer;
-    layer_tree_view_->SetRootLayer(*root_layer_);
+    layer_tree_view_->SetRootLayer(root_layer_);
     layer_tree_view_->SetVisible(GetPage()->IsPageVisible());
   } else {
     root_layer_ = nullptr;
@@ -3607,8 +3574,6 @@ void WebViewImpl::SetRootLayer(WebLayer* layer) {
     layer_tree_view_->SetDeferCommits(true);
     layer_tree_view_->ClearRootLayer();
     layer_tree_view_->ClearViewportLayers();
-    if (WebDevToolsAgentImpl* dev_tools = MainFrameDevToolsAgentImpl())
-      dev_tools->RootLayerCleared();
   }
 }
 
@@ -3661,19 +3626,21 @@ void WebViewImpl::DetachCompositorAnimationTimeline(
 void WebViewImpl::InitializeLayerTreeView() {
   if (client_) {
     layer_tree_view_ = client_->InitializeLayerTreeView();
-    if (layer_tree_view_ && layer_tree_view_->CompositorAnimationHost()) {
-      animation_host_ = std::make_unique<CompositorAnimationHost>(
-          layer_tree_view_->CompositorAnimationHost());
-    }
-  }
+    // TODO(dcheng): All WebViewImpls should have an associated LayerTreeView,
+    // but for various reasons, that's not the case...
+    page_->GetSettings().SetAcceleratedCompositingEnabled(layer_tree_view_);
+    if (layer_tree_view_) {
+      if (layer_tree_view_->CompositorAnimationHost()) {
+        animation_host_ = std::make_unique<CompositorAnimationHost>(
+            layer_tree_view_->CompositorAnimationHost());
+      }
 
-  page_->GetSettings().SetAcceleratedCompositingEnabled(layer_tree_view_);
-  if (layer_tree_view_) {
-    page_->LayerTreeViewInitialized(*layer_tree_view_, nullptr);
-    // We don't yet have a page loaded at this point of the initialization of
-    // WebViewImpl, so don't allow cc to commit any frames Blink might
-    // try to create in the meantime.
-    layer_tree_view_->SetDeferCommits(true);
+      page_->LayerTreeViewInitialized(*layer_tree_view_, nullptr);
+      // We don't yet have a page loaded at this point of the initialization of
+      // WebViewImpl, so don't allow cc to commit any frames Blink might
+      // try to create in the meantime.
+      layer_tree_view_->SetDeferCommits(true);
+    }
   }
 
   // FIXME: only unittests, click to play, Android printing, and printing (for

@@ -6,6 +6,7 @@
 
 #include "build/build_config.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
+#include "third_party/blink/renderer/core/editing/position_with_affinity.h"
 #include "third_party/blink/renderer/core/editing/selection_template.h"
 #include "third_party/blink/renderer/core/editing/testing/editing_test_base.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
@@ -14,16 +15,12 @@
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/paint/compositing/composited_selection.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
-#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/use_mock_scrollbar_settings.h"
 
 namespace blink {
 
-class RenderedPositionTest : public testing::WithParamInterface<bool>,
-                             private ScopedRootLayerScrollingForTest,
-                             public EditingTestBase {
+class RenderedPositionTest : public EditingTestBase {
  public:
-  RenderedPositionTest() : ScopedRootLayerScrollingForTest(GetParam()) {}
   void SetUp() override {
     EditingTestBase::SetUp();
     GetPage().GetSettings().SetAcceleratedCompositingEnabled(true);
@@ -49,9 +46,7 @@ class RenderedPositionTest : public testing::WithParamInterface<bool>,
   UseMockScrollbarSettings mock_scrollbars_;
 };
 
-INSTANTIATE_TEST_CASE_P(All, RenderedPositionTest, testing::Bool());
-
-TEST_P(RenderedPositionTest, ComputeCompositedSelection) {
+TEST_F(RenderedPositionTest, ComputeCompositedSelection) {
   SetBodyContent(R"HTML(
       <!DOCTYPE html>
       input {
@@ -66,12 +61,12 @@ TEST_P(RenderedPositionTest, ComputeCompositedSelection) {
   FocusAndSelectAll(ToHTMLInputElement(GetDocument().getElementById("target")));
 
   const CompositedSelection& composited_selection =
-      RenderedPosition::ComputeCompositedSelection(Selection());
+      ComputeCompositedSelection(Selection());
   EXPECT_FALSE(composited_selection.start.hidden);
   EXPECT_TRUE(composited_selection.end.hidden);
 }
 
-TEST_P(RenderedPositionTest, PositionInScrollableRoot) {
+TEST_F(RenderedPositionTest, PositionInScrollableRoot) {
   SetBodyContent(R"HTML(
       <!DOCTYPE html>
       <style>
@@ -103,7 +98,7 @@ TEST_P(RenderedPositionTest, PositionInScrollableRoot) {
   UpdateAllLifecyclePhases();
 
   const CompositedSelection& composited_selection =
-      RenderedPosition::ComputeCompositedSelection(Selection());
+      ComputeCompositedSelection(Selection());
 
   // Top-left corner should be around (1000, 905) - 10px centered in 20px
   // height.
@@ -116,7 +111,7 @@ TEST_P(RenderedPositionTest, PositionInScrollableRoot) {
             composited_selection.end.edge_bottom_in_layer);
 }
 
-TEST_P(RenderedPositionTest, PositionInScroller) {
+TEST_F(RenderedPositionTest, PositionInScroller) {
   SetBodyContent(R"HTML(
       <!DOCTYPE html>
       <style>
@@ -169,7 +164,7 @@ TEST_P(RenderedPositionTest, PositionInScroller) {
   UpdateAllLifecyclePhases();
 
   const CompositedSelection& composited_selection =
-      RenderedPosition::ComputeCompositedSelection(Selection());
+      ComputeCompositedSelection(Selection());
 
   // Top-left corner should be around (1000, 905) - 10px centered in 20px
   // height.
@@ -183,14 +178,14 @@ TEST_P(RenderedPositionTest, PositionInScroller) {
 }
 
 // crbug.com/807930
-TEST_P(RenderedPositionTest, ContentEditableLinebreak) {
+TEST_F(RenderedPositionTest, ContentEditableLinebreak) {
   SetBodyContent(
       "<div style='font: 10px/10px Ahem;' contenteditable>"
       "test<br><br></div>");
   Element* target = GetDocument().QuerySelector("div");
   FocusAndSelectAll(target, *target);
   const CompositedSelection& composited_selection =
-      RenderedPosition::ComputeCompositedSelection(Selection());
+      ComputeCompositedSelection(Selection());
   EXPECT_EQ(composited_selection.start.edge_top_in_layer,
             FloatPoint(8.0f, 8.0f));
   EXPECT_EQ(composited_selection.start.edge_bottom_in_layer,
@@ -202,13 +197,13 @@ TEST_P(RenderedPositionTest, ContentEditableLinebreak) {
 }
 
 // crbug.com/807930
-TEST_P(RenderedPositionTest, TextAreaLinebreak) {
+TEST_F(RenderedPositionTest, TextAreaLinebreak) {
   SetBodyContent(
       "<textarea style='font: 10px/10px Ahem;'>"
       "test\n</textarea>");
   FocusAndSelectAll(ToTextControl(GetDocument().QuerySelector("textarea")));
   const CompositedSelection& composited_selection =
-      RenderedPosition::ComputeCompositedSelection(Selection());
+      ComputeCompositedSelection(Selection());
   EXPECT_EQ(composited_selection.start.edge_top_in_layer,
             FloatPoint(11.0f, 11.0f));
   EXPECT_EQ(composited_selection.start.edge_bottom_in_layer,
@@ -220,7 +215,7 @@ TEST_P(RenderedPositionTest, TextAreaLinebreak) {
 }
 
 // crbug.com/815099
-TEST_P(RenderedPositionTest, CaretBeforeSoftWrap) {
+TEST_F(RenderedPositionTest, CaretBeforeSoftWrap) {
   SetBodyContent(
       "<div style='font: 10px/10px Ahem; width:20px;' "
       "contenteditable>foo</div>");
@@ -235,7 +230,7 @@ TEST_P(RenderedPositionTest, CaretBeforeSoftWrap) {
       SetSelectionOptions::Builder().SetShouldShowHandle(true).Build());
   UpdateAllLifecyclePhases();
   const CompositedSelection& composited_selection =
-      RenderedPosition::ComputeCompositedSelection(Selection());
+      ComputeCompositedSelection(Selection());
   EXPECT_EQ(composited_selection.start.edge_top_in_layer,
             FloatPoint(27.0f, 8.0f));
   EXPECT_EQ(composited_selection.start.edge_bottom_in_layer,
@@ -246,7 +241,7 @@ TEST_P(RenderedPositionTest, CaretBeforeSoftWrap) {
             FloatPoint(27.0f, 18.0f));
 }
 
-TEST_P(RenderedPositionTest, CaretAfterSoftWrap) {
+TEST_F(RenderedPositionTest, CaretAfterSoftWrap) {
   SetBodyContent(
       "<div style='font: 10px/10px Ahem; width:20px;' "
       "contenteditable>foo</div>");
@@ -261,7 +256,7 @@ TEST_P(RenderedPositionTest, CaretAfterSoftWrap) {
       SetSelectionOptions::Builder().SetShouldShowHandle(true).Build());
   UpdateAllLifecyclePhases();
   const CompositedSelection& composited_selection =
-      RenderedPosition::ComputeCompositedSelection(Selection());
+      ComputeCompositedSelection(Selection());
   EXPECT_EQ(composited_selection.start.edge_top_in_layer,
             FloatPoint(8.0f, 18.0f));
   EXPECT_EQ(composited_selection.start.edge_bottom_in_layer,
@@ -270,6 +265,29 @@ TEST_P(RenderedPositionTest, CaretAfterSoftWrap) {
             FloatPoint(8.0f, 18.0f));
   EXPECT_EQ(composited_selection.end.edge_bottom_in_layer,
             FloatPoint(8.0f, 28.0f));
+}
+
+// crbug.com/834686
+TEST_F(RenderedPositionTest, RangeBeginAtBlockEnd) {
+  const SelectionInDOMTree& selection = SetSelectionTextToBody(
+      "<div style='font: 10px/10px Ahem;'>"
+      "<div>foo\n^</div><div>ba|r</div></div>");
+  Selection().SetSelection(
+      selection,
+      SetSelectionOptions::Builder().SetShouldShowHandle(true).Build());
+  Element* target = GetDocument().QuerySelector("div");
+  target->focus();
+  UpdateAllLifecyclePhases();
+  const CompositedSelection& composited_selection =
+      ComputeCompositedSelection(Selection());
+  EXPECT_EQ(composited_selection.start.edge_top_in_layer,
+            FloatPoint(38.0f, 8.0f));
+  EXPECT_EQ(composited_selection.start.edge_bottom_in_layer,
+            FloatPoint(38.0f, 18.0f));
+  EXPECT_EQ(composited_selection.end.edge_top_in_layer,
+            FloatPoint(28.0f, 18.0f));
+  EXPECT_EQ(composited_selection.end.edge_bottom_in_layer,
+            FloatPoint(28.0f, 28.0f));
 }
 
 }  // namespace blink

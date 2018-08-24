@@ -9,7 +9,6 @@
 
 #include "base/base64.h"
 #include "base/callback.h"
-#include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -31,9 +30,9 @@
 #include "chromeos/dbus/dbus_method_call_status.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/settings/cros_settings_names.h"
+#include "components/account_id/account_id.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
-#include "components/signin/core/account_id/account_id.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/user_manager/known_user.h"
 #include "components/user_manager/user.h"
@@ -147,6 +146,11 @@ bool EPKPChallengeKeyBase::IsExtensionWhitelisted() const {
     // login/signin screen.
     // TODO(drcrash): Use a separate device-wide policy for the API.
     return Manifest::IsPolicyLocation(extension_->location());
+  }
+  if (Manifest::IsComponentLocation(extension_->location())) {
+    // Note: For this to even be called, the component extension must also be
+    // whitelisted in chrome/common/extensions/api/_permission_features.json
+    return true;
   }
   const base::ListValue* list =
       profile_->GetPrefs()->GetList(prefs::kAttestationExtensionWhitelist);

@@ -17,7 +17,7 @@
 #include "core/fxcrt/string_data_template.h"
 #include "core/fxcrt/string_view_template.h"
 #include "third_party/base/optional.h"
-
+#include "third_party/base/span.h"
 
 namespace fxcrt {
 
@@ -77,6 +77,13 @@ class WideString {
   // Note: Any subsequent modification of |this| will invalidate the result.
   WideStringView AsStringView() const {
     return WideStringView(c_str(), GetLength());
+  }
+
+  // Explicit conversion to span.
+  // Note: Any subsequent modification of |this| will invalidate the result.
+  pdfium::span<const wchar_t> AsSpan() const {
+    return pdfium::make_span(m_pData ? m_pData->m_String : nullptr,
+                             GetLength());
   }
 
   // Note: Any subsequent modification of |this| will invalidate iterators.
@@ -163,7 +170,10 @@ class WideString {
   void TrimRight(const WideStringView& targets);
 
   void Reserve(size_t len);
-  wchar_t* GetBuffer(size_t len);
+
+  // Note: any modification of the string (including ReleaseBuffer()) may
+  // invalidate the span, which must not outlive its buffer.
+  pdfium::span<wchar_t> GetBuffer(size_t len);
   void ReleaseBuffer(size_t len);
 
   int GetInteger() const;

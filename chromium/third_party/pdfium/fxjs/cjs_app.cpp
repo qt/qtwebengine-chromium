@@ -6,12 +6,18 @@
 
 #include "fxjs/cjs_app.h"
 
+#include <utility>
+
 #include "fpdfsdk/cpdfsdk_interform.h"
 #include "fxjs/cjs_document.h"
 #include "fxjs/cjs_timerobj.h"
 #include "fxjs/global_timer.h"
 #include "fxjs/ijs_event_context.h"
 #include "fxjs/js_resources.h"
+
+#ifdef PDF_ENABLE_XFA
+#include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
+#endif  // PDF_ENABLE_XFA
 
 namespace {
 
@@ -76,6 +82,11 @@ const JSMethodSpec CJS_App::MethodSpecs[] = {
 int CJS_App::ObjDefnID = -1;
 
 const char CJS_App::kName[] = "app";
+
+// static
+int CJS_App::GetObjDefnID() {
+  return ObjDefnID;
+}
 
 // static
 void CJS_App::DefineJSObjects(CFXJS_Engine* pEngine) {
@@ -263,9 +274,8 @@ CJS_Return CJS_App::alert(CJS_Runtime* pRuntime,
 
   pRuntime->BeginBlock();
   pFormFillEnv->KillFocusAnnot(0);
-
   v8::Local<v8::Value> ret = pRuntime->NewNumber(
-      pFormFillEnv->JS_appAlert(swMsg.c_str(), swTitle.c_str(), iType, iIcon));
+      pFormFillEnv->JS_appAlert(swMsg, swTitle, iType, iIcon));
   pRuntime->EndBlock();
 
   return CJS_Return(ret);
@@ -273,11 +283,11 @@ CJS_Return CJS_App::alert(CJS_Runtime* pRuntime,
 
 CJS_Return CJS_App::beep(CJS_Runtime* pRuntime,
                          const std::vector<v8::Local<v8::Value>>& params) {
-  if (params.size() == 1) {
-    pRuntime->GetFormFillEnv()->JS_appBeep(pRuntime->ToInt32(params[0]));
-    return CJS_Return(true);
-  }
-  return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
+  if (params.size() != 1)
+    return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
+
+  pRuntime->GetFormFillEnv()->JS_appBeep(pRuntime->ToInt32(params[0]));
+  return CJS_Return(true);
 }
 
 CJS_Return CJS_App::findComponent(
@@ -303,18 +313,18 @@ CJS_Return CJS_App::set_fs(CJS_Runtime* pRuntime, v8::Local<v8::Value> vp) {
 CJS_Return CJS_App::setInterval(
     CJS_Runtime* pRuntime,
     const std::vector<v8::Local<v8::Value>>& params) {
-  if (params.size() > 2 || params.size() == 0)
+  if (params.size() == 0 || params.size() > 2)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
 
-  WideString script =
-      params.size() > 0 ? pRuntime->ToWideString(params[0]) : L"";
+  WideString script = pRuntime->ToWideString(params[0]);
   if (script.IsEmpty())
     return CJS_Return(JSGetStringFromID(JSMessage::kInvalidInputError));
 
   uint32_t dwInterval = params.size() > 1 ? pRuntime->ToInt32(params[1]) : 1000;
-  GlobalTimer* timerRef = new GlobalTimer(this, pRuntime->GetFormFillEnv(),
-                                          pRuntime, 0, script, dwInterval, 0);
-  m_Timers.insert(std::unique_ptr<GlobalTimer>(timerRef));
+  auto timerRef = pdfium::MakeUnique<GlobalTimer>(
+      this, pRuntime->GetFormFillEnv(), pRuntime, 0, script, dwInterval, 0);
+  GlobalTimer* pTimerRef = timerRef.get();
+  m_Timers.insert(std::move(timerRef));
 
   v8::Local<v8::Object> pRetObj =
       pRuntime->NewFXJSBoundObject(CJS_TimerObj::GetObjDefnID());
@@ -323,14 +333,14 @@ CJS_Return CJS_App::setInterval(
 
   CJS_TimerObj* pJS_TimerObj =
       static_cast<CJS_TimerObj*>(pRuntime->GetObjectPrivate(pRetObj));
-  pJS_TimerObj->SetTimer(timerRef);
+  pJS_TimerObj->SetTimer(pTimerRef);
   return CJS_Return(pRetObj);
 }
 
 CJS_Return CJS_App::setTimeOut(
     CJS_Runtime* pRuntime,
     const std::vector<v8::Local<v8::Value>>& params) {
-  if (params.size() > 2 || params.size() == 0)
+  if (params.size() == 0 || params.size() > 2)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
 
   WideString script = pRuntime->ToWideString(params[0]);
@@ -338,10 +348,11 @@ CJS_Return CJS_App::setTimeOut(
     return CJS_Return(JSGetStringFromID(JSMessage::kInvalidInputError));
 
   uint32_t dwTimeOut = params.size() > 1 ? pRuntime->ToInt32(params[1]) : 1000;
-  GlobalTimer* timerRef =
-      new GlobalTimer(this, pRuntime->GetFormFillEnv(), pRuntime, 1, script,
-                      dwTimeOut, dwTimeOut);
-  m_Timers.insert(std::unique_ptr<GlobalTimer>(timerRef));
+  auto timerRef = pdfium::MakeUnique<GlobalTimer>(
+      this, pRuntime->GetFormFillEnv(), pRuntime, 1, script, dwTimeOut,
+      dwTimeOut);
+  GlobalTimer* pTimerRef = timerRef.get();
+  m_Timers.insert(std::move(timerRef));
 
   v8::Local<v8::Object> pRetObj =
       pRuntime->NewFXJSBoundObject(CJS_TimerObj::GetObjDefnID());
@@ -350,8 +361,7 @@ CJS_Return CJS_App::setTimeOut(
 
   CJS_TimerObj* pJS_TimerObj =
       static_cast<CJS_TimerObj*>(pRuntime->GetObjectPrivate(pRetObj));
-  pJS_TimerObj->SetTimer(timerRef);
-
+  pJS_TimerObj->SetTimer(pTimerRef);
   return CJS_Return(pRetObj);
 }
 
@@ -412,8 +422,7 @@ void CJS_App::RunJsScript(CJS_Runtime* pRuntime, const WideString& wsScript) {
   if (!pRuntime->IsBlocking()) {
     IJS_EventContext* pContext = pRuntime->NewEventContext();
     pContext->OnExternal_Exec();
-    WideString wtInfo;
-    pContext->RunScript(wsScript, &wtInfo);
+    pContext->RunScript(wsScript);
     pRuntime->ReleaseEventContext(pContext);
   }
 }
@@ -466,9 +475,8 @@ CJS_Return CJS_App::mailMsg(CJS_Runtime* pRuntime,
     cMsg = pRuntime->ToWideString(newParams[5]);
 
   pRuntime->BeginBlock();
-  pRuntime->GetFormFillEnv()->JS_docmailForm(nullptr, 0, bUI, cTo.c_str(),
-                                             cSubject.c_str(), cCc.c_str(),
-                                             cBcc.c_str(), cMsg.c_str());
+  pRuntime->GetFormFillEnv()->JS_docmailForm(nullptr, 0, bUI, cTo, cSubject,
+                                             cCc, cBcc, cMsg);
   pRuntime->EndBlock();
   return CJS_Return(true);
 }
@@ -558,8 +566,8 @@ CJS_Return CJS_App::response(CJS_Runtime* pRuntime,
   const int MAX_INPUT_BYTES = 2048;
   std::vector<uint8_t> pBuff(MAX_INPUT_BYTES + 2);
   int nLengthBytes = pRuntime->GetFormFillEnv()->JS_appResponse(
-      swQuestion.c_str(), swTitle.c_str(), swDefault.c_str(), swLabel.c_str(),
-      bPassword, pBuff.data(), MAX_INPUT_BYTES);
+      swQuestion, swTitle, swDefault, swLabel, bPassword, pBuff.data(),
+      MAX_INPUT_BYTES);
 
   if (nLengthBytes < 0 || nLengthBytes > MAX_INPUT_BYTES)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamTooLongError));

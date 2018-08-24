@@ -2362,10 +2362,10 @@ void BindVertexArrayOES(GLuint array) {
   }
 }
 
-void SwapBuffers() {
+void SwapBuffers(GLuint64 swap_id, GLbitfield flags) {
   gles2::cmds::SwapBuffers* c = GetCmdSpace<gles2::cmds::SwapBuffers>();
   if (c) {
-    c->Init();
+    c->Init(swap_id, flags);
   }
 }
 
@@ -2497,11 +2497,16 @@ void GetTranslatedShaderSourceANGLE(GLuint shader, uint32_t bucket_id) {
   }
 }
 
-void PostSubBufferCHROMIUM(GLint x, GLint y, GLint width, GLint height) {
+void PostSubBufferCHROMIUM(GLuint64 swap_id,
+                           GLint x,
+                           GLint y,
+                           GLint width,
+                           GLint height,
+                           GLbitfield flags) {
   gles2::cmds::PostSubBufferCHROMIUM* c =
       GetCmdSpace<gles2::cmds::PostSubBufferCHROMIUM>();
   if (c) {
-    c->Init(x, y, width, height);
+    c->Init(swap_id, x, y, width, height, flags);
   }
 }
 
@@ -2743,13 +2748,14 @@ void ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
                                   GLfloat uv_y,
                                   GLfloat uv_width,
                                   GLfloat uv_height,
-                                  GLboolean enable_blend) {
+                                  GLboolean enable_blend,
+                                  GLuint gpu_fence_id) {
   gles2::cmds::ScheduleOverlayPlaneCHROMIUM* c =
       GetCmdSpace<gles2::cmds::ScheduleOverlayPlaneCHROMIUM>();
   if (c) {
     c->Init(plane_z_order, plane_transform, overlay_texture_id, bounds_x,
             bounds_y, bounds_width, bounds_height, uv_x, uv_y, uv_width,
-            uv_height, enable_blend);
+            uv_height, enable_blend, gpu_fence_id);
   }
 }
 
@@ -2792,11 +2798,11 @@ void ScheduleCALayerInUseQueryCHROMIUMImmediate(GLsizei count,
   }
 }
 
-void CommitOverlayPlanesCHROMIUM() {
+void CommitOverlayPlanesCHROMIUM(GLuint64 swap_id, GLbitfield flags) {
   gles2::cmds::CommitOverlayPlanesCHROMIUM* c =
       GetCmdSpace<gles2::cmds::CommitOverlayPlanesCHROMIUM>();
   if (c) {
-    c->Init();
+    c->Init(swap_id, flags);
   }
 }
 
@@ -2825,12 +2831,13 @@ void ScheduleDCLayerCHROMIUM(GLsizei num_textures,
                              GLuint edge_aa_mask,
                              GLuint filter,
                              GLuint shm_id,
-                             GLuint shm_offset) {
+                             GLuint shm_offset,
+                             bool is_protected_video) {
   gles2::cmds::ScheduleDCLayerCHROMIUM* c =
       GetCmdSpace<gles2::cmds::ScheduleDCLayerCHROMIUM>();
   if (c) {
     c->Init(num_textures, background_color, edge_aa_mask, filter, shm_id,
-            shm_offset);
+            shm_offset, is_protected_video);
   }
 }
 
@@ -3112,18 +3119,6 @@ void ProgramPathFragmentInputGenCHROMIUM(GLuint program,
   }
 }
 
-void GetBufferSubDataAsyncCHROMIUM(GLenum target,
-                                   GLintptr offset,
-                                   GLsizeiptr size,
-                                   uint32_t data_shm_id,
-                                   uint32_t data_shm_offset) {
-  gles2::cmds::GetBufferSubDataAsyncCHROMIUM* c =
-      GetCmdSpace<gles2::cmds::GetBufferSubDataAsyncCHROMIUM>();
-  if (c) {
-    c->Init(target, offset, size, data_shm_id, data_shm_offset);
-  }
-}
-
 void CoverageModulationCHROMIUM(GLenum components) {
   gles2::cmds::CoverageModulationCHROMIUM* c =
       GetCmdSpace<gles2::cmds::CoverageModulationCHROMIUM>();
@@ -3208,14 +3203,17 @@ void OverlayPromotionHintCHROMIUM(GLuint texture,
   }
 }
 
-void SwapBuffersWithBoundsCHROMIUMImmediate(GLsizei count, const GLint* rects) {
+void SwapBuffersWithBoundsCHROMIUMImmediate(GLuint64 swap_id,
+                                            GLsizei count,
+                                            const GLint* rects,
+                                            GLbitfield flags) {
   const uint32_t size =
       gles2::cmds::SwapBuffersWithBoundsCHROMIUMImmediate::ComputeSize(count);
   gles2::cmds::SwapBuffersWithBoundsCHROMIUMImmediate* c =
       GetImmediateCmdSpaceTotalSize<
           gles2::cmds::SwapBuffersWithBoundsCHROMIUMImmediate>(size);
   if (c) {
-    c->Init(count, rects);
+    c->Init(swap_id, count, rects, flags);
   }
 }
 
@@ -3258,68 +3256,6 @@ void LockDiscardableTextureCHROMIUM(GLuint texture_id) {
       GetCmdSpace<gles2::cmds::LockDiscardableTextureCHROMIUM>();
   if (c) {
     c->Init(texture_id);
-  }
-}
-
-void BeginRasterCHROMIUM(GLuint texture_id,
-                         GLuint sk_color,
-                         GLuint msaa_sample_count,
-                         GLboolean can_use_lcd_text,
-                         GLint color_type,
-                         GLuint color_space_transfer_cache_id) {
-  gles2::cmds::BeginRasterCHROMIUM* c =
-      GetCmdSpace<gles2::cmds::BeginRasterCHROMIUM>();
-  if (c) {
-    c->Init(texture_id, sk_color, msaa_sample_count, can_use_lcd_text,
-            color_type, color_space_transfer_cache_id);
-  }
-}
-
-void RasterCHROMIUM(GLsizeiptr size,
-                    uint32_t list_shm_id,
-                    uint32_t list_shm_offset) {
-  gles2::cmds::RasterCHROMIUM* c = GetCmdSpace<gles2::cmds::RasterCHROMIUM>();
-  if (c) {
-    c->Init(size, list_shm_id, list_shm_offset);
-  }
-}
-
-void EndRasterCHROMIUM() {
-  gles2::cmds::EndRasterCHROMIUM* c =
-      GetCmdSpace<gles2::cmds::EndRasterCHROMIUM>();
-  if (c) {
-    c->Init();
-  }
-}
-
-void CreateTransferCacheEntryINTERNAL(GLuint entry_type,
-                                      GLuint entry_id,
-                                      GLuint handle_shm_id,
-                                      GLuint handle_shm_offset,
-                                      GLuint data_shm_id,
-                                      GLuint data_shm_offset,
-                                      GLuint data_size) {
-  gles2::cmds::CreateTransferCacheEntryINTERNAL* c =
-      GetCmdSpace<gles2::cmds::CreateTransferCacheEntryINTERNAL>();
-  if (c) {
-    c->Init(entry_type, entry_id, handle_shm_id, handle_shm_offset, data_shm_id,
-            data_shm_offset, data_size);
-  }
-}
-
-void DeleteTransferCacheEntryINTERNAL(GLuint entry_type, GLuint entry_id) {
-  gles2::cmds::DeleteTransferCacheEntryINTERNAL* c =
-      GetCmdSpace<gles2::cmds::DeleteTransferCacheEntryINTERNAL>();
-  if (c) {
-    c->Init(entry_type, entry_id);
-  }
-}
-
-void UnlockTransferCacheEntryINTERNAL(GLuint entry_type, GLuint entry_id) {
-  gles2::cmds::UnlockTransferCacheEntryINTERNAL* c =
-      GetCmdSpace<gles2::cmds::UnlockTransferCacheEntryINTERNAL>();
-  if (c) {
-    c->Init(entry_type, entry_id);
   }
 }
 

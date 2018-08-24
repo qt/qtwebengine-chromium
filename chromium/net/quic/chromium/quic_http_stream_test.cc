@@ -37,30 +37,31 @@
 #include "net/quic/chromium/quic_stream_factory.h"
 #include "net/quic/chromium/quic_test_packet_maker.h"
 #include "net/quic/chromium/test_task_runner.h"
-#include "net/quic/core/congestion_control/send_algorithm_interface.h"
-#include "net/quic/core/crypto/crypto_protocol.h"
-#include "net/quic/core/crypto/quic_decrypter.h"
-#include "net/quic/core/crypto/quic_encrypter.h"
-#include "net/quic/core/quic_connection.h"
-#include "net/quic/core/quic_write_blocked_list.h"
-#include "net/quic/core/spdy_utils.h"
-#include "net/quic/core/tls_client_handshaker.h"
-#include "net/quic/platform/api/quic_string_piece.h"
-#include "net/quic/test_tools/crypto_test_utils.h"
-#include "net/quic/test_tools/mock_clock.h"
-#include "net/quic/test_tools/mock_random.h"
-#include "net/quic/test_tools/quic_connection_peer.h"
-#include "net/quic/test_tools/quic_spdy_session_peer.h"
-#include "net/quic/test_tools/quic_test_utils.h"
 #include "net/socket/socket_performance_watcher.h"
 #include "net/socket/socket_test_util.h"
-#include "net/spdy/chromium/spdy_http_utils.h"
-#include "net/spdy/core/spdy_frame_builder.h"
-#include "net/spdy/core/spdy_framer.h"
-#include "net/spdy/core/spdy_protocol.h"
+#include "net/spdy/spdy_http_utils.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/gtest_util.h"
 #include "net/test/test_data_directory.h"
+#include "net/test/test_with_scoped_task_environment.h"
+#include "net/third_party/quic/core/congestion_control/send_algorithm_interface.h"
+#include "net/third_party/quic/core/crypto/crypto_protocol.h"
+#include "net/third_party/quic/core/crypto/quic_decrypter.h"
+#include "net/third_party/quic/core/crypto/quic_encrypter.h"
+#include "net/third_party/quic/core/quic_connection.h"
+#include "net/third_party/quic/core/quic_write_blocked_list.h"
+#include "net/third_party/quic/core/spdy_utils.h"
+#include "net/third_party/quic/core/tls_client_handshaker.h"
+#include "net/third_party/quic/platform/api/quic_string_piece.h"
+#include "net/third_party/quic/test_tools/crypto_test_utils.h"
+#include "net/third_party/quic/test_tools/mock_clock.h"
+#include "net/third_party/quic/test_tools/mock_random.h"
+#include "net/third_party/quic/test_tools/quic_connection_peer.h"
+#include "net/third_party/quic/test_tools/quic_spdy_session_peer.h"
+#include "net/third_party/quic/test_tools/quic_test_utils.h"
+#include "net/third_party/spdy/core/spdy_frame_builder.h"
+#include "net/third_party/spdy/core/spdy_framer.h"
+#include "net/third_party/spdy/core/spdy_protocol.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -165,7 +166,8 @@ class QuicHttpStreamPeer {
 };
 
 class QuicHttpStreamTest
-    : public ::testing::TestWithParam<std::tuple<QuicTransportVersion, bool>> {
+    : public ::testing::TestWithParam<std::tuple<QuicTransportVersion, bool>>,
+      public WithScopedTaskEnvironment {
  public:
   void CloseStream(QuicHttpStream* stream, int /*rv*/) { stream->Close(false); }
 
@@ -259,7 +261,8 @@ class QuicHttpStreamTest
     }
 
     socket_data_.reset(new StaticSocketDataProvider(
-        nullptr, 0, mock_writes_.get(), writes_.size()));
+        base::span<MockRead>(),
+        base::make_span(mock_writes_.get(), writes_.size())));
 
     std::unique_ptr<MockUDPClientSocket> socket(new MockUDPClientSocket(
         socket_data_.get(), net_log_.bound().net_log()));
@@ -413,7 +416,7 @@ class QuicHttpStreamTest
       QuicStreamId parent_stream_id,
       size_t* spdy_headers_frame_length,
       QuicStreamOffset* offset) {
-    SpdyPriority priority =
+    spdy::SpdyPriority priority =
         ConvertRequestPriorityToQuicPriority(request_priority);
     return client_maker_.MakeRequestHeadersPacket(
         packet_number, stream_id, should_include_version, fin, priority,
@@ -432,7 +435,7 @@ class QuicHttpStreamTest
       QuicStreamOffset* offset,
       size_t* spdy_headers_frame_length,
       const std::vector<std::string>& data_writes) {
-    SpdyPriority priority =
+    spdy::SpdyPriority priority =
         ConvertRequestPriorityToQuicPriority(request_priority);
     return client_maker_.MakeRequestHeadersAndMultipleDataFramesPacket(
         packet_number, stream_id, should_include_version, fin, priority,
@@ -451,7 +454,7 @@ class QuicHttpStreamTest
       QuicStreamOffset* header_stream_offset,
       QuicRstStreamErrorCode error_code,
       size_t bytes_written) {
-    SpdyPriority priority =
+    spdy::SpdyPriority priority =
         ConvertRequestPriorityToQuicPriority(request_priority);
     return client_maker_.MakeRequestHeadersAndRstPacket(
         packet_number, stream_id, should_include_version, fin, priority,
@@ -502,7 +505,7 @@ class QuicHttpStreamTest
   std::unique_ptr<QuicReceivedPacket> ConstructResponseTrailersPacket(
       QuicPacketNumber packet_number,
       bool fin,
-      SpdyHeaderBlock trailers,
+      spdy::SpdyHeaderBlock trailers,
       size_t* spdy_headers_frame_length,
       QuicStreamOffset* offset) {
     return server_maker_.MakeResponseHeadersPacket(
@@ -641,16 +644,16 @@ class QuicHttpStreamTest
   HttpRequestHeaders headers_;
   HttpResponseInfo response_;
   scoped_refptr<IOBufferWithSize> read_buffer_;
-  SpdyHeaderBlock request_headers_;
-  SpdyHeaderBlock response_headers_;
+  spdy::SpdyHeaderBlock request_headers_;
+  spdy::SpdyHeaderBlock response_headers_;
   string request_data_;
   string response_data_;
   QuicClientPushPromiseIndex push_promise_index_;
 
   // For server push testing
   std::unique_ptr<QuicHttpStream> promised_stream_;
-  SpdyHeaderBlock push_promise_;
-  SpdyHeaderBlock promised_response_;
+  spdy::SpdyHeaderBlock push_promise_;
+  spdy::SpdyHeaderBlock promised_response_;
   const QuicStreamId promise_id_;
   string promise_url_;
   const QuicStreamId stream_id_;
@@ -669,7 +672,7 @@ class QuicHttpStreamTest
 };
 
 INSTANTIATE_TEST_CASE_P(
-    VersionIncludeStreamDependencySequnece,
+    VersionIncludeStreamDependencySequence,
     QuicHttpStreamTest,
     ::testing::Combine(::testing::ValuesIn(AllSupportedTransportVersions()),
                        ::testing::Bool()));
@@ -892,7 +895,7 @@ TEST_P(QuicHttpStreamTest, GetRequestWithTrailers) {
   const char kResponseBody[] = "Hello world!";
   ProcessPacket(
       ConstructServerDataPacket(3, false, !kFin, /*offset=*/0, kResponseBody));
-  SpdyHeaderBlock trailers;
+  spdy::SpdyHeaderBlock trailers;
   size_t spdy_trailers_frame_length;
   trailers["foo"] = "bar";
   trailers[kFinalOffsetHeaderKey] = base::IntToString(strlen(kResponseBody));
@@ -1113,6 +1116,8 @@ TEST_P(QuicHttpStreamTest, LogGranularQuicErrorIfHandshakeNotConfirmed) {
   SetRequest("GET", "/", DEFAULT_PRIORITY);
   size_t spdy_request_headers_frame_length;
   QuicStreamOffset header_stream_offset = 0;
+  client_maker_.SetEncryptionLevel(ENCRYPTION_INITIAL);
+  client_maker_.SetLongHeaderType(ZERO_RTT_PROTECTED);
   AddWrite(InnerConstructRequestHeadersPacket(
       1, GetNthClientInitiatedStreamId(0), kIncludeVersion, kFin,
       DEFAULT_PRIORITY, &spdy_request_headers_frame_length,

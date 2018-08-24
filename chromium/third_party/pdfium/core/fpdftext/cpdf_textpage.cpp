@@ -7,6 +7,7 @@
 #include "core/fpdftext/cpdf_textpage.h"
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -27,9 +28,9 @@
 namespace {
 
 const float kDefaultFontSize = 1.0f;
-const uint16_t* const g_UnicodeData_Normalization_Maps[5] = {
-    nullptr, g_UnicodeData_Normalization_Map1, g_UnicodeData_Normalization_Map2,
-    g_UnicodeData_Normalization_Map3, g_UnicodeData_Normalization_Map4};
+const uint16_t* const g_UnicodeData_Normalization_Maps[] = {
+    g_UnicodeData_Normalization_Map2, g_UnicodeData_Normalization_Map3,
+    g_UnicodeData_Normalization_Map4};
 
 float NormalizeThreshold(float threshold, int t1, int t2, int t3) {
   ASSERT(t1 < t2);
@@ -77,19 +78,18 @@ size_t Unicode_GetNormalization(wchar_t wch, wchar_t* pDst) {
     return 1;
   }
   if (wFind >= 0x8000) {
-    wch = wFind - 0x8000;
-    wFind = 1;
-  } else {
-    wch = wFind & 0x0FFF;
-    wFind >>= 12;
+    const uint16_t* pMap = g_UnicodeData_Normalization_Map1 + (wFind - 0x8000);
+    if (pDst)
+      *pDst = *pMap;
+    return 1;
   }
-  const uint16_t* pMap = g_UnicodeData_Normalization_Maps[wFind];
-  if (pMap == g_UnicodeData_Normalization_Map4) {
-    pMap = g_UnicodeData_Normalization_Map4 + wch;
+
+  wch = wFind & 0x0FFF;
+  wFind >>= 12;
+  const uint16_t* pMap = g_UnicodeData_Normalization_Maps[wFind - 2] + wch;
+  if (wFind == 4)
     wFind = (wchar_t)(*pMap++);
-  } else {
-    pMap += wch;
-  }
+
   if (pDst) {
     wchar_t n = wFind;
     while (n--)
@@ -112,6 +112,91 @@ bool IsHyphenCode(wchar_t c) {
   return c == 0x2D || c == 0xAD;
 }
 
+bool IsRectIntersect(const CFX_FloatRect& rect1, const CFX_FloatRect& rect2) {
+  CFX_FloatRect rect = rect1;
+  rect.Intersect(rect2);
+  return !rect.IsEmpty();
+}
+
+bool IsRightToLeft(const CPDF_TextObject& text_obj, const CPDF_Font& font) {
+  const size_t nItems = text_obj.CountItems();
+  WideString str;
+  str.Reserve(nItems);
+  for (size_t i = 0; i < nItems; ++i) {
+    CPDF_TextObjectItem item;
+    text_obj.GetItemInfo(i, &item);
+    if (item.m_CharCode == static_cast<uint32_t>(-1))
+      continue;
+    WideString wstrItem = font.UnicodeFromCharCode(item.m_CharCode);
+    wchar_t wChar = !wstrItem.IsEmpty() ? wstrItem[0] : 0;
+    if (wChar == 0)
+      wChar = item.m_CharCode;
+    if (wChar)
+      str += wChar;
+  }
+  return CFX_BidiString(str).OverallDirection() == CFX_BidiChar::RIGHT;
+}
+
+uint32_t GetCharWidth(uint32_t charCode, CPDF_Font* pFont) {
+  if (charCode == CPDF_Font::kInvalidCharCode)
+    return 0;
+
+  uint32_t w = pFont->GetCharWidthF(charCode);
+  if (w > 0)
+    return w;
+
+  ByteString str;
+  pFont->AppendChar(&str, charCode);
+  w = pFont->GetStringWidth(str.AsStringView());
+  if (w > 0)
+    return w;
+
+  ASSERT(pFont->GetCharBBox(charCode).Width() >= 0);
+  return pFont->GetCharBBox(charCode).Width();
+}
+
+bool GenerateSpace(const CFX_PointF& pos,
+                   float last_pos,
+                   float this_width,
+                   float last_width,
+                   float threshold) {
+  if (fabs(last_pos + last_width - pos.x) <= threshold)
+    return false;
+
+  float threshold_pos = threshold + last_width;
+  float pos_difference = pos.x - last_pos;
+  if (fabs(pos_difference) > threshold_pos)
+    return true;
+  if (pos.x < 0 && -threshold_pos > pos_difference)
+    return true;
+  return pos_difference > this_width + last_width;
+}
+
+bool EndHorizontalLine(const CFX_FloatRect& this_rect,
+                       const CFX_FloatRect& prev_rect) {
+  if (this_rect.Height() <= 4.5 || prev_rect.Height() <= 4.5)
+    return false;
+
+  float top = std::min(this_rect.top, prev_rect.top);
+  float bottom = std::max(this_rect.bottom, prev_rect.bottom);
+  return bottom >= top;
+}
+
+bool EndVerticalLine(const CFX_FloatRect& this_rect,
+                     const CFX_FloatRect& prev_rect,
+                     const CFX_FloatRect& curline_rect,
+                     float this_fontsize,
+                     float prev_fontsize) {
+  if (this_rect.Width() <= this_fontsize * 0.1f ||
+      prev_rect.Width() <= prev_fontsize * 0.1f) {
+    return false;
+  }
+
+  float left = std::max(this_rect.left, curline_rect.left);
+  float right = std::min(this_rect.right, curline_rect.right);
+  return right <= left;
+}
+
 }  // namespace
 
 PDFTEXT_Obj::PDFTEXT_Obj() {}
@@ -120,28 +205,18 @@ PDFTEXT_Obj::PDFTEXT_Obj(const PDFTEXT_Obj& that) = default;
 
 PDFTEXT_Obj::~PDFTEXT_Obj() {}
 
-FPDF_CHAR_INFO::FPDF_CHAR_INFO()
-    : m_Unicode(0),
-      m_Charcode(0),
-      m_Flag(0),
-      m_FontSize(0),
-      m_pTextObj(nullptr) {}
+FPDF_CHAR_INFO::FPDF_CHAR_INFO() {}
 
 FPDF_CHAR_INFO::~FPDF_CHAR_INFO() {}
 
-PAGECHAR_INFO::PAGECHAR_INFO()
-    : m_Index(0), m_CharCode(0), m_Unicode(0), m_Flag(0), m_pTextObj(nullptr) {}
+PAGECHAR_INFO::PAGECHAR_INFO() {}
 
 PAGECHAR_INFO::PAGECHAR_INFO(const PAGECHAR_INFO&) = default;
 
 PAGECHAR_INFO::~PAGECHAR_INFO() {}
 
 CPDF_TextPage::CPDF_TextPage(const CPDF_Page* pPage, FPDFText_Direction flags)
-    : m_pPage(pPage),
-      m_parserflag(flags),
-      m_pPreTextObj(nullptr),
-      m_bIsParsed(false),
-      m_TextlineDir(TextOrientation::Unknown) {
+    : m_pPage(pPage), m_parserflag(flags) {
   m_TextBuf.EstimateSize(0, 10240);
   const FX_RECT rect(0, 0, static_cast<int>(pPage->GetPageWidth()),
                      static_cast<int>(pPage->GetPageHeight()));
@@ -278,22 +353,19 @@ std::vector<CFX_FloatRect> CPDF_TextPage::GetRectArray(int start,
       rect.left = info_curchar.m_CharBox.left;
       rect.right = info_curchar.m_CharBox.right;
       if (pCurObj->GetFont()->GetTypeDescent()) {
-        rect.bottom = origin.y +
-                      pCurObj->GetFont()->GetTypeDescent() *
-                          pCurObj->GetFontSize() / 1000;
-
+        const float fFontSize = pCurObj->GetFontSize() / 1000;
+        rect.bottom =
+            origin.y + pCurObj->GetFont()->GetTypeDescent() * fFontSize;
         rect.bottom = matrix.Transform(CFX_PointF(origin.x, rect.bottom)).y;
       } else {
         rect.bottom = info_curchar.m_CharBox.bottom;
       }
       if (pCurObj->GetFont()->GetTypeAscent()) {
-        rect.top =
-            origin.y +
-            pCurObj->GetFont()->GetTypeAscent() * pCurObj->GetFontSize() / 1000;
+        const float fFontSize = pCurObj->GetFontSize() / 1000;
+        rect.top = origin.y + pCurObj->GetFont()->GetTypeAscent() * fFontSize;
         float xPosTemp =
-            origin.x +
-            GetCharWidth(info_curchar.m_CharCode, pCurObj->GetFont()) *
-                pCurObj->GetFontSize() / 1000;
+            GetCharWidth(info_curchar.m_CharCode, pCurObj->GetFont());
+        xPosTemp = xPosTemp * fFontSize + origin.x;
         rect.top = matrix.Transform(CFX_PointF(xPosTemp, rect.top)).y;
       } else {
         rect.top = info_curchar.m_CharBox.top;
@@ -399,10 +471,9 @@ void CPDF_TextPage::GetCharInfo(int index, FPDF_CHAR_INFO* info) const {
   info->m_Flag = charinfo.m_Flag;
   info->m_CharBox = charinfo.m_CharBox;
   info->m_pTextObj = charinfo.m_pTextObj;
-  if (charinfo.m_pTextObj && charinfo.m_pTextObj->GetFont())
-    info->m_FontSize = charinfo.m_pTextObj->GetFontSize();
-  else
-    info->m_FontSize = kDefaultFontSize;
+  bool bHasFont = charinfo.m_pTextObj && charinfo.m_pTextObj->GetFont();
+  info->m_FontSize =
+      bHasFont ? charinfo.m_pTextObj->GetFontSize() : kDefaultFontSize;
   info->m_Matrix = charinfo.m_Matrix;
 }
 
@@ -599,83 +670,60 @@ void CPDF_TextPage::ProcessFormObject(CPDF_FormObject* pFormObj,
   }
 }
 
-uint32_t CPDF_TextPage::GetCharWidth(uint32_t charCode,
-                                     CPDF_Font* pFont) const {
-  if (charCode == CPDF_Font::kInvalidCharCode)
-    return 0;
-
-  uint32_t w = pFont->GetCharWidthF(charCode);
-  if (w > 0)
-    return w;
-
-  ByteString str;
-  pFont->AppendChar(&str, charCode);
-  w = pFont->GetStringWidth(str.AsStringView());
-  if (w > 0)
-    return w;
-
-  ASSERT(pFont->GetCharBBox(charCode).Width() >= 0);
-  return pFont->GetCharBBox(charCode).Width();
-}
-
 void CPDF_TextPage::AddCharInfoByLRDirection(wchar_t wChar,
-                                             PAGECHAR_INFO info) {
-  if (IsControlChar(info)) {
-    info.m_Index = -1;
-    m_CharList.push_back(info);
+                                             const PAGECHAR_INFO& info) {
+  PAGECHAR_INFO info2 = info;
+  if (IsControlChar(info2)) {
+    info2.m_Index = -1;
+    m_CharList.push_back(info2);
     return;
   }
 
-  info.m_Index = m_TextBuf.GetLength();
+  info2.m_Index = m_TextBuf.GetLength();
   if (wChar >= 0xFB00 && wChar <= 0xFB06) {
-    wchar_t* pDst = nullptr;
-    size_t nCount = Unicode_GetNormalization(wChar, pDst);
+    size_t nCount = Unicode_GetNormalization(wChar, nullptr);
     if (nCount >= 1) {
-      pDst = FX_Alloc(wchar_t, nCount);
-      Unicode_GetNormalization(wChar, pDst);
+      std::unique_ptr<wchar_t, FxFreeDeleter> pDst(FX_Alloc(wchar_t, nCount));
+      Unicode_GetNormalization(wChar, pDst.get());
       for (size_t nIndex = 0; nIndex < nCount; nIndex++) {
-        PAGECHAR_INFO info2 = info;
-        info2.m_Unicode = pDst[nIndex];
+        info2.m_Unicode = pDst.get()[nIndex];
         info2.m_Flag = FPDFTEXT_CHAR_PIECE;
         m_TextBuf.AppendChar(info2.m_Unicode);
         m_CharList.push_back(info2);
       }
-      FX_Free(pDst);
       return;
     }
   }
   m_TextBuf.AppendChar(wChar);
-  m_CharList.push_back(info);
+  m_CharList.push_back(info2);
 }
 
 void CPDF_TextPage::AddCharInfoByRLDirection(wchar_t wChar,
-                                             PAGECHAR_INFO info) {
-  if (IsControlChar(info)) {
-    info.m_Index = -1;
-    m_CharList.push_back(info);
+                                             const PAGECHAR_INFO& info) {
+  PAGECHAR_INFO info2 = info;
+  if (IsControlChar(info2)) {
+    info2.m_Index = -1;
+    m_CharList.push_back(info2);
     return;
   }
 
-  info.m_Index = m_TextBuf.GetLength();
+  info2.m_Index = m_TextBuf.GetLength();
   wChar = FX_GetMirrorChar(wChar);
-  wchar_t* pDst = nullptr;
-  size_t nCount = Unicode_GetNormalization(wChar, pDst);
+  size_t nCount = Unicode_GetNormalization(wChar, nullptr);
   if (nCount >= 1) {
-    pDst = FX_Alloc(wchar_t, nCount);
-    Unicode_GetNormalization(wChar, pDst);
+    std::unique_ptr<wchar_t, FxFreeDeleter> pDst(FX_Alloc(wchar_t, nCount));
+    Unicode_GetNormalization(wChar, pDst.get());
     for (size_t nIndex = 0; nIndex < nCount; nIndex++) {
-      PAGECHAR_INFO info2 = info;
-      info2.m_Unicode = pDst[nIndex];
+      info2.m_Unicode = pDst.get()[nIndex];
       info2.m_Flag = FPDFTEXT_CHAR_PIECE;
       m_TextBuf.AppendChar(info2.m_Unicode);
       m_CharList.push_back(info2);
     }
-    FX_Free(pDst);
     return;
   }
-  info.m_Unicode = wChar;
-  m_TextBuf.AppendChar(info.m_Unicode);
-  m_CharList.push_back(info);
+  info2.m_Unicode = wChar;
+  m_TextBuf.AppendChar(info2.m_Unicode);
+  m_CharList.push_back(info2);
 }
 
 void CPDF_TextPage::CloseTempLine() {
@@ -707,11 +755,11 @@ void CPDF_TextPage::CloseTempLine() {
          eCurrentDirection == CFX_BidiChar::RIGHT)) {
       eCurrentDirection = CFX_BidiChar::RIGHT;
       for (int m = segment.start + segment.count; m > segment.start; --m)
-        AddCharInfoByRLDirection(bidi.CharAt(m - 1), m_TempCharList[m - 1]);
+        AddCharInfoByRLDirection(str[m - 1], m_TempCharList[m - 1]);
     } else {
       eCurrentDirection = CFX_BidiChar::LEFT;
       for (int m = segment.start; m < segment.start + segment.count; m++)
-        AddCharInfoByLRDirection(bidi.CharAt(m), m_TempCharList[m]);
+        AddCharInfoByLRDirection(str[m], m_TempCharList[m]);
     }
   }
   m_TempCharList.clear();
@@ -762,7 +810,7 @@ void CPDF_TextPage::ProcessTextObject(
   this_matrix.Concat(formMatrix);
   this_width = this_matrix.TransformDistance(this_width);
 
-  float threshold = prev_width > this_width ? prev_width / 4 : this_width / 4;
+  float threshold = std::max(prev_width, this_width) / 4;
   CFX_PointF prev_pos = m_DisplayMatrix.Transform(
       prev_Obj.m_formMatrix.Transform(prev_Obj.m_pTextObj->GetPos()));
   CFX_PointF this_pos =
@@ -895,14 +943,12 @@ void CPDF_TextPage::ProcessMarkedContent(PDFTEXT_Obj Obj) {
 }
 
 void CPDF_TextPage::FindPreviousTextObject() {
-  if (m_TempCharList.empty() && m_CharList.empty())
+  const PAGECHAR_INFO* pPrevCharInfo = GetPrevCharInfo();
+  if (!pPrevCharInfo)
     return;
 
-  PAGECHAR_INFO preChar =
-      m_TempCharList.empty() ? m_CharList.back() : m_TempCharList.back();
-
-  if (preChar.m_pTextObj)
-    m_pPreTextObj = preChar.m_pTextObj;
+  if (pPrevCharInfo->m_pTextObj)
+    m_pPreTextObj = pPrevCharInfo->m_pTextObj;
 }
 
 void CPDF_TextPage::SwapTempTextBuf(int32_t iCharListStartAppend,
@@ -918,25 +964,6 @@ void CPDF_TextPage::SwapTempTextBuf(int32_t iCharListStartAppend,
   j = m_TempTextBuf.GetLength() - 1;
   for (; i < j; i++, j--)
     std::swap(pTempBuffer[i], pTempBuffer[j]);
-}
-
-bool CPDF_TextPage::IsRightToLeft(const CPDF_TextObject* pTextObj,
-                                  const CPDF_Font* pFont,
-                                  size_t nItems) const {
-  WideString str;
-  for (size_t i = 0; i < nItems; ++i) {
-    CPDF_TextObjectItem item;
-    pTextObj->GetItemInfo(i, &item);
-    if (item.m_CharCode == static_cast<uint32_t>(-1))
-      continue;
-    WideString wstrItem = pFont->UnicodeFromCharCode(item.m_CharCode);
-    wchar_t wChar = !wstrItem.IsEmpty() ? wstrItem[0] : 0;
-    if (wChar == 0)
-      wChar = item.m_CharCode;
-    if (wChar)
-      str += wChar;
-  }
-  return CFX_BidiString(str).OverallDirection() == CFX_BidiChar::RIGHT;
 }
 
 void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
@@ -992,7 +1019,7 @@ void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
           if (wstrItem.IsEmpty())
             wstrItem += (wchar_t)item.m_CharCode;
           wchar_t curChar = wstrItem[0];
-          if (curChar == 0x2D || curChar == 0xAD)
+          if (IsHyphenCode(curChar))
             return;
         }
         while (m_TempTextBuf.GetSize() > 0 &&
@@ -1020,10 +1047,9 @@ void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
   }
   m_pPreTextObj = pTextObj;
   m_perMatrix = formMatrix;
-  size_t nItems = pTextObj->CountItems();
   float baseSpace = CalculateBaseSpace(pTextObj, matrix);
 
-  const bool bR2L = IsRightToLeft(pTextObj, pFont, nItems);
+  const bool bR2L = IsRightToLeft(*pTextObj, *pFont);
   const bool bIsBidiAndMirrorInverse =
       bR2L && (matrix.a * matrix.d - matrix.b * matrix.c) < 0;
   int32_t iBufStartAppend = m_TempTextBuf.GetLength();
@@ -1031,6 +1057,7 @@ void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
       pdfium::CollectionSize<int32_t>(m_TempCharList);
 
   float spacing = 0;
+  const size_t nItems = pTextObj->CountItems();
   for (size_t i = 0; i < nItems; ++i) {
     CPDF_TextObjectItem item;
     PAGECHAR_INFO charinfo;
@@ -1093,24 +1120,18 @@ void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
     }
     charinfo.m_Index = -1;
     charinfo.m_CharCode = item.m_CharCode;
-    if (bNoUnicode)
-      charinfo.m_Flag = FPDFTEXT_CHAR_UNUNICODE;
-    else
-      charinfo.m_Flag = FPDFTEXT_CHAR_NORMAL;
-
+    charinfo.m_Flag =
+        bNoUnicode ? FPDFTEXT_CHAR_UNUNICODE : FPDFTEXT_CHAR_NORMAL;
     charinfo.m_pTextObj = pTextObj;
     charinfo.m_Origin = matrix.Transform(item.m_Origin);
 
-    FX_RECT rect =
+    const FX_RECT rect =
         charinfo.m_pTextObj->GetFont()->GetCharBBox(charinfo.m_CharCode);
-    charinfo.m_CharBox.top =
-        rect.top * pTextObj->GetFontSize() / 1000 + item.m_Origin.y;
-    charinfo.m_CharBox.left =
-        rect.left * pTextObj->GetFontSize() / 1000 + item.m_Origin.x;
-    charinfo.m_CharBox.right =
-        rect.right * pTextObj->GetFontSize() / 1000 + item.m_Origin.x;
-    charinfo.m_CharBox.bottom =
-        rect.bottom * pTextObj->GetFontSize() / 1000 + item.m_Origin.y;
+    const float fFontSize = pTextObj->GetFontSize() / 1000;
+    charinfo.m_CharBox.top = rect.top * fFontSize + item.m_Origin.y;
+    charinfo.m_CharBox.left = rect.left * fFontSize + item.m_Origin.x;
+    charinfo.m_CharBox.right = rect.right * fFontSize + item.m_Origin.x;
+    charinfo.m_CharBox.bottom = rect.bottom * fFontSize + item.m_Origin.y;
     if (fabsf(charinfo.m_CharBox.top - charinfo.m_CharBox.bottom) < 0.01f) {
       charinfo.m_CharBox.top =
           charinfo.m_CharBox.bottom + pTextObj->GetFontSize();
@@ -1180,20 +1201,19 @@ CPDF_TextPage::TextOrientation CPDF_TextPage::GetTextObjectWritingMode(
   first.m_Origin = textMatrix.Transform(first.m_Origin);
   last.m_Origin = textMatrix.Transform(last.m_Origin);
 
+  static constexpr float kEpsilon = 0.0001f;
   float dX = fabs(last.m_Origin.x - first.m_Origin.x);
   float dY = fabs(last.m_Origin.y - first.m_Origin.y);
-  if (dX <= 0.0001f && dY <= 0.0001f)
+  if (dX <= kEpsilon && dY <= kEpsilon)
     return TextOrientation::Unknown;
 
+  static constexpr float kThreshold = 0.0872f;
   CFX_VectorF v(dX, dY);
   v.Normalize();
-  if (v.y <= 0.0872f)
-    return v.x <= 0.0872f ? m_TextlineDir : TextOrientation::Horizontal;
-
-  if (v.x <= 0.0872f)
-    return TextOrientation::Vertical;
-
-  return m_TextlineDir;
+  bool bXUnderThreshold = v.x <= kThreshold;
+  if (v.y <= kThreshold)
+    return bXUnderThreshold ? m_TextlineDir : TextOrientation::Horizontal;
+  return bXUnderThreshold ? TextOrientation::Vertical : m_TextlineDir;
 }
 
 bool CPDF_TextPage::IsHyphen(wchar_t curChar) const {
@@ -1218,16 +1238,15 @@ bool CPDF_TextPage::IsHyphen(wchar_t curChar) const {
       return true;
   }
 
-  const PAGECHAR_INFO* preInfo;
-  if (!m_TempCharList.empty())
-    preInfo = &m_TempCharList.back();
-  else if (!m_CharList.empty())
-    preInfo = &m_CharList.back();
-  else
-    return false;
+  const PAGECHAR_INFO* pPrevCharInfo = GetPrevCharInfo();
+  return pPrevCharInfo && pPrevCharInfo->m_Flag == FPDFTEXT_CHAR_PIECE &&
+         IsHyphenCode(pPrevCharInfo->m_Unicode);
+}
 
-  return FPDFTEXT_CHAR_PIECE == preInfo->m_Flag &&
-         IsHyphenCode(preInfo->m_Unicode);
+const PAGECHAR_INFO* CPDF_TextPage::GetPrevCharInfo() const {
+  if (!m_TempCharList.empty())
+    return &m_TempCharList.back();
+  return !m_CharList.empty() ? &m_CharList.back() : nullptr;
 }
 
 CPDF_TextPage::GenerateCharacter CPDF_TextPage::ProcessInsertObject(
@@ -1256,26 +1275,15 @@ CPDF_TextPage::GenerateCharacter CPDF_TextPage::ProcessInsertObject(
     wstrItem += static_cast<wchar_t>(item.m_CharCode);
   wchar_t curChar = wstrItem[0];
   if (WritingMode == TextOrientation::Horizontal) {
-    if (this_rect.Height() > 4.5 && prev_rect.Height() > 4.5) {
-      float top = this_rect.top < prev_rect.top ? this_rect.top : prev_rect.top;
-      float bottom = this_rect.bottom > prev_rect.bottom ? this_rect.bottom
-                                                         : prev_rect.bottom;
-      if (bottom >= top) {
-        return IsHyphen(curChar) ? GenerateCharacter::Hyphen
-                                 : GenerateCharacter::LineBreak;
-      }
+    if (EndHorizontalLine(this_rect, prev_rect)) {
+      return IsHyphen(curChar) ? GenerateCharacter::Hyphen
+                               : GenerateCharacter::LineBreak;
     }
   } else if (WritingMode == TextOrientation::Vertical) {
-    if (this_rect.Width() > pObj->GetFontSize() * 0.1f &&
-        prev_rect.Width() > m_pPreTextObj->GetFontSize() * 0.1f) {
-      float left = this_rect.left > m_CurlineRect.left ? this_rect.left
-                                                       : m_CurlineRect.left;
-      float right = this_rect.right < m_CurlineRect.right ? this_rect.right
-                                                          : m_CurlineRect.right;
-      if (right <= left) {
-        return IsHyphen(curChar) ? GenerateCharacter::Hyphen
-                                 : GenerateCharacter::LineBreak;
-      }
+    if (EndVerticalLine(this_rect, prev_rect, m_CurlineRect,
+                        pObj->GetFontSize(), m_pPreTextObj->GetFontSize())) {
+      return IsHyphen(curChar) ? GenerateCharacter::Hyphen
+                               : GenerateCharacter::LineBreak;
     }
   }
 
@@ -1285,9 +1293,8 @@ CPDF_TextPage::GenerateCharacter CPDF_TextPage::ProcessInsertObject(
   float last_width = nLastWidth * m_pPreTextObj->GetFontSize() / 1000;
   last_width = fabs(last_width);
   uint32_t nThisWidth = GetCharWidth(item.m_CharCode, pObj->GetFont());
-  float this_width = nThisWidth * pObj->GetFontSize() / 1000;
-  this_width = fabs(this_width);
-  float threshold = last_width > this_width ? last_width / 4 : this_width / 4;
+  float this_width = fabs(nThisWidth * pObj->GetFontSize() / 1000);
+  float threshold = std::max(last_width, this_width) / 4;
 
   CFX_Matrix prev_matrix = m_pPreTextObj->GetTextMatrix();
   prev_matrix.Concat(m_perMatrix);
@@ -1300,14 +1307,12 @@ CPDF_TextPage::GenerateCharacter CPDF_TextPage::ProcessInsertObject(
 
   bool bNewline = false;
   if (WritingMode == TextOrientation::Horizontal) {
-    CFX_FloatRect rect1(m_pPreTextObj->m_Left, pObj->m_Bottom,
-                        m_pPreTextObj->m_Right, pObj->m_Top);
-    CFX_FloatRect rect2 = m_pPreTextObj->GetRect();
-    CFX_FloatRect rect3 = rect1;
-    rect1.Intersect(rect2);
-    if ((rect1.IsEmpty() && rect2.Height() > 5 && rect3.Height() > 5) ||
+    CFX_FloatRect rect = m_pPreTextObj->GetRect();
+    float rect_height = rect.Height();
+    rect.Normalize();
+    if ((rect.IsEmpty() && rect_height > 5) ||
         ((pos.y > threshold * 2 || pos.y < threshold * -3) &&
-         (fabs(pos.y) < 1 ? fabs(pos.x) < fabs(pos.y) : true))) {
+         (fabs(pos.y) >= 1 || fabs(pos.y) > fabs(pos.x)))) {
       bNewline = true;
       if (nItem > 1) {
         CPDF_TextObjectItem tempItem;
@@ -1335,46 +1340,37 @@ CPDF_TextPage::GenerateCharacter CPDF_TextPage::ProcessInsertObject(
                              : GenerateCharacter::LineBreak;
   }
 
-  if (pObj->CountChars() == 1 && (0x2D == curChar || 0xAD == curChar) &&
-      IsHyphen(curChar)) {
+  if (pObj->CountChars() == 1 && IsHyphenCode(curChar) && IsHyphen(curChar))
     return GenerateCharacter::Hyphen;
-  }
+
+  if (curChar == L' ')
+    return GenerateCharacter::None;
+
   WideString PrevStr =
       m_pPreTextObj->GetFont()->UnicodeFromCharCode(PrevItem.m_CharCode);
   wchar_t preChar = PrevStr.Last();
+  if (preChar == L' ')
+    return GenerateCharacter::None;
+
   CFX_Matrix matrix = pObj->GetTextMatrix();
   matrix.Concat(formMatrix);
-
-  threshold = static_cast<float>(std::max(nLastWidth, nThisWidth));
-  threshold = NormalizeThreshold(threshold, 400, 700, 800);
+  float threshold2 = static_cast<float>(std::max(nLastWidth, nThisWidth));
+  threshold2 = NormalizeThreshold(threshold2, 400, 700, 800);
   if (nLastWidth >= nThisWidth) {
-    threshold *= fabs(m_pPreTextObj->GetFontSize());
+    threshold2 *= fabs(m_pPreTextObj->GetFontSize());
   } else {
-    threshold *= fabs(pObj->GetFontSize());
-    threshold = matrix.TransformDistance(threshold);
-    threshold = prev_reverse.TransformDistance(threshold);
+    threshold2 *= fabs(pObj->GetFontSize());
+    threshold2 = matrix.TransformDistance(threshold2);
+    threshold2 = prev_reverse.TransformDistance(threshold2);
   }
-  threshold /= 1000;
-  if ((threshold < 1.4881 && threshold > 1.4879) ||
-      (threshold < 1.39001 && threshold > 1.38999)) {
-    threshold *= 1.5;
+  threshold2 /= 1000;
+  if ((threshold2 < 1.4881 && threshold2 > 1.4879) ||
+      (threshold2 < 1.39001 && threshold2 > 1.38999)) {
+    threshold2 *= 1.5;
   }
-  if (fabs(last_pos + last_width - pos.x) > threshold && curChar != L' ' &&
-      preChar != L' ') {
-    if (curChar != L' ' && preChar != L' ') {
-      if ((pos.x - last_pos - last_width) > threshold ||
-          (last_pos - pos.x - last_width) > threshold) {
-        return GenerateCharacter::Space;
-      }
-      if (pos.x < 0 && (last_pos - pos.x - last_width) > threshold)
-        return GenerateCharacter::Space;
-      if ((pos.x - last_pos - last_width) > this_width ||
-          (pos.x - last_pos - this_width) > last_width) {
-        return GenerateCharacter::Space;
-      }
-    }
-  }
-  return GenerateCharacter::None;
+  return GenerateSpace(pos, last_pos, this_width, last_width, threshold2)
+             ? GenerateCharacter::Space
+             : GenerateCharacter::None;
 }
 
 bool CPDF_TextPage::IsSameTextObject(CPDF_TextObject* pTextObj1,
@@ -1449,42 +1445,32 @@ bool CPDF_TextPage::IsSameAsPreTextObject(
 }
 
 Optional<PAGECHAR_INFO> CPDF_TextPage::GenerateCharInfo(wchar_t unicode) {
-  const PAGECHAR_INFO* preChar;
-  if (!m_TempCharList.empty())
-    preChar = &m_TempCharList.back();
-  else if (!m_CharList.empty())
-    preChar = &m_CharList.back();
-  else
+  const PAGECHAR_INFO* pPrevCharInfo = GetPrevCharInfo();
+  if (!pPrevCharInfo)
     return {};
 
   PAGECHAR_INFO info;
   info.m_Index = m_TextBuf.GetLength();
-  info.m_Unicode = unicode;
-  info.m_pTextObj = nullptr;
   info.m_CharCode = CPDF_Font::kInvalidCharCode;
+  info.m_Unicode = unicode;
   info.m_Flag = FPDFTEXT_CHAR_GENERATED;
 
   int preWidth = 0;
-  if (preChar->m_pTextObj && preChar->m_CharCode != -1) {
-    preWidth =
-        GetCharWidth(preChar->m_CharCode, preChar->m_pTextObj->GetFont());
+  if (pPrevCharInfo->m_pTextObj && pPrevCharInfo->m_CharCode != -1) {
+    preWidth = GetCharWidth(pPrevCharInfo->m_CharCode,
+                            pPrevCharInfo->m_pTextObj->GetFont());
   }
 
-  float fFontSize = preChar->m_pTextObj ? preChar->m_pTextObj->GetFontSize()
-                                        : preChar->m_CharBox.Height();
+  float fFontSize = pPrevCharInfo->m_pTextObj
+                        ? pPrevCharInfo->m_pTextObj->GetFontSize()
+                        : pPrevCharInfo->m_CharBox.Height();
   if (!fFontSize)
     fFontSize = kDefaultFontSize;
 
-  info.m_Origin = CFX_PointF(
-      preChar->m_Origin.x + preWidth * (fFontSize) / 1000, preChar->m_Origin.y);
+  info.m_Origin =
+      CFX_PointF(pPrevCharInfo->m_Origin.x + preWidth * (fFontSize) / 1000,
+                 pPrevCharInfo->m_Origin.y);
   info.m_CharBox = CFX_FloatRect(info.m_Origin.x, info.m_Origin.y,
                                  info.m_Origin.x, info.m_Origin.y);
   return info;
-}
-
-bool CPDF_TextPage::IsRectIntersect(const CFX_FloatRect& rect1,
-                                    const CFX_FloatRect& rect2) {
-  CFX_FloatRect rect = rect1;
-  rect.Intersect(rect2);
-  return !rect.IsEmpty();
 }

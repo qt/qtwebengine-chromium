@@ -34,6 +34,7 @@
 #include "third_party/blink/public/platform/web_rtc_session_description.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/exception_code.h"
+#include "third_party/blink/renderer/modules/peerconnection/rtc_error_util.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_session_description.h"
 
@@ -67,19 +68,20 @@ void RTCSessionDescriptionRequestImpl::RequestSucceeded(
   bool should_fire_callback =
       requester_ ? requester_->ShouldFireDefaultCallbacks() : false;
   if (should_fire_callback && success_callback_) {
-    auto description = RTCSessionDescription::Create(web_session_description);
+    auto* description = RTCSessionDescription::Create(web_session_description);
     requester_->NoteSdpCreated(*description);
     success_callback_->InvokeAndReportException(nullptr, description);
   }
   Clear();
 }
 
-void RTCSessionDescriptionRequestImpl::RequestFailed(const String& error) {
+void RTCSessionDescriptionRequestImpl::RequestFailed(
+    const webrtc::RTCError& error) {
   bool should_fire_callback =
       requester_ ? requester_->ShouldFireDefaultCallbacks() : false;
   if (should_fire_callback && error_callback_) {
     error_callback_->InvokeAndReportException(
-        nullptr, DOMException::Create(kOperationError, error));
+        nullptr, CreateDOMExceptionFromRTCError(error));
   }
   Clear();
 }

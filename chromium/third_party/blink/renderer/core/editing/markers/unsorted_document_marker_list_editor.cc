@@ -66,7 +66,7 @@ bool UnsortedDocumentMarkerListEditor::ShiftMarkersContentIndependent(
   bool did_shift_marker = false;
   HeapVector<Member<DocumentMarker>> unremoved_markers;
   for (const Member<DocumentMarker>& marker : *list) {
-    Optional<DocumentMarker::MarkerOffsets> result =
+    base::Optional<DocumentMarker::MarkerOffsets> result =
         marker->ComputeOffsetsAfterShift(offset, old_length, new_length);
     if (!result) {
       did_shift_marker = true;
@@ -93,7 +93,7 @@ DocumentMarker* UnsortedDocumentMarkerListEditor::FirstMarkerIntersectingRange(
     unsigned end_offset) {
   DCHECK_LE(start_offset, end_offset);
 
-  const auto it =
+  auto* const it =
       std::find_if(list.begin(), list.end(),
                    [start_offset, end_offset](const DocumentMarker* marker) {
                      return marker->StartOffset() < end_offset &&

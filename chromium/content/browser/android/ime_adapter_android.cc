@@ -19,7 +19,6 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "content/common/frame_messages.h"
-#include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/native_web_keyboard_event.h"
@@ -54,10 +53,10 @@ NativeWebKeyboardEvent NativeWebKeyboardEventFromKeyEvent(
     int scan_code,
     bool is_system_key,
     int unicode_char) {
-  return NativeWebKeyboardEvent(env, java_key_event,
-                                static_cast<blink::WebInputEvent::Type>(type),
-                                modifiers, time_ms / 1000.0, key_code,
-                                scan_code, unicode_char, is_system_key);
+  return NativeWebKeyboardEvent(
+      env, java_key_event, static_cast<blink::WebInputEvent::Type>(type),
+      modifiers, base::TimeTicks() + base::TimeDelta::FromMilliseconds(time_ms),
+      key_code, scan_code, unicode_char, is_system_key);
 }
 
 }  // anonymous namespace

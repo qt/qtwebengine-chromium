@@ -42,6 +42,8 @@ class MEDIA_MOJO_EXPORT MojoAudioInputStream
 
   ~MojoAudioInputStream() override;
 
+  void SetOutputDeviceForAec(const std::string& raw_output_device_id);
+
  private:
   // mojom::AudioInputStream implementation.
   void Record() override;
@@ -50,7 +52,7 @@ class MEDIA_MOJO_EXPORT MojoAudioInputStream
   // AudioInputDelegate::EventHandler implementation.
   void OnStreamCreated(
       int stream_id,
-      const base::SharedMemory* shared_memory,
+      base::ReadOnlySharedMemoryRegion shared_memory_region,
       std::unique_ptr<base::CancelableSyncSocket> foreign_socket,
       bool initially_muted) override;
   void OnMuted(int stream_id, bool is_muted) override;

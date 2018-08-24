@@ -35,10 +35,19 @@ class PLATFORM_EXPORT MarkingVisitor final : public Visitor {
 
   static std::unique_ptr<MarkingVisitor> Create(ThreadState*, MarkingMode);
 
-  inline static void WriteBarrier(void* value);
+  // Write barrier that adds |value| to the set of marked objects. The barrier
+  // bails out if marking is off or the object is not yet marked.
+  ALWAYS_INLINE static void WriteBarrier(void* value);
+
+  // Eagerly traces an already marked backing store ensuring that all its
+  // children are discovered by the marker. The barrier bails out if marking
+  // is off and on individual objects reachable if they are already marked. The
+  // barrier uses the callback function through GcInfo, so it will not inline
+  // any templated type-specific code.
+  ALWAYS_INLINE static void TraceMarkedBackingStore(void* value);
 
   MarkingVisitor(ThreadState*, MarkingMode);
-  virtual ~MarkingVisitor();
+  ~MarkingVisitor() override;
 
   // Marking implementation.
 
@@ -100,6 +109,10 @@ class PLATFORM_EXPORT MarkingVisitor final : public Visitor {
                desc.callback);
   }
 
+  void Visit(void*, TraceWrapperDescriptor) final {
+    // Ignore as the object is also passed to Visit(void*, TraceDescriptor).
+  }
+
   void VisitWeak(void* object,
                  void** object_slot,
                  TraceDescriptor desc,
@@ -138,7 +151,16 @@ class PLATFORM_EXPORT MarkingVisitor final : public Visitor {
                          EphemeronCallback iteration_callback) final;
   void RegisterWeakCallback(void* closure, WeakCallback) final;
 
+  // Unused cross-component visit methods.
+  void Visit(const TraceWrapperV8Reference<v8::Value>&) final {}
+  void Visit(DOMWrapperMap<ScriptWrappable>*,
+             const ScriptWrappable* key) final {}
+
  private:
+  // Exact version of the marking write barriers.
+  static void WriteBarrierSlow(void*);
+  static void TraceMarkedBackingStoreSlow(void*);
+
   void RegisterBackingStoreReference(void* slot);
 
   void ConservativelyMarkHeader(HeapObjectHeader*);
@@ -173,16 +195,25 @@ inline void MarkingVisitor::MarkHeader(HeapObjectHeader* header,
   }
 }
 
-inline void MarkingVisitor::WriteBarrier(void* value) {
+ALWAYS_INLINE void MarkingVisitor::WriteBarrier(void* value) {
 #if BUILDFLAG(BLINK_HEAP_INCREMENTAL_MARKING)
-  if (!ThreadState::IsAnyIncrementalMarking() || !value)
+  if (!ThreadState::IsAnyIncrementalMarking())
     return;
 
-  ThreadState* const thread_state = ThreadState::Current();
-  if (!thread_state->IsIncrementalMarking())
+  // Avoid any further checks and dispatch to a call at this point. Aggressive
+  // inlining otherwise pollutes the regular execution paths.
+  WriteBarrierSlow(value);
+#endif  // BUILDFLAG(BLINK_HEAP_INCREMENTAL_MARKING)
+}
+
+ALWAYS_INLINE void MarkingVisitor::TraceMarkedBackingStore(void* value) {
+#if BUILDFLAG(BLINK_HEAP_INCREMENTAL_MARKING)
+  if (!ThreadState::IsAnyIncrementalMarking())
     return;
 
-  thread_state->Heap().WriteBarrier(value);
+  // Avoid any further checks and dispatch to a call at this point. Aggressive
+  // inlining otherwise pollutes the regular execution paths.
+  TraceMarkedBackingStoreSlow(value);
 #endif  // BUILDFLAG(BLINK_HEAP_INCREMENTAL_MARKING)
 }
 

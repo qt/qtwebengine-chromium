@@ -34,10 +34,13 @@
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_cache_options.h"
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/dom/frame_request_callback_collection.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/frame/dom_timer_coordinator.h"
 #include "third_party/blink/renderer/core/frame/dom_window_base64.h"
+#include "third_party/blink/renderer/core/script/script.h"
+#include "third_party/blink/renderer/core/workers/worker_animation_frame_provider.h"
 #include "third_party/blink/renderer/core/workers/worker_or_worklet_global_scope.h"
 #include "third_party/blink/renderer/core/workers/worker_or_worklet_module_fetch_coordinator_proxy.h"
 #include "third_party/blink/renderer/core/workers/worker_settings.h"
@@ -126,9 +129,6 @@ class CORE_EXPORT WorkerGlobalScope
   // EventTarget
   ExecutionContext* GetExecutionContext() const final;
 
-  WorkerOrWorkletModuleFetchCoordinatorProxy* ModuleFetchCoordinatorProxy()
-      const;
-
   // Evaluates the given top-level classic script.
   virtual void EvaluateClassicScript(
       const KURL& script_url,
@@ -136,18 +136,25 @@ class CORE_EXPORT WorkerGlobalScope
       std::unique_ptr<Vector<char>> cached_meta_data);
 
   // Imports the top-level module script for |module_url_record|.
-  void ImportModuleScript(const KURL& module_url_record,
-                          network::mojom::FetchCredentialsMode);
+  virtual void ImportModuleScript(const KURL& module_url_record,
+                                  network::mojom::FetchCredentialsMode) = 0;
 
   double TimeOrigin() const { return time_origin_; }
   WorkerSettings* GetWorkerSettings() const { return worker_settings_.get(); }
 
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(const ScriptWrappableVisitor*) const override;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
   // TODO(fserb): This can be removed once we WorkerGlobalScope implements
   // FontFaceSource on the IDL.
   FontFaceSet* fonts();
+
+  int requestAnimationFrame(V8FrameRequestCallback* callback);
+  void cancelAnimationFrame(int id);
+
+  WorkerAnimationFrameProvider* GetAnimationFrameProvider() {
+    return animation_frame_provider_;
+  }
 
  protected:
   WorkerGlobalScope(std::unique_ptr<GlobalScopeCreationParams>,
@@ -194,11 +201,11 @@ class CORE_EXPORT WorkerGlobalScope
   EventTarget* ErrorEventTarget() final { return this; }
 
   const KURL url_;
+  const ScriptType script_type_;
   const String user_agent_;
   const base::UnguessableToken parent_devtools_token_;
   const V8CacheOptions v8_cache_options_;
   std::unique_ptr<WorkerSettings> worker_settings_;
-  Member<WorkerOrWorkletModuleFetchCoordinatorProxy> fetch_coordinator_proxy_;
 
   mutable Member<WorkerLocation> location_;
   mutable TraceWrapperMember<WorkerNavigator> navigator_;
@@ -215,6 +222,7 @@ class CORE_EXPORT WorkerGlobalScope
   int last_pending_error_event_id_ = 0;
 
   Member<OffscreenFontSelector> font_selector_;
+  Member<WorkerAnimationFrameProvider> animation_frame_provider_;
 
   service_manager::InterfaceProvider interface_provider_;
 };

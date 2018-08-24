@@ -4,13 +4,22 @@
 
 #include "third_party/blink/renderer/platform/scheduler/common/scheduler_helper.h"
 
+#include <utility>
+
 #include "base/time/default_tick_clock.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_argument.h"
 #include "third_party/blink/renderer/platform/scheduler/base/task_queue_impl.h"
+#include "third_party/blink/renderer/platform/scheduler/child/task_queue_with_task_type.h"
 
 namespace blink {
 namespace scheduler {
+
+using base::sequence_manager::RealTimeDomain;
+using base::sequence_manager::TaskQueue;
+using base::sequence_manager::TaskQueueManager;
+using base::sequence_manager::TaskTimeObserver;
+using base::sequence_manager::TimeDomain;
 
 SchedulerHelper::SchedulerHelper(
     std::unique_ptr<TaskQueueManager> task_queue_manager)
@@ -20,11 +29,13 @@ SchedulerHelper::SchedulerHelper(
 
 void SchedulerHelper::InitDefaultQueues(
     scoped_refptr<TaskQueue> default_task_queue,
-    scoped_refptr<TaskQueue> control_task_queue) {
+    scoped_refptr<TaskQueue> control_task_queue,
+    TaskType default_task_type) {
   control_task_queue->SetQueuePriority(TaskQueue::kControlPriority);
 
   DCHECK(task_queue_manager_);
-  task_queue_manager_->SetDefaultTaskRunner(default_task_queue);
+  task_queue_manager_->SetDefaultTaskRunner(
+      TaskQueueWithTaskType::Create(default_task_queue, default_task_type));
 }
 
 SchedulerHelper::~SchedulerHelper() {
@@ -127,6 +138,12 @@ base::TimeTicks SchedulerHelper::NowTicks() const {
     return task_queue_manager_->NowTicks();
   // We may need current time for tracing when shutting down worker thread.
   return base::TimeTicks::Now();
+}
+
+double SchedulerHelper::GetSamplingRateForRecordingCPUTime() const {
+  if (task_queue_manager_)
+    return task_queue_manager_->GetSamplingRateForRecordingCPUTime();
+  return 0;
 }
 
 }  // namespace scheduler

@@ -30,6 +30,7 @@
 class CPDF_Array;
 class CPDF_Document;
 class CPDF_Object;
+class CPDF_PatternCS;
 
 constexpr size_t kMaxPatternColorComps = 16;
 
@@ -48,8 +49,8 @@ class CPDF_ColorSpace {
                                                CPDF_Object* pCSObj);
   static std::unique_ptr<CPDF_ColorSpace> Load(
       CPDF_Document* pDoc,
-      CPDF_Object* pCSObj,
-      std::set<CPDF_Object*>* pVisited);
+      const CPDF_Object* pCSObj,
+      std::set<const CPDF_Object*>* pVisited);
 
   void Release();
 
@@ -84,7 +85,21 @@ class CPDF_ColorSpace {
                                   bool bTransMask) const;
   virtual void EnableStdConversion(bool bEnabled);
 
-  CPDF_Array* GetArray() const { return m_pArray.Get(); }
+  virtual bool IsNormal() const;
+
+  // Only call these 3 methods below if GetFamily() returns |PDFCS_PATTERN|.
+
+  // Returns |this| as a CPDF_PatternCS* if |this| is a pattern.
+  virtual CPDF_PatternCS* AsPatternCS();
+  virtual const CPDF_PatternCS* AsPatternCS() const;
+
+  // Use instead of GetRGB() for patterns.
+  virtual bool GetPatternRGB(const PatternValue& value,
+                             float* R,
+                             float* G,
+                             float* B) const;
+
+  const CPDF_Array* GetArray() const { return m_pArray.Get(); }
   CPDF_Document* GetDocument() const { return m_pDocument.Get(); }
 
  protected:
@@ -93,15 +108,15 @@ class CPDF_ColorSpace {
 
   // Returns the number of components, or 0 on failure.
   virtual uint32_t v_Load(CPDF_Document* pDoc,
-                          CPDF_Array* pArray,
-                          std::set<CPDF_Object*>* pVisited) = 0;
+                          const CPDF_Array* pArray,
+                          std::set<const CPDF_Object*>* pVisited) = 0;
 
   // Stock colorspaces are not loaded normally. This initializes their
   // components count.
   void SetComponentsForStockCS(uint32_t nComponents);
 
   UnownedPtr<CPDF_Document> const m_pDocument;
-  UnownedPtr<CPDF_Array> m_pArray;
+  UnownedPtr<const CPDF_Array> m_pArray;
   const int m_Family;
   uint32_t m_dwStdConversion = 0;
 

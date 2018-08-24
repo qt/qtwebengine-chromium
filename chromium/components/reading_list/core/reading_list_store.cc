@@ -125,7 +125,7 @@ void ReadingListStore::OnDatabaseLoad(
   auto loaded_entries =
       std::make_unique<ReadingListStoreDelegate::ReadingListEntries>();
 
-  for (const syncer::ModelTypeStore::Record& r : *entries.get()) {
+  for (const syncer::ModelTypeStore::Record& r : *entries) {
     reading_list::ReadingListLocal proto;
     if (!proto.ParseFromString(r.value)) {
       continue;
@@ -156,7 +156,7 @@ void ReadingListStore::OnReadAllMetadata(
   if (error) {
     change_processor()->ReportError({FROM_HERE, "Failed to read metadata."});
   } else {
-    change_processor()->ModelReadyToSync(this, std::move(metadata_batch));
+    change_processor()->ModelReadyToSync(std::move(metadata_batch));
   }
 }
 

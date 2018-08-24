@@ -22,21 +22,22 @@ namespace content {
 class FakeFlingController : public FlingController {
  public:
   FakeFlingController(GestureEventQueue* gesture_event_queue,
-                      TouchpadTapSuppressionControllerClient* touchpad_client,
-                      FlingControllerClient* fling_client,
+
+                      FlingControllerEventSenderClient* event_sender_client,
+                      FlingControllerSchedulerClient* scheduler_client,
                       const Config& config)
       : FlingController(gesture_event_queue,
-                        touchpad_client,
-                        fling_client,
+                        event_sender_client,
+                        scheduler_client,
                         config) {}
 
   bool FlingBoosted() const { return fling_booster_->fling_boosted(); }
 };
 
 class FlingControllerTest : public testing::Test,
-                            public TouchpadTapSuppressionControllerClient,
                             public GestureEventQueueClient,
-                            public FlingControllerClient {
+                            public FlingControllerEventSenderClient,
+                            public FlingControllerSchedulerClient {
  public:
   // testing::Test
   FlingControllerTest()
@@ -54,10 +55,6 @@ class FlingControllerTest : public testing::Test,
         features::kTouchpadAndWheelScrollLatching.name, "");
   }
 
-  // TouchpadTapSuppressionControllerClient
-  void SendMouseEventImmediately(
-      const MouseEventWithLatencyInfo& event) override {}
-
   // GestureEventQueueClient
   void SendGestureEventImmediately(
       const GestureEventWithLatencyInfo& event) override {}
@@ -65,7 +62,7 @@ class FlingControllerTest : public testing::Test,
                          InputEventAckSource ack_source,
                          InputEventAckState ack_result) override {}
 
-  // FlingControllerClient
+  // FlingControllerEventSenderClient
   void SendGeneratedWheelEvent(
       const MouseWheelEventWithLatencyInfo& wheel_event) override {
     last_sent_wheel_ = wheel_event.event;
@@ -74,20 +71,23 @@ class FlingControllerTest : public testing::Test,
       const GestureEventWithLatencyInfo& gesture_event) override {
     last_sent_gesture_ = gesture_event.event;
   }
-  void SetNeedsBeginFrameForFlingProgress() override {
+
+  // FlingControllerSchedulerClient
+  void ScheduleFlingProgress(
+      base::WeakPtr<FlingController> fling_controller) override {
     DCHECK(!scheduled_next_fling_progress_);
     scheduled_next_fling_progress_ = true;
   }
-  void DidStopFlingingOnBrowser() override {
+  void DidStopFlingingOnBrowser(
+      base::WeakPtr<FlingController> fling_controller) override {
     notified_client_after_fling_stop_ = true;
   }
 
   void SimulateFlingStart(blink::WebGestureDevice source_device,
                           const gfx::Vector2dF& velocity) {
     scheduled_next_fling_progress_ = false;
-    WebGestureEvent fling_start(
-        WebInputEvent::kGestureFlingStart, 0,
-        ui::EventTimeStampToSeconds(base::TimeTicks::Now()), source_device);
+    WebGestureEvent fling_start(WebInputEvent::kGestureFlingStart, 0,
+                                base::TimeTicks::Now(), source_device);
     fling_start.data.fling_start.velocity_x = velocity.x();
     fling_start.data.fling_start.velocity_y = velocity.y();
     GestureEventWithLatencyInfo fling_start_with_latency(fling_start);
@@ -97,9 +97,8 @@ class FlingControllerTest : public testing::Test,
 
   void SimulateFlingCancel(blink::WebGestureDevice source_device) {
     notified_client_after_fling_stop_ = false;
-    WebGestureEvent fling_cancel(
-        WebInputEvent::kGestureFlingCancel, 0,
-        ui::EventTimeStampToSeconds(base::TimeTicks::Now()), source_device);
+    WebGestureEvent fling_cancel(WebInputEvent::kGestureFlingCancel, 0,
+                                 base::TimeTicks::Now(), source_device);
     // autoscroll fling cancel doesn't allow fling boosting.
     if (source_device == blink::kWebGestureDeviceSyntheticAutoscroll)
       fling_cancel.data.fling_cancel.prevent_boosting = true;
@@ -257,9 +256,8 @@ TEST_F(FlingControllerTest,
   EXPECT_GT(last_sent_wheel_.delta_x, 0.f);
 
   // A non-consumed GSU ack in inertial state cancels out the rest of the fling.
-  WebGestureEvent scroll_update(
-      WebInputEvent::kGestureScrollUpdate, 0,
-      ui::EventTimeStampToSeconds(base::TimeTicks::Now()));
+  WebGestureEvent scroll_update(WebInputEvent::kGestureScrollUpdate, 0,
+                                base::TimeTicks::Now());
   scroll_update.data.scroll_update.inertial_phase =
       WebGestureEvent::kMomentumPhase;
 
@@ -286,9 +284,8 @@ TEST_F(FlingControllerTest,
   EXPECT_GT(last_sent_gesture_.data.scroll_update.delta_x, 0.f);
 
   // A non-consumed GSU ack in inertial state cancels out the rest of the fling.
-  WebGestureEvent scroll_update(
-      WebInputEvent::kGestureScrollUpdate, 0,
-      ui::EventTimeStampToSeconds(base::TimeTicks::Now()));
+  WebGestureEvent scroll_update(WebInputEvent::kGestureScrollUpdate, 0,
+                                base::TimeTicks::Now());
   scroll_update.data.scroll_update.inertial_phase =
       WebGestureEvent::kMomentumPhase;
 
@@ -352,7 +349,8 @@ TEST_F(FlingControllerTest, GestureFlingCancelsFiltered) {
   EXPECT_TRUE(last_fling_cancel_filtered_);
 }
 
-TEST_F(FlingControllerTest, GestureFlingNotCancelledBySmallTimeDelta) {
+// Flaky. https://crbug.com/836996.
+TEST_F(FlingControllerTest, DISABLED_GestureFlingNotCancelledBySmallTimeDelta) {
   base::TimeTicks progress_time = base::TimeTicks::Now();
   SimulateFlingStart(blink::kWebGestureDeviceTouchscreen,
                      gfx::Vector2dF(1000, 0));

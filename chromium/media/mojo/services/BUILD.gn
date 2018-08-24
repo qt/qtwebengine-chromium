@@ -32,8 +32,6 @@ component("services") {
     "mojo_audio_decoder_service.h",
     "mojo_audio_input_stream.cc",
     "mojo_audio_input_stream.h",
-    "mojo_audio_input_stream_observer.cc",
-    "mojo_audio_input_stream_observer.h",
     "mojo_audio_output_stream.cc",
     "mojo_audio_output_stream.h",
     "mojo_audio_output_stream_provider.cc",
@@ -103,7 +101,6 @@ component("services") {
     "//media/gpu/ipc/service",
     "//media/mojo/common",
     "//media/mojo/common:mojo_shared_buffer_video_frame",
-    "//mojo/common",
     "//services/metrics/public/cpp:metrics_cpp",
     "//services/metrics/public/cpp:ukm_builders",
     "//services/service_manager/public/mojom",
@@ -133,7 +130,11 @@ component("services") {
       "mojo_cdm_proxy_service.cc",
       "mojo_cdm_proxy_service.h",
     ]
-    deps += [ "//media/cdm:cdm_api" ]
+    deps += [
+      "//media/cdm:cdm_api",
+      "//media/cdm:cdm_paths",
+      "//media/cdm/library_cdm/clear_key_cdm:clear_key_cdm_proxy",
+    ]
 
     # TODO(xhwang): Ideally media should not worry about sandbox. Find a way to
     # remove this dependency.
@@ -161,7 +162,6 @@ source_set("unit_tests") {
   sources = [
     "deferred_destroy_strong_binding_set_unittest.cc",
     "media_metrics_provider_unittest.cc",
-    "mojo_audio_input_stream_observer_unittest.cc",
     "mojo_audio_input_stream_unittest.cc",
     "mojo_audio_output_stream_provider_unittest.cc",
     "mojo_audio_output_stream_unittest.cc",
@@ -238,6 +238,7 @@ service_test("media_service_unittests") {
     ":services",
     "//base",
     "//media:test_support",
+    "//media/cdm:cdm_paths",
     "//media/mojo/clients",
     "//media/mojo/common",
     "//media/mojo/interfaces",

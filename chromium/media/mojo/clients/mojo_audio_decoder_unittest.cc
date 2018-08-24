@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
@@ -65,7 +66,7 @@ class MojoAudioDecoderTest : public ::testing::Test {
         message_loop_.task_runner(), std::move(remote_audio_decoder)));
   }
 
-  virtual ~MojoAudioDecoderTest() {
+  ~MojoAudioDecoderTest() override {
     // Destroy |mojo_audio_decoder_| first so that the service will be
     // destructed. Then stop the service thread. Otherwise we'll leak memory.
     mojo_audio_decoder_.reset();
@@ -140,7 +141,7 @@ class MojoAudioDecoderTest : public ::testing::Test {
         base::Bind(&MojoAudioDecoderTest::OnInitialized,
                    base::Unretained(this)),
         base::Bind(&MojoAudioDecoderTest::OnOutput, base::Unretained(this)),
-        AudioDecoder::WaitingForDecryptionKeyCB());
+        base::NullCallback());
 
     RunLoop();
   }

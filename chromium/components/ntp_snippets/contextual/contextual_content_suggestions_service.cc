@@ -11,23 +11,27 @@
 
 #include "base/bind.h"
 #include "base/memory/ptr_util.h"
-#include "components/ntp_snippets/contextual/cluster.h"
+#include "components/ntp_snippets/contextual/contextual_suggestions_result.h"
 #include "components/ntp_snippets/remote/cached_image_fetcher.h"
 #include "components/ntp_snippets/remote/remote_suggestions_database.h"
 #include "components/ntp_snippets/remote/remote_suggestions_provider_impl.h"
 #include "contextual_content_suggestions_service_proxy.h"
 #include "ui/gfx/image/image.h"
 
-namespace ntp_snippets {
+namespace contextual_suggestions {
 
-using contextual_suggestions::Cluster;
-using contextual_suggestions::ContextualSuggestionsMetricsReporterProvider;
-using contextual_suggestions::FetchClustersCallback;
+using ntp_snippets::ContentSuggestion;
+using ntp_snippets::ImageDataFetchedCallback;
+using ntp_snippets::ImageFetchedCallback;
+using ntp_snippets::CachedImageFetcher;
+using ntp_snippets::RemoteSuggestionsDatabase;
 
 namespace {
 bool IsEligibleURL(const GURL& url) {
   return url.is_valid() && url.SchemeIsHTTPOrHTTPS() && !url.HostIsIPAddress();
 }
+
+static constexpr float kMinimumConfidence = 0.75;
 
 }  // namespace
 
@@ -36,14 +40,13 @@ ContextualContentSuggestionsService::ContextualContentSuggestionsService(
         contextual_suggestions_fetcher,
     std::unique_ptr<CachedImageFetcher> image_fetcher,
     std::unique_ptr<RemoteSuggestionsDatabase> contextual_suggestions_database,
-    std::unique_ptr<ContextualSuggestionsMetricsReporterProvider>
-        metrics_reporter_provider)
+    std::unique_ptr<ContextualSuggestionsReporterProvider> reporter_provider)
     : contextual_suggestions_database_(
           std::move(contextual_suggestions_database)),
       contextual_suggestions_fetcher_(
           std::move(contextual_suggestions_fetcher)),
       image_fetcher_(std::move(image_fetcher)),
-      metrics_reporter_provider_(std::move(metrics_reporter_provider)) {}
+      reporter_provider_(std::move(reporter_provider)) {}
 
 ContextualContentSuggestionsService::~ContextualContentSuggestionsService() =
     default;
@@ -54,10 +57,14 @@ void ContextualContentSuggestionsService::FetchContextualSuggestionClusters(
     ReportFetchMetricsCallback metrics_callback) {
   // TODO(pnoland): Also check that the url is safe.
   if (IsEligibleURL(url)) {
+    FetchClustersCallback internal_callback = base::BindOnce(
+        &ContextualContentSuggestionsService::FetchDone, base::Unretained(this),
+        std::move(callback), metrics_callback);
     contextual_suggestions_fetcher_->FetchContextualSuggestionsClusters(
-        url, std::move(callback), std::move(metrics_callback));
+        url, std::move(internal_callback), metrics_callback);
   } else {
-    std::move(callback).Run("", {});
+    std::move(callback).Run(
+        ContextualSuggestionsResult("", {}, PeekConditions()));
   }
 }
 
@@ -70,20 +77,18 @@ void ContextualContentSuggestionsService::FetchContextualSuggestionImage(
                                        std::move(callback));
 }
 
-void ContextualContentSuggestionsService::FetchContextualSuggestionImageLegacy(
-    const ContentSuggestion::ID& suggestion_id,
-    ImageFetchedCallback callback) {
-  const std::string& id_within_category = suggestion_id.id_within_category();
-  auto image_url_iterator = image_url_by_id_.find(id_within_category);
-  if (image_url_iterator == image_url_by_id_.end()) {
-    DVLOG(1) << "FetchContextualSuggestionImage unknown image"
-             << " id_within_category: " << id_within_category;
-    std::move(callback).Run(gfx::Image());
+void ContextualContentSuggestionsService::FetchDone(
+    FetchClustersCallback callback,
+    ReportFetchMetricsCallback metrics_callback,
+    ContextualSuggestionsResult result) {
+  if (result.peek_conditions.confidence < kMinimumConfidence) {
+    metrics_callback.Run(contextual_suggestions::FETCH_BELOW_THRESHOLD);
+    std::move(callback).Run(
+        ContextualSuggestionsResult("", {}, PeekConditions()));
     return;
   }
 
-  GURL image_url = image_url_iterator->second;
-  FetchContextualSuggestionImage(suggestion_id, image_url, std::move(callback));
+  std::move(callback).Run(result);
 }
 
 std::unique_ptr<
@@ -91,7 +96,7 @@ std::unique_ptr<
 ContextualContentSuggestionsService::CreateProxy() {
   return std::make_unique<
       contextual_suggestions::ContextualContentSuggestionsServiceProxy>(
-      this, metrics_reporter_provider_->CreateMetricsReporter());
+      this, reporter_provider_->CreateReporter());
 }
 
-}  // namespace ntp_snippets
+}  // namespace contextual_suggestions

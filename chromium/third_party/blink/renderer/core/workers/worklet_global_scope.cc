@@ -40,7 +40,7 @@ WorkletGlobalScope::WorkletGlobalScope(
       document_secure_context_(creation_params->starter_secure_context),
       fetch_coordinator_proxy_(
           WorkerOrWorkletModuleFetchCoordinatorProxy::Create(
-              creation_params->module_fetch_coordinator,
+              creation_params->module_responses_map,
               std::move(document_loading_task_runner),
               std::move(worklet_loading_task_runner))) {
   // Step 2: "Let inheritedAPIBaseURL be outsideSettings's API base URL."
@@ -101,7 +101,11 @@ void WorkletGlobalScope::FetchAndInvokeScript(
   WorkletModuleTreeClient* client = new WorkletModuleTreeClient(
       modulator, std::move(outside_settings_task_runner), pending_tasks);
 
-  FetchModuleScript(module_url_record, credentials_mode, client);
+  // TODO(nhiroki): Specify an appropriate destination defined in each worklet
+  // spec (e.g., "paint worklet", "audio worklet").
+  WebURLRequest::RequestContext destination =
+      WebURLRequest::kRequestContextScript;
+  FetchModuleScript(module_url_record, destination, credentials_mode, client);
 }
 
 WorkerOrWorkletModuleFetchCoordinatorProxy*
@@ -126,8 +130,7 @@ void WorkletGlobalScope::Trace(blink::Visitor* visitor) {
   WorkerOrWorkletGlobalScope::Trace(visitor);
 }
 
-void WorkletGlobalScope::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+void WorkletGlobalScope::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   WorkerOrWorkletGlobalScope::TraceWrappers(visitor);
 }
 

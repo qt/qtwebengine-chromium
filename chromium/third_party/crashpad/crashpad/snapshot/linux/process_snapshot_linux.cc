@@ -21,19 +21,9 @@
 
 namespace crashpad {
 
-ProcessSnapshotLinux::ProcessSnapshotLinux()
-    : ProcessSnapshot(),
-      annotations_simple_map_(),
-      snapshot_time_(),
-      report_id_(),
-      client_id_(),
-      threads_(),
-      exception_(),
-      system_(),
-      process_reader_(),
-      initialized_() {}
+ProcessSnapshotLinux::ProcessSnapshotLinux() = default;
 
-ProcessSnapshotLinux::~ProcessSnapshotLinux() {}
+ProcessSnapshotLinux::~ProcessSnapshotLinux() = default;
 
 bool ProcessSnapshotLinux::Initialize(PtraceConnection* connection) {
   INITIALIZATION_STATE_SET_INITIALIZING(initialized_);
@@ -43,11 +33,14 @@ bool ProcessSnapshotLinux::Initialize(PtraceConnection* connection) {
     return false;
   }
 
-  if (!process_reader_.Initialize(connection)) {
+  if (!process_reader_.Initialize(connection) ||
+      !memory_range_.Initialize(process_reader_.Memory(),
+                                process_reader_.Is64Bit())) {
     return false;
   }
 
   system_.Initialize(&process_reader_, &snapshot_time_);
+
   InitializeThreads();
   InitializeModules();
 
@@ -76,7 +69,36 @@ bool ProcessSnapshotLinux::InitializeException(
     return false;
   }
 
-  return true;
+  // The thread's existing snapshot will have captured the stack for the signal
+  // handler. Replace it with a thread snapshot which captures the stack for the
+  // exception context.
+  for (const auto& reader_thread : process_reader_.Threads()) {
+    if (reader_thread.tid == info.thread_id) {
+      ProcessReaderLinux::Thread thread = reader_thread;
+      thread.InitializeStackFromSP(&process_reader_,
+                                   exception_->Context()->StackPointer());
+
+      auto exc_thread_snapshot =
+          std::make_unique<internal::ThreadSnapshotLinux>();
+      if (!exc_thread_snapshot->Initialize(&process_reader_, thread)) {
+        return false;
+      }
+
+      for (auto& thread_snapshot : threads_) {
+        if (thread_snapshot->ThreadID() ==
+            static_cast<uint64_t>(info.thread_id)) {
+          thread_snapshot.reset(exc_thread_snapshot.release());
+          return true;
+        }
+      }
+
+      LOG(ERROR) << "thread not found " << info.thread_id;
+      return false;
+    }
+  }
+
+  LOG(ERROR) << "thread not found " << info.thread_id;
+  return false;
 }
 
 void ProcessSnapshotLinux::GetCrashpadOptions(
@@ -227,8 +249,11 @@ void ProcessSnapshotLinux::InitializeThreads() {
 void ProcessSnapshotLinux::InitializeModules() {
   for (const ProcessReaderLinux::Module& reader_module :
        process_reader_.Modules()) {
-    auto module = std::make_unique<internal::ModuleSnapshotElf>(
-        reader_module.name, reader_module.elf_reader, reader_module.type);
+    auto module =
+        std::make_unique<internal::ModuleSnapshotElf>(reader_module.name,
+                                                      reader_module.elf_reader,
+                                                      reader_module.type,
+                                                      &memory_range_);
     if (module->Initialize()) {
       modules_.push_back(std::move(module));
     }

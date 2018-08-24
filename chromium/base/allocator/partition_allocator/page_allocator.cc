@@ -22,10 +22,10 @@
 #include <windows.h>
 #endif
 
-#if defined(OS_POSIX)
-#include "base/allocator/partition_allocator/page_allocator_internals_posix.h"
-#elif defined(OS_WIN)
+#if defined(OS_WIN)
 #include "base/allocator/partition_allocator/page_allocator_internals_win.h"
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
+#include "base/allocator/partition_allocator/page_allocator_internals_posix.h"
 #else
 #error Platform not supported.
 #endif
@@ -119,8 +119,8 @@ void* AllocPages(void* address,
   if (length >= kMinimumGuardedMemorySize) {
     CHECK_EQ(PageInaccessible, accessibility);
     CHECK(!commit);
-    if (AdjustAddressSpaceLimit(base::checked_cast<int64_t>(length))) {
-      DLOG(WARNING) << "Could not address space by " << length;
+    if (!AdjustAddressSpaceLimit(base::checked_cast<int64_t>(length))) {
+      DLOG(WARNING) << "Could not adjust address space by " << length;
       // Fall through. Try the allocation, since we may have a reserve.
     }
   }

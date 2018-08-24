@@ -19,6 +19,8 @@ struct BlockMemberInfo;
 
 namespace rx
 {
+class BlitGL;
+class ClearMultiviewGL;
 class FunctionsGL;
 class RendererGL;
 class StateManagerGL;
@@ -53,7 +55,7 @@ class ContextGL : public ContextImpl
     VertexArrayImpl *createVertexArray(const gl::VertexArrayState &data) override;
 
     // Query and Fence creation
-    QueryImpl *createQuery(GLenum type) override;
+    QueryImpl *createQuery(gl::QueryType type) override;
     FenceNVImpl *createFenceNV() override;
     SyncImpl *createSync() override;
 
@@ -193,6 +195,8 @@ class ContextGL : public ContextImpl
     const FunctionsGL *getFunctions() const;
     StateManagerGL *getStateManager();
     const WorkaroundsGL &getWorkaroundsGL() const;
+    BlitGL *getBlitter() const;
+    ClearMultiviewGL *getMultiviewClearer() const;
 
     gl::Error dispatchCompute(const gl::Context *context,
                               GLuint numGroupsX,

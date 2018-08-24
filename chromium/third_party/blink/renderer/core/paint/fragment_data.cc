@@ -71,8 +71,10 @@ const ClipPaintPropertyNode* FragmentData::PreClip() const {
 
 const ClipPaintPropertyNode* FragmentData::PostOverflowClip() const {
   if (const auto* properties = PaintProperties()) {
-    if (const auto* clip = properties->OverflowOrInnerBorderRadiusClip())
-      return clip;
+    if (properties->OverflowClip())
+      return properties->OverflowClip();
+    if (properties->InnerBorderRadiusClip())
+      return properties->InnerBorderRadiusClip();
   }
   return LocalBorderBoxProperties().Clip();
 }
@@ -100,11 +102,11 @@ void FragmentData::InvalidateClipPathCache() {
     return;
 
   rare_data_->is_clip_path_cache_valid = false;
-  rare_data_->clip_path_bounding_box = WTF::nullopt;
+  rare_data_->clip_path_bounding_box = base::nullopt;
   rare_data_->clip_path_path = nullptr;
 }
 
-void FragmentData::SetClipPathCache(const Optional<IntRect>& bounding_box,
+void FragmentData::SetClipPathCache(const base::Optional<IntRect>& bounding_box,
                                     scoped_refptr<const RefCountedPath> path) {
   EnsureRareData().is_clip_path_cache_valid = true;
   rare_data_->clip_path_bounding_box = bounding_box;

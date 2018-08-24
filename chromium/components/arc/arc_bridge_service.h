@@ -40,6 +40,8 @@ class FileSystemHost;
 class FileSystemInstance;
 class ImeHost;
 class ImeInstance;
+class InputMethodManagerHost;
+class InputMethodManagerInstance;
 class IntentHelperHost;
 class IntentHelperInstance;
 class KioskHost;
@@ -51,8 +53,6 @@ class MidisHost;
 class MidisInstance;
 class NetHost;
 class NetInstance;
-class NotificationsHost;
-class NotificationsInstance;
 class ObbMounterHost;
 class ObbMounterInstance;
 class OemCryptoHost;
@@ -146,6 +146,11 @@ class ArcBridgeService {
     return &file_system_;
   }
   ConnectionHolder<mojom::ImeInstance, mojom::ImeHost>* ime() { return &ime_; }
+  ConnectionHolder<mojom::InputMethodManagerInstance,
+                   mojom::InputMethodManagerHost>*
+  input_method_manager() {
+    return &input_method_manager_;
+  }
   ConnectionHolder<mojom::IntentHelperInstance, mojom::IntentHelperHost>*
   intent_helper() {
     return &intent_helper_;
@@ -163,10 +168,6 @@ class ArcBridgeService {
     return &midis_;
   }
   ConnectionHolder<mojom::NetInstance, mojom::NetHost>* net() { return &net_; }
-  ConnectionHolder<mojom::NotificationsInstance, mojom::NotificationsHost>*
-  notifications() {
-    return &notifications_;
-  }
   ConnectionHolder<mojom::ObbMounterInstance, mojom::ObbMounterHost>*
   obb_mounter() {
     return &obb_mounter_;
@@ -250,6 +251,9 @@ class ArcBridgeService {
   ConnectionHolder<mojom::FileSystemInstance, mojom::FileSystemHost>
       file_system_;
   ConnectionHolder<mojom::ImeInstance, mojom::ImeHost> ime_;
+  ConnectionHolder<mojom::InputMethodManagerInstance,
+                   mojom::InputMethodManagerHost>
+      input_method_manager_;
   ConnectionHolder<mojom::IntentHelperInstance, mojom::IntentHelperHost>
       intent_helper_;
   ConnectionHolder<mojom::KioskInstance, mojom::KioskHost> kiosk_;
@@ -257,8 +261,6 @@ class ArcBridgeService {
   ConnectionHolder<mojom::MetricsInstance, mojom::MetricsHost> metrics_;
   ConnectionHolder<mojom::MidisInstance, mojom::MidisHost> midis_;
   ConnectionHolder<mojom::NetInstance, mojom::NetHost> net_;
-  ConnectionHolder<mojom::NotificationsInstance, mojom::NotificationsHost>
-      notifications_;
   ConnectionHolder<mojom::ObbMounterInstance, mojom::ObbMounterHost>
       obb_mounter_;
   ConnectionHolder<mojom::OemCryptoInstance, mojom::OemCryptoHost> oemcrypto_;

@@ -353,7 +353,6 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   virtual bool IsNativeSlider() const { return false; }
   virtual bool IsMoveableSplitter() const { return false; }
   virtual bool IsSpinButton() const { return RoleValue() == kSpinButtonRole; }
-  virtual bool IsSpinButtonPart() const { return false; }
   bool IsTabItem() const { return RoleValue() == kTabRole; }
   virtual bool IsTableCell() const { return false; }
   virtual bool IsTableRow() const { return false; }
@@ -380,6 +379,8 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   virtual AccessibilitySelectedState IsSelected() const {
     return kSelectedStateUndefined;
   }
+  // Is the object selected because selection is following focus?
+  virtual bool IsSelectedFromFocus() const { return false; }
   virtual bool IsSelectedOptionActive() const { return false; }
   virtual bool IsVisible() const { return true; }
   virtual bool IsVisited() const { return false; }
@@ -487,7 +488,7 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   // Used by objects of role ColorWellRole.
   virtual RGBA32 ColorValue() const { return Color::kTransparent; }
   virtual bool CanvasHasFallbackContent() const { return false; }
-  virtual String FontFamily() const { return g_null_atom; }
+  virtual AtomicString FontFamily() const { return g_null_atom; }
   // Font size is in pixels.
   virtual float FontSize() const { return 0.0f; }
   // Value should be 1-based. 0 means not supported.
@@ -506,6 +507,7 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   virtual AccessibilityTextDirection GetTextDirection() const {
     return kAccessibilityTextDirectionLTR;
   }
+  virtual AXTextPosition GetTextPosition() const { return kAXTextPositionNone; }
   virtual int TextLength() const { return 0; }
   virtual TextStyle GetTextStyle() const { return kTextStyleNone; }
   virtual AXObjectVector RadioButtonsInGroup() const {
@@ -560,7 +562,7 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   virtual String AriaAutoComplete() const { return String(); }
   virtual void AriaOwnsElements(AXObjectVector& owns) const {}
   virtual void AriaDescribedbyElements(AXObjectVector&) const {}
-  virtual bool AriaHasPopup() const { return false; }
+  virtual AXHasPopup HasPopup() const { return kAXHasPopupFalse; }
   virtual bool IsEditable() const { return false; }
   bool IsEditableRoot() const;
   virtual bool ComputeIsEditableRoot() const { return false; }
@@ -686,7 +688,7 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   virtual LocalFrameView* DocumentFrameView() const;
   virtual Element* AnchorElement() const { return nullptr; }
   virtual Element* ActionElement() const { return nullptr; }
-  String Language() const;
+  virtual AtomicString Language() const;
   bool HasAttribute(const QualifiedName&) const;
   const AtomicString& GetAttribute(const QualifiedName&) const;
 
@@ -734,6 +736,13 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   bool RequestSetSequentialFocusNavigationStartingPointAction();
   bool RequestSetValueAction(const String&);
   bool RequestShowContextMenuAction();
+
+  // These are actions, just like the actions above, and they allow us
+  // to keep track of nodes that gain or lose accessibility focus, but
+  // this isn't exposed to the open web so they're explicitly marked as
+  // internal so it's clear that these should not dispatch DOM events.
+  virtual bool InternalClearAccessibilityFocusAction();
+  virtual bool InternalSetAccessibilityFocusAction();
 
   // Native implementations of actions that aren't handled by AOM
   // event listeners. These all return true if handled.

@@ -14,7 +14,6 @@
 #include "base/debug/alias.h"
 #include "base/debug/stack_trace.h"
 #include "base/files/file_path.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/rand_util.h"
 #include "base/strings/string_util.h"
@@ -24,6 +23,7 @@
 #include "content/common/inter_process_time_ticks_converter.h"
 #include "content/common/navigation_params.h"
 #include "content/common/throttling_url_loader.h"
+#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/resource_load_info.mojom.h"
 #include "content/public/common/resource_type.h"
 #include "content/public/renderer/fixed_received_data.h"
@@ -119,6 +119,20 @@ void NotifyResourceLoadComplete(
       std::move(resource_load_info));
 }
 
+// Returns true if the headers indicate that this resource should always be
+// revalidated or not cached.
+bool AlwaysAccessNetwork(
+    const scoped_refptr<net::HttpResponseHeaders>& headers) {
+  if (!headers)
+    return false;
+
+  // RFC 2616, section 14.9.
+  return headers->HasHeaderValue("cache-control", "no-cache") ||
+         headers->HasHeaderValue("cache-control", "no-store") ||
+         headers->HasHeaderValue("pragma", "no-cache") ||
+         headers->HasHeaderValue("vary", "*");
+}
+
 int GetInitialRequestID() {
   // Starting with a random number speculatively avoids RDH_INVALID_REQUEST_ID
   // which are assumed to have been caused by restarting RequestID at 0 when
@@ -172,13 +186,35 @@ void ResourceDispatcher::OnUploadProgress(int request_id,
 
 void ResourceDispatcher::OnReceivedResponse(
     int request_id,
-    const network::ResourceResponseHead& response_head) {
+    const network::ResourceResponseHead& initial_response_head) {
   TRACE_EVENT0("loader", "ResourceDispatcher::OnReceivedResponse");
   PendingRequestInfo* request_info = GetPendingRequestInfo(request_id);
   if (!request_info)
     return;
-  request_info->response_start = base::TimeTicks::Now();
+  request_info->local_response_start = base::TimeTicks::Now();
+  request_info->remote_request_start =
+      initial_response_head.load_timing.request_start;
+  // Now that response_start has been set, we can properly set the TimeTicks in
+  // the ResourceResponseInfo.
+  network::ResourceResponseInfo renderer_response_info;
+  ToResourceResponseInfo(*request_info, initial_response_head,
+                         &renderer_response_info);
+  request_info->load_timing_info = renderer_response_info.load_timing;
 
+  network::ResourceResponseHead response_head;
+  std::unique_ptr<NavigationResponseOverrideParameters> response_override =
+      std::move(request_info->navigation_response_override);
+  if (response_override) {
+    CHECK(IsBrowserSideNavigationEnabled());
+    response_head = response_override->response;
+  } else {
+    response_head = initial_response_head;
+  }
+
+  request_info->mime_type = response_head.mime_type;
+  request_info->network_accessed = response_head.network_accessed;
+  request_info->always_access_network =
+      AlwaysAccessNetwork(response_head.headers);
   if (delegate_) {
     std::unique_ptr<RequestPeer> new_peer = delegate_->OnReceivedResponse(
         std::move(request_info->peer), response_head.mime_type,
@@ -186,14 +222,7 @@ void ResourceDispatcher::OnReceivedResponse(
     DCHECK(new_peer);
     request_info->peer = std::move(new_peer);
   }
-
-  if (!response_head.socket_address.host().empty()) {
-    ignore_result(request_info->parsed_ip.AssignFromIPLiteral(
-        response_head.socket_address.host()));
-  }
-
-  request_info->mime_type = response_head.mime_type;
-  request_info->network_accessed = response_head.network_accessed;
+  request_info->host_port_pair = renderer_response_info.socket_address;
   if (!IsResourceTypeFrame(request_info->resource_type)) {
     NotifySubresourceStarted(RenderThreadImpl::DeprecatedGetMainTaskRunner(),
                              request_info->render_frame_id,
@@ -201,8 +230,6 @@ void ResourceDispatcher::OnReceivedResponse(
                              response_head.cert_status);
   }
 
-  network::ResourceResponseInfo renderer_response_info;
-  ToResourceResponseInfo(*request_info, response_head, &renderer_response_info);
   request_info->peer->OnReceivedResponse(renderer_response_info);
 }
 
@@ -248,7 +275,8 @@ void ResourceDispatcher::OnReceivedRedirect(
   PendingRequestInfo* request_info = GetPendingRequestInfo(request_id);
   if (!request_info)
     return;
-  request_info->response_start = base::TimeTicks::Now();
+  request_info->local_response_start = base::TimeTicks::Now();
+  request_info->remote_request_start = response_head.load_timing.request_start;
 
   network::ResourceResponseInfo renderer_response_info;
   ToResourceResponseInfo(*request_info, response_head, &renderer_response_info);
@@ -264,9 +292,19 @@ void ResourceDispatcher::OnReceivedRedirect(
     request_info->response_method = redirect_info.new_method;
     request_info->response_referrer = GURL(redirect_info.new_referrer);
     request_info->has_pending_redirect = true;
-    if (!request_info->is_deferred) {
+    mojom::RedirectInfoPtr net_redirect_info = mojom::RedirectInfo::New();
+    net_redirect_info->url = redirect_info.new_url;
+    net_redirect_info->network_info = mojom::CommonNetworkInfo::New();
+    net_redirect_info->network_info->network_accessed =
+        response_head.network_accessed;
+    net_redirect_info->network_info->always_access_network =
+        AlwaysAccessNetwork(response_head.headers);
+    net_redirect_info->network_info->ip_port_pair =
+        response_head.socket_address;
+    request_info->redirect_info_chain.push_back(std::move(net_redirect_info));
+
+    if (!request_info->is_deferred)
       FollowPendingRedirect(request_info);
-    }
   } else {
     Cancel(request_id, std::move(task_runner));
   }
@@ -274,8 +312,11 @@ void ResourceDispatcher::OnReceivedRedirect(
 
 void ResourceDispatcher::FollowPendingRedirect(
     PendingRequestInfo* request_info) {
-  if (request_info->has_pending_redirect) {
+  if (request_info->has_pending_redirect &&
+      request_info->should_follow_redirect) {
     request_info->has_pending_redirect = false;
+    // net::URLRequest clears its request_start on redirect, so should we.
+    request_info->local_request_start = base::TimeTicks::Now();
     request_info->url_loader->FollowRedirect();
   }
 }
@@ -288,7 +329,6 @@ void ResourceDispatcher::OnRequestComplete(
   PendingRequestInfo* request_info = GetPendingRequestInfo(request_id);
   if (!request_info)
     return;
-  request_info->completion_time = base::TimeTicks::Now();
   request_info->buffer.reset();
   request_info->buffer_size = 0;
 
@@ -299,13 +339,21 @@ void ResourceDispatcher::OnRequestComplete(
   resource_load_info->method = request_info->response_method;
   resource_load_info->resource_type = request_info->resource_type;
   resource_load_info->request_id = request_id;
-  if (request_info->parsed_ip.IsValid())
-    resource_load_info->ip = request_info->parsed_ip;
   resource_load_info->mime_type = request_info->mime_type;
-  resource_load_info->network_accessed = request_info->network_accessed;
+  resource_load_info->network_info = mojom::CommonNetworkInfo::New();
+  resource_load_info->network_info->network_accessed =
+      request_info->network_accessed;
+  resource_load_info->network_info->always_access_network =
+      request_info->always_access_network;
+  resource_load_info->network_info->ip_port_pair = request_info->host_port_pair;
+  resource_load_info->load_timing_info = request_info->load_timing_info;
   resource_load_info->was_cached = status.exists_in_cache;
   resource_load_info->net_error = status.error_code;
-  resource_load_info->request_start = request_info->request_start;
+  resource_load_info->redirect_info_chain =
+      std::move(request_info->redirect_info_chain);
+  resource_load_info->total_received_bytes = status.encoded_data_length;
+  resource_load_info->raw_body_bytes = status.encoded_body_length;
+
   NotifyResourceLoadComplete(RenderThreadImpl::DeprecatedGetMainTaskRunner(),
                              request_info->render_frame_id,
                              std::move(resource_load_info));
@@ -320,15 +368,34 @@ void ResourceDispatcher::OnRequestComplete(
     request_info->peer = std::move(new_peer);
   }
 
+  network::URLLoaderCompletionStatus renderer_status(status);
+  if (status.completion_time.is_null()) {
+    // No completion timestamp is provided, leave it as is.
+  } else if (request_info->remote_request_start.is_null() ||
+             request_info->load_timing_info.request_start.is_null()) {
+    // We cannot convert the remote time to a local time, let's use the current
+    // timestamp. This happens when
+    //  - We get an error before OnReceivedRedirect or OnReceivedResponse is
+    //    called, or
+    //  - Somehow such a timestamp was missing in the LoadTimingInfo.
+    renderer_status.completion_time = base::TimeTicks::Now();
+  } else {
+    // We have already converted the request start timestamp, let's use that
+    // conversion information.
+    // Note: We cannot create a InterProcessTimeTicksConverter with
+    // (local_request_start, now, remote_request_start, remote_completion_time)
+    // as that may result in inconsistent timestamps.
+    renderer_status.completion_time =
+        std::min(status.completion_time - request_info->remote_request_start +
+                     request_info->load_timing_info.request_start,
+                 base::TimeTicks::Now());
+  }
   // The request ID will be removed from our pending list in the destructor.
   // Normally, dispatching this message causes the reference-counted request to
   // die immediately.
   // TODO(kinuko): Revisit here. This probably needs to call request_info->peer
   // but the past attempt to change it seems to have caused crashes.
   // (crbug.com/547047)
-  network::URLLoaderCompletionStatus renderer_status(status);
-  renderer_status.completion_time =
-      ToRendererCompletionTime(*request_info, status.completion_time);
   peer->OnCompletedRequest(renderer_status);
 }
 
@@ -427,7 +494,9 @@ ResourceDispatcher::PendingRequestInfo::PendingRequestInfo(
     const GURL& request_url,
     const std::string& method,
     const GURL& referrer,
-    bool download_to_file)
+    bool download_to_file,
+    std::unique_ptr<NavigationResponseOverrideParameters>
+        navigation_response_override_params)
     : peer(std::move(peer)),
       resource_type(resource_type),
       render_frame_id(render_frame_id),
@@ -436,7 +505,10 @@ ResourceDispatcher::PendingRequestInfo::PendingRequestInfo(
       response_method(method),
       response_referrer(referrer),
       download_to_file(download_to_file),
-      request_start(base::TimeTicks::Now()) {}
+      local_request_start(base::TimeTicks::Now()),
+      buffer_size(0),
+      navigation_response_override(
+          std::move(navigation_response_override_params)) {}
 
 ResourceDispatcher::PendingRequestInfo::~PendingRequestInfo() {
 }
@@ -449,12 +521,13 @@ void ResourceDispatcher::StartSync(
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
     double timeout,
-    blink::mojom::BlobRegistryPtrInfo download_to_blob_registry) {
+    blink::mojom::BlobRegistryPtrInfo download_to_blob_registry,
+    std::unique_ptr<RequestPeer> peer) {
   CheckSchemeForReferrerPolicy(*request);
 
   std::unique_ptr<network::SharedURLLoaderFactoryInfo> factory_info =
       url_loader_factory->Clone();
-  base::WaitableEvent completed_event(
+  base::WaitableEvent redirect_or_response_event(
       base::WaitableEvent::ResetPolicy::MANUAL,
       base::WaitableEvent::InitialState::NOT_SIGNALED);
 
@@ -474,10 +547,32 @@ void ResourceDispatcher::StartSync(
                      std::move(request), routing_id, task_runner,
                      traffic_annotation, std::move(factory_info),
                      std::move(throttles), base::Unretained(response),
-                     base::Unretained(&completed_event),
+                     base::Unretained(&redirect_or_response_event),
                      base::Unretained(terminate_sync_load_event_), timeout,
                      std::move(download_to_blob_registry)));
-  completed_event.Wait();
+
+  // redirect_or_response_event will signal when each redirect completes, and
+  // when the final response is complete.
+  redirect_or_response_event.Wait();
+
+  while (response->context_for_redirect) {
+    DCHECK(response->redirect_info);
+    bool follow_redirect =
+        peer->OnReceivedRedirect(*response->redirect_info, response->info);
+    redirect_or_response_event.Reset();
+    if (follow_redirect) {
+      task_runner->PostTask(
+          FROM_HERE,
+          base::BindOnce(&SyncLoadContext::FollowRedirect,
+                         base::Unretained(response->context_for_redirect)));
+    } else {
+      task_runner->PostTask(
+          FROM_HERE,
+          base::BindOnce(&SyncLoadContext::CancelRedirect,
+                         base::Unretained(response->context_for_redirect)));
+    }
+    redirect_or_response_event.Wait();
+  }
 }
 
 int ResourceDispatcher::StartAsync(
@@ -490,27 +585,32 @@ int ResourceDispatcher::StartAsync(
     std::unique_ptr<RequestPeer> peer,
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
-    network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
+    std::unique_ptr<NavigationResponseOverrideParameters>
+        response_override_params,
     base::OnceClosure* continue_navigation_function) {
   CheckSchemeForReferrerPolicy(*request);
+
+  bool override_url_loader =
+      !!response_override_params &&
+      !!response_override_params->url_loader_client_endpoints;
 
   // Compute a unique request_id for this renderer process.
   int request_id = MakeRequestID();
   pending_requests_[request_id] = std::make_unique<PendingRequestInfo>(
       std::move(peer), static_cast<ResourceType>(request->resource_type),
       request->render_frame_id, request->url, request->method,
-      request->referrer, request->download_to_file);
+      request->referrer, request->download_to_file,
+      std::move(response_override_params));
 
-  if (url_loader_client_endpoints) {
+  if (override_url_loader) {
     pending_requests_[request_id]->url_loader_client =
         std::make_unique<URLLoaderClientImpl>(request_id, this,
                                               loading_task_runner);
 
     DCHECK(continue_navigation_function);
-    *continue_navigation_function = base::BindOnce(
-        &ResourceDispatcher::ContinueForNavigation, weak_factory_.GetWeakPtr(),
-        request_id, std::move(url_loader_client_endpoints));
-
+    *continue_navigation_function =
+        base::BindOnce(&ResourceDispatcher::ContinueForNavigation,
+                       weak_factory_.GetWeakPtr(), request_id);
     return request_id;
   }
 
@@ -550,16 +650,16 @@ void ResourceDispatcher::ToResourceResponseInfo(
     network::ResourceResponseInfo* renderer_info) const {
   *renderer_info = browser_info;
   if (base::TimeTicks::IsConsistentAcrossProcesses() ||
-      request_info.request_start.is_null() ||
-      request_info.response_start.is_null() ||
+      request_info.local_request_start.is_null() ||
+      request_info.local_response_start.is_null() ||
       browser_info.request_start.is_null() ||
       browser_info.response_start.is_null() ||
       browser_info.load_timing.request_start.is_null()) {
     return;
   }
   InterProcessTimeTicksConverter converter(
-      LocalTimeTicks::FromTimeTicks(request_info.request_start),
-      LocalTimeTicks::FromTimeTicks(request_info.response_start),
+      LocalTimeTicks::FromTimeTicks(request_info.local_request_start),
+      LocalTimeTicks::FromTimeTicks(request_info.local_response_start),
       RemoteTimeTicks::FromTimeTicks(browser_info.request_start),
       RemoteTimeTicks::FromTimeTicks(browser_info.response_start));
 
@@ -582,46 +682,42 @@ void ResourceDispatcher::ToResourceResponseInfo(
   RemoteToLocalTimeTicks(converter, &renderer_info->service_worker_ready_time);
 }
 
-base::TimeTicks ResourceDispatcher::ToRendererCompletionTime(
-    const PendingRequestInfo& request_info,
-    const base::TimeTicks& browser_completion_time) const {
-  if (request_info.completion_time.is_null()) {
-    return browser_completion_time;
-  }
-
-  // TODO(simonjam): The optimal lower bound should be the most recent value of
-  // TimeTicks::Now() returned to WebKit. Is it worth trying to cache that?
-  // Until then, |response_start| is used as it is the most recent value
-  // returned for this request.
-  int64_t result = std::max(browser_completion_time.ToInternalValue(),
-                            request_info.response_start.ToInternalValue());
-  result = std::min(result, request_info.completion_time.ToInternalValue());
-  return base::TimeTicks::FromInternalValue(result);
-}
-
-void ResourceDispatcher::ContinueForNavigation(
-    int request_id,
-    network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints) {
-  DCHECK(url_loader_client_endpoints);
+void ResourceDispatcher::ContinueForNavigation(int request_id) {
   PendingRequestInfo* request_info = GetPendingRequestInfo(request_id);
   if (!request_info)
     return;
 
-  URLLoaderClientImpl* client_ptr = request_info->url_loader_client.get();
+  std::unique_ptr<NavigationResponseOverrideParameters> response_override =
+      std::move(request_info->navigation_response_override);
+  DCHECK(response_override);
 
-  // Short circuiting call to OnReceivedResponse to immediately start
-  // the request. ResourceResponseHead can be empty here because we
-  // pull the StreamOverride's one in
-  // WebURLLoaderImpl::Context::OnReceivedResponse.
-  client_ptr->OnReceiveResponse(network::ResourceResponseHead(),
+  // Mark the request so we do not attempt to follow the redirects, they already
+  // happened.
+  request_info->should_follow_redirect = false;
+
+  URLLoaderClientImpl* client_ptr = request_info->url_loader_client.get();
+  // PlzNavigate: during navigations, the ResourceResponse has already been
+  // received on the browser side, and has been passed down to the renderer.
+  // Replay the redirects that happened during navigation.
+  DCHECK_EQ(response_override->redirect_responses.size(),
+            response_override->redirect_infos.size());
+  for (size_t i = 0; i < response_override->redirect_responses.size(); ++i) {
+    client_ptr->OnReceiveRedirect(response_override->redirect_infos[i],
+                                  response_override->redirect_responses[i]);
+    // The request might have been cancelled while processing the redirect.
+    if (!GetPendingRequestInfo(request_id))
+      return;
+  }
+
+  client_ptr->OnReceiveResponse(response_override->response,
                                 network::mojom::DownloadedTempFilePtr());
-  // TODO(clamy): Move the replaying of redirects from WebURLLoaderImpl here.
 
   // Abort if the request is cancelled.
   if (!GetPendingRequestInfo(request_id))
     return;
 
-  client_ptr->Bind(std::move(url_loader_client_endpoints));
+  DCHECK(response_override->url_loader_client_endpoints);
+  client_ptr->Bind(std::move(response_override->url_loader_client_endpoints));
 }
 
 }  // namespace content

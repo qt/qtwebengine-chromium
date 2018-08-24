@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/core/layout/ng/ng_column_layout_algorithm.h"
 
 #include <algorithm>
+#include "third_party/blink/renderer/core/layout/ng/geometry/ng_logical_size.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_baseline.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_block_layout_algorithm.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_box_fragment.h"
@@ -12,6 +13,7 @@
 #include "third_party/blink/renderer/core/layout/ng/ng_length_utils.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_out_of_flow_layout_part.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_physical_box_fragment.h"
+#include "third_party/blink/renderer/core/style/computed_style.h"
 
 namespace blink {
 
@@ -44,26 +46,20 @@ LayoutUnit ConstrainColumnBlockSize(LayoutUnit size,
   LayoutUnit extra = border_scrollbar_padding.BlockSum();
   size += extra;
 
-  Optional<LayoutUnit> max_length;
   const ComputedStyle& style = node.Style();
-  Length logical_max_height = style.LogicalMaxHeight();
-  if (!logical_max_height.IsMaxSizeNone()) {
-    max_length = ResolveBlockLength(space, style, logical_max_height, size,
-                                    LengthResolveType::kMaxSize);
-  }
+  LayoutUnit max = ResolveBlockLength(space, style, style.LogicalMaxHeight(),
+                                      size, LengthResolveType::kMaxSize,
+                                      LengthResolvePhase::kLayout);
   LayoutUnit extent = ResolveBlockLength(space, style, style.LogicalHeight(),
-                                         size, LengthResolveType::kContentSize);
+                                         size, LengthResolveType::kContentSize,
+                                         LengthResolvePhase::kLayout);
   if (extent != NGSizeIndefinite) {
     // A specified height/width will just constrain the maximum length.
-    if (max_length.has_value())
-      max_length = std::min(max_length.value(), extent);
-    else
-      max_length = extent;
+    max = std::min(max, extent);
   }
 
   // Constrain and convert the value back to content-box.
-  if (max_length.has_value())
-    size = std::min(size, max_length.value());
+  size = std::min(size, max);
   return size - extra;
 }
 
@@ -75,7 +71,7 @@ NGColumnLayoutAlgorithm::NGColumnLayoutAlgorithm(NGBlockNode node,
     : NGLayoutAlgorithm(node, space, ToNGBlockBreakToken(break_token)) {}
 
 scoped_refptr<NGLayoutResult> NGColumnLayoutAlgorithm::Layout() {
-  Optional<MinMaxSize> min_max_size;
+  base::Optional<MinMaxSize> min_max_size;
   if (NeedMinMaxSize(ConstraintSpace(), Style()))
     min_max_size = ComputeMinMaxSize(MinMaxSizeInput());
   NGBoxStrut border_scrollbar_padding =
@@ -193,11 +189,11 @@ scoped_refptr<NGLayoutResult> NGColumnLayoutAlgorithm::Layout() {
   return container_builder_.ToBoxFragment();
 }
 
-Optional<MinMaxSize> NGColumnLayoutAlgorithm::ComputeMinMaxSize(
+base::Optional<MinMaxSize> NGColumnLayoutAlgorithm::ComputeMinMaxSize(
     const MinMaxSizeInput& input) const {
   // First calculate the min/max sizes of columns.
   NGBlockLayoutAlgorithm algorithm(Node(), ConstraintSpace());
-  Optional<MinMaxSize> min_max_sizes = algorithm.ComputeMinMaxSize(input);
+  base::Optional<MinMaxSize> min_max_sizes = algorithm.ComputeMinMaxSize(input);
   DCHECK(min_max_sizes.has_value());
   MinMaxSize sizes = min_max_sizes.value();
 

@@ -9,13 +9,13 @@
 
 #include "base/process/process.h"
 #include "base/unguessable_token.h"
-#include "cc/ipc/cc_param_traits.h"
+#include "cc/trees/render_frame_metadata.h"
 #include "components/viz/common/surfaces/surface_info.h"
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
 #include "content/common/cursors/webcursor.h"
 #include "content/common/edit_command.h"
-#include "content/common/frame_resize_params.h"
+#include "content/common/frame_visual_properties.h"
 #include "content/public/common/drop_data.h"
 #include "content/public/common/screen_info.h"
 #include "ipc/ipc_channel_handle.h"
@@ -156,10 +156,10 @@ IPC_MESSAGE_CONTROL1(BrowserPluginHostMsg_UnlockMouse_ACK,
                      int /* browser_plugin_instance_id */)
 
 // Sent when plugin's position has changed.
-IPC_MESSAGE_CONTROL3(BrowserPluginHostMsg_UpdateResizeParams,
+IPC_MESSAGE_CONTROL3(BrowserPluginHostMsg_SynchronizeVisualProperties,
                      int /* browser_plugin_instance_id */,
                      viz::LocalSurfaceId /* local_surface_id */,
-                     content::FrameResizeParams /* resize_params */)
+                     content::FrameVisualProperties /* resize_params */)
 
 // -----------------------------------------------------------------------------
 // These messages are from the browser process to the embedder.
@@ -187,11 +187,10 @@ IPC_MESSAGE_CONTROL2(BrowserPluginMsg_AdvanceFocus,
                      int /* browser_plugin_instance_id */,
                      bool /* reverse */)
 
-// When a guest resizes due to auto-resize, this message informs the
-// BrowserPlugin to request a new viz::LocalSurfaceId.
-IPC_MESSAGE_CONTROL2(BrowserPluginMsg_ResizeDueToAutoResize,
+// Informs the BrowserPlugin that the guest's visual properties have changed.
+IPC_MESSAGE_CONTROL2(BrowserPluginMsg_DidUpdateVisualProperties,
                      int /* browser_plugin_instance_id */,
-                     uint64_t /* sequence_number */)
+                     cc::RenderFrameMetadata /* metadata */)
 
 // Requests a viz::LocalSurfaceId to enable auto-resize mode from the parent
 // renderer.

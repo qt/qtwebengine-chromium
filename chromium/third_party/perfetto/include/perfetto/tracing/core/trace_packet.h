@@ -20,11 +20,12 @@
 #include <stddef.h>
 
 #include <memory>
+#include <tuple>
 
+#include "google/protobuf/io/zero_copy_stream.h"
+#include "perfetto/base/export.h"
 #include "perfetto/base/logging.h"
-#include "perfetto/tracing/core/chunk.h"
-
-class TracePacket;
+#include "perfetto/tracing/core/slice.h"
 
 namespace perfetto {
 
@@ -40,45 +41,65 @@ class TracePacket;  // From protos/trace_packet.pb.h.
 // If the packets are saved / streamed and not just consumed locally, consumers
 // should ensure to preserve the unknown fields in the proto. A consumer, in
 // fact, might have an older version .proto which is newer on the producer.
-class TracePacket {
+class PERFETTO_EXPORT TracePacket {
  public:
-  using const_iterator = ChunkSequence::const_iterator;
+  using const_iterator = Slices::const_iterator;
+  using ZeroCopyInputStream = ::google::protobuf::io::ZeroCopyInputStream;
 
-  using DecodedTracePacket = protos::TracePacket;
+  // The field id of protos::Trace::packet, static_assert()-ed in the unittest.
+  static constexpr uint32_t kPacketFieldNumber = 1;
+
   TracePacket();
   ~TracePacket();
   TracePacket(TracePacket&&) noexcept;
   TracePacket& operator=(TracePacket&&);
 
-  // Accesses all the raw chunks in the packet, for saving them to file/network.
-  const_iterator begin() const { return chunks_.begin(); }
-  const_iterator end() const { return chunks_.end(); }
+  // Accesses all the raw slices in the packet, for saving them to file/network.
+  const Slices& slices() const { return slices_; }
 
-  // Decodes the packet for inline use.
-  bool Decode();
-
-  // Must explicitly call Decode() first.
-  const DecodedTracePacket* operator->() {
-    PERFETTO_DCHECK(decoded_packet_);
-    return decoded_packet_.get();
+  // Decodes the packet. This function requires that the caller:
+  // 1) Does #include "perfetto/trace/trace_packet.pb.h"
+  // 2) Links against the //protos/trace:lite target.
+  // The core service code deliberately doesn't link against that in order to
+  // avoid binary bloat. This is the reason why this is a templated function.
+  // It doesn't need to be (i.e. the caller should not specify the template
+  // argument) but doing so prevents the compiler trying to resolve the
+  // TracePacket type until it's needed, in which case the caller needs (1).
+  template <typename TracePacketType = protos::TracePacket>
+  bool Decode(TracePacketType* packet) const {
+    std::unique_ptr<ZeroCopyInputStream> istr = CreateSlicedInputStream();
+    return packet->ParseFromZeroCopyStream(istr.get());
   }
-  const DecodedTracePacket& operator*() { return *(operator->()); }
 
   // Mutator, used only by the service and tests.
-  void AddChunk(Chunk);
+  void AddSlice(Slice);
 
-  // Total size of all chunks.
+  // Does not copy / take ownership of the memory of the slice. The TracePacket
+  // will be valid only as long as the original buffer is valid.
+  void AddSlice(const void* start, size_t size);
+
+  // Total size of all slices.
   size_t size() const { return size_; }
+
+  // Generates a protobuf preamble suitable to represent this packet as a
+  // repeated field within a root trace.proto message.
+  // Returns a pointer to a buffer, owned by this class, containing the preamble
+  // and its size.
+  std::tuple<char*, size_t> GetProtoPreamble();
 
  private:
   TracePacket(const TracePacket&) = delete;
   TracePacket& operator=(const TracePacket&) = delete;
 
-  // TODO(primiano): who owns the memory of the chunks? Figure out later.
+  std::unique_ptr<ZeroCopyInputStream> CreateSlicedInputStream() const;
 
-  ChunkSequence chunks_;  // Not owned.
-  size_t size_ = 0;       // SUM(chunk.size for chunk in chunks_).
-  std::unique_ptr<DecodedTracePacket> decoded_packet_;
+  Slices slices_;     // Not owned.
+  size_t size_ = 0;   // SUM(slice.size for slice in slices_).
+  char preamble_[8];  // Deliberately not initialized.
+
+  // Remember to update the move operators and their unittest if adding new
+  // fields. ConsumerIPCClientImpl::OnReadBuffersResponse() relies on
+  // std::move(TracePacket) to clear up the moved-from instance.
 };
 
 }  // namespace perfetto

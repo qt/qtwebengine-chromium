@@ -748,6 +748,16 @@ NET_ERROR(SPDY_CLAIMED_PUSHED_STREAM_RESET_BY_SERVER, -374)
 // credentials or presents a fresh invalid certificate.
 NET_ERROR(TOO_MANY_RETRIES, -375)
 
+// Received an HTTP/2 frame on a closed stream.
+NET_ERROR(SPDY_STREAM_CLOSED, -376)
+
+// Client is refusing an HTTP/2 stream.
+NET_ERROR(SPDY_CLIENT_REFUSED_STREAM, -377)
+
+// A pushed HTTP/2 stream was claimed by a request based on matching URL and
+// request headers, but the pushed response headers do not match the request.
+NET_ERROR(SPDY_PUSHED_RESPONSE_DOES_NOT_MATCH, -378)
+
 // The cache does not have the requested entry.
 NET_ERROR(CACHE_MISS, -400)
 
@@ -804,6 +814,9 @@ NET_ERROR(NO_PRIVATE_KEY_FOR_CERT, -502)
 
 // An error adding a certificate to the OS certificate database.
 NET_ERROR(ADD_USER_CERT_FAILED, -503)
+
+// An error occurred while handling a signed exchange.
+NET_ERROR(INVALID_SIGNED_EXCHANGE, -504)
 
 // *** Code -600 is reserved (was FTP_PASV_COMMAND_FAILED). ***
 

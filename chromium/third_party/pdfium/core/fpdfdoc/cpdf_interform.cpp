@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "constants/stream_dict_common.h"
 #include "core/fpdfapi/font/cpdf_font.h"
 #include "core/fpdfapi/font/cpdf_fontencoding.h"
 #include "core/fpdfapi/page/cpdf_page.h"
@@ -18,6 +19,7 @@
 #include "core/fpdfapi/parser/cpdf_name.h"
 #include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
+#include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "core/fpdfdoc/cpdf_filespec.h"
 #include "core/fpdfdoc/cpdf_formcontrol.h"
 #include "core/fxcrt/fx_codepage.h"
@@ -813,7 +815,7 @@ CPDF_FormControl* CPDF_InterForm::GetControlAtPoint(CPDF_Page* pPage,
                                                     const CFX_PointF& point,
 
                                                     int* z_order) const {
-  CPDF_Array* pAnnotList = pPage->m_pFormDict->GetArrayFor("Annots");
+  CPDF_Array* pAnnotList = pPage->GetFormDict()->GetArrayFor("Annots");
   if (!pAnnotList)
     return nullptr;
 
@@ -962,7 +964,7 @@ bool CPDF_InterForm::HasXFAForm() const {
 }
 
 void CPDF_InterForm::FixPageFields(const CPDF_Page* pPage) {
-  CPDF_Dictionary* pPageDict = pPage->m_pFormDict.Get();
+  const CPDF_Dictionary* pPageDict = pPage->GetFormDict();
   if (!pPageDict)
     return;
 
@@ -1116,7 +1118,7 @@ std::unique_ptr<CFDF_Document> CPDF_InterForm::ExportToFDF(
     if (bSimpleFileSpec) {
       WideString wsFilePath = CPDF_FileSpec::EncodeFileName(pdf_path);
       pMainDict->SetNewFor<CPDF_String>(
-          "F", ByteString::FromUnicode(wsFilePath), false);
+          pdfium::stream::kF, ByteString::FromUnicode(wsFilePath), false);
       pMainDict->SetNewFor<CPDF_String>("UF", PDF_EncodeText(wsFilePath),
                                         false);
     } else {

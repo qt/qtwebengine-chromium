@@ -100,6 +100,32 @@ bool PathFiltersMatch(const std::vector<std::string>& path_filters,
   return false;
 }
 
+// If normalized |file_path| starts with |base_directory|, returns the
+// relative path to |file_path|, otherwise the original |file_path| is returned.
+std::string MakeRelativePath(const base::FilePath& base_directory,
+                             const std::string& file_path) {
+  DCHECK(base_directory.IsAbsolute());
+
+#if defined(OS_WIN)
+  base::FilePath converted_file_path = base::FilePath(
+      base::FilePath::StringPieceType((base::UTF8ToWide(file_path))));
+#else
+  base::FilePath converted_file_path(file_path);
+#endif
+  base::FilePath normalized_path;
+  if (base::NormalizeFilePath(converted_file_path, &normalized_path) &&
+      normalized_path.IsAbsolute()) {
+    normalized_path = normalized_path.NormalizePathSeparatorsTo('/');
+    std::string file_str = normalized_path.MaybeAsASCII();
+    std::string base_str = base_directory.MaybeAsASCII();
+    if (file_str.find(base_str) == 0) {
+      return file_str.substr(base_str.length() + 1,
+                             file_str.length() - base_str.length() - 1);
+    }
+  }
+  return file_path;
+}
+
 }  // namespace
 
 TrafficAnnotationAuditor::TrafficAnnotationAuditor(
@@ -114,6 +140,15 @@ TrafficAnnotationAuditor::TrafficAnnotationAuditor(
   DCHECK(!source_path.empty());
   DCHECK(!build_path.empty());
   DCHECK(!clang_tool_path.empty());
+
+  // Get absolute source path.
+  base::FilePath original_path;
+  base::GetCurrentDirectory(&original_path);
+  base::SetCurrentDirectory(source_path_);
+  base::GetCurrentDirectory(&absolute_source_path_);
+  base::SetCurrentDirectory(original_path);
+  absolute_source_path_ = absolute_source_path_.NormalizePathSeparatorsTo('/');
+  DCHECK(absolute_source_path_.IsAbsolute());
 
   base::FilePath switches_file =
       base::MakeAbsoluteFilePath(source_path_.Append(kClangToolSwitchesPath));
@@ -145,7 +180,8 @@ bool TrafficAnnotationAuditor::RunClangTool(
     const std::vector<std::string>& path_filters,
     bool filter_files_based_on_heuristics,
     bool use_compile_commands,
-    bool rerun_on_errors) {
+    bool rerun_on_errors,
+    const base::FilePath& errors_file) {
   if (!safe_list_loaded_ && !LoadSafeList())
     return false;
 
@@ -210,8 +246,16 @@ bool TrafficAnnotationAuditor::RunClangTool(
 
   // If running clang tool had no output, it means that the script running it
   // could not perform the task.
-  if (clang_tool_raw_output_.empty())
+  if (clang_tool_raw_output_.empty()) {
     result = false;
+  } else if (!result) {
+    // If clang tool had errors but also returned results, the errors can be
+    // ignored as we do not separate platform specific files here and processing
+    // them fails. This is a post-build test and if there exists any actual
+    // compile error, it should be noted when the code is built.
+    printf("WARNING: Ignoring clang tool's returned errors.\n");
+    result = true;
+  }
 
   if (!result) {
     if (use_compile_commands && !clang_tool_raw_output_.empty()) {
@@ -232,7 +276,7 @@ bool TrafficAnnotationAuditor::RunClangTool(
       if (!base::ReadFileToString(options_filepath, &options_file_text))
         options_file_text = "Could not read options file.";
 
-      LOG(ERROR) << base::StringPrintf(
+      std::string error_message = base::StringPrintf(
           "Calling clang tool returned false from %s\nCommandline: %s\n\n"
           "Returned output: %s\n\nPartial options file: %s\n",
           source_path_.MaybeAsASCII().c_str(),
@@ -242,6 +286,16 @@ bool TrafficAnnotationAuditor::RunClangTool(
           cmdline.GetCommandLineString().c_str(),
 #endif
           tool_errors.c_str(), options_file_text.substr(0, 1024).c_str());
+
+      if (errors_file.empty()) {
+        LOG(ERROR) << error_message;
+      } else {
+        if (base::WriteFile(errors_file, error_message.c_str(),
+                            error_message.length()) == -1) {
+          LOG(ERROR) << "Writing error message to file failed:\n"
+                     << error_message;
+        }
+      }
     }
   }
 
@@ -387,18 +441,23 @@ bool TrafficAnnotationAuditor::ParseClangToolRawOutput() {
     if (block_type == "ANNOTATION") {
       AnnotationInstance new_annotation;
       result = new_annotation.Deserialize(lines, current, end_line);
+      std::string file_path = result.IsOK()
+                                  ? new_annotation.proto.source().file()
+                                  : result.file_path();
+      file_path = MakeRelativePath(absolute_source_path_, file_path);
+      if (IsSafeListed(file_path, AuditorException::ExceptionType::ALL))
+        result = AuditorResult(AuditorResult::Type::RESULT_IGNORE);
       switch (result.type()) {
         case AuditorResult::Type::RESULT_OK:
+          new_annotation.proto.mutable_source()->set_file(file_path);
           extracted_annotations_.push_back(new_annotation);
           break;
         case AuditorResult::Type::ERROR_MISSING_TAG_USED:
-          if (IsSafeListed(result.file_path(),
-                           AuditorException::ExceptionType::MISSING)) {
+          if (IsSafeListed(file_path, AuditorException::ExceptionType::MISSING))
             result = AuditorResult(AuditorResult::Type::RESULT_IGNORE);
-          }
           break;
         case AuditorResult::Type::ERROR_TEST_ANNOTATION:
-          if (IsSafeListed(result.file_path(),
+          if (IsSafeListed(file_path,
                            AuditorException::ExceptionType::TEST_ANNOTATION)) {
             result = AuditorResult(AuditorResult::Type::RESULT_IGNORE);
           }
@@ -409,11 +468,23 @@ bool TrafficAnnotationAuditor::ParseClangToolRawOutput() {
     } else if (block_type == "CALL") {
       CallInstance new_call;
       result = new_call.Deserialize(lines, current, end_line);
+      new_call.file_path =
+          MakeRelativePath(absolute_source_path_, new_call.file_path);
+      if (IsSafeListed(new_call.file_path,
+                       AuditorException::ExceptionType::ALL)) {
+        result = AuditorResult(AuditorResult::Type::RESULT_IGNORE);
+      }
       if (result.IsOK())
         extracted_calls_.push_back(new_call);
     } else if (block_type == "ASSIGNMENT") {
       AssignmentInstance new_assignment;
       result = new_assignment.Deserialize(lines, current, end_line);
+      new_assignment.file_path =
+          MakeRelativePath(absolute_source_path_, new_assignment.file_path);
+      if (IsSafeListed(new_assignment.file_path,
+                       AuditorException::ExceptionType::ALL)) {
+        result = AuditorResult(AuditorResult::Type::RESULT_IGNORE);
+      }
       if (result.IsOK() &&
           !IsSafeListed(base::StringPrintf(
                             "%s@%s", new_assignment.function_context.c_str(),
@@ -530,14 +601,6 @@ void TrafficAnnotationAuditor::CheckAllRequiredFunctionsAreAnnotated() {
 
 bool TrafficAnnotationAuditor::CheckIfCallCanBeUnannotated(
     const CallInstance& call) {
-  // At this stage we do not enforce annotation on native network requests,
-  // hence all calls except those to 'net::URLRequestContext::CreateRequest' and
-  // 'net::URLFetcher::Create' are ignored.
-  if (call.function_name != "net::URLFetcher::Create" &&
-      call.function_name != "net::URLRequestContext::CreateRequest") {
-    return true;
-  }
-
   if (IsSafeListed(call.file_path, AuditorException::ExceptionType::MISSING))
     return true;
 

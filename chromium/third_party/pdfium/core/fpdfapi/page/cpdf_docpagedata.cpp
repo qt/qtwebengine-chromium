@@ -209,32 +209,33 @@ void CPDF_DocPageData::ReleaseFont(const CPDF_Dictionary* pFontDict) {
 }
 
 CPDF_ColorSpace* CPDF_DocPageData::GetColorSpace(
-    CPDF_Object* pCSObj,
+    const CPDF_Object* pCSObj,
     const CPDF_Dictionary* pResources) {
-  std::set<CPDF_Object*> visited;
+  std::set<const CPDF_Object*> visited;
   return GetColorSpaceGuarded(pCSObj, pResources, &visited);
 }
 
 CPDF_ColorSpace* CPDF_DocPageData::GetColorSpaceGuarded(
-    CPDF_Object* pCSObj,
+    const CPDF_Object* pCSObj,
     const CPDF_Dictionary* pResources,
-    std::set<CPDF_Object*>* pVisited) {
-  std::set<CPDF_Object*> visitedLocal;
+    std::set<const CPDF_Object*>* pVisited) {
+  std::set<const CPDF_Object*> visitedLocal;
   return GetColorSpaceInternal(pCSObj, pResources, pVisited, &visitedLocal);
 }
 
 CPDF_ColorSpace* CPDF_DocPageData::GetColorSpaceInternal(
-    CPDF_Object* pCSObj,
+    const CPDF_Object* pCSObj,
     const CPDF_Dictionary* pResources,
-    std::set<CPDF_Object*>* pVisited,
-    std::set<CPDF_Object*>* pVisitedInternal) {
+    std::set<const CPDF_Object*>* pVisited,
+    std::set<const CPDF_Object*>* pVisitedInternal) {
   if (!pCSObj)
     return nullptr;
 
   if (pdfium::ContainsKey(*pVisitedInternal, pCSObj))
     return nullptr;
 
-  pdfium::ScopedSetInsertion<CPDF_Object*> insertion(pVisitedInternal, pCSObj);
+  pdfium::ScopedSetInsertion<const CPDF_Object*> insertion(pVisitedInternal,
+                                                           pCSObj);
 
   if (pCSObj->IsName()) {
     ByteString name = pCSObj->GetString();
@@ -272,7 +273,7 @@ CPDF_ColorSpace* CPDF_DocPageData::GetColorSpaceInternal(
                                  pVisitedInternal);
   }
 
-  CPDF_Array* pArray = pCSObj->AsArray();
+  const CPDF_Array* pArray = pCSObj->AsArray();
   if (!pArray || pArray->IsEmpty())
     return nullptr;
 
@@ -304,7 +305,8 @@ CPDF_ColorSpace* CPDF_DocPageData::GetColorSpaceInternal(
   return csData->AddRef();
 }
 
-CPDF_ColorSpace* CPDF_DocPageData::GetCopiedColorSpace(CPDF_Object* pCSObj) {
+CPDF_ColorSpace* CPDF_DocPageData::GetCopiedColorSpace(
+    const CPDF_Object* pCSObj) {
   if (!pCSObj)
     return nullptr;
 
@@ -419,7 +421,7 @@ void CPDF_DocPageData::MaybePurgeImage(uint32_t dwStreamObjNum) {
 }
 
 RetainPtr<CPDF_IccProfile> CPDF_DocPageData::GetIccProfile(
-    CPDF_Stream* pProfileStream) {
+    const CPDF_Stream* pProfileStream) {
   if (!pProfileStream)
     return nullptr;
 
@@ -447,7 +449,7 @@ RetainPtr<CPDF_IccProfile> CPDF_DocPageData::GetIccProfile(
   return pProfile;
 }
 
-void CPDF_DocPageData::MaybePurgeIccProfile(CPDF_Stream* pProfileStream) {
+void CPDF_DocPageData::MaybePurgeIccProfile(const CPDF_Stream* pProfileStream) {
   ASSERT(pProfileStream);
   auto it = m_IccProfileMap.find(pProfileStream);
   if (it != m_IccProfileMap.end() && it->second->HasOneRef())
@@ -484,7 +486,7 @@ void CPDF_DocPageData::MaybePurgeFontFileStreamAcc(
 }
 
 CPDF_CountedColorSpace* CPDF_DocPageData::FindColorSpacePtr(
-    CPDF_Object* pCSObj) const {
+    const CPDF_Object* pCSObj) const {
   if (!pCSObj)
     return nullptr;
 

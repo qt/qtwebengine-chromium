@@ -63,6 +63,7 @@ class CONTENT_EXPORT BackgroundFetchDataManager
                               std::unique_ptr<BackgroundFetchRegistration>)>;
   using NextRequestCallback =
       base::OnceCallback<void(scoped_refptr<BackgroundFetchRequestInfo>)>;
+  using NumRequestsCallback = base::OnceCallback<void(size_t)>;
 
   BackgroundFetchDataManager(
       BrowserContext* browser_context,
@@ -133,16 +134,26 @@ class CONTENT_EXPORT BackgroundFetchDataManager
       const url::Origin& origin,
       blink::mojom::BackgroundFetchService::GetDeveloperIdsCallback callback);
 
-  int GetTotalNumberOfRequests(
-      const BackgroundFetchRegistrationId& registration_id) const;
+  // Gets the number of fetch requests that have been completed for a given
+  // registration.
+  void GetNumCompletedRequests(
+      const BackgroundFetchRegistrationId& registration_id,
+      NumRequestsCallback callback);
 
   // BackgroundFetchScheduler::RequestProvider implementation:
   void PopNextRequest(const BackgroundFetchRegistrationId& registration_id,
                       NextRequestCallback callback) override;
+
   void MarkRequestAsComplete(
       const BackgroundFetchRegistrationId& registration_id,
       BackgroundFetchRequestInfo* request,
       BackgroundFetchScheduler::MarkedCompleteCallback callback) override;
+
+  // TODO(rayankans): Move this function to MarkRequestCompleteTask after
+  // non-persistent background fetch support is removed.
+  bool FillServiceWorkerResponse(const BackgroundFetchRequestInfo& request,
+                                 const url::Origin& origin,
+                                 ServiceWorkerResponse* response);
 
  private:
   FRIEND_TEST_ALL_PREFIXES(BackgroundFetchDataManagerTest, Cleanup);
@@ -150,6 +161,12 @@ class CONTENT_EXPORT BackgroundFetchDataManager
   friend class background_fetch::DatabaseTask;
 
   class RegistrationData;
+
+  void AddStartNextPendingRequestTask(
+      int64_t service_worker_registration_id,
+      NextRequestCallback callback,
+      blink::mojom::BackgroundFetchError error,
+      std::unique_ptr<proto::BackgroundFetchMetadata> metadata);
 
   void AddDatabaseTask(std::unique_ptr<background_fetch::DatabaseTask> task);
 

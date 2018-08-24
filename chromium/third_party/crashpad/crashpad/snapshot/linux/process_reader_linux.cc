@@ -101,7 +101,12 @@ void ProcessReaderLinux::Thread::InitializeStack(ProcessReaderLinux* reader) {
 #else
 #error Port.
 #endif
+  InitializeStackFromSP(reader, stack_pointer);
+}
 
+void ProcessReaderLinux::Thread::InitializeStackFromSP(
+    ProcessReaderLinux* reader,
+    LinuxVMAddress stack_pointer) {
   const MemoryMap* memory_map = reader->GetMemoryMap();
 
   // If we can't find the mapping, it's probably a bad stack pointer
@@ -182,7 +187,6 @@ ProcessReaderLinux::ProcessReaderLinux()
       threads_(),
       modules_(),
       elf_readers_(),
-      process_memory_(),
       is_64_bit_(false),
       initialized_threads_(false),
       initialized_modules_(false),
@@ -200,11 +204,6 @@ bool ProcessReaderLinux::Initialize(PtraceConnection* connection) {
   }
 
   if (!memory_map_.Initialize(connection_)) {
-    return false;
-  }
-
-  pid_t pid = connection->GetProcessID();
-  if (!process_memory_.Initialize(pid)) {
     return false;
   }
 
@@ -273,6 +272,7 @@ const std::vector<ProcessReaderLinux::Module>& ProcessReaderLinux::Modules() {
 
 void ProcessReaderLinux::InitializeThreads() {
   DCHECK(threads_.empty());
+  initialized_threads_ = true;
 
   pid_t pid = ProcessID();
   if (pid == getpid()) {
@@ -330,6 +330,7 @@ void ProcessReaderLinux::InitializeThreads() {
 
 void ProcessReaderLinux::InitializeModules() {
   INITIALIZATION_STATE_DCHECK_VALID(initialized_);
+  initialized_modules_ = true;
 
   AuxiliaryVector aux;
   if (!aux.Initialize(connection_)) {

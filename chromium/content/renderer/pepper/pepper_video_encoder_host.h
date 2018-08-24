@@ -78,6 +78,10 @@ class CONTENT_EXPORT PepperVideoEncoderHost
   void OnGpuControlLostContext() final;
   void OnGpuControlLostContextMaybeReentrant() final;
   void OnGpuControlErrorMessage(const char* msg, int id) final {}
+  void OnGpuControlSwapBuffersCompleted(
+      const gpu::SwapBuffersCompleteParams& params) final {}
+  void OnSwapBufferPresented(uint64_t swap_id,
+                             const gfx::PresentationFeedback& feedback) final {}
 
   int32_t OnHostMsgGetSupportedProfiles(
       ppapi::host::HostMessageContext* context);

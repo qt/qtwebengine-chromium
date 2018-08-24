@@ -8,7 +8,20 @@ enum KeyboardLockRequestResult {
   kSuccess = 0,
   kFrameDetachedError = 1,
   kNoValidKeyCodesError = 2,
-  kChildFrameError = 3
+  kChildFrameError = 3,
+  kRequestFailedError = 4
+};
+
+enum GetKeyboardLayoutMapStatus {
+  kSuccess = 0,
+  kFail = 1,
+};
+
+struct GetKeyboardLayoutMapResult {
+  GetKeyboardLayoutMapStatus status;
+
+  // A map of KeyboardEvent code to KeyboardEvent key values.
+  map<string, string> layout_map;
 };
 
 // The browser side service to process navigator.keyboard.lock() and
@@ -23,4 +36,8 @@ interface KeyboardLockService {
 
   // Removes all reserved keys. This function is expected to never fail.
   CancelKeyboardLock();
+
+  // Requests the keyboard layout mapping for the highest-priority ASCII-capable
+  // installed layout.
+  GetKeyboardLayoutMap() => (GetKeyboardLayoutMapResult result);
 };

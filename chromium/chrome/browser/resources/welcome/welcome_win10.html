@@ -27,7 +27,6 @@
     <template>
       <style include="action-link">
         :host {
-          --expandable-section-height: 28.375em;
           align-items: flex-start;
           display: inline-flex;
           flex-direction: column;
@@ -36,7 +35,11 @@
           transition: opacity 300ms;
         }
 
-        :host(.accelerated) {
+        :host .section {
+          --expandable-section-height: 28.375em;
+        }
+
+        :host([is-accelerated]) .section {
           --expandable-section-height: 26.375em;
         }
 
@@ -61,8 +64,10 @@
           margin: 0 -0.0625em;
         }
 
-        .heading {
+        h1 {
           font-size: 2.125em;
+          font-weight: normal;
+          margin: 0;
           padding-bottom: 2rem;
           padding-top: 1rem;
         }
@@ -283,7 +288,7 @@
         }
       </style>
       <div class="header-logo" role="presentation"></div>
-      <div class="heading" role="heading" aria-level="1">$i18n{headerText}</div>
+      <h1>$i18n{headerText}</h1>
       <div class="sections">
         <div class$="[[computeClasses(isCombined)]]">
           <template is="dom-if" if="[[isCombined]]">

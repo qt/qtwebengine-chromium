@@ -94,7 +94,10 @@ JsepTransportController::JsepTransportController(
     : signaling_thread_(signaling_thread),
       network_thread_(network_thread),
       port_allocator_(port_allocator),
-      config_(config) {}
+      config_(config) {
+  // The |transport_observer| is assumed to be non-null.
+  RTC_DCHECK(config_.transport_observer);
+}
 
 JsepTransportController::~JsepTransportController() {
   // Channel destructors may try to send packets, so this needs to happen on
@@ -181,7 +184,7 @@ void JsepTransportController::SetNeedsIceRestartFlag() {
 
 bool JsepTransportController::NeedsIceRestart(
     const std::string& transport_name) const {
-  const cricket::JsepTransport2* transport =
+  const cricket::JsepTransport* transport =
       GetJsepTransportByName(transport_name);
   if (!transport) {
     return false;
@@ -196,7 +199,7 @@ rtc::Optional<rtc::SSLRole> JsepTransportController::GetDtlsRole(
         RTC_FROM_HERE, [&] { return GetDtlsRole(mid); });
   }
 
-  const cricket::JsepTransport2* t = GetJsepTransportForMid(mid);
+  const cricket::JsepTransport* t = GetJsepTransportForMid(mid);
   if (!t) {
     return rtc::Optional<rtc::SSLRole>();
   }
@@ -237,7 +240,7 @@ JsepTransportController::GetLocalCertificate(
         RTC_FROM_HERE, [&] { return GetLocalCertificate(transport_name); });
   }
 
-  const cricket::JsepTransport2* t = GetJsepTransportByName(transport_name);
+  const cricket::JsepTransport* t = GetJsepTransportByName(transport_name);
   if (!t) {
     return nullptr;
   }
@@ -329,7 +332,7 @@ RTCError JsepTransportController::RemoveRemoteCandidates(
   for (const auto& kv : candidates_by_transport_name) {
     const std::string& transport_name = kv.first;
     const cricket::Candidates& candidates = kv.second;
-    cricket::JsepTransport2* jsep_transport =
+    cricket::JsepTransport* jsep_transport =
         GetJsepTransportByName(transport_name);
     if (!jsep_transport) {
       RTC_LOG(LS_WARNING)
@@ -355,7 +358,7 @@ bool JsepTransportController::GetStats(const std::string& transport_name,
         RTC_FROM_HERE, [=] { return GetStats(transport_name, stats); });
   }
 
-  cricket::JsepTransport2* transport = GetJsepTransportByName(transport_name);
+  cricket::JsepTransport* transport = GetJsepTransportByName(transport_name);
   if (!transport) {
     return false;
   }
@@ -467,14 +470,11 @@ JsepTransportController::CreateDtlsSrtpTransport(
     cricket::DtlsTransportInternal* rtp_dtls_transport,
     cricket::DtlsTransportInternal* rtcp_dtls_transport) {
   RTC_DCHECK(network_thread_->IsCurrent());
-  auto srtp_transport =
-      rtc::MakeUnique<webrtc::SrtpTransport>(rtcp_dtls_transport == nullptr);
+  auto dtls_srtp_transport = rtc::MakeUnique<webrtc::DtlsSrtpTransport>(
+      rtcp_dtls_transport == nullptr);
   if (config_.enable_external_auth) {
-    srtp_transport->EnableExternalAuth();
+    dtls_srtp_transport->EnableExternalAuth();
   }
-
-  auto dtls_srtp_transport =
-      rtc::MakeUnique<webrtc::DtlsSrtpTransport>(std::move(srtp_transport));
 
   dtls_srtp_transport->SetDtlsTransports(rtp_dtls_transport,
                                          rtcp_dtls_transport);
@@ -579,7 +579,10 @@ RTCError JsepTransportController::ApplyDescription_n(
     }
 
     if (IsBundled(content_info.name) && content_info.name != *bundled_mid()) {
-      HandleBundledContent(content_info);
+      if (!HandleBundledContent(content_info)) {
+        return RTCError(RTCErrorType::INVALID_PARAMETER,
+                        "Failed to process the bundled m= section.");
+      }
       continue;
     }
 
@@ -598,7 +601,7 @@ RTCError JsepTransportController::ApplyDescription_n(
     int rtp_abs_sendtime_extn_id =
         GetRtpAbsSendTimeHeaderExtensionId(content_info);
 
-    cricket::JsepTransport2* transport =
+    cricket::JsepTransport* transport =
         GetJsepTransportForMid(content_info.name);
     RTC_DCHECK(transport);
 
@@ -741,10 +744,8 @@ void JsepTransportController::HandleRejectedContent(
     const cricket::SessionDescription* description) {
   // If the content is rejected, let the
   // BaseChannel/SctpTransport change the RtpTransport/DtlsTransport first,
-  // then destroy the cricket::JsepTransport2.
+  // then destroy the cricket::JsepTransport.
   RemoveTransportForMid(content_info.name);
-  // If the answerer rejects the first content, which other contents are bundled
-  // on, all the other contents in the bundle group will be rejected.
   if (content_info.name == bundled_mid()) {
     for (auto content_name : bundle_group_->content_names()) {
       RemoveTransportForMid(content_name);
@@ -761,33 +762,40 @@ void JsepTransportController::HandleRejectedContent(
   MaybeDestroyJsepTransport(content_info.name);
 }
 
-void JsepTransportController::HandleBundledContent(
+bool JsepTransportController::HandleBundledContent(
     const cricket::ContentInfo& content_info) {
   auto jsep_transport = GetJsepTransportByName(*bundled_mid());
   RTC_DCHECK(jsep_transport);
   // If the content is bundled, let the
   // BaseChannel/SctpTransport change the RtpTransport/DtlsTransport first,
-  // then destroy the cricket::JsepTransport2.
-  SetTransportForMid(content_info.name, jsep_transport);
-  MaybeDestroyJsepTransport(content_info.name);
+  // then destroy the cricket::JsepTransport.
+  if (SetTransportForMid(content_info.name, jsep_transport)) {
+    MaybeDestroyJsepTransport(content_info.name);
+    return true;
+  }
+  return false;
 }
 
-void JsepTransportController::SetTransportForMid(
+bool JsepTransportController::SetTransportForMid(
     const std::string& mid,
-    cricket::JsepTransport2* jsep_transport) {
+    cricket::JsepTransport* jsep_transport) {
   RTC_DCHECK(jsep_transport);
   if (mid_to_transport_[mid] == jsep_transport) {
-    return;
+    return true;
   }
 
   mid_to_transport_[mid] = jsep_transport;
-  SignalRtpTransportChanged(mid, jsep_transport->rtp_transport());
-  SignalDtlsTransportChanged(mid, jsep_transport->rtp_dtls_transport());
+  return config_.transport_observer->OnTransportChanged(
+      mid, jsep_transport->rtp_transport(),
+      jsep_transport->rtp_dtls_transport());
 }
 
 void JsepTransportController::RemoveTransportForMid(const std::string& mid) {
-  SignalRtpTransportChanged(mid, nullptr);
-  SignalDtlsTransportChanged(mid, nullptr);
+  bool ret =
+      config_.transport_observer->OnTransportChanged(mid, nullptr, nullptr);
+  // Calling OnTransportChanged with nullptr should always succeed, since it is
+  // only expected to fail when adding media to a transport (not removing).
+  RTC_DCHECK(ret);
   mid_to_transport_.erase(mid);
 }
 
@@ -894,25 +902,25 @@ int JsepTransportController::GetRtpAbsSendTimeHeaderExtensionId(
   return send_time_extension ? send_time_extension->id : -1;
 }
 
-const cricket::JsepTransport2* JsepTransportController::GetJsepTransportForMid(
+const cricket::JsepTransport* JsepTransportController::GetJsepTransportForMid(
     const std::string& mid) const {
   auto it = mid_to_transport_.find(mid);
   return it == mid_to_transport_.end() ? nullptr : it->second;
 }
 
-cricket::JsepTransport2* JsepTransportController::GetJsepTransportForMid(
+cricket::JsepTransport* JsepTransportController::GetJsepTransportForMid(
     const std::string& mid) {
   auto it = mid_to_transport_.find(mid);
   return it == mid_to_transport_.end() ? nullptr : it->second;
 }
 
-const cricket::JsepTransport2* JsepTransportController::GetJsepTransportByName(
+const cricket::JsepTransport* JsepTransportController::GetJsepTransportByName(
     const std::string& transport_name) const {
   auto it = jsep_transports_by_name_.find(transport_name);
   return (it == jsep_transports_by_name_.end()) ? nullptr : it->second.get();
 }
 
-cricket::JsepTransport2* JsepTransportController::GetJsepTransportByName(
+cricket::JsepTransport* JsepTransportController::GetJsepTransportByName(
     const std::string& transport_name) {
   auto it = jsep_transports_by_name_.find(transport_name);
   return (it == jsep_transports_by_name_.end()) ? nullptr : it->second.get();
@@ -921,8 +929,7 @@ cricket::JsepTransport2* JsepTransportController::GetJsepTransportByName(
 RTCError JsepTransportController::MaybeCreateJsepTransport(
     const cricket::ContentInfo& content_info) {
   RTC_DCHECK(network_thread_->IsCurrent());
-  cricket::JsepTransport2* transport =
-      GetJsepTransportByName(content_info.name);
+  cricket::JsepTransport* transport = GetJsepTransportByName(content_info.name);
   if (transport) {
     return RTCError::OK();
   }
@@ -959,8 +966,8 @@ RTCError JsepTransportController::MaybeCreateJsepTransport(
         content_info.name, rtp_dtls_transport.get(), rtcp_dtls_transport.get());
   }
 
-  std::unique_ptr<cricket::JsepTransport2> jsep_transport =
-      rtc::MakeUnique<cricket::JsepTransport2>(
+  std::unique_ptr<cricket::JsepTransport> jsep_transport =
+      rtc::MakeUnique<cricket::JsepTransport>(
           content_info.name, certificate_, std::move(unencrypted_rtp_transport),
           std::move(sdes_transport), std::move(dtls_srtp_transport),
           std::move(rtp_dtls_transport), std::move(rtcp_dtls_transport));
@@ -1006,7 +1013,7 @@ void JsepTransportController::SetIceRole_n(cricket::IceRole ice_role) {
 }
 
 cricket::IceRole JsepTransportController::DetermineIceRole(
-    cricket::JsepTransport2* jsep_transport,
+    cricket::JsepTransport* jsep_transport,
     const cricket::TransportInfo& transport_info,
     SdpType type,
     bool local) {

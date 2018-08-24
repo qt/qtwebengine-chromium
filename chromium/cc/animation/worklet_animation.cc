@@ -11,11 +11,13 @@ namespace cc {
 WorkletAnimation::WorkletAnimation(
     int id,
     const std::string& name,
-    std::unique_ptr<ScrollTimeline> scroll_timeline)
+    std::unique_ptr<ScrollTimeline> scroll_timeline,
+    bool is_controlling_instance)
     : SingleKeyframeEffectAnimation(id),
       name_(name),
       scroll_timeline_(std::move(scroll_timeline)),
-      last_current_time_(base::nullopt) {}
+      last_current_time_(base::nullopt),
+      is_impl_instance_(is_controlling_instance) {}
 
 WorkletAnimation::~WorkletAnimation() = default;
 
@@ -24,7 +26,7 @@ scoped_refptr<WorkletAnimation> WorkletAnimation::Create(
     const std::string& name,
     std::unique_ptr<ScrollTimeline> scroll_timeline) {
   return WrapRefCounted(
-      new WorkletAnimation(id, name, std::move(scroll_timeline)));
+      new WorkletAnimation(id, name, std::move(scroll_timeline), false));
 }
 
 scoped_refptr<Animation> WorkletAnimation::CreateImplInstance() const {
@@ -33,7 +35,7 @@ scoped_refptr<Animation> WorkletAnimation::CreateImplInstance() const {
     impl_timeline = scroll_timeline_->CreateImplInstance();
 
   return WrapRefCounted(
-      new WorkletAnimation(id(), name(), std::move(impl_timeline)));
+      new WorkletAnimation(id(), name(), std::move(impl_timeline), true));
 }
 
 void WorkletAnimation::SetLocalTime(base::TimeDelta local_time) {
@@ -42,7 +44,17 @@ void WorkletAnimation::SetLocalTime(base::TimeDelta local_time) {
 }
 
 void WorkletAnimation::Tick(base::TimeTicks monotonic_time) {
-  keyframe_effect()->Tick(monotonic_time, this);
+  // Do not tick worklet animations on main thread. This should be removed if we
+  // skip ticking all animations on main thread in http://crbug.com/762717.
+  if (!is_impl_instance_)
+    return;
+  // As the output of a WorkletAnimation is driven by a script-provided local
+  // time, we don't want the underlying effect to participate in the normal
+  // animations lifecycle. To avoid this we pause the underlying keyframe effect
+  // at the local time obtained from the user script - essentially turning each
+  // call to |WorkletAnimation::Tick| into a seek in the effect.
+  keyframe_effect()->Pause(local_time_);
+  keyframe_effect()->Tick(monotonic_time);
 }
 
 // TODO(crbug.com/780151): The current time returned should be an offset against
@@ -64,18 +76,6 @@ bool WorkletAnimation::NeedsUpdate(base::TimeTicks monotonic_time,
   bool needs_update = last_current_time_ != current_time;
   last_current_time_ = current_time;
   return needs_update;
-}
-
-base::TimeTicks WorkletAnimation::GetTimeForKeyframeModel(
-    const KeyframeModel& keyframe_model) const {
-  // Animation local time is equivalent to animation active time. So we have to
-  // convert it from active time to monotonic time.
-  return keyframe_model.ConvertFromActiveTime(local_time_);
-}
-
-void WorkletAnimation::PushPropertiesTo(Animation* animation_impl) {
-  SingleKeyframeEffectAnimation::PushPropertiesTo(animation_impl);
-  static_cast<WorkletAnimation*>(animation_impl)->SetLocalTime(local_time_);
 }
 
 bool WorkletAnimation::IsWorkletAnimation() const {

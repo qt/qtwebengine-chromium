@@ -164,16 +164,11 @@ class ConversionContext {
   void UpdateEffectBounds(const FloatRect&, const TransformPaintPropertyNode*);
 
   // Starts a clip state by adjusting the transform state, applying
-  // |combined_clip_rect| which is combined from multiple rectangular
-  // consecutive clips, and updating the current state.
-  // |lowest_combined_clip_node| is the lowest node of the combined clips.
-  void StartCombinedClip(
-      const FloatRect& combined_clip_rect,
-      const ClipPaintPropertyNode* lowest_combined_clip_node);
-  // Starts a clip state by adjusting the transform state, applying the single
-  // clip node which can't be combined with other clips, and updating the
-  // current state.
-  void StartSingleClip(const ClipPaintPropertyNode*);
+  // |combined_clip_rect| which is combined from one or more consecutive clips,
+  // and updating the current state. |lowest_combined_clip_node| is the lowest
+  // node of the combined clips.
+  void StartClip(const FloatRoundedRect& combined_clip_rect,
+                 const ClipPaintPropertyNode* lowest_combined_clip_node);
   // Pop one clip state from the top of the stack.
   void EndClip();
   // Pop clip states from the top of the stack until the top is an effect state
@@ -268,10 +263,51 @@ void ConversionContext::TranslateForLayerOffsetOnce() {
 void ConversionContext::SwitchToChunkState(const PaintChunk& chunk) {
   chunk_to_layer_mapper_.SwitchToChunk(chunk);
 
-  const auto& chunk_state = chunk.properties.property_tree_state;
+  const auto& chunk_state = chunk.properties;
   SwitchToEffect(chunk_state.Effect());
   SwitchToClip(chunk_state.Clip());
   SwitchToTransform(chunk_state.Transform());
+}
+
+// Tries to combine a clip node's clip rect into |combined_clip_rect|.
+// Returns whether the clip has been combined.
+static bool CombineClip(const ClipPaintPropertyNode* clip,
+                        FloatRoundedRect& combined_clip_rect) {
+  // Don't combine into a clip with clip path.
+  if (clip->Parent()->ClipPath())
+    return false;
+
+  // Don't combine clips in different transform spaces.
+  const auto* transform_space = clip->LocalTransformSpace();
+  const auto* parent_transform_space = clip->Parent()->LocalTransformSpace();
+  if (transform_space != parent_transform_space &&
+      (transform_space->Parent() != parent_transform_space ||
+       !transform_space->Matrix().IsIdentity()))
+    return false;
+
+  // Don't combine two rounded clip rects.
+  bool clip_is_rounded = clip->ClipRect().IsRounded();
+  bool combined_is_rounded = combined_clip_rect.IsRounded();
+  if (clip_is_rounded && combined_is_rounded)
+    return false;
+
+  // If one is rounded and the other contains the rounded bounds, use the
+  // rounded as the combined.
+  if (combined_is_rounded)
+    return clip->ClipRect().Rect().Contains(combined_clip_rect.Rect());
+  if (clip_is_rounded) {
+    if (combined_clip_rect.Rect().Contains(clip->ClipRect().Rect())) {
+      combined_clip_rect = clip->ClipRect();
+      return true;
+    }
+    return false;
+  }
+
+  // The combined is the intersection if both are rectangular.
+  DCHECK(!combined_is_rounded && !clip_is_rounded);
+  combined_clip_rect = FloatRoundedRect(
+      Intersection(combined_clip_rect.Rect(), clip->ClipRect().Rect()));
+  return true;
 }
 
 void ConversionContext::SwitchToClip(const ClipPaintPropertyNode* target_clip) {
@@ -317,49 +353,29 @@ void ConversionContext::SwitchToClip(const ClipPaintPropertyNode* target_clip) {
   }
 
   // Step 3: Now apply the list of clips in top-down order.
-  Optional<FloatRect> pending_combined_clip_rect;
-  const ClipPaintPropertyNode* lowest_combined_clip_node = nullptr;
-  for (size_t i = pending_clips.size(); i--;) {
+  DCHECK(pending_clips.size());
+  auto pending_combined_clip_rect = pending_clips.back()->ClipRect();
+  const auto* lowest_combined_clip_node = pending_clips.back();
+  for (size_t i = pending_clips.size() - 1; i--;) {
     const auto* sub_clip = pending_clips[i];
-    bool has_rounded_clip_or_clip_path =
-        sub_clip->ClipRect().IsRounded() || sub_clip->ClipPath();
-    if (!has_rounded_clip_or_clip_path && pending_combined_clip_rect &&
-        (sub_clip->Parent()->LocalTransformSpace() ==
-             sub_clip->LocalTransformSpace() ||
-         GeometryMapper::SourceToDestinationProjection(
-             sub_clip->Parent()->LocalTransformSpace(),
-             sub_clip->LocalTransformSpace())
-             .IsIdentity())) {
-      // Continue to combine rectangular clips in the same transform space.
-      pending_combined_clip_rect->Intersect(sub_clip->ClipRect().Rect());
+    if (CombineClip(sub_clip, pending_combined_clip_rect)) {
+      // Continue to combine.
       lowest_combined_clip_node = sub_clip;
-      continue;
-    }
-
-    if (pending_combined_clip_rect) {
-      StartCombinedClip(*pending_combined_clip_rect, lowest_combined_clip_node);
-      lowest_combined_clip_node = nullptr;
-      pending_combined_clip_rect.reset();
-    }
-
-    if (has_rounded_clip_or_clip_path) {
-      // The clip can't be combined with others.
-      StartSingleClip(sub_clip);
     } else {
-      // Start to combine clips.
-      pending_combined_clip_rect = sub_clip->ClipRect().Rect();
+      // |sub_clip| can't be combined to previous clips. Output the current
+      // combined clip, and start new combination.
+      StartClip(pending_combined_clip_rect, lowest_combined_clip_node);
+      pending_combined_clip_rect = sub_clip->ClipRect();
       lowest_combined_clip_node = sub_clip;
     }
   }
-
-  if (pending_combined_clip_rect)
-    StartCombinedClip(*pending_combined_clip_rect, lowest_combined_clip_node);
+  StartClip(pending_combined_clip_rect, lowest_combined_clip_node);
 
   DCHECK_EQ(current_clip_, target_clip);
 }
 
-void ConversionContext::StartCombinedClip(
-    const FloatRect& combined_clip_rect,
+void ConversionContext::StartClip(
+    const FloatRoundedRect& combined_clip_rect,
     const ClipPaintPropertyNode* lowest_combined_clip_node) {
   if (lowest_combined_clip_node->LocalTransformSpace() != current_transform_)
     EndTransform();
@@ -367,37 +383,23 @@ void ConversionContext::StartCombinedClip(
   cc_list_.push<cc::SaveOp>();
   ApplyTransform(lowest_combined_clip_node->LocalTransformSpace());
   const bool antialias = true;
-  cc_list_.push<cc::ClipRectOp>(combined_clip_rect, SkClipOp::kIntersect,
-                                antialias);
+  if (combined_clip_rect.IsRounded()) {
+    cc_list_.push<cc::ClipRRectOp>(combined_clip_rect, SkClipOp::kIntersect,
+                                   antialias);
+  } else {
+    cc_list_.push<cc::ClipRectOp>(combined_clip_rect.Rect(),
+                                  SkClipOp::kIntersect, antialias);
+  }
+  if (lowest_combined_clip_node->ClipPath()) {
+    cc_list_.push<cc::ClipPathOp>(
+        lowest_combined_clip_node->ClipPath()->GetSkPath(),
+        SkClipOp::kIntersect, antialias);
+  }
   cc_list_.EndPaintOfPairedBegin();
 
   PushState(StateEntry::kClip, 1);
   current_clip_ = lowest_combined_clip_node;
   current_transform_ = lowest_combined_clip_node->LocalTransformSpace();
-}
-
-void ConversionContext::StartSingleClip(const ClipPaintPropertyNode* clip) {
-  if (clip->LocalTransformSpace() != current_transform_)
-    EndTransform();
-  cc_list_.StartPaint();
-  cc_list_.push<cc::SaveOp>();
-  ApplyTransform(clip->LocalTransformSpace());
-  const bool antialias = true;
-  cc_list_.push<cc::ClipRectOp>(static_cast<SkRect>(clip->ClipRect().Rect()),
-                                SkClipOp::kIntersect, antialias);
-  if (clip->ClipRect().IsRounded()) {
-    cc_list_.push<cc::ClipRRectOp>(static_cast<SkRRect>(clip->ClipRect()),
-                                   SkClipOp::kIntersect, antialias);
-  }
-  if (clip->ClipPath()) {
-    cc_list_.push<cc::ClipPathOp>(clip->ClipPath()->GetSkPath(),
-                                  SkClipOp::kIntersect, antialias);
-  }
-  cc_list_.EndPaintOfPairedBegin();
-
-  PushState(StateEntry::kClip, 1);
-  current_clip_ = clip;
-  current_transform_ = clip->LocalTransformSpace();
 }
 
 void ConversionContext::SwitchToEffect(
@@ -450,10 +452,17 @@ void ConversionContext::StartEffect(const EffectPaintPropertyNode* effect) {
   else
     EndClips();
 
-  // Apply effects.
   int saved_count = 0;
   size_t save_layer_id = kNotFound;
-  const auto* target_transform = current_transform_;
+
+  // Adjust transform first. Though a non-filter effect itself doesn't depend on
+  // the transform, switching to the target transform before SaveLayer[Alpha]Op
+  // will help the rasterizer optimize a non-filter SaveLayer[Alpha]Op/
+  // DrawRecord/Restore sequence into a single DrawRecord which is much faster.
+  // This also avoids multiple Save/Concat/.../Restore pairs for multiple
+  // consecutive effects in the same transform space, by issuing only one pair
+  // around all of the effects.
+  SwitchToTransform(effect->LocalTransformSpace());
 
   // We always create separate effect nodes for normal effects and filter
   // effects, so we can handle them separately.
@@ -463,10 +472,9 @@ void ConversionContext::StartEffect(const EffectPaintPropertyNode* effect) {
                            effect->GetColorFilter() != kColorFilterNone;
   DCHECK(!has_filter || !(has_opacity || has_other_effects));
 
+  // Apply effects.
+  cc_list_.StartPaint();
   if (!has_filter) {
-    cc_list_.StartPaint();
-    // No need to adjust transform for non-filter effects because transform
-    // doesn't matter.
     // TODO(ajuma): This should really be rounding instead of flooring the
     // alpha value, but that breaks slimming paint reftests.
     auto alpha =
@@ -484,22 +492,13 @@ void ConversionContext::StartEffect(const EffectPaintPropertyNode* effect) {
           nullptr, alpha, preserve_lcd_text_requests);
     }
     saved_count++;
-    cc_list_.EndPaintOfPairedBegin();
   } else {
-    // Handle filter effect. Adjust transform first.
-    target_transform = effect->LocalTransformSpace();
+    // Handle filter effect.
     FloatPoint filter_origin = effect->PaintOffset();
-    if (current_transform_ != target_transform ||
-        filter_origin != FloatPoint()) {
-      EndTransform();
-      auto matrix = GetSkMatrix(target_transform);
-      matrix.preTranslate(filter_origin.X(), filter_origin.Y());
-      cc_list_.StartPaint();
+    if (filter_origin != FloatPoint()) {
       cc_list_.push<cc::SaveOp>();
-      cc_list_.push<cc::ConcatOp>(matrix);
+      cc_list_.push<cc::TranslateOp>(filter_origin.X(), filter_origin.Y());
       saved_count++;
-    } else {
-      cc_list_.StartPaint();
     }
 
     // The size parameter is only used to computed the origin of zoom
@@ -509,12 +508,12 @@ void ConversionContext::StartEffect(const EffectPaintPropertyNode* effect) {
     filter_flags.setImageFilter(cc::RenderSurfaceFilters::BuildImageFilter(
         effect->Filter().AsCcFilterOperations(), empty));
     save_layer_id = cc_list_.push<cc::SaveLayerOp>(nullptr, &filter_flags);
+    saved_count++;
 
     if (filter_origin != FloatPoint())
       cc_list_.push<cc::TranslateOp>(-filter_origin.X(), -filter_origin.Y());
-    cc_list_.EndPaintOfPairedBegin();
-    saved_count++;
   }
+  cc_list_.EndPaintOfPairedBegin();
 
   DCHECK_GT(saved_count, 0);
   DCHECK_LE(saved_count, 2);
@@ -525,8 +524,7 @@ void ConversionContext::StartEffect(const EffectPaintPropertyNode* effect) {
   const ClipPaintPropertyNode* input_clip = current_clip_;
   PushState(StateEntry::kEffect, saved_count);
   effect_bounds_stack_.emplace_back(
-      EffectBoundsInfo{save_layer_id, target_transform});
-  current_transform_ = target_transform;
+      EffectBoundsInfo{save_layer_id, current_transform_});
   current_clip_ = input_clip;
   current_effect_ = effect;
 }
@@ -643,7 +641,7 @@ void ConversionContext::EndTransform() {
 void ConversionContext::Convert(const PaintChunkSubset& paint_chunks,
                                 const DisplayItemList& display_items) {
   for (const auto& chunk : paint_chunks) {
-    const auto& chunk_state = chunk.properties.property_tree_state;
+    const auto& chunk_state = chunk.properties;
     bool switched_to_chunk_state = false;
 
     for (const auto& item : display_items.ItemsInPaintChunk(chunk)) {

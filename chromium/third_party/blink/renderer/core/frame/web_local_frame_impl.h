@@ -50,6 +50,7 @@
 namespace blink {
 
 class ChromePrintContext;
+class FindInPage;
 class IntSize;
 class LocalFrameClientImpl;
 class ScrollableArea;
@@ -63,7 +64,6 @@ class WebFrameClient;
 class WebFrameWidgetBase;
 class WebNode;
 class WebPerformance;
-class WebPlugin;
 class WebScriptExecutionCallback;
 class WebSpellCheckPanelHostClient;
 class WebView;
@@ -97,11 +97,15 @@ class CORE_EXPORT WebLocalFrameImpl final
   WebView* View() const override;
   WebDocument GetDocument() const override;
   WebPerformance Performance() const override;
+  bool IsAdSubframe() const override;
+  void SetIsAdSubframe() override;
   void DispatchUnloadEvent() override;
   void ExecuteScript(const WebScriptSource&) override;
   void ExecuteScriptInIsolatedWorld(int world_id,
-                                    const WebScriptSource* sources,
-                                    unsigned num_sources) override;
+                                    const WebScriptSource&) override;
+  WARN_UNUSED_RESULT v8::Local<v8::Value>
+  ExecuteScriptInIsolatedWorldAndReturnValue(int world_id,
+                                             const WebScriptSource&) override;
   void SetIsolatedWorldSecurityOrigin(int world_id,
                                       const WebSecurityOrigin&) override;
   void SetIsolatedWorldContentSecurityPolicy(int world_id,
@@ -127,11 +131,6 @@ class CORE_EXPORT WebLocalFrameImpl final
                                 v8::Local<v8::Value> argv[],
                                 WebScriptExecutionCallback*) override;
   void PostPausableTask(PausableTaskCallback) override;
-  void ExecuteScriptInIsolatedWorld(
-      int world_id,
-      const WebScriptSource* sources_in,
-      unsigned num_sources,
-      WebVector<v8::Local<v8::Value>>* results) override;
   void RequestExecuteScriptInIsolatedWorld(
       int world_id,
       const WebScriptSource* source_in,
@@ -147,8 +146,6 @@ class CORE_EXPORT WebLocalFrameImpl final
   v8::Local<v8::Context> MainWorldScriptContext() const override;
   v8::Local<v8::Object> GlobalProxy() const override;
   void Reload(WebFrameLoadType) override;
-  void ReloadWithOverrideURL(const WebURL& override_url,
-                             WebFrameLoadType) override;
   void ReloadImage(const WebNode&) override;
   void ReloadLoFiImages() override;
   void LoadRequest(const WebURLRequest&) override;
@@ -246,6 +243,8 @@ class CORE_EXPORT WebLocalFrameImpl final
   WebString GetLayerTreeAsTextForTesting(
       bool show_debug_info = false) const override;
 
+  WebFrameClient* Client() const override { return client_; }
+
   // WebLocalFrame methods:
   WebLocalFrameImpl* CreateLocalChild(WebTreeScopeType,
                                       WebFrameClient*,
@@ -258,16 +257,13 @@ class CORE_EXPORT WebLocalFrameImpl final
   WebFrame* FindFrameByName(const WebString& name) override;
   void SendPings(const WebURL& destination_url) override;
   bool DispatchBeforeUnloadEvent(bool) override;
-  WebURLRequest RequestFromHistoryItem(const WebHistoryItem&,
-                                       mojom::FetchCacheMode) const override;
-  WebURLRequest RequestForReload(WebFrameLoadType,
-                                 const WebURL&) const override;
-  void Load(const WebURLRequest&,
-            WebFrameLoadType,
-            const WebHistoryItem&,
-            WebHistoryLoadType,
-            bool is_client_redirect,
-            const base::UnguessableToken& devtools_navigation_token) override;
+  void CommitNavigation(
+      const WebURLRequest&,
+      WebFrameLoadType,
+      const WebHistoryItem&,
+      WebHistoryLoadType,
+      bool is_client_redirect,
+      const base::UnguessableToken& devtools_navigation_token) override;
   blink::mojom::CommitResult CommitSameDocumentNavigation(
       const WebURL&,
       WebFrameLoadType,
@@ -313,21 +309,15 @@ class CORE_EXPORT WebLocalFrameImpl final
             const WebFindOptions&,
             bool wrap_within_frame,
             bool* active_now = nullptr) override;
-  void StopFinding(StopFindAction) override;
-  void IncreaseMatchCount(int count, int identifier) override;
-  int FindMatchMarkersVersion() const override;
-  WebFloatRect ActiveFindMatchRect() override;
-  void FindMatchRects(WebVector<WebFloatRect>&) override;
-  int SelectNearestFindMatch(const WebFloatPoint&,
-                             WebRect* selection_rect) override;
-  float DistanceToNearestFindMatch(const WebFloatPoint&) override;
+  void StopFindingForTesting(mojom::StopFindAction) override;
+
   void SetTickmarks(const WebVector<WebRect>&) override;
+  WebPlugin* GetWebPluginForFind() override;
   WebNode ContextMenuNode() const override;
   WebFrameWidget* FrameWidget() const override;
   void CopyImageAt(const WebPoint&) override;
   void SaveImageAt(const WebPoint&) override;
   void SetEngagementLevel(mojom::EngagementLevel) override;
-  void ClearActiveFindMatch() override;
   void UsageCountChromeLoadTimes(const WebString& metric) override;
   FrameScheduler* Scheduler() const override;
   scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(TaskType) override;
@@ -335,7 +325,8 @@ class CORE_EXPORT WebLocalFrameImpl final
 
   void ExtractSmartClipData(WebRect rect_in_viewport,
                             WebString& clip_text,
-                            WebString& clip_html) override;
+                            WebString& clip_html,
+                            WebRect& clip_rect) override;
 
   void AdvanceFocusInForm(WebFocusType) override;
 
@@ -401,7 +392,6 @@ class CORE_EXPORT WebLocalFrameImpl final
   // Otherwise, disallow scrolling.
   void SetCanHaveScrollbars(bool) override;
 
-  WebFrameClient* Client() const { return client_; }
   void SetClient(WebFrameClient* client) { client_ = client; }
 
   WebFrameWidgetBase* FrameWidgetImpl() { return frame_widget_; }
@@ -424,6 +414,8 @@ class CORE_EXPORT WebLocalFrameImpl final
     return spell_check_panel_host_client_;
   }
 
+  FindInPage* GetFindInPage() const { return find_in_page_; }
+
   TextFinder* GetTextFinder() const;
   // Returns the text finder object if it already exists.
   // Otherwise creates it and then returns.
@@ -434,11 +426,12 @@ class CORE_EXPORT WebLocalFrameImpl final
 
   void SetFrameWidget(WebFrameWidgetBase*);
 
-  std::unique_ptr<WebURLLoaderFactory> CreateURLLoaderFactory() override;
-
   // TODO(dcheng): Remove this and make |FrameWidget()| always return something
   // useful.
   WebFrameWidgetBase* LocalRootFrameWidget();
+
+  // Returns true if the frame is focused.
+  bool IsFocused() const;
 
   virtual void Trace(blink::Visitor*);
 
@@ -466,9 +459,6 @@ class CORE_EXPORT WebLocalFrameImpl final
 
   WebPlugin* FocusedPluginIfInputMethodSupported();
   ScrollableArea* LayoutViewportScrollableArea() const;
-
-  // Returns true if the frame is focused.
-  bool IsFocused() const;
 
   // A helper for DispatchBeforePrintEvent() and DispatchAfterPrintEvent().
   void DispatchPrintEventRecursively(const AtomicString& event_type);
@@ -498,8 +488,7 @@ class CORE_EXPORT WebLocalFrameImpl final
   std::unique_ptr<SharedWorkerRepositoryClientImpl>
       shared_worker_repository_client_;
 
-  // Will be initialized after first call to ensureTextFinder().
-  Member<TextFinder> text_finder_;
+  Member<FindInPage> find_in_page_;
 
   // Valid between calls to BeginPrint() and EndPrint(). Containts the print
   // information. Is used by PrintPage().

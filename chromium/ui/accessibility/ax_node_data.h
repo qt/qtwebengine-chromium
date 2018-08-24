@@ -57,16 +57,17 @@ struct AX_EXPORT AXNodeData {
   // attribute is not present. In addition, strings can be returned as
   // either std::string or base::string16, for convenience.
 
-  bool HasBoolAttribute(ax::mojom::BoolAttribute attr) const;
-  bool GetBoolAttribute(ax::mojom::BoolAttribute attr) const;
-  bool GetBoolAttribute(ax::mojom::BoolAttribute attr, bool* value) const;
+  bool HasBoolAttribute(ax::mojom::BoolAttribute attribute) const;
+  bool GetBoolAttribute(ax::mojom::BoolAttribute attribute) const;
+  bool GetBoolAttribute(ax::mojom::BoolAttribute attribute, bool* value) const;
 
-  bool HasFloatAttribute(ax::mojom::FloatAttribute attr) const;
-  float GetFloatAttribute(ax::mojom::FloatAttribute attr) const;
-  bool GetFloatAttribute(ax::mojom::FloatAttribute attr, float* value) const;
+  bool HasFloatAttribute(ax::mojom::FloatAttribute attribute) const;
+  float GetFloatAttribute(ax::mojom::FloatAttribute attribute) const;
+  bool GetFloatAttribute(ax::mojom::FloatAttribute attribute,
+                         float* value) const;
 
   bool HasIntAttribute(ax::mojom::IntAttribute attribute) const;
-  int32_t GetIntAttribute(ax::mojom::IntAttribute attribute) const;
+  int GetIntAttribute(ax::mojom::IntAttribute attribute) const;
   bool GetIntAttribute(ax::mojom::IntAttribute attribute, int* value) const;
 
   bool HasStringAttribute(ax::mojom::StringAttribute attribute) const;
@@ -92,8 +93,8 @@ struct AX_EXPORT AXNodeData {
   bool GetStringListAttribute(ax::mojom::StringListAttribute attribute,
                               std::vector<std::string>* value) const;
 
-  bool GetHtmlAttribute(const char* attr, base::string16* value) const;
-  bool GetHtmlAttribute(const char* attr, std::string* value) const;
+  bool GetHtmlAttribute(const char* attribute, base::string16* value) const;
+  bool GetHtmlAttribute(const char* attribute, std::string* value) const;
 
   // Setting accessibility attributes.
   void AddStringAttribute(ax::mojom::StringAttribute attribute,
@@ -139,6 +140,12 @@ struct AX_EXPORT AXNodeData {
     return static_cast<ax::mojom::CheckedState>(
         GetIntAttribute(ax::mojom::IntAttribute::kCheckedState));
   }
+
+  ax::mojom::HasPopup GetHasPopup() const {
+    return static_cast<ax::mojom::HasPopup>(
+        GetIntAttribute(ax::mojom::IntAttribute::kHasPopup));
+  }
+
   ax::mojom::DefaultActionVerb GetDefaultActionVerb() const {
     return static_cast<ax::mojom::DefaultActionVerb>(
         GetIntAttribute(ax::mojom::IntAttribute::kDefaultActionVerb));
@@ -160,10 +167,19 @@ struct AX_EXPORT AXNodeData {
         GetIntAttribute(ax::mojom::IntAttribute::kTextDirection));
   }
 
+  ax::mojom::TextPosition GetTextPosition() const {
+    return static_cast<ax::mojom::TextPosition>(
+        GetIntAttribute(ax::mojom::IntAttribute::kTextPosition));
+  }
+
   // Helper functions to set some common int attributes.
   void SetCheckedState(ax::mojom::CheckedState checked_state) {
     AddIntAttribute(ax::mojom::IntAttribute::kCheckedState,
                     static_cast<int32_t>(checked_state));
+  }
+  void SetHasPopup(ax::mojom::HasPopup has_popup) {
+    AddIntAttribute(ax::mojom::IntAttribute::kHasPopup,
+                    static_cast<int32_t>(has_popup));
   }
   void SetDefaultActionVerb(ax::mojom::DefaultActionVerb default_action_verb) {
     AddIntAttribute(ax::mojom::IntAttribute::kDefaultActionVerb,
@@ -184,6 +200,11 @@ struct AX_EXPORT AXNodeData {
   void SetTextDirection(ax::mojom::TextDirection text_direction) {
     AddIntAttribute(ax::mojom::IntAttribute::kTextDirection,
                     static_cast<int32_t>(text_direction));
+  }
+
+  void SetTextPosition(ax::mojom::TextPosition text_position) {
+    AddIntAttribute(ax::mojom::IntAttribute::kTextPosition,
+                    static_cast<int32_t>(text_position));
   }
 
   // Return a string representation of this data, for debugging.
@@ -213,7 +234,7 @@ struct AX_EXPORT AXNodeData {
 
   // The id of an ancestor node in the same AXTree that this object's
   // bounding box is relative to, or -1 if there's no offset container.
-  int offset_container_id = -1;
+  int32_t offset_container_id = -1;
 
   // The relative bounding box of this node.
   gfx::RectF location;

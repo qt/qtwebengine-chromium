@@ -20,9 +20,12 @@
 #include <stdint.h>
 
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <vector>
 
+#include "perfetto/base/thread_checker.h"
+#include "perfetto/base/weak_ptr.h"
 #include "perfetto/tracing/core/basic_types.h"
 #include "perfetto/tracing/core/shared_memory_abi.h"
 #include "perfetto/tracing/core/shared_memory_arbiter.h"
@@ -30,6 +33,8 @@
 
 namespace perfetto {
 
+class CommitDataRequest;
+class PatchList;
 class TraceWriter;
 
 namespace base {
@@ -50,11 +55,11 @@ class SharedMemoryArbiterImpl : public SharedMemoryArbiter {
   // pages. See tradeoff considerations in shared_memory_abi.h.
   // |OnPagesCompleteCallback|: a callback that will be posted on the passed
   // |TaskRunner| when one or more pages are complete (and hence the Producer
-  // should send a NotifySharedMemoryUpdate() to the Service).
+  // should send a CommitData request to the Service).
   SharedMemoryArbiterImpl(void* start,
                           size_t size,
                           size_t page_size,
-                          OnPagesCompleteCallback,
+                          Service::ProducerEndpoint*,
                           base::TaskRunner*);
 
   // Returns a new Chunk to write tracing data. The call always returns a valid
@@ -62,10 +67,23 @@ class SharedMemoryArbiterImpl : public SharedMemoryArbiter {
   // in the SMB. In the long term the caller should be allowed to pick a policy
   // and handle the retry itself asynchronously.
   SharedMemoryABI::Chunk GetNewChunk(const SharedMemoryABI::ChunkHeader&,
-                                     BufferID target_buffer,
                                      size_t size_hint = 0);
 
-  void ReturnCompletedChunk(SharedMemoryABI::Chunk chunk);
+  // Puts back a Chunk that has been completed and sends a request to the
+  // service to move it to the central tracing buffer. |target_buffer| is the
+  // absolute trace buffer ID where the service should move the chunk onto (the
+  // producer is just to copy back the same number received in the
+  // DataSourceConfig upon the CreateDataSourceInstance() reques).
+  // PatchList is a pointer to the list of patches for previous chunks. The
+  // first patched entries will be removed from the patched list and sent over
+  // to the service in the same CommitData() IPC request.
+  void ReturnCompletedChunk(SharedMemoryABI::Chunk,
+                            BufferID target_buffer,
+                            PatchList*);
+
+  // Forces a synchronous commit of the completed packets without waiting for
+  // the next task.
+  void FlushPendingCommitDataRequests(std::function<void()> callback = {});
 
   SharedMemoryABI* shmem_abi_for_testing() { return &shmem_abi_; }
 
@@ -78,6 +96,8 @@ class SharedMemoryArbiterImpl : public SharedMemoryArbiter {
   std::unique_ptr<TraceWriter> CreateTraceWriter(
       BufferID target_buffer = 0) override;
 
+  void NotifyFlushComplete(FlushRequestID) override;
+
  private:
   friend class TraceWriterImpl;
 
@@ -89,18 +109,21 @@ class SharedMemoryArbiterImpl : public SharedMemoryArbiter {
   // Called by the TraceWriter destructor.
   void ReleaseWriterID(WriterID);
 
-  void InvokeOnPagesCompleteCallback();
-
   base::TaskRunner* const task_runner_;
-  OnPagesCompleteCallback on_pages_complete_callback_;
+  Service::ProducerEndpoint* const producer_endpoint_;
+  PERFETTO_THREAD_CHECKER(thread_checker_)
 
   // --- Begin lock-protected members ---
   std::mutex lock_;
   SharedMemoryABI shmem_abi_;
   size_t page_idx_ = 0;
+  std::unique_ptr<CommitDataRequest> commit_data_req_;
+  size_t bytes_pending_commit_ = 0;  // SUM(chunk.size() : commit_data_req_).
   IdAllocator<WriterID> active_writer_ids_;
-  std::vector<uint32_t> pages_to_notify_;
   // --- End lock-protected members ---
+
+  // Keep at the end.
+  base::WeakPtrFactory<SharedMemoryArbiterImpl> weak_ptr_factory_;
 };
 
 }  // namespace perfetto

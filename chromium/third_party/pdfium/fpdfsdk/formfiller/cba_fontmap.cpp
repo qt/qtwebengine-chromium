@@ -13,7 +13,7 @@
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
-#include "core/fpdfapi/parser/fpdf_parser_decode.h"
+#include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "core/fpdfdoc/cpdf_defaultappearance.h"
 #include "core/fpdfdoc/cpdf_formfield.h"
 #include "core/fxge/cfx_substfont.h"
@@ -28,7 +28,7 @@ CBA_FontMap::CBA_FontMap(CPDFSDK_Annot* pAnnot,
       m_sAPType("N") {
   CPDF_Page* pPage = pAnnot->GetPDFPage();
 
-  m_pDocument = pPage->m_pDocument.Get();
+  m_pDocument = pPage->GetDocument();
   m_pAnnotDict = pAnnot->GetPDFAnnot()->GetAnnotDict();
   Initialize();
 }

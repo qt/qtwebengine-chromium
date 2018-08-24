@@ -43,9 +43,9 @@ bool SaveToFD(const printing::Metafile& metafile,
 
 namespace printing {
 
-#if BUILDFLAG(ENABLE_BASIC_PRINTING)
 bool PrintRenderFrameHelper::PrintPagesNative(blink::WebLocalFrame* frame,
-                                              int page_count) {
+                                              int page_count,
+                                              bool is_pdf) {
   const PrintMsg_PrintPages_Params& params = *print_pages_params_;
   const PrintMsg_Print_Params& print_params = params.params;
 
@@ -58,8 +58,9 @@ bool PrintRenderFrameHelper::PrintPagesNative(blink::WebLocalFrame* frame,
   CHECK(metafile.Init());
 
   for (int page_number : printed_pages) {
-    PrintPageInternal(print_params, page_number, page_count, frame, &metafile,
-                      nullptr, nullptr);
+    PrintPageInternal(print_params, page_number, page_count,
+                      GetScaleFactor(print_params.scale_factor, is_pdf), frame,
+                      &metafile, nullptr, nullptr);
   }
 
   // blink::printEnd() for PDF should be called before metafile is closed.
@@ -92,6 +93,5 @@ bool PrintRenderFrameHelper::PrintPagesNative(blink::WebLocalFrame* frame,
   return true;
 #endif  // defined(OS_ANDROID)
 }
-#endif  // BUILDFLAG(ENABLE_BASIC_PRINTING)
 
 }  // namespace printing

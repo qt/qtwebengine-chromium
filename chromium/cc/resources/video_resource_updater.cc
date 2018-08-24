@@ -22,7 +22,6 @@
 #include "cc/base/math_util.h"
 #include "cc/paint/skia_paint_canvas.h"
 #include "cc/resources/layer_tree_resource_provider.h"
-#include "cc/trees/layer_tree_frame_sink.h"
 #include "components/viz/common/gpu/context_provider.h"
 #include "components/viz/common/gpu/texture_allocation.h"
 #include "components/viz/common/quads/render_pass.h"
@@ -31,6 +30,7 @@
 #include "components/viz/common/quads/yuv_video_draw_quad.h"
 #include "components/viz/common/resources/bitmap_allocation.h"
 #include "components/viz/common/resources/resource_sizes.h"
+#include "components/viz/common/resources/shared_bitmap_reporter.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
@@ -43,6 +43,7 @@
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/gl/gl_enums.h"
 #include "ui/gl/trace_util.h"
 
 namespace cc {
@@ -84,8 +85,7 @@ VideoFrameResourceType ExternalResourceTypeForHardwarePlanes(
     case media::PIXEL_FORMAT_NV12:
       DCHECK(target == GL_TEXTURE_EXTERNAL_OES || target == GL_TEXTURE_2D ||
              target == GL_TEXTURE_RECTANGLE_ARB)
-          << "Unsupported texture target " << std::hex << std::showbase
-          << target;
+          << "Unsupported target " << gl::GLEnums::GetStringEnum(target);
       // Single plane textures can be sampled as RGB.
       if (num_textures > 1)
         return VideoFrameResourceType::YUV;
@@ -252,14 +252,14 @@ class VideoResourceUpdater::SoftwarePlaneResource
  public:
   SoftwarePlaneResource(uint32_t plane_resource_id,
                         const gfx::Size& size,
-                        LayerTreeFrameSink* layer_tree_frame_sink)
+                        viz::SharedBitmapReporter* shared_bitmap_reporter)
       : PlaneResource(plane_resource_id,
                       size,
                       viz::ResourceFormat::RGBA_8888,
                       /*is_software=*/true),
-        layer_tree_frame_sink_(layer_tree_frame_sink),
+        shared_bitmap_reporter_(shared_bitmap_reporter),
         shared_bitmap_id_(viz::SharedBitmap::GenerateId()) {
-    DCHECK(layer_tree_frame_sink_);
+    DCHECK(shared_bitmap_reporter_);
 
     // Allocate SharedMemory and notify display compositor of the allocation.
     shared_memory_ = viz::bitmap_allocation::AllocateMappedBitmap(
@@ -268,11 +268,11 @@ class VideoResourceUpdater::SoftwarePlaneResource
         viz::bitmap_allocation::DuplicateAndCloseMappedBitmap(
             shared_memory_.get(), resource_size(),
             viz::ResourceFormat::RGBA_8888);
-    layer_tree_frame_sink_->DidAllocateSharedBitmap(std::move(handle),
-                                                    shared_bitmap_id_);
+    shared_bitmap_reporter_->DidAllocateSharedBitmap(std::move(handle),
+                                                     shared_bitmap_id_);
   }
   ~SoftwarePlaneResource() override {
-    layer_tree_frame_sink_->DidDeleteSharedBitmap(shared_bitmap_id_);
+    shared_bitmap_reporter_->DidDeleteSharedBitmap(shared_bitmap_id_);
   }
 
   const viz::SharedBitmapId& shared_bitmap_id() const {
@@ -286,7 +286,7 @@ class VideoResourceUpdater::SoftwarePlaneResource
   }
 
  private:
-  LayerTreeFrameSink* const layer_tree_frame_sink_;
+  viz::SharedBitmapReporter* const shared_bitmap_reporter_;
   const viz::SharedBitmapId shared_bitmap_id_;
   std::unique_ptr<base::SharedMemory> shared_memory_;
 
@@ -340,18 +340,22 @@ VideoResourceUpdater::PlaneResource::AsHardware() {
 
 VideoResourceUpdater::VideoResourceUpdater(
     viz::ContextProvider* context_provider,
-    LayerTreeFrameSink* layer_tree_frame_sink,
+    viz::SharedBitmapReporter* shared_bitmap_reporter,
     LayerTreeResourceProvider* resource_provider,
     bool use_stream_video_draw_quad,
-    bool use_gpu_memory_buffer_resources)
+    bool use_gpu_memory_buffer_resources,
+    bool use_r16_texture,
+    int max_resource_size)
     : context_provider_(context_provider),
-      layer_tree_frame_sink_(layer_tree_frame_sink),
+      shared_bitmap_reporter_(shared_bitmap_reporter),
       resource_provider_(resource_provider),
       use_stream_video_draw_quad_(use_stream_video_draw_quad),
       use_gpu_memory_buffer_resources_(use_gpu_memory_buffer_resources),
+      use_r16_texture_(use_r16_texture),
+      max_resource_size_(max_resource_size),
       tracing_id_(g_next_video_resource_updater_id.GetNext()),
       weak_ptr_factory_(this) {
-  DCHECK(context_provider_ || layer_tree_frame_sink_);
+  DCHECK(context_provider_ || shared_bitmap_reporter_);
 
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
       this, "cc::VideoResourceUpdater", base::ThreadTaskRunnerHandle::Get());
@@ -477,6 +481,8 @@ void VideoResourceUpdater::AppendQuads(viz::RenderPass* render_pass,
           frame_resource_multiplier_, frame_bits_per_channel_);
       yuv_video_quad->require_overlay =
           frame->metadata()->IsTrue(media::VideoFrameMetadata::REQUIRE_OVERLAY);
+      yuv_video_quad->is_protected_video =
+          frame->metadata()->IsTrue(media::VideoFrameMetadata::PROTECTED_VIDEO);
 
       for (viz::ResourceId resource_id : yuv_video_quad->resources) {
         resource_provider_->ValidateResource(resource_id);
@@ -543,6 +549,21 @@ VideoResourceUpdater::CreateExternalResourcesFromVideoFrame(
     return CreateForSoftwarePlanes(std::move(video_frame));
 }
 
+viz::ResourceFormat VideoResourceUpdater::YuvResourceFormat(
+    int bits_per_channel) {
+  DCHECK(context_provider_);
+  const auto& caps = context_provider_->ContextCapabilities();
+  if (caps.disable_one_component_textures)
+    return viz::RGBA_8888;
+  if (bits_per_channel <= 8)
+    return caps.texture_rg ? viz::RED_8 : viz::LUMINANCE_8;
+  if (use_r16_texture_ && caps.texture_norm16)
+    return viz::R16_EXT;
+  if (caps.texture_half_float_linear)
+    return viz::LUMINANCE_F16;
+  return viz::LUMINANCE_8;
+}
+
 VideoResourceUpdater::PlaneResource*
 VideoResourceUpdater::RecycleOrAllocateResource(
     const gfx::Size& resource_size,
@@ -591,7 +612,7 @@ VideoResourceUpdater::PlaneResource* VideoResourceUpdater::AllocateResource(
     DCHECK_EQ(format, viz::ResourceFormat::RGBA_8888);
 
     all_resources_.push_back(std::make_unique<SoftwarePlaneResource>(
-        plane_resource_id, plane_size, layer_tree_frame_sink_));
+        plane_resource_id, plane_size, shared_bitmap_reporter_));
   } else {
     // Video textures get composited into the display frame, the GPU doesn't
     // draw to them directly.
@@ -718,7 +739,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
 #if defined(OS_ANDROID)
       transfer_resource.is_backed_by_surface_texture =
           video_frame->metadata()->IsTrue(
-              media::VideoFrameMetadata::SURFACE_TEXTURE);
+              media::VideoFrameMetadata::TEXTURE_OWNER);
       transfer_resource.wants_promotion_hint = video_frame->metadata()->IsTrue(
           media::VideoFrameMetadata::WANTS_PROMOTION_HINT);
 #endif
@@ -749,10 +770,9 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
     // compositing.
     output_resource_format = viz::RGBA_8888;
     output_color_space = output_color_space.GetAsFullRangeRGB();
-  } else {
+  } else if (!software_compositor()) {
     // Can be composited directly from yuv planes.
-    output_resource_format =
-        resource_provider_->YuvResourceFormat(bits_per_channel);
+    output_resource_format = YuvResourceFormat(bits_per_channel);
   }
 
   // If GPU compositing is enabled, but the output resource format
@@ -780,37 +800,43 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
     output_color_space = output_color_space.GetAsFullRangeRGB();
   }
 
-  // Drop recycled resources that are the wrong format.
-  auto can_delete_resource_fn =
-      [output_resource_format](const std::unique_ptr<PlaneResource>& resource) {
-        return !resource->has_refs() &&
-               resource->resource_format() != output_resource_format;
-      };
-  base::EraseIf(all_resources_, can_delete_resource_fn);
-  // TODO(kylechar): Delete resources that are the wrong size for all output
-  // planes.
-
-  const int max_resource_size = resource_provider_->max_texture_size();
-  std::vector<PlaneResource*> plane_resources;
+  std::vector<gfx::Size> outplane_plane_sizes;
+  outplane_plane_sizes.reserve(output_plane_count);
   for (size_t i = 0; i < output_plane_count; ++i) {
-    gfx::Size output_plane_resource_size =
-        SoftwarePlaneDimension(video_frame.get(), software_compositor(), i);
+    outplane_plane_sizes.push_back(
+        SoftwarePlaneDimension(video_frame.get(), software_compositor(), i));
+    const gfx::Size& output_plane_resource_size = outplane_plane_sizes.back();
     if (output_plane_resource_size.IsEmpty() ||
-        output_plane_resource_size.width() > max_resource_size ||
-        output_plane_resource_size.height() > max_resource_size) {
-      // This output plane has invalid geometry. Clean up and return an empty
-      // external resources.
-      for (auto* plane_resource : plane_resources)
-        plane_resource->remove_ref();
+        output_plane_resource_size.width() > max_resource_size_ ||
+        output_plane_resource_size.height() > max_resource_size_) {
+      // This output plane has invalid geometry so return an empty external
+      // resources.
       return VideoFrameExternalResources();
     }
+  }
 
-    PlaneResource* plane_resource = RecycleOrAllocateResource(
-        output_plane_resource_size, output_resource_format, output_color_space,
-        video_frame->unique_id(), i);
+  // Delete recycled resources that are the wrong format or wrong size.
+  auto can_delete_resource_fn =
+      [output_resource_format,
+       &outplane_plane_sizes](const std::unique_ptr<PlaneResource>& resource) {
+        // Resources that are still being used can't be deleted.
+        if (resource->has_refs())
+          return false;
 
-    plane_resource->add_ref();
-    plane_resources.push_back(plane_resource);
+        return resource->resource_format() != output_resource_format ||
+               !base::ContainsValue(outplane_plane_sizes,
+                                    resource->resource_size());
+      };
+  base::EraseIf(all_resources_, can_delete_resource_fn);
+
+  // Recycle or allocate resources for each video plane.
+  std::vector<PlaneResource*> plane_resources;
+  plane_resources.reserve(output_plane_count);
+  for (size_t i = 0; i < output_plane_count; ++i) {
+    plane_resources.push_back(RecycleOrAllocateResource(
+        outplane_plane_sizes[i], output_resource_format, output_color_space,
+        video_frame->unique_id(), i));
+    plane_resources.back()->add_ref();
   }
 
   VideoFrameExternalResources external_resources;
@@ -874,7 +900,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
       SoftwarePlaneResource* software_resource = plane_resource->AsSoftware();
       external_resources.type = VideoFrameResourceType::RGBA_PREMULTIPLIED;
       transferable_resource = viz::TransferableResource::MakeSoftware(
-          software_resource->shared_bitmap_id(), 0 /* sequence_number */,
+          software_resource->shared_bitmap_id(),
           software_resource->resource_size(),
           plane_resource->resource_format());
     } else {
@@ -902,7 +928,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
   }
 
   const viz::ResourceFormat yuv_resource_format =
-      resource_provider_->YuvResourceFormat(bits_per_channel);
+      YuvResourceFormat(bits_per_channel);
   DCHECK(yuv_resource_format == viz::LUMINANCE_F16 ||
          yuv_resource_format == viz::R16_EXT ||
          yuv_resource_format == viz::LUMINANCE_8 ||

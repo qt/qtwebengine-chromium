@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/core/layout/ng/ng_constraint_space_builder.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_fragment_builder.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_positioned_float.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_unpositioned_float.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
@@ -46,15 +47,14 @@ class NGLineBreakerTest : public NGBaseLayoutAlgorithmTest {
 
     Vector<NGInlineItemResults> lines;
     NGExclusionSpace exclusion_space;
-    NGLayoutOpportunity opportunity;
-    opportunity.rect =
-        NGBfcRect(NGBfcOffset(), {available_width, LayoutUnit::Max()});
+    NGLineLayoutOpportunity line_opportunity(available_width);
     NGLineInfo line_info;
     while (!break_token || !break_token->IsFinished()) {
       NGLineBreaker line_breaker(node, NGLineBreakerMode::kContent, *space,
                                  &positioned_floats, &unpositioned_floats,
+                                 /* container_builder */ nullptr,
                                  &exclusion_space, 0u, break_token.get());
-      if (!line_breaker.NextLine(opportunity, &line_info))
+      if (!line_breaker.NextLine(line_opportunity, &line_info))
         break;
 
       break_token = line_breaker.CreateBreakToken(line_info, nullptr);
@@ -69,8 +69,11 @@ namespace {
 
 String ToString(NGInlineItemResults line, NGInlineNode node) {
   StringBuilder builder;
+  const String& text = node.ItemsData(false).text_content;
   for (const auto& item_result : line) {
-    builder.Append(node.Text(item_result.start_offset, item_result.end_offset));
+    builder.Append(
+        StringView(text, item_result.start_offset,
+                   item_result.end_offset - item_result.start_offset));
   }
   return builder.ToString();
 }
@@ -181,7 +184,7 @@ TEST_F(NGLineBreakerTest, OverflowMargin) {
     </style>
     <div id=container><span>123 456</span> 789</div>
   )HTML");
-  const Vector<NGInlineItem>& items = node.Items();
+  const Vector<NGInlineItem>& items = node.ItemsData(false).items;
 
   // While "123 456" can fit in a line, "456" has a right margin that cannot
   // fit. Since "456" and its right margin is not breakable, "456" should be on

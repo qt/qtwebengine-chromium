@@ -6,8 +6,8 @@
 
 #include "third_party/blink/renderer/platform/scheduler/base/work_queue_sets.h"
 
-namespace blink {
-namespace scheduler {
+namespace base {
+namespace sequence_manager {
 namespace internal {
 
 WorkQueue::WorkQueue(TaskQueueImpl* task_queue,
@@ -15,8 +15,8 @@ WorkQueue::WorkQueue(TaskQueueImpl* task_queue,
                      QueueType queue_type)
     : task_queue_(task_queue), name_(name), queue_type_(queue_type) {}
 
-void WorkQueue::AsValueInto(base::TimeTicks now,
-                            base::trace_event::TracedValue* state) const {
+void WorkQueue::AsValueInto(TimeTicks now,
+                            trace_event::TracedValue* state) const {
   for (const TaskQueueImpl::Task& task : tasks_) {
     TaskQueueImpl::TaskAsValueInto(task, now, state);
   }
@@ -81,7 +81,7 @@ void WorkQueue::Push(TaskQueueImpl::Task task) {
 }
 
 void WorkQueue::PushNonNestableTaskToFront(TaskQueueImpl::Task task) {
-  DCHECK(task.nestable == base::Nestable::kNonNestable);
+  DCHECK(task.nestable == Nestable::kNonNestable);
 
   bool was_empty = tasks_.empty();
   bool was_blocked = BlockedByFence();
@@ -130,7 +130,8 @@ TaskQueueImpl::Task WorkQueue::TakeTaskFromWorkQueue() {
   DCHECK(work_queue_sets_);
   DCHECK(!tasks_.empty());
 
-  TaskQueueImpl::Task pending_task = tasks_.TakeFirst();
+  TaskQueueImpl::Task pending_task = std::move(tasks_.front());
+  tasks_.pop_front();
   // NB immediate tasks have a different pipeline to delayed ones.
   if (queue_type_ == QueueType::kImmediate && tasks_.empty()) {
     // Short-circuit the queue reload so that OnPopQueue does the right thing.
@@ -230,5 +231,5 @@ void WorkQueue::PopTaskForTesting() {
 }
 
 }  // namespace internal
-}  // namespace scheduler
-}  // namespace blink
+}  // namespace sequence_manager
+}  // namespace base

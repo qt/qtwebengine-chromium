@@ -45,6 +45,9 @@ constexpr gl::Rectangle kMaxSizedScissor(0,
                                          std::numeric_limits<int>::max(),
                                          std::numeric_limits<int>::max());
 
+constexpr VkColorComponentFlags kAllColorChannelsMask =
+    (VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+     VK_COLOR_COMPONENT_A_BIT);
 }  // anonymous namespace
 
 ContextVk::ContextVk(const gl::ContextState &state, RendererVk *renderer)
@@ -53,7 +56,8 @@ ContextVk::ContextVk(const gl::ContextState &state, RendererVk *renderer)
       mCurrentDrawMode(GL_NONE),
       mDynamicDescriptorPool(),
       mTexturesDirty(false),
-      mVertexArrayBindingHasChanged(false)
+      mVertexArrayBindingHasChanged(false),
+      mClearColorMask(kAllColorChannelsMask)
 {
     memset(&mClearColorValue, 0, sizeof(mClearColorValue));
     memset(&mClearDepthStencilValue, 0, sizeof(mClearDepthStencilValue));
@@ -65,7 +69,17 @@ ContextVk::~ContextVk()
 
 void ContextVk::onDestroy(const gl::Context *context)
 {
+    mIncompleteTextures.onDestroy(context);
     mDynamicDescriptorPool.destroy(mRenderer);
+}
+
+gl::Error ContextVk::getIncompleteTexture(const gl::Context *context,
+                                          gl::TextureType type,
+                                          gl::Texture **textureOut)
+{
+    // At some point, we'll need to support multisample and we'll pass "this" instead of nullptr
+    // and implement the necessary interface.
+    return mIncompleteTextures.getIncompleteTexture(context, type, nullptr, textureOut);
 }
 
 gl::Error ContextVk::initialize()
@@ -96,7 +110,7 @@ gl::Error ContextVk::finish(const gl::Context *context)
     return mRenderer->finish(context);
 }
 
-gl::Error ContextVk::initPipeline(const gl::Context *context)
+gl::Error ContextVk::initPipeline()
 {
     ASSERT(!mCurrentPipeline);
 
@@ -114,11 +128,11 @@ gl::Error ContextVk::initPipeline(const gl::Context *context)
     vertexArrayVk->getPackedInputDescriptions(mPipelineDesc.get());
 
     // Ensure that the RenderPass description is updated.
-    mPipelineDesc->updateRenderPassDesc(framebufferVk->getRenderPassDesc(context));
+    mPipelineDesc->updateRenderPassDesc(framebufferVk->getRenderPassDesc());
 
     // TODO(jmadill): Validate with ASSERT against physical device limits/caps?
-    ANGLE_TRY(mRenderer->getPipeline(programVk, *mPipelineDesc, activeAttribLocationsMask,
-                                     &mCurrentPipeline));
+    ANGLE_TRY(mRenderer->getAppPipeline(programVk, *mPipelineDesc, activeAttribLocationsMask,
+                                        &mCurrentPipeline));
 
     return gl::NoError();
 }
@@ -136,7 +150,7 @@ gl::Error ContextVk::setupDraw(const gl::Context *context,
 
     if (!mCurrentPipeline)
     {
-        ANGLE_TRY(initPipeline(context));
+        ANGLE_TRY(initPipeline());
     }
 
     const auto &state            = mState.getState();
@@ -147,7 +161,7 @@ gl::Error ContextVk::setupDraw(const gl::Context *context,
     Serial queueSerial           = mRenderer->getCurrentQueueSerial();
 
     vk::CommandGraphNode *graphNode = nullptr;
-    ANGLE_TRY(vkFBO->getCommandGraphNodeForDraw(context, &graphNode));
+    ANGLE_TRY(vkFBO->getCommandGraphNodeForDraw(this, &graphNode));
 
     vk::CommandBuffer *commandBuffer = nullptr;
 
@@ -177,11 +191,14 @@ gl::Error ContextVk::setupDraw(const gl::Context *context,
             // TODO(jmadill): Sampler arrays
             ASSERT(samplerBinding.boundTextureUnits.size() == 1);
 
-            GLuint textureUnit         = samplerBinding.boundTextureUnits[0];
-            const gl::Texture *texture = completeTextures[textureUnit];
+            GLuint textureUnit   = samplerBinding.boundTextureUnits[0];
+            gl::Texture *texture = completeTextures[textureUnit];
 
-            // TODO(jmadill): Incomplete textures handling.
-            ASSERT(texture);
+            // Null textures represent incomplete textures.
+            if (texture == nullptr)
+            {
+                ANGLE_TRY(getIncompleteTexture(context, samplerBinding.textureType, &texture));
+            }
 
             TextureVk *textureVk = vk::GetImpl(texture);
             ANGLE_TRY(textureVk->ensureImageInitialized(mRenderer));
@@ -197,7 +214,7 @@ gl::Error ContextVk::setupDraw(const gl::Context *context,
 
     // TODO(jmadill): Can probably use more dirty bits here.
     ANGLE_TRY(programVk->updateUniforms(this));
-    ANGLE_TRY(programVk->updateTexturesDescriptorSet(this));
+    ANGLE_TRY(programVk->updateTexturesDescriptorSet(context));
 
     // Bind the graphics descriptor sets.
     // TODO(jmadill): Handle multiple command buffers.
@@ -390,7 +407,7 @@ void ContextVk::syncState(const gl::Context *context, const gl::State::DirtyBits
                                               glState.getFarPlane());
                 break;
             case gl::State::DIRTY_BIT_DEPTH_RANGE:
-                WARN() << "DIRTY_BIT_DEPTH_RANGE unimplemented";
+                mPipelineDesc->updateDepthRange(glState.getNearPlane(), glState.getFarPlane());
                 break;
             case gl::State::DIRTY_BIT_BLEND_ENABLED:
                 mPipelineDesc->updateBlendEnabled(glState.isBlendEnabled());
@@ -405,8 +422,14 @@ void ContextVk::syncState(const gl::Context *context, const gl::State::DirtyBits
                 mPipelineDesc->updateBlendEquations(glState.getBlendState());
                 break;
             case gl::State::DIRTY_BIT_COLOR_MASK:
-                mPipelineDesc->updateColorWriteMask(glState.getBlendState());
+            {
+                const gl::BlendState &blendState = glState.getBlendState();
+                mClearColorMask                  = gl_vk::GetColorComponentFlags(
+                    blendState.colorMaskRed, blendState.colorMaskGreen, blendState.colorMaskBlue,
+                    blendState.colorMaskAlpha);
+                mPipelineDesc->updateColorWriteMask(mClearColorMask);
                 break;
+            }
             case gl::State::DIRTY_BIT_SAMPLE_ALPHA_TO_COVERAGE_ENABLED:
                 WARN() << "DIRTY_BIT_SAMPLE_ALPHA_TO_COVERAGE_ENABLED unimplemented";
                 break;
@@ -490,13 +513,15 @@ void ContextVk::syncState(const gl::Context *context, const gl::State::DirtyBits
                     static_cast<uint32_t>(glState.getStencilClearValue());
                 break;
             case gl::State::DIRTY_BIT_UNPACK_STATE:
-                WARN() << "DIRTY_BIT_UNPACK_STATE unimplemented";
+                // This is a no-op, its only important to use the right unpack state when we do
+                // setImage or setSubImage in TextureVk, which is plumbed through the frontend call
                 break;
             case gl::State::DIRTY_BIT_UNPACK_BUFFER_BINDING:
                 WARN() << "DIRTY_BIT_UNPACK_BUFFER_BINDING unimplemented";
                 break;
             case gl::State::DIRTY_BIT_PACK_STATE:
-                WARN() << "DIRTY_BIT_PACK_STATE unimplemented";
+                // This is a no-op, its only important to use the right pack state when we do
+                // call readPixels later on.
                 break;
             case gl::State::DIRTY_BIT_PACK_BUFFER_BINDING:
                 WARN() << "DIRTY_BIT_PACK_BUFFER_BINDING unimplemented";
@@ -530,12 +555,12 @@ void ContextVk::syncState(const gl::Context *context, const gl::State::DirtyBits
                 WARN() << "DIRTY_BIT_DISPATCH_INDIRECT_BUFFER_BINDING unimplemented";
                 break;
             case gl::State::DIRTY_BIT_PROGRAM_BINDING:
-                WARN() << "DIRTY_BIT_PROGRAM_BINDING unimplemented";
                 break;
             case gl::State::DIRTY_BIT_PROGRAM_EXECUTABLE:
             {
                 ProgramVk *programVk = vk::GetImpl(glState.getProgram());
-                mPipelineDesc->updateShaders(programVk);
+                mPipelineDesc->updateShaders(programVk->getVertexModuleSerial(),
+                                             programVk->getFragmentModuleSerial());
                 dirtyTextures = true;
                 break;
             }
@@ -650,7 +675,7 @@ FramebufferImpl *ContextVk::createFramebuffer(const gl::FramebufferState &state)
 
 TextureImpl *ContextVk::createTexture(const gl::TextureState &state)
 {
-    return new TextureVk(state);
+    return new TextureVk(state, mRenderer);
 }
 
 RenderbufferImpl *ContextVk::createRenderbuffer(const gl::RenderbufferState &state)
@@ -665,10 +690,10 @@ BufferImpl *ContextVk::createBuffer(const gl::BufferState &state)
 
 VertexArrayImpl *ContextVk::createVertexArray(const gl::VertexArrayState &state)
 {
-    return new VertexArrayVk(state);
+    return new VertexArrayVk(state, mRenderer);
 }
 
-QueryImpl *ContextVk::createQuery(GLenum type)
+QueryImpl *ContextVk::createQuery(gl::QueryType type)
 {
     return new QueryVk(type);
 }
@@ -750,4 +775,8 @@ const VkClearValue &ContextVk::getClearDepthStencilValue() const
     return mClearDepthStencilValue;
 }
 
+VkColorComponentFlags ContextVk::getClearColorMask() const
+{
+    return mClearColorMask;
+}
 }  // namespace rx

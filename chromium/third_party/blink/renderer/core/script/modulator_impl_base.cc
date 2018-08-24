@@ -51,43 +51,43 @@ const SecurityOrigin* ModulatorImplBase::GetSecurityOriginForFetch() {
 // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-module-script-tree
 // [fetch-a-module-worker-script-tree]
 // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-module-worker-script-tree
-void ModulatorImplBase::FetchTree(const ModuleScriptFetchRequest& request,
+void ModulatorImplBase::FetchTree(const KURL& url,
+                                  WebURLRequest::RequestContext destination,
+                                  const ScriptFetchOptions& options,
                                   ModuleTreeClient* client) {
-  // [fetch-a-module-script-tree] Step 2. Perform the internal module script
-  // graph fetching procedure given url, settings object, destination, options,
-  // settings object, visited set, "client", and with the top-level module fetch
-  // flag set. If the caller of this algorithm specified custom perform the
-  // fetch steps, pass those along as well. [spec text]
+  // <spec label="fetch-a-module-script-tree" step="2">Perform the internal
+  // module script graph fetching procedure given url, settings object,
+  // destination, options, settings object, visited set, "client", and with the
+  // top-level module fetch flag set. If the caller of this algorithm specified
+  // custom perform the fetch steps, pass those along as well.</spec>
 
-  // [fetch-a-module-worker-script-tree] Step 3. Perform the internal module
-  // script graph fetching procedure given url, fetch client settings object,
-  // destination, options, module map settings object, visited set, "client",
-  // and with the top-level module fetch flag set. If the caller of this
-  // algorithm specified custom perform the fetch steps, pass those along as
-  // well. [spec text]
+  // <spec label="fetch-a-module-worker-script-tree" step="3">Perform the
+  // internal module script graph fetching procedure given url, fetch client
+  // settings object, destination, options, module map settings object, visited
+  // set, "client", and with the top-level module fetch flag set. If the caller
+  // of this algorithm specified custom perform the fetch steps, pass those
+  // along as well.</spec>
 
-  // Note: "Fetch a module script graph" algorithm doesn't have "referrer" as
-  // its argument.
-  DCHECK(request.GetReferrer().IsNull());
+  tree_linker_registry_->Fetch(url, GetExecutionContext()->BaseURL(),
+                               destination, options, this, client);
 
-  tree_linker_registry_->Fetch(request, this, client);
+  // <spec label="fetch-a-module-script-tree" step="3">When the internal module
+  // script graph fetching procedure asynchronously completes with result,
+  // asynchronously complete this algorithm with result.</spec>
 
-  // [fetch-a-module-script-tree] Step 3. When the internal module script graph
-  // fetching procedure asynchronously completes with result, asynchronously
-  // complete this algorithm with result. [spec text]
-
-  // [fetch-a-module-worker-script-tree] Step 4. When the internal module script
-  // graph fetching procedure asynchronously completes with result,
-  // asynchronously complete this algorithm with result. [spec text]
+  // <spec label="fetch-a-module-worker-script-tree" step="4">When the internal
+  // module script graph fetching procedure asynchronously completes with
+  // result, asynchronously complete this algorithm with result.</spec>
 
   // Note: We delegate to ModuleTreeLinker to notify ModuleTreeClient.
 }
 
 void ModulatorImplBase::FetchDescendantsForInlineScript(
     ModuleScript* module_script,
+    WebURLRequest::RequestContext destination,
     ModuleTreeClient* client) {
-  tree_linker_registry_->FetchDescendantsForInlineScript(module_script, this,
-                                                         client);
+  tree_linker_registry_->FetchDescendantsForInlineScript(
+      module_script, destination, this, client);
 }
 
 void ModulatorImplBase::FetchSingle(const ModuleScriptFetchRequest& request,
@@ -258,8 +258,7 @@ void ModulatorImplBase::Trace(blink::Visitor* visitor) {
   visitor->Trace(dynamic_module_resolver_);
 }
 
-void ModulatorImplBase::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+void ModulatorImplBase::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(map_);
   visitor->TraceWrappers(tree_linker_registry_);
   Modulator::TraceWrappers(visitor);

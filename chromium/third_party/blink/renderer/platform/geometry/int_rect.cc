@@ -28,6 +28,7 @@
 #include "third_party/blink/renderer/platform/geometry/float_rect.h"
 #include "third_party/blink/renderer/platform/geometry/layout_rect.h"
 #include "third_party/blink/renderer/platform/wtf/checked_numeric.h"
+#include "third_party/blink/renderer/platform/wtf/text/text_stream.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "third_party/skia/include/core/SkRect.h"
@@ -36,6 +37,9 @@
 #include <algorithm>
 
 namespace blink {
+
+IntRect::IntRect(const gfx::Rect& rect)
+    : location_(rect.x(), rect.y()), size_(rect.width(), rect.height()) {}
 
 void IntRect::ShiftXEdgeTo(int edge) {
   int delta = edge - X();
@@ -202,6 +206,11 @@ bool IntRect::IsValid() const {
   max = location_.Y();
   max += size_.Height();
   return max.IsValid();
+}
+
+WTF::TextStream& operator<<(WTF::TextStream& ts, const IntRect& r) {
+  return ts << "at (" << r.X() << "," << r.Y() << ") size " << r.Width() << "x"
+            << r.Height();
 }
 
 }  // namespace blink

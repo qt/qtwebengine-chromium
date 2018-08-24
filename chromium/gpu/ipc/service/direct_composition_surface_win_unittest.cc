@@ -67,10 +67,7 @@ class TestImageTransportSurfaceDelegate
     return gpu_preferences_;
   }
   void SetSnapshotRequestedCallback(const base::Closure& callback) override {}
-  void UpdateVSyncParameters(base::TimeTicks timebase,
-                             base::TimeDelta interval) override {}
-  void BufferPresented(uint64_t swap_id,
-                       const gfx::PresentationFeedback& feedback) override {}
+  void BufferPresented(const gfx::PresentationFeedback& feedback) override {}
   void AddFilter(IPC::MessageFilter* message_filter) override {}
   int32_t GetRouteID() const override { return 0; }
 
@@ -91,6 +88,7 @@ class TestPlatformDelegate : public ui::PlatformWindowDelegate {
   void OnLostCapture() override {}
   void OnAcceleratedWidgetAvailable(gfx::AcceleratedWidget widget,
                                     float device_pixel_ratio) override {}
+  void OnAcceleratedWidgetDestroying() override {}
   void OnAcceleratedWidgetDestroyed() override {}
   void OnActivationChanged(bool active) override {}
 };
@@ -161,10 +159,12 @@ TEST(DirectCompositionSurfaceTest, TestMakeCurrent) {
       new DirectCompositionSurfaceWin(nullptr, delegate.AsWeakPtr(),
                                       ui::GetHiddenWindow()));
   EXPECT_TRUE(surface1->Initialize());
-  surface1->SetEnableDCLayers(true);
 
   scoped_refptr<gl::GLContext> context1 = gl::init::CreateGLContext(
       nullptr, surface1.get(), gl::GLContextAttribs());
+  EXPECT_TRUE(context1->MakeCurrent(surface1.get()));
+
+  surface1->SetEnableDCLayers(true);
   EXPECT_TRUE(surface1->Resize(gfx::Size(100, 100), 1.0,
                                gl::GLSurface::ColorSpace::UNSPECIFIED, true));
 
@@ -175,7 +175,6 @@ TEST(DirectCompositionSurfaceTest, TestMakeCurrent) {
   // SetDrawRectangle can't be called again until swap.
   EXPECT_FALSE(surface1->SetDrawRectangle(gfx::Rect(0, 0, 100, 100)));
 
-  EXPECT_TRUE(context1->MakeCurrent(surface1.get()));
   EXPECT_EQ(gfx::SwapResult::SWAP_ACK,
             surface1->SwapBuffers(base::DoNothing()));
 
@@ -199,8 +198,9 @@ TEST(DirectCompositionSurfaceTest, TestMakeCurrent) {
 
   scoped_refptr<gl::GLContext> context2 = gl::init::CreateGLContext(
       nullptr, surface2.get(), gl::GLContextAttribs());
-  surface2->SetEnableDCLayers(true);
   EXPECT_TRUE(context2->MakeCurrent(surface2.get()));
+
+  surface2->SetEnableDCLayers(true);
   EXPECT_TRUE(surface2->Resize(gfx::Size(100, 100), 1.0,
                                gl::GLSurface::ColorSpace::UNSPECIFIED, true));
   // The previous IDCompositionSurface should be suspended when another
@@ -232,6 +232,8 @@ TEST(DirectCompositionSurfaceTest, DXGIDCLayerSwitch) {
 
   scoped_refptr<gl::GLContext> context =
       gl::init::CreateGLContext(nullptr, surface.get(), gl::GLContextAttribs());
+  EXPECT_TRUE(context->MakeCurrent(surface.get()));
+
   EXPECT_TRUE(surface->Resize(gfx::Size(100, 100), 1.0,
                               gl::GLSurface::ColorSpace::UNSPECIFIED, true));
   EXPECT_FALSE(surface->swap_chain());
@@ -287,6 +289,8 @@ TEST(DirectCompositionSurfaceTest, SwitchAlpha) {
 
   scoped_refptr<gl::GLContext> context =
       gl::init::CreateGLContext(nullptr, surface.get(), gl::GLContextAttribs());
+  EXPECT_TRUE(context->MakeCurrent(surface.get()));
+
   EXPECT_TRUE(surface->Resize(gfx::Size(100, 100), 1.0,
                               gl::GLSurface::ColorSpace::UNSPECIFIED, true));
   EXPECT_FALSE(surface->swap_chain());
@@ -328,11 +332,12 @@ TEST(DirectCompositionSurfaceTest, NoPresentTwice) {
       new DirectCompositionSurfaceWin(nullptr, delegate.AsWeakPtr(),
                                       ui::GetHiddenWindow()));
   EXPECT_TRUE(surface->Initialize());
-  surface->SetEnableDCLayers(true);
-  gfx::Size window_size(100, 100);
 
   scoped_refptr<gl::GLContext> context =
       gl::init::CreateGLContext(nullptr, surface.get(), gl::GLContextAttribs());
+  EXPECT_TRUE(context->MakeCurrent(surface.get()));
+
+  surface->SetEnableDCLayers(true);
 
   Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device =
       gl::QueryD3D11DeviceObjectFromANGLE();
@@ -346,11 +351,12 @@ TEST(DirectCompositionSurfaceTest, NoPresentTwice) {
   image_dxgi->SetTexture(texture, 0);
   image_dxgi->SetColorSpace(gfx::ColorSpace::CreateREC709());
 
+  gfx::Size window_size(100, 100);
   ui::DCRendererLayerParams params(
       false, gfx::Rect(), 1, gfx::Transform(),
       std::vector<scoped_refptr<gl::GLImage>>{image_dxgi},
-      gfx::RectF(gfx::Rect(texture_size)), gfx::Rect(window_size), 0, 0, 1.0,
-      0);
+      gfx::RectF(gfx::Rect(texture_size)), gfx::Rect(window_size), 0, 0, 1.0, 0,
+      false);
   surface->ScheduleDCLayer(params);
 
   Microsoft::WRL::ComPtr<IDXGISwapChain1> swap_chain =
@@ -385,7 +391,7 @@ TEST(DirectCompositionSurfaceTest, NoPresentTwice) {
       false, gfx::Rect(), 1, gfx::Transform(),
       std::vector<scoped_refptr<gl::GLImage>>{image_dxgi},
       gfx::RectF(gfx::Rect(texture_size)), gfx::Rect(0, 0, 25, 25), 0, 0, 1.0,
-      0);
+      0, false);
   surface->ScheduleDCLayer(params2);
 
   EXPECT_EQ(gfx::SwapResult::SWAP_ACK, surface->SwapBuffers(base::DoNothing()));
@@ -398,7 +404,7 @@ TEST(DirectCompositionSurfaceTest, NoPresentTwice) {
   DestroySurface(std::move(surface));
 }
 
-COLORREF ReadBackWindowPixel(HWND window, const gfx::Point& point) {
+SkColor ReadBackWindowPixel(HWND window, const gfx::Point& point) {
   base::win::ScopedCreateDC mem_hdc(::CreateCompatibleDC(nullptr));
   void* bits = nullptr;
   BITMAPV4HEADER hdr;
@@ -426,13 +432,19 @@ COLORREF ReadBackWindowPixel(HWND window, const gfx::Point& point) {
   uint32_t pixel_value =
       static_cast<uint32_t*>(bits)[hdr.bV4Width * point.y() + point.x()];
 
-  return pixel_value;
+  return static_cast<SkColor>(pixel_value);
 }
 
 class DirectCompositionPixelTest : public testing::Test {
  public:
   DirectCompositionPixelTest()
       : window_(&platform_delegate_, gfx::Rect(0, 0, 100, 100)) {}
+
+  ~DirectCompositionPixelTest() override {
+    context_ = nullptr;
+    if (surface_)
+      DestroySurface(std::move(surface_));
+  }
 
  protected:
   void InitializeSurface() {
@@ -441,6 +453,9 @@ class DirectCompositionPixelTest : public testing::Test {
     surface_ = new DirectCompositionSurfaceWin(nullptr, delegate_.AsWeakPtr(),
                                                window_.hwnd());
     EXPECT_TRUE(surface_->Initialize());
+    context_ = gl::init::CreateGLContext(nullptr, surface_.get(),
+                                         gl::GLContextAttribs());
+    EXPECT_TRUE(context_->MakeCurrent(surface_.get()));
   }
 
   void PixelTestSwapChain(bool layers_enabled) {
@@ -451,13 +466,9 @@ class DirectCompositionPixelTest : public testing::Test {
 
     surface_->SetEnableDCLayers(layers_enabled);
     gfx::Size window_size(100, 100);
-
-    scoped_refptr<gl::GLContext> context = gl::init::CreateGLContext(
-        nullptr, surface_.get(), gl::GLContextAttribs());
     EXPECT_TRUE(surface_->Resize(window_size, 1.0,
                                  gl::GLSurface::ColorSpace::UNSPECIFIED, true));
     EXPECT_TRUE(surface_->SetDrawRectangle(gfx::Rect(window_size)));
-    EXPECT_TRUE(context->MakeCurrent(surface_.get()));
 
     glClearColor(1.0, 0.0, 0.0, 1.0);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -468,20 +479,21 @@ class DirectCompositionPixelTest : public testing::Test {
     // Ensure DWM swap completed.
     Sleep(1000);
 
+    SkColor expected_color = SK_ColorRED;
     SkColor actual_color =
         ReadBackWindowPixel(window_.hwnd(), gfx::Point(75, 75));
-    EXPECT_EQ(SK_ColorRED, actual_color);
+    EXPECT_EQ(expected_color, actual_color)
+        << std::hex << "Expected " << expected_color << " Actual "
+        << actual_color;
 
-    EXPECT_TRUE(context->IsCurrent(surface_.get()));
-
-    context = nullptr;
-    DestroySurface(std::move(surface_));
+    EXPECT_TRUE(context_->IsCurrent(surface_.get()));
   }
 
   TestPlatformDelegate platform_delegate_;
   TestImageTransportSurfaceDelegate delegate_;
   ui::WinWindow window_;
   scoped_refptr<DirectCompositionSurfaceWin> surface_;
+  scoped_refptr<gl::GLContext> context_;
 };
 
 TEST_F(DirectCompositionPixelTest, DCLayersEnabled) {
@@ -511,10 +523,8 @@ class DirectCompositionVideoPixelTest : public DirectCompositionPixelTest {
       return;
     InitializeSurface();
     surface_->SetEnableDCLayers(true);
-    gfx::Size window_size(100, 100);
 
-    scoped_refptr<gl::GLContext> context = gl::init::CreateGLContext(
-        nullptr, surface_.get(), gl::GLContextAttribs());
+    gfx::Size window_size(100, 100);
     EXPECT_TRUE(surface_->Resize(window_size, 1.0,
                                  gl::GLSurface::ColorSpace::UNSPECIFIED, true));
 
@@ -534,7 +544,7 @@ class DirectCompositionVideoPixelTest : public DirectCompositionPixelTest {
         false, gfx::Rect(), 1, gfx::Transform(),
         std::vector<scoped_refptr<gl::GLImage>>{image_dxgi},
         gfx::RectF(gfx::Rect(texture_size)), gfx::Rect(texture_size), 0, 0, 1.0,
-        0);
+        0, false);
     surface_->ScheduleDCLayer(params);
 
     EXPECT_EQ(gfx::SwapResult::SWAP_ACK,
@@ -546,7 +556,7 @@ class DirectCompositionVideoPixelTest : public DirectCompositionPixelTest {
         false, gfx::Rect(), 1, gfx::Transform(),
         std::vector<scoped_refptr<gl::GLImage>>{image_dxgi},
         gfx::RectF(gfx::Rect(texture_size)), gfx::Rect(window_size), 0, 0, 1.0,
-        0);
+        0, false);
     surface_->ScheduleDCLayer(params2);
 
     EXPECT_EQ(gfx::SwapResult::SWAP_ACK,
@@ -560,9 +570,6 @@ class DirectCompositionVideoPixelTest : public DirectCompositionPixelTest {
           << std::hex << "Expected " << expected_color << " Actual "
           << actual_color;
     }
-
-    context = nullptr;
-    DestroySurface(std::move(surface_));
   }
 };
 
@@ -578,14 +585,12 @@ TEST_F(DirectCompositionVideoPixelTest, BT709) {
 
 TEST_F(DirectCompositionVideoPixelTest, SRGB) {
   // SRGB doesn't make sense on an NV12 input, but don't crash.
-  TestVideo(gfx::ColorSpace::CreateSRGB(), SkColorSetRGB(0xd7, 0x89, 0xe0),
-            false);
+  TestVideo(gfx::ColorSpace::CreateSRGB(), SK_ColorTRANSPARENT, false);
 }
 
 TEST_F(DirectCompositionVideoPixelTest, SCRGBLinear) {
   // SCRGB doesn't make sense on an NV12 input, but don't crash.
-  TestVideo(gfx::ColorSpace::CreateSCRGBLinear(),
-            SkColorSetRGB(0xd7, 0x89, 0xe0), false);
+  TestVideo(gfx::ColorSpace::CreateSCRGBLinear(), SK_ColorTRANSPARENT, false);
 }
 
 TEST_F(DirectCompositionVideoPixelTest, InvalidColorSpace) {
@@ -598,10 +603,8 @@ TEST_F(DirectCompositionPixelTest, SoftwareVideoSwapchain) {
     return;
   InitializeSurface();
   surface_->SetEnableDCLayers(true);
-  gfx::Size window_size(100, 100);
 
-  scoped_refptr<gl::GLContext> context = gl::init::CreateGLContext(
-      nullptr, surface_.get(), gl::GLContextAttribs());
+  gfx::Size window_size(100, 100);
   EXPECT_TRUE(surface_->Resize(window_size, 1.0,
                                gl::GLSurface::ColorSpace::UNSPECIFIED, true));
 
@@ -630,7 +633,8 @@ TEST_F(DirectCompositionPixelTest, SoftwareVideoSwapchain) {
   ui::DCRendererLayerParams params(
       false, gfx::Rect(), 1, gfx::Transform(),
       std::vector<scoped_refptr<gl::GLImage>>{y_image, uv_image},
-      gfx::RectF(gfx::Rect(y_size)), gfx::Rect(window_size), 0, 0, 1.0, 0);
+      gfx::RectF(gfx::Rect(y_size)), gfx::Rect(window_size), 0, 0, 1.0, 0,
+      false);
   surface_->ScheduleDCLayer(params);
 
   EXPECT_EQ(gfx::SwapResult::SWAP_ACK,
@@ -643,9 +647,6 @@ TEST_F(DirectCompositionPixelTest, SoftwareVideoSwapchain) {
   EXPECT_TRUE(AreColorsSimilar(expected_color, actual_color))
       << std::hex << "Expected " << expected_color << " Actual "
       << actual_color;
-
-  context = nullptr;
-  DestroySurface(std::move(surface_));
 }
 
 TEST_F(DirectCompositionPixelTest, VideoHandleSwapchain) {
@@ -653,10 +654,8 @@ TEST_F(DirectCompositionPixelTest, VideoHandleSwapchain) {
     return;
   InitializeSurface();
   surface_->SetEnableDCLayers(true);
-  gfx::Size window_size(100, 100);
 
-  scoped_refptr<gl::GLContext> context = gl::init::CreateGLContext(
-      nullptr, surface_.get(), gl::GLContextAttribs());
+  gfx::Size window_size(100, 100);
   EXPECT_TRUE(surface_->Resize(window_size, 1.0,
                                gl::GLSurface::ColorSpace::UNSPECIFIED, true));
 
@@ -668,7 +667,7 @@ TEST_F(DirectCompositionPixelTest, VideoHandleSwapchain) {
       CreateNV12Texture(d3d11_device, texture_size, true);
   Microsoft::WRL::ComPtr<IDXGIResource1> resource;
   texture.CopyTo(resource.GetAddressOf());
-  HANDLE handle;
+  HANDLE handle = 0;
   resource->CreateSharedHandle(nullptr, DXGI_SHARED_RESOURCE_READ, nullptr,
                                &handle);
   // The format doesn't matter, since we aren't binding.
@@ -679,8 +678,8 @@ TEST_F(DirectCompositionPixelTest, VideoHandleSwapchain) {
   ui::DCRendererLayerParams params(
       false, gfx::Rect(), 1, gfx::Transform(),
       std::vector<scoped_refptr<gl::GLImage>>{image_dxgi},
-      gfx::RectF(gfx::Rect(texture_size)), gfx::Rect(window_size), 0, 0, 1.0,
-      0);
+      gfx::RectF(gfx::Rect(texture_size)), gfx::Rect(window_size), 0, 0, 1.0, 0,
+      false);
   surface_->ScheduleDCLayer(params);
 
   EXPECT_EQ(gfx::SwapResult::SWAP_ACK,
@@ -694,9 +693,115 @@ TEST_F(DirectCompositionPixelTest, VideoHandleSwapchain) {
   EXPECT_TRUE(AreColorsSimilar(expected_color, actual_color))
       << std::hex << "Expected " << expected_color << " Actual "
       << actual_color;
+}
 
-  context = nullptr;
-  DestroySurface(std::move(surface_));
+TEST_F(DirectCompositionPixelTest, SkipVideoLayerEmptyBoundsRect) {
+  if (!CheckIfDCSupported())
+    return;
+  InitializeSurface();
+  surface_->SetEnableDCLayers(true);
+
+  gfx::Size window_size(100, 100);
+  EXPECT_TRUE(surface_->Resize(window_size, 1.0,
+                               gl::GLSurface::ColorSpace::UNSPECIFIED, true));
+  EXPECT_TRUE(surface_->SetDrawRectangle(gfx::Rect(window_size)));
+
+  glClearColor(0.0, 0.0, 0.0, 1.0);
+  glClear(GL_COLOR_BUFFER_BIT);
+
+  Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device =
+      gl::QueryD3D11DeviceObjectFromANGLE();
+
+  gfx::Size texture_size(50, 50);
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> texture =
+      CreateNV12Texture(d3d11_device, texture_size, true);
+  Microsoft::WRL::ComPtr<IDXGIResource1> resource;
+  texture.CopyTo(resource.GetAddressOf());
+  HANDLE handle = 0;
+  resource->CreateSharedHandle(nullptr, DXGI_SHARED_RESOURCE_READ, nullptr,
+                               &handle);
+  // The format doesn't matter, since we aren't binding.
+  scoped_refptr<gl::GLImageDXGIHandle> image_dxgi(
+      new gl::GLImageDXGIHandle(texture_size, 0, gfx::BufferFormat::RGBA_8888));
+  ASSERT_TRUE(image_dxgi->Initialize(base::win::ScopedHandle(handle)));
+
+  // Layer with empty bounds rect.
+  gfx::Rect bounds_rect;
+  ui::DCRendererLayerParams params(
+      false, gfx::Rect(), 1, gfx::Transform(),
+      std::vector<scoped_refptr<gl::GLImage>>{image_dxgi},
+      gfx::RectF(gfx::Rect(texture_size)), bounds_rect, 0, 0, 1.0, 0, false);
+  surface_->ScheduleDCLayer(params);
+
+  EXPECT_EQ(gfx::SwapResult::SWAP_ACK,
+            surface_->SwapBuffers(base::DoNothing()));
+
+  Sleep(1000);
+
+  // No color is written since the visual committed to DirectComposition has no
+  // content.
+  SkColor expected_color = SK_ColorBLACK;
+  SkColor actual_color =
+      ReadBackWindowPixel(window_.hwnd(), gfx::Point(75, 75));
+  EXPECT_TRUE(AreColorsSimilar(expected_color, actual_color))
+      << std::hex << "Expected " << expected_color << " Actual "
+      << actual_color;
+}
+
+TEST_F(DirectCompositionPixelTest, SkipVideoLayerEmptyContentsRect) {
+  if (!CheckIfDCSupported())
+    return;
+  InitializeSurface();
+  // Swap chain size is overridden to content rect size only if scaled overlays
+  // are supported.
+  DirectCompositionSurfaceWin::EnableScaledOverlaysForTesting();
+  surface_->SetEnableDCLayers(true);
+
+  gfx::Size window_size(100, 100);
+  EXPECT_TRUE(surface_->Resize(window_size, 1.0,
+                               gl::GLSurface::ColorSpace::UNSPECIFIED, true));
+  EXPECT_TRUE(surface_->SetDrawRectangle(gfx::Rect(window_size)));
+
+  glClearColor(0.0, 0.0, 0.0, 1.0);
+  glClear(GL_COLOR_BUFFER_BIT);
+
+  Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device =
+      gl::QueryD3D11DeviceObjectFromANGLE();
+
+  gfx::Size texture_size(50, 50);
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> texture =
+      CreateNV12Texture(d3d11_device, texture_size, true);
+  Microsoft::WRL::ComPtr<IDXGIResource1> resource;
+  texture.CopyTo(resource.GetAddressOf());
+  HANDLE handle = 0;
+  resource->CreateSharedHandle(nullptr, DXGI_SHARED_RESOURCE_READ, nullptr,
+                               &handle);
+  // The format doesn't matter, since we aren't binding.
+  scoped_refptr<gl::GLImageDXGIHandle> image_dxgi(
+      new gl::GLImageDXGIHandle(texture_size, 0, gfx::BufferFormat::RGBA_8888));
+  ASSERT_TRUE(image_dxgi->Initialize(base::win::ScopedHandle(handle)));
+
+  // Layer with empty content rect.
+  gfx::RectF contents_rect;
+  ui::DCRendererLayerParams params(
+      false, gfx::Rect(), 1, gfx::Transform(),
+      std::vector<scoped_refptr<gl::GLImage>>{image_dxgi}, contents_rect,
+      gfx::Rect(window_size), 0, 0, 1.0, 0, false);
+  surface_->ScheduleDCLayer(params);
+
+  EXPECT_EQ(gfx::SwapResult::SWAP_ACK,
+            surface_->SwapBuffers(base::DoNothing()));
+
+  Sleep(1000);
+
+  // No color is written since the visual committed to DirectComposition has no
+  // content.
+  SkColor expected_color = SK_ColorBLACK;
+  SkColor actual_color =
+      ReadBackWindowPixel(window_.hwnd(), gfx::Point(75, 75));
+  EXPECT_TRUE(AreColorsSimilar(expected_color, actual_color))
+      << std::hex << "Expected " << expected_color << " Actual "
+      << actual_color;
 }
 
 }  // namespace

@@ -25,7 +25,6 @@
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/test/mock_resource_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker.mojom.h"
@@ -87,9 +86,8 @@ std::unique_ptr<ServiceWorkerNavigationHandleCore> CreateNavigationHandleCore(
 class TestingServiceWorkerDispatcherHost : public ServiceWorkerDispatcherHost {
  public:
   TestingServiceWorkerDispatcherHost(int process_id,
-                                     ResourceContext* resource_context,
                                      EmbeddedWorkerTestHelper* helper)
-      : ServiceWorkerDispatcherHost(process_id, resource_context),
+      : ServiceWorkerDispatcherHost(process_id),
         bad_messages_received_count_(0),
         helper_(helper) {}
 
@@ -130,8 +128,8 @@ class ServiceWorkerDispatcherHostTest : public testing::Test {
     helper_.reset(helper.release());
     // Replace the default dispatcher host.
     int process_id = helper_->mock_render_process_id();
-    dispatcher_host_ = new TestingServiceWorkerDispatcherHost(
-        process_id, &resource_context_, helper_.get());
+    dispatcher_host_ =
+        new TestingServiceWorkerDispatcherHost(process_id, helper_.get());
     helper_->RegisterDispatcherHost(process_id, nullptr);
     dispatcher_host_->Init(context_wrapper());
   }
@@ -179,7 +177,6 @@ class ServiceWorkerDispatcherHostTest : public testing::Test {
   }
 
   TestBrowserThreadBundle browser_thread_bundle_;
-  content::MockResourceContext resource_context_;
   std::unique_ptr<EmbeddedWorkerTestHelper> helper_;
   scoped_refptr<TestingServiceWorkerDispatcherHost> dispatcher_host_;
   scoped_refptr<ServiceWorkerRegistration> registration_;
@@ -198,7 +195,7 @@ TEST_F(ServiceWorkerDispatcherHostTest, ProviderCreatedAndDestroyed) {
   navigation_handle_core =
       CreateNavigationHandleCore(helper_->context_wrapper());
   ASSERT_TRUE(navigation_handle_core);
-  std::unique_ptr<ServiceWorkerProviderHost> host1 =
+  base::WeakPtr<ServiceWorkerProviderHost> host1 =
       ServiceWorkerProviderHost::PreCreateNavigationHost(
           context()->AsWeakPtr(), true /* are_ancestors_secure */,
           base::RepeatingCallback<WebContents*(void)>());
@@ -210,7 +207,7 @@ TEST_F(ServiceWorkerDispatcherHostTest, ProviderCreatedAndDestroyed) {
       host1->provider_id(), 1 /* route_id */, host1->provider_type(),
       host1->is_parent_frame_secure());
   RemoteProviderInfo remote_info_1 = SetupProviderHostInfoPtrs(&host_info_1);
-  navigation_handle_core->DidPreCreateProviderHost(std::move(host1));
+  navigation_handle_core->DidPreCreateProviderHost(host1->provider_id());
 
   dispatcher_host_->OnProviderCreated(std::move(host_info_1));
   EXPECT_TRUE(context()->GetProviderHost(process_id, kProviderId1));
@@ -229,8 +226,7 @@ TEST_F(ServiceWorkerDispatcherHostTest, ProviderCreatedAndDestroyed) {
   navigation_handle_core =
       CreateNavigationHandleCore(helper_->context_wrapper());
   ASSERT_TRUE(navigation_handle_core);
-  // ProviderHost should be created before OnProviderCreated.
-  std::unique_ptr<ServiceWorkerProviderHost> host2 =
+  base::WeakPtr<ServiceWorkerProviderHost> host2 =
       ServiceWorkerProviderHost::PreCreateNavigationHost(
           context()->AsWeakPtr(), true /* are_ancestors_secure */,
           base::RepeatingCallback<WebContents*(void)>());
@@ -239,7 +235,7 @@ TEST_F(ServiceWorkerDispatcherHostTest, ProviderCreatedAndDestroyed) {
       host2->provider_id(), 2 /* route_id */, host2->provider_type(),
       host2->is_parent_frame_secure());
   RemoteProviderInfo remote_info_2 = SetupProviderHostInfoPtrs(&host_info_2);
-  navigation_handle_core->DidPreCreateProviderHost(std::move(host2));
+  navigation_handle_core->DidPreCreateProviderHost(host2->provider_id());
 
   // Deletion of the dispatcher_host should cause providers for that
   // process to get deleted as well.
@@ -251,8 +247,8 @@ TEST_F(ServiceWorkerDispatcherHostTest, ProviderCreatedAndDestroyed) {
 }
 
 TEST_F(ServiceWorkerDispatcherHostTest, CleanupOnRendererCrash) {
-  GURL pattern = GURL("http://www.example.com/");
-  GURL script_url = GURL("http://www.example.com/service_worker.js");
+  GURL pattern = GURL("https://www.example.com/");
+  GURL script_url = GURL("https://www.example.com/service_worker.js");
   int process_id = helper_->mock_render_process_id();
 
   SendProviderCreated(blink::mojom::ServiceWorkerProviderType::kForWindow,
@@ -286,9 +282,9 @@ TEST_F(ServiceWorkerDispatcherHostTest, CleanupOnRendererCrash) {
   // We should be able to hook up a new dispatcher host although the old object
   // is not yet destroyed. This is what the browser does when reusing a crashed
   // render process.
-  scoped_refptr<TestingServiceWorkerDispatcherHost> new_dispatcher_host(
-      new TestingServiceWorkerDispatcherHost(process_id, &resource_context_,
-                                             helper_.get()));
+  auto new_dispatcher_host =
+      base::MakeRefCounted<TestingServiceWorkerDispatcherHost>(process_id,
+                                                               helper_.get());
   new_dispatcher_host->Init(context_wrapper());
 
   // To show the new dispatcher can operate, simulate provider creation. Since

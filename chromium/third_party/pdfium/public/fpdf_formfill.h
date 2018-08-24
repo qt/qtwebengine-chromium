@@ -1384,6 +1384,30 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnChar(FPDF_FORMHANDLE hHandle,
                                                 int modifier);
 
 /**
+ * Experimental API
+ * Function: FORM_GetFocusedText
+ *          You can call this function to obtain the text within the current
+ *          focused field, if any.
+ * Parameters:
+ *          hHandle     -   Handle to the form fill module. Returned by
+ *                          FPDFDOC_InitFormFillEnvironment.
+ *          page        -   Handle to the page. Returned by FPDF_LoadPage
+ *                          function.
+ *          buffer      -   Buffer for holding the form text, encoded in
+ *                          UTF16-LE. If NULL, |buffer| is not modified.
+ *          buflen      -   Length of |buffer| in bytes. If |buflen| is less
+                            than the length of the form text string, |buffer| is
+                            not modified.
+ * Return Value:
+ *          Length in bytes for the text in the focused field.
+ **/
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FORM_GetFocusedText(FPDF_FORMHANDLE hHandle,
+                    FPDF_PAGE page,
+                    void* buffer,
+                    unsigned long buflen);
+
+/**
  * Function: FORM_GetSelectedText
  *          You can call this function to obtain selected text within
  *          a form text field or form combobox text field.
@@ -1392,11 +1416,11 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnChar(FPDF_FORMHANDLE hHandle,
  *                          FPDFDOC_InitFormFillEnvironment.
  *          page        -   Handle to the page. Returned by FPDF_LoadPage
  *                          function.
- *          buffer      -   Buffer for holding the selected text, encoded
- *                          in UTF16-LE. If NULL, |buffer| is not modified.
- *          buflen      -   Length of |buffer| in bytes. If |buflen|
-                            is less than the length of the selected text
-                            string, |buffer| is not modified.
+ *          buffer      -   Buffer for holding the selected text, encoded in
+ *                          UTF16-LE. If NULL, |buffer| is not modified.
+ *          buflen      -   Length of |buffer| in bytes. If |buflen| is less
+                            than the length of the selected text string,
+                            |buffer| is not modified.
  * Return Value:
  *          Length in bytes of selected text in form text field or form combobox
  *          text field.
@@ -1426,6 +1450,64 @@ FORM_GetSelectedText(FPDF_FORMHANDLE hHandle,
 FPDF_EXPORT void FPDF_CALLCONV FORM_ReplaceSelection(FPDF_FORMHANDLE hHandle,
                                                      FPDF_PAGE page,
                                                      FPDF_WIDESTRING wsText);
+
+/**
+ * Function: FORM_CanUndo
+ *          Find out if it is possible for the current focused widget in a given
+ *          form to perform an undo operation.
+ * Parameters:
+ *          hHandle     -   Handle to the form fill module. Returned by
+ *                          FPDFDOC_InitFormFillEnvironment.
+ *          page        -   Handle to the page. Returned by FPDF_LoadPage
+ *                          function.
+ * Return Value:
+ *          True if it is possible to undo.
+ **/
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_CanUndo(FPDF_FORMHANDLE hHandle,
+                                                 FPDF_PAGE page);
+
+/**
+ * Function: FORM_CanRedo
+ *          Find out if it is possible for the current focused widget in a given
+ *          form to perform a redo operation.
+ * Parameters:
+ *          hHandle     -   Handle to the form fill module. Returned by
+ *                          FPDFDOC_InitFormFillEnvironment.
+ *          page        -   Handle to the page. Returned by FPDF_LoadPage
+ *                          function.
+ * Return Value:
+ *          True if it is possible to redo.
+ **/
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_CanRedo(FPDF_FORMHANDLE hHandle,
+                                                 FPDF_PAGE page);
+
+/**
+ * Function: FORM_Undo
+ *          Make the current focussed widget perform an undo operation.
+ * Parameters:
+ *          hHandle     -   Handle to the form fill module. Returned by
+ *                          FPDFDOC_InitFormFillEnvironment.
+ *          page        -   Handle to the page. Returned by FPDF_LoadPage
+ *                          function.
+ * Return Value:
+ *          True if the undo operation succeeded.
+ **/
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_Undo(FPDF_FORMHANDLE hHandle,
+                                              FPDF_PAGE page);
+
+/**
+ * Function: FORM_Redo
+ *          Make the current focussed widget perform a redo operation.
+ * Parameters:
+ *          hHandle     -   Handle to the form fill module. Returned by
+ *                          FPDFDOC_InitFormFillEnvironment.
+ *          page        -   Handle to the page. Returned by FPDF_LoadPage
+ *                          function.
+ * Return Value:
+ *          True if the redo operation succeeded.
+ **/
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_Redo(FPDF_FORMHANDLE hHandle,
+                                              FPDF_PAGE page);
 
 /**
  * Function: FORM_ForceToKillFocus.

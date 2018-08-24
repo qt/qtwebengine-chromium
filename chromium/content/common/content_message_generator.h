@@ -52,11 +52,6 @@
 #ifndef CONTENT_COMMON_MEDIA_AEC_DUMP_MESSAGES_H_
 #error "Failed to include content/common/media/aec_dump_messages.h"
 #endif
-#undef CONTENT_COMMON_MEDIA_AUDIO_MESSAGES_H_
-#include "content/common/media/audio_messages.h"
-#ifndef CONTENT_COMMON_MEDIA_AUDIO_MESSAGES_H_
-#error "Failed to include content/common/media/audio_messages.h"
-#endif
 #undef CONTENT_COMMON_MEDIA_MEDIA_PLAYER_DELEGATE_MESSAGES_H_
 #include "content/common/media/media_player_delegate_messages.h"
 #ifndef CONTENT_COMMON_MEDIA_MEDIA_PLAYER_DELEGATE_MESSAGES_H_
@@ -94,11 +89,6 @@
 #error \
     "Failed to include content/common/service_worker/service_worker_messages.h"
 #endif
-#undef CONTENT_COMMON_SPEECH_RECOGNITION_MESSAGES_H_
-#include "content/common/speech_recognition_messages.h"
-#ifndef CONTENT_COMMON_SPEECH_RECOGNITION_MESSAGES_H_
-#error "Failed to include content/common/speech_recognition_messages.h"
-#endif
 #undef CONTENT_COMMON_TEXT_INPUT_CLIENT_MESSAGES_H_
 #include "content/common/text_input_client_messages.h"
 #ifndef CONTENT_COMMON_TEXT_INPUT_CLIENT_MESSAGES_H_
@@ -117,12 +107,10 @@
 #error "Failed to include content/common/input/sync_compositor_messages.h"
 #endif
 
-#if BUILDFLAG(ENABLE_WEBRTC)
 #undef CONTENT_COMMON_P2P_MESSAGES_H_
 #include "content/common/p2p_messages.h"
 #ifndef CONTENT_COMMON_P2P_MESSAGES_H_
 #error "Failed to include content/common/p2p_messages.h"
-#endif
 #endif
 
 #if defined(OS_ANDROID)

@@ -154,10 +154,6 @@ else()
     set_cpp_flag("-Werror=sign-compare")
     set_cpp_flag("-fno-exceptions")
 
-    # Don't allow symbols to be overridden by another module.
-    # This enables libGLES_CM and libGLESv2 to statically link LLVM.
-    set_cpp_flag("-fvisibility=protected")
-
     # Remove xor, and, or and friends from the list of keywords, they are used
     # by Reactor
     set_cpp_flag("-fno-operator-names")
@@ -938,7 +934,7 @@ if(BUILD_GLESv2)
     set_target_properties(libGLESv2 PROPERTIES
         INCLUDE_DIRECTORIES "${OPENGL_INCLUDE_DIR}"
         FOLDER "OpenGL"
-        COMPILE_DEFINITIONS "GL_GLEXT_PROTOTYPES; GL_API=; GL_APICALL=; NO_SANITIZE_FUNCTION=;"
+        COMPILE_DEFINITIONS "GL_GLEXT_PROTOTYPES; GL_API=; GL_APICALL=; GLAPI=; NO_SANITIZE_FUNCTION=;"
         PREFIX ""
     )
     set_target_export_map(libGLESv2 ${SOURCE_DIR}/OpenGL/libGLESv2)
@@ -958,7 +954,7 @@ if(BUILD_GLES_CM)
     set_target_properties(libGLES_CM PROPERTIES
         INCLUDE_DIRECTORIES "${OPENGL_INCLUDE_DIR}"
         FOLDER "OpenGL"
-        COMPILE_DEFINITIONS "GL_GLEXT_PROTOTYPES; EGLAPI=; GL_API=; GL_APICALL=;"
+        COMPILE_DEFINITIONS "GL_GLEXT_PROTOTYPES; EGLAPI=; GL_API=; GL_APICALL=; GLAPI=;"
         PREFIX ""
     )
     set_target_export_map(libGLES_CM ${SOURCE_DIR}/OpenGL/libGLES_CM)

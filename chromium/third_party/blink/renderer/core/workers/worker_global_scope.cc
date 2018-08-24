@@ -49,12 +49,10 @@
 #include "third_party/blink/renderer/core/loader/worker_threadable_loader.h"
 #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
-#include "third_party/blink/renderer/core/script/modulator.h"
 #include "third_party/blink/renderer/core/workers/global_scope_creation_params.h"
 #include "third_party/blink/renderer/core/workers/installed_scripts_manager.h"
 #include "third_party/blink/renderer/core/workers/worker_classic_script_loader.h"
 #include "third_party/blink/renderer/core/workers/worker_location.h"
-#include "third_party/blink/renderer/core/workers/worker_module_tree_client.h"
 #include "third_party/blink/renderer/core/workers/worker_navigator.h"
 #include "third_party/blink/renderer/core/workers/worker_reporting_proxy.h"
 #include "third_party/blink/renderer/core/workers/worker_thread.h"
@@ -63,7 +61,7 @@
 #include "third_party/blink/renderer/platform/loader/fetch/memory_cache.h"
 #include "third_party/blink/renderer/platform/network/content_security_policy_parsers.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
@@ -132,10 +130,20 @@ String WorkerGlobalScope::origin() const {
   return GetSecurityOrigin()->ToString();
 }
 
+// Implementation of the "importScripts()" algorithm:
+// https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-importscripts
 void WorkerGlobalScope::importScripts(const Vector<String>& urls,
                                       ExceptionState& exception_state) {
   DCHECK(GetContentSecurityPolicy());
   DCHECK(GetExecutionContext());
+
+  // Step 1: "If worker global scope's type is "module", throw a TypeError
+  // exception."
+  if (script_type_ == ScriptType::kModule) {
+    exception_state.ThrowTypeError(
+        "Module scripts don't support importScripts().");
+    return;
+  }
 
   ExecutionContext& execution_context = *this->GetExecutionContext();
   Vector<KURL> completed_urls;
@@ -298,13 +306,6 @@ ExecutionContext* WorkerGlobalScope::GetExecutionContext() const {
   return const_cast<WorkerGlobalScope*>(this);
 }
 
-WorkerOrWorkletModuleFetchCoordinatorProxy*
-WorkerGlobalScope::ModuleFetchCoordinatorProxy() const {
-  DCHECK(IsContextThread());
-  DCHECK(fetch_coordinator_proxy_);
-  return fetch_coordinator_proxy_;
-}
-
 void WorkerGlobalScope::EvaluateClassicScript(
     const KURL& script_url,
     String source_code,
@@ -324,14 +325,6 @@ void WorkerGlobalScope::EvaluateClassicScript(
   ReportingProxy().DidEvaluateClassicScript(success);
 }
 
-void WorkerGlobalScope::ImportModuleScript(
-    const KURL& module_url_record,
-    network::mojom::FetchCredentialsMode credentials_mode) {
-  Modulator* modulator = Modulator::From(ScriptController()->GetScriptState());
-  FetchModuleScript(module_url_record, credentials_mode,
-                    new WorkerModuleTreeClient(modulator));
-}
-
 WorkerGlobalScope::WorkerGlobalScope(
     std::unique_ptr<GlobalScopeCreationParams> creation_params,
     WorkerThread* thread,
@@ -340,21 +333,17 @@ WorkerGlobalScope::WorkerGlobalScope(
                                  creation_params->worker_clients,
                                  thread->GetWorkerReportingProxy()),
       url_(creation_params->script_url),
+      script_type_(creation_params->script_type),
       user_agent_(creation_params->user_agent),
       parent_devtools_token_(creation_params->parent_devtools_token),
       v8_cache_options_(creation_params->v8_cache_options),
-      // Specify |kInternalLoading| because these task runners are used during
-      // module loading and this usage is not explicitly spec'ed.
-      fetch_coordinator_proxy_(
-          WorkerOrWorkletModuleFetchCoordinatorProxy::Create(
-              creation_params->module_fetch_coordinator,
-              thread->GetParentExecutionContextTaskRunners()->Get(
-                  TaskType::kInternalLoading),
-              thread->GetTaskRunner(TaskType::kInternalLoading))),
       thread_(thread),
       timers_(GetTaskRunner(TaskType::kJavascriptTimer)),
       time_origin_(time_origin),
-      font_selector_(OffscreenFontSelector::Create(this)) {
+      font_selector_(OffscreenFontSelector::Create(this)),
+      animation_frame_provider_(WorkerAnimationFrameProvider::Create(
+          this,
+          creation_params->begin_frame_provider_params)) {
   InstanceCounters::IncrementCounter(
       InstanceCounters::kWorkerGlobalScopeCounter);
   scoped_refptr<SecurityOrigin> security_origin = SecurityOrigin::Create(url_);
@@ -404,6 +393,18 @@ void WorkerGlobalScope::RemoveURLFromMemoryCache(const KURL& url) {
                       CrossThreadBind(&RemoveURLFromMemoryCacheInternal, url));
 }
 
+int WorkerGlobalScope::requestAnimationFrame(V8FrameRequestCallback* callback) {
+  FrameRequestCallbackCollection::V8FrameCallback* frame_callback =
+      FrameRequestCallbackCollection::V8FrameCallback::Create(callback);
+  frame_callback->SetUseLegacyTimeBase(true);
+
+  return animation_frame_provider_->RegisterCallback(frame_callback);
+}
+
+void WorkerGlobalScope::cancelAnimationFrame(int id) {
+  animation_frame_provider_->CancelCallback(id);
+}
+
 void WorkerGlobalScope::SetWorkerSettings(
     std::unique_ptr<WorkerSettings> worker_settings) {
   worker_settings_ = std::move(worker_settings);
@@ -413,18 +414,17 @@ void WorkerGlobalScope::SetWorkerSettings(
 }
 
 void WorkerGlobalScope::Trace(blink::Visitor* visitor) {
-  visitor->Trace(fetch_coordinator_proxy_);
   visitor->Trace(location_);
   visitor->Trace(navigator_);
   visitor->Trace(timers_);
   visitor->Trace(pending_error_events_);
   visitor->Trace(font_selector_);
+  visitor->Trace(animation_frame_provider_);
   WorkerOrWorkletGlobalScope::Trace(visitor);
   Supplementable<WorkerGlobalScope>::Trace(visitor);
 }
 
-void WorkerGlobalScope::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+void WorkerGlobalScope::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   Supplementable<WorkerGlobalScope>::TraceWrappers(visitor);
   WorkerOrWorkletGlobalScope::TraceWrappers(visitor);
   visitor->TraceWrappers(navigator_);

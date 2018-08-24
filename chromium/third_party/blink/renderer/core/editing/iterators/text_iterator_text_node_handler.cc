@@ -125,7 +125,7 @@ void TextIteratorTextNodeHandler::HandleTextNodeWithLayoutNG() {
       const String& string = string_and_offsets.string;
       const unsigned text_content_start = string_and_offsets.start;
       const unsigned text_content_end = string_and_offsets.end;
-      text_state_.EmitText(text_node_, run_start, run_end, string,
+      text_state_.EmitText(*text_node_, run_start, run_end, string,
                            text_content_start, text_content_end);
       offset_ = run_end;
       return;
@@ -181,7 +181,7 @@ void TextIteratorTextNodeHandler::HandlePreFormattedTextNode() {
       HasVisibleTextNode(layout_object)) {
     if (!behavior_.CollapseTrailingSpace() ||
         (offset_ > 0 && str[offset_ - 1] == ' ')) {
-      SpliceBuffer(kSpaceCharacter, text_node_, nullptr, offset_, offset_);
+      EmitChar16Before(kSpaceCharacter, offset_);
       needs_handle_pre_formatted_text_node_ = true;
       return;
     }
@@ -194,7 +194,7 @@ void TextIteratorTextNodeHandler::HandlePreFormattedTextNode() {
       const bool stops_in_first_letter = end_offset_ <= first_letter.length();
       const unsigned run_end =
           stops_in_first_letter ? end_offset_ : first_letter.length();
-      EmitText(text_node_, first_letter_text_, run_start, run_end);
+      EmitText(first_letter_text_, run_start, run_end);
       first_letter_text_ = nullptr;
       text_box_ = nullptr;
       offset_ = run_end;
@@ -219,7 +219,7 @@ void TextIteratorTextNodeHandler::HandlePreFormattedTextNode() {
   if (run_start >= run_end)
     return;
 
-  EmitText(text_node_, text_node_->GetLayoutObject(), run_start, run_end);
+  EmitText(text_node_->GetLayoutObject(), run_start, run_end);
 }
 
 void TextIteratorTextNodeHandler::HandleTextNodeInRange(const Text* node,
@@ -375,11 +375,9 @@ void TextIteratorTextNodeHandler::HandleTextBox() {
           unsigned space_run_start = run_start - 1;
           while (space_run_start > 0 && str[space_run_start - 1] == ' ')
             --space_run_start;
-          EmitText(text_node_, layout_object, space_run_start,
-                   space_run_start + 1);
+          EmitText(layout_object, space_run_start, space_run_start + 1);
         } else {
-          SpliceBuffer(kSpaceCharacter, text_node_, nullptr, run_start,
-                       run_start);
+          EmitChar16Before(kSpaceCharacter, run_start);
         }
         return;
       }
@@ -417,10 +415,9 @@ void TextIteratorTextNodeHandler::HandleTextBox() {
           // We need to preserve new lines in case of PreLine.
           // See bug crbug.com/317365.
           if (layout_object->Style()->WhiteSpace() == EWhiteSpace::kPreLine) {
-            SpliceBuffer('\n', text_node_, nullptr, run_start, run_start);
+            EmitChar16Before('\n', run_start);
           } else {
-            SpliceBuffer(kSpaceCharacter, text_node_, nullptr, run_start,
-                         run_start + 1);
+            EmitReplacmentCodeUnit(kSpaceCharacter, run_start);
           }
           offset_ = text_start_offset + run_start + 1;
         } else {
@@ -432,7 +429,7 @@ void TextIteratorTextNodeHandler::HandleTextBox() {
           }
 
           offset_ = text_start_offset + subrun_end;
-          EmitText(text_node_, layout_object, run_start, subrun_end);
+          EmitText(layout_object, run_start, subrun_end);
         }
 
         // If we are doing a subrun that doesn't go to the end of the text box,
@@ -522,28 +519,28 @@ void TextIteratorTextNodeHandler::HandleTextNodeFirstLetter(
   text_box_ = first_letter_text_->FirstTextBox();
 }
 
-bool TextIteratorTextNodeHandler::FixLeadingWhiteSpaceForReplacedElement(
-    const Node* parent) {
+bool TextIteratorTextNodeHandler::ShouldFixLeadingWhiteSpaceForReplacedElement()
+    const {
   // This is a hacky way for white space fixup in legacy layout. With LayoutNG,
   // we can get rid of this function.
   if (uses_layout_ng_)
     return false;
-
-  if (behavior_.CollapseTrailingSpace()) {
-    if (text_node_) {
-      String str = text_node_->GetLayoutObject()->GetText();
-      if (last_text_node_ended_with_collapsed_space_ && offset_ > 0 &&
-          str[offset_ - 1] == ' ') {
-        SpliceBuffer(kSpaceCharacter, parent, text_node_, 1, 1);
-        return true;
-      }
-    }
-  } else if (last_text_node_ended_with_collapsed_space_) {
-    SpliceBuffer(kSpaceCharacter, parent, text_node_, 1, 1);
+  if (!last_text_node_ended_with_collapsed_space_)
+    return false;
+  if (!behavior_.CollapseTrailingSpace())
     return true;
-  }
+  if (!text_node_)
+    return false;
+  const String str = text_node_->GetLayoutObject()->GetText();
+  return offset_ > 0 && str[offset_ - 1] == ' ';
+}
 
-  return false;
+bool TextIteratorTextNodeHandler::FixLeadingWhiteSpaceForReplacedElement() {
+  if (!ShouldFixLeadingWhiteSpaceForReplacedElement())
+    return false;
+  text_state_.EmitChar16AfterNode(kSpaceCharacter, *text_node_);
+  ResetCollapsedWhiteSpaceFixup();
+  return true;
 }
 
 void TextIteratorTextNodeHandler::ResetCollapsedWhiteSpaceFixup() {
@@ -552,25 +549,26 @@ void TextIteratorTextNodeHandler::ResetCollapsedWhiteSpaceFixup() {
   last_text_node_ended_with_collapsed_space_ = false;
 }
 
-void TextIteratorTextNodeHandler::SpliceBuffer(UChar c,
-                                               const Node* text_node,
-                                               const Node* offset_base_node,
-                                               unsigned text_start_offset,
-                                               unsigned text_end_offset) {
-  text_state_.SpliceBuffer(c, text_node, offset_base_node, text_start_offset,
-                           text_end_offset);
+void TextIteratorTextNodeHandler::EmitChar16Before(UChar code_unit,
+                                                   unsigned offset) {
+  text_state_.EmitChar16Before(code_unit, *text_node_, offset);
   ResetCollapsedWhiteSpaceFixup();
 }
 
-void TextIteratorTextNodeHandler::EmitText(const Node* text_node,
-                                           const LayoutText* layout_object,
+void TextIteratorTextNodeHandler::EmitReplacmentCodeUnit(UChar code_unit,
+                                                         unsigned offset) {
+  text_state_.EmitReplacmentCodeUnit(code_unit, *text_node_, offset);
+  ResetCollapsedWhiteSpaceFixup();
+}
+
+void TextIteratorTextNodeHandler::EmitText(const LayoutText* layout_object,
                                            unsigned text_start_offset,
                                            unsigned text_end_offset) {
   String string = behavior_.EmitsOriginalText() ? layout_object->OriginalText()
                                                 : layout_object->GetText();
   if (behavior_.EmitsSpaceForNbsp())
     string.Replace(kNoBreakSpaceCharacter, kSpaceCharacter);
-  text_state_.EmitText(text_node,
+  text_state_.EmitText(*text_node_,
                        text_start_offset + layout_object->TextStartOffset(),
                        text_end_offset + layout_object->TextStartOffset(),
                        string, text_start_offset, text_end_offset);

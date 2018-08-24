@@ -19,6 +19,7 @@ from common import PrintErr
 
 CALLGRIND_PROFILER = 'callgrind'
 PERFSTAT_PROFILER = 'perfstat'
+NONE_PROFILER = 'none'
 
 PDFIUM_TEST = 'pdfium_test'
 
@@ -55,6 +56,8 @@ class PerformanceRun(object):
       time = self._RunCallgrind()
     elif self.args.profiler == PERFSTAT_PROFILER:
       time = self._RunPerfStat()
+    elif self.args.profiler == NONE_PROFILER:
+      time = self._RunWithoutProfiler()
     else:
       PrintErr('profiler=%s not supported, aborting' % self.args.profiler)
       return 1
@@ -102,11 +105,30 @@ class PerformanceRun(object):
     # '        12345      instructions'
     return self._ExtractIrCount(r'\b(\d+)\b.*\binstructions\b', output)
 
+  def _RunWithoutProfiler(self):
+    """Runs test harness and measures performance without a profiler.
+
+    Returns:
+      int with the result of the measurement, in instructions or time. In this
+      case, always return 1 since no profiler is being used.
+    """
+    cmd_to_run = self._BuildTestHarnessCommand()
+    output = subprocess.check_output(cmd_to_run, stderr=subprocess.STDOUT)
+
+    # Return 1 for every run.
+    return 1
+
   def _BuildTestHarnessCommand(self):
     """Builds command to run the test harness."""
     cmd = [self.pdfium_test_path, '--send-events']
+
     if self.args.interesting_section:
       cmd.append('--callgrind-delim')
+    if self.args.png:
+      cmd.append('--png')
+    if self.args.pages:
+      cmd.append('--pages=%s' % self.args.pages)
+
     cmd.append(self.args.pdf_path)
     return cmd
 
@@ -129,8 +151,8 @@ def main():
                       help='relative path to the build directory with '
                            '%s' % PDFIUM_TEST)
   parser.add_argument('--profiler', default=CALLGRIND_PROFILER,
-                      help='which profiler to use. Supports callgrind and '
-                           'perfstat for now.')
+                      help='which profiler to use. Supports callgrind, '
+                           'perfstat, and none.')
   parser.add_argument('--interesting-section', action='store_true',
                       help='whether to measure just the interesting section or '
                            'the whole test harness. The interesting section is '
@@ -140,6 +162,14 @@ def main():
                            'Limiting to only the interesting section does not '
                            'work on Release since the delimiters are optimized '
                            'out. Callgrind only.')
+  parser.add_argument('--png', action='store_true',
+                      help='outputs a png image on the same location as the '
+                           'pdf file')
+  parser.add_argument('--pages',
+                      help='selects some pages to be rendered. Page numbers '
+                           'are 0-based. "--pages A" will render only page A. '
+                           '"--pages A-B" will render pages A to B '
+                           '(inclusive).')
   parser.add_argument('--output-path',
                       help='where to write the profile data output file')
   args = parser.parse_args()

@@ -307,10 +307,7 @@ uint32_t DisplayOzone::Buffer::getDRMFB()
 
 FramebufferGL *DisplayOzone::Buffer::framebufferGL(const gl::FramebufferState &state)
 {
-    return new FramebufferGL(
-        mGLFB, state, mDisplay->mFunctionsGL, mDisplay->getRenderer()->getWorkarounds(),
-        mDisplay->getRenderer()->getBlitter(), mDisplay->getRenderer()->getMultiviewClearer(),
-        mDisplay->getRenderer()->getStateManager());
+    return new FramebufferGL(state, mGLFB, true);
 }
 
 void DisplayOzone::Buffer::present()
@@ -462,7 +459,7 @@ egl::Error DisplayOzone::initialize(egl::Display *display)
     // with a .1 suffix) while Angle only installs libEGL.so.
     FunctionsEGLDL *egl = new FunctionsEGLDL();
     mEGL = egl;
-    ANGLE_TRY(egl->initialize(display->getNativeDisplayId(), "libEGL.so.1"));
+    ANGLE_TRY(egl->initialize(display->getNativeDisplayId(), "libEGL.so.1", nullptr));
 
     const char *necessaryExtensions[] = {
         "EGL_KHR_image_base", "EGL_EXT_image_dma_buf_import", "EGL_KHR_surfaceless_context",
@@ -861,7 +858,7 @@ SurfaceImpl *DisplayOzone::createWindowSurface(const egl::SurfaceState &state,
     {
         return nullptr;
     }
-    return new SurfaceOzone(state, getRenderer(), buffer);
+    return new SurfaceOzone(state, buffer);
 }
 
 SurfaceImpl *DisplayOzone::createPbufferSurface(const egl::SurfaceState &state,
@@ -875,7 +872,7 @@ SurfaceImpl *DisplayOzone::createPbufferSurface(const egl::SurfaceState &state,
     {
         return nullptr;
     }
-    return new SurfaceOzone(state, getRenderer(), buffer);
+    return new SurfaceOzone(state, buffer);
 }
 
 SurfaceImpl *DisplayOzone::createPbufferFromClientBuffer(const egl::SurfaceState &state,

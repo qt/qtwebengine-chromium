@@ -10,12 +10,15 @@
 #include <set>
 #include <vector>
 
+#include "base/containers/flat_set.h"
 #include "base/mac/scoped_nsobject.h"
+#include "base/optional.h"
 #include "content/browser/renderer_host/input/mouse_wheel_rails_filter_mac.h"
 #include "content/common/edit_command.h"
 #import "ui/base/cocoa/command_dispatcher.h"
 #import "ui/base/cocoa/tool_tip_base_view.h"
 #include "ui/base/ime/ime_text_span.h"
+#include "ui/base/ime/text_input_type.h"
 #include "ui/gfx/range/range.h"
 
 namespace blink {
@@ -29,6 +32,7 @@ class RenderWidgetHostViewMacEditCommandHelper;
 }
 
 namespace ui {
+enum class DomCode;
 struct DidOverscrollParams;
 }
 
@@ -111,6 +115,8 @@ struct DidOverscrollParams;
   // the whole content yet.
   NSRange markedRange_;
 
+  ui::TextInputType textInputType_;
+
   // The text selection, cached from the RenderWidgetHostView. This is only ever
   // updated from the renderer.
   base::string16 textSelectionText_;
@@ -169,6 +175,7 @@ struct DidOverscrollParams;
 }
 
 @property(nonatomic, assign) NSRange markedRange;
+@property(nonatomic, assign) ui::TextInputType textInputType;
 
 // Common code path for handling begin gesture events. This helper method is
 // called via different codepaths based on OS version and SDK:
@@ -176,7 +183,8 @@ struct DidOverscrollParams;
 //   |magnifyWithEvent:| when the given event's phase is NSEventPhaseBegin.
 // - On 10.10 and earlier, or when linking with an earlier SDK, it is called
 //   by |beginGestureWithEvent:| when a gesture begins.
-- (void)handleBeginGestureWithEvent:(NSEvent*)event;
+- (void)handleBeginGestureWithEvent:(NSEvent*)event
+            isSyntheticallyInjected:(BOOL)isSyntheticallyInjected;
 
 // Common code path for handling end gesture events. This helper method is
 // called via different codepaths based on OS version and SDK:
@@ -213,6 +221,11 @@ struct DidOverscrollParams;
 - (base::string16)selectedText;
 // Set the current TextInputManager::CompositionRangeInfo from the renderer.
 - (void)setCompositionRange:(gfx::Range)range;
+
+// KeyboardLock methods.
+- (void)lockKeyboard:(base::Optional<base::flat_set<ui::DomCode>>)keysToLock;
+- (void)unlockKeyboard;
+
 // Methods previously marked as private.
 - (id)initWithClient:(content::RenderWidgetHostNSViewClient*)client;
 - (void)setResponderDelegate:

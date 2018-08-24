@@ -93,7 +93,7 @@ FloatSize StyleFetchedImage::ImageSize(
   // border-image, etc.)
   //
   // https://drafts.csswg.org/css-images-3/#the-image-orientation
-  FloatSize size(image_->IntrinsicSize(kDoNotRespectImageOrientation));
+  FloatSize size(image->Size());
   return ApplyZoom(size, multiplier);
 }
 
@@ -116,7 +116,6 @@ void StyleFetchedImage::RemoveClient(ImageResourceObserver* observer) {
 void StyleFetchedImage::ImageNotifyFinished(ImageResourceContent*) {
   if (image_ && image_->HasImage()) {
     Image& image = *image_->GetImage();
-    Image::RecordCheckerableImageUMA(image, Image::ImageType::kCss);
 
     if (document_ && image.IsSVGImage())
       ToSVGImage(image).UpdateUseCounters(*document_);

@@ -33,9 +33,10 @@
 #include "ui/display/unified_desktop_utils.h"
 
 #if defined(OS_CHROMEOS)
+#include "base/cancelable_callback.h"
 #include "base/optional.h"
-#include "ui/display/manager/chromeos/display_configurator.h"
-#include "ui/display/manager/chromeos/touch_device_manager.h"
+#include "ui/display/manager/display_configurator.h"
+#include "ui/display/manager/touch_device_manager.h"
 #endif
 
 namespace gfx {
@@ -218,6 +219,8 @@ class DISPLAY_MANAGER_EXPORT DisplayManager
   // |overscan_insets| is null if the display has no custom overscan insets.
   // |touch_calibration_data| is null if the display has no touch calibration
   // associated data.
+  // |ui_scale| will be negative if this is not the first boot with display zoom
+  // mode enabled.
   void RegisterDisplayProperty(int64_t display_id,
                                Display::Rotation rotation,
                                float ui_scale,
@@ -684,6 +687,13 @@ class DISPLAY_MANAGER_EXPORT DisplayManager
 
 #if defined(OS_CHROMEOS)
   std::unique_ptr<TouchDeviceManager> touch_device_manager_;
+
+  // A cancelable callback to trigger sending UMA metrics when display zoom is
+  // updated. The reason we need a cancelable callback is because we dont want
+  // to record UMA metrics for changes to the display zoom that are temporary.
+  // Temporary changes may include things like the user trying out different
+  // zoom levels before making the final decision.
+  base::CancelableCallback<void()> on_display_zoom_modify_timeout_;
 #endif
 
   // Whether mirroring across multiple displays is enabled.

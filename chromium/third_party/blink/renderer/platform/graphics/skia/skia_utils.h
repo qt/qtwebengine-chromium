@@ -41,6 +41,7 @@
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "third_party/skia/include/core/SkPoint.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 #include "third_party/skia/include/core/SkScalar.h"
 
@@ -62,20 +63,18 @@ bool PLATFORM_EXPORT IsValidImageSize(const IntSize&);
 
 SkBlendMode PLATFORM_EXPORT
     WebCoreCompositeToSkiaComposite(CompositeOperator,
-                                    WebBlendMode = WebBlendMode::kNormal);
-CompositeOperator PLATFORM_EXPORT CompositeOperatorFromSkia(SkBlendMode);
-WebBlendMode PLATFORM_EXPORT BlendModeFromSkia(SkBlendMode);
-
-// Map alpha values from [0, 1] to [0, 256] for alpha blending.
-int PLATFORM_EXPORT ClampedAlphaForBlending(float);
+                                    BlendMode = BlendMode::kNormal);
+SkBlendMode PLATFORM_EXPORT WebCoreBlendModeToSkBlendMode(BlendMode);
+CompositeOperator PLATFORM_EXPORT CompositeOperatorFromSkBlendMode(SkBlendMode);
+BlendMode PLATFORM_EXPORT BlendModeFromSkBlendMode(SkBlendMode);
 
 // Multiply a color's alpha channel by an additional alpha factor where
 // alpha is in the range [0, 1].
 SkColor PLATFORM_EXPORT ScaleAlpha(SkColor, float);
 
-// Multiply a color's alpha channel by an additional alpha factor where
-// alpha is in the range [0, 256].
-SkColor PLATFORM_EXPORT ScaleAlpha(SkColor, int);
+// Convert a SkColorSpace to a gfx::ColorSpace
+gfx::ColorSpace PLATFORM_EXPORT
+SkColorSpaceToGfxColorSpace(const sk_sp<SkColorSpace>);
 
 // Skia has problems when passed infinite, etc floats, filter them to 0.
 inline SkScalar WebCoreFloatToSkScalar(float f) {
@@ -105,6 +104,11 @@ inline WindRule SkFillTypeToWindRule(SkPath::FillType fill_type) {
       break;
   }
   return RULE_NONZERO;
+}
+
+inline SkPoint FloatPointToSkPoint(const FloatPoint& point) {
+  return SkPoint::Make(WebCoreFloatToSkScalar(point.X()),
+                       WebCoreFloatToSkScalar(point.Y()));
 }
 
 SkMatrix PLATFORM_EXPORT AffineTransformToSkMatrix(const AffineTransform&);

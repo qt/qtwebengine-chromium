@@ -4,6 +4,7 @@
 
 #include "services/identity/public/cpp/identity_manager.h"
 #include "base/threading/sequenced_task_runner_handle.h"
+#include "google_apis/gaia/gaia_auth_util.h"
 
 namespace identity {
 
@@ -41,13 +42,37 @@ AccountInfo IdentityManager::GetPrimaryAccountInfo() {
   // where you are setting the authenticated account info in the SigninManager.
   // TODO(blundell): Add the API to do this once we hit the first case and
   // document the API to use here.
-  DCHECK_EQ(signin_manager_->GetAuthenticatedAccountInfo().account_id,
+  DCHECK_EQ(signin_manager_->GetAuthenticatedAccountId(),
             primary_account_info_.account_id);
-  DCHECK_EQ(signin_manager_->GetAuthenticatedAccountInfo().gaia,
-            primary_account_info_.gaia);
-  DCHECK_EQ(signin_manager_->GetAuthenticatedAccountInfo().email,
-            primary_account_info_.email);
-#endif
+
+  // Note: If the primary account's refresh token gets revoked, then the account
+  // gets removed from AccountTrackerService (via
+  // AccountFetcherService::OnRefreshTokenRevoked), and so SigninManager's
+  // GetAuthenticatedAccountInfo is empty (even though
+  // GetAuthenticatedAccountId is NOT empty).
+  if (!signin_manager_->GetAuthenticatedAccountInfo().account_id.empty()) {
+    DCHECK_EQ(signin_manager_->GetAuthenticatedAccountInfo().account_id,
+              primary_account_info_.account_id);
+    DCHECK_EQ(signin_manager_->GetAuthenticatedAccountInfo().gaia,
+              primary_account_info_.gaia);
+
+    // TODO(842670): As described in the bug, AccountTrackerService's email
+    // address can be updated after it is initially set on ChromeOS. Figure out
+    // right long-term solution for this problem.
+    if (signin_manager_->GetAuthenticatedAccountInfo().email !=
+        primary_account_info_.email) {
+      // This update should only be to move it from normalized form to the form
+      // in which the user entered the email when creating the account. The
+      // below check verifies that the normalized forms of the two email
+      // addresses are identical.
+      DCHECK(gaia::AreEmailsSame(
+          signin_manager_->GetAuthenticatedAccountInfo().email,
+          primary_account_info_.email));
+      primary_account_info_.email =
+          signin_manager_->GetAuthenticatedAccountInfo().email;
+    }
+  }
+#endif  // defined(OS_CHROMEOS)
   return primary_account_info_;
 }
 
@@ -96,17 +121,17 @@ void IdentityManager::RemoveDiagnosticsObserver(DiagnosticsObserver* observer) {
 }
 
 void IdentityManager::SetPrimaryAccountSynchronouslyForTests(
-    std::string gaia_id,
-    std::string email_address,
-    std::string refresh_token) {
+    const std::string& gaia_id,
+    const std::string& email_address,
+    const std::string& refresh_token) {
   DCHECK(!refresh_token.empty());
   SetPrimaryAccountSynchronously(gaia_id, email_address, refresh_token);
 }
 
 void IdentityManager::SetPrimaryAccountSynchronously(
-    std::string gaia_id,
-    std::string email_address,
-    std::string refresh_token) {
+    const std::string& gaia_id,
+    const std::string& email_address,
+    const std::string& refresh_token) {
   signin_manager_->SetAuthenticatedAccountInfo(gaia_id, email_address);
   primary_account_info_ = signin_manager_->GetAuthenticatedAccountInfo();
 
@@ -119,10 +144,16 @@ void IdentityManager::SetPrimaryAccountSynchronously(
 #if !defined(OS_CHROMEOS)
 void IdentityManager::WillFireGoogleSigninSucceeded(
     const AccountInfo& account_info) {
+  // TODO(843510): Consider setting this info and notifying observers
+  // asynchronously in response to GoogleSigninSucceeded() once there are no
+  // direct clients of SigninManager.
   primary_account_info_ = account_info;
 }
 
 void IdentityManager::WillFireGoogleSignedOut(const AccountInfo& account_info) {
+  // TODO(843510): Consider setting this info and notifying observers
+  // asynchronously in response to GoogleSigninSucceeded() once there are no
+  // direct clients of SigninManager.
   DCHECK(account_info.account_id == primary_account_info_.account_id);
   DCHECK(account_info.gaia == primary_account_info_.gaia);
   DCHECK(account_info.email == primary_account_info_.email);
@@ -131,25 +162,19 @@ void IdentityManager::WillFireGoogleSignedOut(const AccountInfo& account_info) {
 #endif
 
 void IdentityManager::GoogleSigninSucceeded(const AccountInfo& account_info) {
-  // Fire observer callbacks asynchronously to mimic this callback itself coming
-  // in asynchronously from the Identity Service rather than synchronously from
-  // SigninManager.
   DCHECK(account_info.account_id == primary_account_info_.account_id);
   DCHECK(account_info.gaia == primary_account_info_.gaia);
   DCHECK(account_info.email == primary_account_info_.email);
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::BindOnce(&IdentityManager::HandleGoogleSigninSucceeded,
-                                weak_ptr_factory_.GetWeakPtr(), account_info));
+  for (auto& observer : observer_list_) {
+    observer.OnPrimaryAccountSet(account_info);
+  }
 }
 
 void IdentityManager::GoogleSignedOut(const AccountInfo& account_info) {
-  // Fire observer callbacks asynchronously to mimic this callback itself coming
-  // in asynchronously from the Identity Service rather than synchronously from
-  // SigninManager.
   DCHECK(!HasPrimaryAccount());
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::BindOnce(&IdentityManager::HandleGoogleSignedOut,
-                                weak_ptr_factory_.GetWeakPtr(), account_info));
+  for (auto& observer : observer_list_) {
+    observer.OnPrimaryAccountCleared(account_info);
+  }
 }
 
 void IdentityManager::OnAccessTokenRequested(
@@ -170,19 +195,6 @@ void IdentityManager::HandleRemoveAccessTokenFromCache(
     const OAuth2TokenService::ScopeSet& scopes,
     const std::string& access_token) {
   token_service_->InvalidateAccessToken(account_id, scopes, access_token);
-}
-
-void IdentityManager::HandleGoogleSigninSucceeded(
-    const AccountInfo& account_info) {
-  for (auto& observer : observer_list_) {
-    observer.OnPrimaryAccountSet(account_info);
-  }
-}
-
-void IdentityManager::HandleGoogleSignedOut(const AccountInfo& account_info) {
-  for (auto& observer : observer_list_) {
-    observer.OnPrimaryAccountCleared(account_info);
-  }
 }
 
 void IdentityManager::HandleOnAccessTokenRequested(

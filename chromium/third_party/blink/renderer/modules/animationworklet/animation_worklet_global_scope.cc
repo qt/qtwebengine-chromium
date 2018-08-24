@@ -65,9 +65,6 @@ AnimationWorkletGlobalScope::AnimationWorkletGlobalScope(
     v8::Isolate* isolate,
     WorkerThread* thread)
     : ThreadedWorkletGlobalScope(std::move(creation_params), isolate, thread) {
-  if (AnimationWorkletProxyClient* proxy_client =
-          AnimationWorkletProxyClient::From(Clients()))
-    proxy_client->SetGlobalScope(this);
 }
 
 AnimationWorkletGlobalScope::~AnimationWorkletGlobalScope() = default;
@@ -79,7 +76,7 @@ void AnimationWorkletGlobalScope::Trace(blink::Visitor* visitor) {
 }
 
 void AnimationWorkletGlobalScope::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+    ScriptWrappableVisitor* visitor) const {
   for (auto animator : animators_)
     visitor->TraceWrappers(animator.value);
 
@@ -149,10 +146,23 @@ AnimationWorkletGlobalScope::Mutate(
   return result;
 }
 
+void AnimationWorkletGlobalScope::RegisterWithProxyClientIfNeeded() {
+  if (registered_)
+    return;
+
+  if (AnimationWorkletProxyClient* proxy_client =
+          AnimationWorkletProxyClient::From(Clients())) {
+    proxy_client->SetGlobalScope(this);
+    registered_ = true;
+  }
+}
+
 void AnimationWorkletGlobalScope::registerAnimator(
     const String& name,
     const ScriptValue& constructor_value,
     ExceptionState& exception_state) {
+  RegisterWithProxyClientIfNeeded();
+
   DCHECK(IsContextThread());
   if (animator_definitions_.Contains(name)) {
     exception_state.ThrowDOMException(

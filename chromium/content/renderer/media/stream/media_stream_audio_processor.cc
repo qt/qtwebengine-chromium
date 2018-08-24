@@ -629,6 +629,8 @@ void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
         base::FeatureList::IsEnabled(features::kWebRtcAecBoundedErlSetup);
     aec3_config.echo_removal_control.has_clock_drift =
         base::FeatureList::IsEnabled(features::kWebRtcAecClockDriftSetup);
+    aec3_config.echo_audibility.use_stationary_properties =
+        base::FeatureList::IsEnabled(features::kWebRtcAecNoiseTransparency);
 
     ap_builder.SetEchoControlFactory(
         std::unique_ptr<webrtc::EchoControlFactory>(
@@ -738,7 +740,6 @@ void MediaStreamAudioProcessor::InitializeCaptureFifo(
       media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
       output_channel_layout,
       output_sample_rate,
-      16,
       output_frames);
 
   capture_fifo_.reset(

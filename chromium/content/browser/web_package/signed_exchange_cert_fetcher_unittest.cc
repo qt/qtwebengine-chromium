@@ -9,16 +9,15 @@
 #include "base/strings/string_piece.h"
 #include "base/test/scoped_task_environment.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
-#include "content/browser/web_package/signed_exchange_utils.h"
 #include "content/public/common/resource_type.h"
 #include "content/public/common/url_loader_throttle.h"
-#include "content/public/common/weak_wrapper_shared_url_loader_factory.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/system/data_pipe_utils.h"
 #include "net/base/load_flags.h"
 #include "net/cert/x509_util.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/test_data_directory.h"
+#include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -76,7 +75,8 @@ class MockURLLoader final : public network::mojom::URLLoader {
       : binding_(this, std::move(url_loader_request)) {}
   ~MockURLLoader() override = default;
 
-  MOCK_METHOD0(FollowRedirect, void());
+  MOCK_METHOD1(FollowRedirect,
+               void(const base::Optional<net::HttpRequestHeaders>&));
   MOCK_METHOD0(ProceedWithResponse, void());
   MOCK_METHOD2(SetPriority,
                void(net::RequestPriority priority,
@@ -208,10 +208,11 @@ class SignedExchangeCertFetcherTest : public testing::Test {
         base::Unretained(&cert_result_));
 
     return SignedExchangeCertFetcher::CreateAndStart(
-        base::MakeRefCounted<WeakWrapperSharedURLLoaderFactory>(
+        base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
             &mock_loader_factory_),
         std::move(throttles_), url_, request_initiator_, force_fetch,
-        std::move(callback), signed_exchange_utils::LogCallback());
+        SignedExchangeVersion::kB0, std::move(callback),
+        nullptr /* devtools_proxy */);
   }
 
   void CallOnReceiveResponse() {
@@ -317,7 +318,7 @@ TEST_F(SignedExchangeCertFetcherTest, ForceFetchAndFail) {
             mock_loader_factory_.url_request()->load_flags);
 
   mock_loader_factory_.client_ptr()->OnComplete(
-      network::URLLoaderCompletionStatus(net::ERR_FAILED));
+      network::URLLoaderCompletionStatus(net::ERR_INVALID_SIGNED_EXCHANGE));
   RunUntilIdle();
 
   EXPECT_TRUE(callback_called_);
@@ -534,7 +535,7 @@ TEST_F(SignedExchangeCertFetcherTest, Throttle_AbortsOnRequest) {
       CreateFetcherAndStart(false /* force_fetch */);
   RunUntilIdle();
 
-  throttle->delegate()->CancelWithError(net::ERR_FAILED);
+  throttle->delegate()->CancelWithError(net::ERR_INVALID_SIGNED_EXCHANGE);
 
   RunUntilIdle();
 
@@ -561,7 +562,7 @@ TEST_F(SignedExchangeCertFetcherTest, Throttle_AbortsOnRedirect) {
 
   EXPECT_TRUE(throttle->will_redirect_request_called());
 
-  throttle->delegate()->CancelWithError(net::ERR_FAILED);
+  throttle->delegate()->CancelWithError(net::ERR_INVALID_SIGNED_EXCHANGE);
   RunUntilIdle();
 
   EXPECT_TRUE(callback_called_);
@@ -593,7 +594,7 @@ TEST_F(SignedExchangeCertFetcherTest, Throttle_AbortsOnResponse) {
 
   EXPECT_FALSE(callback_called_);
 
-  throttle->delegate()->CancelWithError(net::ERR_FAILED);
+  throttle->delegate()->CancelWithError(net::ERR_INVALID_SIGNED_EXCHANGE);
   RunUntilIdle();
 
   EXPECT_TRUE(callback_called_);

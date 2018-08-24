@@ -90,7 +90,7 @@ void DecoderSelector<StreamType>::SelectDecoder(
   waiting_for_decryption_key_cb_ = waiting_for_decryption_key_cb;
 
   decoders_ = create_decoders_cb_.Run();
-  config_ = StreamTraits::GetDecoderConfig(input_stream_);
+  config_ = traits_->GetDecoderConfig(input_stream_);
 
   InitializeDecoder();
 }
@@ -125,6 +125,7 @@ void DecoderSelector<StreamType>::InitializeDecoder() {
     return;
   }
 
+  DVLOG(2) << __func__ << ": initializing " << decoder_->GetDisplayName();
   traits_->InitializeDecoder(
       decoder_.get(), config_,
       input_stream_->liveness() == DemuxerStream::LIVENESS_LIVE, cdm_context_,
@@ -135,7 +136,8 @@ void DecoderSelector<StreamType>::InitializeDecoder() {
 
 template <DemuxerStream::Type StreamType>
 void DecoderSelector<StreamType>::DecoderInitDone(bool success) {
-  DVLOG(2) << __func__ << ": success=" << success;
+  DVLOG(2) << __func__ << ": " << decoder_->GetDisplayName()
+           << " success=" << success;
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   if (!success) {
@@ -197,7 +199,7 @@ void DecoderSelector<StreamType>::DecryptingDemuxerStreamInitDone(
   // try to see whether any decoder can decrypt-and-decode the encrypted stream
   // directly. So in both cases, we'll initialize the decoders.
   input_stream_ = decrypted_stream_.get();
-  config_ = StreamTraits::GetDecoderConfig(input_stream_);
+  config_ = traits_->GetDecoderConfig(input_stream_);
   DCHECK(!config_.is_encrypted());
 
   // If we're here we tried all the decoders w/ is_encrypted=true, try again

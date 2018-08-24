@@ -274,10 +274,13 @@ void NGInlineLayoutStateStack::AddBoxFragmentPlaceholder(
     // Do not defer creating a box fragment if this is an empty inline box.
     // An empty box fragment is still flat that we do not have to defer.
     // Also, placeholders cannot be reordred if empty.
-    scoped_refptr<NGLayoutResult> layout_result =
-        box_data.CreateBoxFragment(line_box);
     offset.inline_offset += box_data.margin_line_left;
-    line_box->AddChild(layout_result, offset, box_data.size.inline_size, 0);
+    LayoutUnit advance = box_data.margin_border_padding_line_left +
+                         box_data.margin_border_padding_line_right;
+    box_data.size.inline_size =
+        advance - box_data.margin_line_left - box_data.margin_line_right;
+    line_box->AddChild(box_data.CreateBoxFragment(line_box), offset, advance,
+                       0);
     box_data_list_.pop_back();
   }
 }
@@ -365,55 +368,67 @@ LayoutUnit NGInlineLayoutStateStack::ComputeInlinePositions(
   if (box_data_list_.IsEmpty())
     return position;
 
-  // Create box fragments.
+  // Compute inline positions of inline boxes.
   for (auto& box_data : box_data_list_) {
     unsigned start = box_data.fragment_start;
     unsigned end = box_data.fragment_end;
     DCHECK_GT(end, start);
     NGLineBoxFragmentBuilder::Child& start_child = (*line_box)[start];
+
     // Clamping left offset is not defined, match to the existing behavior.
     LayoutUnit line_left_offset =
         start_child.offset.inline_offset.ClampNegativeToZero();
     LayoutUnit line_right_offset = end < line_box->size()
                                        ? (*line_box)[end].offset.inline_offset
                                        : position;
-    box_data.offset.inline_offset = line_left_offset;
-    box_data.size.inline_size = line_right_offset - line_left_offset;
+    box_data.offset.inline_offset =
+        line_left_offset + box_data.margin_line_left;
+    box_data.size.inline_size =
+        line_right_offset - line_left_offset +
+        box_data.margin_border_padding_line_left - box_data.margin_line_left +
+        box_data.margin_border_padding_line_right - box_data.margin_line_right;
+
+    // Adjust child offsets for margin/border/padding.
+    if (box_data.margin_border_padding_line_left) {
+      line_box->MoveInInlineDirection(box_data.margin_border_padding_line_left,
+                                      start, line_box->size());
+      position += box_data.margin_border_padding_line_left;
+    }
+
+    if (box_data.margin_border_padding_line_right) {
+      line_box->MoveInInlineDirection(box_data.margin_border_padding_line_right,
+                                      end, line_box->size());
+      position += box_data.margin_border_padding_line_right;
+    }
+  }
+
+  return position;
+}
+
+void NGInlineLayoutStateStack::CreateBoxFragments(
+    NGLineBoxFragmentBuilder::ChildList* line_box) {
+  DCHECK(!box_data_list_.IsEmpty());
+
+  for (auto& box_data : box_data_list_) {
+    unsigned start = box_data.fragment_start;
+    unsigned end = box_data.fragment_end;
+    DCHECK_GT(end, start);
+    NGLineBoxFragmentBuilder::Child& start_child = (*line_box)[start];
 
     scoped_refptr<NGLayoutResult> box_fragment =
         box_data.CreateBoxFragment(line_box);
-    NGLogicalOffset offset(line_left_offset + box_data.margin_line_left,
-                           box_data.offset.block_offset);
     if (!start_child.HasFragment()) {
       start_child.layout_result = std::move(box_fragment);
-      start_child.offset = offset;
+      start_child.offset = box_data.offset;
     } else {
       // In most cases, |start_child| is moved to the children of the box, and
       // is empty. It's not empty when it's out-of-flow. Insert in such case.
-      line_box->InsertChild(start, std::move(box_fragment), offset,
+      line_box->InsertChild(start, std::move(box_fragment), box_data.offset,
                             LayoutUnit(), 0);
-    }
-
-    // Out-of-flow fragments are left in (start + 1, end). Move them by the left
-    // margin/border/padding.
-    if (box_data.margin_border_padding_line_left) {
-      line_box->MoveInInlineDirection(box_data.margin_border_padding_line_left,
-                                      start + 1, end);
-    }
-    // Move the rest of children by the inline size the box consumes.
-    LayoutUnit margin_border_padding =
-        box_data.margin_border_padding_line_left +
-        box_data.margin_border_padding_line_right;
-    if (margin_border_padding) {
-      line_box->MoveInInlineDirection(margin_border_padding, end,
-                                      line_box->size());
-      position += margin_border_padding;
     }
   }
 
   box_data_list_.clear();
-
-  return position;
 }
 
 scoped_refptr<NGLayoutResult>
@@ -427,17 +442,12 @@ NGInlineLayoutStateStack::BoxData::CreateBoxFragment(
   NGFragmentBuilder box(item->GetLayoutObject(), &style, style.GetWritingMode(),
                         TextDirection::kLtr);
   box.SetBoxType(NGPhysicalFragment::kInlineBox);
+  box.SetStyleVariant(item->StyleVariant());
 
   // Inline boxes have block start/end borders, even when its containing block
   // was fragmented. Fragmenting a line box in block direction is not
   // supported today.
   box.SetBorderEdges({true, has_line_right_edge, true, has_line_left_edge});
-  LayoutUnit border_padding_line_left =
-      margin_border_padding_line_left - margin_line_left;
-  LayoutUnit border_padding_line_right =
-      margin_border_padding_line_right - margin_line_right;
-  offset.inline_offset -= border_padding_line_left;
-  size.inline_size += border_padding_line_left + border_padding_line_right;
   box.SetInlineSize(size.inline_size.ClampNegativeToZero());
   box.SetBlockSize(size.block_size);
   box.SetPadding(padding);
@@ -462,7 +472,9 @@ NGInlineLayoutStateStack::ApplyBaselineShift(
     NGInlineBoxState* box,
     NGLineBoxFragmentBuilder::ChildList* line_box,
     FontBaseline baseline_type) {
-  // Compute descendants that depend on the layout size of this box if any.
+  // Some 'vertical-align' values require the size of their parents. Align all
+  // such descendant boxes that require the size of this box; they are queued in
+  // |pending_descendants|.
   LayoutUnit baseline_shift;
   if (!box->pending_descendants.IsEmpty()) {
     for (auto& child : box->pending_descendants) {
@@ -514,9 +526,15 @@ NGInlineLayoutStateStack::ApplyBaselineShift(
   if (vertical_align == EVerticalAlign::kBaseline)
     return kPositionNotPending;
 
-  // 'vertical-align' aplies only to inline-level elements.
+  // 'vertical-align' aligns boxes relative to themselves, to their parent
+  // boxes, or to the line box, depends on the value.
+  // Because |box| is an item in |stack_|, |box[-1]| is its parent box.
+  // If this box doesn't have a parent; i.e., this box is a line box,
+  // 'vertical-align' has no effect.
+  DCHECK(box >= stack_.begin() && box < stack_.end());
   if (box == stack_.begin())
     return kPositionNotPending;
+  NGInlineBoxState& parent_box = box[-1];
 
   // Check if there are any fragments to move.
   unsigned fragment_end = line_box->size();
@@ -525,10 +543,10 @@ NGInlineLayoutStateStack::ApplyBaselineShift(
 
   switch (vertical_align) {
     case EVerticalAlign::kSub:
-      baseline_shift = style.ComputedFontSizeAsFixed() / 5 + 1;
+      baseline_shift = parent_box.style->ComputedFontSizeAsFixed() / 5 + 1;
       break;
     case EVerticalAlign::kSuper:
-      baseline_shift = -(style.ComputedFontSizeAsFixed() / 3 + 1);
+      baseline_shift = -(parent_box.style->ComputedFontSizeAsFixed() / 3 + 1);
       break;
     case EVerticalAlign::kLength: {
       // 'Percentages: refer to the 'line-height' of the element itself'.
@@ -542,9 +560,10 @@ NGInlineLayoutStateStack::ApplyBaselineShift(
     }
     case EVerticalAlign::kMiddle:
       baseline_shift = (box->metrics.ascent - box->metrics.descent) / 2;
-      if (const SimpleFontData* font_data = style.GetFont().PrimaryFont()) {
+      if (const SimpleFontData* parent_font_data =
+              parent_box.style->GetFont().PrimaryFont()) {
         baseline_shift -= LayoutUnit::FromFloatRound(
-            font_data->GetFontMetrics().XHeight() / 2);
+            parent_font_data->GetFontMetrics().XHeight() / 2);
       }
       break;
     case EVerticalAlign::kBaselineMiddle:
@@ -558,8 +577,7 @@ NGInlineLayoutStateStack::ApplyBaselineShift(
       return kPositionPending;
     default:
       // Other values require the layout size of the parent box.
-      SECURITY_CHECK(box != stack_.begin());
-      box[-1].pending_descendants.push_back(NGPendingPositions{
+      parent_box.pending_descendants.push_back(NGPendingPositions{
           box->fragment_start, fragment_end, box->metrics, vertical_align});
       return kPositionPending;
   }

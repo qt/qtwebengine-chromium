@@ -66,6 +66,8 @@ int32_t VideoEncoderWrapper::InitEncodeInternal(JNIEnv* jni) {
       break;
     case kVideoCodecVP9:
       automatic_resize_on = codec_settings_.VP9()->automaticResizeOn;
+      gof_.SetGofInfoVP9(TemporalStructureMode::kTemporalStructureMode1);
+      gof_idx_ = 0;
       break;
     default:
       automatic_resize_on = true;
@@ -73,8 +75,8 @@ int32_t VideoEncoderWrapper::InitEncodeInternal(JNIEnv* jni) {
 
   ScopedJavaLocalRef<jobject> settings = Java_Settings_Constructor(
       jni, number_of_cores_, codec_settings_.width, codec_settings_.height,
-      codec_settings_.startBitrate, codec_settings_.maxFramerate,
-      automatic_resize_on);
+      static_cast<int>(codec_settings_.startBitrate),
+      static_cast<int>(codec_settings_.maxFramerate), automatic_resize_on);
 
   ScopedJavaLocalRef<jobject> callback =
       Java_VideoEncoderWrapper_createEncoderCallback(jni,
@@ -147,7 +149,7 @@ int32_t VideoEncoderWrapper::SetChannelParameters(uint32_t packet_loss,
 }
 
 int32_t VideoEncoderWrapper::SetRateAllocation(
-    const BitrateAllocation& allocation,
+    const VideoBitrateAllocation& allocation,
     uint32_t framerate) {
   JNIEnv* jni = AttachCurrentThreadIfNeeded();
 
@@ -414,6 +416,8 @@ CodecSpecificInfo VideoEncoderWrapper::ParseCodecSpecificInfo(
       info.codecSpecific.VP9.gof_idx =
           static_cast<uint8_t>(gof_idx_++ % gof_.num_frames_in_gof);
       info.codecSpecific.VP9.num_spatial_layers = 1;
+      info.codecSpecific.VP9.first_frame_in_picture = true;
+      info.codecSpecific.VP9.end_of_picture = true;
       info.codecSpecific.VP9.spatial_layer_resolution_present = false;
       if (info.codecSpecific.VP9.ss_data_available) {
         info.codecSpecific.VP9.spatial_layer_resolution_present = true;
@@ -433,7 +437,7 @@ CodecSpecificInfo VideoEncoderWrapper::ParseCodecSpecificInfo(
 
 ScopedJavaLocalRef<jobject> VideoEncoderWrapper::ToJavaBitrateAllocation(
     JNIEnv* jni,
-    const BitrateAllocation& allocation) {
+    const VideoBitrateAllocation& allocation) {
   ScopedJavaLocalRef<jobjectArray> j_allocation_array(
       jni, jni->NewObjectArray(kMaxSpatialLayers, int_array_class_.obj(),
                                nullptr /* initial */));

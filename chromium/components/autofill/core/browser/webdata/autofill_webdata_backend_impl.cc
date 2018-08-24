@@ -49,7 +49,7 @@ void AutofillWebDataBackendImpl::RemoveObserver(
 }
 
 AutofillWebDataBackendImpl::~AutofillWebDataBackendImpl() {
-  DCHECK(!user_data_.get());  // Forgot to call ResetUserData?
+  DCHECK(!user_data_);  // Forgot to call ResetUserData?
 }
 
 WebDatabase* AutofillWebDataBackendImpl::GetDatabase() {
@@ -496,6 +496,15 @@ WebDatabase::State AutofillWebDataBackendImpl::RemoveExpiredFormElementsImpl(
       for (auto& db_observer : db_observer_list_)
         db_observer.AutofillEntriesChanged(changes);
     }
+    return WebDatabase::COMMIT_NEEDED;
+  }
+  return WebDatabase::COMMIT_NOT_NEEDED;
+}
+
+WebDatabase::State AutofillWebDataBackendImpl::RemoveOrphanAutofillTableRows(
+    WebDatabase* db) {
+  DCHECK(owning_task_runner()->RunsTasksInCurrentSequence());
+  if (AutofillTable::FromWebDatabase(db)->RemoveOrphanAutofillTableRows()) {
     return WebDatabase::COMMIT_NEEDED;
   }
   return WebDatabase::COMMIT_NOT_NEEDED;

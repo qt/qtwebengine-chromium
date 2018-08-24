@@ -28,6 +28,7 @@
 #include "third_party/blink/renderer/core/script/pending_script.h"
 #include "third_party/blink/renderer/core/script/script.h"
 #include "third_party/blink/renderer/core/script/script_runner.h"
+#include "third_party/blink/renderer/core/script/script_scheduling_type.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
 #include "third_party/blink/renderer/platform/loader/fetch/integrity_metadata.h"
@@ -46,23 +47,22 @@ class ScriptResource;
 
 class Modulator;
 
-class CORE_EXPORT ScriptLoader : public GarbageCollectedFinalized<ScriptLoader>,
-                                 public PendingScriptClient,
-                                 public TraceWrapperBase {
+class CORE_EXPORT ScriptLoader final
+    : public GarbageCollectedFinalized<ScriptLoader>,
+      public PendingScriptClient,
+      public TraceWrapperBase {
   USING_GARBAGE_COLLECTED_MIXIN(ScriptLoader);
 
  public:
   static ScriptLoader* Create(ScriptElementBase* element,
                               bool created_by_parser,
-                              bool is_evaluated,
-                              bool created_during_document_write) {
-    return new ScriptLoader(element, created_by_parser, is_evaluated,
-                            created_during_document_write);
+                              bool is_evaluated) {
+    return new ScriptLoader(element, created_by_parser, is_evaluated);
   }
 
   ~ScriptLoader() override;
-  virtual void Trace(blink::Visitor*);
-  void TraceWrappers(const ScriptWrappableVisitor*) const override;
+  void Trace(blink::Visitor*) override;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override { return "ScriptLoader"; }
 
   enum LegacyTypeSupport {
@@ -85,30 +85,15 @@ class CORE_EXPORT ScriptLoader : public GarbageCollectedFinalized<ScriptLoader>,
                          TextPosition::MinimumPosition(),
                      LegacyTypeSupport = kDisallowLegacyTypeInTypeAttribute);
 
-  // https://html.spec.whatwg.org/multipage/scripting.html#execute-the-script-block
-  // The single entry point of script execution.
-  // PendingScript::Dispose() is called in ExecuteScriptBlock().
-  void ExecuteScriptBlock(PendingScript*, const KURL&);
-
   // Gets a PendingScript for external script whose fetch is started in
   // FetchClassicScript()/FetchModuleScriptTree().
   // This should be called only once.
-  PendingScript* TakePendingScript();
+  PendingScript* TakePendingScript(ScriptSchedulingType);
 
-  // The entry point only for ScriptRunner that wraps ExecuteScriptBlock().
-  virtual void Execute();
-
-  bool IsScriptTypeSupported(LegacyTypeSupport,
-                             ScriptType& out_script_type) const;
-
-  bool HaveFiredLoadEvent() const { return have_fired_load_; }
   bool WillBeParserExecuted() const { return will_be_parser_executed_; }
   bool ReadyToBeParserExecuted() const { return ready_to_be_parser_executed_; }
   bool WillExecuteWhenDocumentFinishedParsing() const {
     return will_execute_when_document_finished_parsing_;
-  }
-  void SetHaveFiredLoadEvent(bool have_fired_load) {
-    have_fired_load_ = have_fired_load;
   }
   bool IsParserInserted() const { return parser_inserted_; }
   bool AlreadyStarted() const { return already_started_; }
@@ -121,22 +106,15 @@ class CORE_EXPORT ScriptLoader : public GarbageCollectedFinalized<ScriptLoader>,
   void HandleSourceAttribute(const String& source_url);
   void HandleAsyncAttribute();
 
-  virtual bool IsReady() const {
-    return pending_script_ && pending_script_->IsReady();
-  }
-
   void SetFetchDocWrittenScriptDeferIdle();
 
-  // To support script streaming, the ScriptRunner may need to access the
-  // PendingScript. This breaks the intended layering, so please use with
-  // care. (Method is virtual to support testing.)
-  virtual PendingScript* GetPendingScriptIfScriptIsAsync();
+  // Return non-null if controlled by ScriptRunner, or null otherwise.
+  // Only for ScriptRunner::MovePendingScript() and should be removed once
+  // crbug.com/721914 is fixed.
+  PendingScript* GetPendingScriptIfControlledByScriptRunnerForCrossDocMove();
 
  protected:
-  ScriptLoader(ScriptElementBase*,
-               bool created_by_parser,
-               bool is_evaluated,
-               bool created_during_document_write);
+  ScriptLoader(ScriptElementBase*, bool created_by_parser, bool is_evaluated);
 
  private:
   bool IgnoresLoadRequest() const;
@@ -156,69 +134,51 @@ class CORE_EXPORT ScriptLoader : public GarbageCollectedFinalized<ScriptLoader>,
                              Modulator*,
                              const ScriptFetchOptions&);
 
-  void DispatchLoadEvent();
-  void DispatchErrorEvent();
-
   // Clears the connection to the PendingScript.
   void DetachPendingScript();
 
   // PendingScriptClient
   void PendingScriptFinished(PendingScript*) override;
 
-  bool WasCreatedDuringDocumentWrite() {
-    return created_during_document_write_;
-  }
-
   Member<ScriptElementBase> element_;
-  WTF::OrdinalNumber start_line_number_;
 
   // https://html.spec.whatwg.org/multipage/scripting.html#script-processing-model
   // "A script element has several associated pieces of state.":
 
-  // https://html.spec.whatwg.org/multipage/scripting.html#already-started
-  //
-  // Spec: ... Initially, script elements must have this flag unset ... [spec
-  // text]
+  // <spec
+  // href="https://html.spec.whatwg.org/multipage/scripting.html#already-started">
+  // ... Initially, script elements must have this flag unset ...</spec>
   bool already_started_ = false;
 
-  // https://html.spec.whatwg.org/multipage/scripting.html#parser-inserted
-  //
-  // Spec: ... Initially, script elements must have this flag unset. ... [spec
-  // text]
+  // <spec
+  // href="https://html.spec.whatwg.org/multipage/scripting.html#parser-inserted">
+  // ... Initially, script elements must have this flag unset. ...</spec>
   bool parser_inserted_ = false;
 
-  // https://html.spec.whatwg.org/multipage/scripting.html#non-blocking
-  //
-  // Spec: ... Initially, script elements must have this flag set. ... [spec
-  // text]
+  // <spec
+  // href="https://html.spec.whatwg.org/multipage/scripting.html#non-blocking">
+  // ... Initially, script elements must have this flag set. ...</spec>
   bool non_blocking_ = true;
 
-  // https://html.spec.whatwg.org/multipage/scripting.html#ready-to-be-parser-executed
-  //
-  // Spec: ... Initially, script elements must have this flag unset ... [spec
-  // text]
+  // <spec
+  // href="https://html.spec.whatwg.org/multipage/scripting.html#ready-to-be-parser-executed">
+  // ... Initially, script elements must have this flag unset ...</spec>
   bool ready_to_be_parser_executed_ = false;
 
-  // https://html.spec.whatwg.org/multipage/scripting.html#concept-script-type
-  //
-  // Spec: ... It is determined when the script is prepared, ... [spec text]
+  // <spec
+  // href="https://html.spec.whatwg.org/multipage/scripting.html#concept-script-type">
+  // ... It is determined when the script is prepared, ...</spec>
   ScriptType script_type_ = ScriptType::kClassic;
 
-  // https://html.spec.whatwg.org/multipage/scripting.html#concept-script-external
-  //
-  // Spec: ... It is determined when the script is prepared, ... [spec text]
+  // <spec
+  // href="https://html.spec.whatwg.org/multipage/scripting.html#concept-script-external">
+  // ... It is determined when the script is prepared, ...</spec>
   bool is_external_script_ = false;
-
-  bool have_fired_load_;
 
   // Same as "The parser will handle executing the script."
   bool will_be_parser_executed_;
 
   bool will_execute_when_document_finished_parsing_;
-
-  const bool created_during_document_write_;
-
-  ScriptRunner::AsyncExecutionType async_exec_type_;
 
   // A PendingScript is first created in PrepareScript() and stored in
   // |prepared_pending_script_|.
@@ -237,11 +197,6 @@ class CORE_EXPORT ScriptLoader : public GarbageCollectedFinalized<ScriptLoader>,
   // and thus to keep it on MemoryCache, even after script execution, as long
   // as ScriptLoader is alive. crbug.com/778799
   Member<Resource> resource_keep_alive_;
-
-  // The context document at the time when PrepareScript() is executed.
-  // This is only used to check whether the script element is moved between
-  // documents and thus doesn't retain a strong reference.
-  WeakMember<Document> original_document_;
 };
 
 }  // namespace blink

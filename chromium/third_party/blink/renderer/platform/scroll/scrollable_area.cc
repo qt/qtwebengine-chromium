@@ -36,7 +36,7 @@
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/platform_chrome_client.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/scroll/main_thread_scrolling_reason.h"
 #include "third_party/blink/renderer/platform/scroll/programmatic_scroll_animator.h"
 #include "third_party/blink/renderer/platform/scroll/scrollbar_theme.h"
@@ -158,6 +158,9 @@ float ScrollableArea::ScrollStep(ScrollGranularity granularity,
 
 ScrollResult ScrollableArea::UserScroll(ScrollGranularity granularity,
                                         const ScrollOffset& delta) {
+  TRACE_EVENT2("input", "ScrollableArea::UserScroll", "x", delta.Width(), "y",
+               delta.Height());
+
   float step_x = ScrollStep(granularity, kHorizontalScrollbar);
   float step_y = ScrollStep(granularity, kVerticalScrollbar);
 
@@ -574,7 +577,7 @@ void ScrollableArea::CancelProgrammaticScrollAnimation() {
 
 bool ScrollableArea::ShouldScrollOnMainThread() const {
   if (GraphicsLayer* layer = LayerForScrolling()) {
-    uint32_t reasons = layer->PlatformLayer()->MainThreadScrollingReasons();
+    uint32_t reasons = layer->CcLayer()->main_thread_scrolling_reasons();
     // Should scroll on main thread unless the reason is the one that is set
     // by the ScrollAnimator, in which case, the animation can still be
     // scheduled on the compositor.

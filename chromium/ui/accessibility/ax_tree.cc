@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "ui/accessibility/ax_node.h"
+#include "ui/accessibility/ax_table_info.h"
 #include "ui/gfx/transform.h"
 
 namespace ui {
@@ -139,6 +140,7 @@ AXTree::AXTree(const AXTreeUpdate& initial_state) {
 AXTree::~AXTree() {
   if (root_)
     DestroyNodeAndSubtree(root_, nullptr);
+  ClearTables();
 }
 
 void AXTree::SetDelegate(AXTreeDelegate* delegate) {
@@ -318,6 +320,7 @@ std::set<int32_t> AXTree::GetReverseRelations(ax::mojom::IntListAttribute attr,
 }
 
 bool AXTree::Unserialize(const AXTreeUpdate& update) {
+  ClearTables();
   AXTreeUpdateState update_state;
   int32_t old_root_id = root_ ? root_->id() : 0;
 
@@ -429,6 +432,20 @@ bool AXTree::Unserialize(const AXTreeUpdate& update) {
   }
 
   return true;
+}
+
+AXTableInfo* AXTree::GetTableInfo(AXNode* table_node) {
+  DCHECK(table_node);
+  const auto& cached = table_info_map_.find(table_node->id());
+  if (cached != table_info_map_.end())
+    return cached->second;
+
+  AXTableInfo* table_info = AXTableInfo::Create(this, table_node);
+  if (!table_info)
+    return nullptr;
+
+  table_info_map_[table_node->id()] = table_info;
+  return table_info;
 }
 
 std::string AXTree::ToString() const {
@@ -611,26 +628,37 @@ void AXTree::UpdateReverseRelations(AXNode* node, const AXNodeData& new_data) {
   const AXNodeData& old_data = node->data();
   int id = new_data.id;
   auto int_callback = [this, node, id](ax::mojom::IntAttribute attr,
-                                       const int& old_int, const int& new_int) {
+                                       const int& old_id, const int& new_id) {
     if (!IsNodeIdIntAttribute(attr))
       return;
 
-    int_reverse_relations_[attr][old_int].erase(id);
-    int_reverse_relations_[attr][new_int].insert(id);
+    auto& map = int_reverse_relations_[attr];
+    if (map.find(old_id) != map.end()) {
+      map[old_id].erase(id);
+      if (map[old_id].empty())
+        map.erase(old_id);
+    }
+    map[new_id].insert(id);
   };
   CallIfAttributeValuesChanged(old_data.int_attributes, new_data.int_attributes,
                                0, int_callback);
 
   auto intlist_callback = [this, node, id](
                               ax::mojom::IntListAttribute attr,
-                              const std::vector<int32_t>& old_intlist,
-                              const std::vector<int32_t>& new_intlist) {
+                              const std::vector<int32_t>& old_idlist,
+                              const std::vector<int32_t>& new_idlist) {
     if (!IsNodeIdIntListAttribute(attr))
       return;
 
-    for (int32_t old_id : old_intlist)
-      intlist_reverse_relations_[attr][old_id].erase(id);
-    for (int32_t new_id : new_intlist)
+    auto& map = intlist_reverse_relations_[attr];
+    for (int32_t old_id : old_idlist) {
+      if (map.find(old_id) != map.end()) {
+        map[old_id].erase(id);
+        if (map[old_id].empty())
+          map.erase(old_id);
+      }
+    }
+    for (int32_t new_id : new_idlist)
       intlist_reverse_relations_[attr][new_id].insert(id);
   };
   CallIfAttributeValuesChanged(old_data.intlist_attributes,
@@ -652,6 +680,11 @@ void AXTree::DestroySubtree(AXNode* node,
 
 void AXTree::DestroyNodeAndSubtree(AXNode* node,
                                    AXTreeUpdateState* update_state) {
+  // Clear out any reverse relations.
+  AXNodeData empty_data;
+  empty_data.id = node->id();
+  UpdateReverseRelations(node, empty_data);
+
   if (delegate_) {
     if (!update_state || !update_state->HasChangedNode(node))
       delegate_->OnNodeWillBeDeleted(this, node);
@@ -726,6 +759,12 @@ bool AXTree::CreateNewChildVector(AXNode* node,
   }
 
   return success;
+}
+
+void AXTree::ClearTables() {
+  for (auto& entry : table_info_map_)
+    delete entry.second;
+  table_info_map_.clear();
 }
 
 }  // namespace ui

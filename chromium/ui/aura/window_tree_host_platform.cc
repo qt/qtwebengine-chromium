@@ -15,6 +15,8 @@
 #include "ui/base/layout.h"
 #include "ui/compositor/compositor.h"
 #include "ui/events/event.h"
+#include "ui/events/keyboard_hook.h"
+#include "ui/events/keycodes/dom/dom_code.h"
 
 #if defined(OS_ANDROID)
 #include "ui/platform_window/android/platform_window_android.h"
@@ -79,7 +81,10 @@ void WindowTreeHostPlatform::SetPlatformWindow(
 WindowTreeHostPlatform::~WindowTreeHostPlatform() {
   DestroyCompositor();
   DestroyDispatcher();
-  platform_window_->Close();
+
+  // |platform_window_| might have already been destroyed by this time.
+  if (platform_window_)
+    platform_window_->Close();
 }
 
 ui::EventSource* WindowTreeHostPlatform::GetEventSource() {
@@ -102,7 +107,11 @@ gfx::Rect WindowTreeHostPlatform::GetBoundsInPixels() const {
   return platform_window_ ? platform_window_->GetBounds() : gfx::Rect();
 }
 
-void WindowTreeHostPlatform::SetBoundsInPixels(const gfx::Rect& bounds) {
+void WindowTreeHostPlatform::SetBoundsInPixels(
+    const gfx::Rect& bounds,
+    const viz::LocalSurfaceId& local_surface_id) {
+  pending_size_ = bounds.size();
+  pending_local_surface_id_ = local_surface_id;
   platform_window_->SetBounds(bounds);
 }
 
@@ -119,18 +128,34 @@ void WindowTreeHostPlatform::ReleaseCapture() {
 }
 
 bool WindowTreeHostPlatform::CaptureSystemKeyEventsImpl(
-    base::Optional<base::flat_set<int>> native_key_codes) {
-  // TODO(680809): Implement as part of the KeyboardLock feature work.
-  NOTIMPLEMENTED();
-  return false;
+    base::Optional<base::flat_set<ui::DomCode>> dom_codes) {
+  // Only one KeyboardHook should be active at a time, otherwise there will be
+  // problems with event routing (i.e. which Hook takes precedence) and
+  // destruction ordering.
+  DCHECK(!keyboard_hook_);
+  keyboard_hook_ = ui::KeyboardHook::Create(
+      std::move(dom_codes), GetAcceleratedWidget(),
+      base::BindRepeating(
+          [](ui::PlatformWindowDelegate* delegate, ui::KeyEvent* event) {
+            delegate->DispatchEvent(event);
+          },
+          base::Unretained(this)));
+
+  return keyboard_hook_ != nullptr;
 }
 
-void WindowTreeHostPlatform::ReleaseSystemKeyEventCapture() {}
+void WindowTreeHostPlatform::ReleaseSystemKeyEventCapture() {
+  keyboard_hook_.reset();
+}
 
-bool WindowTreeHostPlatform::IsKeyLocked(int native_key_code) {
-  // TODO(680809): Implement as part of the KeyboardLock feature work.
+bool WindowTreeHostPlatform::IsKeyLocked(ui::DomCode dom_code) {
+  return keyboard_hook_ && keyboard_hook_->IsKeyLocked(dom_code);
+}
+
+base::flat_map<std::string, std::string>
+WindowTreeHostPlatform::GetKeyboardLayoutMap() {
   NOTIMPLEMENTED();
-  return false;
+  return {};
 }
 
 void WindowTreeHostPlatform::SetCursorNative(gfx::NativeCursor cursor) {
@@ -162,8 +187,15 @@ void WindowTreeHostPlatform::OnBoundsChanged(const gfx::Rect& new_bounds) {
   bounds_ = new_bounds;
   if (bounds_.origin() != old_bounds.origin())
     OnHostMovedInPixels(bounds_.origin());
-  if (bounds_.size() != old_bounds.size() || current_scale != new_scale)
-    OnHostResizedInPixels(bounds_.size());
+  if (pending_local_surface_id_.is_valid() ||
+      bounds_.size() != old_bounds.size() || current_scale != new_scale) {
+    auto local_surface_id = bounds_.size() == pending_size_
+                                ? pending_local_surface_id_
+                                : viz::LocalSurfaceId();
+    pending_local_surface_id_ = viz::LocalSurfaceId();
+    pending_size_ = gfx::Size();
+    OnHostResizedInPixels(bounds_.size(), local_surface_id);
+  }
 }
 
 void WindowTreeHostPlatform::OnDamageRect(const gfx::Rect& damage_rect) {
@@ -203,6 +235,8 @@ void WindowTreeHostPlatform::OnAcceleratedWidgetAvailable(
   if (compositor())
     WindowTreeHost::OnAcceleratedWidgetAvailable();
 }
+
+void WindowTreeHostPlatform::OnAcceleratedWidgetDestroying() {}
 
 void WindowTreeHostPlatform::OnAcceleratedWidgetDestroyed() {
   gfx::AcceleratedWidget widget = compositor()->ReleaseAcceleratedWidget();

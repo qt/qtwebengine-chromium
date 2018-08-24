@@ -10,7 +10,6 @@ group("mojo") {
   testonly = true
   deps = [
     ":tests",
-    "//mojo/common",
   ]
 
   if (!(is_linux && current_cpu == "x86")) {
@@ -30,7 +29,6 @@ group("tests") {
     ":mojo_perftests",
     ":mojo_unittests",
     "//ipc:ipc_tests",
-    "//mojo/common:mojo_common_unittests",
     "//services/service_manager/tests",
   ]
 }
@@ -41,6 +39,7 @@ test("mojo_unittests") {
     "//mojo/edk/test:run_all_unittests",
     "//mojo/public/cpp/base:tests",
     "//mojo/public/cpp/bindings/tests",
+    "//mojo/public/cpp/platform/tests",
     "//mojo/public/cpp/system/tests",
   ]
 }

@@ -34,18 +34,18 @@
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
-#include "third_party/blink/renderer/core/frame/PerformanceMonitor.h"
+#include "third_party/blink/renderer/core/frame/performance_monitor.h"
 #include "third_party/blink/renderer/core/timing/memory_info.h"
 #include "third_party/blink/renderer/core/timing/performance.h"
 #include "third_party/blink/renderer/core/timing/performance_navigation.h"
 #include "third_party/blink/renderer/core/timing/performance_timing.h"
+#include "third_party/blink/renderer/platform/heap/heap_allocator.h"
 
 namespace blink {
 
 class CORE_EXPORT WindowPerformance final : public Performance,
                                             public PerformanceMonitor::Client,
                                             public DOMWindowClient {
-  DEFINE_WRAPPERTYPEINFO();
   USING_GARBAGE_COLLECTED_MIXIN(WindowPerformance);
   friend class WindowPerformanceTest;
 
@@ -57,11 +57,24 @@ class CORE_EXPORT WindowPerformance final : public Performance,
 
   ExecutionContext* GetExecutionContext() const override;
 
-  MemoryInfo* memory();
-  PerformanceNavigation* navigation() const;
   PerformanceTiming* timing() const override;
+  PerformanceNavigation* navigation() const override;
+
+  MemoryInfo* memory() const override;
 
   void UpdateLongTaskInstrumentation() override;
+
+  bool ObservingEventTimingEntries();
+  bool ShouldBufferEventTiming();
+
+  // This method creates a PerformanceEventTiming and if needed creates a swap
+  // promise to calculate the |duration| attribute when such promise is
+  // resolved.
+  void RegisterEventTiming(String event_type,
+                           TimeTicks start_time,
+                           TimeTicks processing_start,
+                           TimeTicks processing_end,
+                           bool cancelable);
 
   void Trace(blink::Visitor*) override;
   using Performance::TraceWrappers;
@@ -86,6 +99,22 @@ class CORE_EXPORT WindowPerformance final : public Performance,
 
   void BuildJSONValue(V8ObjectBuilder&) const override;
 
+  // Method called once swap promise is resolved. It will add all event timings
+  // that have not been added since the last swap promise.
+  void ReportEventTimings(WebLayerTreeView::SwapResult result,
+                          TimeTicks timestamp);
+
+  void DispatchFirstInputTiming(PerformanceEventTiming* entry);
+
+  // PerformanceEventTiming entries that have not been added yet: the event
+  // dispatch has been completed but the swap promise used to determine
+  // |duration| has not been resolved.
+  HeapVector<Member<PerformanceEventTiming>> event_timings_;
+  // We use a bool separate from |first_input_timing_| because if the first
+  // input does not happen before onload then |first_input_timing_| will never
+  // be populated since it should not be accessible from the performance buffer.
+  bool first_input_detected_ = false;
+  Member<PerformanceEventTiming> first_pointer_down_event_timing_;
   mutable Member<PerformanceNavigation> navigation_;
   mutable Member<PerformanceTiming> timing_;
 };

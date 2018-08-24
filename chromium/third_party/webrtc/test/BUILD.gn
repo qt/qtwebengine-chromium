@@ -64,8 +64,8 @@ rtc_source_set("video_test_common") {
     "../:typedefs",
     "../api:libjingle_peerconnection_api",
     "../api:optional",
-    "../api:video_frame_api",
-    "../api:video_frame_api_i420",
+    "../api/video:video_frame",
+    "../api/video:video_frame_i420",
     "../api/video_codecs:video_codecs_api",
     "../call:video_stream_api",
     "../common_video",
@@ -172,7 +172,6 @@ rtc_source_set("test_support") {
   sources = [
     "gmock.h",
     "gtest.h",
-    "testsupport/unittest_utils.h",
   ]
 
   public_deps = []
@@ -181,13 +180,7 @@ rtc_source_set("test_support") {
   }
 
   deps = [
-    "..:webrtc_common",
-    "../:typedefs",
-    "../api:array_view",
-    "../common_video",
-    "../rtc_base:gtest_prod",
     "../rtc_base:rtc_base_approved",
-    "../system_wrappers",
     "//testing/gmock",
     "//testing/gtest",
   ]
@@ -247,8 +240,8 @@ if (rtc_include_tests) {
       ":video_test_common",
       "..:webrtc_common",
       "../:typedefs",
-      "../api:video_frame_api",
-      "../api:video_frame_api_i420",
+      "../api/video:video_frame",
+      "../api/video:video_frame_i420",
       "../common_video",
       "../rtc_base:checks",
       "../rtc_base:rtc_base_approved",
@@ -316,19 +309,23 @@ if (rtc_include_tests) {
 
   rtc_test("test_support_unittests") {
     deps = [
+      ":direct_transport",
       ":fileutils",
       ":perf_test",
       ":rtp_test_utils",
-      "../api:video_frame_api",
-      "../api:video_frame_api_i420",
-      "../call:call_interfaces",
-      "../common_audio",
-      "../modules/audio_device",
-      "../modules/rtp_rtcp",
+      ":test_main",
+      ":test_support",
+      ":test_support_test_artifacts",
+      ":video_test_common",
+      ":video_test_support",
+      "../api/video:video_frame_i420",
+      "../modules/rtp_rtcp:rtp_rtcp",
       "../rtc_base:rtc_base_approved",
-      "../system_wrappers",
+      "../test:single_threaded_task_queue",
+      "//testing/gtest",
     ]
     sources = [
+      "direct_transport_unittest.cc",
       "frame_generator_unittest.cc",
       "rtp_file_reader_unittest.cc",
       "rtp_file_writer_unittest.cc",
@@ -358,19 +355,11 @@ if (rtc_include_tests) {
     if (is_ios) {
       deps += [ ":test_support_unittests_bundle_data" ]
     }
-
-    deps += [
-      ":direct_transport",
-      ":fileutils_unittests",
-      ":test_common",
-      ":test_main",
-      ":test_support_test_artifacts",
-      ":video_test_common",
-      ":video_test_support",
-      "../modules/video_capture",
-      "../rtc_base:rtc_base_approved",
-      "//testing/gtest",
-    ]
+    if (!is_android && !build_with_chromium) {
+      # This is needed in order to avoid:
+      # undefined symbol: webrtc::videocapturemodule::VideoCaptureImpl::Create
+      deps += [ "../modules/video_capture:video_capture_internal_impl" ]
+    }
   }
 }
 
@@ -521,6 +510,7 @@ rtc_source_set("test_common") {
     "constants.h",
     "drifting_clock.cc",
     "drifting_clock.h",
+    "encoder_proxy_factory.h",
     "encoder_settings.cc",
     "encoder_settings.h",
     "fake_decoder.cc",
@@ -528,6 +518,7 @@ rtc_source_set("test_common") {
     "fake_encoder.cc",
     "fake_encoder.h",
     "fake_videorenderer.h",
+    "function_video_encoder_factory.h",
     "layer_filtering_transport.cc",
     "layer_filtering_transport.h",
     "mock_transport.cc",
@@ -561,10 +552,10 @@ rtc_source_set("test_common") {
     "../:typedefs",
     "../api:libjingle_peerconnection_api",
     "../api:transport_api",
-    "../api:video_frame_api",
-    "../api:video_frame_api_i420",
     "../api/audio_codecs:builtin_audio_decoder_factory",
     "../api/audio_codecs:builtin_audio_encoder_factory",
+    "../api/video:video_frame",
+    "../api/video:video_frame_i420",
     "../api/video_codecs:video_codecs_api",
     "../audio",
     "../call",
@@ -588,7 +579,7 @@ rtc_source_set("test_common") {
     "../modules/video_coding:video_coding_utility",
     "../modules/video_coding:webrtc_h264",
     "../modules/video_coding:webrtc_multiplex",
-    "../modules/video_coding:webrtc_vp8",
+    "../modules/video_coding:webrtc_vp8_helpers",
     "../modules/video_coding:webrtc_vp9",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
@@ -612,7 +603,6 @@ config("test_renderer_exported_config") {
     # come from a config and cannot be on the target directly.
     cflags = [
       "-Wno-bool-conversion",
-      "-Wno-comment",
       "-Wno-delete-non-virtual-dtor",
     ]
   }
@@ -669,7 +659,7 @@ rtc_source_set("test_renderer_generic") {
     ":test_support",
     "..:webrtc_common",
     "../:typedefs",
-    "../api:video_frame_api",
+    "../api/video:video_frame",
     "../common_video",
     "../media:rtc_media_base",
     "../rtc_base:checks",

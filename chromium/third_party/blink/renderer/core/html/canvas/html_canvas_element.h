@@ -31,12 +31,12 @@
 #include <memory>
 
 #include "base/memory/weak_ptr.h"
+#include "base/single_thread_task_runner.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_blob_callback.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/dom/document.h"
-#include "third_party/blink/renderer/core/html/canvas/canvas_draw_listener.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_image_source.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context_host.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
@@ -56,11 +56,16 @@
 
 #define CanvasDefaultInterpolationQuality kInterpolationLow
 
+namespace cc {
+class Layer;
+}
+
 namespace blink {
 
 class Canvas2DLayerBridge;
 class CanvasColorParams;
 class CanvasContextCreationAttributesCore;
+class CanvasDrawListener;
 class CanvasRenderingContext;
 class CanvasRenderingContextFactory;
 class GraphicsContext;
@@ -83,8 +88,7 @@ class CORE_EXPORT HTMLCanvasElement final
       public CanvasRenderingContextHost,
       public WebSurfaceLayerBridgeObserver,
       public ImageBitmapSource,
-      public OffscreenCanvasPlaceholder,
-      public CanvasResourceHost {
+      public OffscreenCanvasPlaceholder {
   DEFINE_WRAPPERTYPEINFO();
   USING_GARBAGE_COLLECTED_MIXIN(HTMLCanvasElement);
   USING_PRE_FINALIZER(HTMLCanvasElement, Dispose);
@@ -148,8 +152,8 @@ class CORE_EXPORT HTMLCanvasElement final
   scoped_refptr<Image> CopiedImage(SourceDrawingBuffer, AccelerationHint);
   void ClearCopiedImage();
 
-  bool OriginClean() const;
-  void SetOriginTainted() { origin_clean_ = false; }
+  bool OriginClean() const override;
+  void SetOriginTainted() override { origin_clean_ = false; }
 
   bool Is3d() const;
   bool Is2d() const;
@@ -197,12 +201,11 @@ class CORE_EXPORT HTMLCanvasElement final
 
   // SurfaceLayerBridgeObserver implementation
   void OnWebLayerUpdated() override;
-  void RegisterContentsLayer(WebLayer*) override;
-  void UnregisterContentsLayer(WebLayer*) override;
+  void RegisterContentsLayer(cc::Layer*) override;
+  void UnregisterContentsLayer(cc::Layer*) override;
 
   // CanvasResourceHost implementation
-  void NotifySurfaceInvalid() override;
-  void RestoreCanvasMatrixClipStack(PaintCanvas*) const override;
+  void NotifyGpuContextLost() override;
   void SetNeedsCompositingUpdate() override;
   void UpdateMemoryUsage() override;
 
@@ -213,7 +216,7 @@ class CORE_EXPORT HTMLCanvasElement final
   IntSize BitmapSourceSize() const override;
   ScriptPromise CreateImageBitmap(ScriptState*,
                                   EventTarget&,
-                                  Optional<IntRect> crop_rect,
+                                  base::Optional<IntRect> crop_rect,
                                   const ImageBitmapOptions&) override;
 
   // OffscreenCanvasPlaceholder implementation.
@@ -221,9 +224,9 @@ class CORE_EXPORT HTMLCanvasElement final
                            base::WeakPtr<OffscreenCanvasFrameDispatcher>,
                            scoped_refptr<base::SingleThreadTaskRunner>,
                            unsigned resource_id) override;
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
-  virtual void TraceWrappers(const ScriptWrappableVisitor*) const;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
   void CreateCanvas2DLayerBridgeForTesting(std::unique_ptr<Canvas2DLayerBridge>,
                                            const IntSize&);

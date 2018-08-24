@@ -44,7 +44,7 @@ source_set("pipeline_integration_test_base") {
       "//media:test_support",
       "//testing/gmock",
       "//testing/gtest",
-      "//third_party/libaom:av1_features",
+      "//third_party/libaom:av1_buildflags",
       "//url",
     ]
   }
@@ -69,7 +69,7 @@ source_set("pipeline_integration_tests") {
       "//media:test_support",
       "//media/mojo/clients",
       "//services/service_manager/public/cpp:service_test_support",
-      "//third_party/libaom:av1_features",
+      "//third_party/libaom:av1_buildflags",
 
       # Needed for the opus_config
       "//third_party/opus",
@@ -127,7 +127,7 @@ source_set("mojo_pipeline_integration_tests") {
       "//media/mojo/services",
       "//services/service_manager/public/cpp:service_test_support",
       "//testing/gtest",
-      "//third_party/libaom:av1_features",
+      "//third_party/libaom:av1_buildflags",
       "//ui/gfx:test_support",
       "//ui/gfx/geometry",
 
@@ -161,6 +161,8 @@ pipeline_integration_fuzzer_variants = [
   "WEBM_VP8",
   "WEBM_VP9",
   "WEBM_OPUS_VP9",
+  "MP4_FLAC",
+  "MP3",
 
   # See below for additional variants depending on build configuration.
 ]
@@ -168,7 +170,6 @@ pipeline_integration_fuzzer_variants = [
 if (proprietary_codecs) {
   pipeline_integration_fuzzer_variants += [
     "ADTS",
-    "MP3",
     "MP4_AACLC",
     "MP4_AACSBR",
 
@@ -176,7 +177,6 @@ if (proprietary_codecs) {
     # SourceBufferState::Init differentiate kinds of AVC, we use "AVC1" here to
     # retain corpus associated with this fuzzer target name.
     "MP4_AVC1",
-    "MP4_FLAC",
     "MP4_AACLC_AVC",
   ]
   if (enable_mse_mpeg2ts_stream_parser) {

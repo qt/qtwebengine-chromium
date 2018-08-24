@@ -31,7 +31,6 @@
 
 #include <memory>
 
-#include "third_party/blink/public/platform/web_composite_and_readback_async_callback.h"
 #include "third_party/blink/public/platform/web_cursor_info.h"
 #include "third_party/blink/public/platform/web_float_rect.h"
 #include "third_party/blink/public/web/web_frame_client.h"
@@ -90,7 +89,7 @@ class PagePopupChromeClient final : public EmptyChromeClient {
   IntRect RootWindowRect() override { return popup_->WindowRectInScreen(); }
 
   IntRect ViewportToScreen(const IntRect& rect,
-                           const PlatformFrameView* frame_view) const override {
+                           const LocalFrameView*) const override {
     WebRect rect_in_screen(rect);
     WebRect window_rect = popup_->WindowRectInScreen();
     popup_->WidgetClient()->ConvertViewportToWindow(&rect_in_screen);
@@ -123,7 +122,7 @@ class PagePopupChromeClient final : public EmptyChromeClient {
       popup_->WidgetClient()->DidInvalidateRect(paint_rect);
   }
 
-  void ScheduleAnimation(const PlatformFrameView*) override {
+  void ScheduleAnimation(const LocalFrameView*) override {
     // Calling scheduleAnimation on m_webView so WebViewTestProxy will call
     // beginFrame.
     if (LayoutTestSupport::IsRunningLayoutTest()) {
@@ -249,12 +248,7 @@ bool PagePopupFeaturesClient::IsEnabled(Document*,
 // WebPagePopupImpl ----------------------------------------------------------
 
 WebPagePopupImpl::WebPagePopupImpl(WebWidgetClient* client)
-    : widget_client_(client),
-      closing_(false),
-      layer_tree_view_(nullptr),
-      root_layer_(nullptr),
-      root_graphics_layer_(nullptr),
-      is_accelerated_compositing_active_(false) {
+    : widget_client_(client) {
   DCHECK(client);
 }
 
@@ -363,12 +357,12 @@ void WebPagePopupImpl::SetWindowRect(const IntRect& rect_in_screen) {
 
 void WebPagePopupImpl::SetRootGraphicsLayer(GraphicsLayer* layer) {
   root_graphics_layer_ = layer;
-  root_layer_ = layer ? layer->PlatformLayer() : nullptr;
+  root_layer_ = layer ? layer->CcLayer() : nullptr;
 
   is_accelerated_compositing_active_ = !!layer;
   if (layer_tree_view_) {
     if (root_layer_) {
-      layer_tree_view_->SetRootLayer(*root_layer_);
+      layer_tree_view_->SetRootLayer(root_layer_);
     } else {
       layer_tree_view_->ClearRootLayer();
     }
@@ -395,12 +389,12 @@ void WebPagePopupImpl::SetSuppressFrameRequestsWorkaroundFor704763Only(
   page_->Animator().SetSuppressFrameRequestsWorkaroundFor704763Only(
       suppress_frame_requests);
 }
-void WebPagePopupImpl::BeginFrame(double last_frame_time_monotonic) {
+void WebPagePopupImpl::BeginFrame(base::TimeTicks last_frame_time) {
   if (!page_)
     return;
   // FIXME: This should use lastFrameTimeMonotonic but doing so
   // breaks tests.
-  PageWidgetDelegate::Animate(*page_, CurrentTimeTicksInSeconds());
+  PageWidgetDelegate::Animate(*page_, CurrentTimeTicks());
 }
 
 void WebPagePopupImpl::WillCloseLayerTreeView() {
@@ -422,6 +416,11 @@ void WebPagePopupImpl::UpdateLifecycle(LifecycleUpdate requested_update) {
 void WebPagePopupImpl::UpdateAllLifecyclePhasesAndCompositeForTesting() {
   if (layer_tree_view_)
     layer_tree_view_->SynchronouslyCompositeNoRasterForTesting();
+}
+
+void WebPagePopupImpl::CompositeWithRasterForTesting() {
+  if (layer_tree_view_)
+    layer_tree_view_->CompositeWithRasterForTesting();
 }
 
 void WebPagePopupImpl::Paint(WebCanvas* canvas, const WebRect& rect) {
@@ -574,15 +573,14 @@ LocalDOMWindow* WebPagePopupImpl::Window() {
   return page_->DeprecatedLocalMainFrame()->DomWindow();
 }
 
-void WebPagePopupImpl::LayoutAndPaintAsync(
-    WebLayoutAndPaintAsyncCallback* callback) {
-  layer_tree_view_->LayoutAndPaintAsync(callback);
+void WebPagePopupImpl::LayoutAndPaintAsync(base::OnceClosure callback) {
+  layer_tree_view_->LayoutAndPaintAsync(std::move(callback));
 }
 
 void WebPagePopupImpl::CompositeAndReadbackAsync(
-    WebCompositeAndReadbackAsyncCallback* callback) {
+    base::OnceCallback<void(const SkBitmap&)> callback) {
   DCHECK(IsAcceleratedCompositingActive());
-  layer_tree_view_->CompositeAndReadbackAsync(callback);
+  layer_tree_view_->CompositeAndReadbackAsync(std::move(callback));
 }
 
 WebPoint WebPagePopupImpl::PositionRelativeToOwner() {

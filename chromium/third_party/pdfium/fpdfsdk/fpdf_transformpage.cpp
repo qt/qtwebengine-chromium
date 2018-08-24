@@ -27,7 +27,7 @@ namespace {
 void SetBoundingBox(CPDF_Page* page,
                     const ByteString& key,
                     const CFX_FloatRect& rect) {
-  page->m_pFormDict->SetRectFor(key, rect);
+  page->GetFormDict()->SetRectFor(key, rect);
 }
 
 bool GetBoundingBox(CPDF_Page* page,
@@ -36,7 +36,7 @@ bool GetBoundingBox(CPDF_Page* page,
                     float* bottom,
                     float* right,
                     float* top) {
-  CPDF_Array* pArray = page->m_pFormDict->GetArrayFor(key);
+  CPDF_Array* pArray = page->GetFormDict()->GetArrayFor(key);
   if (!pArray)
     return false;
 
@@ -121,12 +121,12 @@ FPDFPage_TransFormWithClip(FPDF_PAGE page,
                                   matrix->c, matrix->d, matrix->e, matrix->f);
   }
 
-  CPDF_Dictionary* pPageDict = pPage->m_pFormDict.Get();
+  CPDF_Dictionary* pPageDict = pPage->GetFormDict();
   CPDF_Object* pContentObj = GetPageContent(pPageDict);
   if (!pContentObj)
     return false;
 
-  CPDF_Document* pDoc = pPage->m_pDocument.Get();
+  CPDF_Document* pDoc = pPage->GetDocument();
   if (!pDoc)
     return false;
 
@@ -189,9 +189,10 @@ FPDFPageObj_TransformClipPath(FPDF_PAGEOBJECT page_object,
                               double d,
                               double e,
                               double f) {
-  CPDF_PageObject* pPageObj = (CPDF_PageObject*)page_object;
+  CPDF_PageObject* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
   if (!pPageObj)
     return;
+
   CFX_Matrix matrix((float)a, (float)b, (float)c, (float)d, (float)e, (float)f);
 
   // Special treatment to shading object, because the ClipPath for shading
@@ -210,12 +211,14 @@ FPDF_EXPORT FPDF_CLIPPATH FPDF_CALLCONV FPDF_CreateClipPath(float left,
 
   auto pNewClipPath = pdfium::MakeUnique<CPDF_ClipPath>();
   pNewClipPath->AppendPath(Path, FXFILL_ALTERNATE, false);
-  return pNewClipPath.release();  // Caller takes ownership.
+
+  // Caller takes ownership.
+  return FPDFClipPathFromCPDFClipPath(pNewClipPath.release());
 }
 
 FPDF_EXPORT void FPDF_CALLCONV FPDF_DestroyClipPath(FPDF_CLIPPATH clipPath) {
   // Take ownership back from caller and destroy.
-  std::unique_ptr<CPDF_ClipPath>(static_cast<CPDF_ClipPath*>(clipPath));
+  std::unique_ptr<CPDF_ClipPath>(CPDFClipPathFromFPDFClipPath(clipPath));
 }
 
 void OutputPath(std::ostringstream& buf, CPDF_Path path) {
@@ -261,13 +264,13 @@ FPDF_EXPORT void FPDF_CALLCONV FPDFPage_InsertClipPath(FPDF_PAGE page,
   if (!pPage)
     return;
 
-  CPDF_Dictionary* pPageDict = pPage->m_pFormDict.Get();
+  CPDF_Dictionary* pPageDict = pPage->GetFormDict();
   CPDF_Object* pContentObj = GetPageContent(pPageDict);
   if (!pContentObj)
     return;
 
   std::ostringstream strClip;
-  CPDF_ClipPath* pClipPath = (CPDF_ClipPath*)clipPath;
+  CPDF_ClipPath* pClipPath = CPDFClipPathFromFPDFClipPath(clipPath);
   for (size_t i = 0; i < pClipPath->GetPathCount(); ++i) {
     CPDF_Path path = pClipPath->GetPath(i);
     if (path.GetPoints().empty()) {
@@ -281,7 +284,7 @@ FPDF_EXPORT void FPDF_CALLCONV FPDFPage_InsertClipPath(FPDF_PAGE page,
         strClip << "W* n\n";
     }
   }
-  CPDF_Document* pDoc = pPage->m_pDocument.Get();
+  CPDF_Document* pDoc = pPage->GetDocument();
   if (!pDoc)
     return;
 

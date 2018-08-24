@@ -5,6 +5,7 @@
 #include "services/network/cors/preflight_controller.h"
 
 #include <memory>
+#include <utility>
 
 #include "base/run_loop.h"
 #include "base/test/scoped_task_environment.h"
@@ -144,8 +145,12 @@ class PreflightControllerTest : public testing::Test {
         mojo::MakeRequest(&network_context_ptr_),
         mojom::NetworkContextParams::New());
 
+    network::mojom::URLLoaderFactoryParamsPtr params =
+        network::mojom::URLLoaderFactoryParams::New();
+    params->process_id = mojom::kBrowserProcessId;
+    params->is_corb_enabled = false;
     network_context_ptr_->CreateURLLoaderFactory(
-        mojo::MakeRequest(&url_loader_factory_ptr_), 0 /* process_id */);
+        mojo::MakeRequest(&url_loader_factory_ptr_), std::move(params));
   }
 
  protected:
@@ -162,13 +167,17 @@ class PreflightControllerTest : public testing::Test {
     preflight_controller_->PerformPreflightCheck(
         base::BindOnce(&PreflightControllerTest::HandleRequestCompletion,
                        base::Unretained(this)),
-        request, TRAFFIC_ANNOTATION_FOR_TESTS, url_loader_factory_ptr_.get());
+        0 /* request_id */, request, TRAFFIC_ANNOTATION_FOR_TESTS,
+        url_loader_factory_ptr_.get(),
+        base::BindOnce(&PreflightControllerTest::CancelPreflight,
+                       base::Unretained(this)));
     run_loop_->Run();
   }
 
   base::Optional<CORSErrorStatus> status() { return status_; }
   base::Optional<CORSErrorStatus> success() { return base::nullopt; }
   size_t access_count() { return access_count_; }
+  bool cancel_preflight_called() const { return cancel_preflight_called_; }
 
  private:
   void SetUp() override {
@@ -188,10 +197,11 @@ class PreflightControllerTest : public testing::Test {
       return response;
 
     response = std::make_unique<net::test_server::BasicHttpResponse>();
-    if (net::test_server::ShouldHandle(request, "/404")) {
-      response->set_code(net::HTTP_NOT_FOUND);
-    } else if (net::test_server::ShouldHandle(request, "/allow")) {
-      response->set_code(net::HTTP_OK);
+    if (net::test_server::ShouldHandle(request, "/404") ||
+        net::test_server::ShouldHandle(request, "/allow")) {
+      response->set_code(net::test_server::ShouldHandle(request, "/404")
+                             ? net::HTTP_NOT_FOUND
+                             : net::HTTP_OK);
       url::Origin origin = url::Origin::Create(test_server_.base_url());
       response->AddCustomHeader(cors::header_names::kAccessControlAllowOrigin,
                                 origin.Serialize());
@@ -201,8 +211,11 @@ class PreflightControllerTest : public testing::Test {
       response->AddCustomHeader(net::HttpRequestHeaders::kCacheControl,
                                 "no-store");
     }
+
     return response;
   }
+
+  void CancelPreflight() { cancel_preflight_called_ = true; }
 
   base::test::ScopedTaskEnvironment scoped_task_environment_;
   std::unique_ptr<base::RunLoop> run_loop_;
@@ -213,6 +226,7 @@ class PreflightControllerTest : public testing::Test {
 
   net::test_server::EmbeddedTestServer test_server_;
   size_t access_count_ = 0;
+  bool cancel_preflight_called_ = false;
 
   std::unique_ptr<PreflightController> preflight_controller_;
   base::Optional<CORSErrorStatus> status_;
@@ -241,6 +255,20 @@ TEST_F(PreflightControllerTest, CheckValidRequest) {
   PerformPreflightCheck(request);
   ASSERT_FALSE(status());
   EXPECT_EQ(1u, access_count());  // Should be from the preflight cache.
+}
+
+// TODO(yhirano): Remove this test case when the network service is fully
+// enabled.
+TEST_F(PreflightControllerTest, CancelPreflightIsCalled) {
+  ResourceRequest request;
+  request.url = GetURL("/allow");
+  request.request_initiator = url::Origin::Create(request.url);
+
+  EXPECT_FALSE(cancel_preflight_called());
+  PerformPreflightCheck(request);
+  ASSERT_FALSE(status());
+  EXPECT_TRUE(cancel_preflight_called());
+  EXPECT_EQ(1u, access_count());
 }
 
 }  // namespace

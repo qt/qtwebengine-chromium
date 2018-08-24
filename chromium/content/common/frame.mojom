@@ -38,7 +38,8 @@ interface Frame {
   // Extracts the data at the given rect.
   [EnableIf=is_android]
   ExtractSmartClipData(gfx.mojom.Rect rect)
-      => (mojo_base.mojom.String16 text, mojo_base.mojom.String16 html);
+      => (mojo_base.mojom.String16 text, mojo_base.mojom.String16 html,
+              gfx.mojom.Rect clip_rect);
 };
 
 // See src/content/common/navigation_params.h
@@ -54,20 +55,18 @@ struct RequestNavigationParams;
 interface FrameNavigationControl {
   // Tells the renderer that a navigation is ready to commit.
   //
-  // The renderer should request |body_url| to get access to the stream
-  // containing the body of the response. When the Network Service or
-  // NavigationMojoResponse is enabled, |body_url| is not used and instead
-  // |url_loader_client_endpoints| provides a way to continue the navigation.
+  // The renderer should bind the |url_loader_client_endpoints| to an
+  // URLLoaderClient implementation to continue loading the document that will
+  // be the result of the committed navigation.
   //
-  // Note: |body_url| and |url_loader_client_endpoints| will be empty iff the
-  // navigation URL wasn't handled by the network stack (i.e. JavaScript URLs,
-  // renderer debug URLs, same document navigations, about:blank, ...)
+  // Note: |url_loader_client_endpoints| will be empty iff the navigation URL
+  // wasn't handled by the network stack (i.e. JavaScript URLs, renderer debug
+  // URLs, same document navigations, about:blank, ...)
   //
   // When the Network Service is enabled, |subresource_loader_factories| may
   // also be provided by the browser as a a means for the renderer to load
   // subresources where applicable.
   //
-  // When S13nServiceWorker/NavigationMojoResponse is enabled,
   // |controller_service_worker_info| may also be provided by the browser if the
   // frame that is being navigated is supposed to be controlled by a Service
   // Worker.
@@ -84,7 +83,6 @@ interface FrameNavigationControl {
   // navigation token that can be passed from renderer to the browser.
   CommitNavigation(
       network.mojom.URLResponseHead head,
-      url.mojom.Url body_url,
       CommonNavigationParams common_params,
       RequestNavigationParams request_params,
       network.mojom.URLLoaderClientEndpoints? url_loader_client_endpoints,
@@ -327,13 +325,4 @@ interface FrameHost {
   // correctly set the initial size of the frame in case of a cross-process
   // navigation.
   FrameSizeChanged(gfx.mojom.Size size);
-
-  // Sent by the renderer to update Picture-in-Picture with SurfaceId and video
-  // size to be used to show content in the Picture-in-Picture window.
-  OnUpdatePictureInPictureSurfaceId(
-      viz.mojom.SurfaceId surface_id,
-      gfx.mojom.Size natural_size);
-
-  // Sent by the renderer to signal that Picture-in-Picture mode has ended.
-  OnExitPictureInPicture();
 };

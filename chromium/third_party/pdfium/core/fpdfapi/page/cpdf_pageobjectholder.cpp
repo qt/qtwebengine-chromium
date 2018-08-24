@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "constants/transparency.h"
 #include "core/fpdfapi/page/cpdf_allstates.h"
 #include "core/fpdfapi/page/cpdf_contentparser.h"
 #include "core/fpdfapi/page/cpdf_pageobject.h"
@@ -16,14 +17,7 @@
 
 CPDF_PageObjectHolder::CPDF_PageObjectHolder(CPDF_Document* pDoc,
                                              CPDF_Dictionary* pFormDict)
-    : m_pFormDict(pFormDict),
-      m_pFormStream(nullptr),
-      m_pDocument(pDoc),
-      m_pPageResources(nullptr),
-      m_pResources(nullptr),
-      m_iTransparency(0),
-      m_bBackgroundAlphaNeeded(false),
-      m_ParseState(CONTENT_NOT_PARSED) {
+    : m_pFormDict(pFormDict), m_pDocument(pDoc) {
   // TODO(thestig): Check if |m_pFormDict| is never a nullptr and simplify
   // callers that checks for that.
 }
@@ -35,8 +29,10 @@ bool CPDF_PageObjectHolder::IsPage() const {
 }
 
 void CPDF_PageObjectHolder::ContinueParse(PauseIndicatorIface* pPause) {
-  if (!m_pParser)
+  if (!m_pParser) {
+    m_ParseState = CONTENT_PARSED;
     return;
+  }
 
   if (m_pParser->Continue(pPause))
     return;
@@ -44,6 +40,7 @@ void CPDF_PageObjectHolder::ContinueParse(PauseIndicatorIface* pPause) {
   m_ParseState = CONTENT_PARSED;
   if (m_pParser->GetCurStates())
     m_LastCTM = m_pParser->GetCurStates()->m_CTM;
+
   m_pParser.reset();
 }
 
@@ -74,23 +71,20 @@ CFX_FloatRect CPDF_PageObjectHolder::CalcBoundingBox() const {
 }
 
 void CPDF_PageObjectHolder::LoadTransInfo() {
-  if (!m_pFormDict) {
+  if (!m_pFormDict)
     return;
-  }
+
   CPDF_Dictionary* pGroup = m_pFormDict->GetDictFor("Group");
-  if (!pGroup) {
+  if (!pGroup)
+    return;
+
+  if (pGroup->GetStringFor(pdfium::transparency::kGroupSubType) !=
+      pdfium::transparency::kTransparency) {
     return;
   }
-  if (pGroup->GetStringFor("S") != "Transparency") {
-    return;
-  }
-  m_iTransparency |= PDFTRANS_GROUP;
-  if (pGroup->GetIntegerFor("I")) {
-    m_iTransparency |= PDFTRANS_ISOLATED;
-  }
-  if (pGroup->GetIntegerFor("K")) {
-    m_iTransparency |= PDFTRANS_KNOCKOUT;
-  }
+  m_Transparency.SetGroup();
+  if (pGroup->GetIntegerFor(pdfium::transparency::kI))
+    m_Transparency.SetIsolated();
 }
 
 size_t CPDF_PageObjectHolder::GetPageObjectCount() const {
@@ -117,5 +111,13 @@ bool CPDF_PageObjectHolder::RemovePageObject(CPDF_PageObject* pPageObj) {
 
   it->release();
   m_PageObjectList.erase(it);
+  return true;
+}
+
+bool CPDF_PageObjectHolder::ErasePageObjectAtIndex(size_t index) {
+  if (index >= m_PageObjectList.size())
+    return false;
+
+  m_PageObjectList.erase(m_PageObjectList.begin() + index);
   return true;
 }

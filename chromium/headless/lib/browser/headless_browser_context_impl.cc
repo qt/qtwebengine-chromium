@@ -84,8 +84,7 @@ HeadlessBrowserContextImpl::HeadlessBrowserContextImpl(
       context_options_(std::move(context_options)),
       resource_context_(std::make_unique<HeadlessResourceContext>()),
       should_remove_headers_(true),
-      permission_manager_(std::make_unique<HeadlessPermissionManager>(this)),
-      id_(base::GenerateGUID()) {
+      permission_manager_(std::make_unique<HeadlessPermissionManager>(this)) {
   InitWhileIOAllowed();
 }
 
@@ -211,7 +210,7 @@ void HeadlessBrowserContextImpl::InitWhileIOAllowed() {
   if (!context_options_->user_data_dir().empty()) {
     path_ = context_options_->user_data_dir().Append(kDefaultProfileName);
   } else {
-    PathService::Get(base::DIR_EXE, &path_);
+    base::PathService::Get(base::DIR_EXE, &path_);
   }
   BrowserContext::Initialize(this, path_);
 }
@@ -372,7 +371,7 @@ bool HeadlessBrowserContextImpl::ShouldRemoveHeaders() const {
 }
 
 const std::string& HeadlessBrowserContextImpl::Id() const {
-  return id_;
+  return UniqueId();
 }
 
 void HeadlessBrowserContextImpl::AddObserver(Observer* obs) {
@@ -502,25 +501,8 @@ HeadlessBrowserContext::Builder::SetBlockNewWebContents(
 }
 
 HeadlessBrowserContext::Builder&
-HeadlessBrowserContext::Builder::SetInitialVirtualTime(
-    base::Time initial_virtual_time) {
-  options_->initial_virtual_time_ = initial_virtual_time;
-  return *this;
-}
-
-HeadlessBrowserContext::Builder&
 HeadlessBrowserContext::Builder::SetAllowCookies(bool allow_cookies) {
   options_->allow_cookies_ = allow_cookies;
-  return *this;
-}
-
-HeadlessBrowserContext::Builder&
-HeadlessBrowserContext::Builder::AddTabSocketMojoBindings() {
-  std::string js_bindings =
-      ui::ResourceBundle::GetSharedInstance()
-          .GetRawDataResource(IDR_HEADLESS_TAB_SOCKET_MOJOM_JS)
-          .as_string();
-  mojo_bindings_.emplace_back("headless/lib/tab_socket.mojom", js_bindings);
   return *this;
 }
 

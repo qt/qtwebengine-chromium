@@ -15,11 +15,22 @@
 #include "media/base/streamparams.h"
 #include "media/engine/constants.h"
 #include "media/engine/simulcast.h"
+#include "modules/video_coding/codecs/vp8/include/vp8_common_types.h"
 #include "rtc_base/arraysize.h"
 #include "rtc_base/logging.h"
 #include "system_wrappers/include/field_trial.h"
 
 namespace cricket {
+
+namespace {
+
+constexpr int kScreenshareDefaultTl0BitrateKbps = 200;
+constexpr int kScreenshareDefaultTl1BitrateKbps = 1000;
+
+static const char* kSimulcastScreenshareFieldTrialName =
+    "WebRTC-SimulcastScreenshare";
+
+}  // namespace
 
 struct SimulcastFormat {
   int width;
@@ -53,13 +64,31 @@ const SimulcastFormat kSimulcastFormats[] = {
 
 const int kMaxScreenshareSimulcastLayers = 2;
 
-// Multiway: Number of temporal layers for each simulcast stream, for maximum
-// possible number of simulcast streams |kMaxSimulcastStreams|. The array
-// goes from lowest resolution at position 0 to highest resolution.
-// For example, first three elements correspond to say: QVGA, VGA, WHD.
-static const int
-    kDefaultConferenceNumberOfTemporalLayers[webrtc::kMaxSimulcastStreams] =
-    {3, 3, 3, 3};
+// Multiway: Number of temporal layers for each simulcast stream.
+int DefaultNumberOfTemporalLayers(int simulcast_id) {
+  RTC_CHECK_GE(simulcast_id, 0);
+  RTC_CHECK_LT(simulcast_id, webrtc::kMaxSimulcastStreams);
+
+  const int kDefaultNumTemporalLayers = 3;
+
+  const std::string group_name =
+      webrtc::field_trial::FindFullName("WebRTC-VP8ConferenceTemporalLayers");
+  if (group_name.empty())
+    return kDefaultNumTemporalLayers;
+
+  int num_temporal_layers = kDefaultNumTemporalLayers;
+  if (sscanf(group_name.c_str(), "%d", &num_temporal_layers) == 1 &&
+      num_temporal_layers > 0 &&
+      num_temporal_layers <= webrtc::kMaxTemporalStreams) {
+    return num_temporal_layers;
+  }
+
+  RTC_LOG(LS_WARNING) << "Attempt to set number of temporal layers to "
+                         "incorrect value: "
+                      << group_name;
+
+  return kDefaultNumTemporalLayers;
+}
 
 int FindSimulcastFormatIndex(int width, int height) {
   RTC_DCHECK_GE(width, 0);
@@ -90,7 +119,7 @@ int FindSimulcastFormatIndex(int width, int height, size_t max_layers) {
 }
 
 // Simulcast stream width and height must both be dividable by
-// |2 ^ simulcast_layers - 1|.
+// |2 ^ (simulcast_layers - 1)|.
 int NormalizeSimulcastSize(int size, size_t simulcast_layers) {
   const int base2_exponent = static_cast<int>(simulcast_layers) - 1;
   return ((size >> base2_exponent) << base2_exponent);
@@ -196,9 +225,24 @@ std::vector<webrtc::VideoStream> GetNormalSimulcastLayers(
     layers[s].height = height;
     // TODO(pbos): Fill actual temporal-layer bitrate thresholds.
     layers[s].max_qp = max_qp;
-    layers[s].num_temporal_layers = kDefaultConferenceNumberOfTemporalLayers[s];
+    layers[s].num_temporal_layers = DefaultNumberOfTemporalLayers(s);
     layers[s].max_bitrate_bps = FindSimulcastMaxBitrateBps(width, height);
     layers[s].target_bitrate_bps = FindSimulcastTargetBitrateBps(width, height);
+    int num_temporal_layers = DefaultNumberOfTemporalLayers(s);
+    if (s == 0 && num_temporal_layers != 3) {
+      // If alternative number temporal layers is selected, adjust the
+      // bitrate of the lowest simulcast stream so that absolute bitrate for the
+      // base temporal layer matches the bitrate for the base temporal layer
+      // with the default 3 simulcast streams. Otherwise we risk a higher
+      // threshold for receiving a feed at all.
+      const float rate_factor =
+          webrtc::kVp8LayerRateAlloction[3][0] /
+          webrtc::kVp8LayerRateAlloction[num_temporal_layers][0];
+      layers[s].max_bitrate_bps =
+          static_cast<int>(layers[s].max_bitrate_bps * rate_factor);
+      layers[s].target_bitrate_bps =
+          static_cast<int>(layers[s].target_bitrate_bps * rate_factor);
+    }
     layers[s].min_bitrate_bps = FindSimulcastMinBitrateBps(width, height);
     layers[s].max_framerate = max_framerate;
 
@@ -235,7 +279,6 @@ std::vector<webrtc::VideoStream> GetScreenshareLayers(
       std::min<int>(max_layers, max_screenshare_layers);
 
   std::vector<webrtc::VideoStream> layers(num_simulcast_layers);
-  ScreenshareLayerConfig config = ScreenshareLayerConfig::GetDefault();
   // For legacy screenshare in conference mode, tl0 and tl1 bitrates are
   // piggybacked on the VideoCodec struct as target and max bitrates,
   // respectively. See eg. webrtc::LibvpxVp8Encoder::SetRates().
@@ -244,8 +287,8 @@ std::vector<webrtc::VideoStream> GetScreenshareLayers(
   layers[0].max_qp = max_qp;
   layers[0].max_framerate = 5;
   layers[0].min_bitrate_bps = kMinVideoBitrateBps;
-  layers[0].target_bitrate_bps = config.tl0_bitrate_kbps * 1000;
-  layers[0].max_bitrate_bps = config.tl1_bitrate_kbps * 1000;
+  layers[0].target_bitrate_bps = kScreenshareDefaultTl0BitrateKbps * 1000;
+  layers[0].max_bitrate_bps = kScreenshareDefaultTl1BitrateKbps * 1000;
   layers[0].num_temporal_layers = 2;
 
   // With simulcast enabled, add another spatial layer. This one will have a
@@ -277,58 +320,6 @@ std::vector<webrtc::VideoStream> GetScreenshareLayers(
   // just set it for the first simulcast layer.
   layers[0].bitrate_priority = bitrate_priority;
   return layers;
-}
-
-static const int kScreenshareMinBitrateKbps = 50;
-static const int kScreenshareMaxBitrateKbps = 6000;
-static const int kScreenshareDefaultTl0BitrateKbps = 200;
-static const int kScreenshareDefaultTl1BitrateKbps = 1000;
-
-static const char* kScreenshareLayerFieldTrialName =
-    "WebRTC-ScreenshareLayerRates";
-static const char* kSimulcastScreenshareFieldTrialName =
-    "WebRTC-SimulcastScreenshare";
-
-ScreenshareLayerConfig::ScreenshareLayerConfig(int tl0_bitrate, int tl1_bitrate)
-    : tl0_bitrate_kbps(tl0_bitrate), tl1_bitrate_kbps(tl1_bitrate) {
-}
-
-ScreenshareLayerConfig ScreenshareLayerConfig::GetDefault() {
-  std::string group =
-      webrtc::field_trial::FindFullName(kScreenshareLayerFieldTrialName);
-
-  ScreenshareLayerConfig config(kScreenshareDefaultTl0BitrateKbps,
-                                kScreenshareDefaultTl1BitrateKbps);
-  if (!group.empty() && !FromFieldTrialGroup(group, &config)) {
-    RTC_LOG(LS_WARNING) << "Unable to parse WebRTC-ScreenshareLayerRates"
-                           " field trial group: '"
-                        << group << "'.";
-  }
-  return config;
-}
-
-bool ScreenshareLayerConfig::FromFieldTrialGroup(
-    const std::string& group,
-    ScreenshareLayerConfig* config) {
-  // Parse field trial group name, containing bitrates for tl0 and tl1.
-  int tl0_bitrate;
-  int tl1_bitrate;
-  if (sscanf(group.c_str(), "%d-%d", &tl0_bitrate, &tl1_bitrate) != 2) {
-    return false;
-  }
-
-  // Sanity check.
-  if (tl0_bitrate < kScreenshareMinBitrateKbps ||
-      tl0_bitrate > kScreenshareMaxBitrateKbps ||
-      tl1_bitrate < kScreenshareMinBitrateKbps ||
-      tl1_bitrate > kScreenshareMaxBitrateKbps || tl0_bitrate > tl1_bitrate) {
-    return false;
-  }
-
-  config->tl0_bitrate_kbps = tl0_bitrate;
-  config->tl1_bitrate_kbps = tl1_bitrate;
-
-  return true;
 }
 
 bool ScreenshareSimulcastFieldTrialEnabled() {

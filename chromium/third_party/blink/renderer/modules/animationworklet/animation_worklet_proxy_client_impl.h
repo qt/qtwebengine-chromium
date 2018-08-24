@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_ANIMATIONWORKLET_ANIMATION_WORKLET_PROXY_CLIENT_IMPL_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_ANIMATIONWORKLET_ANIMATION_WORKLET_PROXY_CLIENT_IMPL_H_
 
+#include "base/single_thread_task_runner.h"
 #include "third_party/blink/renderer/core/dom/animation_worklet_proxy_client.h"
 #include "third_party/blink/renderer/modules/animationworklet/animation_worklet_global_scope.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
@@ -45,7 +46,7 @@ class MODULES_EXPORT AnimationWorkletProxyClientImpl final
   // CompositorAnimator:
   // These methods are invoked on the animation worklet thread.
   std::unique_ptr<CompositorMutatorOutputState> Mutate(
-      const CompositorMutatorInputState&);
+      const CompositorMutatorInputState&) override;
 
   static AnimationWorkletProxyClientImpl* FromDocument(Document*);
 

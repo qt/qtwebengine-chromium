@@ -113,7 +113,17 @@ class CONTENT_EXPORT BackgroundFetchContext
   void CreateController(const BackgroundFetchRegistrationId& registration_id,
                         const BackgroundFetchOptions& options,
                         const SkBitmap& icon,
-                        const BackgroundFetchRegistration& registration);
+                        size_t num_requests,
+                        const BackgroundFetchRegistration& registration,
+                        base::OnceClosure done_closure);
+
+  // Initializes the new Job Controller.
+  void InitializeController(
+      const std::string& unique_id,
+      std::unique_ptr<BackgroundFetchJobController> controller,
+      base::OnceClosure done_closure,
+      size_t total_downloads,
+      size_t completed_downloads);
 
   // Called when an existing registration has been retrieved from the data
   // manager. If the registration does not exist then |registration| is nullptr.
@@ -127,6 +137,7 @@ class CONTENT_EXPORT BackgroundFetchContext
       const BackgroundFetchRegistrationId& registration_id,
       const BackgroundFetchOptions& options,
       const SkBitmap& icon,
+      size_t num_requests,
       blink::mojom::BackgroundFetchService::FetchCallback callback,
       blink::mojom::BackgroundFetchError error,
       std::unique_ptr<BackgroundFetchRegistration> registration);
@@ -143,12 +154,12 @@ class CONTENT_EXPORT BackgroundFetchContext
   void DidFinishJob(
       base::OnceCallback<void(blink::mojom::BackgroundFetchError)> callback,
       const BackgroundFetchRegistrationId& registration_id,
-      bool aborted);
+      BackgroundFetchReasonToAbort reason_to_abort);
 
   // Called when the data manager finishes marking a registration as deleted.
   void DidMarkForDeletion(
       const BackgroundFetchRegistrationId& registration_id,
-      bool aborted,
+      BackgroundFetchReasonToAbort reason_to_abort,
       base::OnceCallback<void(blink::mojom::BackgroundFetchError)> callback,
       blink::mojom::BackgroundFetchError error);
 

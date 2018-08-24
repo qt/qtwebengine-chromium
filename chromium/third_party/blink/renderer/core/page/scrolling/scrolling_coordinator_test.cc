@@ -25,11 +25,10 @@
 #include "third_party/blink/renderer/core/page/scrolling/scrolling_coordinator.h"
 
 #include "build/build_config.h"
+#include "cc/layers/layer_sticky_position_constraint.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_cache.h"
-#include "third_party/blink/public/platform/web_layer.h"
-#include "third_party/blink/public/platform/web_layer_position_constraint.h"
 #include "third_party/blink/public/platform/web_layer_tree_view.h"
 #include "third_party/blink/public/platform/web_rect.h"
 #include "third_party/blink/public/platform/web_url_loader_mock_factory.h"
@@ -47,6 +46,7 @@
 #include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/core/page/scrolling/scrolling_coordinator_context.h"
 #include "third_party/blink/renderer/core/paint/compositing/composited_layer_mapping.h"
 #include "third_party/blink/renderer/core/paint/compositing/paint_layer_compositor.h"
 #include "third_party/blink/renderer/platform/geometry/int_point.h"
@@ -54,19 +54,14 @@
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
 #include "third_party/blink/renderer/platform/graphics/touch_action.h"
 #include "third_party/blink/renderer/platform/testing/histogram_tester.h"
-#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/url_test_helpers.h"
 
 namespace blink {
 
-class ScrollingCoordinatorTest : public testing::Test,
-                                 public testing::WithParamInterface<bool>,
-                                 private ScopedRootLayerScrollingForTest {
+class ScrollingCoordinatorTest : public testing::Test {
  public:
-  ScrollingCoordinatorTest()
-      : ScopedRootLayerScrollingForTest(GetParam()),
-        base_url_("http://www.test.com/") {
+  ScrollingCoordinatorTest() : base_url_("http://www.test.com/") {
     helper_.Initialize(nullptr, nullptr, nullptr, &ConfigureSettings);
     GetWebView()->Resize(IntSize(320, 240));
 
@@ -109,10 +104,10 @@ class ScrollingCoordinatorTest : public testing::Test,
         WebString::FromUTF8(file_name));
   }
 
-  WebLayer* GetRootScrollLayer() {
+  cc::Layer* GetRootScrollLayer() {
     GraphicsLayer* layer =
         GetFrame()->View()->LayoutViewportScrollableArea()->LayerForScrolling();
-    return layer ? layer->PlatformLayer() : nullptr;
+    return layer ? layer->CcLayer() : nullptr;
   }
 
   WebViewImpl* GetWebView() const { return helper_.GetWebView(); }
@@ -127,16 +122,13 @@ class ScrollingCoordinatorTest : public testing::Test,
 
  private:
   static void ConfigureSettings(WebSettings* settings) {
-    settings->SetAcceleratedCompositingEnabled(true);
     settings->SetPreferCompositingToLCDTextEnabled(true);
   }
 
   FrameTestHelpers::WebViewHelper helper_;
 };
 
-INSTANTIATE_TEST_CASE_P(All, ScrollingCoordinatorTest, testing::Bool());
-
-TEST_P(ScrollingCoordinatorTest, fastScrollingByDefault) {
+TEST_F(ScrollingCoordinatorTest, fastScrollingByDefault) {
   GetWebView()->Resize(WebSize(800, 600));
   LoadHTML("<div id='spacer' style='height: 1000px'></div>");
   ForceFullCompositingUpdate();
@@ -149,10 +141,10 @@ TEST_P(ScrollingCoordinatorTest, fastScrollingByDefault) {
       frame_view));
 
   // Fast scrolling should be enabled by default.
-  WebLayer* root_scroll_layer = GetRootScrollLayer();
+  cc::Layer* root_scroll_layer = GetRootScrollLayer();
   ASSERT_TRUE(root_scroll_layer);
-  ASSERT_TRUE(root_scroll_layer->Scrollable());
-  ASSERT_FALSE(root_scroll_layer->ShouldScrollOnMainThread());
+  ASSERT_TRUE(root_scroll_layer->scrollable());
+  ASSERT_FALSE(root_scroll_layer->should_scroll_on_main_thread());
   ASSERT_EQ(WebEventListenerProperties::kNothing,
             GetWebLayerTreeView()->EventListenerProperties(
                 WebEventListenerClass::kTouchStartOrMove));
@@ -160,13 +152,13 @@ TEST_P(ScrollingCoordinatorTest, fastScrollingByDefault) {
             GetWebLayerTreeView()->EventListenerProperties(
                 WebEventListenerClass::kMouseWheel));
 
-  WebLayer* inner_viewport_scroll_layer =
-      page->GetVisualViewport().ScrollLayer()->PlatformLayer();
-  ASSERT_TRUE(inner_viewport_scroll_layer->Scrollable());
-  ASSERT_FALSE(inner_viewport_scroll_layer->ShouldScrollOnMainThread());
+  cc::Layer* inner_viewport_scroll_layer =
+      page->GetVisualViewport().ScrollLayer()->CcLayer();
+  ASSERT_TRUE(inner_viewport_scroll_layer->scrollable());
+  ASSERT_FALSE(inner_viewport_scroll_layer->should_scroll_on_main_thread());
 }
 
-TEST_P(ScrollingCoordinatorTest, fastScrollingCanBeDisabledWithSetting) {
+TEST_F(ScrollingCoordinatorTest, fastScrollingCanBeDisabledWithSetting) {
   GetWebView()->Resize(WebSize(800, 600));
   LoadHTML("<div id='spacer' style='height: 1000px'></div>");
   GetWebView()->GetSettings()->SetThreadedScrollingEnabled(false);
@@ -180,19 +172,19 @@ TEST_P(ScrollingCoordinatorTest, fastScrollingCanBeDisabledWithSetting) {
       frame_view));
 
   // Main scrolling should be enabled with the setting override.
-  WebLayer* root_scroll_layer = GetRootScrollLayer();
+  cc::Layer* root_scroll_layer = GetRootScrollLayer();
   ASSERT_TRUE(root_scroll_layer);
-  ASSERT_TRUE(root_scroll_layer->Scrollable());
-  ASSERT_TRUE(root_scroll_layer->ShouldScrollOnMainThread());
+  ASSERT_TRUE(root_scroll_layer->scrollable());
+  ASSERT_TRUE(root_scroll_layer->should_scroll_on_main_thread());
 
   // Main scrolling should also propagate to inner viewport layer.
-  WebLayer* inner_viewport_scroll_layer =
-      page->GetVisualViewport().ScrollLayer()->PlatformLayer();
-  ASSERT_TRUE(inner_viewport_scroll_layer->Scrollable());
-  ASSERT_TRUE(inner_viewport_scroll_layer->ShouldScrollOnMainThread());
+  cc::Layer* inner_viewport_scroll_layer =
+      page->GetVisualViewport().ScrollLayer()->CcLayer();
+  ASSERT_TRUE(inner_viewport_scroll_layer->scrollable());
+  ASSERT_TRUE(inner_viewport_scroll_layer->should_scroll_on_main_thread());
 }
 
-TEST_P(ScrollingCoordinatorTest, fastFractionalScrollingDiv) {
+TEST_F(ScrollingCoordinatorTest, fastFractionalScrollingDiv) {
   ScopedFractionalScrollOffsetsForTest fractional_scroll_offsets(true);
 
   RegisterMockedHttpURLLoad("fractional-scroll-div.html");
@@ -221,14 +213,14 @@ TEST_P(ScrollingCoordinatorTest, fastFractionalScrollingDiv) {
       box->Layer()->GetCompositedLayerMapping();
   ASSERT_TRUE(composited_layer_mapping->HasScrollingLayer());
   DCHECK(composited_layer_mapping->ScrollingContentsLayer());
-  WebLayer* web_scroll_layer =
-      composited_layer_mapping->ScrollingContentsLayer()->PlatformLayer();
-  ASSERT_TRUE(web_scroll_layer);
-  ASSERT_NEAR(1.2f, web_scroll_layer->ScrollPosition().x, 0.01f);
-  ASSERT_NEAR(1.2f, web_scroll_layer->ScrollPosition().y, 0.01f);
+  cc::Layer* cc_scroll_layer =
+      composited_layer_mapping->ScrollingContentsLayer()->CcLayer();
+  ASSERT_TRUE(cc_scroll_layer);
+  ASSERT_NEAR(1.2f, cc_scroll_layer->scroll_offset().x(), 0.01f);
+  ASSERT_NEAR(1.2f, cc_scroll_layer->scroll_offset().y(), 0.01f);
 }
 
-static WebLayer* WebLayerFromElement(Element* element) {
+static cc::Layer* CcLayerFromElement(Element* element) {
   if (!element)
     return nullptr;
   LayoutObject* layout_object = element->GetLayoutObject();
@@ -244,139 +236,138 @@ static WebLayer* WebLayerFromElement(Element* element) {
   GraphicsLayer* graphics_layer = composited_layer_mapping->MainGraphicsLayer();
   if (!graphics_layer)
     return nullptr;
-  return graphics_layer->PlatformLayer();
+  return graphics_layer->CcLayer();
 }
 
-TEST_P(ScrollingCoordinatorTest, fastScrollingForFixedPosition) {
+TEST_F(ScrollingCoordinatorTest, fastScrollingForFixedPosition) {
   RegisterMockedHttpURLLoad("fixed-position.html");
   NavigateTo(base_url_ + "fixed-position.html");
   ForceFullCompositingUpdate();
 
   // Fixed position should not fall back to main thread scrolling.
-  WebLayer* root_scroll_layer = GetRootScrollLayer();
+  cc::Layer* root_scroll_layer = GetRootScrollLayer();
   ASSERT_TRUE(root_scroll_layer);
-  ASSERT_FALSE(root_scroll_layer->ShouldScrollOnMainThread());
+  ASSERT_FALSE(root_scroll_layer->should_scroll_on_main_thread());
 
   Document* document = GetFrame()->GetDocument();
   {
     Element* element = document->getElementById("div-tl");
     ASSERT_TRUE(element);
-    WebLayer* layer = WebLayerFromElement(element);
+    cc::Layer* layer = CcLayerFromElement(element);
     ASSERT_TRUE(layer);
-    WebLayerPositionConstraint constraint = layer->PositionConstraint();
-    ASSERT_TRUE(constraint.is_fixed_position);
-    ASSERT_TRUE(!constraint.is_fixed_to_right_edge &&
-                !constraint.is_fixed_to_bottom_edge);
+    cc::LayerPositionConstraint constraint = layer->position_constraint();
+    ASSERT_TRUE(constraint.is_fixed_position());
+    ASSERT_TRUE(!constraint.is_fixed_to_right_edge() &&
+                !constraint.is_fixed_to_bottom_edge());
   }
   {
     Element* element = document->getElementById("div-tr");
     ASSERT_TRUE(element);
-    WebLayer* layer = WebLayerFromElement(element);
+    cc::Layer* layer = CcLayerFromElement(element);
     ASSERT_TRUE(layer);
-    WebLayerPositionConstraint constraint = layer->PositionConstraint();
-    ASSERT_TRUE(constraint.is_fixed_position);
-    ASSERT_TRUE(constraint.is_fixed_to_right_edge &&
-                !constraint.is_fixed_to_bottom_edge);
+    cc::LayerPositionConstraint constraint = layer->position_constraint();
+    ASSERT_TRUE(constraint.is_fixed_position());
+    ASSERT_TRUE(constraint.is_fixed_to_right_edge() &&
+                !constraint.is_fixed_to_bottom_edge());
   }
   {
     Element* element = document->getElementById("div-bl");
     ASSERT_TRUE(element);
-    WebLayer* layer = WebLayerFromElement(element);
+    cc::Layer* layer = CcLayerFromElement(element);
     ASSERT_TRUE(layer);
-    WebLayerPositionConstraint constraint = layer->PositionConstraint();
-    ASSERT_TRUE(constraint.is_fixed_position);
-    ASSERT_TRUE(!constraint.is_fixed_to_right_edge &&
-                constraint.is_fixed_to_bottom_edge);
+    cc::LayerPositionConstraint constraint = layer->position_constraint();
+    ASSERT_TRUE(constraint.is_fixed_position());
+    ASSERT_TRUE(!constraint.is_fixed_to_right_edge() &&
+                constraint.is_fixed_to_bottom_edge());
   }
   {
     Element* element = document->getElementById("div-br");
     ASSERT_TRUE(element);
-    WebLayer* layer = WebLayerFromElement(element);
+    cc::Layer* layer = CcLayerFromElement(element);
     ASSERT_TRUE(layer);
-    WebLayerPositionConstraint constraint = layer->PositionConstraint();
-    ASSERT_TRUE(constraint.is_fixed_position);
-    ASSERT_TRUE(constraint.is_fixed_to_right_edge &&
-                constraint.is_fixed_to_bottom_edge);
+    cc::LayerPositionConstraint constraint = layer->position_constraint();
+    ASSERT_TRUE(constraint.is_fixed_position());
+    ASSERT_TRUE(constraint.is_fixed_to_right_edge() &&
+                constraint.is_fixed_to_bottom_edge());
   }
   {
     Element* element = document->getElementById("span-tl");
     ASSERT_TRUE(element);
-    WebLayer* layer = WebLayerFromElement(element);
+    cc::Layer* layer = CcLayerFromElement(element);
     ASSERT_TRUE(layer);
-    WebLayerPositionConstraint constraint = layer->PositionConstraint();
-    ASSERT_TRUE(constraint.is_fixed_position);
-    ASSERT_TRUE(!constraint.is_fixed_to_right_edge &&
-                !constraint.is_fixed_to_bottom_edge);
+    cc::LayerPositionConstraint constraint = layer->position_constraint();
+    ASSERT_TRUE(constraint.is_fixed_position());
+    ASSERT_TRUE(!constraint.is_fixed_to_right_edge() &&
+                !constraint.is_fixed_to_bottom_edge());
   }
   {
     Element* element = document->getElementById("span-tr");
     ASSERT_TRUE(element);
-    WebLayer* layer = WebLayerFromElement(element);
+    cc::Layer* layer = CcLayerFromElement(element);
     ASSERT_TRUE(layer);
-    WebLayerPositionConstraint constraint = layer->PositionConstraint();
-    ASSERT_TRUE(constraint.is_fixed_position);
-    ASSERT_TRUE(constraint.is_fixed_to_right_edge &&
-                !constraint.is_fixed_to_bottom_edge);
+    cc::LayerPositionConstraint constraint = layer->position_constraint();
+    ASSERT_TRUE(constraint.is_fixed_position());
+    ASSERT_TRUE(constraint.is_fixed_to_right_edge() &&
+                !constraint.is_fixed_to_bottom_edge());
   }
   {
     Element* element = document->getElementById("span-bl");
     ASSERT_TRUE(element);
-    WebLayer* layer = WebLayerFromElement(element);
+    cc::Layer* layer = CcLayerFromElement(element);
     ASSERT_TRUE(layer);
-    WebLayerPositionConstraint constraint = layer->PositionConstraint();
-    ASSERT_TRUE(constraint.is_fixed_position);
-    ASSERT_TRUE(!constraint.is_fixed_to_right_edge &&
-                constraint.is_fixed_to_bottom_edge);
+    cc::LayerPositionConstraint constraint = layer->position_constraint();
+    ASSERT_TRUE(constraint.is_fixed_position());
+    ASSERT_TRUE(!constraint.is_fixed_to_right_edge() &&
+                constraint.is_fixed_to_bottom_edge());
   }
   {
     Element* element = document->getElementById("span-br");
     ASSERT_TRUE(element);
-    WebLayer* layer = WebLayerFromElement(element);
+    cc::Layer* layer = CcLayerFromElement(element);
     ASSERT_TRUE(layer);
-    WebLayerPositionConstraint constraint = layer->PositionConstraint();
-    ASSERT_TRUE(constraint.is_fixed_position);
-    ASSERT_TRUE(constraint.is_fixed_to_right_edge &&
-                constraint.is_fixed_to_bottom_edge);
+    cc::LayerPositionConstraint constraint = layer->position_constraint();
+    ASSERT_TRUE(constraint.is_fixed_position());
+    ASSERT_TRUE(constraint.is_fixed_to_right_edge() &&
+                constraint.is_fixed_to_bottom_edge());
   }
 }
 
-TEST_P(ScrollingCoordinatorTest, fastScrollingForStickyPosition) {
+TEST_F(ScrollingCoordinatorTest, fastScrollingForStickyPosition) {
   RegisterMockedHttpURLLoad("sticky-position.html");
   NavigateTo(base_url_ + "sticky-position.html");
   ForceFullCompositingUpdate();
 
   // Sticky position should not fall back to main thread scrolling.
-  WebLayer* root_scroll_layer = GetRootScrollLayer();
+  cc::Layer* root_scroll_layer = GetRootScrollLayer();
   ASSERT_TRUE(root_scroll_layer);
-  EXPECT_FALSE(root_scroll_layer->ShouldScrollOnMainThread());
+  EXPECT_FALSE(root_scroll_layer->should_scroll_on_main_thread());
 
   Document* document = GetFrame()->GetDocument();
   {
     Element* element = document->getElementById("div-tl");
     ASSERT_TRUE(element);
-    WebLayer* layer = WebLayerFromElement(element);
+    cc::Layer* layer = CcLayerFromElement(element);
     ASSERT_TRUE(layer);
-    WebLayerStickyPositionConstraint constraint =
-        layer->StickyPositionConstraint();
+    cc::LayerStickyPositionConstraint constraint =
+        layer->sticky_position_constraint();
     ASSERT_TRUE(constraint.is_sticky);
     EXPECT_TRUE(constraint.is_anchored_top && constraint.is_anchored_left &&
                 !constraint.is_anchored_right &&
                 !constraint.is_anchored_bottom);
     EXPECT_EQ(1.f, constraint.top_offset);
     EXPECT_EQ(1.f, constraint.left_offset);
-    EXPECT_EQ(IntRect(100, 100, 10, 10),
-              IntRect(constraint.scroll_container_relative_sticky_box_rect));
-    EXPECT_EQ(
-        IntRect(100, 100, 200, 200),
-        IntRect(constraint.scroll_container_relative_containing_block_rect));
+    EXPECT_EQ(gfx::Rect(100, 100, 10, 10),
+              constraint.scroll_container_relative_sticky_box_rect);
+    EXPECT_EQ(gfx::Rect(100, 100, 200, 200),
+              constraint.scroll_container_relative_containing_block_rect);
   }
   {
     Element* element = document->getElementById("div-tr");
     ASSERT_TRUE(element);
-    WebLayer* layer = WebLayerFromElement(element);
+    cc::Layer* layer = CcLayerFromElement(element);
     ASSERT_TRUE(layer);
-    WebLayerStickyPositionConstraint constraint =
-        layer->StickyPositionConstraint();
+    cc::LayerStickyPositionConstraint constraint =
+        layer->sticky_position_constraint();
     ASSERT_TRUE(constraint.is_sticky);
     EXPECT_TRUE(constraint.is_anchored_top && !constraint.is_anchored_left &&
                 constraint.is_anchored_right && !constraint.is_anchored_bottom);
@@ -384,10 +375,10 @@ TEST_P(ScrollingCoordinatorTest, fastScrollingForStickyPosition) {
   {
     Element* element = document->getElementById("div-bl");
     ASSERT_TRUE(element);
-    WebLayer* layer = WebLayerFromElement(element);
+    cc::Layer* layer = CcLayerFromElement(element);
     ASSERT_TRUE(layer);
-    WebLayerStickyPositionConstraint constraint =
-        layer->StickyPositionConstraint();
+    cc::LayerStickyPositionConstraint constraint =
+        layer->sticky_position_constraint();
     ASSERT_TRUE(constraint.is_sticky);
     EXPECT_TRUE(!constraint.is_anchored_top && constraint.is_anchored_left &&
                 !constraint.is_anchored_right && constraint.is_anchored_bottom);
@@ -395,10 +386,10 @@ TEST_P(ScrollingCoordinatorTest, fastScrollingForStickyPosition) {
   {
     Element* element = document->getElementById("div-br");
     ASSERT_TRUE(element);
-    WebLayer* layer = WebLayerFromElement(element);
+    cc::Layer* layer = CcLayerFromElement(element);
     ASSERT_TRUE(layer);
-    WebLayerStickyPositionConstraint constraint =
-        layer->StickyPositionConstraint();
+    cc::LayerStickyPositionConstraint constraint =
+        layer->sticky_position_constraint();
     ASSERT_TRUE(constraint.is_sticky);
     EXPECT_TRUE(!constraint.is_anchored_top && !constraint.is_anchored_left &&
                 constraint.is_anchored_right && constraint.is_anchored_bottom);
@@ -406,10 +397,10 @@ TEST_P(ScrollingCoordinatorTest, fastScrollingForStickyPosition) {
   {
     Element* element = document->getElementById("span-tl");
     ASSERT_TRUE(element);
-    WebLayer* layer = WebLayerFromElement(element);
+    cc::Layer* layer = CcLayerFromElement(element);
     ASSERT_TRUE(layer);
-    WebLayerStickyPositionConstraint constraint =
-        layer->StickyPositionConstraint();
+    cc::LayerStickyPositionConstraint constraint =
+        layer->sticky_position_constraint();
     ASSERT_TRUE(constraint.is_sticky);
     EXPECT_TRUE(constraint.is_anchored_top && constraint.is_anchored_left &&
                 !constraint.is_anchored_right &&
@@ -418,10 +409,10 @@ TEST_P(ScrollingCoordinatorTest, fastScrollingForStickyPosition) {
   {
     Element* element = document->getElementById("span-tlbr");
     ASSERT_TRUE(element);
-    WebLayer* layer = WebLayerFromElement(element);
+    cc::Layer* layer = CcLayerFromElement(element);
     ASSERT_TRUE(layer);
-    WebLayerStickyPositionConstraint constraint =
-        layer->StickyPositionConstraint();
+    cc::LayerStickyPositionConstraint constraint =
+        layer->sticky_position_constraint();
     ASSERT_TRUE(constraint.is_sticky);
     EXPECT_TRUE(constraint.is_anchored_top && constraint.is_anchored_left &&
                 constraint.is_anchored_right && constraint.is_anchored_bottom);
@@ -433,21 +424,20 @@ TEST_P(ScrollingCoordinatorTest, fastScrollingForStickyPosition) {
   {
     Element* element = document->getElementById("composited-top");
     ASSERT_TRUE(element);
-    WebLayer* layer = WebLayerFromElement(element);
+    cc::Layer* layer = CcLayerFromElement(element);
     ASSERT_TRUE(layer);
-    WebLayerStickyPositionConstraint constraint =
-        layer->StickyPositionConstraint();
+    cc::LayerStickyPositionConstraint constraint =
+        layer->sticky_position_constraint();
     ASSERT_TRUE(constraint.is_sticky);
     EXPECT_TRUE(constraint.is_anchored_top);
-    EXPECT_EQ(IntRect(100, 110, 10, 10),
-              IntRect(constraint.scroll_container_relative_sticky_box_rect));
-    EXPECT_EQ(
-        IntRect(100, 100, 200, 200),
-        IntRect(constraint.scroll_container_relative_containing_block_rect));
+    EXPECT_EQ(gfx::Rect(100, 110, 10, 10),
+              constraint.scroll_container_relative_sticky_box_rect);
+    EXPECT_EQ(gfx::Rect(100, 100, 200, 200),
+              constraint.scroll_container_relative_containing_block_rect);
   }
 }
 
-TEST_P(ScrollingCoordinatorTest, touchEventHandler) {
+TEST_F(ScrollingCoordinatorTest, touchEventHandler) {
   RegisterMockedHttpURLLoad("touch-event-handler.html");
   NavigateTo(base_url_ + "touch-event-handler.html");
   ForceFullCompositingUpdate();
@@ -457,7 +447,7 @@ TEST_P(ScrollingCoordinatorTest, touchEventHandler) {
                 WebEventListenerClass::kTouchStartOrMove));
 }
 
-TEST_P(ScrollingCoordinatorTest, touchEventHandlerPassive) {
+TEST_F(ScrollingCoordinatorTest, touchEventHandlerPassive) {
   RegisterMockedHttpURLLoad("touch-event-handler-passive.html");
   NavigateTo(base_url_ + "touch-event-handler-passive.html");
   ForceFullCompositingUpdate();
@@ -467,7 +457,7 @@ TEST_P(ScrollingCoordinatorTest, touchEventHandlerPassive) {
                 WebEventListenerClass::kTouchStartOrMove));
 }
 
-TEST_P(ScrollingCoordinatorTest, touchEventHandlerBoth) {
+TEST_F(ScrollingCoordinatorTest, touchEventHandlerBoth) {
   RegisterMockedHttpURLLoad("touch-event-handler-both.html");
   NavigateTo(base_url_ + "touch-event-handler-both.html");
   ForceFullCompositingUpdate();
@@ -477,7 +467,7 @@ TEST_P(ScrollingCoordinatorTest, touchEventHandlerBoth) {
                 WebEventListenerClass::kTouchStartOrMove));
 }
 
-TEST_P(ScrollingCoordinatorTest, wheelEventHandler) {
+TEST_F(ScrollingCoordinatorTest, wheelEventHandler) {
   RegisterMockedHttpURLLoad("wheel-event-handler.html");
   NavigateTo(base_url_ + "wheel-event-handler.html");
   ForceFullCompositingUpdate();
@@ -487,7 +477,7 @@ TEST_P(ScrollingCoordinatorTest, wheelEventHandler) {
                 WebEventListenerClass::kMouseWheel));
 }
 
-TEST_P(ScrollingCoordinatorTest, wheelEventHandlerPassive) {
+TEST_F(ScrollingCoordinatorTest, wheelEventHandlerPassive) {
   RegisterMockedHttpURLLoad("wheel-event-handler-passive.html");
   NavigateTo(base_url_ + "wheel-event-handler-passive.html");
   ForceFullCompositingUpdate();
@@ -497,7 +487,7 @@ TEST_P(ScrollingCoordinatorTest, wheelEventHandlerPassive) {
                 WebEventListenerClass::kMouseWheel));
 }
 
-TEST_P(ScrollingCoordinatorTest, wheelEventHandlerBoth) {
+TEST_F(ScrollingCoordinatorTest, wheelEventHandlerBoth) {
   RegisterMockedHttpURLLoad("wheel-event-handler-both.html");
   NavigateTo(base_url_ + "wheel-event-handler-both.html");
   ForceFullCompositingUpdate();
@@ -507,7 +497,7 @@ TEST_P(ScrollingCoordinatorTest, wheelEventHandlerBoth) {
                 WebEventListenerClass::kMouseWheel));
 }
 
-TEST_P(ScrollingCoordinatorTest, scrollEventHandler) {
+TEST_F(ScrollingCoordinatorTest, scrollEventHandler) {
   RegisterMockedHttpURLLoad("scroll-event-handler.html");
   NavigateTo(base_url_ + "scroll-event-handler.html");
   ForceFullCompositingUpdate();
@@ -515,7 +505,7 @@ TEST_P(ScrollingCoordinatorTest, scrollEventHandler) {
   ASSERT_TRUE(GetWebLayerTreeView()->HaveScrollEventHandlers());
 }
 
-TEST_P(ScrollingCoordinatorTest, updateEventHandlersDuringTeardown) {
+TEST_F(ScrollingCoordinatorTest, updateEventHandlersDuringTeardown) {
   RegisterMockedHttpURLLoad("scroll-event-handler-window.html");
   NavigateTo(base_url_ + "scroll-event-handler-window.html");
   ForceFullCompositingUpdate();
@@ -525,17 +515,17 @@ TEST_P(ScrollingCoordinatorTest, updateEventHandlersDuringTeardown) {
   GetFrame()->GetDocument()->Shutdown();
 }
 
-TEST_P(ScrollingCoordinatorTest, clippedBodyTest) {
+TEST_F(ScrollingCoordinatorTest, clippedBodyTest) {
   RegisterMockedHttpURLLoad("clipped-body.html");
   NavigateTo(base_url_ + "clipped-body.html");
   ForceFullCompositingUpdate();
 
-  WebLayer* root_scroll_layer = GetRootScrollLayer();
+  cc::Layer* root_scroll_layer = GetRootScrollLayer();
   ASSERT_TRUE(root_scroll_layer);
-  ASSERT_EQ(0u, root_scroll_layer->NonFastScrollableRegion().size());
+  EXPECT_TRUE(root_scroll_layer->non_fast_scrollable_region().IsEmpty());
 }
 
-TEST_P(ScrollingCoordinatorTest, touchAction) {
+TEST_F(ScrollingCoordinatorTest, touchAction) {
   RegisterMockedHttpURLLoad("touch-action.html");
   NavigateTo(base_url_ + "touch-action.html");
   ForceFullCompositingUpdate();
@@ -550,15 +540,14 @@ TEST_P(ScrollingCoordinatorTest, touchAction) {
       box->Layer()->GetCompositedLayerMapping();
 
   GraphicsLayer* graphics_layer = composited_layer_mapping->MainGraphicsLayer();
-  WebLayer* web_layer = graphics_layer->PlatformLayer();
-  WebVector<WebRect> rects =
-      web_layer->TouchEventHandlerRegionForTouchActionForTesting(
-          TouchAction::kTouchActionPanX | TouchAction::kTouchActionPanDown);
-  EXPECT_EQ(rects.size(), 1u);
-  EXPECT_EQ(IntRect(rects[0]), IntRect(0, 0, 1000, 1000));
+  cc::Layer* cc_layer = graphics_layer->CcLayer();
+  cc::Region region = cc_layer->touch_action_region().GetRegionForTouchAction(
+      TouchAction::kTouchActionPanX | TouchAction::kTouchActionPanDown);
+  EXPECT_EQ(region.GetRegionComplexity(), 1);
+  EXPECT_EQ(region.bounds(), gfx::Rect(0, 0, 1000, 1000));
 }
 
-TEST_P(ScrollingCoordinatorTest, touchActionRegions) {
+TEST_F(ScrollingCoordinatorTest, touchActionRegions) {
   RegisterMockedHttpURLLoad("touch-action-regions.html");
   NavigateTo(base_url_ + "touch-action-regions.html");
   ForceFullCompositingUpdate();
@@ -573,26 +562,25 @@ TEST_P(ScrollingCoordinatorTest, touchActionRegions) {
       box->Layer()->GetCompositedLayerMapping();
 
   GraphicsLayer* graphics_layer = composited_layer_mapping->MainGraphicsLayer();
-  WebLayer* web_layer = graphics_layer->PlatformLayer();
+  cc::Layer* cc_layer = graphics_layer->CcLayer();
 
-  WebVector<WebRect> rects =
-      web_layer->TouchEventHandlerRegionForTouchActionForTesting(
-          TouchAction::kTouchActionPanDown | TouchAction::kTouchActionPanX);
-  EXPECT_EQ(rects.size(), 1u);
-  EXPECT_EQ(IntRect(rects[0]), IntRect(0, 0, 100, 100));
+  cc::Region region = cc_layer->touch_action_region().GetRegionForTouchAction(
+      TouchAction::kTouchActionPanDown | TouchAction::kTouchActionPanX);
+  EXPECT_EQ(region.GetRegionComplexity(), 1);
+  EXPECT_EQ(region.bounds(), gfx::Rect(0, 0, 100, 100));
 
-  rects = web_layer->TouchEventHandlerRegionForTouchActionForTesting(
+  region = cc_layer->touch_action_region().GetRegionForTouchAction(
       TouchAction::kTouchActionPanDown | TouchAction::kTouchActionPanRight);
-  EXPECT_EQ(rects.size(), 1u);
-  EXPECT_EQ(IntRect(rects[0]), IntRect(0, 0, 50, 50));
+  EXPECT_EQ(region.GetRegionComplexity(), 1);
+  EXPECT_EQ(region.bounds(), gfx::Rect(0, 0, 50, 50));
 
-  rects = web_layer->TouchEventHandlerRegionForTouchActionForTesting(
+  region = cc_layer->touch_action_region().GetRegionForTouchAction(
       TouchAction::kTouchActionPanDown);
-  EXPECT_EQ(rects.size(), 1u);
-  EXPECT_EQ(IntRect(rects[0]), IntRect(0, 100, 100, 100));
+  EXPECT_EQ(region.GetRegionComplexity(), 1);
+  EXPECT_EQ(region.bounds(), gfx::Rect(0, 100, 100, 100));
 }
 
-TEST_P(ScrollingCoordinatorTest, touchActionBlockingHandler) {
+TEST_F(ScrollingCoordinatorTest, touchActionBlockingHandler) {
   RegisterMockedHttpURLLoad("touch-action-blocking-handler.html");
   NavigateTo(base_url_ + "touch-action-blocking-handler.html");
   ForceFullCompositingUpdate();
@@ -607,27 +595,73 @@ TEST_P(ScrollingCoordinatorTest, touchActionBlockingHandler) {
       box->Layer()->GetCompositedLayerMapping();
 
   GraphicsLayer* graphics_layer = composited_layer_mapping->MainGraphicsLayer();
-  WebLayer* web_layer = graphics_layer->PlatformLayer();
+  cc::Layer* cc_layer = graphics_layer->CcLayer();
 
-  WebVector<WebRect> rects =
-      web_layer->TouchEventHandlerRegionForTouchActionForTesting(
-          TouchAction::kTouchActionNone);
-  EXPECT_EQ(rects.size(), 1u);
-  EXPECT_EQ(IntRect(rects[0]), IntRect(0, 0, 100, 100));
+  cc::Region region = cc_layer->touch_action_region().GetRegionForTouchAction(
+      TouchAction::kTouchActionNone);
+  EXPECT_EQ(region.GetRegionComplexity(), 1);
+  EXPECT_EQ(region.bounds(), gfx::Rect(0, 0, 100, 100));
 
-  rects = web_layer->TouchEventHandlerRegionForTouchActionForTesting(
+  region = cc_layer->touch_action_region().GetRegionForTouchAction(
       TouchAction::kTouchActionPanY);
-  EXPECT_EQ(rects.size(), 1u);
-  EXPECT_EQ(IntRect(rects[0]), IntRect(0, 0, 1000, 1000));
+  EXPECT_EQ(region.GetRegionComplexity(), 1);
+  EXPECT_EQ(region.bounds(), gfx::Rect(0, 0, 1000, 1000));
 }
 
-TEST_P(ScrollingCoordinatorTest, overflowScrolling) {
+TEST_F(ScrollingCoordinatorTest, IframeWindowTouchHandler) {
+  LoadHTML(
+      R"(<iframe style="width: 275px; height: 250px;"></iframe>)");
+  WebLocalFrameImpl* child_frame =
+      ToWebLocalFrameImpl(GetWebView()->MainFrameImpl()->FirstChild());
+  FrameTestHelpers::LoadHTMLString(child_frame,
+                                   R"(<body>
+                                   <p style="margin: 1000px"> Hello </p>
+        <script>
+          window.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+          }, {passive: false});
+        </script>
+      </body>)",
+                                   URLTestHelpers::ToKURL("about:blank"));
+  ForceFullCompositingUpdate();
+
+  PaintLayer* paint_layer_child_frame =
+      child_frame->GetFrame()->GetDocument()->GetLayoutView()->Layer();
+  cc::Region region_child_frame =
+      paint_layer_child_frame
+          ->EnclosingLayerForPaintInvalidationCrossingFrameBoundaries()
+          ->GraphicsLayerBacking(&paint_layer_child_frame->GetLayoutObject())
+          ->CcLayer()
+          ->touch_action_region()
+          .GetRegionForTouchAction(TouchAction::kTouchActionNone);
+  PaintLayer* paint_layer_main_frame = GetWebView()
+                                           ->MainFrameImpl()
+                                           ->GetFrame()
+                                           ->GetDocument()
+                                           ->GetLayoutView()
+                                           ->Layer();
+  cc::Region region_main_frame =
+      paint_layer_main_frame
+          ->EnclosingLayerForPaintInvalidationCrossingFrameBoundaries()
+          ->GraphicsLayerBacking(&paint_layer_main_frame->GetLayoutObject())
+          ->CcLayer()
+          ->touch_action_region()
+          .GetRegionForTouchAction(TouchAction::kTouchActionNone);
+  EXPECT_TRUE(region_main_frame.bounds().IsEmpty());
+  EXPECT_FALSE(region_child_frame.bounds().IsEmpty());
+  // We only check for the content size for verification as the offset is 0x0
+  // due to child frame having its own composited layer.
+  EXPECT_EQ(child_frame->GetFrameView()->ContentsSize(),
+            IntRect(region_child_frame.bounds()).Size());
+}
+
+TEST_F(ScrollingCoordinatorTest, overflowScrolling) {
   RegisterMockedHttpURLLoad("overflow-scrolling.html");
   NavigateTo(base_url_ + "overflow-scrolling.html");
   ForceFullCompositingUpdate();
 
   // Verify the properties of the accelerated scrolling element starting from
-  // the LayoutObject all the way to the WebLayer.
+  // the LayoutObject all the way to the cc::Layer.
   Element* scrollable_element =
       GetFrame()->GetDocument()->getElementById("scrollable");
   DCHECK(scrollable_element);
@@ -650,11 +684,11 @@ TEST_P(ScrollingCoordinatorTest, overflowScrolling) {
   ASSERT_EQ(box->Layer()->GetScrollableArea(),
             graphics_layer->GetScrollableArea());
 
-  WebLayer* web_scroll_layer =
-      composited_layer_mapping->ScrollingContentsLayer()->PlatformLayer();
-  ASSERT_TRUE(web_scroll_layer->Scrollable());
-  ASSERT_TRUE(web_scroll_layer->UserScrollableHorizontal());
-  ASSERT_TRUE(web_scroll_layer->UserScrollableVertical());
+  cc::Layer* cc_scroll_layer =
+      composited_layer_mapping->ScrollingContentsLayer()->CcLayer();
+  ASSERT_TRUE(cc_scroll_layer->scrollable());
+  ASSERT_TRUE(cc_scroll_layer->user_scrollable_horizontal());
+  ASSERT_TRUE(cc_scroll_layer->user_scrollable_vertical());
 
 #if defined(OS_ANDROID)
   // Now verify we've attached impl-side scrollbars onto the scrollbar layers
@@ -667,13 +701,13 @@ TEST_P(ScrollingCoordinatorTest, overflowScrolling) {
 #endif
 }
 
-TEST_P(ScrollingCoordinatorTest, overflowHidden) {
+TEST_F(ScrollingCoordinatorTest, overflowHidden) {
   RegisterMockedHttpURLLoad("overflow-hidden.html");
   NavigateTo(base_url_ + "overflow-hidden.html");
   ForceFullCompositingUpdate();
 
   // Verify the properties of the accelerated scrolling element starting from
-  // the LayoutObject all the way to the WebLayer.
+  // the LayoutObject all the way to the cc::Layer.
   Element* overflow_element =
       GetFrame()->GetDocument()->getElementById("unscrollable-y");
   DCHECK(overflow_element);
@@ -696,11 +730,11 @@ TEST_P(ScrollingCoordinatorTest, overflowHidden) {
   ASSERT_EQ(box->Layer()->GetScrollableArea(),
             graphics_layer->GetScrollableArea());
 
-  WebLayer* web_scroll_layer =
-      composited_layer_mapping->ScrollingContentsLayer()->PlatformLayer();
-  ASSERT_TRUE(web_scroll_layer->Scrollable());
-  ASSERT_TRUE(web_scroll_layer->UserScrollableHorizontal());
-  ASSERT_FALSE(web_scroll_layer->UserScrollableVertical());
+  cc::Layer* cc_scroll_layer =
+      composited_layer_mapping->ScrollingContentsLayer()->CcLayer();
+  ASSERT_TRUE(cc_scroll_layer->scrollable());
+  ASSERT_TRUE(cc_scroll_layer->user_scrollable_horizontal());
+  ASSERT_FALSE(cc_scroll_layer->user_scrollable_vertical());
 
   overflow_element =
       GetFrame()->GetDocument()->getElementById("unscrollable-x");
@@ -722,21 +756,21 @@ TEST_P(ScrollingCoordinatorTest, overflowHidden) {
   ASSERT_EQ(box->Layer()->GetScrollableArea(),
             graphics_layer->GetScrollableArea());
 
-  web_scroll_layer =
-      composited_layer_mapping->ScrollingContentsLayer()->PlatformLayer();
-  ASSERT_TRUE(web_scroll_layer->Scrollable());
-  ASSERT_FALSE(web_scroll_layer->UserScrollableHorizontal());
-  ASSERT_TRUE(web_scroll_layer->UserScrollableVertical());
+  cc_scroll_layer =
+      composited_layer_mapping->ScrollingContentsLayer()->CcLayer();
+  ASSERT_TRUE(cc_scroll_layer->scrollable());
+  ASSERT_FALSE(cc_scroll_layer->user_scrollable_horizontal());
+  ASSERT_TRUE(cc_scroll_layer->user_scrollable_vertical());
 }
 
-TEST_P(ScrollingCoordinatorTest, iframeScrolling) {
+TEST_F(ScrollingCoordinatorTest, iframeScrolling) {
   RegisterMockedHttpURLLoad("iframe-scrolling.html");
   RegisterMockedHttpURLLoad("iframe-scrolling-inner.html");
   NavigateTo(base_url_ + "iframe-scrolling.html");
   ForceFullCompositingUpdate();
 
   // Verify the properties of the accelerated scrolling element starting from
-  // the LayoutObject all the way to the WebLayer.
+  // the LayoutObject all the way to the cc::Layer.
   Element* scrollable_frame =
       GetFrame()->GetDocument()->getElementById("scrollable");
   ASSERT_TRUE(scrollable_frame);
@@ -765,8 +799,8 @@ TEST_P(ScrollingCoordinatorTest, iframeScrolling) {
   ASSERT_EQ(inner_frame_view->LayoutViewportScrollableArea(),
             scroll_layer->GetScrollableArea());
 
-  WebLayer* web_scroll_layer = scroll_layer->PlatformLayer();
-  ASSERT_TRUE(web_scroll_layer->Scrollable());
+  cc::Layer* cc_scroll_layer = scroll_layer->CcLayer();
+  ASSERT_TRUE(cc_scroll_layer->scrollable());
 
 #if defined(OS_ANDROID)
   // Now verify we've attached impl-side scrollbars onto the scrollbar layers
@@ -783,14 +817,14 @@ TEST_P(ScrollingCoordinatorTest, iframeScrolling) {
 #endif
 }
 
-TEST_P(ScrollingCoordinatorTest, rtlIframe) {
+TEST_F(ScrollingCoordinatorTest, rtlIframe) {
   RegisterMockedHttpURLLoad("rtl-iframe.html");
   RegisterMockedHttpURLLoad("rtl-iframe-inner.html");
   NavigateTo(base_url_ + "rtl-iframe.html");
   ForceFullCompositingUpdate();
 
   // Verify the properties of the accelerated scrolling element starting from
-  // the LayoutObject all the way to the WebLayer.
+  // the LayoutObject all the way to the cc::Layer.
   Element* scrollable_frame =
       GetFrame()->GetDocument()->getElementById("scrollable");
   ASSERT_TRUE(scrollable_frame);
@@ -819,8 +853,8 @@ TEST_P(ScrollingCoordinatorTest, rtlIframe) {
   ASSERT_EQ(inner_frame_view->LayoutViewportScrollableArea(),
             scroll_layer->GetScrollableArea());
 
-  WebLayer* web_scroll_layer = scroll_layer->PlatformLayer();
-  ASSERT_TRUE(web_scroll_layer->Scrollable());
+  cc::Layer* cc_scroll_layer = scroll_layer->CcLayer();
+  ASSERT_TRUE(cc_scroll_layer->scrollable());
 
   int expected_scroll_position =
       958 + (inner_frame_view->LayoutViewportScrollableArea()
@@ -828,10 +862,10 @@ TEST_P(ScrollingCoordinatorTest, rtlIframe) {
                      ->IsOverlayScrollbar()
                  ? 0
                  : 15);
-  ASSERT_EQ(expected_scroll_position, web_scroll_layer->ScrollPosition().x);
+  ASSERT_EQ(expected_scroll_position, cc_scroll_layer->scroll_offset().x());
 }
 
-TEST_P(ScrollingCoordinatorTest, setupScrollbarLayerShouldNotCrash) {
+TEST_F(ScrollingCoordinatorTest, setupScrollbarLayerShouldNotCrash) {
   RegisterMockedHttpURLLoad("setup_scrollbar_layer_crash.html");
   NavigateTo(base_url_ + "setup_scrollbar_layer_crash.html");
   ForceFullCompositingUpdate();
@@ -839,8 +873,8 @@ TEST_P(ScrollingCoordinatorTest, setupScrollbarLayerShouldNotCrash) {
   // an empty document by javascript.
 }
 
-TEST_P(ScrollingCoordinatorTest,
-       scrollbarsForceMainThreadOrHaveWebScrollbarLayer) {
+TEST_F(ScrollingCoordinatorTest,
+       ScrollbarsForceMainThreadOrHaveCompositorScrollbarLayer) {
   RegisterMockedHttpURLLoad("trivial-scroller.html");
   NavigateTo(base_url_ + "trivial-scroller.html");
   ForceFullCompositingUpdate();
@@ -859,17 +893,17 @@ TEST_P(ScrollingCoordinatorTest,
       composited_layer_mapping->LayerForVerticalScrollbar();
   ASSERT_TRUE(scrollbar_graphics_layer);
 
-  bool has_web_scrollbar_layer = !scrollbar_graphics_layer->DrawsContent();
+  bool has_cc_scrollbar_layer = !scrollbar_graphics_layer->DrawsContent();
   ASSERT_TRUE(
-      has_web_scrollbar_layer ||
-      scrollbar_graphics_layer->PlatformLayer()->ShouldScrollOnMainThread());
+      has_cc_scrollbar_layer ||
+      scrollbar_graphics_layer->CcLayer()->should_scroll_on_main_thread());
 }
 
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
-TEST_P(ScrollingCoordinatorTest,
+TEST_F(ScrollingCoordinatorTest,
        DISABLED_setupScrollbarLayerShouldSetScrollLayerOpaque)
 #else
-TEST_P(ScrollingCoordinatorTest, setupScrollbarLayerShouldSetScrollLayerOpaque)
+TEST_F(ScrollingCoordinatorTest, setupScrollbarLayerShouldSetScrollLayerOpaque)
 #endif
 {
   RegisterMockedHttpURLLoad("wide_document.html");
@@ -883,26 +917,27 @@ TEST_P(ScrollingCoordinatorTest, setupScrollbarLayerShouldSetScrollLayerOpaque)
       frame_view->LayoutViewportScrollableArea()->LayerForHorizontalScrollbar();
   ASSERT_TRUE(scrollbar_graphics_layer);
 
-  WebLayer* platform_layer = scrollbar_graphics_layer->PlatformLayer();
+  cc::Layer* platform_layer = scrollbar_graphics_layer->CcLayer();
   ASSERT_TRUE(platform_layer);
 
-  WebLayer* contents_layer = scrollbar_graphics_layer->ContentsLayer();
+  cc::Layer* contents_layer = scrollbar_graphics_layer->ContentsLayer();
   ASSERT_TRUE(contents_layer);
 
-  // After scrollableAreaScrollbarLayerDidChange,
-  // if the main frame's scrollbarLayer is opaque,
-  // contentsLayer should be opaque too.
-  ASSERT_EQ(platform_layer->Opaque(), contents_layer->Opaque());
+  // After ScrollableAreaScrollbarLayerDidChange(),
+  // if the main frame's scrollbar_layer is opaque,
+  // contents_layer should be opaque too.
+  ASSERT_EQ(platform_layer->contents_opaque(),
+            contents_layer->contents_opaque());
 }
 
-TEST_P(ScrollingCoordinatorTest,
+TEST_F(ScrollingCoordinatorTest,
        FixedPositionLosingBackingShouldTriggerMainThreadScroll) {
   GetWebView()->GetSettings()->SetPreferCompositingToLCDTextEnabled(false);
   RegisterMockedHttpURLLoad("fixed-position-losing-backing.html");
   NavigateTo(base_url_ + "fixed-position-losing-backing.html");
   ForceFullCompositingUpdate();
 
-  WebLayer* scroll_layer = GetRootScrollLayer();
+  cc::Layer* scroll_layer = GetRootScrollLayer();
   ASSERT_TRUE(scroll_layer);
 
   Document* document = GetFrame()->GetDocument();
@@ -911,7 +946,7 @@ TEST_P(ScrollingCoordinatorTest,
   EXPECT_TRUE(static_cast<LayoutBoxModelObject*>(fixed_pos->GetLayoutObject())
                   ->Layer()
                   ->HasCompositedLayerMapping());
-  EXPECT_FALSE(scroll_layer->ShouldScrollOnMainThread());
+  EXPECT_FALSE(scroll_layer->should_scroll_on_main_thread());
 
   fixed_pos->SetInlineStyleProperty(CSSPropertyTransform, CSSValueNone);
   ForceFullCompositingUpdate();
@@ -919,10 +954,10 @@ TEST_P(ScrollingCoordinatorTest,
   EXPECT_FALSE(static_cast<LayoutBoxModelObject*>(fixed_pos->GetLayoutObject())
                    ->Layer()
                    ->HasCompositedLayerMapping());
-  EXPECT_TRUE(scroll_layer->ShouldScrollOnMainThread());
+  EXPECT_TRUE(scroll_layer->should_scroll_on_main_thread());
 }
 
-TEST_P(ScrollingCoordinatorTest, CustomScrollbarShouldTriggerMainThreadScroll) {
+TEST_F(ScrollingCoordinatorTest, CustomScrollbarShouldTriggerMainThreadScroll) {
   GetWebView()->GetSettings()->SetPreferCompositingToLCDTextEnabled(true);
   GetWebView()->SetDeviceScaleFactor(2.f);
   RegisterMockedHttpURLLoad("custom_scrollbar.html");
@@ -946,9 +981,9 @@ TEST_P(ScrollingCoordinatorTest, CustomScrollbarShouldTriggerMainThreadScroll) {
       composited_layer_mapping->LayerForVerticalScrollbar();
   ASSERT_TRUE(scrollbar_graphics_layer);
   ASSERT_TRUE(
-      scrollbar_graphics_layer->PlatformLayer()->ShouldScrollOnMainThread());
+      scrollbar_graphics_layer->CcLayer()->should_scroll_on_main_thread());
   ASSERT_TRUE(
-      scrollbar_graphics_layer->PlatformLayer()->MainThreadScrollingReasons() &
+      scrollbar_graphics_layer->CcLayer()->main_thread_scrolling_reasons() &
       MainThreadScrollingReason::kCustomScrollbarScrolling);
 
   // remove custom scrollbar class, the scrollbar is expected to scroll on
@@ -958,13 +993,13 @@ TEST_P(ScrollingCoordinatorTest, CustomScrollbarShouldTriggerMainThreadScroll) {
   scrollbar_graphics_layer =
       composited_layer_mapping->LayerForVerticalScrollbar();
   ASSERT_FALSE(
-      scrollbar_graphics_layer->PlatformLayer()->ShouldScrollOnMainThread());
+      scrollbar_graphics_layer->CcLayer()->should_scroll_on_main_thread());
   ASSERT_FALSE(
-      scrollbar_graphics_layer->PlatformLayer()->MainThreadScrollingReasons() &
+      scrollbar_graphics_layer->CcLayer()->main_thread_scrolling_reasons() &
       MainThreadScrollingReason::kCustomScrollbarScrolling);
 }
 
-TEST_P(ScrollingCoordinatorTest,
+TEST_F(ScrollingCoordinatorTest,
        BackgroundAttachmentFixedShouldTriggerMainThreadScroll) {
   RegisterMockedHttpURLLoad("iframe-background-attachment-fixed.html");
   RegisterMockedHttpURLLoad("iframe-background-attachment-fixed-inner.html");
@@ -999,9 +1034,9 @@ TEST_P(ScrollingCoordinatorTest,
   ASSERT_EQ(inner_frame_view->LayoutViewportScrollableArea(),
             scroll_layer->GetScrollableArea());
 
-  WebLayer* web_scroll_layer = scroll_layer->PlatformLayer();
-  ASSERT_TRUE(web_scroll_layer->Scrollable());
-  ASSERT_TRUE(web_scroll_layer->MainThreadScrollingReasons() &
+  cc::Layer* cc_scroll_layer = scroll_layer->CcLayer();
+  ASSERT_TRUE(cc_scroll_layer->scrollable());
+  ASSERT_TRUE(cc_scroll_layer->main_thread_scrolling_reasons() &
               MainThreadScrollingReason::kHasBackgroundAttachmentFixedObjects);
 
   // Remove fixed background-attachment should make the iframe
@@ -1021,9 +1056,9 @@ TEST_P(ScrollingCoordinatorTest,
                      ->LayerForScrolling();
   ASSERT_TRUE(scroll_layer);
 
-  web_scroll_layer = scroll_layer->PlatformLayer();
-  ASSERT_TRUE(web_scroll_layer->Scrollable());
-  ASSERT_FALSE(web_scroll_layer->MainThreadScrollingReasons() &
+  cc_scroll_layer = scroll_layer->CcLayer();
+  ASSERT_TRUE(cc_scroll_layer->scrollable());
+  ASSERT_FALSE(cc_scroll_layer->main_thread_scrolling_reasons() &
                MainThreadScrollingReason::kHasBackgroundAttachmentFixedObjects);
 
   // Force main frame to scroll on main thread. All its descendants
@@ -1044,15 +1079,15 @@ TEST_P(ScrollingCoordinatorTest,
                      ->LayerForScrolling();
   ASSERT_TRUE(scroll_layer);
 
-  web_scroll_layer = scroll_layer->PlatformLayer();
-  ASSERT_TRUE(web_scroll_layer->Scrollable());
-  ASSERT_TRUE(web_scroll_layer->MainThreadScrollingReasons() &
+  cc_scroll_layer = scroll_layer->CcLayer();
+  ASSERT_TRUE(cc_scroll_layer->scrollable());
+  ASSERT_TRUE(cc_scroll_layer->main_thread_scrolling_reasons() &
               MainThreadScrollingReason::kHasBackgroundAttachmentFixedObjects);
 }
 
 // Upon resizing the content size, the main thread scrolling reason
 // kHasNonLayerViewportConstrainedObject should be updated on all frames
-TEST_P(ScrollingCoordinatorTest,
+TEST_F(ScrollingCoordinatorTest,
        RecalculateMainThreadScrollingReasonsUponResize) {
   GetWebView()->GetSettings()->SetPreferCompositingToLCDTextEnabled(false);
   RegisterMockedHttpURLLoad("has-non-layer-viewport-constrained-objects.html");
@@ -1065,20 +1100,6 @@ TEST_P(ScrollingCoordinatorTest,
   LayoutObject* layout_object = element->GetLayoutObject();
   ASSERT_TRUE(layout_object);
 
-  GraphicsLayer* scroll_layer = layout_object->GetFrameView()
-                                    ->LayoutViewportScrollableArea()
-                                    ->LayerForScrolling();
-  WebLayer* web_scroll_layer;
-
-  if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-    ASSERT_TRUE(scroll_layer);
-    web_scroll_layer = scroll_layer->PlatformLayer();
-    ASSERT_TRUE(web_scroll_layer->Scrollable());
-    ASSERT_FALSE(
-        web_scroll_layer->MainThreadScrollingReasons() &
-        MainThreadScrollingReason::kHasNonLayerViewportConstrainedObjects);
-  }
-
   // When the div becomes to scrollable it should scroll on main thread
   element->setAttribute("style",
                         "overflow:scroll;height:2000px;will-change:transform;",
@@ -1088,15 +1109,15 @@ TEST_P(ScrollingCoordinatorTest,
   layout_object = element->GetLayoutObject();
   ASSERT_TRUE(layout_object);
 
-  scroll_layer = layout_object->GetFrameView()
-                     ->LayoutViewportScrollableArea()
-                     ->LayerForScrolling();
+  GraphicsLayer* scroll_layer = layout_object->GetFrameView()
+                                    ->LayoutViewportScrollableArea()
+                                    ->LayerForScrolling();
   ASSERT_TRUE(scroll_layer);
 
-  web_scroll_layer = scroll_layer->PlatformLayer();
-  ASSERT_TRUE(web_scroll_layer->Scrollable());
+  cc::Layer* cc_scroll_layer = scroll_layer->CcLayer();
+  ASSERT_TRUE(cc_scroll_layer->scrollable());
   ASSERT_TRUE(
-      web_scroll_layer->MainThreadScrollingReasons() &
+      cc_scroll_layer->main_thread_scrolling_reasons() &
       MainThreadScrollingReason::kHasNonLayerViewportConstrainedObjects);
 
   // The main thread scrolling reason should be reset upon the following change
@@ -1107,36 +1128,24 @@ TEST_P(ScrollingCoordinatorTest,
 
   layout_object = element->GetLayoutObject();
   ASSERT_TRUE(layout_object);
-
-  scroll_layer = layout_object->GetFrameView()
-                     ->LayoutViewportScrollableArea()
-                     ->LayerForScrolling();
-  if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-    ASSERT_TRUE(scroll_layer);
-    web_scroll_layer = scroll_layer->PlatformLayer();
-    ASSERT_TRUE(web_scroll_layer->Scrollable());
-    ASSERT_FALSE(
-        web_scroll_layer->MainThreadScrollingReasons() &
-        MainThreadScrollingReason::kHasNonLayerViewportConstrainedObjects);
-  }
 }
 
-TEST_P(ScrollingCoordinatorTest, StickyTriggersMainThreadScroll) {
+TEST_F(ScrollingCoordinatorTest, StickyTriggersMainThreadScroll) {
   GetWebView()->GetSettings()->SetPreferCompositingToLCDTextEnabled(false);
   LoadHTML(
       "<body style='height: 1200px'>"
       "<div style='position: sticky; top: 0'>sticky</div>");
   ForceFullCompositingUpdate();
   ScrollableArea* viewport = GetFrame()->View()->LayoutViewportScrollableArea();
-  WebLayer* scroll_layer = viewport->LayerForScrolling()->PlatformLayer();
+  cc::Layer* scroll_layer = viewport->LayerForScrolling()->CcLayer();
   ASSERT_EQ(MainThreadScrollingReason::kHasNonLayerViewportConstrainedObjects,
-            scroll_layer->MainThreadScrollingReasons());
+            scroll_layer->main_thread_scrolling_reasons());
 }
 
 // LocalFrameView::FrameIsScrollableDidChange is used as a dirty bit and is
 // set to clean in ScrollingCoordinator::UpdateAfterCompositingChangeIfNeeded.
 // This test ensures that the dirty bit is set and unset properly.
-TEST_P(ScrollingCoordinatorTest, FrameIsScrollableDidChange) {
+TEST_F(ScrollingCoordinatorTest, FrameIsScrollableDidChange) {
   LoadHTML(R"HTML(
     <div id='bg' style='background: red; width: 10px; height: 10px;'></div>
     <div id='forcescroll' style='height: 5000px;'></div>
@@ -1164,7 +1173,7 @@ TEST_P(ScrollingCoordinatorTest, FrameIsScrollableDidChange) {
   EXPECT_FALSE(GetFrame()->View()->FrameIsScrollableDidChange());
 }
 
-TEST_P(ScrollingCoordinatorTest, UpdateUMAMetricUpdated) {
+TEST_F(ScrollingCoordinatorTest, UpdateUMAMetricUpdated) {
   HistogramTester histogram_tester;
   LoadHTML(R"HTML(
     <div id='bg' style='background: blue;'></div>
@@ -1266,32 +1275,28 @@ class NonCompositedMainThreadScrollingReasonTest
   }
 };
 
-INSTANTIATE_TEST_CASE_P(All,
-                        NonCompositedMainThreadScrollingReasonTest,
-                        testing::Bool());
-
-TEST_P(NonCompositedMainThreadScrollingReasonTest, TransparentTest) {
+TEST_F(NonCompositedMainThreadScrollingReasonTest, TransparentTest) {
   TestNonCompositedReasons("transparent",
                            MainThreadScrollingReason::kHasOpacityAndLCDText);
 }
 
-TEST_P(NonCompositedMainThreadScrollingReasonTest, TransformTest) {
+TEST_F(NonCompositedMainThreadScrollingReasonTest, TransformTest) {
   TestNonCompositedReasons("transform",
                            MainThreadScrollingReason::kHasTransformAndLCDText);
 }
 
-TEST_P(NonCompositedMainThreadScrollingReasonTest, BackgroundNotOpaqueTest) {
+TEST_F(NonCompositedMainThreadScrollingReasonTest, BackgroundNotOpaqueTest) {
   TestNonCompositedReasons(
       "background-not-opaque",
       MainThreadScrollingReason::kBackgroundNotOpaqueInRectAndLCDText);
 }
 
-TEST_P(NonCompositedMainThreadScrollingReasonTest, ClipTest) {
+TEST_F(NonCompositedMainThreadScrollingReasonTest, ClipTest) {
   TestNonCompositedReasons("clip",
                            MainThreadScrollingReason::kHasClipRelatedProperty);
 }
 
-TEST_P(NonCompositedMainThreadScrollingReasonTest, ClipPathTest) {
+TEST_F(NonCompositedMainThreadScrollingReasonTest, ClipPathTest) {
   uint32_t clip_reason = MainThreadScrollingReason::kHasClipRelatedProperty;
   GetWebView()->GetSettings()->SetPreferCompositingToLCDTextEnabled(false);
   Document* document = GetFrame()->GetDocument();
@@ -1340,17 +1345,17 @@ TEST_P(NonCompositedMainThreadScrollingReasonTest, ClipPathTest) {
   EXPECT_FALSE(frame_view->GetMainThreadScrollingReasons() & clip_reason);
 }
 
-TEST_P(NonCompositedMainThreadScrollingReasonTest, LCDTextEnabledTest) {
+TEST_F(NonCompositedMainThreadScrollingReasonTest, LCDTextEnabledTest) {
   TestNonCompositedReasons("transparent",
                            MainThreadScrollingReason::kHasOpacityAndLCDText);
 }
 
-TEST_P(NonCompositedMainThreadScrollingReasonTest, BoxShadowTest) {
+TEST_F(NonCompositedMainThreadScrollingReasonTest, BoxShadowTest) {
   TestNonCompositedReasons(
       "box-shadow", MainThreadScrollingReason::kHasBoxShadowFromNonRootLayer);
 }
 
-TEST_P(NonCompositedMainThreadScrollingReasonTest, StackingContextTest) {
+TEST_F(NonCompositedMainThreadScrollingReasonTest, StackingContextTest) {
   GetWebView()->GetSettings()->SetPreferCompositingToLCDTextEnabled(false);
 
   Document* document = GetFrame()->GetDocument();
@@ -1379,7 +1384,7 @@ TEST_P(NonCompositedMainThreadScrollingReasonTest, StackingContextTest) {
   EXPECT_FALSE(scrollable_area->GetNonCompositedMainThreadScrollingReasons());
 }
 
-TEST_P(NonCompositedMainThreadScrollingReasonTest,
+TEST_F(NonCompositedMainThreadScrollingReasonTest,
        CompositedWithLCDTextRelatedReasonsTest) {
   // With "will-change:transform" we composite elements with
   // LCDTextRelatedReasons only. For elements with other

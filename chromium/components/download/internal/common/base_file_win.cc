@@ -257,25 +257,22 @@ DownloadInterruptReason MapShFileOperationCodes(int code) {
   if (result == DOWNLOAD_INTERRUPT_REASON_FILE_FAILED) {
     UMA_HISTOGRAM_CUSTOM_ENUMERATION(
         "Download.MapWinShErrorFileFailed", code,
-        base::CustomHistogram::ArrayToCustomRanges(
-            kAllSpecialShFileOperationCodes,
-            arraysize(kAllSpecialShFileOperationCodes)));
+        base::CustomHistogram::ArrayToCustomEnumRanges(
+            kAllSpecialShFileOperationCodes));
   }
 
   if (result == DOWNLOAD_INTERRUPT_REASON_FILE_ACCESS_DENIED) {
     UMA_HISTOGRAM_CUSTOM_ENUMERATION(
         "Download.MapWinShErrorAccessDenied", code,
-        base::CustomHistogram::ArrayToCustomRanges(
-            kAllSpecialShFileOperationCodes,
-            arraysize(kAllSpecialShFileOperationCodes)));
+        base::CustomHistogram::ArrayToCustomEnumRanges(
+            kAllSpecialShFileOperationCodes));
   }
 
   if (result == DOWNLOAD_INTERRUPT_REASON_FILE_TRANSIENT_ERROR) {
     UMA_HISTOGRAM_CUSTOM_ENUMERATION(
         "Download.MapWinShErrorTransientError", code,
-        base::CustomHistogram::ArrayToCustomRanges(
-            kAllSpecialShFileOperationCodes,
-            arraysize(kAllSpecialShFileOperationCodes)));
+        base::CustomHistogram::ArrayToCustomEnumRanges(
+            kAllSpecialShFileOperationCodes));
   }
 
   if (result != DOWNLOAD_INTERRUPT_REASON_NONE)
@@ -302,7 +299,7 @@ DownloadInterruptReason BaseFile::MoveFileAndAdjustPermissions(
   source.append(1, L'\0');
   target.append(1, L'\0');
 
-  SHFILEOPSTRUCT move_info = {0};
+  SHFILEOPSTRUCT move_info = {nullptr};
   move_info.wFunc = FO_MOVE;
   move_info.pFrom = source.c_str();
   move_info.pTo = target.c_str();

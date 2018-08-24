@@ -176,7 +176,7 @@ int CPDFSDK_InterForm::GetPageIndexByAnnotDict(
   ASSERT(pAnnotDict);
 
   for (int i = 0, sz = pDocument->GetPageCount(); i < sz; i++) {
-    if (CPDF_Dictionary* pPageDict = pDocument->GetPage(i)) {
+    if (CPDF_Dictionary* pPageDict = pDocument->GetPageDictionary(i)) {
       if (CPDF_Array* pAnnots = pPageDict->GetArrayFor("Annots")) {
         for (int j = 0, jsz = pAnnots->GetCount(); j < jsz; j++) {
           CPDF_Object* pDict = pAnnots->GetDirectObjectAt(j);
@@ -291,10 +291,9 @@ void CPDFSDK_InterForm::OnCalculate(CPDF_FormField* pFormField) {
     bool bRC = true;
     pContext->OnField_Calculate(pFormField, pField, sValue, bRC);
 
-    WideString sInfo;
-    bool bRet = pContext->RunScript(csJS, &sInfo);
+    Optional<IJS_Runtime::JS_Error> err = pContext->RunScript(csJS);
     pRuntime->ReleaseEventContext(pContext);
-    if (bRet && bRC && sValue.Compare(sOldValue) != 0)
+    if (!err && bRC && sValue.Compare(sOldValue) != 0)
       pField->SetValue(sValue, true);
   }
   m_bBusy = false;
@@ -328,10 +327,10 @@ WideString CPDFSDK_InterForm::OnFormat(CPDF_FormField* pFormField,
 
         IJS_EventContext* pContext = pRuntime->NewEventContext();
         pContext->OnField_Format(pFormField, Value, true);
-        WideString sInfo;
-        bool bRet = pContext->RunScript(script, &sInfo);
+
+        Optional<IJS_Runtime::JS_Error> err = pContext->RunScript(script);
         pRuntime->ReleaseEventContext(pContext);
-        if (bRet) {
+        if (!err) {
           sValue = Value;
           bFormatted = true;
         }
@@ -472,7 +471,6 @@ bool CPDFSDK_InterForm::SubmitFields(const WideString& csDestination,
                                      bool bIncludeOrExclude,
                                      bool bUrlEncoded) {
   ByteString textBuf = ExportFieldsToFDFTextBuf(fields, bIncludeOrExclude);
-
   size_t nBufSize = textBuf.GetLength();
   if (nBufSize == 0)
     return false;
@@ -486,7 +484,7 @@ bool CPDFSDK_InterForm::SubmitFields(const WideString& csDestination,
     return false;
   }
 
-  m_pFormFillEnv->JS_docSubmitForm(pBuffer, nBufSize, csDestination.c_str());
+  m_pFormFillEnv->JS_docSubmitForm(pBuffer, nBufSize, csDestination);
 
   if (pBuffer != pLocalBuffer)
     FX_Free(pBuffer);
@@ -564,15 +562,15 @@ bool CPDFSDK_InterForm::SubmitForm(const WideString& sDestination,
 
   uint8_t* pLocalBuffer = FX_Alloc(uint8_t, fdfBuffer.GetLength());
   memcpy(pLocalBuffer, fdfBuffer.c_str(), fdfBuffer.GetLength());
-  uint8_t* pBuffer = pLocalBuffer;
 
+  uint8_t* pBuffer = pLocalBuffer;
   size_t nBufSize = fdfBuffer.GetLength();
   if (bUrlEncoded && !FDFToURLEncodedData(pBuffer, nBufSize)) {
     FX_Free(pLocalBuffer);
     return false;
   }
 
-  m_pFormFillEnv->JS_docSubmitForm(pBuffer, nBufSize, sDestination.c_str());
+  m_pFormFillEnv->JS_docSubmitForm(pBuffer, nBufSize, sDestination);
 
   if (pBuffer != pLocalBuffer)
     FX_Free(pBuffer);

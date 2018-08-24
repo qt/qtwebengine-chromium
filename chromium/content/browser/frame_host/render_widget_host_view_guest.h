@@ -62,6 +62,9 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   // Called when this RenderWidgetHostViewGuest is attached.
   void OnAttached();
 
+  // RenderWidgetHostViewChildFrame implementation.
+  RenderWidgetHostViewBase* GetParentView() override;
+
   // RenderWidgetHostView implementation.
   bool OnMessageReceived(const IPC::Message& msg) override;
   void InitAsChild(gfx::NativeView parent_view) override;
@@ -82,9 +85,10 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   GetTouchSelectionControllerClientManager() override;
   gfx::PointF TransformPointToRootCoordSpaceF(
       const gfx::PointF& point) override;
-  bool TransformPointToLocalCoordSpace(const gfx::PointF& point,
-                                       const viz::SurfaceId& original_surface,
-                                       gfx::PointF* transformed_point) override;
+  bool TransformPointToLocalCoordSpaceLegacy(
+      const gfx::PointF& point,
+      const viz::SurfaceId& original_surface,
+      gfx::PointF* transformed_point) override;
   gfx::PointF TransformRootPointToViewCoordSpace(
       const gfx::PointF& point) override;
 
@@ -121,6 +125,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   void DidStopFlinging() override;
   bool LockMouse() override;
   void UnlockMouse() override;
+  viz::FrameSinkId GetRootFrameSinkId() override;
   viz::LocalSurfaceId GetLocalSurfaceId() const override;
   void DidCreateNewRendererCompositorFrameSink(
       viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink)
@@ -151,15 +156,17 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
                         const gfx::Size& max_size) override;
   void DisableAutoResize(const gfx::Size& new_size) override;
 
-  viz::ScopedSurfaceIdAllocator ResizeDueToAutoResize(
-      const gfx::Size& new_size,
-      uint64_t sequence_number) override;
+  viz::ScopedSurfaceIdAllocator DidUpdateVisualProperties(
+      const cc::RenderFrameMetadata& metadata) override;
 
  private:
   friend class RenderWidgetHostView;
 
   void SendSurfaceInfoToEmbedderImpl(
       const viz::SurfaceInfo& surface_info) override;
+
+  void OnDidUpdateVisualPropertiesComplete(
+      const cc::RenderFrameMetadata& metadata);
 
   RenderWidgetHostViewGuest(
       RenderWidgetHost* widget,

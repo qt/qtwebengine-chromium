@@ -20,7 +20,6 @@
 #include "base/debug/activity_tracker.h"
 #include "base/debug/stack_trace.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/process/kill.h"
 #include "base/strings/utf_string_conversions.h"
@@ -256,9 +255,13 @@ Process LaunchProcess(const string16& cmdline,
     startup_info->hStdError = options.stderr_handle;
   }
 
-  if (options.job_handle) {
+  const bool launch_suspended =
+      options.job_handle || options.grant_foreground_privilege;
+
+  if (launch_suspended)
     flags |= CREATE_SUSPENDED;
 
+  if (options.job_handle) {
     // If this code is run under a debugger, the launched process is
     // automatically associated with a job object created by the debugger.
     // The CREATE_BREAKAWAY_FROM_JOB flag is used to prevent this on Windows
@@ -307,17 +310,22 @@ Process LaunchProcess(const string16& cmdline,
   }
   base::win::ScopedProcessInformation process_info(temp_process_info);
 
-  if (options.job_handle) {
-    if (0 == AssignProcessToJobObject(options.job_handle,
-                                      process_info.process_handle())) {
-      DLOG(ERROR) << "Could not AssignProcessToObject.";
-      Process scoped_process(process_info.TakeProcessHandle());
-      scoped_process.Terminate(win::kProcessKilledExitCode, true);
-      return Process();
-    }
-
-    ResumeThread(process_info.thread_handle());
+  if (options.job_handle &&
+      !AssignProcessToJobObject(options.job_handle,
+                                process_info.process_handle())) {
+    DPLOG(ERROR) << "Could not AssignProcessToObject";
+    Process scoped_process(process_info.TakeProcessHandle());
+    scoped_process.Terminate(win::kProcessKilledExitCode, true);
+    return Process();
   }
+
+  if (options.grant_foreground_privilege &&
+      !AllowSetForegroundWindow(GetProcId(process_info.process_handle()))) {
+    DPLOG(ERROR) << "Failed to grant foreground privilege to launched process";
+  }
+
+  if (launch_suspended)
+    ResumeThread(process_info.thread_handle());
 
   if (options.wait)
     WaitForSingleObject(process_info.process_handle(), INFINITE);

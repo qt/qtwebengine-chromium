@@ -16,11 +16,6 @@
 #include "mkvparser/mkvparser.h"
 #include "mkvparser/mkvreader.h"
 
-// disable deprecation warnings for auto_ptr
-#if defined(__GNUC__) && __GNUC__ >= 5
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-
 namespace {
 const wchar_t* utf8towcs(const char* str) {
   if (str == NULL)
@@ -113,7 +108,7 @@ int main(int argc, char* argv[]) {
     return EXIT_FAILURE;
   }
 
-  const std::auto_ptr<seg_t> pSegment(pSegment_);
+  const std::unique_ptr<seg_t> pSegment(pSegment_);
 
   ret = pSegment->Load();
   if (ret < 0) {

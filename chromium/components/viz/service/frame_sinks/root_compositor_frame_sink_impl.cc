@@ -103,7 +103,7 @@ void RootCompositorFrameSinkImpl::SetWantsAnimateOnlyBeginFrames() {
 void RootCompositorFrameSinkImpl::SubmitCompositorFrame(
     const LocalSurfaceId& local_surface_id,
     CompositorFrame frame,
-    mojom::HitTestRegionListPtr hit_test_region_list,
+    base::Optional<HitTestRegionList> hit_test_region_list,
     uint64_t submit_time) {
   // Update display when size or local surface id changes.
   if (support_->last_activated_local_surface_id() != local_surface_id) {
@@ -112,7 +112,8 @@ void RootCompositorFrameSinkImpl::SubmitCompositorFrame(
   }
 
   const auto result = support_->MaybeSubmitCompositorFrame(
-      local_surface_id, std::move(frame), std::move(hit_test_region_list));
+      local_surface_id, std::move(frame), std::move(hit_test_region_list),
+      SubmitCompositorFrameSyncCallback());
   if (result == CompositorFrameSinkSupport::ACCEPTED)
     return;
 
@@ -123,6 +124,15 @@ void RootCompositorFrameSinkImpl::SubmitCompositorFrame(
   compositor_frame_sink_binding_.CloseWithReason(static_cast<uint32_t>(result),
                                                  reason);
   OnClientConnectionLost();
+}
+
+void RootCompositorFrameSinkImpl::SubmitCompositorFrameSync(
+    const LocalSurfaceId& local_surface_id,
+    CompositorFrame frame,
+    base::Optional<HitTestRegionList> hit_test_region_list,
+    uint64_t submit_time,
+    SubmitCompositorFrameSyncCallback callback) {
+  NOTIMPLEMENTED();
 }
 
 void RootCompositorFrameSinkImpl::DidNotProduceFrame(
@@ -165,6 +175,11 @@ void RootCompositorFrameSinkImpl::DisplayDidReceiveCALayerParams(
   DCHECK(ca_layer_params.is_empty || display_client_);
   if (display_client_)
     display_client_->OnDisplayReceivedCALayerParams(ca_layer_params);
+}
+
+void RootCompositorFrameSinkImpl::DidSwapAfterSnapshotRequestReceived(
+    const std::vector<ui::LatencyInfo>& latency_info) {
+  display_client_->DidSwapAfterSnapshotRequestReceived(latency_info);
 }
 
 void RootCompositorFrameSinkImpl::DisplayDidDrawAndSwap() {}

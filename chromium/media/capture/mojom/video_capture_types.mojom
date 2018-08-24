@@ -4,10 +4,39 @@
 
 module media.mojom;
 
-import "media/mojo/interfaces/media_types.mojom";
+import "gpu/ipc/common/mailbox_holder.mojom";
 import "mojo/public/mojom/base/time.mojom";
 import "mojo/public/mojom/base/values.mojom";
 import "ui/gfx/geometry/mojo/geometry.mojom";
+
+enum VideoCapturePixelFormat {
+  UNKNOWN,
+  I420,
+  YV12,
+  I422,
+  I420A,
+  I444,
+  NV12,
+  NV21,
+  UYVY,
+  YUY2,
+  ARGB,
+  XRGB,
+  RGB24,
+  RGB32,
+  MJPEG,
+  MT21,
+  YUV420P9,
+  YUV420P10,
+  YUV422P9,
+  YUV422P10,
+  YUV444P9,
+  YUV444P10,
+  YUV420P12,
+  YUV422P12,
+  YUV444P12,
+  Y16
+};
 
 enum ResolutionChangePolicy {
   FIXED_RESOLUTION,
@@ -19,11 +48,6 @@ enum PowerLineFrequency {
   DEFAULT,
   HZ_50,
   HZ_60
-};
-
-enum VideoPixelStorage {
-  CPU,
-  GPUMEMORYBUFFER
 };
 
 enum VideoCaptureApi {
@@ -49,8 +73,7 @@ enum VideoCaptureTransportType {
 struct VideoCaptureFormat {
   gfx.mojom.Size frame_size;
   float frame_rate;
-  VideoPixelFormat pixel_format;
-  VideoPixelStorage pixel_storage;
+  VideoCapturePixelFormat pixel_format;
 };
 
 struct VideoCaptureParams {
@@ -62,8 +85,7 @@ struct VideoCaptureParams {
 struct VideoFrameInfo{
   mojo_base.mojom.TimeDelta timestamp;
   mojo_base.mojom.DictionaryValue metadata;
-  VideoPixelFormat pixel_format;
-  VideoPixelStorage storage_type;
+  VideoCapturePixelFormat pixel_format;
   gfx.mojom.Size coded_size;
   gfx.mojom.Rect visible_rect;
 };
@@ -88,3 +110,14 @@ struct VideoCaptureDeviceInfo {
   VideoCaptureDeviceDescriptor descriptor;
   array<VideoCaptureFormat> supported_formats;
 };
+
+struct MailboxBufferHandleSet {
+  // Size must be kept in sync with media::VideoFrame::kMaxPlanes.
+  array<gpu.mojom.MailboxHolder, 4> mailbox_holder;
+};
+
+union VideoBufferHandle {
+  handle<shared_buffer> shared_buffer_handle;
+  MailboxBufferHandleSet mailbox_handles;
+};
+

@@ -107,9 +107,6 @@ struct CORE_EXPORT PaintInfo {
   bool SkipRootBackground() const {
     return paint_flags_ & kPaintLayerPaintingSkipRootBackground;
   }
-  bool PaintRootBackgroundOnly() const {
-    return paint_flags_ & kPaintLayerPaintingRootBackgroundOnly;
-  }
 
   bool IsPrinting() const { return global_paint_flags_ & kGlobalPaintPrinting; }
 
@@ -154,6 +151,10 @@ struct CORE_EXPORT PaintInfo {
     // No fragment of the current painting object matches the layer fragment,
     // which means the object should not paint in this fragment.
     return nullptr;
+  }
+
+  void SetFragmentLogicalTopInFlowThread(LayoutUnit fragment_logical_top) {
+    fragment_logical_top_in_flow_thread_ = fragment_logical_top;
   }
 
   // FIXME: Introduce setters/getters at some point. Requires a lot of changes

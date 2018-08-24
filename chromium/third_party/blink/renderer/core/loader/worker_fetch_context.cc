@@ -20,6 +20,7 @@
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/timing/worker_global_scope_performance.h"
 #include "third_party/blink/renderer/core/workers/worker_clients.h"
+#include "third_party/blink/renderer/core/workers/worker_content_settings_client.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
 #include "third_party/blink/renderer/platform/exported/wrapped_resource_request.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
@@ -113,14 +114,12 @@ SubresourceFilter* WorkerFetchContext::GetSubresourceFilter() const {
   return subresource_filter_.Get();
 }
 
-bool WorkerFetchContext::AllowScriptFromSource(const KURL&) const {
-  // Currently we don't use WorkerFetchContext for loading scripts. So this
-  // method must not be called.
-  // TODO(horo): When we will use WorkerFetchContext for loading scripts, we
-  // need to have a copy the script rules of RendererContentSettingRules on the
-  // worker thread.
-  NOTREACHED();
-  return false;
+bool WorkerFetchContext::AllowScriptFromSource(const KURL& url) const {
+  WorkerContentSettingsClient* settings_client =
+      WorkerContentSettingsClient::From(*global_scope_);
+  // If we're on a worker, script should be enabled, so no need to plumb
+  // Settings::GetScriptEnabled() here.
+  return !settings_client || settings_client->AllowScriptFromSource(true, url);
 }
 
 bool WorkerFetchContext::ShouldBlockRequestByInspector(const KURL& url) const {
@@ -163,6 +162,11 @@ bool WorkerFetchContext::ShouldBlockWebSocketByMixedContentCheck(
   DCHECK(global_scope_->IsWorkerGlobalScope());
   return !MixedContentChecker::IsWebSocketAllowed(
       ToWorkerGlobalScope(global_scope_), web_context_.get(), url);
+}
+
+std::unique_ptr<WebSocketHandshakeThrottle>
+WorkerFetchContext::CreateWebSocketHandshakeThrottle() {
+  return web_context_->CreateWebSocketHandshakeThrottle();
 }
 
 bool WorkerFetchContext::ShouldBlockFetchByMixedContentCheck(
@@ -215,8 +219,10 @@ const SecurityOrigin* WorkerFetchContext::GetParentSecurityOrigin() const {
   return nullptr;
 }
 
-Optional<mojom::IPAddressSpace> WorkerFetchContext::GetAddressSpace() const {
-  return WTF::make_optional(global_scope_->GetSecurityContext().AddressSpace());
+base::Optional<mojom::IPAddressSpace> WorkerFetchContext::GetAddressSpace()
+    const {
+  return base::make_optional(
+      global_scope_->GetSecurityContext().AddressSpace());
 }
 
 const ContentSecurityPolicy* WorkerFetchContext::GetContentSecurityPolicy()
@@ -342,7 +348,7 @@ void WorkerFetchContext::DispatchDidReceiveEncodedData(
 
 void WorkerFetchContext::DispatchDidFinishLoading(
     unsigned long identifier,
-    double finish_time,
+    TimeTicks finish_time,
     int64_t encoded_data_length,
     int64_t decoded_body_length,
     bool blocked_cross_site_document) {

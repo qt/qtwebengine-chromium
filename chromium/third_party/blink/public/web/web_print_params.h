@@ -51,6 +51,9 @@ struct WebPrintParams {
   // Specifies user selected DPI for printing.
   int printer_dpi;
 
+  // Specifies the scale factor in percent. 100 is 1:1 (default scaling).
+  int scale_factor = 100;
+
   // Specifies whether to print PDFs as image.
   bool rasterize_pdf = false;
 
@@ -61,10 +64,14 @@ struct WebPrintParams {
   // Specifies whether printing layout needs to be applied.
   bool use_printing_layout;
 
+  // Specifies how many pages per sheet. This parameter is for N-up mode.
+  size_t num_pages_per_sheet;
+
   WebPrintParams()
       : printer_dpi(72),
         print_scaling_option(kWebPrintScalingOptionFitToPrintableArea),
-        use_printing_layout(true) {}
+        use_printing_layout(true),
+        num_pages_per_sheet(1) {}
 
   WebPrintParams(const WebSize& paper_size)
       : WebPrintParams(paper_size, true) {}
@@ -75,20 +82,25 @@ struct WebPrintParams {
         paper_size(paper_size),
         printer_dpi(72),
         print_scaling_option(kWebPrintScalingOptionSourceSize),
-        use_printing_layout(use_printing_layout) {}
+        use_printing_layout(use_printing_layout),
+        num_pages_per_sheet(1) {}
 
   WebPrintParams(const WebRect& print_content_area,
                  const WebRect& printable_area,
                  const WebSize& paper_size,
                  int printer_dpi,
+                 int scale_factor,
                  WebPrintScalingOption print_scaling_option,
-                 bool use_printing_layout)
+                 bool use_printing_layout,
+                 int num_pages_per_sheet)
       : print_content_area(print_content_area),
         printable_area(printable_area),
         paper_size(paper_size),
         printer_dpi(printer_dpi),
+        scale_factor(scale_factor),
         print_scaling_option(print_scaling_option),
-        use_printing_layout(use_printing_layout) {}
+        use_printing_layout(use_printing_layout),
+        num_pages_per_sheet(num_pages_per_sheet) {}
 };
 
 }  // namespace blink

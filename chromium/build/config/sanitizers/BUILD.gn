@@ -212,6 +212,9 @@ config("default_sanitizer_ldflags") {
           "-fsanitize=cfi-unrelated-cast",
         ]
       }
+      if (use_cfi_icall) {
+        ldflags += [ "-fsanitize=cfi-icall" ]
+      }
       if (use_cfi_diag) {
         ldflags += [ "-fno-sanitize-trap=cfi" ]
         if (use_cfi_recover) {
@@ -345,11 +348,6 @@ config("cfi_flags") {
     if (!defined(cfi_blacklist_path)) {
       cfi_blacklist_path =
           rebase_path("//tools/cfi/blacklist.txt", root_build_dir)
-      if (is_android) {
-        cflags +=
-            [ "-fsanitize-blacklist=" +
-              rebase_path("//tools/cfi/blacklist_android.txt", root_build_dir) ]
-      }
     }
     cflags += [
       "-fsanitize=cfi-vcall",
@@ -466,6 +464,7 @@ config("ubsan_flags") {
       "-fsanitize=integer-divide-by-zero",
       "-fsanitize=null",
       "-fsanitize=object-size",
+      "-fsanitize=pointer-overflow",
       "-fsanitize=return",
       "-fsanitize=returns-nonnull-attribute",
       "-fsanitize=shift-exponent",
@@ -507,7 +506,12 @@ config("ubsan_security_flags") {
           rebase_path("//tools/ubsan/security_blacklist.txt", root_build_dir)
     }
     cflags = [
-      "-fsanitize=signed-integer-overflow,shift,vptr,function,vla-bound",
+      "-fsanitize=function",
+      "-fsanitize=pointer-overflow",
+      "-fsanitize=shift",
+      "-fsanitize=signed-integer-overflow",
+      "-fsanitize=vla-bound",
+      "-fsanitize=vptr",
       "-fsanitize-blacklist=$ubsan_security_blacklist_path",
     ]
   }

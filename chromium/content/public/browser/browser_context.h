@@ -29,7 +29,6 @@ class GURL;
 
 namespace base {
 class FilePath;
-class Time;
 }
 
 namespace service_manager {
@@ -135,20 +134,14 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   using BlobContextGetter =
       base::RepeatingCallback<base::WeakPtr<storage::BlobStorageContext>()>;
 
-  // |callback| returns a nullptr scoped_ptr on failure.
+  // This method should be called on UI thread and calls back on UI thread
+  // as well. Note that retrieving a blob ptr out of BlobHandle can only be
+  // done on IO. |callback| returns a nullptr on failure.
   static void CreateMemoryBackedBlob(BrowserContext* browser_context,
                                      const char* data,
                                      size_t length,
                                      const std::string& content_type,
                                      BlobCallback callback);
-
-  // |callback| returns a nullptr scoped_ptr on failure.
-  static void CreateFileBackedBlob(BrowserContext* browser_context,
-                                   const base::FilePath& path,
-                                   int64_t offset,
-                                   int64_t size,
-                                   const base::Time& expected_modification_time,
-                                   BlobCallback callback);
 
   // Get a BlobStorageContext getter that needs to run on IO thread.
   static BlobContextGetter GetBlobStorageContext(
@@ -301,6 +294,9 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // by the Service Manager.
   virtual void RegisterInProcessServices(StaticServiceMap* services) {}
 
+  // Returns a unique string associated with this browser context.
+  virtual const std::string& UniqueId() const;
+
   // Returns a random salt string that is used for creating media device IDs.
   // Returns a random string by default.
   virtual std::string GetMediaDeviceIDSalt();
@@ -317,7 +313,7 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   virtual media::VideoDecodePerfHistory* GetVideoDecodePerfHistory();
 
  private:
-  const std::string media_device_id_salt_;
+  const std::string unique_id_;
   bool was_notify_will_be_destroyed_called_ = false;
 };
 

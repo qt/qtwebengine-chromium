@@ -42,6 +42,7 @@ source_set("tests") {
 
   sources = [
     "metrics_utils_unittest.cc",
+    "ukm_source_id_unittest.cc",
   ]
 
   deps = [
@@ -57,6 +58,7 @@ action("gen_ukm_builders") {
   # Re-generate the outputs if the codegen code changes:
   inputs = [
     "//tools/metrics/ukm/builders_template.py",
+    "//tools/metrics/ukm/decode_template.py",
     "//tools/metrics/ukm/codegen.py",
     "//tools/metrics/ukm/gen_builders.py",
   ]

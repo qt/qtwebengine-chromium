@@ -9,14 +9,18 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/optional.h"
+#include "base/time/tick_clock.h"
 #include "third_party/blink/renderer/platform/scheduler/base/real_time_domain.h"
+#include "third_party/blink/renderer/platform/scheduler/common/thread_scheduler_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/common/throttling/budget_pool.h"
 #include "third_party/blink/renderer/platform/scheduler/common/throttling/throttled_time_domain.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/frame_scheduler_impl.h"
-#include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.h"
 
 namespace blink {
 namespace scheduler {
+
+using base::sequence_manager::LazyNow;
+using base::sequence_manager::TaskQueue;
 
 namespace {
 
@@ -63,12 +67,12 @@ base::Optional<T> Max(const base::Optional<T>& a, const base::Optional<T>& b) {
 }  // namespace
 
 TaskQueueThrottler::TaskQueueThrottler(
-    MainThreadSchedulerImpl* main_thread_scheduler,
+    ThreadSchedulerImpl* thread_scheduler,
     TraceableVariableController* tracing_controller)
-    : control_task_queue_(main_thread_scheduler->ControlTaskQueue()),
-      main_thread_scheduler_(main_thread_scheduler),
+    : control_task_runner_(thread_scheduler->ControlTaskRunner()),
+      thread_scheduler_(thread_scheduler),
       tracing_controller_(tracing_controller),
-      tick_clock_(main_thread_scheduler->tick_clock()),
+      tick_clock_(thread_scheduler->GetTickClock()),
       time_domain_(new ThrottledTimeDomain()),
       allow_throttling_(true),
       weak_factory_(this) {
@@ -78,7 +82,7 @@ TaskQueueThrottler::TaskQueueThrottler(
       base::BindRepeating(&TaskQueueThrottler::OnQueueNextWakeUpChanged,
                           weak_factory_.GetWeakPtr());
 
-  main_thread_scheduler_->RegisterTimeDomain(time_domain_.get());
+  thread_scheduler_->RegisterTimeDomain(time_domain_.get());
 }
 
 TaskQueueThrottler::~TaskQueueThrottler() {
@@ -87,18 +91,18 @@ TaskQueueThrottler::~TaskQueueThrottler() {
   for (const TaskQueueMap::value_type& map_entry : queue_details_) {
     TaskQueue* task_queue = map_entry.first;
     if (IsThrottled(task_queue)) {
-      task_queue->SetTimeDomain(main_thread_scheduler_->GetActiveTimeDomain());
+      task_queue->SetTimeDomain(thread_scheduler_->GetActiveTimeDomain());
       task_queue->RemoveFence();
     }
     if (map_entry.second.throttling_ref_count != 0)
       task_queue->SetObserver(nullptr);
   }
 
-  main_thread_scheduler_->UnregisterTimeDomain(time_domain_.get());
+  thread_scheduler_->UnregisterTimeDomain(time_domain_.get());
 }
 
 void TaskQueueThrottler::IncreaseThrottleRefCount(TaskQueue* task_queue) {
-  DCHECK_NE(task_queue, control_task_queue_.get());
+  DCHECK_NE(task_queue, control_task_runner_.get());
 
   std::pair<TaskQueueMap::iterator, bool> insert_result =
       queue_details_.insert(std::make_pair(task_queue, Metadata()));
@@ -151,7 +155,7 @@ void TaskQueueThrottler::DecreaseThrottleRefCount(TaskQueue* task_queue) {
   if (!allow_throttling_)
     return;
 
-  task_queue->SetTimeDomain(main_thread_scheduler_->GetActiveTimeDomain());
+  task_queue->SetTimeDomain(thread_scheduler_->GetActiveTimeDomain());
   task_queue->RemoveFence();
 }
 
@@ -172,7 +176,7 @@ void TaskQueueThrottler::ShutdownTaskQueue(TaskQueue* task_queue) {
 
   // Reset a time domain reference to a valid domain, otherwise it's possible
   // to get a stale reference when deleting queue.
-  task_queue->SetTimeDomain(main_thread_scheduler_->GetActiveTimeDomain());
+  task_queue->SetTimeDomain(thread_scheduler_->GetActiveTimeDomain());
   task_queue->RemoveFence();
 
   std::unordered_set<BudgetPool*> budget_pools = find_it->second.budget_pools;
@@ -190,8 +194,8 @@ void TaskQueueThrottler::ShutdownTaskQueue(TaskQueue* task_queue) {
 void TaskQueueThrottler::OnQueueNextWakeUpChanged(
     TaskQueue* queue,
     base::TimeTicks next_wake_up) {
-  if (!control_task_queue_->RunsTasksInCurrentSequence()) {
-    control_task_queue_->PostTask(
+  if (!control_task_runner_->RunsTasksInCurrentSequence()) {
+    control_task_runner_->PostTask(
         FROM_HERE, base::BindOnce(forward_immediate_work_callback_,
                                   base::RetainedRef(queue), next_wake_up));
     return;
@@ -276,7 +280,7 @@ void TaskQueueThrottler::MaybeSchedulePumpThrottledTasks(
   TRACE_EVENT1("renderer.scheduler",
                "TaskQueueThrottler::MaybeSchedulePumpThrottledTasks",
                "delay_till_next_pump_ms", delay.InMilliseconds());
-  control_task_queue_->PostDelayedTask(
+  control_task_runner_->PostDelayedTask(
       from_here, pump_throttled_tasks_closure_.GetCallback(), delay);
 }
 
@@ -332,7 +336,7 @@ void TaskQueueThrottler::UpdateQueueThrottlingStateInternal(base::TimeTicks now,
     base::Optional<base::TimeTicks> unblock_until =
         GetTimeTasksCanRunUntil(queue, now, is_wake_up);
     DCHECK(unblock_until);
-    if (!unblock_until || unblock_until.value() > now) {
+    if (unblock_until.value() > now) {
       queue->InsertFenceAt(unblock_until.value());
     } else if (unblock_until.value() == now) {
       queue->InsertFence(TaskQueue::InsertFencePosition::kNow);
@@ -540,7 +544,7 @@ void TaskQueueThrottler::DisableThrottling() {
 
     TaskQueue* queue = map_entry.first;
 
-    queue->SetTimeDomain(main_thread_scheduler_->GetActiveTimeDomain());
+    queue->SetTimeDomain(thread_scheduler_->GetActiveTimeDomain());
     queue->RemoveFence();
   }
 

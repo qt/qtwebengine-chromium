@@ -93,6 +93,29 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
   void DeleteNavigationEntries(
       const DeletionPredicate& deletionPredicate) override;
 
+  // Starts a navigation in a newly created subframe as part of a history
+  // navigation. Returns true if the history navigation could start, false
+  // otherwise.  If this returns false, the caller should do a regular
+  // navigation to |default_url| should be done instead.
+  bool StartHistoryNavigationInNewSubframe(
+      RenderFrameHostImpl* render_frame_host,
+      const GURL& default_url);
+
+  // Called when a document requests a navigation through a
+  // RenderFrameProxyHost.
+  void NavigateFromFrameProxy(
+      RenderFrameHostImpl* render_frame_host,
+      const GURL& url,
+      bool is_renderer_initiated,
+      SiteInstance* source_site_instance,
+      const Referrer& referrer,
+      ui::PageTransition page_transition,
+      bool should_replace_current_entry,
+      const std::string& method,
+      scoped_refptr<network::ResourceRequestBody> post_body,
+      const std::string& extra_headers,
+      scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory);
+
   void ClearAllScreenshots() override;
 
   // Whether this is the initial navigation in an unmodified new tab.  In this
@@ -138,7 +161,7 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
       RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
       LoadCommittedDetails* details,
-      bool is_navigation_within_page,
+      bool is_same_document_navigation,
       NavigationHandleImpl* navigation_handle);
 
   // Notifies us that we just became active. This is used by the WebContentsImpl

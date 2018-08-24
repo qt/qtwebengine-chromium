@@ -34,6 +34,10 @@ namespace history {
 class HistoryService;
 }
 
+namespace policy {
+class BrowserPolicyConnector;
+}
+
 class GURL;
 class HostContentSettingsMap;
 
@@ -79,6 +83,11 @@ class PasswordProtectionService : public history::HistoryServiceObserver {
     MATCHED_ENTERPRISE_WHITELIST = 15,
     MATCHED_ENTERPRISE_CHANGE_PASSWORD_URL = 16,
     MATCHED_ENTERPRISE_LOGIN_URL = 17,
+    // No request is ever sent if the admin configures password protection to
+    // warn on ALL password reuses (rather than just phishing sites).
+    PASSWORD_ALERT_MODE = 18,
+    // No request is event sent if the admin turns off password protection.
+    TURNED_OFF_BY_ADMIN = 19,
     MAX_OUTCOME
   };
 
@@ -110,7 +119,7 @@ class PasswordProtectionService : public history::HistoryServiceObserver {
     PAGE_INFO = 1,
     MODAL_DIALOG = 2,
     CHROME_SETTINGS = 3,
-    MAX_UI_TYPE
+    INTERSTITIAL = 4
   };
 
   PasswordProtectionService(
@@ -198,13 +207,13 @@ class PasswordProtectionService : public history::HistoryServiceObserver {
   virtual void ShowModalWarning(content::WebContents* web_contents,
                                 const std::string& verdict_token) = 0;
 
+  // Shows chrome://reset-password interstitial.
+  virtual void ShowInterstitial(content::WebContents* web_contens) = 0;
+
   // Called when user interacts with warning UIs.
   virtual void OnUserAction(content::WebContents* web_contents,
                             WarningUIType ui_type,
                             WarningAction action) = 0;
-
-  // If we want to show softer warnings based on Finch parameters.
-  static bool ShouldShowSofterWarning();
 
   virtual void UpdateSecurityState(safe_browsing::SBThreatType threat_type,
                                    content::WebContents* web_contents) = 0;
@@ -231,9 +240,9 @@ class PasswordProtectionService : public history::HistoryServiceObserver {
   // Returns if the event logging is enabled.
   bool IsEventLoggingEnabled();
 
-  // Returns the pref value of password protection trigger.
-  virtual PasswordProtectionTrigger GetPasswordProtectionTriggerPref(
-      const std::string& pref_name) const = 0;
+  // Returns the pref value of password protection warning trigger.
+  virtual PasswordProtectionTrigger GetPasswordProtectionWarningTriggerPref()
+      const = 0;
 
   // If |url| matches Safe Browsing whitelist domains, password protection
   // change password URL, or password protection login URLs in the enterprise
@@ -242,16 +251,27 @@ class PasswordProtectionService : public history::HistoryServiceObserver {
       const GURL& url,
       RequestOutcome* reason) const = 0;
 
+  // Called when password reuse warning or phishing reuse warning is shown.
+  // Must be called on UI thread.
+  virtual void OnPolicySpecifiedPasswordReuseDetected(const GURL& url,
+                                                      bool is_phishing_url) = 0;
+
+  // Called when a protected password change is detected. Must be called on
+  // UI thread.
+  virtual void OnPolicySpecifiedPasswordChanged() = 0;
+
  protected:
   friend class PasswordProtectionRequest;
 
   // Chrome can send password protection ping if it is allowed by Finch config
   // and if Safe Browsing can compute reputation of |main_frame_url| (e.g.
   // Safe Browsing is not able to compute reputation of a private IP or
-  // a local host). |matches_sync_password| is used for UMA metric recording.
+  // a local host). Update |reason| if sending ping is not allowed.
+  // |matches_sync_password| is used for UMA metric recording.
   bool CanSendPing(LoginReputationClientRequest::TriggerType trigger_type,
                    const GURL& main_frame_url,
-                   bool matches_sync_password);
+                   bool matches_sync_password,
+                   RequestOutcome* reason);
 
   // Called by a PasswordProtectionRequest instance when it finishes to remove
   // itself from |requests_|.
@@ -268,6 +288,10 @@ class PasswordProtectionService : public history::HistoryServiceObserver {
   // for this profile. This counts both expired and active verdicts.
   virtual int GetStoredVerdictCount(
       LoginReputationClientRequest::TriggerType trigger_type);
+
+  // Gets an unowned |BrowserPolicyConnector| for the current platform.
+  virtual const policy::BrowserPolicyConnector* GetBrowserPolicyConnector()
+      const = 0;
 
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory() {
     return url_loader_factory_;
@@ -338,10 +362,7 @@ class PasswordProtectionService : public history::HistoryServiceObserver {
 
   // Overridden from history::HistoryServiceObserver.
   void OnURLsDeleted(history::HistoryService* history_service,
-                     bool all_history,
-                     bool expired,
-                     const history::URLRows& deleted_rows,
-                     const std::set<GURL>& favicon_urls) override;
+                     const history::DeletionInfo& deletion_info) override;
 
   void HistoryServiceBeingDeleted(
       history::HistoryService* history_service) override;

@@ -147,6 +147,10 @@ bool CXFA_FFWidgetHandler::OnChar(CXFA_FFWidget* hWidget,
   return bRet;
 }
 
+WideString CXFA_FFWidgetHandler::GetText(CXFA_FFWidget* widget) {
+  return widget->GetText();
+}
+
 WideString CXFA_FFWidgetHandler::GetSelectedText(CXFA_FFWidget* widget) {
   if (!widget->CanCopy())
     return WideString();
@@ -160,6 +164,22 @@ void CXFA_FFWidgetHandler::PasteText(CXFA_FFWidget* widget,
     return;
 
   widget->Paste(text);
+}
+
+bool CXFA_FFWidgetHandler::CanUndo(CXFA_FFWidget* widget) {
+  return widget->CanUndo();
+}
+
+bool CXFA_FFWidgetHandler::CanRedo(CXFA_FFWidget* widget) {
+  return widget->CanRedo();
+}
+
+bool CXFA_FFWidgetHandler::Undo(CXFA_FFWidget* widget) {
+  return widget->Undo();
+}
+
+bool CXFA_FFWidgetHandler::Redo(CXFA_FFWidget* widget) {
+  return widget->Redo();
 }
 
 FWL_WidgetHit CXFA_FFWidgetHandler::OnHitTest(CXFA_FFWidget* hWidget,

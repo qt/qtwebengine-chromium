@@ -1356,11 +1356,6 @@ MaybeHandle<JSFunction> Compiler::GetFunctionFromEval(
     }
   }
 
-  // OnAfterCompile has to be called after we create the JSFunction, which we
-  // may require to recompile the eval for debugging, if we find a function
-  // that contains break points in the eval script.
-  isolate->debug()->OnAfterCompile(script);
-
   return result;
 }
 
@@ -1402,7 +1397,8 @@ MaybeHandle<JSFunction> Compiler::GetFunctionFromString(
   // Compile source string in the native context.
   int eval_scope_position = 0;
   int eval_position = kNoSourcePosition;
-  Handle<SharedFunctionInfo> outer_info(native_context->closure()->shared());
+  Handle<SharedFunctionInfo> outer_info(
+      native_context->empty_function()->shared());
   return Compiler::GetFunctionFromEval(
       source, outer_info, native_context, LanguageMode::kSloppy, restriction,
       parameters_end_pos, eval_scope_position, eval_position);
@@ -1731,12 +1727,6 @@ MaybeHandle<SharedFunctionInfo> Compiler::GetSharedFunctionInfoForScript(
     }
   }
 
-  // On success, report script compilation to debugger.
-  Handle<SharedFunctionInfo> result;
-  if (maybe_result.ToHandle(&result)) {
-    isolate->debug()->OnAfterCompile(handle(Script::cast(result->script())));
-  }
-
   return maybe_result;
 }
 
@@ -1815,14 +1805,8 @@ MaybeHandle<JSFunction> Compiler::GetWrappedFunction(
     script = Handle<Script>(Script::cast(wrapped->script()), isolate);
   }
 
-  Handle<JSFunction> function =
-      isolate->factory()->NewFunctionFromSharedFunctionInfo(wrapped, context,
+  return isolate->factory()->NewFunctionFromSharedFunctionInfo(wrapped, context,
                                                             NOT_TENURED);
-  // OnAfterCompile has to be called after we create the JSFunction, which we
-  // may require to recompile the eval for debugging, if we find a function
-  // that contains break points in the eval script.
-  isolate->debug()->OnAfterCompile(script);
-  return function;
 }
 
 ScriptCompiler::ScriptStreamingTask* Compiler::NewBackgroundCompileTask(
@@ -1890,12 +1874,6 @@ Compiler::GetSharedFunctionInfoForStreamedScript(
       compilation_cache->PutScript(source, isolate->native_context(),
                                    parse_info->language_mode(), result);
     }
-  }
-
-  // On success, report script compilation to debugger.
-  Handle<SharedFunctionInfo> result;
-  if (maybe_result.ToHandle(&result)) {
-    isolate->debug()->OnAfterCompile(handle(Script::cast(result->script())));
   }
 
   streaming_data->Release();
@@ -1979,6 +1957,12 @@ void Compiler::PostInstantiation(Handle<JSFunction> function,
       DCHECK(function->shared()->is_compiled());
       function->set_code(code);
     }
+  }
+
+  if (shared->is_toplevel() || shared->is_wrapped()) {
+    // If it's a top-level script, report compilation to the debugger.
+    Handle<Script> script(handle(Script::cast(shared->script())));
+    script->GetIsolate()->debug()->OnAfterCompile(script);
   }
 }
 

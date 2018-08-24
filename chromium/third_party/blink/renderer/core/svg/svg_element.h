@@ -42,6 +42,7 @@ class SVGAnimatedString;
 class SVGElement;
 class SVGElementRareData;
 class SVGPropertyBase;
+class SVGResourceClient;
 class SVGSVGElement;
 class SVGUseElement;
 
@@ -177,6 +178,9 @@ class CORE_EXPORT SVGElement : public Element {
   void RemoveAllIncomingReferences();
   void RemoveAllOutgoingReferences();
 
+  SVGResourceClient* GetSVGResourceClient();
+  SVGResourceClient& EnsureSVGResourceClient();
+
   class InvalidationGuard {
     STACK_ALLOCATED();
 
@@ -205,7 +209,7 @@ class CORE_EXPORT SVGElement : public Element {
   void SetNeedsStyleRecalcForInstances(StyleChangeType,
                                        const StyleChangeReasonForTracing&);
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
   static const AtomicString& EventParameterName();
 

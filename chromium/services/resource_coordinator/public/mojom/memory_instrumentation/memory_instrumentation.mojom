@@ -102,6 +102,9 @@ struct VmRegion {
   uint64 start_address;
   uint64 size_in_bytes;
   uint64 module_timestamp;
+  // Unique module debug identifier to retrieve debug information.
+  string module_debugid;
+  string module_debug_path;
   uint32 protection_flags;
 
   string mapped_file;
@@ -285,7 +288,8 @@ interface Coordinator {
 
   // Sends a dump request to the client process given by the specified pid and
   // returns a summarized dump back or null if there was a failure.
-  RequestGlobalMemoryDumpForPid(mojo_base.mojom.ProcessId pid) =>
+  RequestGlobalMemoryDumpForPid(mojo_base.mojom.ProcessId pid,
+                                array<string> allocator_dump_names) =>
       (bool success, GlobalMemoryDump? global_memory_dump);
 
   // Broadcasts a dump request to all registered client processes and injects the

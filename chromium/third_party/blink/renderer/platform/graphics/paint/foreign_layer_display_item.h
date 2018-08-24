@@ -16,7 +16,6 @@ class Layer;
 namespace blink {
 
 class GraphicsContext;
-class WebLayer;
 
 // Represents foreign content (produced outside Blink) which draws to a layer.
 // A client supplies a layer which can be unwrapped and inserted into the full
@@ -31,7 +30,7 @@ class PLATFORM_EXPORT ForeignLayerDisplayItem final : public DisplayItem {
                           scoped_refptr<cc::Layer>,
                           const FloatPoint& location,
                           const IntSize& bounds);
-  ~ForeignLayerDisplayItem();
+  ~ForeignLayerDisplayItem() override;
 
   cc::Layer* GetLayer() const { return layer_.get(); }
   const FloatPoint& Location() const { return location_; }
@@ -39,8 +38,8 @@ class PLATFORM_EXPORT ForeignLayerDisplayItem final : public DisplayItem {
 
   // DisplayItem
   void Replay(GraphicsContext&) const override;
-  void AppendToWebDisplayItemList(const FloatSize&,
-                                  WebDisplayItemList*) const override;
+  void AppendToDisplayItemList(const FloatSize&,
+                               cc::DisplayItemList&) const override;
   bool DrawsContent() const override;
   bool Equals(const DisplayItem&) const override;
 #if DCHECK_IS_ON()
@@ -58,7 +57,7 @@ class PLATFORM_EXPORT ForeignLayerDisplayItem final : public DisplayItem {
 PLATFORM_EXPORT void RecordForeignLayer(GraphicsContext&,
                                         const DisplayItemClient&,
                                         DisplayItem::Type,
-                                        WebLayer*,
+                                        scoped_refptr<cc::Layer>,
                                         const FloatPoint& location,
                                         const IntSize& bounds);
 

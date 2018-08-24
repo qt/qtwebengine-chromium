@@ -36,13 +36,12 @@ namespace content {
 PepperPlatformAudioOutputDev* PepperPlatformAudioOutputDev::Create(
     int render_frame_id,
     const std::string& device_id,
-    const GURL& document_url,
     int sample_rate,
     int frames_per_buffer,
     PepperAudioOutputHost* client) {
   scoped_refptr<PepperPlatformAudioOutputDev> audio_output(
       new PepperPlatformAudioOutputDev(
-          render_frame_id, device_id, document_url,
+          render_frame_id, device_id,
           // Set authorization request timeout at 80% of renderer hung timeout,
           // but no more than kMaxAuthorizationTimeout.
           base::TimeDelta::FromMilliseconds(std::min(
@@ -182,7 +181,8 @@ void PepperPlatformAudioOutputDev::OnDeviceAuthorized(
 
 void PepperPlatformAudioOutputDev::OnStreamCreated(
     base::SharedMemoryHandle handle,
-    base::SyncSocket::Handle socket_handle) {
+    base::SyncSocket::Handle socket_handle,
+    bool playing_automatically) {
   DCHECK(handle.IsValid());
 #if defined(OS_WIN)
   DCHECK(socket_handle);
@@ -208,7 +208,7 @@ void PepperPlatformAudioOutputDev::OnStreamCreated(
     main_task_runner_->PostTask(
         FROM_HERE,
         base::BindOnce(&PepperPlatformAudioOutputDev::OnStreamCreated, this,
-                       handle, socket_handle));
+                       handle, socket_handle, playing_automatically));
   }
 }
 
@@ -231,7 +231,6 @@ PepperPlatformAudioOutputDev::~PepperPlatformAudioOutputDev() {
 PepperPlatformAudioOutputDev::PepperPlatformAudioOutputDev(
     int render_frame_id,
     const std::string& device_id,
-    const GURL& document_url,
     base::TimeDelta authorization_timeout)
     : client_(nullptr),
       main_task_runner_(base::ThreadTaskRunnerHandle::Get()),
@@ -242,7 +241,6 @@ PepperPlatformAudioOutputDev::PepperPlatformAudioOutputDev(
       play_on_start_(false),
       session_id_(0),
       device_id_(device_id),
-      security_origin_(url::Origin::Create(document_url)),
       did_receive_auth_(base::WaitableEvent::ResetPolicy::MANUAL,
                         base::WaitableEvent::InitialState::NOT_SIGNALED),
       device_status_(media::OUTPUT_DEVICE_STATUS_ERROR_INTERNAL),
@@ -264,8 +262,7 @@ bool PepperPlatformAudioOutputDev::Initialize(int sample_rate,
   CHECK(ipc_);
 
   params_.Reset(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                media::CHANNEL_LAYOUT_STEREO, sample_rate,
-                ppapi::kBitsPerAudioOutputSample, frames_per_buffer);
+                media::CHANNEL_LAYOUT_STEREO, sample_rate, frames_per_buffer);
 
   io_task_runner_->PostTask(
       FROM_HERE,
@@ -283,8 +280,7 @@ void PepperPlatformAudioOutputDev::RequestDeviceAuthorizationOnIOThread() {
     return;
 
   state_ = AUTHORIZING;
-  ipc_->RequestDeviceAuthorization(this, session_id_, device_id_,
-                                   security_origin_);
+  ipc_->RequestDeviceAuthorization(this, session_id_, device_id_);
 
   if (auth_timeout_ > base::TimeDelta()) {
     // Create the timer on the thread it's used on. It's guaranteed to be
@@ -311,8 +307,7 @@ void PepperPlatformAudioOutputDev::CreateStreamOnIOThread(
       break;
 
     case IDLE:
-      if (did_receive_auth_.IsSignaled() && device_id_.empty() &&
-          security_origin_.unique()) {
+      if (did_receive_auth_.IsSignaled() && device_id_.empty()) {
         state_ = CREATING_STREAM;
         ipc_->CreateStream(this, params);
       } else {

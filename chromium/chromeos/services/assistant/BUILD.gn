@@ -28,7 +28,8 @@ source_set("lib") {
     "//chromeos",
     "//chromeos/assistant:buildflags",
     "//chromeos/services/assistant/public/mojom",
-    "//components/signin/core/account_id",
+    "//components/account_id",
+    "//services/device/public/mojom",
     "//services/identity/public/mojom",
   ]
 
@@ -54,23 +55,27 @@ source_set("lib") {
       "platform/system_provider_impl.h",
       "platform_api_impl.cc",
       "platform_api_impl.h",
+      "utils.cc",
+      "utils.h",
     ]
 
     deps += [
       "//chromeos/assistant/internal/action",
       "//libassistant/contrib/core",
       "//libassistant/contrib/platform/audio",
-      "//libassistant/contrib/platform/auth",
-      "//libassistant/contrib/platform/file",
       "//libassistant/contrib/platform/net",
       "//libassistant/contrib/platform/resources",
-      "//libassistant/contrib/platform/system",
-      "//libassistant/internal/assistant/controller:libassistant",
       "//libassistant/shared/internal_api/c:api_wrappers_for_caller_no_chromium",
       "//libassistant/shared/proto:assistant_proto",
       "//libassistant/shared/public",
       "//libassistant/shared/public:export",
     ]
+
+    if (enable_cros_libassistant_so) {
+      deps += [ "//libassistant/internal/assistant/controller:libassistant" ]
+    } else {
+      libs = [ "assistant" ]
+    }
 
     include_dirs = [
       "//libassistant/contrib",
@@ -115,4 +120,17 @@ service_manifest("unittest_manifest") {
 catalog("tests_catalog") {
   testonly = true
   embedded_services = [ ":unittest_manifest" ]
+}
+
+static_library("test_support") {
+  testonly = true
+  sources = [
+    "test_support/mock_assistant.cc",
+    "test_support/mock_assistant.h",
+  ]
+  deps = [
+    "//base",
+    "//chromeos/services/assistant/public/mojom",
+    "//testing/gmock",
+  ]
 }

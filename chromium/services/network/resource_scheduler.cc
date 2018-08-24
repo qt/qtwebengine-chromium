@@ -29,6 +29,7 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "services/network/public/cpp/features.h"
+#include "services/network/resource_scheduler_params_manager.h"
 #include "url/scheme_host_port.h"
 
 namespace network {
@@ -67,17 +68,6 @@ const char kMaxRequestsBeforeYieldingParam[] = "MaxRequestsBeforeYieldingParam";
 const int kMaxRequestsBeforeYieldingDefault = 5;
 const char kYieldMsParam[] = "MaxYieldMs";
 const int kYieldMsDefault = 0;
-
-// Based on the field trial parameters, this feature will override the value of
-// the maximum number of delayable requests allowed in flight. The number of
-// delayable requests allowed in flight will be based on the network's
-// effective connection type ranges and the
-// corresponding number of delayable requests in flight specified in the
-// experiment configuration. Based on field trial parameters, this experiment
-// may also throttle delayable requests based on the number of non-delayable
-// requests in-flight times a weighting factor.
-const base::Feature kThrottleDelayable{"ThrottleDelayable",
-                                       base::FEATURE_ENABLED_BY_DEFAULT};
 
 enum StartMode { START_SYNC, START_ASYNC };
 
@@ -126,12 +116,9 @@ const char* RequestStartTriggerString(RequestStartTrigger trigger) {
 
 }  // namespace
 
-// The maximum number of delayable requests to allow to be in-flight at any
-// point in time (across all hosts).
-static const size_t kDefaultMaxNumDelayableRequestsPerClient = 10;
-
 // The maximum number of requests to allow be in-flight at any point in time per
-// host.
+// host. This limit does not apply to hosts that support request prioritization
+// when |delay_requests_on_multiplexed_connections| is true.
 static const size_t kMaxNumDelayableRequestsPerHostPerClient = 6;
 
 // The maximum number of delayable requests to allow to be in-flight at any
@@ -363,7 +350,7 @@ class ResourceScheduler::ScheduledResourceRequestImpl
 
   // Maximum number of delayable requests in-flight when |this| was in-flight.
   size_t peak_delayable_requests_in_flight_;
-  // Cached to excessive recomputation in ShouldKeepSearching.
+  // Cached to excessive recomputation in ReachedMaxRequestsPerHostPerClient().
   const net::HostPortPair host_port_pair_;
 
   base::WeakPtrFactory<ResourceScheduler::ScheduledResourceRequestImpl>
@@ -415,17 +402,21 @@ class ResourceScheduler::Client {
         started_requests_since_yielding_(0),
         did_scheduler_yield_(false),
         network_quality_estimator_(network_quality_estimator),
-        max_delayable_requests_(
-            resource_scheduler->throttle_delayable_
-                .GetParamsForNetworkQuality(network_quality_estimator)
-                .max_delayable_requests),
         resource_scheduler_(resource_scheduler),
         weak_ptr_factory_(this) {
+    UpdateParamsForNetworkQuality();
     if (IsRendererSideResourceSchedulerEnabled()) {
       // In this case, "layout blocking" concept is moved to the renderer side,
       // so the shceduler works always with the normal mode.
       deprecated_has_html_body_ = true;
     }
+    // Must not run the conflicting experiments together.
+    DCHECK(!params_for_network_quality_
+                .delay_requests_on_multiplexed_connections ||
+           !resource_scheduler->priority_requests_delayable());
+    DCHECK(!params_for_network_quality_
+                .delay_requests_on_multiplexed_connections ||
+           !resource_scheduler->head_priority_requests_delayable());
   }
 
   ~Client() {}
@@ -498,10 +489,7 @@ class ResourceScheduler::Client {
     }
 
     deprecated_is_loaded_ = false;
-    max_delayable_requests_ =
-        resource_scheduler_->throttle_delayable_
-            .GetParamsForNetworkQuality(network_quality_estimator_)
-            .max_delayable_requests;
+    UpdateParamsForNetworkQuality();
   }
 
   void DeprecatedOnWillInsertBody() {
@@ -554,6 +542,16 @@ class ResourceScheduler::Client {
     START_REQUEST,
     YIELD_SCHEDULER
   };
+
+  // Updates the params based on the current network quality estimate.
+  void UpdateParamsForNetworkQuality() {
+    params_for_network_quality_ =
+        resource_scheduler_->resource_scheduler_params_manager_
+            ->GetParamsForEffectiveConnectionType(
+                network_quality_estimator_
+                    ? network_quality_estimator_->GetEffectiveConnectionType()
+                    : net::EFFECTIVE_CONNECTION_TYPE_UNKNOWN);
+  }
 
   // Records the metrics related to number of requests in flight.
   void RecordRequestCountMetrics() const {
@@ -689,7 +687,9 @@ class ResourceScheduler::Client {
                kDelayablePriorityThreshold) {
       if (resource_scheduler_->priority_requests_delayable() ||
           (resource_scheduler_->head_priority_requests_delayable() &&
-           !deprecated_has_html_body_)) {
+           !deprecated_has_html_body_) ||
+          params_for_network_quality_
+              .delay_requests_on_multiplexed_connections) {
         // Resources below the delayable priority threshold that are considered
         // delayable.
         attributes |= kAttributeDelayable;
@@ -708,7 +708,29 @@ class ResourceScheduler::Client {
     return attributes;
   }
 
-  bool ShouldKeepSearching(const net::HostPortPair& active_request_host) const {
+  bool ReachedMaxRequestsPerHostPerClient(
+      const net::HostPortPair& active_request_host,
+      bool supports_priority) const {
+    // This method should not be called for requests to origins that support
+    // prioritization (aka multiplexing) unless one of the experiments to
+    // throttle priority requests is enabled.
+    DCHECK(
+        !supports_priority ||
+        params_for_network_quality_.delay_requests_on_multiplexed_connections ||
+        resource_scheduler_->priority_requests_delayable() ||
+        resource_scheduler_->head_priority_requests_delayable());
+
+    // kMaxNumDelayableRequestsPerHostPerClient limit does not apply to servers
+    // that support request priorities when
+    // |delay_requests_on_multiplexed_connections| is true. If
+    // |delay_requests_on_multiplexed_connections| is false, then
+    // kMaxNumDelayableRequestsPerHostPerClient limit still applies to other
+    // experiments that delay priority requests.
+    if (supports_priority &&
+        params_for_network_quality_.delay_requests_on_multiplexed_connections) {
+      return false;
+    }
+
     size_t same_host_count = 0;
     for (RequestSet::const_iterator it = in_flight_requests_.begin();
          it != in_flight_requests_.end(); ++it) {
@@ -813,20 +835,22 @@ class ResourceScheduler::Client {
     bool priority_delayable =
         resource_scheduler_->priority_requests_delayable() ||
         (resource_scheduler_->head_priority_requests_delayable() &&
-         !deprecated_has_html_body_);
+         !deprecated_has_html_body_) ||
+        params_for_network_quality_.delay_requests_on_multiplexed_connections;
+
+    url::SchemeHostPort scheme_host_port(url_request.url());
+    bool supports_priority = url_request.context()
+                                 ->http_server_properties()
+                                 ->SupportsRequestPriority(scheme_host_port);
 
     if (!priority_delayable) {
       if (using_spdy_proxy_ && url_request.url().SchemeIs(url::kHttpScheme))
         return ShouldStartOrYieldRequest(request);
 
-      url::SchemeHostPort scheme_host_port(url_request.url());
-
-      net::HttpServerProperties& http_server_properties =
-          *url_request.context()->http_server_properties();
       // TODO(willchan): We should really improve this algorithm as described in
       // https://crbug.com/164101. Also, theoretically we should not count a
       // request-priority capable request against the delayable requests limit.
-      if (http_server_properties.SupportsRequestPriority(scheme_host_port))
+      if (supports_priority)
         return ShouldStartOrYieldRequest(request);
     }
 
@@ -837,16 +861,14 @@ class ResourceScheduler::Client {
     // Delayable requests.
     DCHECK_GE(in_flight_requests_.size(), in_flight_delayable_count_);
     size_t num_non_delayable_requests_weighted = static_cast<size_t>(
-        resource_scheduler_->throttle_delayable_
-            .GetParamsForNetworkQuality(network_quality_estimator_)
-            .non_delayable_weight *
+        params_for_network_quality_.non_delayable_weight *
         (in_flight_requests_.size() - in_flight_delayable_count_));
     if ((in_flight_delayable_count_ + num_non_delayable_requests_weighted >=
-         max_delayable_requests_)) {
+         params_for_network_quality_.max_delayable_requests)) {
       return DO_NOT_START_REQUEST_AND_STOP_SEARCHING;
     }
 
-    if (ShouldKeepSearching(host_port_pair)) {
+    if (ReachedMaxRequestsPerHostPerClient(host_port_pair, supports_priority)) {
       // There may be other requests for other hosts that may be allowed,
       // so keep checking.
       return DO_NOT_START_REQUEST_AND_KEEP_SEARCHING;
@@ -1006,9 +1028,10 @@ class ResourceScheduler::Client {
   // be null.
   const net::NetworkQualityEstimator* const network_quality_estimator_;
 
-  // The value of the maximum number of delayable requests in flight. This gets
-  // recalculated every time an |OnNavigate| event is triggered.
-  size_t max_delayable_requests_;
+  // Resource scheduling params computed for the current network quality.
+  // These are recomputed every time an |OnNavigate| event is triggered.
+  ResourceSchedulerParamsManager::ParamsForNetworkQuality
+      params_for_network_quality_;
 
   // A pointer to the resource scheduler which contains the resource scheduling
   // configuration.
@@ -1034,6 +1057,8 @@ ResourceScheduler::ResourceScheduler(bool enabled)
                                                  kYieldMsParam,
                                                  kYieldMsDefault))),
       task_runner_(base::ThreadTaskRunnerHandle::Get()) {
+  resource_scheduler_params_manager_ =
+      std::make_unique<ResourceSchedulerParamsManager>();
   // Don't run the two experiments together.
   if (priority_requests_delayable_ && head_priority_requests_delayable_)
     priority_requests_delayable_ = false;
@@ -1241,96 +1266,6 @@ ResourceScheduler::ClientId ResourceScheduler::MakeClientId(int child_id,
   return (static_cast<ResourceScheduler::ClientId>(child_id) << 32) | route_id;
 }
 
-ResourceScheduler::ThrottleDelayable::ThrottleDelayable()
-    : params_for_network_quality_container_(
-          GetParamsForNetworkQualityContainer()) {}
-
-ResourceScheduler::ThrottleDelayable::~ThrottleDelayable() {}
-
-ResourceScheduler::ParamsForNetworkQuality
-ResourceScheduler::ThrottleDelayable::GetParamsForNetworkQuality(
-    const net::NetworkQualityEstimator* network_quality_estimator) const {
-  if (network_quality_estimator) {
-    net::EffectiveConnectionType effective_connection_type =
-        network_quality_estimator->GetEffectiveConnectionType();
-
-    for (const auto& range : params_for_network_quality_container_) {
-      if (effective_connection_type == range.effective_connection_type) {
-        return range;
-      }
-    }
-  }
-
-  return ResourceScheduler::ParamsForNetworkQuality{
-      net::EFFECTIVE_CONNECTION_TYPE_UNKNOWN,
-      kDefaultMaxNumDelayableRequestsPerClient, 0.0};
-}
-
-ResourceScheduler::ParamsForNetworkQualityContainer
-ResourceScheduler::ThrottleDelayable::GetParamsForNetworkQualityContainer() {
-  static const char kMaxDelayableRequestsBase[] = "MaxDelayableRequests";
-  static const char kEffectiveConnectionTypeBase[] = "EffectiveConnectionType";
-  static const char kNonDelayableWeightBase[] = "NonDelayableWeight";
-
-  ParamsForNetworkQualityContainer result;
-  // Set the default params for networks with ECT Slow2G and 2G. These params
-  // can still be overridden using the field trial.
-  result.push_back({net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G, 8, 3});
-  result.push_back({net::EFFECTIVE_CONNECTION_TYPE_2G, 8, 3});
-
-  if (!base::FeatureList::IsEnabled(kThrottleDelayable))
-    return result;
-
-  int config_param_index = 1;
-  while (true) {
-    size_t max_delayable_requests;
-
-    if (!base::StringToSizeT(
-            base::GetFieldTrialParamValueByFeature(
-                kThrottleDelayable, kMaxDelayableRequestsBase +
-                                        base::IntToString(config_param_index)),
-            &max_delayable_requests)) {
-      DCHECK_LE(result.size(), 20u);
-      return result;
-    }
-
-    base::Optional<net::EffectiveConnectionType> effective_connection_type =
-        net::GetEffectiveConnectionTypeForName(
-            base::GetFieldTrialParamValueByFeature(
-                kThrottleDelayable, kEffectiveConnectionTypeBase +
-                                        base::IntToString(config_param_index)));
-    if (!effective_connection_type)
-      return result;
-
-    double non_delayable_weight;
-    if (!base::StringToDouble(
-            base::GetFieldTrialParamValueByFeature(
-                kThrottleDelayable, kNonDelayableWeightBase +
-                                        base::IntToString(config_param_index)),
-            &non_delayable_weight)) {
-      return result;
-    }
-
-    // Check if the entry is already present. This will happen if the default
-    // params are being overridden by the field trial.
-    bool entry_found = false;
-    for (auto& range : result) {
-      if (effective_connection_type == range.effective_connection_type) {
-        range.max_delayable_requests = max_delayable_requests;
-        range.non_delayable_weight = non_delayable_weight;
-        entry_found = true;
-        break;
-      }
-    }
-
-    if (!entry_found) {
-      result.push_back({effective_connection_type.value(),
-                        max_delayable_requests, non_delayable_weight});
-    }
-    config_param_index++;
-  }
-}
-
 bool ResourceScheduler::IsRendererSideResourceSchedulerEnabled() {
   // We are assuming that kRendererSideResourceScheduler will be shipped when
   // launching Network Service, so let's act as if
@@ -1338,6 +1273,15 @@ bool ResourceScheduler::IsRendererSideResourceSchedulerEnabled() {
   return base::FeatureList::IsEnabled(
              features::kRendererSideResourceScheduler) ||
          base::FeatureList::IsEnabled(features::kNetworkService);
+}
+
+void ResourceScheduler::SetResourceSchedulerParamsManagerForTests(
+    std::unique_ptr<ResourceSchedulerParamsManager>
+        resource_scheduler_params_manager) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  resource_scheduler_params_manager_ =
+      std::move(resource_scheduler_params_manager);
+  DCHECK(resource_scheduler_params_manager_);
 }
 
 }  // namespace network

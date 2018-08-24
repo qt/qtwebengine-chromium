@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "build/build_config.h"
-#include "cc/blink/web_layer_impl.h"
 #include "cc/layers/picture_image_layer.h"
 #include "cc/layers/solid_color_layer.h"
 #include "cc/layers/surface_layer.h"
@@ -66,8 +65,9 @@ void ChildFrameCompositingHelper::ChildFrameGone(
     }
   }
 
-  child_frame_compositor_->SetLayer(
-      std::make_unique<cc_blink::WebLayerImpl>(crashed_layer));
+  bool prevent_contents_opaque_changes = false;
+  child_frame_compositor_->SetLayer(std::move(crashed_layer),
+                                    prevent_contents_opaque_changes);
 }
 
 void ChildFrameCompositingHelper::SetPrimarySurfaceId(
@@ -81,25 +81,21 @@ void ChildFrameCompositingHelper::SetPrimarySurfaceId(
 
   surface_layer_ = cc::SurfaceLayer::Create();
   surface_layer_->SetMasksToBounds(true);
-  surface_layer_->SetHitTestable(true);
+  surface_layer_->SetSurfaceHitTestable(true);
   surface_layer_->SetBackgroundColor(SK_ColorTRANSPARENT);
 
   surface_layer_->SetPrimarySurfaceId(surface_id, deadline);
   surface_layer_->SetFallbackSurfaceId(fallback_surface_id_);
 
-  std::unique_ptr<cc_blink::WebLayerImpl> layer(
-      new cc_blink::WebLayerImpl(surface_layer_));
-  // TODO(lfg): Investigate if it's possible to propagate the information about
-  // the child surface's opacity. https://crbug.com/629851.
-  layer->SetOpaque(false);
-  layer->SetContentsOpaqueIsFixed(true);
-  child_frame_compositor_->SetLayer(std::move(layer));
+  // TODO(lfg): Investigate if it's possible to propagate the information
+  // about the child surface's opacity. https://crbug.com/629851.
+  bool prevent_contents_opaque_changes = true;
+  child_frame_compositor_->SetLayer(surface_layer_,
+                                    prevent_contents_opaque_changes);
 
   UpdateVisibility(true);
 
-  static_cast<cc_blink::WebLayerImpl*>(child_frame_compositor_->GetLayer())
-      ->layer()
-      ->SetBounds(frame_size_in_dip);
+  surface_layer_->SetBounds(frame_size_in_dip);
 }
 
 void ChildFrameCompositingHelper::SetFallbackSurfaceId(
@@ -120,9 +116,9 @@ void ChildFrameCompositingHelper::SetFallbackSurfaceId(
 }
 
 void ChildFrameCompositingHelper::UpdateVisibility(bool visible) {
-  blink::WebLayer* web_layer = child_frame_compositor_->GetLayer();
-  if (web_layer)
-    web_layer->SetDrawsContent(visible);
+  cc::Layer* layer = child_frame_compositor_->GetLayer();
+  if (layer)
+    layer->SetIsDrawable(visible);
 }
 
 }  // namespace content

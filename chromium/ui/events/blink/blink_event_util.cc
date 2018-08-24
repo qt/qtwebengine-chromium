@@ -541,8 +541,7 @@ bool IsCompatibleScrollorPinch(const WebGestureEvent& new_event,
          new_event.GetType() == WebInputEvent::kGesturePinchUpdate)
       << "Invalid event type for pinch/scroll coalescing: "
       << WebInputEvent::GetName(new_event.GetType());
-  DLOG_IF(WARNING,
-          new_event.TimeStampSeconds() < event_in_queue.TimeStampSeconds())
+  DLOG_IF(WARNING, new_event.TimeStamp() < event_in_queue.TimeStamp())
       << "Event time not monotonic?\n";
   return (event_in_queue.GetType() == WebInputEvent::kGestureScrollUpdate ||
           event_in_queue.GetType() == WebInputEvent::kGesturePinchUpdate) &&
@@ -561,9 +560,9 @@ std::pair<WebGestureEvent, WebGestureEvent> CoalesceScrollAndPinch(
   DCHECK(!second_last_event ||
          IsCompatibleScrollorPinch(new_event, *second_last_event));
 
-  WebGestureEvent scroll_event(
-      WebInputEvent::kGestureScrollUpdate, new_event.GetModifiers(),
-      new_event.TimeStampSeconds(), new_event.SourceDevice());
+  WebGestureEvent scroll_event(WebInputEvent::kGestureScrollUpdate,
+                               new_event.GetModifiers(), new_event.TimeStamp(),
+                               new_event.SourceDevice());
   WebGestureEvent pinch_event;
   scroll_event.primary_pointer_type = new_event.primary_pointer_type;
   pinch_event = scroll_event;
@@ -607,10 +606,9 @@ blink::WebTouchEvent CreateWebTouchEventFromMotionEvent(
                     static_cast<int>(blink::WebTouchEvent::kTouchesLengthCap),
                 "inconsistent maximum number of active touch points");
 
-  blink::WebTouchEvent result(
-      ToWebTouchEventType(event.GetAction()),
-      EventFlagsToWebEventModifiers(event.GetFlags()),
-      ui::EventTimeStampToSeconds(event.GetEventTime()));
+  blink::WebTouchEvent result(ToWebTouchEventType(event.GetAction()),
+                              EventFlagsToWebEventModifiers(event.GetFlags()),
+                              event.GetEventTime());
   result.dispatch_type = result.GetType() == WebInputEvent::kTouchCancel
                              ? WebInputEvent::kEventNonBlocking
                              : WebInputEvent::kBlocking;
@@ -688,9 +686,9 @@ WebGestureEvent CreateWebGestureEvent(const GestureEventDetails& details,
       NOTREACHED() << "Unknown device type is not allowed";
       break;
   }
-  WebGestureEvent gesture(
-      WebInputEvent::kUndefined, EventFlagsToWebEventModifiers(flags),
-      ui::EventTimeStampToSeconds(timestamp), source_device);
+  WebGestureEvent gesture(WebInputEvent::kUndefined,
+                          EventFlagsToWebEventModifiers(flags), timestamp,
+                          source_device);
 
   gesture.SetPositionInWidget(location);
   gesture.SetPositionInScreen(raw_location);
@@ -1132,6 +1130,17 @@ bool IsGestureScrollOrFlingOrPinch(WebInputEvent::Type type) {
   }
 }
 
+bool IsGestureScroll(WebInputEvent::Type type) {
+  switch (type) {
+    case blink::WebGestureEvent::kGestureScrollBegin:
+    case blink::WebGestureEvent::kGestureScrollUpdate:
+    case blink::WebGestureEvent::kGestureScrollEnd:
+      return true;
+    default:
+      return false;
+  }
+}
+
 bool IsContinuousGestureEvent(WebInputEvent::Type type) {
   switch (type) {
     case blink::WebGestureEvent::kGestureScrollUpdate:
@@ -1197,7 +1206,8 @@ std::unique_ptr<WebGestureEvent> CreateWebGestureEventFromGestureEventAndroid(
       return std::make_unique<WebGestureEvent>();
   }
   auto web_event = std::make_unique<WebGestureEvent>(
-      event_type, WebInputEvent::kNoModifiers, event.time() / 1000.0);
+      event_type, WebInputEvent::kNoModifiers,
+      base::TimeTicks() + base::TimeDelta::FromMilliseconds(event.time()));
   // NOTE: Source gesture events are synthetic ones that simulate
   // gesture from keyboard (zoom in/out) for now. Should populate Blink
   // event's fields better when extended to handle more cases.
@@ -1220,7 +1230,7 @@ std::unique_ptr<WebGestureEvent> CreateWebGestureEventFromGestureEventAndroid(
     web_event->data.fling_start.velocity_y = event.velocity_y();
     web_event->data.fling_start.target_viewport = event.target_viewport();
   } else if (event_type == WebInputEvent::kGestureFlingCancel) {
-    web_event->data.fling_cancel.prevent_boosting = true;
+    web_event->data.fling_cancel.prevent_boosting = event.prevent_boosting();
     if (event.synthetic_scroll())
       web_event->data.fling_cancel.target_viewport = true;
   } else if (event_type == WebInputEvent::kGestureDoubleTap) {

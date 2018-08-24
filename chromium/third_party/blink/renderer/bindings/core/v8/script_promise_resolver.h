@@ -101,7 +101,7 @@ class CORE_EXPORT ScriptPromiseResolver
   // promise is pending and the associated ExecutionContext isn't stopped.
   void KeepAliveWhilePending();
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  protected:
   // You need to call suspendIfNeeded after the construction because
@@ -152,6 +152,8 @@ class CORE_EXPORT ScriptPromiseResolver
     // resolve.
     // See: http://crbug.com/663476
     if (ScriptForbiddenScope::IsScriptForbidden()) {
+      // Retain this object until it is actually resolved or rejected.
+      KeepAliveWhilePending();
       timer_.StartOneShot(TimeDelta(), FROM_HERE);
       return;
     }

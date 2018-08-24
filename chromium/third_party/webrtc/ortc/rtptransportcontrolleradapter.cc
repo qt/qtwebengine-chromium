@@ -657,7 +657,8 @@ void RtpTransportControllerAdapter::Init_w() {
   call_config.bitrate_config.max_bitrate_bps = kMaxBandwidthBps;
   std::unique_ptr<RtpTransportControllerSend> controller_send =
       rtc::MakeUnique<RtpTransportControllerSend>(
-          Clock::GetRealTimeClock(), event_log_, call_config.bitrate_config);
+          Clock::GetRealTimeClock(), event_log_,
+          call_config.network_controller_factory, call_config.bitrate_config);
   call_send_rtp_transport_controller_ = controller_send.get();
   call_.reset(webrtc::Call::Create(call_config, std::move(controller_send)));
 }
@@ -869,8 +870,6 @@ void RtpTransportControllerAdapter::CreateVoiceChannel() {
       cricket::AudioOptions());
   RTC_DCHECK(voice_channel_);
   voice_channel_->Enable(true);
-  voice_channel_->DisableEncryption(
-      !inner_audio_transport_->GetInternal()->IsSrtpTransport());
 }
 
 void RtpTransportControllerAdapter::CreateVideoChannel() {
@@ -880,8 +879,6 @@ void RtpTransportControllerAdapter::CreateVideoChannel() {
       cricket::VideoOptions());
   RTC_DCHECK(video_channel_);
   video_channel_->Enable(true);
-  video_channel_->DisableEncryption(
-      !inner_video_transport_->GetInternal()->IsSrtpTransport());
 }
 
 void RtpTransportControllerAdapter::DestroyVoiceChannel() {

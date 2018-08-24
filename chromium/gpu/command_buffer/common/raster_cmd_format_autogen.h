@@ -622,122 +622,6 @@ static_assert(
     offsetof(UnpremultiplyAndDitherCopyCHROMIUM, height) == 24,
     "offset of UnpremultiplyAndDitherCopyCHROMIUM height should be 24");
 
-struct InitializeDiscardableTextureCHROMIUM {
-  typedef InitializeDiscardableTextureCHROMIUM ValueType;
-  static const CommandId kCmdId = kInitializeDiscardableTextureCHROMIUM;
-  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
-  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
-
-  static uint32_t ComputeSize() {
-    return static_cast<uint32_t>(sizeof(ValueType));  // NOLINT
-  }
-
-  void SetHeader() { header.SetCmd<ValueType>(); }
-
-  void Init(GLuint _texture_id, uint32_t _shm_id, uint32_t _shm_offset) {
-    SetHeader();
-    texture_id = _texture_id;
-    shm_id = _shm_id;
-    shm_offset = _shm_offset;
-  }
-
-  void* Set(void* cmd,
-            GLuint _texture_id,
-            uint32_t _shm_id,
-            uint32_t _shm_offset) {
-    static_cast<ValueType*>(cmd)->Init(_texture_id, _shm_id, _shm_offset);
-    return NextCmdAddress<ValueType>(cmd);
-  }
-
-  gpu::CommandHeader header;
-  uint32_t texture_id;
-  uint32_t shm_id;
-  uint32_t shm_offset;
-};
-
-static_assert(sizeof(InitializeDiscardableTextureCHROMIUM) == 16,
-              "size of InitializeDiscardableTextureCHROMIUM should be 16");
-static_assert(
-    offsetof(InitializeDiscardableTextureCHROMIUM, header) == 0,
-    "offset of InitializeDiscardableTextureCHROMIUM header should be 0");
-static_assert(
-    offsetof(InitializeDiscardableTextureCHROMIUM, texture_id) == 4,
-    "offset of InitializeDiscardableTextureCHROMIUM texture_id should be 4");
-static_assert(
-    offsetof(InitializeDiscardableTextureCHROMIUM, shm_id) == 8,
-    "offset of InitializeDiscardableTextureCHROMIUM shm_id should be 8");
-static_assert(
-    offsetof(InitializeDiscardableTextureCHROMIUM, shm_offset) == 12,
-    "offset of InitializeDiscardableTextureCHROMIUM shm_offset should be 12");
-
-struct UnlockDiscardableTextureCHROMIUM {
-  typedef UnlockDiscardableTextureCHROMIUM ValueType;
-  static const CommandId kCmdId = kUnlockDiscardableTextureCHROMIUM;
-  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
-  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
-
-  static uint32_t ComputeSize() {
-    return static_cast<uint32_t>(sizeof(ValueType));  // NOLINT
-  }
-
-  void SetHeader() { header.SetCmd<ValueType>(); }
-
-  void Init(GLuint _texture_id) {
-    SetHeader();
-    texture_id = _texture_id;
-  }
-
-  void* Set(void* cmd, GLuint _texture_id) {
-    static_cast<ValueType*>(cmd)->Init(_texture_id);
-    return NextCmdAddress<ValueType>(cmd);
-  }
-
-  gpu::CommandHeader header;
-  uint32_t texture_id;
-};
-
-static_assert(sizeof(UnlockDiscardableTextureCHROMIUM) == 8,
-              "size of UnlockDiscardableTextureCHROMIUM should be 8");
-static_assert(offsetof(UnlockDiscardableTextureCHROMIUM, header) == 0,
-              "offset of UnlockDiscardableTextureCHROMIUM header should be 0");
-static_assert(
-    offsetof(UnlockDiscardableTextureCHROMIUM, texture_id) == 4,
-    "offset of UnlockDiscardableTextureCHROMIUM texture_id should be 4");
-
-struct LockDiscardableTextureCHROMIUM {
-  typedef LockDiscardableTextureCHROMIUM ValueType;
-  static const CommandId kCmdId = kLockDiscardableTextureCHROMIUM;
-  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
-  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
-
-  static uint32_t ComputeSize() {
-    return static_cast<uint32_t>(sizeof(ValueType));  // NOLINT
-  }
-
-  void SetHeader() { header.SetCmd<ValueType>(); }
-
-  void Init(GLuint _texture_id) {
-    SetHeader();
-    texture_id = _texture_id;
-  }
-
-  void* Set(void* cmd, GLuint _texture_id) {
-    static_cast<ValueType*>(cmd)->Init(_texture_id);
-    return NextCmdAddress<ValueType>(cmd);
-  }
-
-  gpu::CommandHeader header;
-  uint32_t texture_id;
-};
-
-static_assert(sizeof(LockDiscardableTextureCHROMIUM) == 8,
-              "size of LockDiscardableTextureCHROMIUM should be 8");
-static_assert(offsetof(LockDiscardableTextureCHROMIUM, header) == 0,
-              "offset of LockDiscardableTextureCHROMIUM header should be 0");
-static_assert(
-    offsetof(LockDiscardableTextureCHROMIUM, texture_id) == 4,
-    "offset of LockDiscardableTextureCHROMIUM texture_id should be 4");
-
 struct BeginRasterCHROMIUM {
   typedef BeginRasterCHROMIUM ValueType;
   static const CommandId kCmdId = kBeginRasterCHROMIUM;
@@ -754,13 +638,15 @@ struct BeginRasterCHROMIUM {
             GLuint _sk_color,
             GLuint _msaa_sample_count,
             GLboolean _can_use_lcd_text,
-            GLint _color_type) {
+            GLint _color_type,
+            GLuint _color_space_transfer_cache_id) {
     SetHeader();
     texture_id = _texture_id;
     sk_color = _sk_color;
     msaa_sample_count = _msaa_sample_count;
     can_use_lcd_text = _can_use_lcd_text;
     color_type = _color_type;
+    color_space_transfer_cache_id = _color_space_transfer_cache_id;
   }
 
   void* Set(void* cmd,
@@ -768,10 +654,11 @@ struct BeginRasterCHROMIUM {
             GLuint _sk_color,
             GLuint _msaa_sample_count,
             GLboolean _can_use_lcd_text,
-            GLint _color_type) {
-    static_cast<ValueType*>(cmd)->Init(_texture_id, _sk_color,
-                                       _msaa_sample_count, _can_use_lcd_text,
-                                       _color_type);
+            GLint _color_type,
+            GLuint _color_space_transfer_cache_id) {
+    static_cast<ValueType*>(cmd)->Init(
+        _texture_id, _sk_color, _msaa_sample_count, _can_use_lcd_text,
+        _color_type, _color_space_transfer_cache_id);
     return NextCmdAddress<ValueType>(cmd);
   }
 
@@ -781,10 +668,11 @@ struct BeginRasterCHROMIUM {
   uint32_t msaa_sample_count;
   uint32_t can_use_lcd_text;
   int32_t color_type;
+  uint32_t color_space_transfer_cache_id;
 };
 
-static_assert(sizeof(BeginRasterCHROMIUM) == 24,
-              "size of BeginRasterCHROMIUM should be 24");
+static_assert(sizeof(BeginRasterCHROMIUM) == 28,
+              "size of BeginRasterCHROMIUM should be 28");
 static_assert(offsetof(BeginRasterCHROMIUM, header) == 0,
               "offset of BeginRasterCHROMIUM header should be 0");
 static_assert(offsetof(BeginRasterCHROMIUM, texture_id) == 4,
@@ -797,6 +685,9 @@ static_assert(offsetof(BeginRasterCHROMIUM, can_use_lcd_text) == 16,
               "offset of BeginRasterCHROMIUM can_use_lcd_text should be 16");
 static_assert(offsetof(BeginRasterCHROMIUM, color_type) == 20,
               "offset of BeginRasterCHROMIUM color_type should be 20");
+static_assert(
+    offsetof(BeginRasterCHROMIUM, color_space_transfer_cache_id) == 24,
+    "offset of BeginRasterCHROMIUM color_space_transfer_cache_id should be 24");
 
 struct RasterCHROMIUM {
   typedef RasterCHROMIUM ValueType;
@@ -810,39 +701,59 @@ struct RasterCHROMIUM {
 
   void SetHeader() { header.SetCmd<ValueType>(); }
 
-  void Init(GLsizeiptr _size,
-            uint32_t _list_shm_id,
-            uint32_t _list_shm_offset) {
+  void Init(GLuint _raster_shm_id,
+            GLuint _raster_shm_offset,
+            GLsizeiptr _raster_shm_size,
+            GLuint _font_shm_id,
+            GLuint _font_shm_offset,
+            GLsizeiptr _font_shm_size) {
     SetHeader();
-    size = _size;
-    list_shm_id = _list_shm_id;
-    list_shm_offset = _list_shm_offset;
+    raster_shm_id = _raster_shm_id;
+    raster_shm_offset = _raster_shm_offset;
+    raster_shm_size = _raster_shm_size;
+    font_shm_id = _font_shm_id;
+    font_shm_offset = _font_shm_offset;
+    font_shm_size = _font_shm_size;
   }
 
   void* Set(void* cmd,
-            GLsizeiptr _size,
-            uint32_t _list_shm_id,
-            uint32_t _list_shm_offset) {
-    static_cast<ValueType*>(cmd)->Init(_size, _list_shm_id, _list_shm_offset);
+            GLuint _raster_shm_id,
+            GLuint _raster_shm_offset,
+            GLsizeiptr _raster_shm_size,
+            GLuint _font_shm_id,
+            GLuint _font_shm_offset,
+            GLsizeiptr _font_shm_size) {
+    static_cast<ValueType*>(cmd)->Init(_raster_shm_id, _raster_shm_offset,
+                                       _raster_shm_size, _font_shm_id,
+                                       _font_shm_offset, _font_shm_size);
     return NextCmdAddress<ValueType>(cmd);
   }
 
   gpu::CommandHeader header;
-  int32_t size;
-  uint32_t list_shm_id;
-  uint32_t list_shm_offset;
+  uint32_t raster_shm_id;
+  uint32_t raster_shm_offset;
+  int32_t raster_shm_size;
+  uint32_t font_shm_id;
+  uint32_t font_shm_offset;
+  int32_t font_shm_size;
 };
 
-static_assert(sizeof(RasterCHROMIUM) == 16,
-              "size of RasterCHROMIUM should be 16");
+static_assert(sizeof(RasterCHROMIUM) == 28,
+              "size of RasterCHROMIUM should be 28");
 static_assert(offsetof(RasterCHROMIUM, header) == 0,
               "offset of RasterCHROMIUM header should be 0");
-static_assert(offsetof(RasterCHROMIUM, size) == 4,
-              "offset of RasterCHROMIUM size should be 4");
-static_assert(offsetof(RasterCHROMIUM, list_shm_id) == 8,
-              "offset of RasterCHROMIUM list_shm_id should be 8");
-static_assert(offsetof(RasterCHROMIUM, list_shm_offset) == 12,
-              "offset of RasterCHROMIUM list_shm_offset should be 12");
+static_assert(offsetof(RasterCHROMIUM, raster_shm_id) == 4,
+              "offset of RasterCHROMIUM raster_shm_id should be 4");
+static_assert(offsetof(RasterCHROMIUM, raster_shm_offset) == 8,
+              "offset of RasterCHROMIUM raster_shm_offset should be 8");
+static_assert(offsetof(RasterCHROMIUM, raster_shm_size) == 12,
+              "offset of RasterCHROMIUM raster_shm_size should be 12");
+static_assert(offsetof(RasterCHROMIUM, font_shm_id) == 16,
+              "offset of RasterCHROMIUM font_shm_id should be 16");
+static_assert(offsetof(RasterCHROMIUM, font_shm_offset) == 20,
+              "offset of RasterCHROMIUM font_shm_offset should be 20");
+static_assert(offsetof(RasterCHROMIUM, font_shm_size) == 24,
+              "offset of RasterCHROMIUM font_shm_size should be 24");
 
 struct EndRasterCHROMIUM {
   typedef EndRasterCHROMIUM ValueType;
@@ -1485,5 +1396,69 @@ static_assert(offsetof(CopySubTexture, width) == 28,
               "offset of CopySubTexture width should be 28");
 static_assert(offsetof(CopySubTexture, height) == 32,
               "offset of CopySubTexture height should be 32");
+
+struct TraceBeginCHROMIUM {
+  typedef TraceBeginCHROMIUM ValueType;
+  static const CommandId kCmdId = kTraceBeginCHROMIUM;
+  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
+
+  static uint32_t ComputeSize() {
+    return static_cast<uint32_t>(sizeof(ValueType));  // NOLINT
+  }
+
+  void SetHeader() { header.SetCmd<ValueType>(); }
+
+  void Init(GLuint _category_bucket_id, GLuint _name_bucket_id) {
+    SetHeader();
+    category_bucket_id = _category_bucket_id;
+    name_bucket_id = _name_bucket_id;
+  }
+
+  void* Set(void* cmd, GLuint _category_bucket_id, GLuint _name_bucket_id) {
+    static_cast<ValueType*>(cmd)->Init(_category_bucket_id, _name_bucket_id);
+    return NextCmdAddress<ValueType>(cmd);
+  }
+
+  gpu::CommandHeader header;
+  uint32_t category_bucket_id;
+  uint32_t name_bucket_id;
+};
+
+static_assert(sizeof(TraceBeginCHROMIUM) == 12,
+              "size of TraceBeginCHROMIUM should be 12");
+static_assert(offsetof(TraceBeginCHROMIUM, header) == 0,
+              "offset of TraceBeginCHROMIUM header should be 0");
+static_assert(offsetof(TraceBeginCHROMIUM, category_bucket_id) == 4,
+              "offset of TraceBeginCHROMIUM category_bucket_id should be 4");
+static_assert(offsetof(TraceBeginCHROMIUM, name_bucket_id) == 8,
+              "offset of TraceBeginCHROMIUM name_bucket_id should be 8");
+
+struct TraceEndCHROMIUM {
+  typedef TraceEndCHROMIUM ValueType;
+  static const CommandId kCmdId = kTraceEndCHROMIUM;
+  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
+
+  static uint32_t ComputeSize() {
+    return static_cast<uint32_t>(sizeof(ValueType));  // NOLINT
+  }
+
+  void SetHeader() { header.SetCmd<ValueType>(); }
+
+  void Init() { SetHeader(); }
+
+  void* Set(void* cmd) {
+    static_cast<ValueType*>(cmd)->Init();
+    return NextCmdAddress<ValueType>(cmd);
+  }
+
+  gpu::CommandHeader header;
+};
+
+static_assert(sizeof(TraceEndCHROMIUM) == 4,
+              "size of TraceEndCHROMIUM should be 4");
+static_assert(offsetof(TraceEndCHROMIUM, header) == 0,
+              "offset of TraceEndCHROMIUM header should be 0");
 
 #endif  // GPU_COMMAND_BUFFER_COMMON_RASTER_CMD_FORMAT_AUTOGEN_H_

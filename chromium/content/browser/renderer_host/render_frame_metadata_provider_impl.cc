@@ -10,8 +10,10 @@
 namespace content {
 
 RenderFrameMetadataProviderImpl::RenderFrameMetadataProviderImpl(
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
     FrameTokenMessageQueue* frame_token_message_queue)
-    : frame_token_message_queue_(frame_token_message_queue),
+    : task_runner_(task_runner),
+      frame_token_message_queue_(frame_token_message_queue),
       render_frame_metadata_observer_client_binding_(this),
       weak_factory_(this) {}
 
@@ -30,8 +32,8 @@ void RenderFrameMetadataProviderImpl::Bind(
     mojom::RenderFrameMetadataObserverPtr observer) {
   render_frame_metadata_observer_ptr_ = std::move(observer);
   render_frame_metadata_observer_client_binding_.Close();
-  render_frame_metadata_observer_client_binding_.Bind(
-      std::move(client_request));
+  render_frame_metadata_observer_client_binding_.Bind(std::move(client_request),
+                                                      task_runner_);
 }
 
 void RenderFrameMetadataProviderImpl::ReportAllFrameSubmissionsForTesting(
@@ -66,6 +68,12 @@ void RenderFrameMetadataProviderImpl::SetLastRenderFrameMetadataForTest(
 void RenderFrameMetadataProviderImpl::OnRenderFrameMetadataChanged(
     uint32_t frame_token,
     const cc::RenderFrameMetadata& metadata) {
+  if (metadata.local_surface_id != last_local_surface_id_) {
+    last_local_surface_id_ = metadata.local_surface_id;
+    for (Observer& observer : observers_)
+      observer.OnLocalSurfaceIdChanged(metadata);
+  }
+
   // Both RenderFrameMetadataProviderImpl and FrameTokenMessageQueue are owned
   // by the same RenderWidgetHostImpl. During shutdown the queue is cleared
   // without running the callbacks.

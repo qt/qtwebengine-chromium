@@ -81,7 +81,6 @@ namespace {
   // Maximum time limit between incoming frames before requesting a key frame.
   const size_t kFrameDiffThresholdMs = 350;
   const int kMinKeyFrameInterval = 6;
-  const char kH264HighProfileFieldTrial[] = "WebRTC-H264HighProfile";
   const char kCustomQPThresholdsFieldTrial[] = "WebRTC-CustomQPThresholds";
 }  // namespace
 
@@ -110,7 +109,7 @@ class MediaCodecVideoEncoder : public VideoEncoder {
   int32_t Release() override;
   int32_t SetChannelParameters(uint32_t /* packet_loss */,
                                int64_t /* rtt */) override;
-  int32_t SetRateAllocation(const BitrateAllocation& rate_allocation,
+  int32_t SetRateAllocation(const VideoBitrateAllocation& rate_allocation,
                             uint32_t frame_rate) override;
 
   bool SupportsNativeHandle() const override { return egl_context_ != nullptr; }
@@ -172,7 +171,6 @@ class MediaCodecVideoEncoder : public VideoEncoder {
                         bool key_frame,
                         const VideoFrame& frame,
                         int input_buffer_index);
-  bool EncodeTexture(JNIEnv* jni, bool key_frame, const VideoFrame& frame);
   // Encodes a new style org.webrtc.VideoFrame. Might be a I420 or a texture
   // frame.
   bool EncodeJavaFrame(JNIEnv* jni,
@@ -721,25 +719,10 @@ int32_t MediaCodecVideoEncoder::Encode(
     encode_status =
         EncodeByteBuffer(jni, key_frame, input_frame, j_input_buffer_index);
   } else {
-    AndroidVideoFrameBuffer* android_buffer =
-        static_cast<AndroidVideoFrameBuffer*>(
-            input_frame.video_frame_buffer().get());
-    switch (android_buffer->android_type()) {
-      case AndroidVideoFrameBuffer::AndroidType::kTextureBuffer:
-        encode_status = EncodeTexture(jni, key_frame, input_frame);
-        break;
-      case AndroidVideoFrameBuffer::AndroidType::kJavaBuffer: {
-        ScopedJavaLocalRef<jobject> j_frame =
-            NativeToJavaVideoFrame(jni, frame);
-        encode_status =
-            EncodeJavaFrame(jni, key_frame, j_frame, j_input_buffer_index);
-        ReleaseJavaVideoFrame(jni, j_frame);
-        break;
-      }
-      default:
-        RTC_NOTREACHED();
-        return WEBRTC_VIDEO_CODEC_ERROR;
-    }
+    ScopedJavaLocalRef<jobject> j_frame = NativeToJavaVideoFrame(jni, frame);
+    encode_status =
+        EncodeJavaFrame(jni, key_frame, j_frame, j_input_buffer_index);
+    ReleaseJavaVideoFrame(jni, j_frame);
   }
 
   if (!encode_status) {
@@ -808,20 +791,9 @@ bool MediaCodecVideoEncoder::IsTextureFrame(JNIEnv* jni,
   if (frame.video_frame_buffer()->type() != VideoFrameBuffer::Type::kNative) {
     return false;
   }
-
-  AndroidVideoFrameBuffer* android_buffer =
-      static_cast<AndroidVideoFrameBuffer*>(frame.video_frame_buffer().get());
-  switch (android_buffer->android_type()) {
-    case AndroidVideoFrameBuffer::AndroidType::kTextureBuffer:
-      return true;
-    case AndroidVideoFrameBuffer::AndroidType::kJavaBuffer:
-      return Java_MediaCodecVideoEncoder_isTextureBuffer(
-          jni, static_cast<AndroidVideoBuffer*>(android_buffer)
-                   ->video_frame_buffer());
-    default:
-      RTC_NOTREACHED();
-      return false;
-  }
+  return Java_MediaCodecVideoEncoder_isTextureBuffer(
+      jni, static_cast<AndroidVideoBuffer*>(frame.video_frame_buffer().get())
+               ->video_frame_buffer());
 }
 
 bool MediaCodecVideoEncoder::EncodeByteBuffer(JNIEnv* jni,
@@ -872,26 +844,6 @@ bool MediaCodecVideoEncoder::FillInputBuffer(JNIEnv* jni,
                                      width_, height_, encoder_fourcc_))
       << "ConvertFromI420 failed";
   return true;
-}
-
-bool MediaCodecVideoEncoder::EncodeTexture(JNIEnv* jni,
-                                           bool key_frame,
-                                           const VideoFrame& frame) {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&encoder_queue_checker_);
-  RTC_CHECK(use_surface_);
-  NativeHandleImpl handle =
-      static_cast<AndroidTextureBuffer*>(frame.video_frame_buffer().get())
-          ->native_handle_impl();
-
-  bool encode_status = Java_MediaCodecVideoEncoder_encodeTexture(
-      jni, j_media_codec_video_encoder_, key_frame, handle.oes_texture_id,
-      handle.sampling_matrix.ToJava(jni), current_timestamp_us_);
-  if (CheckException(jni)) {
-    ALOGE << "Exception in encode texture.";
-    ProcessHWError(true /* reset_if_fallback_unavailable */);
-    return false;
-  }
-  return encode_status;
 }
 
 bool MediaCodecVideoEncoder::EncodeJavaFrame(JNIEnv* jni,
@@ -951,7 +903,7 @@ int32_t MediaCodecVideoEncoder::Release() {
 }
 
 int32_t MediaCodecVideoEncoder::SetRateAllocation(
-    const BitrateAllocation& rate_allocation,
+    const VideoBitrateAllocation& rate_allocation,
     uint32_t frame_rate) {
   RTC_DCHECK_CALLED_SEQUENTIALLY(&encoder_queue_checker_);
   const uint32_t new_bit_rate = rate_allocation.get_sum_kbps();
@@ -1080,6 +1032,8 @@ bool MediaCodecVideoEncoder::DeliverPendingOutputs(JNIEnv* jni) {
         info.codecSpecific.VP9.gof_idx =
             static_cast<uint8_t>(gof_idx_++ % gof_.num_frames_in_gof);
         info.codecSpecific.VP9.num_spatial_layers = 1;
+        info.codecSpecific.VP9.first_frame_in_picture = true;
+        info.codecSpecific.VP9.end_of_picture = true;
         info.codecSpecific.VP9.spatial_layer_resolution_present = false;
         if (info.codecSpecific.VP9.ss_data_available) {
           info.codecSpecific.VP9.spatial_layer_resolution_present = true;
@@ -1363,11 +1317,7 @@ VideoEncoder* MediaCodecVideoEncoderFactory::CreateVideoEncoder(
 
 const std::vector<cricket::VideoCodec>&
 MediaCodecVideoEncoderFactory::supported_codecs() const {
-  if (field_trial::IsEnabled(kH264HighProfileFieldTrial)) {
-    return supported_codecs_with_h264_hp_;
-  } else {
-    return supported_codecs_;
-  }
+  return supported_codecs_with_h264_hp_;
 }
 
 void MediaCodecVideoEncoderFactory::DestroyVideoEncoder(VideoEncoder* encoder) {

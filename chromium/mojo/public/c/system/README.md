@@ -1,5 +1,5 @@
 # Mojo C System API
-This document is a subset of the [Mojo documentation](/mojo).
+This document is a subset of the [Mojo documentation](/mojo/README.md).
 
 [TOC]
 
@@ -42,9 +42,9 @@ user-provided notification handlers may be invoked at any time on arbitrary
 threads in the process. It is entirely up to the API user to take appropriate
 measures to synchronize operations against other application state.
 
-The higher level [system](/mojo#High-Level-System-APIs) and
-[bindings](/mojo#High-Level-Bindings-APIs) APIs provide helpers to simplify Mojo
-usage in this regard, at the expense of some flexibility.
+The higher level [system](/mojo/README.md#High-Level-System-APIs) and
+[bindings](/mojo/README.md#High-Level-Bindings-APIs) APIs provide helpers to
+simplify Mojo usage in this regard, at the expense of some flexibility.
 
 ## Result Codes
 
@@ -92,12 +92,12 @@ unstructured binary messages with zero or more `MojoHandle` attachments to be
 transferred from one end of a pipe to the other. Message pipes work seamlessly
 across process boundaries or within a single process.
 
-The [Embedder Development Kit (EDK)](/mojo/edk/embedder) provides the means to
-bootstrap one or more primordial cross-process message pipes, and it's up to
-Mojo embedders to expose this capability in some useful way. Once such a pipe is
-established, additional handles -- including other message pipe handles -- may
-be sent to a remote process using that pipe (or in turn, over other pipes sent
-over that pipe, or pipes sent over *that* pipe, and so on...)
+The [Embedder Development Kit (EDK)](/mojo/edk/embedder/README.md) provides the
+means to bootstrap one or more primordial cross-process message pipes, and it's
+up to Mojo embedders to expose this capability in some useful way. Once such a
+pipe is established, additional handles -- including other message pipe
+handles -- may be sent to a remote process using that pipe (or in turn, over
+other pipes sent over that pipe, or pipes sent over *that* pipe, and so on...)
 
 The public C System API exposes the ability to read and write messages on pipes
 and to create new message pipes.
@@ -209,7 +209,7 @@ no need to subsequently call `MojoDestroyMessage` on that message.
 ### Writing Messages
 
 ``` c
-result = MojoWriteMessage(a, message, MOJO_WRITE_MESSAGE_FLAG_NONE);
+result = MojoWriteMessage(a, message, nullptr);
 ```
 
 `MojoWriteMessage` is a *non-blocking* call: it always returns
@@ -237,7 +237,7 @@ We can read a new message object from a pipe:
 
 ``` c
 MojoMessageHandle message;
-MojoResult result = MojoReadMessage(b, &message, MOJO_READ_MESSAGE_FLAG_NONE);
+MojoResult result = MojoReadMessage(b, nullptr, &message);
 ```
 
 and extract its data:
@@ -257,7 +257,7 @@ If we try were to try reading again now that there are no messages on `b`:
 
 ``` c
 MojoMessageHandle message;
-MojoResult result = MojoReadMessage(b, &message, MOJO_READ_MESSAGE_FLAG_NONE);
+MojoResult result = MojoReadMessage(b, nullptr, &message);
 ```
 
 We'll get a `result` of `MOJO_RESULT_SHOULD_WAIT`, indicating that the pipe is
@@ -302,12 +302,12 @@ options.struct_size = sizeof(options);
 options.flags = MOJO_APPEND_MESSAGE_DATA_FLAG_COMMIT_SIZE;
 MojoAppendMessageData(message, &options, 2, &c, 1, &buffer, &buffer_size);
 memcpy(buffer, "hi", 2);
-MojoWriteMessage(a, message, MOJO_WRITE_MESSAGE_FLAG_NONE);
+MojoWriteMessage(a, message, nullptr);
 
 // Some time later...
 MojoHandle e;
 uint32_t num_handles = 1;
-MojoReadMessage(b, &message, MOJO_READ_MESSAGE_FLAG_NONE);
+MojoReadMessage(b, nullptr, &message);
 MojoGetMessageData(message, nullptr, &buffer, &buffer_size, &e, &num_handles);
 ```
 
@@ -378,7 +378,7 @@ also less efficient due to extra copying.
 ``` c
 uint32_t num_bytes = 12;
 MojoResult result = MojoWriteData(producer, "datadatadata", &num_bytes,
-                                  MOJO_WRITE_DATA_FLAG_NONE);
+                                  nullptr);
 ```
 
 The above snippet will attempt to write 12 bytes into the data pipe, which
@@ -393,8 +393,7 @@ Reading from the consumer is a similar operation.
 ``` c
 char buffer[64];
 uint32_t num_bytes = 64;
-MojoResult result = MojoReadData(consumer, buffer, &num_bytes,
-                                 MOJO_READ_DATA_FLAG_NONE);
+MojoResult result = MojoReadData(consumer, nullptr, buffer, &num_bytes);
 ```
 
 This will attempt to read up to 64 bytes, returning the actual number of bytes
@@ -417,8 +416,7 @@ temporarily lock a portion of the data pipe's storage for direct memory access.
 ``` c
 void* buffer;
 uint32_t num_bytes = 1024;
-MojoResult result = MojoBeginWriteData(producer, &buffer, &num_bytes,
-                                       MOJO_WRITE_DATA_FLAG_NONE);
+MojoResult result = MojoBeginWriteData(producer, nullptr, &buffer, &num_bytes);
 ```
 
 This requests write access to a region of up to 1024 bytes of the data pipe's
@@ -430,7 +428,7 @@ ASAP, indicating the number of bytes actually written:
 
 ``` c
 memcpy(buffer, "hello", 6);
-MojoResult result = MojoEndWriteData(producer, 6);
+MojoResult result = MojoEndWriteData(producer, 6, nullptr);
 ```
 
 Two-phase reads look similar:
@@ -438,19 +436,18 @@ Two-phase reads look similar:
 ``` c
 void* buffer;
 uint32_t num_bytes = 1024;
-MojoResult result = MojoBeginReadData(consumer, &buffer, &num_bytes,
-                                      MOJO_READ_DATA_FLAG_NONE);
+MojoResult result = MojoBeginReadData(consumer, nullptr, &buffer, &num_bytes);
 // result should be MOJO_RESULT_OK, since there is some data available.
 
 printf("Pipe says: %s", (const char*)buffer);  // Should say "hello".
 
-result = MojoEndReadData(consumer, 1);  // Say we only consumed one byte.
+// Say we only consumed one byte.
+result = MojoEndReadData(consumer, 1, nullptr);
 
 num_bytes = 1024;
-result = MojoBeginReadData(consumer, &buffer, &num_bytes,
-                           MOJO_READ_DATA_FLAG_NONE);
+result = MojoBeginReadData(consumer, nullptr, &buffer, &num_bytes);
 printf("Pipe says: %s", (const char*)buffer);  // Should say "ello".
-result = MojoEndReadData(consumer, 5);
+result = MojoEndReadData(consumer, 5, nullptr);
 ```
 
 ## Shared Buffers
@@ -469,7 +466,7 @@ Usage is straightforward. You can create a new buffer:
 ``` c
 // Allocate a shared buffer of 4 kB.
 MojoHandle buffer;
-MojoResult result = MojoCreateSharedBuffer(NULL, 4096, &buffer);
+MojoResult result = MojoCreateSharedBuffer(4096, NULL, &buffer);
 ```
 
 You can also duplicate an existing shared buffer handle:
@@ -491,8 +488,7 @@ memory access to its contents:
 
 ``` c
 void* data;
-MojoResult result = MojoMapBuffer(buffer, 0, 64, &data,
-                                  MOJO_MAP_BUFFER_FLAG_NONE);
+MojoResult result = MojoMapBuffer(buffer, 0, 64, nullptr, &data);
 
 *(int*)data = 42;
 result = MojoUnmapBuffer(data);
@@ -510,14 +506,13 @@ that the newly duplicated handle can only be mapped to read-only memory:
 MojoHandle read_only_buffer;
 MojoDuplicateBufferHandleOptions options;
 options.struct_size = sizeof(options);
-options.flags = MOJO_DUPLICATE_BUFFER_HANDLE_OPTIONS_FLAG_READ_ONLY;
+options.flags = MOJO_DUPLICATE_BUFFER_HANDLE_FLAG_READ_ONLY;
 MojoResult result = MojoDuplicateBufferHandle(buffer, &options,
                                               &read_only_buffer);
 
 // Attempt to map and write to the buffer using the read-only handle:
 void* data;
-result = MojoMapBuffer(read_only_buffer, 0, 64, &data,
-                       MOJO_MAP_BUFFER_FLAG_NONE);
+result = MojoMapBuffer(read_only_buffer, 0, 64, nullptr, &data);
 *(int*)data = 42;  // CRASH
 ```
 
@@ -548,7 +543,7 @@ platform_handle.struct_size = sizeof(platform_handle);
 platform_handle.type = MOJO_PLATFORM_HANDLE_TYPE_FILE_DESCRIPTOR;
 platform_handle.value = (uint64_t)fd;
 MojoHandle handle;
-MojoResult result = MojoWrapPlatformHandle(&platform_handle, &handle);
+MojoResult result = MojoWrapPlatformHandle(&platform_handle, nullptr, &handle);
 ```
 
 Note that at this point `handle` effectively owns the file descriptor
@@ -559,7 +554,7 @@ over a message pipe, and now we want to unwrap it on the other side:
 ``` c
 MojoPlatformHandle platform_handle;
 platform_handle.struct_size = sizeof(platform_handle);
-MojoResult result = MojoUnwrapPlatformHandle(handle, &platform_handle);
+MojoResult result = MojoUnwrapPlatformHandle(handle, nullptr, &platform_handle);
 int fd = (int)platform_handle.value;
 ```
 
@@ -760,7 +755,9 @@ MojoResult result = MojoArmWatcher(w, NULL, NULL, NULL, NULL);
 Now we can write to `b` to make `a` readable:
 
 ``` c
-MojoWriteMessage(b, NULL, 0, NULL, 0, MOJO_WRITE_MESSAGE_NONE);
+MojoMessageHandle m;
+MojoCreateMessage(nullptr, &m);
+MojoWriteMessage(b, m, nullptr);
 ```
 
 Eventually -- and in practice possibly before `MojoWriteMessage` even

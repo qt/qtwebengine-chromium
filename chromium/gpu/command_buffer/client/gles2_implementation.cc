@@ -41,6 +41,7 @@
 #include "gpu/command_buffer/client/vertex_array_object_manager.h"
 #include "gpu/command_buffer/common/context_creation_attribs.h"
 #include "gpu/command_buffer/common/id_allocator.h"
+#include "gpu/command_buffer/common/swap_buffers_complete_params.h"
 #include "gpu/command_buffer/common/sync_token.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_f.h"
@@ -335,6 +336,26 @@ void GLES2Implementation::OnGpuControlErrorMessage(const char* message,
                                                    int32_t id) {
   if (!error_message_callback_.is_null())
     error_message_callback_.Run(message, id);
+}
+
+void GLES2Implementation::OnGpuControlSwapBuffersCompleted(
+    const SwapBuffersCompleteParams& params) {
+  auto found = pending_swap_callbacks_.find(params.swap_response.swap_id);
+  if (found == pending_swap_callbacks_.end())
+    return;
+
+  std::move(found->second).Run(params);
+  pending_swap_callbacks_.erase(found);
+}
+
+void GLES2Implementation::OnSwapBufferPresented(
+    uint64_t swap_id,
+    const gfx::PresentationFeedback& feedback) {
+  auto found = pending_presentation_callbacks_.find(swap_id);
+  if (found == pending_presentation_callbacks_.end())
+    return;
+  std::move(found->second).Run(feedback);
+  pending_presentation_callbacks_.erase(found);
 }
 
 void GLES2Implementation::FreeSharedMemory(void* mem) {
@@ -1279,7 +1300,7 @@ GLuint GLES2Implementation::GetLastFlushIdCHROMIUM() {
   return flush_id_;
 }
 
-void GLES2Implementation::SwapBuffers() {
+void GLES2Implementation::SwapBuffers(uint64_t swap_id, GLbitfield flags) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glSwapBuffers()");
   // TODO(piman): Strictly speaking we'd want to insert the token after the
@@ -1290,7 +1311,7 @@ void GLES2Implementation::SwapBuffers() {
   // semantics if the client doesn't use the callback mechanism, and by chance
   // the scheduler yields between the InsertToken and the SwapBuffers.
   swap_buffers_tokens_.push(helper_->InsertToken());
-  helper_->SwapBuffers();
+  helper_->SwapBuffers(swap_id, flags);
   helper_->CommandBufferHelper::Flush();
   // Wait if we added too many swap buffers. Add 1 to kMaxSwapBuffers to
   // compensate for TODO above.
@@ -1300,8 +1321,10 @@ void GLES2Implementation::SwapBuffers() {
   }
 }
 
-void GLES2Implementation::SwapBuffersWithBoundsCHROMIUM(GLsizei count,
-                                                        const GLint* rects) {
+void GLES2Implementation::SwapBuffersWithBoundsCHROMIUM(uint64_t swap_id,
+                                                        GLsizei count,
+                                                        const GLint* rects,
+                                                        GLbitfield flags) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glSwapBuffersWithBoundsCHROMIUM("
                      << count << ", " << static_cast<const void*>(rects)
@@ -1321,7 +1344,7 @@ void GLES2Implementation::SwapBuffersWithBoundsCHROMIUM(GLsizei count,
 
   // Same flow control as GLES2Implementation::SwapBuffers (see comments there).
   swap_buffers_tokens_.push(helper_->InsertToken());
-  helper_->SwapBuffersWithBoundsCHROMIUMImmediate(count, rects);
+  helper_->SwapBuffersWithBoundsCHROMIUMImmediate(swap_id, count, rects, flags);
   helper_->CommandBufferHelper::Flush();
   if (swap_buffers_tokens_.size() > kMaxSwapBuffers + 1) {
     helper_->WaitForToken(swap_buffers_tokens_.front());
@@ -1492,54 +1515,6 @@ GLint GLES2Implementation::GetAttribLocation(
   GPU_CLIENT_LOG("returned " << loc);
   CheckGLError();
   return loc;
-}
-
-void* GLES2Implementation::GetBufferSubDataAsyncCHROMIUM(
-    GLenum target, GLintptr offset, GLsizeiptr size) {
-  const char* name = "glGetBufferSubDataAsyncCHROMIUM";
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] " << name << "("
-      << GLES2Util::GetStringEnum(target) << ", " << offset << ", "
-      << size << ")");
-  switch (target) {
-    case GL_ARRAY_BUFFER:
-    case GL_ELEMENT_ARRAY_BUFFER:
-    case GL_COPY_READ_BUFFER:
-    case GL_COPY_WRITE_BUFFER:
-    case GL_PIXEL_PACK_BUFFER:
-    case GL_PIXEL_UNPACK_BUFFER:
-    case GL_TRANSFORM_FEEDBACK_BUFFER:
-    case GL_UNIFORM_BUFFER:
-      break;
-    default:
-      SetGLError(GL_INVALID_ENUM, name, "invalid target");
-      return nullptr;
-  }
-
-  GLuint buffer = GetBoundBufferHelper(target);
-  if (buffer == 0) {
-    SetGLError(GL_INVALID_OPERATION, name, "no buffer bound");
-    return nullptr;
-  }
-
-  if (!ValidateSize("glMapBufferRange", size) ||
-      !ValidateOffset("glMapBufferRange", offset)) {
-    SetGLError(GL_INVALID_VALUE, name, "invalid size/offset");
-    return nullptr;
-  }
-
-  int32_t shm_id;
-  unsigned int shm_offset;
-  void* shm_ptr = mapped_memory_->Alloc(size, &shm_id, &shm_offset);
-  if (!shm_ptr) {
-    SetGLError(GL_OUT_OF_MEMORY, name, "out of memory");
-    return nullptr;
-  }
-
-  helper_->GetBufferSubDataAsyncCHROMIUM(target, offset, size,
-      shm_id, shm_offset);
-
-  return shm_ptr;
 }
 
 GLint GLES2Implementation::GetUniformLocationHelper(
@@ -2368,6 +2343,18 @@ PixelStoreParams GLES2Implementation::GetUnpackParameters(Dimension dimension) {
     params.skip_images = unpack_skip_images_;
   }
   return params;
+}
+
+uint64_t GLES2Implementation::PrepareNextSwapId(
+    SwapCompletedCallback completion_callback,
+    PresentationCallback presentation_callback) {
+  uint64_t swap_id = swap_id_++;
+  pending_swap_callbacks_.emplace(swap_id, std::move(completion_callback));
+  if (!presentation_callback.is_null()) {
+    pending_presentation_callbacks_.emplace(swap_id,
+                                            std::move(presentation_callback));
+  }
+  return swap_id;
 }
 
 void GLES2Implementation::TexImage2D(
@@ -4676,11 +4663,19 @@ GLenum GLES2Implementation::GetGraphicsResetStatusKHR() {
   return GL_NO_ERROR;
 }
 
-void GLES2Implementation::Swap() {
-  SwapBuffers();
+void GLES2Implementation::Swap(uint32_t flags,
+                               SwapCompletedCallback complete_callback,
+                               PresentationCallback presentation_callback) {
+  SwapBuffers(PrepareNextSwapId(std::move(complete_callback),
+                                std::move(presentation_callback)),
+              flags);
 }
 
-void GLES2Implementation::SwapWithBounds(const std::vector<gfx::Rect>& rects) {
+void GLES2Implementation::SwapWithBounds(
+    const std::vector<gfx::Rect>& rects,
+    uint32_t flags,
+    SwapCompletedCallback swap_completed,
+    PresentationCallback presentation_callback) {
   std::vector<int> rects_data(rects.size() * 4);
   for (size_t i = 0; i < rects.size(); ++i) {
     rects_data[i * 4 + 0] = rects[i].x();
@@ -4688,16 +4683,31 @@ void GLES2Implementation::SwapWithBounds(const std::vector<gfx::Rect>& rects) {
     rects_data[i * 4 + 2] = rects[i].width();
     rects_data[i * 4 + 3] = rects[i].height();
   }
-  SwapBuffersWithBoundsCHROMIUM(rects.size(), rects_data.data());
+  SwapBuffersWithBoundsCHROMIUM(
+      PrepareNextSwapId(std::move(swap_completed),
+                        std::move(presentation_callback)),
+      rects.size(), rects_data.data(), flags);
 }
 
-void GLES2Implementation::PartialSwapBuffers(const gfx::Rect& sub_buffer) {
-  PostSubBufferCHROMIUM(
-      sub_buffer.x(), sub_buffer.y(), sub_buffer.width(), sub_buffer.height());
+void GLES2Implementation::PartialSwapBuffers(
+    const gfx::Rect& sub_buffer,
+    uint32_t flags,
+    SwapCompletedCallback swap_completed,
+    PresentationCallback presentation_callback) {
+  PostSubBufferCHROMIUM(PrepareNextSwapId(std::move(swap_completed),
+                                          std::move(presentation_callback)),
+                        sub_buffer.x(), sub_buffer.y(), sub_buffer.width(),
+                        sub_buffer.height(), flags);
 }
 
-void GLES2Implementation::CommitOverlayPlanes() {
-  CommitOverlayPlanesCHROMIUM();
+void GLES2Implementation::CommitOverlayPlanes(
+    uint32_t flags,
+    SwapCompletedCallback swap_completed,
+    PresentationCallback presentation_callback) {
+  CommitOverlayPlanesCHROMIUM(
+      PrepareNextSwapId(std::move(swap_completed),
+                        std::move(presentation_callback)),
+      flags);
 }
 
 static GLenum GetGLESOverlayTransform(gfx::OverlayTransform plane_transform) {
@@ -4727,12 +4737,13 @@ void GLES2Implementation::ScheduleOverlayPlane(
     unsigned overlay_texture_id,
     const gfx::Rect& display_bounds,
     const gfx::RectF& uv_rect,
-    bool enable_blend) {
+    bool enable_blend,
+    unsigned gpu_fence_id) {
   ScheduleOverlayPlaneCHROMIUM(
       plane_z_order, GetGLESOverlayTransform(plane_transform),
       overlay_texture_id, display_bounds.x(), display_bounds.y(),
       display_bounds.width(), display_bounds.height(), uv_rect.x(), uv_rect.y(),
-      uv_rect.width(), uv_rect.height(), enable_blend);
+      uv_rect.width(), uv_rect.height(), enable_blend, gpu_fence_id);
 }
 
 void GLES2Implementation::ScheduleCALayerSharedStateCHROMIUM(
@@ -4831,7 +4842,8 @@ void GLES2Implementation::ScheduleDCLayerCHROMIUM(
     GLuint background_color,
     GLuint edge_aa_mask,
     const GLfloat* bounds_rect,
-    GLuint filter) {
+    GLuint filter,
+    bool is_protected_video) {
   const size_t kRectsSize = 8 * sizeof(GLfloat);
   size_t textures_size = num_textures * sizeof(GLuint);
   size_t shm_size = kRectsSize + textures_size;
@@ -4847,17 +4859,19 @@ void GLES2Implementation::ScheduleDCLayerCHROMIUM(
   memcpy(static_cast<char*>(buffer.address()) + kRectsSize,
          contents_texture_ids, textures_size);
   helper_->ScheduleDCLayerCHROMIUM(num_textures, background_color, edge_aa_mask,
-                                   filter, buffer.shm_id(), buffer.offset());
+                                   filter, buffer.shm_id(), buffer.offset(),
+                                   is_protected_video);
 }
 
-void GLES2Implementation::CommitOverlayPlanesCHROMIUM() {
+void GLES2Implementation::CommitOverlayPlanesCHROMIUM(uint64_t swap_id,
+                                                      uint32_t flags) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] CommitOverlayPlanesCHROMIUM()");
   TRACE_EVENT0("gpu", "GLES2::CommitOverlayPlanesCHROMIUM");
 
   // Same flow control as GLES2Implementation::SwapBuffers (see comments there).
   swap_buffers_tokens_.push(helper_->InsertToken());
-  helper_->CommitOverlayPlanesCHROMIUM();
+  helper_->CommitOverlayPlanesCHROMIUM(swap_id, flags);
   helper_->CommandBufferHelper::Flush();
   if (swap_buffers_tokens_.size() > kMaxSwapBuffers + 1) {
     helper_->WaitForToken(swap_buffers_tokens_.front());
@@ -5378,8 +5392,12 @@ void GLES2Implementation::GetTransformFeedbackVaryingsCHROMIUM(
   memcpy(info, &result[0], result.size());
 }
 
-void GLES2Implementation::PostSubBufferCHROMIUM(
-    GLint x, GLint y, GLint width, GLint height) {
+void GLES2Implementation::PostSubBufferCHROMIUM(uint64_t swap_id,
+                                                GLint x,
+                                                GLint y,
+                                                GLint width,
+                                                GLint height,
+                                                GLbitfield flags) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] PostSubBufferCHROMIUM("
       << x << ", " << y << ", " << width << ", " << height << ")");
@@ -5388,7 +5406,7 @@ void GLES2Implementation::PostSubBufferCHROMIUM(
 
   // Same flow control as GLES2Implementation::SwapBuffers (see comments there).
   swap_buffers_tokens_.push(helper_->InsertToken());
-  helper_->PostSubBufferCHROMIUM(x, y, width, height);
+  helper_->PostSubBufferCHROMIUM(swap_id, x, y, width, height, flags);
   helper_->CommandBufferHelper::Flush();
   if (swap_buffers_tokens_.size() > kMaxSwapBuffers + 1) {
     helper_->WaitForToken(swap_buffers_tokens_.front());
@@ -5913,6 +5931,36 @@ bool GLES2Implementation::ThreadsafeDiscardableTextureIsDeletedForTracing(
   return manager->TextureIsDeletedForTracing(texture_id);
 }
 
+void* GLES2Implementation::MapTransferCacheEntry(size_t serialized_size) {
+  NOTREACHED();
+  return nullptr;
+}
+
+void GLES2Implementation::UnmapAndCreateTransferCacheEntry(uint32_t type,
+                                                           uint32_t id) {
+  NOTREACHED();
+}
+
+bool GLES2Implementation::ThreadsafeLockTransferCacheEntry(uint32_t type,
+                                                           uint32_t id) {
+  NOTREACHED();
+  return false;
+}
+
+void GLES2Implementation::UnlockTransferCacheEntries(
+    const std::vector<std::pair<uint32_t, uint32_t>>& entries) {
+  NOTREACHED();
+}
+
+void GLES2Implementation::DeleteTransferCacheEntry(uint32_t type, uint32_t id) {
+  NOTREACHED();
+}
+
+unsigned int GLES2Implementation::GetTransferBufferFreeSize() const {
+  NOTREACHED();
+  return 0;
+}
+
 void GLES2Implementation::GenSyncTokenCHROMIUM(GLbyte* sync_token) {
   if (!sync_token) {
     SetGLError(GL_INVALID_VALUE, "glGenSyncTokenCHROMIUM", "empty sync_token");
@@ -6244,6 +6292,34 @@ GLenum GLES2Implementation::ClientWaitSync(
   return *result;
 }
 
+void GLES2Implementation::CopyBufferSubData(GLenum readtarget,
+                                            GLenum writetarget,
+                                            GLintptr readoffset,
+                                            GLintptr writeoffset,
+                                            GLsizeiptr size) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glCopyBufferSubData("
+                     << GLES2Util::GetStringBufferTarget(readtarget) << ", "
+                     << GLES2Util::GetStringBufferTarget(writetarget) << ", "
+                     << readoffset << ", " << writeoffset << ", " << size
+                     << ")");
+  if (readoffset < 0) {
+    SetGLError(GL_INVALID_VALUE, "glCopyBufferSubData", "readoffset < 0");
+    return;
+  }
+  if (writeoffset < 0) {
+    SetGLError(GL_INVALID_VALUE, "glCopyBufferSubData", "writeoffset < 0");
+    return;
+  }
+  if (size < 0) {
+    SetGLError(GL_INVALID_VALUE, "glCopyBufferSubData", "size < 0");
+    return;
+  }
+  helper_->CopyBufferSubData(readtarget, writetarget, readoffset, writeoffset,
+                             size);
+  CheckGLError();
+}
+
 void GLES2Implementation::WaitSync(
     GLsync sync, GLbitfield flags, GLuint64 timeout) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
@@ -6446,7 +6522,7 @@ void GLES2Implementation::PathCommandsCHROMIUM(GLuint path,
     coords_shm_offset = buffer.offset();
   }
 
-  DCHECK(num_commands > 0);
+  DCHECK_GT(num_commands, 0);
   unsigned char* commands_addr =
       static_cast<unsigned char*>(buffer.address()) + coords_size;
   memcpy(commands_addr, commands, num_commands);
@@ -6520,7 +6596,7 @@ bool GLES2Implementation::PrepareInstancedPathCommand(
   }
 
   // The multiplication below will not overflow.
-  DCHECK(transforms_component_count <= 12);
+  DCHECK_LE(transforms_component_count, 12U);
   uint32_t one_transform_size = sizeof(GLfloat) * transforms_component_count;
 
   uint32_t transforms_size;
@@ -6554,7 +6630,7 @@ bool GLES2Implementation::PrepareInstancedPathCommand(
     *out_transforms_offset = 0;
   }
 
-  DCHECK(paths_size > 0);
+  DCHECK_GT(paths_size, 0U);
   unsigned char* paths_addr =
       static_cast<unsigned char*>(buffer->address()) + transforms_size;
   memcpy(paths_addr, paths, paths_size);
@@ -6823,7 +6899,7 @@ void GLES2Implementation::ProgramPathFragmentInputGenCHROMIUM(
       return;
     }
 
-    DCHECK(coeffs_size > 0);
+    DCHECK_GT(coeffs_size, 0U);
     unsigned char* addr = static_cast<unsigned char*>(buffer.address());
     memcpy(addr, coeffs, coeffs_size);
 
@@ -6917,47 +6993,6 @@ void GLES2Implementation::Viewport(GLint x,
   CheckGLError();
 }
 
-void* GLES2Implementation::MapRasterCHROMIUM(GLsizeiptr size) {
-  if (size < 0) {
-    SetGLError(GL_INVALID_VALUE, "glMapRasterCHROMIUM", "negative size");
-    return nullptr;
-  }
-  if (raster_mapped_buffer_) {
-    SetGLError(GL_INVALID_OPERATION, "glMapRasterCHROMIUM", "already mapped");
-    return nullptr;
-  }
-  raster_mapped_buffer_.emplace(size, helper_, transfer_buffer_);
-  if (!raster_mapped_buffer_->valid()) {
-    SetGLError(GL_INVALID_OPERATION, "glMapRasterCHROMIUM", "size too big");
-    raster_mapped_buffer_ = base::nullopt;
-    return nullptr;
-  }
-  return raster_mapped_buffer_->address();
-}
-
-void GLES2Implementation::UnmapRasterCHROMIUM(GLsizeiptr written_size) {
-  if (written_size < 0) {
-    SetGLError(GL_INVALID_VALUE, "glUnmapRasterCHROMIUM",
-               "negative written_size");
-    return;
-  }
-  if (!raster_mapped_buffer_) {
-    SetGLError(GL_INVALID_OPERATION, "glUnmapRasterCHROMIUM", "not mapped");
-    return;
-  }
-  DCHECK(raster_mapped_buffer_->valid());
-  if (written_size == 0) {
-    raster_mapped_buffer_->Discard();
-    raster_mapped_buffer_ = base::nullopt;
-    return;
-  }
-  raster_mapped_buffer_->Shrink(written_size);
-  helper_->RasterCHROMIUM(written_size, raster_mapped_buffer_->shm_id(),
-                          raster_mapped_buffer_->offset());
-  raster_mapped_buffer_ = base::nullopt;
-  CheckGLError();
-}
-
 void GLES2Implementation::IssueBeginQuery(GLenum target,
                                           GLuint id,
                                           uint32_t sync_data_shm_id,
@@ -7002,29 +7037,6 @@ GLenum GLES2Implementation::GetClientSideGLError() {
 
 CommandBufferHelper* GLES2Implementation::cmd_buffer_helper() {
   return helper_;
-}
-
-void GLES2Implementation::IssueCreateTransferCacheEntry(
-    GLuint entry_type,
-    GLuint entry_id,
-    GLuint handle_shm_id,
-    GLuint handle_shm_offset,
-    GLuint data_shm_id,
-    GLuint data_shm_offset,
-    GLuint data_size) {
-  helper_->CreateTransferCacheEntryINTERNAL(entry_type, entry_id, handle_shm_id,
-                                            handle_shm_offset, data_shm_id,
-                                            data_shm_offset, data_size);
-}
-
-void GLES2Implementation::IssueDeleteTransferCacheEntry(GLuint entry_type,
-                                                        GLuint entry_id) {
-  helper_->DeleteTransferCacheEntryINTERNAL(entry_type, entry_id);
-}
-
-void GLES2Implementation::IssueUnlockTransferCacheEntry(GLuint entry_type,
-                                                        GLuint entry_id) {
-  helper_->UnlockTransferCacheEntryINTERNAL(entry_type, entry_id);
 }
 
 CommandBuffer* GLES2Implementation::command_buffer() const {

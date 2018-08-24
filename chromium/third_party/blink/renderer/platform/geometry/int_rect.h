@@ -32,6 +32,7 @@
 #include "third_party/blink/renderer/platform/geometry/int_rect_outsets.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
+#include "third_party/blink/renderer/platform/wtf/saturated_arithmetic.h"
 
 #if defined(OS_MACOSX)
 typedef struct CGRect CGRect;
@@ -67,6 +68,8 @@ class PLATFORM_EXPORT IntRect {
   // PixelSnappedIntRect(), etc. instead.
   explicit IntRect(const FloatRect&) = delete;
   explicit IntRect(const LayoutRect&) = delete;
+
+  explicit IntRect(const gfx::Rect& rect);
 
   IntPoint Location() const { return location_; }
   IntSize Size() const { return size_; }
@@ -215,6 +218,11 @@ inline IntRect UnionRectEvenIfEmpty(const IntRect& a, const IntRect& b) {
 
 PLATFORM_EXPORT IntRect UnionRectEvenIfEmpty(const Vector<IntRect>&);
 
+inline IntRect SaturatedRect(const IntRect& r) {
+  return IntRect(r.X(), r.Y(), ClampAdd(r.X(), r.Width()) - r.X(),
+                 ClampAdd(r.Y(), r.Height()) - r.Y());
+}
+
 inline bool operator==(const IntRect& a, const IntRect& b) {
   return a.Location() == b.Location() && a.Size() == b.Size();
 }
@@ -224,6 +232,7 @@ inline bool operator!=(const IntRect& a, const IntRect& b) {
 }
 
 PLATFORM_EXPORT std::ostream& operator<<(std::ostream&, const IntRect&);
+PLATFORM_EXPORT WTF::TextStream& operator<<(WTF::TextStream&, const IntRect&);
 
 }  // namespace blink
 

@@ -5,19 +5,6 @@
 #include "core/fxcrt/fx_extension.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace {
-
-uint32_t ReferenceGetBits32(const uint8_t* pData, int bitpos, int nbits) {
-  int result = 0;
-  for (int i = 0; i < nbits; i++) {
-    if (pData[(bitpos + i) / 8] & (1 << (7 - (bitpos + i) % 8)))
-      result |= 1 << (nbits - i - 1);
-  }
-  return result;
-}
-
-}  // namespace
-
 TEST(fxcrt, FXSYS_HexCharToInt) {
   EXPECT_EQ(10, FXSYS_HexCharToInt('a'));
   EXPECT_EQ(10, FXSYS_HexCharToInt('A'));
@@ -103,12 +90,47 @@ TEST(fxcrt, FXSYS_ToUTF16BE) {
   EXPECT_STREQ("D840DC3E", buf);
 }
 
-TEST(fxcrt, GetBits32) {
-  unsigned char data[] = {0xDE, 0x3F, 0xB1, 0x7C, 0x12, 0x9A, 0x04, 0x56};
-  for (int nbits = 1; nbits <= 32; ++nbits) {
-    for (int bitpos = 0; bitpos < (int)sizeof(data) * 8 - nbits; ++bitpos) {
-      EXPECT_EQ(ReferenceGetBits32(data, bitpos, nbits),
-                GetBits32(data, bitpos, nbits));
-    }
-  }
+TEST(fxcrt, FXSYS_wcstof) {
+  int32_t used_len = 0;
+  EXPECT_FLOAT_EQ(-12.0f, FXSYS_wcstof(L"-12", 3, &used_len));
+  EXPECT_EQ(3, used_len);
+
+  used_len = 0;
+  EXPECT_FLOAT_EQ(1.5362f, FXSYS_wcstof(L"1.5362", 6, &used_len));
+  EXPECT_EQ(6, used_len);
+
+  used_len = 0;
+  EXPECT_FLOAT_EQ(0.875f, FXSYS_wcstof(L"0.875", 5, &used_len));
+  EXPECT_EQ(5, used_len);
+
+  used_len = 0;
+  EXPECT_FLOAT_EQ(5.56e-2f, FXSYS_wcstof(L"5.56e-2", 7, &used_len));
+  EXPECT_EQ(7, used_len);
+
+  used_len = 0;
+  EXPECT_FLOAT_EQ(1.234e10f, FXSYS_wcstof(L"1.234E10", 8, &used_len));
+  EXPECT_EQ(8, used_len);
+
+  used_len = 0;
+  EXPECT_FLOAT_EQ(0.0f, FXSYS_wcstof(L"1.234E100000000000000", 21, &used_len));
+  EXPECT_EQ(0, used_len);
+
+  used_len = 0;
+  EXPECT_FLOAT_EQ(0.0f, FXSYS_wcstof(L"1.234E-128", 21, &used_len));
+  EXPECT_EQ(0, used_len);
+
+  // TODO(dsinclair): This should round as per IEEE 64-bit values.
+  // EXPECT_EQ(L"123456789.01234567", FXSYS_wcstof(L"123456789.012345678"));
+  used_len = 0;
+  EXPECT_FLOAT_EQ(123456789.012345678f,
+                  FXSYS_wcstof(L"123456789.012345678", 19, &used_len));
+  EXPECT_EQ(19, used_len);
+
+  // TODO(dsinclair): This is spec'd as rounding when > 16 significant digits
+  // prior to the exponent.
+  // EXPECT_EQ(100000000000000000, FXSYS_wcstof(L"99999999999999999"));
+  used_len = 0;
+  EXPECT_FLOAT_EQ(99999999999999999.0f,
+                  FXSYS_wcstof(L"99999999999999999", 17, &used_len));
+  EXPECT_EQ(17, used_len);
 }

@@ -321,6 +321,7 @@ namespace sw
 		inline int getStencilSliceB() const;
 
 		void sync();                      // Wait for lock(s) to be released.
+		virtual bool targetRequiresSync() const { return false; }
 		inline bool isUnlocked() const;   // Only reliable after sync().
 
 		inline int getSamples() const;
@@ -362,7 +363,7 @@ namespace sw
 		static int pitchP(int width, int border, Format format, bool target);
 		static int sliceB(int width, int height, int border, Format format, bool target);
 		static int sliceP(int width, int height, int border, Format format, bool target);
-		static unsigned int size(int width, int height, int depth, int border, int samples, Format format);   // FIXME: slice * depth
+		static size_t size(int width, int height, int depth, int border, int samples, Format format);
 
 		static bool isStencil(Format format);
 		static bool isDepth(Format format);

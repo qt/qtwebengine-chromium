@@ -69,10 +69,12 @@ static void fill_mode_costs(VP9_COMP *cpi) {
   const FRAME_CONTEXT *const fc = cpi->common.fc;
   int i, j;
 
-  for (i = 0; i < INTRA_MODES; ++i)
-    for (j = 0; j < INTRA_MODES; ++j)
+  for (i = 0; i < INTRA_MODES; ++i) {
+    for (j = 0; j < INTRA_MODES; ++j) {
       vp9_cost_tokens(cpi->y_mode_costs[i][j], vp9_kf_y_mode_prob[i][j],
                       vp9_intra_mode_tree);
+    }
+  }
 
   vp9_cost_tokens(cpi->mbmode_cost, fc->y_mode_prob[1], vp9_intra_mode_tree);
   for (i = 0; i < INTRA_MODES; ++i) {
@@ -82,9 +84,28 @@ static void fill_mode_costs(VP9_COMP *cpi) {
                     fc->uv_mode_prob[i], vp9_intra_mode_tree);
   }
 
-  for (i = 0; i < SWITCHABLE_FILTER_CONTEXTS; ++i)
+  for (i = 0; i < SWITCHABLE_FILTER_CONTEXTS; ++i) {
     vp9_cost_tokens(cpi->switchable_interp_costs[i],
                     fc->switchable_interp_prob[i], vp9_switchable_interp_tree);
+  }
+
+  for (i = TX_8X8; i < TX_SIZES; ++i) {
+    for (j = 0; j < TX_SIZE_CONTEXTS; ++j) {
+      const vpx_prob *tx_probs = get_tx_probs(i, j, &fc->tx_probs);
+      int k;
+      for (k = 0; k <= i; ++k) {
+        int cost = 0;
+        int m;
+        for (m = 0; m <= k - (k == i); ++m) {
+          if (m == k)
+            cost += vp9_cost_zero(tx_probs[m]);
+          else
+            cost += vp9_cost_one(tx_probs[m]);
+        }
+        cpi->tx_size_cost[i - 1][j][k] = cost;
+      }
+    }
+  }
 }
 
 static void fill_token_costs(vp9_coeff_cost *c,
@@ -153,10 +174,10 @@ int64_t vp9_compute_rd_mult_based_on_qindex(const VP9_COMP *cpi, int qindex) {
   switch (cpi->common.bit_depth) {
     case VPX_BITS_8: rdmult = 88 * q * q / 24; break;
     case VPX_BITS_10: rdmult = ROUND_POWER_OF_TWO(88 * q * q / 24, 4); break;
-    case VPX_BITS_12: rdmult = ROUND_POWER_OF_TWO(88 * q * q / 24, 8); break;
     default:
-      assert(0 && "bit_depth should be VPX_BITS_8, VPX_BITS_10 or VPX_BITS_12");
-      return -1;
+      assert(cpi->common.bit_depth == VPX_BITS_12);
+      rdmult = ROUND_POWER_OF_TWO(88 * q * q / 24, 8);
+      break;
   }
 #else
   int64_t rdmult = 88 * q * q / 24;
@@ -185,10 +206,10 @@ static int compute_rd_thresh_factor(int qindex, vpx_bit_depth_t bit_depth) {
   switch (bit_depth) {
     case VPX_BITS_8: q = vp9_dc_quant(qindex, 0, VPX_BITS_8) / 4.0; break;
     case VPX_BITS_10: q = vp9_dc_quant(qindex, 0, VPX_BITS_10) / 16.0; break;
-    case VPX_BITS_12: q = vp9_dc_quant(qindex, 0, VPX_BITS_12) / 64.0; break;
     default:
-      assert(0 && "bit_depth should be VPX_BITS_8, VPX_BITS_10 or VPX_BITS_12");
-      return -1;
+      assert(bit_depth == VPX_BITS_12);
+      q = vp9_dc_quant(qindex, 0, VPX_BITS_12) / 64.0;
+      break;
   }
 #else
   (void)bit_depth;
@@ -209,12 +230,11 @@ void vp9_initialize_me_consts(VP9_COMP *cpi, MACROBLOCK *x, int qindex) {
       x->sadperbit16 = sad_per_bit16lut_10[qindex];
       x->sadperbit4 = sad_per_bit4lut_10[qindex];
       break;
-    case VPX_BITS_12:
+    default:
+      assert(cpi->common.bit_depth == VPX_BITS_12);
       x->sadperbit16 = sad_per_bit16lut_12[qindex];
       x->sadperbit4 = sad_per_bit4lut_12[qindex];
       break;
-    default:
-      assert(0 && "bit_depth should be VPX_BITS_8, VPX_BITS_10 or VPX_BITS_12");
   }
 #else
   (void)cpi;
@@ -471,13 +491,13 @@ void vp9_get_entropy_contexts(BLOCK_SIZE bsize, TX_SIZE tx_size,
       for (i = 0; i < num_4x4_h; i += 4)
         t_left[i] = !!*(const uint32_t *)&left[i];
       break;
-    case TX_32X32:
+    default:
+      assert(tx_size == TX_32X32);
       for (i = 0; i < num_4x4_w; i += 8)
         t_above[i] = !!*(const uint64_t *)&above[i];
       for (i = 0; i < num_4x4_h; i += 8)
         t_left[i] = !!*(const uint64_t *)&left[i];
       break;
-    default: assert(0 && "Invalid transform size."); break;
   }
 }
 

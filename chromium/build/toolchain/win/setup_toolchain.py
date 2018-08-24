@@ -149,10 +149,9 @@ def _LoadToolchainEnv(cpu, sdk_dir, target_store):
     # Store target must come before any SDK version declaration
     if (target_store):
       args.append(['store'])
-    # Chromium requires the 10.0.15063.468 SDK - previous versions don't have
-    # all of the required declarations and 10.0.16299.0 has some
-    # incompatibilities (crbug.com/773476).
-    args.append('10.0.15063.0')
+    # Chromium requires the 10.0.17134.0 SDK - previous versions don't have
+    # all of the required declarations.
+    args.append('10.0.17134.0')
     variables = _LoadEnvFromBat(args)
   return _ExtractImportantEnvironment(variables)
 
@@ -182,11 +181,11 @@ def _LowercaseDict(d):
 
 
 def main():
-  if len(sys.argv) != 8:
+  if len(sys.argv) != 7:
     print('Usage setup_toolchain.py '
           '<visual studio path> <win sdk path> '
           '<runtime dirs> <target_os> <target_cpu> '
-          '<environment block name|none> <goma_disabled>')
+          '<environment block name|none>')
     sys.exit(2)
   win_sdk_path = sys.argv[2]
   runtime_dirs = sys.argv[3]
@@ -195,7 +194,6 @@ def main():
   environment_block_name = sys.argv[6]
   if (environment_block_name == 'none'):
     environment_block_name = ''
-  goma_disabled = sys.argv[7]
 
   if (target_os == 'winuwp'):
     target_store = True
@@ -218,7 +216,6 @@ def main():
       # Extract environment variables for subprocesses.
       env = _LoadToolchainEnv(cpu, win_sdk_path, target_store)
       env['PATH'] = runtime_dirs + os.pathsep + env['PATH']
-      env['GOMA_DISABLED'] = goma_disabled
 
       for path in env['PATH'].split(os.pathsep):
         if os.path.exists(os.path.join(path, 'cl.exe')):

@@ -151,7 +151,7 @@ const HeapVector<Member<Node>> HTMLSlotElement::FlattenedAssignedNodes() {
   }
   if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
     return CollectFlattenedAssignedNodes(*this);
-  UpdateDistribution();
+  UpdateDistributionForLegacyDistributedNodes();
   return GetDistributedNodes();
 }
 
@@ -165,7 +165,7 @@ const HeapVector<Member<Node>> HTMLSlotElement::AssignedNodesForBinding(
     DCHECK(assigned_nodes_.IsEmpty());
     return assigned_nodes_;
   }
-  UpdateDistribution();
+  UpdateDistributionForLegacyDistributedNodes();
   return assigned_nodes_;
 }
 
@@ -337,20 +337,6 @@ AtomicString HTMLSlotElement::GetName() const {
 }
 
 void HTMLSlotElement::AttachLayoutTree(AttachContext& context) {
-  if (!GetNonAttachedStyle() && ParentComputedStyle()) {
-    // The select/optgroup/option assumes computed style is stored on optgroup
-    // and option even when they are display:none to update selected indices
-    // correctly. See HTMLOptionElement::IsDisplayNone(). The select and
-    // optgroup elements use a UA shadow with slots for rendering. With slot
-    // elements in the flat tree, we need to ensure that also the slot element
-    // child of optgroups gets their ComputedStyle set in order to inherit and
-    // set the ComputedStyle of display:none option elements.
-    if (Element* host = ParentOrShadowHostElement()) {
-      if (IsHTMLOptGroupElement(host))
-        SetNonAttachedStyle(StyleForLayoutObject());
-    }
-  }
-
   HTMLElement::AttachLayoutTree(context);
 
   if (SupportsAssignment()) {
@@ -553,8 +539,6 @@ void HTMLSlotElement::LazyReattachNodesByDynamicProgramming(
 
 void HTMLSlotElement::LazyReattachDistributedNodesIfNeeded() {
   DCHECK(!RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
-  // TODO(hayato): Move this probe to a better place.
-  probe::didPerformSlotDistribution(this);
 
   LazyReattachNodesIfNeeded(old_distributed_nodes_, distributed_nodes_);
   old_distributed_nodes_.clear();
@@ -565,6 +549,7 @@ void HTMLSlotElement::LazyReattachNodesIfNeeded(
     const HeapVector<Member<Node>>& nodes2) {
   if (nodes1 == nodes2)
     return;
+  probe::didPerformSlotDistribution(this);
 
   if (nodes1.size() + 1 > kLCSTableSizeLimit ||
       nodes2.size() + 1 > kLCSTableSizeLimit) {

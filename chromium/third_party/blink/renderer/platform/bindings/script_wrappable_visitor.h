@@ -8,6 +8,7 @@
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_base.h"
 #include "third_party/blink/renderer/platform/heap/heap_page.h"
 #include "third_party/blink/renderer/platform/heap/threading_traits.h"
+#include "third_party/blink/renderer/platform/heap/visitor.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/deque.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -43,18 +44,9 @@ class TraceWrapperV8Reference;
 // - Call visitor.DispatchTraceWrappers(traceable).
 // DispatchTraceWrappers will invoke Visit() method for all
 // wrapper references in traceable.
-class PLATFORM_EXPORT ScriptWrappableVisitor {
+class PLATFORM_EXPORT ScriptWrappableVisitor : public Visitor {
  public:
-  template <typename T>
-  static NOINLINE void MissedWriteBarrier() {
-    NOTREACHED();
-  }
-
-  template <typename T>
-  static const char* NameCallback(const void* traceable) {
-    // Mixns never inherit from TraceWrapperBase.
-    return NameInHeapSnapshot(static_cast<const T*>(traceable));
-  }
+  ScriptWrappableVisitor() : Visitor(ThreadState::Current()) {}
 
   // Trace all wrappers of |tracable|.
   //
@@ -62,7 +54,7 @@ class PLATFORM_EXPORT ScriptWrappableVisitor {
   // for some reason (e.g., unions using raw pointers), see
   // |TraceWrappersWithManualWriteBarrier()| below.
   template <typename T>
-  void TraceWrappers(const TraceWrapperMember<T>& traceable) const {
+  void TraceWrappers(const TraceWrapperMember<T>& traceable) {
     static_assert(sizeof(T), "T must be fully defined");
     Visit(traceable.Get());
   }
@@ -70,14 +62,14 @@ class PLATFORM_EXPORT ScriptWrappableVisitor {
   // Enable partial tracing of objects. This is used when tracing interior
   // objects without their own header.
   template <typename T>
-  void TraceWrappers(const T& traceable) const {
+  void TraceWrappers(const T& traceable) {
     static_assert(sizeof(T), "T must be fully defined");
     traceable.TraceWrappers(this);
   }
 
   // Only called from automatically generated bindings code.
   template <typename T>
-  void TraceWrappersFromGeneratedCode(const T* traceable) const {
+  void TraceWrappersFromGeneratedCode(const T* traceable) {
     Visit(traceable);
   }
 
@@ -87,65 +79,62 @@ class PLATFORM_EXPORT ScriptWrappableVisitor {
   // assignments to the field. Otherwise, the objects may be collected
   // prematurely.
   template <typename T>
-  void TraceWrappersWithManualWriteBarrier(const T* traceable) const {
+  void TraceWrappersWithManualWriteBarrier(const T* traceable) {
     Visit(traceable);
   }
 
   template <typename V8Type>
-  void TraceWrappers(const TraceWrapperV8Reference<V8Type>& v8reference) const {
+  void TraceWrappers(const TraceWrapperV8Reference<V8Type>& v8reference) {
     Visit(v8reference.template Cast<v8::Value>());
   }
 
   // Trace wrappers in non-main worlds.
   void TraceWrappers(DOMWrapperMap<ScriptWrappable>*,
-                     const ScriptWrappable* key) const;
+                     const ScriptWrappable* key);
 
-  virtual void DispatchTraceWrappers(const TraceWrapperBase*) const;
+  virtual void DispatchTraceWrappers(TraceWrapperBase*);
   template <typename T>
-  void DispatchTraceWrappers(const Supplement<T>* traceable) const {
-    const TraceWrapperBaseForSupplement* base = traceable;
+  void DispatchTraceWrappers(Supplement<T>* traceable) {
+    TraceWrapperBaseForSupplement* base = traceable;
     DispatchTraceWrappersForSupplement(base);
   }
   // Catch all handlers needed because of mixins except for Supplement<T>.
   void DispatchTraceWrappers(const void*) const { CHECK(false); }
 
- protected:
-  // The visitor interface. Derived visitors should override this
-  // function to visit V8 references and ScriptWrappables.
-  virtual void Visit(const TraceWrapperV8Reference<v8::Value>&) const = 0;
-  virtual void Visit(const TraceWrapperDescriptor&) const = 0;
-  virtual void Visit(DOMWrapperMap<ScriptWrappable>*,
-                     const ScriptWrappable* key) const = 0;
+  // Unused blink::Visitor overrides. Derived visitors should still override
+  // the cross-component visitation methods. See Visitor documentation.
+  void Visit(void* object, TraceDescriptor desc) final {}
+  void VisitWeak(void* object,
+                 void** object_slot,
+                 TraceDescriptor desc,
+                 WeakCallback callback) final {}
+  void VisitBackingStoreStrongly(void*, void**, TraceDescriptor) final {}
+  void VisitBackingStoreWeakly(void*,
+                               void**,
+                               TraceDescriptor,
+                               WeakCallback,
+                               void*) final {}
+  void VisitBackingStoreOnly(void*, void**) final {}
+  void RegisterBackingStoreCallback(void*, MovingObjectCallback, void*) final {}
+  void RegisterWeakCallback(void*, WeakCallback) final {}
 
-  template <typename T>
-  static TraceWrapperDescriptor WrapperDescriptorFor(const T* traceable) {
-    return TraceTrait<T>::GetTraceWrapperDescriptor(const_cast<T*>(traceable));
-  }
+ protected:
+  using Visitor::Visit;
 
  private:
-  static const char* NameInHeapSnapshot(const TraceWrapperBase* traceable) {
-    return traceable->NameInHeapSnapshot();
-  }
-
-  static const char* NameInHeapSnapshot(...) {
-    // Default case for all non-TraceWrapperBase classes.
-    return "InternalNode";
-  }
-
   // Helper method to invoke the virtual Visit method with wrapper descriptor.
   template <typename T>
-  void Visit(const T* traceable) const {
+  void Visit(const T* traceable) {
     static_assert(sizeof(T), "T must be fully defined");
     if (!traceable)
       return;
-    Visit(WrapperDescriptorFor(traceable));
+    Visit(const_cast<T*>(traceable), TraceWrapperDescriptorFor(traceable));
   }
 
   // Supplement-specific implementation of DispatchTraceWrappers.  The suffix of
   // "ForSupplement" is necessary not to make this member function a candidate
   // of overload resolutions.
-  void DispatchTraceWrappersForSupplement(
-      const TraceWrapperBaseForSupplement*) const;
+  void DispatchTraceWrappersForSupplement(TraceWrapperBaseForSupplement*);
 };
 
 }  // namespace blink

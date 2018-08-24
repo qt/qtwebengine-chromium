@@ -12,6 +12,10 @@ StubOfflinePageModel::StubOfflinePageModel()
     : archive_directory_(base::FilePath(FILE_PATH_LITERAL("/archive_dir/"))) {}
 StubOfflinePageModel::~StubOfflinePageModel() {}
 
+void StubOfflinePageModel::SetArchiveDirectory(const base::FilePath& path) {
+  archive_directory_ = path;
+}
+
 void StubOfflinePageModel::AddObserver(Observer* observer) {}
 void StubOfflinePageModel::RemoveObserver(Observer* observer) {}
 void StubOfflinePageModel::SavePage(
@@ -34,43 +38,46 @@ void StubOfflinePageModel::DeletePagesByClientIdsAndOrigin(
     const DeletePageCallback& callback) {}
 void StubOfflinePageModel::GetPagesByClientIds(
     const std::vector<ClientId>& client_ids,
-    const MultipleOfflinePageItemCallback& callback) {}
+    MultipleOfflinePageItemCallback callback) {}
 void StubOfflinePageModel::DeleteCachedPagesByURLPredicate(
     const UrlPredicate& predicate,
     const DeletePageCallback& callback) {}
 void StubOfflinePageModel::GetAllPages(
-    const MultipleOfflinePageItemCallback& callback) {}
+    MultipleOfflinePageItemCallback callback) {}
 void StubOfflinePageModel::GetOfflineIdsForClientId(
     const ClientId& client_id,
     const MultipleOfflineIdCallback& callback) {}
 void StubOfflinePageModel::GetPageByOfflineId(
     int64_t offline_id,
-    const SingleOfflinePageItemCallback& callback) {}
+    SingleOfflinePageItemCallback callback) {}
 void StubOfflinePageModel::GetPageByGuid(
     const std::string& guid,
-    const SingleOfflinePageItemCallback& callback) {}
+    SingleOfflinePageItemCallback callback) {}
 void StubOfflinePageModel::GetPagesByURL(
     const GURL& url,
     URLSearchMode url_search_mode,
-    const MultipleOfflinePageItemCallback& callback) {}
+    MultipleOfflinePageItemCallback callback) {}
 void StubOfflinePageModel::GetPagesByRequestOrigin(
     const std::string& origin,
-    const MultipleOfflinePageItemCallback& callback) {}
+    MultipleOfflinePageItemCallback callback) {}
 void StubOfflinePageModel::GetPageBySizeAndDigest(
     int64_t file_size,
     const std::string& digest,
-    const SingleOfflinePageItemCallback& callback) {}
+    SingleOfflinePageItemCallback callback) {}
 void StubOfflinePageModel::GetPagesRemovedOnCacheReset(
-    const MultipleOfflinePageItemCallback& callback) {}
+    MultipleOfflinePageItemCallback callback) {}
 void StubOfflinePageModel::GetPagesByNamespace(
     const std::string& name_space,
-    const MultipleOfflinePageItemCallback& callback) {}
+    MultipleOfflinePageItemCallback callback) {}
 void StubOfflinePageModel::GetPagesSupportedByDownloads(
-    const MultipleOfflinePageItemCallback& callback) {}
+    MultipleOfflinePageItemCallback callback) {}
 void StubOfflinePageModel::StoreThumbnail(const OfflinePageThumbnail& thumb) {}
 void StubOfflinePageModel::GetThumbnailByOfflineId(
     int64_t offline_id,
     GetThumbnailCallback callback) {}
+void StubOfflinePageModel::HasThumbnailForOfflineId(
+    int64_t offline_id,
+    base::OnceCallback<void(bool)> callback) {}
 void StubOfflinePageModel::PublishInternalArchive(
     const OfflinePageItem& offline_page,
     std::unique_ptr<OfflinePageArchiver> archiver,

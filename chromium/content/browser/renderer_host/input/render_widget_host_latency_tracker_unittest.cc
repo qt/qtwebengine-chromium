@@ -34,23 +34,23 @@ void AddFakeComponentsWithTimeStamp(
     ui::LatencyInfo* latency,
     base::TimeTicks time_stamp) {
   latency->AddLatencyNumberWithTimestamp(ui::INPUT_EVENT_LATENCY_UI_COMPONENT,
-                                         0, 0, time_stamp, 1);
+                                         0, time_stamp, 1);
   latency->AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0, time_stamp,
+      ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, time_stamp,
       1);
   latency->AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0, 0, time_stamp, 1);
+      ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0, time_stamp, 1);
   latency->AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_LATENCY_RENDERER_SWAP_COMPONENT, 0, 0, time_stamp, 1);
+      ui::INPUT_EVENT_LATENCY_RENDERER_SWAP_COMPONENT, 0, time_stamp, 1);
   latency->AddLatencyNumberWithTimestamp(
-      ui::DISPLAY_COMPOSITOR_RECEIVED_FRAME_COMPONENT, 0, 0, time_stamp, 1);
+      ui::DISPLAY_COMPOSITOR_RECEIVED_FRAME_COMPONENT, 0, time_stamp, 1);
 }
 
 void AddFakeComponents(const RenderWidgetHostLatencyTracker& tracker,
                        ui::LatencyInfo* latency) {
   latency->AddLatencyNumberWithTimestamp(
       ui::INPUT_EVENT_LATENCY_FIRST_SCROLL_UPDATE_ORIGINAL_COMPONENT,
-      tracker.latency_component_id(), 0, base::TimeTicks::Now(), 1);
+      tracker.latency_component_id(), base::TimeTicks::Now(), 1);
   AddFakeComponentsWithTimeStamp(tracker, latency, base::TimeTicks::Now());
 }
 
@@ -59,12 +59,12 @@ void AddRenderingScheduledComponent(ui::LatencyInfo* latency,
                                     base::TimeTicks time_stamp) {
   if (main) {
     latency->AddLatencyNumberWithTimestamp(
-        ui::INPUT_EVENT_LATENCY_RENDERING_SCHEDULED_MAIN_COMPONENT, 0, 0,
+        ui::INPUT_EVENT_LATENCY_RENDERING_SCHEDULED_MAIN_COMPONENT, 0,
         time_stamp, 1);
 
   } else {
     latency->AddLatencyNumberWithTimestamp(
-        ui::INPUT_EVENT_LATENCY_RENDERING_SCHEDULED_IMPL_COMPONENT, 0, 0,
+        ui::INPUT_EVENT_LATENCY_RENDERING_SCHEDULED_IMPL_COMPONENT, 0,
         time_stamp, 1);
   }
 }
@@ -121,6 +121,8 @@ class RenderWidgetHostLatencyTrackerTest
   }
 
   RenderWidgetHostLatencyTracker* tracker() { return tracker_.get(); }
+  ui::LatencyTracker* viz_tracker() { return &viz_tracker_; }
+
   void ResetHistograms() {
     histogram_tester_.reset(new base::HistogramTester());
   }
@@ -132,9 +134,9 @@ class RenderWidgetHostLatencyTrackerTest
   void SetUp() override {
     RenderViewHostImplTestHarness::SetUp();
     old_browser_client_ = SetBrowserClientForTesting(&test_browser_client_);
-    tracker_ =
-        std::make_unique<RenderWidgetHostLatencyTracker>(false, contents());
+    tracker_ = std::make_unique<RenderWidgetHostLatencyTracker>(contents());
     tracker_->Initialize(kTestRoutingId, kTestProcessId);
+    viz_tracker_.DisableMetricSamplingForTesting();
   }
 
   void TearDown() override {
@@ -149,6 +151,7 @@ class RenderWidgetHostLatencyTrackerTest
   const int kTestProcessId = 1;
   std::unique_ptr<base::HistogramTester> histogram_tester_;
   std::unique_ptr<RenderWidgetHostLatencyTracker> tracker_;
+  ui::LatencyTracker viz_tracker_;
   RenderWidgetHostLatencyTrackerTestBrowserClient test_browser_client_;
   ContentBrowserClient* old_browser_client_;
 };
@@ -161,39 +164,41 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestValidEventTiming) {
   latency_info.set_source_event_type(ui::SourceEventType::WHEEL);
 
   latency_info.AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_LATENCY_FIRST_SCROLL_UPDATE_ORIGINAL_COMPONENT, 0, 0,
+      ui::INPUT_EVENT_LATENCY_FIRST_SCROLL_UPDATE_ORIGINAL_COMPONENT, 0,
       now + base::TimeDelta::FromMilliseconds(60), 1);
 
   latency_info.AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_LATENCY_RENDERING_SCHEDULED_IMPL_COMPONENT, 0, 0,
+      ui::INPUT_EVENT_LATENCY_RENDERING_SCHEDULED_IMPL_COMPONENT, 0,
       now + base::TimeDelta::FromMilliseconds(50), 1);
 
   latency_info.AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_LATENCY_RENDERER_SWAP_COMPONENT, 0, 0,
+      ui::INPUT_EVENT_LATENCY_RENDERER_SWAP_COMPONENT, 0,
       now + base::TimeDelta::FromMilliseconds(40), 1);
 
   latency_info.AddLatencyNumberWithTimestamp(
-      ui::DISPLAY_COMPOSITOR_RECEIVED_FRAME_COMPONENT, 0, 0,
+      ui::DISPLAY_COMPOSITOR_RECEIVED_FRAME_COMPONENT, 0,
       now + base::TimeDelta::FromMilliseconds(30), 1);
 
   latency_info.AddLatencyNumberWithTimestamp(
       ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
-      tracker()->latency_component_id(), 0,
+      tracker()->latency_component_id(),
       now + base::TimeDelta::FromMilliseconds(20), 1);
 
   latency_info.AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0, 0,
+      ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0,
       now + base::TimeDelta::FromMilliseconds(10), 1);
 
   latency_info.AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0, now, 1);
+      ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, now, 1);
 
-  tracker()->OnGpuSwapBuffersCompleted(latency_info);
+  viz_tracker()->OnGpuSwapBuffersCompleted(latency_info);
 
   // When last_event_time of the end_component is less than the first_event_time
   // of the start_component, zero is recorded instead of a negative value.
   histogram_tester().ExpectUniqueSample(
       "Event.Latency.ScrollBegin.Wheel.TimeToScrollUpdateSwapBegin2", 0, 1);
+  histogram_tester().ExpectUniqueSample(
+      "Event.Latency.ScrollBegin.Wheel.TimeToScrollUpdateSwapBegin4", 0, 1);
   histogram_tester().ExpectUniqueSample(
       "Event.Latency.Scroll.Wheel.TimeToScrollUpdateSwapBegin2", 0, 1);
   histogram_tester().ExpectUniqueSample(
@@ -220,11 +225,11 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestWheelToFirstScrollHistograms) {
       auto wheel = SyntheticWebMouseWheelEventBuilder::Build(
           blink::WebMouseWheelEvent::kPhaseChanged);
       base::TimeTicks now = base::TimeTicks::Now();
-      wheel.SetTimeStampSeconds((now - base::TimeTicks()).InSecondsF());
+      wheel.SetTimeStamp(now);
       ui::LatencyInfo wheel_latency(ui::SourceEventType::WHEEL);
       wheel_latency.AddLatencyNumberWithTimestamp(
           ui::INPUT_EVENT_LATENCY_FIRST_SCROLL_UPDATE_ORIGINAL_COMPONENT,
-          tracker()->latency_component_id(), 0, now, 1);
+          tracker()->latency_component_id(), now, 1);
       AddFakeComponentsWithTimeStamp(*tracker(), &wheel_latency, now);
       AddRenderingScheduledComponent(&wheel_latency, rendering_on_main, now);
       tracker()->OnInputEvent(wheel, &wheel_latency);
@@ -235,7 +240,7 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestWheelToFirstScrollHistograms) {
           ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0, nullptr));
       tracker()->OnInputEventAck(wheel, &wheel_latency,
                                  INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
-      tracker()->OnGpuSwapBuffersCompleted(wheel_latency);
+      viz_tracker()->OnGpuSwapBuffersCompleted(wheel_latency);
 
       // UKM metrics.
       total_ukm_entry_count++;
@@ -246,8 +251,20 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestWheelToFirstScrollHistograms) {
 
       // UMA histograms.
       EXPECT_TRUE(
+          HistogramSizeEq("Event.Latency.ScrollBegin."
+                          "TimeToScrollUpdateSwapBegin2",
+                          1));
+      EXPECT_TRUE(
+          HistogramSizeEq("Event.Latency.ScrollUpdate."
+                          "TimeToScrollUpdateSwapBegin2",
+                          0));
+      EXPECT_TRUE(
           HistogramSizeEq("Event.Latency.ScrollBegin.Wheel."
                           "TimeToScrollUpdateSwapBegin2",
+                          1));
+      EXPECT_TRUE(
+          HistogramSizeEq("Event.Latency.ScrollBegin.Wheel."
+                          "TimeToScrollUpdateSwapBegin4",
                           1));
       EXPECT_TRUE(
           HistogramSizeEq("Event.Latency.Scroll.Wheel."
@@ -256,6 +273,10 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestWheelToFirstScrollHistograms) {
       EXPECT_TRUE(
           HistogramSizeEq("Event.Latency.ScrollUpdate.Wheel."
                           "TimeToScrollUpdateSwapBegin2",
+                          0));
+      EXPECT_TRUE(
+          HistogramSizeEq("Event.Latency.ScrollUpdate.Wheel."
+                          "TimeToScrollUpdateSwapBegin4",
                           0));
       EXPECT_TRUE(
           HistogramSizeEq("Event.Latency.ScrollBegin.Wheel.TimeToHandled2_Main",
@@ -316,11 +337,11 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestWheelToScrollHistograms) {
       auto wheel = SyntheticWebMouseWheelEventBuilder::Build(
           blink::WebMouseWheelEvent::kPhaseChanged);
       base::TimeTicks now = base::TimeTicks::Now();
-      wheel.SetTimeStampSeconds((now - base::TimeTicks()).InSecondsF());
+      wheel.SetTimeStamp(now);
       ui::LatencyInfo wheel_latency(ui::SourceEventType::WHEEL);
       wheel_latency.AddLatencyNumberWithTimestamp(
           ui::INPUT_EVENT_LATENCY_SCROLL_UPDATE_ORIGINAL_COMPONENT,
-          tracker()->latency_component_id(), 0, now, 1);
+          tracker()->latency_component_id(), now, 1);
       AddFakeComponentsWithTimeStamp(*tracker(), &wheel_latency, now);
       AddRenderingScheduledComponent(&wheel_latency, rendering_on_main, now);
       tracker()->OnInputEvent(wheel, &wheel_latency);
@@ -331,7 +352,7 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestWheelToScrollHistograms) {
           ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0, nullptr));
       tracker()->OnInputEventAck(wheel, &wheel_latency,
                                  INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
-      tracker()->OnGpuSwapBuffersCompleted(wheel_latency);
+      viz_tracker()->OnGpuSwapBuffersCompleted(wheel_latency);
 
       // UKM metrics.
       total_ukm_entry_count++;
@@ -342,8 +363,20 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestWheelToScrollHistograms) {
 
       // UMA histograms.
       EXPECT_TRUE(
+          HistogramSizeEq("Event.Latency.ScrollBegin."
+                          "TimeToScrollUpdateSwapBegin2",
+                          0));
+      EXPECT_TRUE(
+          HistogramSizeEq("Event.Latency.ScrollUpdate."
+                          "TimeToScrollUpdateSwapBegin2",
+                          1));
+      EXPECT_TRUE(
           HistogramSizeEq("Event.Latency.ScrollBegin.Wheel."
                           "TimeToScrollUpdateSwapBegin2",
+                          0));
+      EXPECT_TRUE(
+          HistogramSizeEq("Event.Latency.ScrollBegin.Wheel."
+                          "TimeToScrollUpdateSwapBegin4",
                           0));
       EXPECT_TRUE(
           HistogramSizeEq("Event.Latency.Scroll.Wheel."
@@ -352,6 +385,10 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestWheelToScrollHistograms) {
       EXPECT_TRUE(
           HistogramSizeEq("Event.Latency.ScrollUpdate.Wheel."
                           "TimeToScrollUpdateSwapBegin2",
+                          1));
+      EXPECT_TRUE(
+          HistogramSizeEq("Event.Latency.ScrollUpdate.Wheel."
+                          "TimeToScrollUpdateSwapBegin4",
                           1));
 
       EXPECT_TRUE(HistogramSizeEq(
@@ -403,6 +440,65 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestWheelToScrollHistograms) {
   }
 }
 
+TEST_F(RenderWidgetHostLatencyTrackerTest, TestInertialToScrollHistograms) {
+  const GURL url(kUrl);
+  contents()->NavigateAndCommit(url);
+  for (bool rendering_on_main : {false, true}) {
+    ResetHistograms();
+    {
+      auto scroll = SyntheticWebGestureEventBuilder::BuildScrollUpdate(
+          5.f, -5.f, 0, blink::kWebGestureDeviceTouchscreen);
+      base::TimeTicks now = base::TimeTicks::Now();
+      scroll.SetTimeStamp(now);
+      ui::LatencyInfo scroll_latency(ui::SourceEventType::INERTIAL);
+      scroll_latency.AddLatencyNumberWithTimestamp(
+          ui::INPUT_EVENT_LATENCY_SCROLL_UPDATE_ORIGINAL_COMPONENT,
+          tracker()->latency_component_id(), now, 1);
+      AddFakeComponentsWithTimeStamp(*tracker(), &scroll_latency, now);
+      AddRenderingScheduledComponent(&scroll_latency, rendering_on_main, now);
+      tracker()->OnInputEvent(scroll, &scroll_latency);
+      EXPECT_TRUE(scroll_latency.FindLatency(
+          ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
+          tracker()->latency_component_id(), nullptr));
+      EXPECT_TRUE(scroll_latency.FindLatency(
+          ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0, nullptr));
+      tracker()->OnInputEventAck(scroll, &scroll_latency,
+                                 INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+      viz_tracker()->OnGpuSwapBuffersCompleted(scroll_latency);
+    }
+
+    // UMA histograms.
+    EXPECT_TRUE(
+        HistogramSizeEq("Event.Latency.ScrollInertial.Touch."
+                        "TimeToScrollUpdateSwapBegin2",
+                        1));
+    EXPECT_TRUE(
+        HistogramSizeEq("Event.Latency.ScrollInertial.Touch."
+                        "TimeToScrollUpdateSwapBegin4",
+                        1));
+    EXPECT_TRUE(HistogramSizeEq(
+        "Event.Latency.ScrollInertial.Touch.TimeToHandled2_Main",
+        rendering_on_main ? 1 : 0));
+    EXPECT_TRUE(HistogramSizeEq(
+        "Event.Latency.ScrollInertial.Touch.TimeToHandled2_Impl",
+        rendering_on_main ? 0 : 1));
+    EXPECT_TRUE(HistogramSizeEq(
+        "Event.Latency.ScrollInertial.Touch.HandledToRendererSwap2_Main",
+        rendering_on_main ? 1 : 0));
+    EXPECT_TRUE(HistogramSizeEq(
+        "Event.Latency.ScrollInertial.Touch.HandledToRendererSwap2_Impl",
+        rendering_on_main ? 0 : 1));
+    EXPECT_TRUE(HistogramSizeEq(
+        "Event.Latency.ScrollInertial.Touch.RendererSwapToBrowserNotified2",
+        1));
+    EXPECT_TRUE(HistogramSizeEq(
+        "Event.Latency.ScrollInertial.Touch.BrowserNotifiedToBeforeGpuSwap2",
+        1));
+    EXPECT_TRUE(
+        HistogramSizeEq("Event.Latency.ScrollInertial.Touch.GpuSwap2", 1));
+  }
+}
+
 TEST_F(RenderWidgetHostLatencyTrackerTest, TestTouchToFirstScrollHistograms) {
   const GURL url(kUrl);
   contents()->NavigateAndCommit(url);
@@ -413,11 +509,11 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestTouchToFirstScrollHistograms) {
       auto scroll = SyntheticWebGestureEventBuilder::BuildScrollUpdate(
           5.f, -5.f, 0, blink::kWebGestureDeviceTouchscreen);
       base::TimeTicks now = base::TimeTicks::Now();
-      scroll.SetTimeStampSeconds((now - base::TimeTicks()).InSecondsF());
+      scroll.SetTimeStamp(now);
       ui::LatencyInfo scroll_latency;
       scroll_latency.AddLatencyNumberWithTimestamp(
           ui::INPUT_EVENT_LATENCY_FIRST_SCROLL_UPDATE_ORIGINAL_COMPONENT,
-          tracker()->latency_component_id(), 0, now, 1);
+          tracker()->latency_component_id(), now, 1);
       AddFakeComponentsWithTimeStamp(*tracker(), &scroll_latency, now);
       AddRenderingScheduledComponent(&scroll_latency, rendering_on_main, now);
       tracker()->OnInputEvent(scroll, &scroll_latency);
@@ -438,7 +534,7 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestTouchToFirstScrollHistograms) {
       base::TimeTicks now = base::TimeTicks::Now();
       touch_latency.AddLatencyNumberWithTimestamp(
           ui::INPUT_EVENT_LATENCY_FIRST_SCROLL_UPDATE_ORIGINAL_COMPONENT,
-          tracker()->latency_component_id(), 0, now, 1);
+          tracker()->latency_component_id(), now, 1);
       AddFakeComponentsWithTimeStamp(*tracker(), &touch_latency, now);
       AddRenderingScheduledComponent(&touch_latency, rendering_on_main, now);
       tracker()->OnInputEvent(touch, &touch_latency);
@@ -449,7 +545,7 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestTouchToFirstScrollHistograms) {
           ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0, nullptr));
       tracker()->OnInputEventAck(touch, &touch_latency,
                                  INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
-      tracker()->OnGpuSwapBuffersCompleted(touch_latency);
+      viz_tracker()->OnGpuSwapBuffersCompleted(touch_latency);
     }
 
     // UKM metrics.
@@ -460,11 +556,23 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestTouchToFirstScrollHistograms) {
         total_ukm_entry_count);
 
     // UMA histograms.
+    EXPECT_TRUE(
+        HistogramSizeEq("Event.Latency.ScrollBegin."
+                        "TimeToScrollUpdateSwapBegin2",
+                        1));
+    EXPECT_TRUE(
+        HistogramSizeEq("Event.Latency.ScrollUpdate."
+                        "TimeToScrollUpdateSwapBegin2",
+                        0));
     EXPECT_TRUE(HistogramSizeEq(
         "Event.Latency.ScrollBegin.Touch.TimeToScrollUpdateSwapBegin2", 1));
+    EXPECT_TRUE(HistogramSizeEq(
+        "Event.Latency.ScrollBegin.Touch.TimeToScrollUpdateSwapBegin4", 1));
 
     EXPECT_TRUE(HistogramSizeEq(
         "Event.Latency.ScrollUpdate.Touch.TimeToScrollUpdateSwapBegin2", 0));
+    EXPECT_TRUE(HistogramSizeEq(
+        "Event.Latency.ScrollUpdate.Touch.TimeToScrollUpdateSwapBegin4", 0));
 
     EXPECT_TRUE(
         HistogramSizeEq("Event.Latency.ScrollBegin.Touch.TimeToHandled2_Main",
@@ -515,11 +623,11 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestTouchToScrollHistograms) {
       auto scroll = SyntheticWebGestureEventBuilder::BuildScrollUpdate(
           5.f, -5.f, 0, blink::kWebGestureDeviceTouchscreen);
       base::TimeTicks now = base::TimeTicks::Now();
-      scroll.SetTimeStampSeconds((now - base::TimeTicks()).InSecondsF());
+      scroll.SetTimeStamp(now);
       ui::LatencyInfo scroll_latency;
       scroll_latency.AddLatencyNumberWithTimestamp(
           ui::INPUT_EVENT_LATENCY_SCROLL_UPDATE_ORIGINAL_COMPONENT,
-          tracker()->latency_component_id(), 0, now, 1);
+          tracker()->latency_component_id(), now, 1);
       AddFakeComponentsWithTimeStamp(*tracker(), &scroll_latency, now);
       AddRenderingScheduledComponent(&scroll_latency, rendering_on_main, now);
       tracker()->OnInputEvent(scroll, &scroll_latency);
@@ -540,7 +648,7 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestTouchToScrollHistograms) {
       base::TimeTicks now = base::TimeTicks::Now();
       touch_latency.AddLatencyNumberWithTimestamp(
           ui::INPUT_EVENT_LATENCY_SCROLL_UPDATE_ORIGINAL_COMPONENT,
-          tracker()->latency_component_id(), 0, now, 1);
+          tracker()->latency_component_id(), now, 1);
       AddFakeComponentsWithTimeStamp(*tracker(), &touch_latency, now);
       AddRenderingScheduledComponent(&touch_latency, rendering_on_main, now);
       tracker()->OnInputEvent(touch, &touch_latency);
@@ -551,7 +659,7 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestTouchToScrollHistograms) {
           ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0, nullptr));
       tracker()->OnInputEventAck(touch, &touch_latency,
                                  INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
-      tracker()->OnGpuSwapBuffersCompleted(touch_latency);
+      viz_tracker()->OnGpuSwapBuffersCompleted(touch_latency);
     }
 
     // UKM metrics.
@@ -562,10 +670,22 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TestTouchToScrollHistograms) {
         total_ukm_entry_count);
 
     // UMA histograms.
+    EXPECT_TRUE(
+        HistogramSizeEq("Event.Latency.ScrollBegin."
+                        "TimeToScrollUpdateSwapBegin2",
+                        0));
+    EXPECT_TRUE(
+        HistogramSizeEq("Event.Latency.ScrollUpdate."
+                        "TimeToScrollUpdateSwapBegin2",
+                        1));
     EXPECT_TRUE(HistogramSizeEq(
         "Event.Latency.ScrollBegin.Touch.TimeToScrollUpdateSwapBegin2", 0));
     EXPECT_TRUE(HistogramSizeEq(
+        "Event.Latency.ScrollBegin.Touch.TimeToScrollUpdateSwapBegin4", 0));
+    EXPECT_TRUE(HistogramSizeEq(
         "Event.Latency.ScrollUpdate.Touch.TimeToScrollUpdateSwapBegin2", 1));
+    EXPECT_TRUE(HistogramSizeEq(
+        "Event.Latency.ScrollUpdate.Touch.TimeToScrollUpdateSwapBegin4", 1));
     EXPECT_TRUE(HistogramSizeEq(
         "Event.Latency.ScrollBegin.Touch.TimeToHandled2_Main", 0));
     EXPECT_TRUE(HistogramSizeEq(
@@ -696,7 +816,7 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, ScrollLatency) {
   auto scroll_begin = SyntheticWebGestureEventBuilder::BuildScrollBegin(
       5, -5, blink::kWebGestureDeviceTouchscreen);
   ui::LatencyInfo scroll_latency;
-  scroll_latency.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0,
+  scroll_latency.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT,
                                   0);
   tracker()->OnInputEvent(scroll_begin, &scroll_latency);
   EXPECT_TRUE(
@@ -709,7 +829,7 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, ScrollLatency) {
   auto first_scroll_update = SyntheticWebGestureEventBuilder::BuildScrollUpdate(
       5.f, -5.f, 0, blink::kWebGestureDeviceTouchscreen);
   scroll_latency = ui::LatencyInfo();
-  scroll_latency.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0,
+  scroll_latency.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT,
                                   0);
   tracker()->OnInputEvent(first_scroll_update, &scroll_latency);
   EXPECT_TRUE(
@@ -728,7 +848,7 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, ScrollLatency) {
   auto scroll_update = SyntheticWebGestureEventBuilder::BuildScrollUpdate(
       -5.f, 5.f, 0, blink::kWebGestureDeviceTouchscreen);
   scroll_latency = ui::LatencyInfo();
-  scroll_latency.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0,
+  scroll_latency.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT,
                                   0);
   tracker()->OnInputEvent(scroll_update, &scroll_latency);
   EXPECT_TRUE(
@@ -765,19 +885,19 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TouchBlockingAndQueueingTime) {
       fake_latency.set_source_event_type(ui::SourceEventType::TOUCH);
       fake_latency.AddLatencyNumberWithTimestamp(
           ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
-          tracker()->latency_component_id(), 0,
+          tracker()->latency_component_id(),
           base::TimeTicks() +
               base::TimeDelta::FromMilliseconds(touchstart_timestamps_ms[0]),
           1);
 
       fake_latency.AddLatencyNumberWithTimestamp(
-          ui::INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT, 0, 0,
+          ui::INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT, 0,
           base::TimeTicks() +
               base::TimeDelta::FromMilliseconds(touchstart_timestamps_ms[1]),
           1);
 
       fake_latency.AddLatencyNumberWithTimestamp(
-          ui::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT, 0, 0,
+          ui::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT, 0,
           base::TimeTicks() +
               base::TimeDelta::FromMilliseconds(touchstart_timestamps_ms[2]),
           1);
@@ -812,19 +932,19 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TouchBlockingAndQueueingTime) {
       fake_latency.set_source_event_type(ui::SourceEventType::TOUCH);
       fake_latency.AddLatencyNumberWithTimestamp(
           ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
-          tracker()->latency_component_id(), 0,
+          tracker()->latency_component_id(),
           base::TimeTicks() +
               base::TimeDelta::FromMilliseconds(touchmove_timestamps_ms[0]),
           1);
 
       fake_latency.AddLatencyNumberWithTimestamp(
-          ui::INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT, 0, 0,
+          ui::INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT, 0,
           base::TimeTicks() +
               base::TimeDelta::FromMilliseconds(touchmove_timestamps_ms[1]),
           1);
 
       fake_latency.AddLatencyNumberWithTimestamp(
-          ui::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT, 0, 0,
+          ui::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT, 0,
           base::TimeTicks() +
               base::TimeDelta::FromMilliseconds(touchmove_timestamps_ms[2]),
           1);
@@ -856,19 +976,19 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, TouchBlockingAndQueueingTime) {
       fake_latency.set_source_event_type(ui::SourceEventType::TOUCH);
       fake_latency.AddLatencyNumberWithTimestamp(
           ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
-          tracker()->latency_component_id(), 0,
+          tracker()->latency_component_id(),
           base::TimeTicks() +
               base::TimeDelta::FromMilliseconds(touchend_timestamps_ms[0]),
           1);
 
       fake_latency.AddLatencyNumberWithTimestamp(
-          ui::INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT, 0, 0,
+          ui::INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT, 0,
           base::TimeTicks() +
               base::TimeDelta::FromMilliseconds(touchend_timestamps_ms[1]),
           1);
 
       fake_latency.AddLatencyNumberWithTimestamp(
-          ui::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT, 0, 0,
+          ui::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT, 0,
           base::TimeTicks() +
               base::TimeDelta::FromMilliseconds(touchend_timestamps_ms[2]),
           1);
@@ -959,19 +1079,19 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, KeyBlockingAndQueueingTime) {
       fake_latency.set_source_event_type(ui::SourceEventType::KEY_PRESS);
       fake_latency.AddLatencyNumberWithTimestamp(
           ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
-          tracker()->latency_component_id(), 0,
+          tracker()->latency_component_id(),
           base::TimeTicks() +
               base::TimeDelta::FromMilliseconds(event_timestamps_ms[0]),
           1);
 
       fake_latency.AddLatencyNumberWithTimestamp(
-          ui::INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT, 0, 0,
+          ui::INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT, 0,
           base::TimeTicks() +
               base::TimeDelta::FromMilliseconds(event_timestamps_ms[1]),
           1);
 
       fake_latency.AddLatencyNumberWithTimestamp(
-          ui::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT, 0, 0,
+          ui::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT, 0,
           base::TimeTicks() +
               base::TimeDelta::FromMilliseconds(event_timestamps_ms[2]),
           1);
@@ -1012,31 +1132,31 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, KeyEndToEndLatency) {
   latency_info.set_trace_id(kTraceEventId);
   latency_info.set_source_event_type(ui::SourceEventType::KEY_PRESS);
   latency_info.AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0, 0,
+      ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0,
       base::TimeTicks() +
           base::TimeDelta::FromMicroseconds(event_timestamps_microseconds[0]),
       1);
 
   latency_info.AddLatencyNumberWithTimestamp(
       ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
-      tracker()->latency_component_id(), 0,
+      tracker()->latency_component_id(),
       base::TimeTicks() +
           base::TimeDelta::FromMicroseconds(event_timestamps_microseconds[0]),
       1);
 
   latency_info.AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0, 0,
+      ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0,
       base::TimeTicks() +
           base::TimeDelta::FromMicroseconds(event_timestamps_microseconds[1]),
       1);
 
   latency_info.AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0,
+      ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0,
       base::TimeTicks() +
           base::TimeDelta::FromMicroseconds(event_timestamps_microseconds[1]),
       1);
 
-  tracker()->OnGpuSwapBuffersCompleted(latency_info);
+  viz_tracker()->OnGpuSwapBuffersCompleted(latency_info);
 
   EXPECT_THAT(
       histogram_tester().GetAllSamples("Event.Latency.EndToEnd.KeyPress"),
@@ -1072,19 +1192,19 @@ TEST_F(RenderWidgetHostLatencyTrackerTest,
     fake_latency.set_trace_id(kTraceEventId);
     fake_latency.AddLatencyNumberWithTimestamp(
         ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
-        tracker()->latency_component_id(), 0,
+        tracker()->latency_component_id(),
         base::TimeTicks() +
             base::TimeDelta::FromMilliseconds(touchstart_timestamps_ms[0]),
         1);
 
     fake_latency.AddLatencyNumberWithTimestamp(
-        ui::INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT, 0, 0,
+        ui::INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT, 0,
         base::TimeTicks() +
             base::TimeDelta::FromMilliseconds(touchstart_timestamps_ms[1]),
         1);
 
     fake_latency.AddLatencyNumberWithTimestamp(
-        ui::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT, 0, 0,
+        ui::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT, 0,
         base::TimeTicks() +
             base::TimeDelta::FromMilliseconds(touchstart_timestamps_ms[2]),
         1);
@@ -1143,17 +1263,17 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, WheelDuringMultiFingerTouch) {
     fake_latency.set_source_event_type(ui::SourceEventType::TOUCH);
     fake_latency.AddLatencyNumberWithTimestamp(
         ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
-        tracker()->latency_component_id(), 0,
+        tracker()->latency_component_id(),
         base::TimeTicks() + base::TimeDelta::FromMilliseconds(timestamps_ms[0]),
         1);
 
     fake_latency.AddLatencyNumberWithTimestamp(
-        ui::INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT, 0, 0,
+        ui::INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT, 0,
         base::TimeTicks() + base::TimeDelta::FromMilliseconds(timestamps_ms[1]),
         1);
 
     fake_latency.AddLatencyNumberWithTimestamp(
-        ui::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT, 0, 0,
+        ui::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT, 0,
         base::TimeTicks() + base::TimeDelta::FromMilliseconds(timestamps_ms[2]),
         1);
 
@@ -1169,92 +1289,6 @@ TEST_F(RenderWidgetHostLatencyTrackerTest, WheelDuringMultiFingerTouch) {
   EXPECT_THAT(histogram_tester().GetAllSamples(
                   "Event.Latency.QueueingTime.MouseWheelDefaultAllowed"),
               ElementsAre(Bucket(14, 1)));
-}
-
-TEST_F(RenderWidgetHostLatencyTrackerTest, ExpectedQueueingTimeAccuracy) {
-  // These numbers are sensitive to where the histogram buckets are.
-  base::TimeTicks event_timestamp =
-      base::TimeTicks() + base::TimeDelta::FromMilliseconds(11);
-  int expected_queueing_time_ms = 1;
-  base::TimeDelta expected_queueing_time =
-      base::TimeDelta::FromMilliseconds(expected_queueing_time_ms);
-
-  for (float queueing_time_ms : {2, 15, 200, 400}) {
-    base::TimeDelta queueing_time =
-        base::TimeDelta::FromMilliseconds(queueing_time_ms);
-    SyntheticWebTouchEvent event;
-    // Touch start.
-    event.PressPoint(1, 1);
-
-    ui::LatencyInfo latency;
-    latency.set_source_event_type(ui::SourceEventType::TOUCH);
-    tracker()->OnInputEvent(event, &latency);
-
-    ui::LatencyInfo fake_latency;
-    fake_latency.set_trace_id(kTraceEventId);
-    fake_latency.set_expected_queueing_time_on_dispatch(expected_queueing_time);
-    fake_latency.set_source_event_type(ui::SourceEventType::TOUCH);
-    fake_latency.AddLatencyNumberWithTimestamp(
-        ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
-        tracker()->latency_component_id(), 0, event_timestamp, 1);
-
-    fake_latency.AddLatencyNumberWithTimestamp(
-        ui::INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT, 0, 0,
-        event_timestamp + queueing_time, 1);
-
-    fake_latency.AddLatencyNumberWithTimestamp(
-        ui::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT, 0, 0,
-        event_timestamp + queueing_time, 1);
-
-    // Call ComputeInputLatencyHistograms directly to avoid OnInputEventAck
-    // overwriting components.
-    tracker()->ComputeInputLatencyHistograms(
-        event.GetType(), tracker()->latency_component_id(), fake_latency,
-        INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
-
-    tracker()->OnInputEventAck(event, &latency,
-                               INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
-  }
-
-  EXPECT_THAT(histogram_tester().GetAllSamples(
-                  "RendererScheduler."
-                  "ExpectedQueueingTimeWhenQueueingTime_LessThan.10ms"),
-              ElementsAre(Bucket(expected_queueing_time_ms, 1)));
-
-  EXPECT_THAT(histogram_tester().GetAllSamples(
-                  "RendererScheduler."
-                  "ExpectedQueueingTimeWhenQueueingTime_LessThan.150ms"),
-              ElementsAre(Bucket(expected_queueing_time_ms, 2)));
-
-  EXPECT_THAT(histogram_tester().GetAllSamples(
-                  "RendererScheduler."
-                  "ExpectedQueueingTimeWhenQueueingTime_LessThan.300ms"),
-              ElementsAre(Bucket(expected_queueing_time_ms, 3)));
-
-  EXPECT_THAT(histogram_tester().GetAllSamples(
-                  "RendererScheduler."
-                  "ExpectedQueueingTimeWhenQueueingTime_LessThan.450ms"),
-              ElementsAre(Bucket(expected_queueing_time_ms, 4)));
-
-  EXPECT_THAT(histogram_tester().GetAllSamples(
-                  "RendererScheduler."
-                  "ExpectedQueueingTimeWhenQueueingTime_GreaterThan.10ms"),
-              ElementsAre(Bucket(expected_queueing_time_ms, 3)));
-
-  EXPECT_THAT(histogram_tester().GetAllSamples(
-                  "RendererScheduler."
-                  "ExpectedQueueingTimeWhenQueueingTime_GreaterThan.150ms"),
-              ElementsAre(Bucket(expected_queueing_time_ms, 2)));
-
-  EXPECT_THAT(histogram_tester().GetAllSamples(
-                  "RendererScheduler."
-                  "ExpectedQueueingTimeWhenQueueingTime_GreaterThan.300ms"),
-              ElementsAre(Bucket(expected_queueing_time_ms, 1)));
-
-  EXPECT_THAT(histogram_tester().GetAllSamples(
-                  "RendererScheduler."
-                  "ExpectedQueueingTimeWhenQueueingTime_GreaterThan.450ms"),
-              ElementsAre());
 }
 
 }  // namespace content

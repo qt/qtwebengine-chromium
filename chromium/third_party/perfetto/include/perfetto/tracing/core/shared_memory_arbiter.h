@@ -23,7 +23,9 @@
 #include <memory>
 #include <vector>
 
+#include "perfetto/base/export.h"
 #include "perfetto/tracing/core/basic_types.h"
+#include "perfetto/tracing/core/service.h"
 
 namespace perfetto {
 
@@ -31,31 +33,32 @@ namespace base {
 class TaskRunner;
 }
 
+class CommitDataRequest;
 class SharedMemory;
 class TraceWriter;
 
 // Used by the Producer-side of the transport layer to vend TraceWriters
 // from the SharedMemory it receives from the Service-side.
-class SharedMemoryArbiter {
+class PERFETTO_EXPORT SharedMemoryArbiter {
  public:
-  using OnPagesCompleteCallback =
-      std::function<void(const std::vector<uint32_t>& /*page_indexes*/)>;
-
-  virtual ~SharedMemoryArbiter() = default;
+  virtual ~SharedMemoryArbiter();
 
   // Creates a new TraceWriter and assigns it a new WriterID. The WriterID is
   // written in each chunk header owned by a given TraceWriter and is used by
   // the Service to reconstruct TracePackets written by the same TraceWriter.
-  // Returns nullptr if all WriterID slots are exhausted.
-  // TODO(primiano): instead of nullptr this should return a NoopWriter.
+  // Returns null impl of TraceWriter if all WriterID slots are exhausted.
   virtual std::unique_ptr<TraceWriter> CreateTraceWriter(
       BufferID target_buffer) = 0;
+
+  // Notifies the service that all data for the given FlushRequestID has been
+  // committed in the shared memory buffer.
+  virtual void NotifyFlushComplete(FlushRequestID) = 0;
 
   // Implemented in src/core/shared_memory_arbiter_impl.cc .
   static std::unique_ptr<SharedMemoryArbiter> CreateInstance(
       SharedMemory*,
       size_t page_size,
-      OnPagesCompleteCallback,
+      Service::ProducerEndpoint*,
       base::TaskRunner*);
 };
 

@@ -268,7 +268,7 @@ void GpuVideoDecodeAccelerator::PictureReady(const Picture& picture) {
   params.color_space = picture.color_space();
   params.allow_overlay = picture.allow_overlay();
   params.size_changed = picture.size_changed();
-  params.surface_texture = picture.surface_texture();
+  params.surface_texture = picture.texture_owner();
   params.wants_promotion_hint = picture.wants_promotion_hint();
   if (!Send(new AcceleratedVideoDecoderHostMsg_PictureReady(host_route_id_,
                                                             params))) {
@@ -305,7 +305,7 @@ void GpuVideoDecodeAccelerator::NotifyError(
   }
 }
 
-void GpuVideoDecodeAccelerator::OnWillDestroyStub() {
+void GpuVideoDecodeAccelerator::OnWillDestroyStub(bool have_context) {
   // The stub is going away, so we have to stop and destroy VDA here, before
   // returning, because the VDA may need the GL context to run and/or do its
   // cleanup. We cannot destroy the VDA before the IO thread message filter is
@@ -513,7 +513,7 @@ void GpuVideoDecodeAccelerator::OnSetOverlayInfo(
 
 void GpuVideoDecodeAccelerator::OnDestroy() {
   DCHECK(video_decode_accelerator_);
-  OnWillDestroyStub();
+  OnWillDestroyStub(false);
 }
 
 void GpuVideoDecodeAccelerator::OnFilterRemoved() {

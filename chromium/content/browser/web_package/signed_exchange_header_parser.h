@@ -13,12 +13,14 @@
 #include "base/macros.h"
 #include "base/optional.h"
 #include "base/strings/string_piece.h"
-#include "content/browser/web_package/signed_exchange_utils.h"
+#include "content/browser/web_package/signed_exchange_consts.h"
 #include "content/common/content_export.h"
 #include "net/base/hash_value.h"
 #include "url/gurl.h"
 
 namespace content {
+
+class SignedExchangeDevToolsProxy;
 
 // Provide parsers for signed-exchange headers.
 // https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html
@@ -45,14 +47,14 @@ class CONTENT_EXPORT SignedExchangeHeaderParser {
   // https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html#signature-header
   static base::Optional<std::vector<Signature>> ParseSignature(
       base::StringPiece signature_str,
-      const signed_exchange_utils::LogCallback& error_message_callback);
+      SignedExchangeDevToolsProxy* devtools_proxy);
 
   // Parses |content_type| to get the value of "v=" parameter of the signed
-  // exchange. Example: "b0" for "application/signed-exchange;v=b0". Returns
-  // false if failed to parse.
+  // exchange, and converts to SignedExchangeVersion. Returns false if failed to
+  // parse.
   static bool GetVersionParamFromContentType(
       base::StringPiece content_type,
-      base::Optional<std::string>* version_param);
+      base::Optional<SignedExchangeVersion>* version_param);
 };
 
 }  // namespace content

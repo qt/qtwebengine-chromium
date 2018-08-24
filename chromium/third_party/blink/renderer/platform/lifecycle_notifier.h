@@ -27,8 +27,8 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_LIFECYCLE_NOTIFIER_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_LIFECYCLE_NOTIFIER_H_
 
+#include "base/auto_reset.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 
 namespace blink {
@@ -50,7 +50,7 @@ class LifecycleNotifier : public GarbageCollectedMixin {
   // and safe to use while handling the notification.
   virtual void NotifyContextDestroyed();
 
-  virtual void Trace(blink::Visitor* visitor) { visitor->Trace(observers_); }
+  void Trace(blink::Visitor* visitor) override { visitor->Trace(observers_); }
 
   bool IsIteratingOverObservers() const {
     return iteration_state_ != kNotIterating;
@@ -132,7 +132,7 @@ class ContextDestroyedNotifier<Observer, T, false> {
 template <typename T, typename Observer>
 inline void LifecycleNotifier<T, Observer>::NotifyContextDestroyed() {
   // Observer unregistration is allowed, but effectively a no-op.
-  AutoReset<IterationState> scope(&iteration_state_, kAllowingRemoval);
+  base::AutoReset<IterationState> scope(&iteration_state_, kAllowingRemoval);
   ObserverSet observers;
   observers_.swap(observers);
   for (Observer* observer : observers) {

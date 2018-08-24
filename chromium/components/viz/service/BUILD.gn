@@ -27,6 +27,8 @@ viz_component("service") {
     "display/display.cc",
     "display/display.h",
     "display/display_client.h",
+    "display/display_resource_provider.cc",
+    "display/display_resource_provider.h",
     "display/display_scheduler.cc",
     "display/display_scheduler.h",
     "display/draw_polygon.cc",
@@ -48,6 +50,8 @@ viz_component("service") {
     "display/output_surface_client.h",
     "display/output_surface_frame.cc",
     "display/output_surface_frame.h",
+    "display/overlay_candidate.cc",
+    "display/overlay_candidate.h",
     "display/overlay_candidate_validator.h",
     "display/overlay_processor.cc",
     "display/overlay_processor.h",
@@ -69,6 +73,8 @@ viz_component("service") {
     "display/scoped_render_pass_texture.h",
     "display/shader.cc",
     "display/shader.h",
+    "display/skia_output_surface.cc",
+    "display/skia_output_surface.h",
     "display/skia_renderer.cc",
     "display/skia_renderer.h",
     "display/software_output_device.cc",
@@ -101,10 +107,14 @@ viz_component("service") {
     "display_embedder/in_process_gpu_memory_buffer_manager.h",
     "display_embedder/server_shared_bitmap_manager.cc",
     "display_embedder/server_shared_bitmap_manager.h",
-    "display_embedder/shared_bitmap_allocation_notifier_impl.cc",
-    "display_embedder/shared_bitmap_allocation_notifier_impl.h",
+    "display_embedder/skia_output_surface_impl.cc",
+    "display_embedder/skia_output_surface_impl.h",
+    "display_embedder/skia_output_surface_impl_on_gpu.cc",
+    "display_embedder/skia_output_surface_impl_on_gpu.h",
     "display_embedder/software_output_surface.cc",
     "display_embedder/software_output_surface.h",
+    "display_embedder/viz_process_context_provider.cc",
+    "display_embedder/viz_process_context_provider.h",
     "frame_sinks/compositor_frame_sink_impl.cc",
     "frame_sinks/compositor_frame_sink_impl.h",
     "frame_sinks/compositor_frame_sink_support.cc",
@@ -168,12 +178,16 @@ viz_component("service") {
     "//cc/paint",
     "//components/crash/core/common:crash_key",
     "//components/viz/common",
+    "//gpu/command_buffer/client:gles2_implementation",
+    "//gpu/command_buffer/client:raster",
+    "//gpu/command_buffer/service:gles2",
     "//gpu/ipc:gl_in_process_context",
 
     # Note that dependency on //gpu/ipc/client is for GpuMemoryBufferImpl. This
     # dependency should not be in public_deps.
     "//gpu/ipc/client",
     "//gpu/ipc/service",
+    "//gpu/skia_bindings:skia_bindings",
     "//gpu/vulkan:buildflags",
     "//media",
     "//media/capture:capture_lib",
@@ -249,6 +263,8 @@ viz_component("service") {
       "display_embedder/compositor_overlay_candidate_validator_win.h",
       "display_embedder/gl_output_surface_win.cc",
       "display_embedder/gl_output_surface_win.h",
+      "display_embedder/output_device_backing.cc",
+      "display_embedder/output_device_backing.h",
       "display_embedder/software_output_device_win.cc",
       "display_embedder/software_output_device_win.h",
     ]
@@ -264,6 +280,7 @@ viz_source_set("unit_tests") {
   sources = [
     "display/bsp_tree_unittest.cc",
     "display/copy_output_scaling_pixeltest.cc",
+    "display/display_resource_provider_unittest.cc",
     "display/display_scheduler_unittest.cc",
     "display/display_unittest.cc",
     "display/draw_polygon_unittest.cc",
@@ -342,6 +359,10 @@ viz_source_set("unit_tests") {
   if (is_mac) {
     sources += [ "display_embedder/software_output_device_mac_unittest.mm" ]
     libs = [ "IOSurface.framework" ]
+  }
+
+  if (is_win) {
+    sources += [ "display_embedder/output_device_backing_unittest.cc" ]
   }
 }
 

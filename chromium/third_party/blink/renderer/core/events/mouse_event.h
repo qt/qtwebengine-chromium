@@ -105,8 +105,8 @@ class CORE_EXPORT MouseEvent : public UIEventWithKeyState {
   }
   const String& region() const { return region_; }
 
-  Node* toElement() const;
-  Node* fromElement() const;
+  virtual Node* toElement() const;
+  virtual Node* fromElement() const;
 
   virtual DataTransfer* getDataTransfer() const { return nullptr; }
 
@@ -188,7 +188,7 @@ class CORE_EXPORT MouseEvent : public UIEventWithKeyState {
 
   DispatchEventResult DispatchEvent(EventDispatcher&) override;
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  protected:
   MouseEvent(const AtomicString& type,

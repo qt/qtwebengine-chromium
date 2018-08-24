@@ -15,6 +15,7 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/single_thread_task_runner.h"
 #include "components/discardable_memory/public/interfaces/discardable_shared_memory_manager.mojom.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/cpp/connector.h"
@@ -25,10 +26,10 @@
 #include "services/ui/input_devices/input_device_server.h"
 #include "services/ui/public/interfaces/accessibility_manager.mojom.h"
 #include "services/ui/public/interfaces/clipboard.mojom.h"
-#include "services/ui/public/interfaces/display_manager.mojom.h"
 #include "services/ui/public/interfaces/event_injector.mojom.h"
 #include "services/ui/public/interfaces/gpu.mojom.h"
 #include "services/ui/public/interfaces/ime/ime.mojom.h"
+#include "services/ui/public/interfaces/screen_provider.mojom.h"
 #include "services/ui/public/interfaces/user_activity_monitor.mojom.h"
 #include "services/ui/public/interfaces/video_detector.mojom.h"
 #include "services/ui/public/interfaces/window_manager_window_tree_factory.mojom.h"
@@ -38,6 +39,7 @@
 #include "services/ui/ws/window_server_delegate.h"
 
 #if defined(OS_CHROMEOS)
+#include "services/ui/input_devices/touch_device_server.h"
 #include "services/ui/public/interfaces/arc.mojom.h"
 #endif  // defined(OS_CHROMEOS)
 
@@ -74,6 +76,8 @@ class WindowTreeHostFactory;
 class Service : public service_manager::Service,
                 public ws::WindowServerDelegate {
  public:
+  // TODO(jamescook): Audit these. Some may be unused after the elimination of
+  // "mus" mode.
   struct InitParams {
     InitParams();
     ~InitParams();
@@ -135,8 +139,8 @@ class Service : public service_manager::Service,
   void BindClipboardRequest(mojom::ClipboardRequest request,
                             const service_manager::BindSourceInfo& source_info);
 
-  void BindDisplayManagerRequest(
-      mojom::DisplayManagerRequest request,
+  void BindScreenProviderRequest(
+      mojom::ScreenProviderRequest request,
       const service_manager::BindSourceInfo& source_info);
 
   void BindGpuRequest(mojom::GpuRequest request);
@@ -144,6 +148,8 @@ class Service : public service_manager::Service,
   void BindIMERegistrarRequest(mojom::IMERegistrarRequest request);
 
   void BindIMEDriverRequest(mojom::IMEDriverRequest request);
+
+  void BindInputDeviceServerRequest(mojom::InputDeviceServerRequest request);
 
   void BindUserActivityMonitorRequest(
       mojom::UserActivityMonitorRequest request,
@@ -173,6 +179,7 @@ class Service : public service_manager::Service,
 
 #if defined(OS_CHROMEOS)
   void BindArcRequest(mojom::ArcRequest request);
+  void BindTouchDeviceServerRequest(mojom::TouchDeviceServerRequest request);
 #endif  // defined(OS_CHROMEOS)
 
   std::unique_ptr<ws::WindowServer> window_server_;
@@ -195,6 +202,7 @@ class Service : public service_manager::Service,
 
 #if defined(OS_CHROMEOS)
   std::unique_ptr<InputDeviceController> input_device_controller_;
+  TouchDeviceServer touch_device_server_;
 #endif
 
   // Manages display hardware and handles display management. May register Mojo

@@ -41,10 +41,14 @@ class MESSAGE_CENTER_EXPORT MessageCenterImpl
   void RemoveNotificationBlocker(NotificationBlocker* blocker) override;
   void SetVisibility(Visibility visible) override;
   bool IsMessageCenterVisible() const override;
+  void SetHasMessageCenterView(bool has_message_center_view) override;
+  bool HasMessageCenterView() const override;
   size_t NotificationCount() const override;
   bool HasPopupNotifications() const override;
   bool IsQuietMode() const override;
   Notification* FindVisibleNotificationById(const std::string& id) override;
+  NotificationList::Notifications FindNotificationsByAppId(
+      const std::string& app_id) override;
   const NotificationList::Notifications& GetVisibleNotifications() override;
   NotificationList::PopupNotifications GetPopupNotifications() override;
   void AddNotification(std::unique_ptr<Notification> notification) override;
@@ -97,6 +101,7 @@ class MESSAGE_CENTER_EXPORT MessageCenterImpl
   std::vector<NotificationBlocker*> blockers_;
 
   bool visible_ = false;
+  bool has_message_center_view_ = true;
 
   base::string16 system_notification_app_name_;
 

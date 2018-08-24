@@ -15,8 +15,8 @@
 #include <cmath>
 #include <limits>
 
+#include "api/audio/audio_frame.h"
 #include "modules/audio_processing/include/audio_processing.h"
-#include "modules/include/module_common_types.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
@@ -113,6 +113,11 @@ void FuzzAudioProcessing(test::FuzzDataHelper* fuzz_data,
         apm_return_code = apm->ProcessReverseStream(&fixed_frame);
       }
     }
+
+    // Make calls to stats gathering functions to cover these
+    // codeways.
+    static_cast<void>(apm->GetStatistics());
+    static_cast<void>(apm->GetStatistics(true));
 
     RTC_DCHECK_NE(apm_return_code, AudioProcessing::kBadDataLengthError);
   }

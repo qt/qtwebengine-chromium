@@ -42,12 +42,6 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="AboutFlags_StartupTick" not_user_triggered="true">
-  <obsolete>Deprecated in favor of AboutFlags.Seen histogram.</obsolete>
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="AboutFlags_background-webapps">
   <obsolete>Deprecated in favor of AboutFlags.Seen histogram.</obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
@@ -433,6 +427,12 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="AboutFlags_StartupTick" not_user_triggered="true">
+  <obsolete>Deprecated in favor of AboutFlags.Seen histogram.</obsolete>
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="AboutFlags_tabbed-options">
   <obsolete>Deprecated in favor of AboutFlags.Seen histogram.</obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
@@ -553,26 +553,6 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="Accel_FocusLocation_D">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Accel_FocusLocation_L">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Accel_FocusSearch_E">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Accel_FocusSearch_K">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="Accel_Focus_Bookmarks">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -612,6 +592,26 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Accel_Focus_Toolbar">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Accel_FocusLocation_D">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Accel_FocusLocation_L">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Accel_FocusSearch_E">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Accel_FocusSearch_K">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -741,11 +741,6 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="Accel_NewTab_T">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="Accel_New_Incognito_Window">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -756,17 +751,22 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Accel_NewTab_T">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Accel_Next_Ime">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="Accel_NextWindow_F5">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="Accel_NextWindow_Tab">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Accel_Next_Ime">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -799,6 +799,11 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Accel_Previous_Ime">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="Accel_PrevWindow_F5">
   <obsolete>Unused as of 08/2017</obsolete>
   <owner>jamescook@chromium.org</owner>
@@ -806,11 +811,6 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Accel_PrevWindow_Tab">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Accel_Previous_Ime">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -1014,6 +1014,22 @@ should be able to be added at any place in this file.
   <description>
     Metric recorded when the user starts or stops dictation using keyboard
     shortcut.
+  </description>
+</action>
+
+<action name="Accel_Toggle_Docked_Magnifier">
+  <owner>afakhry@chromium.org</owner>
+  <description>
+    Metric recorded when the user toggles the Chrome OS Docked Magnifier with a
+    keyboard shortcut.
+  </description>
+</action>
+
+<action name="Accel_Toggle_Fullscreen_Magnifier">
+  <owner>afakhry@chromium.org</owner>
+  <description>
+    Metric recorded when the user toggles the Chrome OS Fullscreen Magnifier
+    with a keyboard shortcut.
   </description>
 </action>
 
@@ -1300,6 +1316,14 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Android.ChromeHome.ClosedByNavigation">
+  <owner>mdjones@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    User closed the Chrome Home bottom sheet by navigating.
+  </description>
+</action>
+
 <action name="Android.ChromeHome.ClosedByNTPCloseButton">
   <obsolete>
     Deprecated 6/2017. There is no longer an NTP UI with a close button.
@@ -1308,14 +1332,6 @@ should be able to be added at any place in this file.
   <owner>twellington@chromium.org</owner>
   <description>
     User closed the Chrome Home bottom sheet using the NTP's close button.
-  </description>
-</action>
-
-<action name="Android.ChromeHome.ClosedByNavigation">
-  <owner>mdjones@chromium.org</owner>
-  <owner>twellington@chromium.org</owner>
-  <description>
-    User closed the Chrome Home bottom sheet by navigating.
   </description>
 </action>
 
@@ -1486,10 +1502,52 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Android.Download.InfoBar.Accelerated">
+  <owner>shaktisahu@chromium.org</owner>
+  <description>
+    Records whether accelerating message was shown on the infobar.
+  </description>
+</action>
+
+<action name="Android.Download.InfoBar.CloseButtonClicked">
+  <owner>shaktisahu@chromium.org</owner>
+  <description>
+    User tapped on the close button to close the infobar.
+  </description>
+</action>
+
+<action name="Android.Download.InfoBar.LinkClicked.OpenDownload">
+  <owner>shaktisahu@chromium.org</owner>
+  <description>
+    User tapped on the infobar link to open the downloaded file.
+  </description>
+</action>
+
+<action name="Android.Download.InfoBar.LinkClicked.OpenDownloadHome">
+  <owner>shaktisahu@chromium.org</owner>
+  <description>
+    User tapped on the infobar link to open download home.
+  </description>
+</action>
+
+<action name="Android.Download.InfoBar.ReparentedToCurrentTab">
+  <owner>shaktisahu@chromium.org</owner>
+  <description>
+    The download infobar was re-attached to the new active tab due to a download
+    event such as a new download or download completion that happened after the
+    user had switched tabs. The infobar which was previously being shown on the
+    old tab was closed and was shown on the new active tab.
+  </description>
+</action>
+
+<action name="Android.Download.InfoBar.Shown">
+  <owner>shaktisahu@chromium.org</owner>
+  <description>The infobar was created and shown.</description>
+</action>
+
 <action name="Android.DownloadManager.CheckForExternallyRemovedItems">
-  <owner>dfalcantara@chromium.org</owner>
+  <owner>dtrainor@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
-  <owner>ianwen@chromium.org</owner>
   <description>
     A request was issued to check the file system for download items that were
     externally deleted e.g. through a third-party download manager.
@@ -1497,9 +1555,8 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Android.DownloadManager.Delete">
-  <owner>dfalcantara@chromium.org</owner>
+  <owner>dtrainor@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
-  <owner>ianwen@chromium.org</owner>
   <description>
     User deleted one or more download items. This is recorded when the snackbar
     allowing the user to &quot;undo&quot; deletion is dismissed and the
@@ -1508,12 +1565,21 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Android.DownloadManager.Item.ExternallyDeleted">
-  <owner>dfalcantara@chromium.org</owner>
+  <owner>dtrainor@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
-  <owner>ianwen@chromium.org</owner>
   <description>
-    A download tracked by the Chrome download service was externally deleted
-    e.g. through a third-party download manager.
+    A download file on primary storage was externally deleted by other
+    application. e.g. through a third-party download manager. The associated
+    database record will be also deleted.
+  </description>
+</action>
+
+<action name="Android.DownloadManager.Item.ExternallyDeletedKeepRecord">
+  <owner>xingliu@chromium.org</owner>
+  <description>
+    A download file was externally deleted by other application, e.g. through a
+    third-party download manager. However the associated database record will
+    not be immediately deleted.
   </description>
 </action>
 
@@ -1522,7 +1588,14 @@ should be able to be added at any place in this file.
   <description>User opened a download from download home.</description>
 </action>
 
+<action name="Android.DownloadManager.Open">
+  <owner>dtrainor@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>User opened the downloads manager UI.</description>
+</action>
+
 <action name="Android.DownloadManager.OpenDrawer">
+  <obsolete>Drawer removed during 2017 redesign.</obsolete>
   <owner>dfalcantara@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
   <owner>ianwen@chromium.org</owner>
@@ -1532,6 +1605,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Android.DownloadManager.RemoveItem">
+  <owner>dtrainor@chromium.org</owner>
   <owner>huayinz@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
   <description>
@@ -1541,13 +1615,13 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Android.DownloadManager.Search">
-  <owner>dfalcantara@chromium.org</owner>
+  <owner>dtrainor@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
   <description>User initiated a search of their downloads.</description>
 </action>
 
 <action name="Android.DownloadManager.SelectionEstablished">
-  <owner>dfalcantara@chromium.org</owner>
+  <owner>dtrainor@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
   <owner>ianwen@chromium.org</owner>
   <description>
@@ -1555,10 +1629,18 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="Android.DownloadManager.UndoDelete">
-  <owner>dfalcantara@chromium.org</owner>
+<action name="Android.DownloadManager.Settings">
+  <owner>jming@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
-  <owner>ianwen@chromium.org</owner>
+  <description>
+    User selected the settings option in the download manager to open up the
+    settings page to download preferences.
+  </description>
+</action>
+
+<action name="Android.DownloadManager.UndoDelete">
+  <owner>dtrainor@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
   <description>
     User chose to &quot;undo&quot; the deletion of one or more download items.
   </description>
@@ -2106,6 +2188,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Autofill_ShowedHttpNotSecureExplanation">
+  <obsolete>Deprecated 5/2018 because the feature never launched.</obsolete>
   <owner>estark@chromium.org</owner>
   <description>
     This user action is logged when the user selects a &quot;Login not
@@ -2172,6 +2255,27 @@ should be able to be added at any place in this file.
 <action name="BackColor">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="BackgroundImageCache">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="BackgroundUploadReportAborted">
+  <owner>olivierrobin@chromium.org</owner>
+  <owner>pkl@chromium.org</owner>
+  <description>
+    An attempt to upload a crash report as a background task failed.
+  </description>
+</action>
+
+<action name="BackgroundUploadReportSucceeded">
+  <owner>olivierrobin@chromium.org</owner>
+  <owner>pkl@chromium.org</owner>
+  <description>
+    An attempt to upload a crash report as a background task succeeeded.
+  </description>
 </action>
 
 <action name="BackMenu_ChapterClick1">
@@ -2372,27 +2476,6 @@ should be able to be added at any place in this file.
 <action name="BackMenu_ShowFullHistory">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="BackgroundImageCache">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="BackgroundUploadReportAborted">
-  <owner>olivierrobin@chromium.org</owner>
-  <owner>pkl@chromium.org</owner>
-  <description>
-    An attempt to upload a crash report as a background task failed.
-  </description>
-</action>
-
-<action name="BackgroundUploadReportSucceeded">
-  <owner>olivierrobin@chromium.org</owner>
-  <owner>pkl@chromium.org</owner>
-  <description>
-    An attempt to upload a crash report as a background task succeeeded.
-  </description>
 </action>
 
 <action name="BadClockInterstitial.Back">
@@ -2703,25 +2786,15 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="BindingsMismatchTerminate_RVH_WebUI">
-  <obsolete>
-    Replaced in 1/2018 with bad_message::RVH_WEB_UI_BINDINGS_MISMATCH.
-  </obsolete>
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="BindingsMismatch_GetProcessHostPerSite">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="BlockNonsandboxedPlugins_Disable">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="BlockNonsandboxedPlugins_Enable">
+<action name="BindingsMismatchTerminate_RVH_WebUI">
+  <obsolete>
+    Replaced in 1/2018 with bad_message::RVH_WEB_UI_BINDINGS_MISMATCH.
+  </obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -2792,6 +2865,16 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="BlockNonsandboxedPlugins_Disable">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="BlockNonsandboxedPlugins_Enable">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="Bold">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -2807,21 +2890,6 @@ should be able to be added at any place in this file.
   <description>
     User selected Bookmark All Tabs from anywhere in the UI.
   </description>
-</action>
-
-<action name="BookmarkBarFolder_CtxMenu">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="BookmarkBarFolder_DragEnd">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="BookmarkBarFolder_DragStart">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="BookmarkBar_ContextMenu_Add">
@@ -2849,12 +2917,12 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="BookmarkBar_ContextMenu_OpenAllInNewWindow">
+<action name="BookmarkBar_ContextMenu_OpenAllIncognito">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="BookmarkBar_ContextMenu_OpenAllIncognito">
+<action name="BookmarkBar_ContextMenu_OpenAllInNewWindow">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -2932,6 +3000,21 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="BookmarkBar_ShowRecentlyBookmarked">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="BookmarkBarFolder_CtxMenu">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="BookmarkBarFolder_DragEnd">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="BookmarkBarFolder_DragStart">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -3016,6 +3099,11 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="BookmarkManager_Command_OpenIncognito">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="BookmarkManager_Command_OpenInNewTab">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -3027,11 +3115,6 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="BookmarkManager_Command_OpenInSame">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="BookmarkManager_Command_OpenIncognito">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -3197,6 +3280,11 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Bookmarks_Search">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="BookmarkShortcutWidgetAdded">
   <obsolete>
     Deprecated as of 10/2015. The widget was removed from Chrome.
@@ -3206,11 +3294,6 @@ should be able to be added at any place in this file.
     User added the &quot;bookmark shortcut&quot; widget, which is an icon to
     open a single bookmark in Chrome, to their homescreen on Android.
   </description>
-</action>
-
-<action name="Bookmarks_Search">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="BrowserActions.MenuOpened">
@@ -3417,16 +3500,16 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Cancel">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="CanCommitURL_BlockedAndKilled">
   <obsolete>
     Deprecated 3/2015. Replaced by the histogram
     Stability.BadMessageTerminate.Content.
   </obsolete>
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Cancel">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -3558,11 +3641,6 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="ClearBrowsingData_LSOData">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="ClearBrowsingData_LastDay">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -3579,6 +3657,11 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="ClearBrowsingData_LastWeek">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="ClearBrowsingData_LSOData">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -3700,6 +3783,21 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="ClickedBookmarkBarAppsShortcutButton">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="ClickedBookmarkBarFolder">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="ClickedBookmarkBarURLButton">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="ClickToPlay_AllowAlways">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -3725,21 +3823,6 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="ClickedBookmarkBarAppsShortcutButton">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="ClickedBookmarkBarFolder">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="ClickedBookmarkBarURLButton">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="CloseAllSuppressedPopups">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -3756,11 +3839,6 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="CloseTab">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="CloseTabByKey">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -3810,6 +3888,11 @@ should be able to be added at any place in this file.
     User clicked the close tab button; the recording/capture indicator was
     showing.
   </description>
+</action>
+
+<action name="CloseTabByKey">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="CloseWebApp">
@@ -4208,11 +4291,6 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="CriticalNotificationShown">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="CriticalNotification_AutoRestart">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -4224,6 +4302,11 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="CriticalNotification_Restart">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="CriticalNotificationShown">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -4470,6 +4553,15 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Desktop_SwitchTask">
+  <owner>bruthig@google.com</owner>
+  <owner>tdanderson@google.com</owner>
+  <description>
+    Recorded when the user activates an existing task window by clicking or
+    tapping on it. Recorded on ChromeOS only.
+  </description>
+</action>
+
 <action name="DesktopSearch">
   <obsolete>
     Deprecated 05/2016 because desktop searches are no longer opened in the
@@ -4532,15 +4624,6 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="Desktop_SwitchTask">
-  <owner>bruthig@google.com</owner>
-  <owner>tdanderson@google.com</owner>
-  <description>
-    Recorded when the user activates an existing task window by clicking or
-    tapping on it. Recorded on ChromeOS only.
-  </description>
-</action>
-
 <action name="Destination_Application_Edit">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -4598,41 +4681,6 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="DevTools_InspectAndroidPage">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="DevTools_InspectAndroidWebView">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="DevTools_InspectElement">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="DevTools_InspectRenderer">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="DevTools_InspectWorker">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="DevTools_ToggleConsole">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="DevTools_ToggleWindow">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="DevicesPage_AddPrintersClicked">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -4674,6 +4722,41 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="DevicesPage_RegisterSuccess">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="DevTools_InspectAndroidPage">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="DevTools_InspectAndroidWebView">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="DevTools_InspectElement">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="DevTools_InspectRenderer">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="DevTools_InspectWorker">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="DevTools_ToggleConsole">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="DevTools_ToggleWindow">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -4978,11 +5061,6 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="ExtensionWipeoutNotificationShown">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="Extensions.ExtensionInstalled">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -4999,6 +5077,11 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Extensions.WebStoreLaunch">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="ExtensionWipeoutNotificationShown">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -5542,6 +5625,26 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="History_DeleteHistory">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="History_DragIcon">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="History_DragThumbnail">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="History_Search">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="HistoryPage_BookmarkStarClicked">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -5617,26 +5720,6 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="History_DeleteHistory">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="History_DragIcon">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="History_DragThumbnail">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="History_Search">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="Home">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -5652,12 +5735,9 @@ should be able to be added at any place in this file.
   <description>User triggered the hotword by saying 'Ok Google'.</description>
 </action>
 
-<action name="ITunesLinksHandler_StoreKitLaunched">
-  <owner>mrefaat@chromium.org</owner>
-  <description>
-    Record when StoreKit is launched on the iOS app by ITunesLinkHandler. This
-    should happen when the user navigates to iTunes appstore URL.
-  </description>
+<action name="Import_ShowDlg">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="ImportLockDialogCocoa_Shown">
@@ -5675,7 +5755,24 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="Import_ShowDlg">
+<action name="IncompatibleApplicationsPage.ApplicationRemoved">
+  <owner>pmonette@chromium.org</owner>
+  <description>
+    A user uninstalled one of the listed incompatible applications while the
+    chrome://settings/incompatibleApplications page was open.
+  </description>
+</action>
+
+<action name="IncompatibleApplicationsPage.UninstallationStarted">
+  <owner>pmonette@chromium.org</owner>
+  <description>
+    A user clicked the &quot;Uninstall&quot; button for one of the listed
+    incompatible applications while the
+    chrome://settings/incompatibleApplications was open.
+  </description>
+</action>
+
+<action name="Indent">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -5686,410 +5783,15 @@ should be able to be added at any place in this file.
   <description>The user dismissed the in-product help.</description>
 </action>
 
-<action name="InProductHelp.NotifyEvent.IPH_BadgedReadingList">
-  <owner>edchin@chromium.org</owner>
-  <owner>gchatz@chromium.org</owner>
-  <description>
-    An event related to the badged reading list in-product help experiment.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_Bookmark">
+<action name="InProductHelp.NotifyEvent.IPH">
+  <owner>dtrainor@@chromium.org</owner>
   <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
   <description>The user triggered an event in in-product help.</description>
 </action>
 
-<action name="InProductHelp.NotifyEvent.IPH_ChromeHomeExpand">
-  <owner>twellington@chromium.org</owner>
-  <owner>mdjones@chromium.org</owner>
-  <description>
-    The user triggered an event related to the Chrome Home cold start in-product
-    help. See //components/feature_engagement/README.md#Configuring-UMA for
-    details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_ChromeHomeMenuHeader">
-  <obsolete>Unused as of 03/2018</obsolete>
-  <owner>twellington@chromium.org</owner>
-  <owner>mdjones@chromium.org</owner>
-  <description>
-    The user triggered an event related to the Chrome Home menu header
-    in-product help. See
-    //components/feature_engagement/README.md#Configuring-UMA for details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_ChromeHomePullToRefresh">
-  <owner>twellington@chromium.org</owner>
-  <owner>mdjones@chromium.org</owner>
-  <description>
-    The user triggered an event related to the Chrome Home in-product help that
-    is shown after a pull-to-refresh. See
-    //components/feature_engagement/README.md#Configuring-UMA for details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_ContextualSearch">
-  <obsolete>
-    Replaced with InProductHelp.NotifyEvent.IPH_ContextualSearchWebSearch.
-  </obsolete>
-  <owner>donnd@chromium.org</owner>
-  <owner>mahmoudi@chromium.org</owner>
-  <owner>twellington@chromium.org</owner>
-  <description>
-    The user triggered an event related to the Contextual Search in-product
-    help. See //components/feature_engagement/README.md#Configuring-UMA for
-    details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_ContextualSearchOptIn">
-  <owner>donnd@chromium.org</owner>
-  <owner>mahmoudi@chromium.org</owner>
-  <owner>twellington@chromium.org</owner>
-  <description>
-    The user triggered an event related to the opting-in for Contextual Search
-    in-product help. See
-    //components/feature_engagement/README.md#Configuring-UMA for details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_ContextualSearchPanel">
-  <obsolete>
-    Replaced with
-    InProductHelp.NotifyEvent.IPH_ContextualSearchPromotePanelOpen.
-  </obsolete>
-  <owner>donnd@chromium.org</owner>
-  <owner>mahmoudi@chromium.org</owner>
-  <owner>twellington@chromium.org</owner>
-  <description>
-    The user triggered an event related to opening the Contextual Search panel
-    in-product help. See
-    //components/feature_engagement/README.md#Configuring-UMA for details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_ContextualSearchPromotePanelOpen">
-  <owner>donnd@chromium.org</owner>
-  <owner>mahmoudi@chromium.org</owner>
-  <owner>twellington@chromium.org</owner>
-  <description>
-    The user triggered an event related to opening the Contextual Search panel
-    in-product help. See
-    //components/feature_engagement/README.md#Configuring-UMA for details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_ContextualSearchPromoteTap">
-  <owner>donnd@chromium.org</owner>
-  <owner>mahmoudi@chromium.org</owner>
-  <owner>twellington@chromium.org</owner>
-  <description>
-    The user triggered an event related to activation by tap for Contextual
-    Search in-product help. See
-    //components/feature_engagement/README.md#Configuring-UMA for details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_ContextualSearchTap">
-  <obsolete>
-    Replaced with InProductHelp.NotifyEvent.IPH_ContextualSearchPromoteTap.
-  </obsolete>
-  <owner>donnd@chromium.org</owner>
-  <owner>mahmoudi@chromium.org</owner>
-  <owner>twellington@chromium.org</owner>
-  <description>
-    The user triggered an event related to activation by tap for Contextual
-    Search in-product help. See
-    //components/feature_engagement/README.md#Configuring-UMA for details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_ContextualSearchWebSearch">
-  <owner>donnd@chromium.org</owner>
-  <owner>mahmoudi@chromium.org</owner>
-  <owner>twellington@chromium.org</owner>
-  <description>
-    The user triggered an event related to the Contextual Search web search
-    in-product help. See
-    //components/feature_engagement/README.md#Configuring-UMA for details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_ContextualSuggestions">
-  <owner>twellington@chromium.org</owner>
-  <description>
-    The user triggered an event related to the contextual suggestions in-product
-    help. See //components/feature_engagement/README.md#Configuring-UMA for
-    details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_DataSaverDetail">
+<action name="InProductHelp.NotifyUsedEvent.IPH">
+  <owner>dtrainor@@chromium.org</owner>
   <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
-  <description>The user triggered an event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_DataSaverPreview">
-  <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
-  <description>
-    A event related to the new tab in-product help experiment.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_DownloadHome">
-  <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
-  <description>The user triggered an event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_DownloadPage">
-  <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
-  <description>The user triggered an event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_DownloadPageScreenshot">
-  <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
-  <description>The user triggered an event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_IncognitoWindow">
-  <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
-  <description>The user triggered an event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_MediaDownload">
-  <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
-  <description>The user triggered an event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_NewIncognitoTabTip">
-  <owner>edchin@chromium.org</owner>
-  <owner>gchatz@chromium.org</owner>
-  <description>
-    An event related to the new incognito tab tip in-product help experiment.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_NewTab">
-  <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
-  <description>The user triggered an event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyEvent.IPH_NewTabTip">
-  <owner>edchin@chromium.org</owner>
-  <owner>gchatz@chromium.org</owner>
-  <description>
-    An event related to the new tab tip in-product help experiment.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_BadgedReadingList">
-  <owner>edchin@chromium.org</owner>
-  <owner>gchatz@chromium.org</owner>
-  <description>The user triggered a used event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_Bookmark">
-  <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
-  <description>The user triggered a used event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_ChromeHomeExpand">
-  <owner>twellington@chromium.org</owner>
-  <owner>mdjones@chromium.org</owner>
-  <description>
-    The user triggered a used event related to the Chrome Home cold start
-    in-product help. See
-    //components/feature_engagement/README.md#Configuring-UMA for details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_ChromeHomeMenuHeader">
-  <obsolete>Unused as of 03/2018</obsolete>
-  <owner>twellington@chromium.org</owner>
-  <owner>mdjones@chromium.org</owner>
-  <description>
-    The user triggered a used event related to the Chrome Home menu header
-    in-product help. See
-    //components/feature_engagement/README.md#Configuring-UMA for details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_ChromeHomePullToRefresh">
-  <owner>twellington@chromium.org</owner>
-  <owner>mdjones@chromium.org</owner>
-  <description>
-    The user triggered a used event related to the Chrome Home in-product help
-    that is shown after a pull-to-refresh. See
-    //components/feature_engagement/README.md#Configuring-UMA for details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_ContextualSearch">
-  <obsolete>
-    Replaced with InProductHelp.NotifyUsedEvent.IPH_ContextualSearchWebSearch.
-  </obsolete>
-  <owner>donnd@chromium.org</owner>
-  <owner>mahmoudi@chromium.org</owner>
-  <owner>twellington@chromium.org</owner>
-  <description>
-    The user triggered a used event related to the Contextual Search in-product
-    help. See //components/feature_engagement/README.md#Configuring-UMA for
-    details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_ContextualSearchOptIn">
-  <owner>donnd@chromium.org</owner>
-  <owner>mahmoudi@chromium.org</owner>
-  <owner>twellington@chromium.org</owner>
-  <description>
-    The user triggered a used event related to the opting-in for Contextual
-    Search in-product help. See
-    //components/feature_engagement/README.md#Configuring-UMA for details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_ContextualSearchPanel">
-  <obsolete>
-    Replaced with
-    InProductHelp.NotifyUsedEvent.IPH_ContextualSearchPromotePanelOpen.
-  </obsolete>
-  <owner>donnd@chromium.org</owner>
-  <owner>mahmoudi@chromium.org</owner>
-  <owner>twellington@chromium.org</owner>
-  <description>
-    The user triggered a used event related to opening the Contextual Search
-    panel in-product help. See
-    //components/feature_engagement/README.md#Configuring-UMA for details.
-  </description>
-</action>
-
-<action
-    name="InProductHelp.NotifyUsedEvent.IPH_ContextualSearchPromotePanelOpen">
-  <owner>donnd@chromium.org</owner>
-  <owner>mahmoudi@chromium.org</owner>
-  <owner>twellington@chromium.org</owner>
-  <description>
-    The user triggered a used event related to opening the Contextual Search
-    panel in-product help. See
-    //components/feature_engagement/README.md#Configuring-UMA for details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_ContextualSearchPromoteTap">
-  <owner>donnd@chromium.org</owner>
-  <owner>mahmoudi@chromium.org</owner>
-  <owner>twellington@chromium.org</owner>
-  <description>
-    The user triggered a used event related to activation by tap for Contextual
-    Search in-product help. See
-    //components/feature_engagement/README.md#Configuring-UMA for details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_ContextualSearchTap">
-  <obsolete>
-    Replaced with InProductHelp.NotifyUsedEvent.IPH_ContextualSearchPromoteTap.
-  </obsolete>
-  <owner>donnd@chromium.org</owner>
-  <owner>mahmoudi@chromium.org</owner>
-  <owner>twellington@chromium.org</owner>
-  <description>
-    The user triggered a used event related to activation by tap for Contextual
-    Search in-product help. See
-    //components/feature_engagement/README.md#Configuring-UMA for details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_ContextualSearchWebSearch">
-  <owner>donnd@chromium.org</owner>
-  <owner>mahmoudi@chromium.org</owner>
-  <owner>twellington@chromium.org</owner>
-  <description>
-    The user triggered a used event related to the Contextual Search in-product
-    help. See //components/feature_engagement/README.md#Configuring-UMA for
-    details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_ContextualSuggestions">
-  <owner>twellington@chromium.org</owner>
-  <description>
-    The user triggered a used event related to the contextual suggestions
-    in-product help. See
-    //components/feature_engagement/README.md#Configuring-UMA for details.
-  </description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_DataSaverDetail">
-  <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
-  <description>The user triggered a used event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_DataSaverPreview">
-  <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
-  <description>The user triggered a used event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_DownloadHome">
-  <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
-  <description>The user triggered a used event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_DownloadPage">
-  <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
-  <description>The user triggered a used event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_DownloadPageScreenshot">
-  <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
-  <description>The user triggered a used event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_IncognitoWindow">
-  <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
-  <description>The user triggered a used event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_MediaDownload">
-  <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
-  <description>The user triggered a used event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_NewIncognitoTabTip">
-  <owner>edchin@chromium.org</owner>
-  <owner>gchatz@chromium.org</owner>
-  <description>The user triggered a used event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_NewTab">
-  <owner>nyquist@chromium.org</owner>
-  <owner>xingliu@chromium.org</owner>
-  <description>The user triggered a used event in in-product help.</description>
-</action>
-
-<action name="InProductHelp.NotifyUsedEvent.IPH_NewTabTip">
-  <owner>edchin@chromium.org</owner>
-  <owner>gchatz@chromium.org</owner>
   <description>The user triggered a used event in in-product help.</description>
 </action>
 
@@ -6291,6 +5993,14 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="InProductHelp.ShouldTriggerHelpUI.IPH_HomePageButton">
+  <owner>danielpark@chromium.org</owner>
+  <description>
+    The feature engagement tracker tried to determine whether in-product help
+    should be shown to the user.
+  </description>
+</action>
+
 <action name="InProductHelp.ShouldTriggerHelpUI.IPH_IncognitoWindow">
   <owner>nyquist@chromium.org</owner>
   <owner>xingliu@chromium.org</owner>
@@ -6321,6 +6031,14 @@ should be able to be added at any place in this file.
 <action name="InProductHelp.ShouldTriggerHelpUI.IPH_NewTab">
   <owner>nyquist@chromium.org</owner>
   <owner>xingliu@chromium.org</owner>
+  <description>
+    The feature engagement tracker tried to determine whether in-product help
+    should be shown to the user.
+  </description>
+</action>
+
+<action name="InProductHelp.ShouldTriggerHelpUI.IPH_NewTabPageButton">
+  <owner>danielpark@chromium.org</owner>
   <description>
     The feature engagement tracker tried to determine whether in-product help
     should be shown to the user.
@@ -6540,6 +6258,14 @@ should be able to be added at any place in this file.
 </action>
 
 <action
+    name="InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_HomePageButton">
+  <owner>danielpark@chromium.org</owner>
+  <description>
+    A user action that could have triggered In-Product Help did not.
+  </description>
+</action>
+
+<action
     name="InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_IncognitoWindow">
   <owner>nyquist@chromium.org</owner>
   <owner>xingliu@chromium.org</owner>
@@ -6569,6 +6295,14 @@ should be able to be added at any place in this file.
 <action name="InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_NewTab">
   <owner>nyquist@chromium.org</owner>
   <owner>xingliu@chromium.org</owner>
+  <description>
+    A user action that could have triggered In-Product Help did not.
+  </description>
+</action>
+
+<action
+    name="InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_NewTabPageButton">
+  <owner>danielpark@chromium.org</owner>
   <description>
     A user action that could have triggered In-Product Help did not.
   </description>
@@ -6766,6 +6500,12 @@ should be able to be added at any place in this file.
 </action>
 
 <action
+    name="InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_HomePageButton">
+  <owner>danielpark@chromium.org</owner>
+  <description>A user action triggered In-Product Help.</description>
+</action>
+
+<action
     name="InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_IncognitoWindow">
   <owner>nyquist@chromium.org</owner>
   <owner>xingliu@chromium.org</owner>
@@ -6789,6 +6529,12 @@ should be able to be added at any place in this file.
 <action name="InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_NewTab">
   <owner>nyquist@chromium.org</owner>
   <owner>xingliu@chromium.org</owner>
+  <description>A user action triggered In-Product Help.</description>
+</action>
+
+<action
+    name="InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_NewTabPageButton">
+  <owner>danielpark@chromium.org</owner>
   <description>A user action triggered In-Product Help.</description>
 </action>
 
@@ -6914,6 +6660,15 @@ should be able to be added at any place in this file.
 </action>
 
 <action
+    name="InProductHelp.ShouldTriggerHelpUIResult.WouldHaveTriggered.IPH_HomePageButton">
+  <owner>danielpark@chromium.org</owner>
+  <description>
+    A user action would have triggered In-Product Help, but the feature was
+    configured for tracking only.
+  </description>
+</action>
+
+<action
     name="InProductHelp.ShouldTriggerHelpUIResult.WouldHaveTriggered.IPH_IncognitoWindow">
   <owner>nyquist@chromium.org</owner>
   <owner>xingliu@chromium.org</owner>
@@ -6954,6 +6709,15 @@ should be able to be added at any place in this file.
 </action>
 
 <action
+    name="InProductHelp.ShouldTriggerHelpUIResult.WouldHaveTriggered.IPH_NewTabPageButton">
+  <owner>danielpark@chromium.org</owner>
+  <description>
+    A user action would have triggered In-Product Help, but the feature was
+    configured for tracking only.
+  </description>
+</action>
+
+<action
     name="InProductHelp.ShouldTriggerHelpUIResult.WouldHaveTriggered.IPH_NewTabTip">
   <owner>edchin@chromium.org</owner>
   <owner>gchatz@chromium.org</owner>
@@ -6961,28 +6725,6 @@ should be able to be added at any place in this file.
     A user action would have triggered In-Product Help, but the feature was
     configured for tracking only.
   </description>
-</action>
-
-<action name="IncompatibleApplicationsPage.ApplicationRemoved">
-  <owner>pmonette@chromium.org</owner>
-  <description>
-    A user uninstalled one of the listed incompatible applications while the
-    chrome://settings/incompatibleApplications page was open.
-  </description>
-</action>
-
-<action name="IncompatibleApplicationsPage.UninstallationStarted">
-  <owner>pmonette@chromium.org</owner>
-  <description>
-    A user clicked the &quot;Uninstall&quot; button for one of the listed
-    incompatible applications while the
-    chrome://settings/incompatibleApplications was open.
-  </description>
-</action>
-
-<action name="Indent">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="InputMethodOptions_Open_chewing">
@@ -8278,12 +8020,12 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="InsertHTML">
+<action name="InsertHorizontalRule">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="InsertHorizontalRule">
+<action name="InsertHTML">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -8368,7 +8110,20 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="ITunesLinksHandler_StoreKitLaunched">
+  <owner>mrefaat@chromium.org</owner>
+  <description>
+    Record when StoreKit is launched on the iOS app by ITunesLinkHandler. This
+    should happen when the user navigates to iTunes appstore URL.
+  </description>
+</action>
+
 <action name="JustifyCenter">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="justifyFull">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -8381,6 +8136,20 @@ should be able to be added at any place in this file.
 <action name="JustifyRight">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="KeyboardShortcutViewer.CreateWindow">
+  <owner>wutao@chromium.org</owner>
+  <description>
+    Records when the user creates a new window of Keyboard Shortcut Viewer.
+  </description>
+</action>
+
+<action name="KeyboardShortcutViewer.Search">
+  <owner>wutao@chromium.org</owner>
+  <description>
+    Records when the user enters search mode in Keyboard Shortcut Viewer.
+  </description>
 </action>
 
 <action name="KeySystemSupport.Widevine.Queried">
@@ -8401,20 +8170,6 @@ should be able to be added at any place in this file.
 <action name="KeySystemSupport.WidevineWithType.Supported">
   <owner>xhwang@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="KeyboardShortcutViewer.CreateWindow">
-  <owner>wutao@chromium.org</owner>
-  <description>
-    Records when the user creates a new window of Keyboard Shortcut Viewer.
-  </description>
-</action>
-
-<action name="KeyboardShortcutViewer.Search">
-  <owner>wutao@chromium.org</owner>
-  <description>
-    Records when the user enters search mode in Keyboard Shortcut Viewer.
-  </description>
 </action>
 
 <action name="KeywordEditor_AddKeyword">
@@ -10992,17 +10747,17 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="MaxButton_Maximize">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="MaxButton_MaxLeft">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="MaxButton_MaxRight">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="MaxButton_Maximize">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -11018,6 +10773,41 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="MaxButton_ShowBubble">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="mceAddControl">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="mceBeginUndoLevel">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="mceEndUndoLevel">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="mceInsertContent">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="mceRepaint">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="mceSave">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="mceSetStyleInfo">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -11240,6 +11030,75 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Media_Paused" not_user_triggered="true">
+  <obsolete>No longer recorded.</obsolete>
+  <owner>liberato@chromium.org</owner>
+  <description>
+    Media playback was paused, either from script or controls.
+  </description>
+</action>
+
+<action name="Media_Play_WithGesture">
+  <obsolete>No longer recorded.</obsolete>
+  <owner>liberato@chromium.org</owner>
+  <description>A call to play() with a user gesture succeeded.</description>
+</action>
+
+<action name="Media_Playback_Ended" not_user_triggered="true">
+  <owner>liberato@chromium.org</owner>
+  <description>Media playback reached the end.</description>
+</action>
+
+<action name="Media_Playback_Mute_Off" not_user_triggered="true">
+  <obsolete>No longer recorded.</obsolete>
+  <owner>liberato@chromium.org</owner>
+  <description>
+    Mute was turned off, either from script or controls.
+  </description>
+</action>
+
+<action name="Media_Playback_Mute_On" not_user_triggered="true">
+  <obsolete>No longer recorded.</obsolete>
+  <owner>liberato@chromium.org</owner>
+  <description>Mute was turned on, either from script or controls.</description>
+</action>
+
+<action name="Media_Playback_Started" not_user_triggered="true">
+  <obsolete>No longer recorded.</obsolete>
+  <owner>liberato@chromium.org</owner>
+  <description>Media playback started due to any cause.</description>
+</action>
+
+<action name="Media_RequestRemotePlayback">
+  <obsolete>No longer recorded.</obsolete>
+  <owner>liberato@chromium.org</owner>
+  <description>
+    User requested to transfer playback to a remote player, via 'cast' button.
+  </description>
+</action>
+
+<action name="Media_RequestRemotePlayback_Control">
+  <obsolete>No longer recorded.</obsolete>
+  <owner>liberato@chromium.org</owner>
+  <description>
+    User requested to control playback of a remote player, such as Chromecast.
+  </description>
+</action>
+
+<action name="Media_Seeked" not_user_triggered="true">
+  <obsolete>No longer recorded.</obsolete>
+  <owner>liberato@chromium.org</owner>
+  <description>Seek originating from script or controls completed.</description>
+</action>
+
+<action name="Media_SetVolume" not_user_triggered="true">
+  <obsolete>No longer recorded.</obsolete>
+  <owner>liberato@chromium.org</owner>
+  <description>
+    Playback volume was changed, either from script or controls.
+  </description>
+</action>
+
 <action name="MediaContextMenu_Controls">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -11362,75 +11221,6 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="Media_Paused" not_user_triggered="true">
-  <obsolete>No longer recorded.</obsolete>
-  <owner>liberato@chromium.org</owner>
-  <description>
-    Media playback was paused, either from script or controls.
-  </description>
-</action>
-
-<action name="Media_Play_WithGesture">
-  <obsolete>No longer recorded.</obsolete>
-  <owner>liberato@chromium.org</owner>
-  <description>A call to play() with a user gesture succeeded.</description>
-</action>
-
-<action name="Media_Playback_Ended" not_user_triggered="true">
-  <owner>liberato@chromium.org</owner>
-  <description>Media playback reached the end.</description>
-</action>
-
-<action name="Media_Playback_Mute_Off" not_user_triggered="true">
-  <obsolete>No longer recorded.</obsolete>
-  <owner>liberato@chromium.org</owner>
-  <description>
-    Mute was turned off, either from script or controls.
-  </description>
-</action>
-
-<action name="Media_Playback_Mute_On" not_user_triggered="true">
-  <obsolete>No longer recorded.</obsolete>
-  <owner>liberato@chromium.org</owner>
-  <description>Mute was turned on, either from script or controls.</description>
-</action>
-
-<action name="Media_Playback_Started" not_user_triggered="true">
-  <obsolete>No longer recorded.</obsolete>
-  <owner>liberato@chromium.org</owner>
-  <description>Media playback started due to any cause.</description>
-</action>
-
-<action name="Media_RequestRemotePlayback">
-  <obsolete>No longer recorded.</obsolete>
-  <owner>liberato@chromium.org</owner>
-  <description>
-    User requested to transfer playback to a remote player, via 'cast' button.
-  </description>
-</action>
-
-<action name="Media_RequestRemotePlayback_Control">
-  <obsolete>No longer recorded.</obsolete>
-  <owner>liberato@chromium.org</owner>
-  <description>
-    User requested to control playback of a remote player, such as Chromecast.
-  </description>
-</action>
-
-<action name="Media_Seeked" not_user_triggered="true">
-  <obsolete>No longer recorded.</obsolete>
-  <owner>liberato@chromium.org</owner>
-  <description>Seek originating from script or controls completed.</description>
-</action>
-
-<action name="Media_SetVolume" not_user_triggered="true">
-  <obsolete>No longer recorded.</obsolete>
-  <owner>liberato@chromium.org</owner>
-  <description>
-    Playback volume was changed, either from script or controls.
-  </description>
-</action>
-
 <action name="Menu_Take_Screenshot">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -11449,6 +11239,14 @@ should be able to be added at any place in this file.
 <action name="MixedScript_LoadAnyway_Bubble">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Mobile_FocusedDefocusedOmnibox_WithNoAction">
+  <owner>stkhapugin@chromium.org</owner>
+  <description>
+    Records when a user focuses the omnibox and then defocuses it without
+    modifying or copying the URL. iOS only.
+  </description>
 </action>
 
 <action name="MobileActionBarShown">
@@ -11860,11 +11658,6 @@ should be able to be added at any place in this file.
   <description>The Help and Feedback dialog is shown.</description>
 </action>
 
-<action name="MobileMWSession">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="MobileMenuAddToBookmarks">
   <owner>aurimas@chromium.org</owner>
   <description>
@@ -11991,6 +11784,11 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="MobileMenuPasteAndGo">
+  <owner>gambard@chromium.org</owner>
+  <description>User pressed 'Paste and Go' in the app menu.</description>
+</action>
+
 <action name="MobileMenuPrint">
   <owner>aurimas@chromium.org</owner>
   <description>User pressed 'Print' in the app menu.</description>
@@ -12002,14 +11800,14 @@ should be able to be added at any place in this file.
   <description>User pressed 'Quit' in the app menu.</description>
 </action>
 
-<action name="MobileMenuReadLater">
-  <owner>gambard@chromium.org</owner>
-  <description>User pressed 'Read Later' in the app menu.</description>
-</action>
-
 <action name="MobileMenuReadingList">
   <owner>gambard@chromium.org</owner>
   <description>User pressed 'Reading List' in the app menu.</description>
+</action>
+
+<action name="MobileMenuReadLater">
+  <owner>gambard@chromium.org</owner>
+  <description>User pressed 'Read Later' in the app menu.</description>
 </action>
 
 <action name="MobileMenuRecentTabs">
@@ -12043,6 +11841,11 @@ should be able to be added at any place in this file.
   <description>User pressed 'Request Mobile Site' in the app menu.</description>
 </action>
 
+<action name="MobileMenuScanQRCode">
+  <owner>gambard@chromium.org</owner>
+  <description>User pressed 'Scan QR Code' in the app menu.</description>
+</action>
+
 <action name="MobileMenuSettings">
   <owner>aurimas@chromium.org</owner>
   <description>User pressed 'Settings' in the app menu.</description>
@@ -12066,6 +11869,21 @@ should be able to be added at any place in this file.
 <action name="MobileMenuStop">
   <owner>tedchoc@chromium.org</owner>
   <description>User pressed the stop option in the app menu.</description>
+</action>
+
+<action name="MobileMenuVoiceSearch">
+  <owner>gambard@chromium.org</owner>
+  <description>User pressed 'Voice Search' in the app menu.</description>
+</action>
+
+<action name="MobileMWSession">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="MobileNewTabOpened">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="MobileNTP.Interests.Click">
@@ -12203,6 +12021,13 @@ should be able to be added at any place in this file.
   <description>The user tapped the history icon on the NTP.</description>
 </action>
 
+<action name="MobileNTPShown">
+  <owner>knn@chromium.org</owner>
+  <description>
+    The New Tab Page (NTP) was loaded or brought to foreground by the user.
+  </description>
+</action>
+
 <action name="MobileNTPShowReadingList">
   <owner>justincohen@chromium.org</owner>
   <description>The user tapped the reading list icon on the NTP.</description>
@@ -12211,13 +12036,6 @@ should be able to be added at any place in this file.
 <action name="MobileNTPShowRecentTabs">
   <owner>justincohen@chromium.org</owner>
   <description>The user tapped the recent list icon on the NTP.</description>
-</action>
-
-<action name="MobileNTPShown">
-  <owner>knn@chromium.org</owner>
-  <description>
-    The New Tab Page (NTP) was loaded or brought to foreground by the user.
-  </description>
 </action>
 
 <action name="MobileNTPSwitchToBookmarks">
@@ -12249,11 +12067,6 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="MobileNTPSwitchToOpenTabs">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="MobileNewTabOpened">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -12556,6 +12369,22 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="MobileStackViewIncognitoMode">
+  <owner>rlanday@chromium.org</owner>
+  <description>
+    User in the Android tab switcher switches from normal mode to incognito
+    mode.
+  </description>
+</action>
+
+<action name="MobileStackViewNormalMode">
+  <owner>rlanday@chromium.org</owner>
+  <description>
+    User in the Android tab switcher switches from incognito mode to normal
+    mode.
+  </description>
+</action>
+
 <action name="MobileStackViewSwipeCloseTab">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -12609,6 +12438,23 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="MobileTabbedModeViewIntentFromApp">
+  <owner>mariakhomenko@chromium.org</owner>
+  <owner>tedchoc@chromium.org</owner>
+  <description>
+    A VIEW intent was received by the tabbed mode activity from an external
+    application.
+  </description>
+</action>
+
+<action name="MobileTabbedModeViewIntentFromChrome">
+  <owner>mariakhomenko@chromium.org</owner>
+  <owner>tedchoc@chromium.org</owner>
+  <description>
+    A VIEW intent was received by the tabbed mode activity from Chrome.
+  </description>
+</action>
+
 <action name="MobileTabClobbered">
   <obsolete>Deprecated as of 8/2017</obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
@@ -12627,6 +12473,14 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="MobileTabReturnedToCurrentTab">
+  <owner>rlanday@chromium.org</owner>
+  <description>
+    User in the Android tab switcher returned to the tab that was active when
+    the tab switcher was opened.
+  </description>
+</action>
+
 <action name="MobileTabStripCloseTab">
   <obsolete>Deprecated as of 5/2015</obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
@@ -12642,23 +12496,6 @@ should be able to be added at any place in this file.
 <action name="MobileTabSwitched">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="MobileTabbedModeViewIntentFromApp">
-  <owner>mariakhomenko@chromium.org</owner>
-  <owner>tedchoc@chromium.org</owner>
-  <description>
-    A VIEW intent was received by the tabbed mode activity from an external
-    application.
-  </description>
-</action>
-
-<action name="MobileTabbedModeViewIntentFromChrome">
-  <owner>mariakhomenko@chromium.org</owner>
-  <owner>tedchoc@chromium.org</owner>
-  <description>
-    A VIEW intent was received by the tabbed mode activity from Chrome.
-  </description>
 </action>
 
 <action name="MobileToolbarBack">
@@ -12740,6 +12577,14 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="MobileToolbarStackViewButtonInStackView">
+  <owner>rlanday@chromium.org</owner>
+  <description>
+    User in the Android tab switcher tapped the tab switcher button on the
+    toolbar to leave the tab switcher.
+  </description>
+</action>
+
 <action name="MobileToolbarStackViewNewTab">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -12748,6 +12593,13 @@ should be able to be added at any place in this file.
 <action name="MobileToolbarStop">
   <owner>tedchoc@chromium.org</owner>
   <description>User pressed the stop icon in the toolbar.</description>
+</action>
+
+<action name="MobileToolbarSwipeOpenStackView">
+  <owner>rlanday@chromium.org</owner>
+  <description>
+    User entered the Android tab switcher by swiping down on the toolbar.
+  </description>
 </action>
 
 <action name="MobileToolbarToggleBookmark">
@@ -12865,12 +12717,6 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="MostVisitedReordered">
-  <obsolete>No longer recorded.</obsolete>
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="MostVisited_BlacklistCleared">
   <obsolete>No longer recorded.</obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
@@ -12902,6 +12748,12 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="MostVisited_UrlUnpinned">
+  <obsolete>No longer recorded.</obsolete>
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="MostVisitedReordered">
   <obsolete>No longer recorded.</obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -13072,30 +12924,6 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="NPAPIRemovalInfobar.LearnMore">
-  <obsolete>Deprecated due to NPAPI removal.</obsolete>
-  <owner>wfh@chromium.org</owner>
-  <description>
-    Recorded when the NPAPI removal infobar link is clicked.
-  </description>
-</action>
-
-<action name="NPAPIRemovalInfobar.Shown">
-  <obsolete>Deprecated due to NPAPI removal.</obsolete>
-  <owner>wfh@chromium.org</owner>
-  <description>Recorded when the NPAPI removal infobar is shown.</description>
-</action>
-
-<action name="NTPPromoClosed">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="NTPPromoShown">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="NativeUI_Applications">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -13139,6 +12967,11 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="NewTab_Button">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="NewTabPage_ContentSuggestions_ArticlesUsage">
   <owner>markusheintz@chromium.org</owner>
   <description>
@@ -13149,11 +12982,6 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="NewTabPage_ReopenTab">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="NewTab_Button">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -13256,6 +13084,30 @@ should be able to be added at any place in this file.
     Recorded when the message center's Do Not Disturb mode is disabled, either
     due to manual user action, or because a timed Do Not Disturb expires.
   </description>
+</action>
+
+<action name="NPAPIRemovalInfobar.LearnMore">
+  <obsolete>Deprecated due to NPAPI removal.</obsolete>
+  <owner>wfh@chromium.org</owner>
+  <description>
+    Recorded when the NPAPI removal infobar link is clicked.
+  </description>
+</action>
+
+<action name="NPAPIRemovalInfobar.Shown">
+  <obsolete>Deprecated due to NPAPI removal.</obsolete>
+  <owner>wfh@chromium.org</owner>
+  <description>Recorded when the NPAPI removal infobar is shown.</description>
+</action>
+
+<action name="NTPPromoClosed">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="NTPPromoShown">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="OfflinePages.Edit.RemoveButtonClicked">
@@ -13474,6 +13326,16 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Omnibox_DragString">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Omnibox_DragURL">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="OmniboxDestinationURLIsSearchOnDSP">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -13485,16 +13347,6 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="OmniboxInputInProgress">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Omnibox_DragString">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Omnibox_DragURL">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -13664,6 +13516,16 @@ should be able to be added at any place in this file.
   <description>Settings: Accessibility: Enable on-screen keyboard</description>
 </action>
 
+<action name="Options_AccessibilityScreenMagnifier_Disable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Disable screen magnifier</description>
+</action>
+
+<action name="Options_AccessibilityScreenMagnifier_Enable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Enable screen magnifier</description>
+</action>
+
 <action name="Options_AccessibilityScreenMagnifierCenterFocus_Disable">
   <owner>jennyz@chromium.org</owner>
   <description>
@@ -13678,16 +13540,6 @@ should be able to be added at any place in this file.
     Settings: Accessibility: Enable centering focus for text input in magnifier
     screen.
   </description>
-</action>
-
-<action name="Options_AccessibilityScreenMagnifier_Disable">
-  <owner>stevenjb@chromium.org</owner>
-  <description>Settings: Accessibility: Disable screen magnifier</description>
-</action>
-
-<action name="Options_AccessibilityScreenMagnifier_Enable">
-  <owner>stevenjb@chromium.org</owner>
-  <description>Settings: Accessibility: Enable screen magnifier</description>
 </action>
 
 <action name="Options_AccessibilitySelectToSpeak_Disable">
@@ -13807,18 +13659,6 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="Options_AutoSpellCorrection_Disable">
-  <obsolete>Deprecated 11/2015</obsolete>
-  <owner>groby@chromium.org</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Options_AutoSpellCorrection_Enable">
-  <obsolete>Deprecated 11/2015</obsolete>
-  <owner>groby@chromium.org</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="Options_AutofillAddressAdded">
   <owner>michaelpg@chromium.org</owner>
   <description>Settings: Autofill: Address added</description>
@@ -13861,6 +13701,18 @@ should be able to be added at any place in this file.
 
 <action name="Options_Autologin_Enable">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Options_AutoSpellCorrection_Disable">
+  <obsolete>Deprecated 11/2015</obsolete>
+  <owner>groby@chromium.org</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Options_AutoSpellCorrection_Enable">
+  <obsolete>Deprecated 11/2015</obsolete>
+  <owner>groby@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
@@ -14058,13 +13910,6 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="Options_DefaultMIDISysExSettingChanged">
-  <owner>toyoshim@chromium.org</owner>
-  <description>
-    Triggers when the default decision for Midi SysEx permissions is changed.
-  </description>
-</action>
-
 <action name="Options_DefaultMediaStreamCameraSettingChanged">
   <owner>msramek@chromium.org</owner>
   <description>
@@ -14094,6 +13939,13 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Options_DefaultMIDISysExSettingChanged">
+  <owner>toyoshim@chromium.org</owner>
+  <description>
+    Triggers when the default decision for Midi SysEx permissions is changed.
+  </description>
+</action>
+
 <action name="Options_DefaultMouseLockSettingChanged">
   <obsolete>Deprecated as of 2016-10. These settings no longer exist.</obsolete>
   <owner>mgiuca@chromium.org</owner>
@@ -14113,14 +13965,6 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="Options_DefaultPPAPIBrokerSettingChanged">
-  <owner>lshang@chromium.org</owner>
-  <description>
-    Recorded when the default value for the PPAPI Broker content setting is
-    changed by the user.
-  </description>
-</action>
-
 <action name="Options_DefaultPluginsSettingChanged">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -14129,6 +13973,14 @@ should be able to be added at any place in this file.
 <action name="Options_DefaultPopupsSettingChanged">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Options_DefaultPPAPIBrokerSettingChanged">
+  <owner>lshang@chromium.org</owner>
+  <description>
+    Recorded when the default value for the PPAPI Broker content setting is
+    changed by the user.
+  </description>
 </action>
 
 <action name="Options_DefaultProtectedMediaIdentifierSettingChanged">
@@ -14357,16 +14209,6 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="Options_HotwordCheckbox_Disable">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Options_HotwordCheckbox_Enable">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="Options_Hotword_AudioLogging_Checkbox_Disable">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of the metric.</description>
@@ -14375,6 +14217,16 @@ should be able to be added at any place in this file.
 <action name="Options_Hotword_AudioLogging_Checkbox_Enable">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of the metric.</description>
+</action>
+
+<action name="Options_HotwordCheckbox_Disable">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Options_HotwordCheckbox_Enable">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="Options_ImagesCheckbox_Disable">
@@ -14548,7 +14400,7 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="Options_ManageSSLCertificates">
+<action name="Options_ManagerCerts">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -14558,7 +14410,7 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="Options_ManagerCerts">
+<action name="Options_ManageSSLCertificates">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -14761,6 +14613,16 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Options_PasswordManager_Disable">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Options_PasswordManager_Enable">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="Options_PasswordManagerDeletePassword">
   <owner>michaelpg@chromium.org</owner>
   <description>Settings: Password manager: Delete password</description>
@@ -14776,16 +14638,6 @@ should be able to be added at any place in this file.
 <action name="Options_PasswordManagerSearch">
   <owner>michaelpg@chromium.org</owner>
   <description>Settings: Password manager: Search</description>
-</action>
-
-<action name="Options_PasswordManager_Disable">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Options_PasswordManager_Enable">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="Options_PluginsCheckbox_Disable">
@@ -14816,26 +14668,6 @@ should be able to be added at any place in this file.
 <action name="Options_ResolveTimezoneByGeoLocation_Enable">
   <owner>alemate@chromium.org</owner>
   <description>ChromeOS periodic timezone refresh enabled.</description>
-</action>
-
-<action name="Options_SSL2_Disable">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Options_SSL2_Enable">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Options_SSL3_Disable">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Options_SSL3_Enable">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="Options_SafeBrowsingCheckbox_Disable">
@@ -15036,6 +14868,26 @@ should be able to be added at any place in this file.
   <description>Settings: Privacy: Use spelling service</description>
 </action>
 
+<action name="Options_SSL2_Disable">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Options_SSL2_Enable">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Options_SSL3_Disable">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Options_SSL3_Enable">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="Options_Startup_Custom">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -15113,16 +14965,6 @@ should be able to be added at any place in this file.
   <description>Settings: Users: Toggle a sync data type</description>
 </action>
 
-<action name="Options_TLS1_Disable">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Options_TLS1_Enable">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="Options_TabsToLinks_Disable">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -15156,6 +14998,16 @@ should be able to be added at any place in this file.
 <action name="Options_TimezoneSelect">
   <owner>michaelpg@chromium.org</owner>
   <description>Settings: Date and time: Timezone</description>
+</action>
+
+<action name="Options_TLS1_Disable">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Options_TLS1_Enable">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="Options_ToggleDeveloperMode_Disabled">
@@ -15245,6 +15097,14 @@ should be able to be added at any place in this file.
 <action name="Options_VertEdgeScrollCheckbox_Enable">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Options_ViewExtensionErrors">
+  <owner>rdevlin.cronin@chromium.org</owner>
+  <description>
+    Extensions WebUI: User clicked or navigated directly to view errors for an
+    extension.
+  </description>
 </action>
 
 <action name="Options_WakeOnWifiDarkConnect_Disable">
@@ -15453,6 +15313,181 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="PageDown">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PageLoad" not_user_triggered="true">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PageLoadInIncognito" not_user_triggered="true">
+  <owner>dullweber@chromium.org</owner>
+  <owner>msramek@chromium.org</owner>
+  <description>A page was loaded in incognito mode.</description>
+</action>
+
+<action name="PageLoadSRP" not_user_triggered="true">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PageUp">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Panel_Minimize_Caption_Click">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Panel_Minimize_Caption_Gesture">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PasswordManager_Autofilled">
+  <owner>vasilii@chromium.org</owner>
+  <description>Username/password were autofilled on pageload.</description>
+</action>
+
+<action name="PasswordManager_ChoseSubdomainPassword">
+  <owner>vasilii@chromium.org</owner>
+  <description>
+    The user submitted a form with an existing credential saved for another
+    subdomain. For example, the user might have signed in on
+    https://accounts.spotify.com using a credential previously saved for
+    https://play.spotify.com.
+  </description>
+</action>
+
+<action name="PasswordManager_Disabled">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PasswordManager_Enabled">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PasswordManager_LoggedInWithNewPassword">
+  <owner>vasilii@chromium.org</owner>
+  <description>
+    The user tried to log in with an existing (possibly for another subdomain)
+    credential but different password.
+  </description>
+</action>
+
+<action name="PasswordManager_LoggedInWithNewUsername">
+  <owner>vasilii@chromium.org</owner>
+  <description>
+    The user tried to log in with a completely new (possibly auto generated)
+    credential.
+  </description>
+</action>
+
+<action name="PasswordManager_LoginFailed">
+  <owner>vasilii@chromium.org</owner>
+  <description>
+    The user submitted a password form, but the website appeared to reject the
+    credentials.  This action reflects the password manager component's logic
+    for whether or not to offer to save a password.  At the time of writing,
+    failure means that either the form submission was canceled with a failure
+    message, or the form submission succeeded, but the user was directed back to
+    a page that still contained a login form.
+  </description>
+</action>
+
+<action name="PasswordManager_LoginFollowingAutofill">
+  <owner>vabr@chromium.org</owner>
+  <owner>vasilii@chromium.org</owner>
+  <description>
+    The user logged in successfully with a credential originally filled by
+    Chrome, and either did not change the stored password at all, or authorized
+    Chrome to update it with the current password value.
+  </description>
+</action>
+
+<action name="PasswordManager_LoginPassed">
+  <owner>vasilii@chromium.org</owner>
+  <description>
+    The user submitted a password form and the website appeared to accept the
+    credentials.  This action reflects the password manager component's logic
+    for whether or not to offer to save a password.
+  </description>
+</action>
+
+<action name="PasswordManager_RemovePasswordException">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PasswordManager_RemoveSavedPassword">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PasswordManager_ShowedHttpNotSecureExplanation">
+  <obsolete>Deprecated 5/2018 because the feature never launched.</obsolete>
+  <owner>estark@chromium.org</owner>
+  <description>
+    The user selected the &quot;Login not secure&quot; or &quot;Form not
+    secure&quot; item in the password manager autofill dropdown to show more
+    information about the warning.
+  </description>
+</action>
+
+<action name="PasswordManager_SyncCredentialFilledAndLoginSuccessfull">
+  <owner>vabr@chromium.org</owner>
+  <owner>vasilii@chromium.org</owner>
+  <description>
+    Counts the number of times when Chrome fills the user's sync account
+    credentials, and the user logs in successfully after submitting them.
+  </description>
+</action>
+
+<action name="PasswordManager_SyncCredentialShown">
+  <owner>gcasto@chromium.org</owner>
+  <owner>vabr@chromium.org</owner>
+  <description>
+    Counts the number of times a user views the saved credentials for their sync
+    account.
+  </description>
+</action>
+
+<action name="PasswordManager_SyncCredentialUsed">
+  <obsolete>Counted the wrong thing, http://crbug.com/635428</obsolete>
+  <owner>gcasto@chromium.org</owner>
+  <owner>vabr@chromium.org</owner>
+  <description>
+    Counts the number of times a user submits an autofilled credential which
+    matches their sync account.
+  </description>
+</action>
+
+<action name="PasswordManager_UsedNonDefaultUsername">
+  <owner>vasilii@chromium.org</owner>
+  <description>
+    The user logged in with an existing credential other than the default one.
+    This results in the default credential being updated, to the credential that
+    the user most recently logged in with.
+  </description>
+</action>
+
+<action name="Paste">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PasteAndMatchStyle">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="PDF.FitToHeightButton">
   <obsolete>Removed with Out of Process PDF (issue 303491)</obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
@@ -15655,205 +15690,6 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="PPAPI.BrokerInfobarClickedAllow">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PPAPI.BrokerInfobarClickedDeny">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PPAPI.BrokerInfobarDisplayed">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PPAPI.BrokerSettingAllow">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PPAPI.BrokerSettingDeny">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PageDown">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PageLoad" not_user_triggered="true">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PageLoadInIncognito" not_user_triggered="true">
-  <owner>dullweber@chromium.org</owner>
-  <owner>msramek@chromium.org</owner>
-  <description>A page was loaded in incognito mode.</description>
-</action>
-
-<action name="PageLoadSRP" not_user_triggered="true">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PageUp">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Panel_Minimize_Caption_Click">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Panel_Minimize_Caption_Gesture">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PasswordManager_Autofilled">
-  <owner>vasilii@chromium.org</owner>
-  <description>Username/password were autofilled on pageload.</description>
-</action>
-
-<action name="PasswordManager_ChoseSubdomainPassword">
-  <owner>vasilii@chromium.org</owner>
-  <description>
-    The user submitted a form with an existing credential saved for another
-    subdomain. For example, the user might have signed in on
-    https://accounts.spotify.com using a credential previously saved for
-    https://play.spotify.com.
-  </description>
-</action>
-
-<action name="PasswordManager_Disabled">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PasswordManager_Enabled">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PasswordManager_LoggedInWithNewPassword">
-  <owner>vasilii@chromium.org</owner>
-  <description>
-    The user tried to log in with an existing (possibly for another subdomain)
-    credential but different password.
-  </description>
-</action>
-
-<action name="PasswordManager_LoggedInWithNewUsername">
-  <owner>vasilii@chromium.org</owner>
-  <description>
-    The user tried to log in with a completely new (possibly auto generated)
-    credential.
-  </description>
-</action>
-
-<action name="PasswordManager_LoginFailed">
-  <owner>vasilii@chromium.org</owner>
-  <description>
-    The user submitted a password form, but the website appeared to reject the
-    credentials.  This action reflects the password manager component's logic
-    for whether or not to offer to save a password.  At the time of writing,
-    failure means that either the form submission was canceled with a failure
-    message, or the form submission succeeded, but the user was directed back to
-    a page that still contained a login form.
-  </description>
-</action>
-
-<action name="PasswordManager_LoginFollowingAutofill">
-  <owner>vabr@chromium.org</owner>
-  <owner>vasilii@chromium.org</owner>
-  <description>
-    The user logged in successfully with a credential originally filled by
-    Chrome, and either did not change the stored password at all, or authorized
-    Chrome to update it with the current password value.
-  </description>
-</action>
-
-<action name="PasswordManager_LoginPassed">
-  <owner>vasilii@chromium.org</owner>
-  <description>
-    The user submitted a password form and the website appeared to accept the
-    credentials.  This action reflects the password manager component's logic
-    for whether or not to offer to save a password.
-  </description>
-</action>
-
-<action name="PasswordManager_RemovePasswordException">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PasswordManager_RemoveSavedPassword">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PasswordManager_ShowedHttpNotSecureExplanation">
-  <owner>estark@chromium.org</owner>
-  <description>
-    The user selected the &quot;Login not secure&quot; or &quot;Form not
-    secure&quot; item in the password manager autofill dropdown to show more
-    information about the warning.
-  </description>
-</action>
-
-<action name="PasswordManager_SyncCredentialFilledAndLoginSuccessfull">
-  <owner>vabr@chromium.org</owner>
-  <owner>vasilii@chromium.org</owner>
-  <description>
-    Counts the number of times when Chrome fills the user's sync account
-    credentials, and the user logs in successfully after submitting them.
-  </description>
-</action>
-
-<action name="PasswordManager_SyncCredentialShown">
-  <owner>gcasto@chromium.org</owner>
-  <owner>vabr@chromium.org</owner>
-  <description>
-    Counts the number of times a user views the saved credentials for their sync
-    account.
-  </description>
-</action>
-
-<action name="PasswordManager_SyncCredentialUsed">
-  <obsolete>Counted the wrong thing, http://crbug.com/635428</obsolete>
-  <owner>gcasto@chromium.org</owner>
-  <owner>vabr@chromium.org</owner>
-  <description>
-    Counts the number of times a user submits an autofilled credential which
-    matches their sync account.
-  </description>
-</action>
-
-<action name="PasswordManager_UsedNonDefaultUsername">
-  <owner>vasilii@chromium.org</owner>
-  <description>
-    The user logged in with an existing credential other than the default one.
-    This results in the default credential being updated, to the credential that
-    the user most recently logged in with.
-  </description>
-</action>
-
-<action name="Paste">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PasteAndMatchStyle">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="PeopleSearch_OpenChat">
   <obsolete>Deprecated.</obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
@@ -15903,6 +15739,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="PhysicalWeb.OptIn.DeclineButtonPressed">
+  <obsolete>
+    Obsolete 4/2018, Physical Web is disabled (crbug.com/826540).
+  </obsolete>
   <owner>cco3@chromium.org</owner>
   <owner>mattreynolds@chromium.org</owner>
   <owner>mmocny@chromium.org</owner>
@@ -15912,6 +15751,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="PhysicalWeb.OptIn.EnableButtonPressed">
+  <obsolete>
+    Obsolete 4/2018, Physical Web is disabled (crbug.com/826540).
+  </obsolete>
   <owner>cco3@chromium.org</owner>
   <owner>mattreynolds@chromium.org</owner>
   <owner>mmocny@chromium.org</owner>
@@ -15951,6 +15793,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="PhysicalWeb.Prefs.FeatureDisabled">
+  <obsolete>
+    Obsolete 4/2018, Physical Web is disabled (crbug.com/826540).
+  </obsolete>
   <owner>cco3@chromium.org</owner>
   <owner>mattreynolds@chromium.org</owner>
   <owner>mmocny@chromium.org</owner>
@@ -15960,6 +15805,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="PhysicalWeb.Prefs.FeatureEnabled">
+  <obsolete>
+    Obsolete 4/2018, Physical Web is disabled (crbug.com/826540).
+  </obsolete>
   <owner>cco3@chromium.org</owner>
   <owner>mattreynolds@chromium.org</owner>
   <owner>mmocny@chromium.org</owner>
@@ -15969,6 +15817,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="PhysicalWeb.Prefs.FromOmnibox">
+  <obsolete>
+    Obsolete 4/2018, Physical Web is disabled (crbug.com/826540).
+  </obsolete>
   <owner>cco3@chromium.org</owner>
   <owner>mattreynolds@chromium.org</owner>
   <owner>mmocny@chromium.org</owner>
@@ -15979,6 +15830,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="PhysicalWeb.Prefs.LocationDenied">
+  <obsolete>
+    Obsolete 4/2018, Physical Web is disabled (crbug.com/826540).
+  </obsolete>
   <owner>cco3@chromium.org</owner>
   <owner>mattreynolds@chromium.org</owner>
   <owner>mmocny@chromium.org</owner>
@@ -15989,6 +15843,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="PhysicalWeb.Prefs.LocationGranted">
+  <obsolete>
+    Obsolete 4/2018, Physical Web is disabled (crbug.com/826540).
+  </obsolete>
   <owner>cco3@chromium.org</owner>
   <owner>mattreynolds@chromium.org</owner>
   <owner>mmocny@chromium.org</owner>
@@ -15999,6 +15856,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="PhysicalWeb.UrlSelected">
+  <obsolete>
+    Obsolete 4/2018, Physical Web is disabled (crbug.com/826540).
+  </obsolete>
   <owner>cco3@chromium.org</owner>
   <owner>mattreynolds@chromium.org</owner>
   <owner>mmocny@chromium.org</owner>
@@ -16006,6 +15866,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="PhysicalWeb.WebUI.ListViewUrlSelected">
+  <obsolete>
+    Obsolete 4/2018, Physical Web is disabled (crbug.com/826540).
+  </obsolete>
   <owner>cco3@chromium.org</owner>
   <owner>mattreynolds@chromium.org</owner>
   <owner>mmocny@chromium.org</owner>
@@ -16015,6 +15878,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="PhysicalWeb.WebUI.Open">
+  <obsolete>
+    Obsolete 4/2018, Physical Web is disabled (crbug.com/826540).
+  </obsolete>
   <owner>cco3@chromium.org</owner>
   <owner>mattreynolds@chromium.org</owner>
   <owner>mmocny@chromium.org</owner>
@@ -16027,28 +15893,6 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="PlatformVerificationRejected">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PluginContextMenu_RotateClockwise">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PluginContextMenu_RotateCounterclockwise">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PluginLoaderPosix.LaunchUtilityProcess">
-  <obsolete>Deprecated due to NPAPI removal.</obsolete>
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="PluginLoaderPosix.UtilityProcessCrashed">
-  <obsolete>Deprecated due to NPAPI removal.</obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -16102,6 +15946,53 @@ should be able to be added at any place in this file.
 
 <action name="Plugin_NPAPINotSupported">
   <obsolete>Deprecated due to NPAPI removal.</obsolete>
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PluginContextMenu_RotateClockwise">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PluginContextMenu_RotateCounterclockwise">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PluginLoaderPosix.LaunchUtilityProcess">
+  <obsolete>Deprecated due to NPAPI removal.</obsolete>
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PluginLoaderPosix.UtilityProcessCrashed">
+  <obsolete>Deprecated due to NPAPI removal.</obsolete>
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PPAPI.BrokerInfobarClickedAllow">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PPAPI.BrokerInfobarClickedDeny">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PPAPI.BrokerInfobarDisplayed">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PPAPI.BrokerSettingAllow">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PPAPI.BrokerSettingDeny">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -16185,6 +16076,11 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="RegisterProtocolHandler.Infobar_Accept">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="RegisterProtocolHandler.InfoBar_Deny">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -16198,19 +16094,6 @@ should be able to be added at any place in this file.
 <action name="RegisterProtocolHandler.InfoBar_Shown">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="RegisterProtocolHandler.Infobar_Accept">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="RelaunchRecommendedShown">
-  <owner>grt@chromium.org</owner>
-  <description>
-    A bubble was shown to the user to indicate that their administrator
-    recommends that Chrome be relaunched.
-  </description>
 </action>
 
 <action name="RelaunchRecommended_Accept">
@@ -16229,11 +16112,11 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="RelaunchRequiredShown">
+<action name="RelaunchRecommendedShown">
   <owner>grt@chromium.org</owner>
   <description>
-    A dialog was shown to the user to indicate that their administrator requires
-    that Chrome be relaunched.
+    A bubble was shown to the user to indicate that their administrator
+    recommends that Chrome be relaunched.
   </description>
 </action>
 
@@ -16250,6 +16133,14 @@ should be able to be added at any place in this file.
   <description>
     The dialog indicating to the user that their administrator requires a
     browser relaunch was closed by the user.
+  </description>
+</action>
+
+<action name="RelaunchRequiredShown">
+  <owner>grt@chromium.org</owner>
+  <description>
+    A dialog was shown to the user to indicate that their administrator requires
+    that Chrome be relaunched.
   </description>
 </action>
 
@@ -16285,6 +16176,16 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="RestoreTab">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Save">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="SavePage">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -16506,73 +16407,6 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="SSL.DisplayedInsecureContent" not_user_triggered="true">
-  <obsolete>Deprecated 02/2017</obsolete>
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="SSL.RanInsecureContent" not_user_triggered="true">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="SSL.RanInsecureContentGoogle" not_user_triggered="true">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="SSLInterstitial.Advanced">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of the metric.</description>
-</action>
-
-<action name="SSLInterstitial.Reload">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of the metric.</description>
-</action>
-
-<action name="SSLNonOverridableInsterstitial.Back">
-  <owner>felt@chromium.org</owner>
-  <description>
-    User went back after seeing the non-overridable SSL interstitial.
-  </description>
-</action>
-
-<action name="SSLNonOverridableInterstitial.Show">
-  <owner>felt@chromium.org</owner>
-  <description>User saw a non-overridable SSL interstitial.</description>
-</action>
-
-<action name="SSLOverridableInterstitial.Back">
-  <owner>felt@chromium.org</owner>
-  <description>
-    User went back after seeing the overridable SSL interstitial.
-  </description>
-</action>
-
-<action name="SSLOverridableInterstitial.Proceed">
-  <owner>felt@chromium.org</owner>
-  <description>
-    User proceeded through an overridable SSL interstitial.
-  </description>
-</action>
-
-<action name="SSLOverridableInterstitial.Show">
-  <owner>felt@chromium.org</owner>
-  <description>User saw an overridable SSL interstitial.</description>
-</action>
-
-<action name="Save">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="SavePage">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="ScreenLocker_OnLoginFailure">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -16656,6 +16490,16 @@ should be able to be added at any place in this file.
   <description>User interacts with an answer card.</description>
 </action>
 
+<action name="SearchEngine_ManualChange">
+  <owner>ianwen@chromium.org</owner>
+  <description>
+    Recorded when the user has manually switched default search engine, which
+    disables search engine auto switch feature in special locale. This is
+    recorded on Android for every locale, but is currently only meaningful for
+    studying special locales.
+  </description>
+</action>
+
 <action name="SearchEnginePromo.ExistingDevice.PromoSelected">
   <owner>yusufo@chromium.org</owner>
   <description>
@@ -16712,16 +16556,6 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="SearchEngine_ManualChange">
-  <owner>ianwen@chromium.org</owner>
-  <description>
-    Recorded when the user has manually switched default search engine, which
-    disables search engine auto switch feature in special locale. This is
-    recorded on Android for every locale, but is currently only meaningful for
-    studying special locales.
-  </description>
-</action>
-
 <action name="SearchWidget.SearchMade">
   <owner>yusufo@chromium.org</owner>
   <description>
@@ -16736,12 +16570,12 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="SearchWithRLZ">
+<action name="SearchWithoutRLZ">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="SearchWithoutRLZ">
+<action name="SearchWithRLZ">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -16749,6 +16583,15 @@ should be able to be added at any place in this file.
 <action name="SelectAll">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="SelectionChanged">
+  <owner>donnd@chromium.org</owner>
+  <description>
+    The user changed the selection by manipulating the selection handles. Only
+    one action of this kind is emmitted when the selection handles are
+    repeatedly moved.
+  </description>
 </action>
 
 <action name="SelectLastTab">
@@ -16819,15 +16662,6 @@ should be able to be added at any place in this file.
 <action name="SelectTab7">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="SelectionChanged">
-  <owner>donnd@chromium.org</owner>
-  <description>
-    The user changed the selection by manipulating the selection handles. Only
-    one action of this kind is emmitted when the selection handles are
-    repeatedly moved.
-  </description>
 </action>
 
 <action name="ServiceWorker.ControlledPageLoad" not_user_triggered="true">
@@ -16994,12 +16828,12 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="ShowAppMenu">
+<action name="ShowApplications">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="ShowApplications">
+<action name="ShowAppMenu">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -17223,6 +17057,132 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Signin_Impression_FromAppsPageLink">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded when showing sign in entry in the chrome://apps page.
+  </description>
+</action>
+
+<action name="Signin_Impression_FromAutofillDropdown">
+  <owner>mathp@chromium.org</owner>
+  <description>
+    Recorded when showing sign in entry in the Autofill dropdown.
+  </description>
+</action>
+
+<action name="Signin_Impression_FromAvatarBubbleSignin">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded when showing sign in entry in the avatar sign in bubble.
+  </description>
+</action>
+
+<action name="Signin_Impression_FromBookmarkBubble">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded when showing sign in entry in the bookmark bubble.
+  </description>
+</action>
+
+<action name="Signin_Impression_FromBookmarkManager">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded when showing sign in entry in the bookmark manager.
+  </description>
+</action>
+
+<action name="Signin_Impression_FromCloudPrint">
+  <obsolete>Deprecated 10/2017. No longer needed.</obsolete>
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded when showing sign in entry in the cloud print preview page.
+  </description>
+</action>
+
+<action name="Signin_Impression_FromDevicesPage">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded when showing sign in entry in the chrome://devices page.
+  </description>
+</action>
+
+<action name="Signin_Impression_FromExtensionInstallBubble">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded when showing sign in entry in the extension installed bubble.
+  </description>
+</action>
+
+<action name="Signin_Impression_FromMenu">
+  <owner>gogerald@chromium.org</owner>
+  <description>Recorded when showing sign in entry in the menu.</description>
+</action>
+
+<action name="Signin_Impression_FromNTP">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded when showing sign in entry in the new tab page.
+  </description>
+</action>
+
+<action name="Signin_Impression_FromNTPContentSuggestions">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded when showing sign in card in the snippets new tab page.
+  </description>
+</action>
+
+<action name="Signin_Impression_FromPasswordBubble">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded when showing sign in entry in the saving password bubble.
+  </description>
+</action>
+
+<action name="Signin_Impression_FromRecentTabs">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded when showing sign in entry in the recent tabs page.
+  </description>
+</action>
+
+<action name="Signin_Impression_FromReSigninInfobar">
+  <owner>bzanotti@chromium.org</owner>
+  <description>
+    Recorded when showing sign in entry in the re-signin infobar.
+  </description>
+</action>
+
+<action name="Signin_Impression_FromSettings">
+  <owner>bzanotti@chromium.org</owner>
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded when showing sign in entry in the settings main page.
+  </description>
+</action>
+
+<action name="Signin_Impression_FromSigninPromo">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded when showing sign in entry in the sign in promo.
+  </description>
+</action>
+
+<action name="Signin_Impression_FromStartPage">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded when showing sign in entry in the first run experience.
+  </description>
+</action>
+
+<action name="Signin_Impression_FromTabSwitcher">
+  <owner>bzanotti@chromium.org</owner>
+  <description>
+    Recorded when showing sign in entry in the tab switcher.
+  </description>
+</action>
+
 <action name="Signin_ImpressionWithAccount_FromAvatarBubbleSignin">
   <owner>msarda@chromium.org</owner>
   <description>
@@ -17381,132 +17341,6 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="Signin_Impression_FromAppsPageLink">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded when showing sign in entry in the chrome://apps page.
-  </description>
-</action>
-
-<action name="Signin_Impression_FromAutofillDropdown">
-  <owner>mathp@chromium.org</owner>
-  <description>
-    Recorded when showing sign in entry in the Autofill dropdown.
-  </description>
-</action>
-
-<action name="Signin_Impression_FromAvatarBubbleSignin">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded when showing sign in entry in the avatar sign in bubble.
-  </description>
-</action>
-
-<action name="Signin_Impression_FromBookmarkBubble">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded when showing sign in entry in the bookmark bubble.
-  </description>
-</action>
-
-<action name="Signin_Impression_FromBookmarkManager">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded when showing sign in entry in the bookmark manager.
-  </description>
-</action>
-
-<action name="Signin_Impression_FromCloudPrint">
-  <obsolete>Deprecated 10/2017. No longer needed.</obsolete>
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded when showing sign in entry in the cloud print preview page.
-  </description>
-</action>
-
-<action name="Signin_Impression_FromDevicesPage">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded when showing sign in entry in the chrome://devices page.
-  </description>
-</action>
-
-<action name="Signin_Impression_FromExtensionInstallBubble">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded when showing sign in entry in the extension installed bubble.
-  </description>
-</action>
-
-<action name="Signin_Impression_FromMenu">
-  <owner>gogerald@chromium.org</owner>
-  <description>Recorded when showing sign in entry in the menu.</description>
-</action>
-
-<action name="Signin_Impression_FromNTP">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded when showing sign in entry in the new tab page.
-  </description>
-</action>
-
-<action name="Signin_Impression_FromNTPContentSuggestions">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded when showing sign in card in the snippets new tab page.
-  </description>
-</action>
-
-<action name="Signin_Impression_FromPasswordBubble">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded when showing sign in entry in the saving password bubble.
-  </description>
-</action>
-
-<action name="Signin_Impression_FromReSigninInfobar">
-  <owner>bzanotti@chromium.org</owner>
-  <description>
-    Recorded when showing sign in entry in the re-signin infobar.
-  </description>
-</action>
-
-<action name="Signin_Impression_FromRecentTabs">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded when showing sign in entry in the recent tabs page.
-  </description>
-</action>
-
-<action name="Signin_Impression_FromSettings">
-  <owner>bzanotti@chromium.org</owner>
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded when showing sign in entry in the settings main page.
-  </description>
-</action>
-
-<action name="Signin_Impression_FromSigninPromo">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded when showing sign in entry in the sign in promo.
-  </description>
-</action>
-
-<action name="Signin_Impression_FromStartPage">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded when showing sign in entry in the first run experience.
-  </description>
-</action>
-
-<action name="Signin_Impression_FromTabSwitcher">
-  <owner>bzanotti@chromium.org</owner>
-  <description>
-    Recorded when showing sign in entry in the tab switcher.
-  </description>
-</action>
-
 <action name="Signin_MoreButton_Shown">
   <owner>gogerald@chromium.org</owner>
   <owner>bzanotti@chromium.org</owner>
@@ -17533,6 +17367,228 @@ should be able to be added at any place in this file.
   <owner>gogerald@chromium.org</owner>
   <description>
     Recorded when showing untrusted sign in confirmation dialog.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromAppsPageLink">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_APPS_PAGE_LINK.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromAutofillDropdown">
+  <owner>mathp@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_AUTOFILL_DROPDOWN.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromAvatarBubbleSignin">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromBookmarkBubble">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_BOOKMARK_BUBBLE.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromBookmarkManager">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_BOOKMARK_MANAGER.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromCloudPrint">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_CLOUD_PRINT.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromContentArea">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_CONTENT_AREA.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromDevicesPage">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_DEVICES_PAGE.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromExtensionInstallBubble">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_EXTENSION_INSTALL_BUBBLE.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromExtensions">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_EXTENSIONS.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromForceSigninWarning">
+  <owner>zmin@chromium.org</owner>
+  <description>
+    Record when a user signs in again from the force sign in auth error warning
+    modal dialog.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromMenu">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_MENU.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromNTP">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_NTP_LINK.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromNTPContentSuggestions">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_NTP_CONTENT_SUGGESTIONS.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromPasswordBubble">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_PASSWORD_BUBBLE.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromRecentTabs">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_RECENT_TABS.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromReSigninInfobar">
+  <owner>bzanotti@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_RESIGNIN_INFOBAR.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromSettings">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_SETTINGS.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromSigninPromo">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_SIGNIN_PROMO.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromStartPage">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_START_PAGE.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromSupervisedUser">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_SUPERVISED_USER.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromTabSwitcher">
+  <owner>bzanotti@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_TAB_SWITCHER.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromUnknownAccessPoint">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_UNKNOWN.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromUnspecifiedAccessPoint">
+  <obsolete>Replaced by Signin_Signin_FromUnknownAccessPoint.</obsolete>
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_UNSPECIFIED.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromUserManager">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_USER_MANAGER.
+  </description>
+</action>
+
+<action name="Signin_Signin_Succeed">
+  <owner>gogerald@chromium.org</owner>
+  <description>Recorded when user sign in was successful.</description>
+</action>
+
+<action name="Signin_Signin_WithAdvancedSyncSettings">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded when the user chooses advanced sync settings in the sign in succeed
+    confirmation dialog.
+  </description>
+</action>
+
+<action name="Signin_Signin_WithDefaultSyncSettings">
+  <owner>gogerald@chromium.org</owner>
+  <description>
+    Recorded when the user chooses default sync settings in the sign in succeed
+    confirmation dialog.
   </description>
 </action>
 
@@ -17783,228 +17839,6 @@ should be able to be added at any place in this file.
     Recorded on sign in start from access point
     signin_metrics::AccessPoint::ACCESS_POINT_TAB_SWITCHER, using the default
     account.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromAppsPageLink">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_APPS_PAGE_LINK.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromAutofillDropdown">
-  <owner>mathp@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_AUTOFILL_DROPDOWN.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromAvatarBubbleSignin">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromBookmarkBubble">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_BOOKMARK_BUBBLE.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromBookmarkManager">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_BOOKMARK_MANAGER.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromCloudPrint">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_CLOUD_PRINT.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromContentArea">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_CONTENT_AREA.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromDevicesPage">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_DEVICES_PAGE.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromExtensionInstallBubble">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_EXTENSION_INSTALL_BUBBLE.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromExtensions">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_EXTENSIONS.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromForceSigninWarning">
-  <owner>zmin@chromium.org</owner>
-  <description>
-    Record when a user signs in again from the force sign in auth error warning
-    modal dialog.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromMenu">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_MENU.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromNTP">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_NTP_LINK.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromNTPContentSuggestions">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_NTP_CONTENT_SUGGESTIONS.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromPasswordBubble">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_PASSWORD_BUBBLE.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromReSigninInfobar">
-  <owner>bzanotti@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_RESIGNIN_INFOBAR.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromRecentTabs">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_RECENT_TABS.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromSettings">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_SETTINGS.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromSigninPromo">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_SIGNIN_PROMO.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromStartPage">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_START_PAGE.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromSupervisedUser">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_SUPERVISED_USER.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromTabSwitcher">
-  <owner>bzanotti@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_TAB_SWITCHER.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromUnknownAccessPoint">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_UNKNOWN.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromUnspecifiedAccessPoint">
-  <obsolete>Replaced by Signin_Signin_FromUnknownAccessPoint.</obsolete>
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_UNSPECIFIED.
-  </description>
-</action>
-
-<action name="Signin_Signin_FromUserManager">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded on sign in start from access point
-    signin_metrics::AccessPoint::ACCESS_POINT_USER_MANAGER.
-  </description>
-</action>
-
-<action name="Signin_Signin_Succeed">
-  <owner>gogerald@chromium.org</owner>
-  <description>Recorded when user sign in was successful.</description>
-</action>
-
-<action name="Signin_Signin_WithAdvancedSyncSettings">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded when the user chooses advanced sync settings in the sign in succeed
-    confirmation dialog.
-  </description>
-</action>
-
-<action name="Signin_Signin_WithDefaultSyncSettings">
-  <owner>gogerald@chromium.org</owner>
-  <description>
-    Recorded when the user chooses default sync settings in the sign in succeed
-    confirmation dialog.
   </description>
 </action>
 
@@ -18267,6 +18101,63 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="SSL.DisplayedInsecureContent" not_user_triggered="true">
+  <obsolete>Deprecated 02/2017</obsolete>
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="SSL.RanInsecureContent" not_user_triggered="true">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="SSL.RanInsecureContentGoogle" not_user_triggered="true">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="SSLInterstitial.Advanced">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of the metric.</description>
+</action>
+
+<action name="SSLInterstitial.Reload">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of the metric.</description>
+</action>
+
+<action name="SSLNonOverridableInsterstitial.Back">
+  <owner>felt@chromium.org</owner>
+  <description>
+    User went back after seeing the non-overridable SSL interstitial.
+  </description>
+</action>
+
+<action name="SSLNonOverridableInterstitial.Show">
+  <owner>felt@chromium.org</owner>
+  <description>User saw a non-overridable SSL interstitial.</description>
+</action>
+
+<action name="SSLOverridableInterstitial.Back">
+  <owner>felt@chromium.org</owner>
+  <description>
+    User went back after seeing the overridable SSL interstitial.
+  </description>
+</action>
+
+<action name="SSLOverridableInterstitial.Proceed">
+  <owner>felt@chromium.org</owner>
+  <description>
+    User proceeded through an overridable SSL interstitial.
+  </description>
+</action>
+
+<action name="SSLOverridableInterstitial.Show">
+  <owner>felt@chromium.org</owner>
+  <description>User saw an overridable SSL interstitial.</description>
+</action>
+
 <action name="StackedTab_DragActiveTab">
   <owner>bruthig@chromium.org</owner>
   <owner>tdanderson@chromium.org</owner>
@@ -18363,6 +18254,12 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="StatusArea_Audio_Muted">
+  <owner>shihuis@chromium.org</owner>
+  <owner>tetsui@chromium.org</owner>
+  <description>User muted audio from the button in SystemTray.</description>
+</action>
+
 <action name="StatusArea_Audio_SwitchInputDevice">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -18371,6 +18268,12 @@ should be able to be added at any place in this file.
 <action name="StatusArea_Audio_SwitchOutputDevice">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="StatusArea_Audio_Unmuted">
+  <owner>shihuis@chromium.org</owner>
+  <owner>tetsui@chromium.org</owner>
+  <description>User unmuted audio from the button in SystemTray.</description>
 </action>
 
 <action name="StatusArea_AutoClickDisabled">
@@ -18408,12 +18311,12 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="StatusArea_BrightnessChanged" not_user_triggered="true">
+<action name="StatusArea_Brightness_Detailed">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="StatusArea_Brightness_Detailed">
+<action name="StatusArea_BrightnessChanged" not_user_triggered="true">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -18476,6 +18379,16 @@ should be able to be added at any place in this file.
   <description>
     Counts the number of times the user has stopped a cast from the system tray.
   </description>
+</action>
+
+<action name="StatusArea_DictationDisabled">
+  <owner>zhelfins@chromium.org</owner>
+  <description>Ash system menu: Accessibility: Disable Dictation.</description>
+</action>
+
+<action name="StatusArea_DictationEnabled">
+  <owner>zhelfins@chromium.org</owner>
+  <description>Ash system menu: Accessibility: Enable Dictation.</description>
 </action>
 
 <action name="StatusArea_Display_Default_Selected">
@@ -18650,17 +18563,17 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="StatusArea_Network_ConnectionDetails">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="StatusArea_Network_ConnectToConfigured">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="StatusArea_Network_ConnectUnconfigured">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="StatusArea_Network_ConnectionDetails">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -18696,34 +18609,6 @@ should be able to be added at any place in this file.
   <description>
     Counts the number of times the user selects the update row in the system
     menu.
-  </description>
-</action>
-
-<action name="StatusArea_SMS_Detailed">
-  <owner>tbuckley@chromium.org</owner>
-  <owner>bruthig@chromium.org</owner>
-  <description>
-    Counts the number of times the user has opened the &quot;SMS messages &quot;
-    detailed view in the system menu.
-  </description>
-</action>
-
-<action name="StatusArea_SMS_Detailed_DismissMsg">
-  <owner>tbuckley@chromium.org</owner>
-  <owner>bruthig@chromium.org</owner>
-  <description>
-    Counts the number of times the user has dismissed an SMS message from the
-    SMS message detailed view in the system menu.
-  </description>
-</action>
-
-<action name="StatusArea_SMS_Notification_DismissMsg">
-  <owner>tbuckley@chromium.org</owner>
-  <owner>bruthig@chromium.org</owner>
-  <description>
-    Counts the number of times the user has dismissed an SMS message
-    notification. Note these notifications are managed by the system menu and
-    not the general notification center.
   </description>
 </action>
 
@@ -18763,6 +18648,34 @@ should be able to be added at any place in this file.
 <action name="StatusArea_SignOut">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="StatusArea_SMS_Detailed">
+  <owner>tbuckley@chromium.org</owner>
+  <owner>bruthig@chromium.org</owner>
+  <description>
+    Counts the number of times the user has opened the &quot;SMS messages &quot;
+    detailed view in the system menu.
+  </description>
+</action>
+
+<action name="StatusArea_SMS_Detailed_DismissMsg">
+  <owner>tbuckley@chromium.org</owner>
+  <owner>bruthig@chromium.org</owner>
+  <description>
+    Counts the number of times the user has dismissed an SMS message from the
+    SMS message detailed view in the system menu.
+  </description>
+</action>
+
+<action name="StatusArea_SMS_Notification_DismissMsg">
+  <owner>tbuckley@chromium.org</owner>
+  <owner>bruthig@chromium.org</owner>
+  <description>
+    Counts the number of times the user has dismissed an SMS message
+    notification. Note these notifications are managed by the system menu and
+    not the general notification center.
+  </description>
 </action>
 
 <action name="StatusArea_SpokenFeedbackDisabled">
@@ -18808,6 +18721,26 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="StatusArea_VirtualKeyboardDisabled">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="StatusArea_VirtualKeyboardEnabled">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="StatusArea_Volume_ChangedMenu">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="StatusArea_Volume_ChangedPopup">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="StatusArea_VPN_AddBuiltIn">
   <owner>bartfab@chromium.org</owner>
   <description>
@@ -18824,12 +18757,12 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="StatusArea_VPN_ConnectToNetwork">
+<action name="StatusArea_VPN_ConnectionDetails">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="StatusArea_VPN_ConnectionDetails">
+<action name="StatusArea_VPN_ConnectToNetwork">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -18857,32 +18790,17 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="StatusArea_VirtualKeyboardDisabled">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="StatusArea_VirtualKeyboardEnabled">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="StatusArea_Volume_ChangedMenu">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="StatusArea_Volume_ChangedPopup">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="Stop">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="Strikethrough">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="styleWithCSS">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -19179,6 +19097,16 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Tab_DropURLBetweenTabs">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Tab_DropURLOnTab">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="TabAlertIndicator_Clicked">
   <owner>miu@chromium.org</owner>
   <description>
@@ -19282,59 +19210,6 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="TabMediaIndicator_Clicked">
-  <obsolete>Replaced with &quot;TabAlertIndicator_Clicked&quot;.</obsolete>
-  <owner>miu@chromium.org</owner>
-  <description>
-    User clicked the tab media indicator; this will have no effect.
-  </description>
-</action>
-
-<action name="TabOverview_DetachCell">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="TabOverview_DragCell">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="TabOverview_DragOverMiniWindow">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="TabOverview_DropOnMiniWindow">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="TabOverview_ExitMouse">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="TabOverview_Keystroke">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="TabOverview_PressedCreateNewBrowserButton">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Tab_DropURLBetweenTabs">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="Tab_DropURLOnTab">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="Tablet_BackButton">
   <owner>sammiequon@chromium.org</owner>
   <description>
@@ -19388,6 +19263,49 @@ should be able to be added at any place in this file.
     User closed the window through the close button in overview mode in tablet
     mode on Chrome OS.
   </description>
+</action>
+
+<action name="TabMediaIndicator_Clicked">
+  <obsolete>Replaced with &quot;TabAlertIndicator_Clicked&quot;.</obsolete>
+  <owner>miu@chromium.org</owner>
+  <description>
+    User clicked the tab media indicator; this will have no effect.
+  </description>
+</action>
+
+<action name="TabOverview_DetachCell">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="TabOverview_DragCell">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="TabOverview_DragOverMiniWindow">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="TabOverview_DropOnMiniWindow">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="TabOverview_ExitMouse">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="TabOverview_Keystroke">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="TabOverview_PressedCreateNewBrowserButton">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="TaskManagement.OpenInChromeActionButtonClicked">
@@ -19520,6 +19438,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="TodayExtension.PhysicalWebPressed">
+  <obsolete>
+    Obsolete 4/2018, Physical Web is disabled (crbug.com/826540).
+  </obsolete>
   <owner>olivierrobin@chromium.org</owner>
   <description>
     Tapped on physical web URL in the Chrome Today extension.
@@ -19583,7 +19504,16 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Touchscreen_Down" not_user_triggered="true">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
 <action name="TouchscreenScroll">
+  <obsolete>
+    Not needed as of 05/2018 since performance metrics for ScrollBegin show the
+    frequency of GSBs.
+  </obsolete>
   <owner>tdresser@chromium.org</owner>
   <description>
     Logged at the beginning of touchscreen based scrolling. In M56 and earlier,
@@ -19594,11 +19524,6 @@ should be able to be added at any place in this file.
 <action name="TouchscreenScrollFling">
   <owner>tdresser@chromium.org</owner>
   <description>Logged on an ET_SCROLL_FLING_START gesture event.</description>
-</action>
-
-<action name="Touchscreen_Down" not_user_triggered="true">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="Touchview_Disabled">
@@ -19623,6 +19548,10 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="TrackpadScroll">
+  <obsolete>
+    Not needed as of 05/2018 since performance metrics for ScrollBegin show the
+    frequency of GSBs.
+  </obsolete>
   <owner>tdresser@chromium.org</owner>
   <description>
     Logged on trackpad scroll events. Logging was removed in M57, because it
@@ -19771,13 +19700,19 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="UpgradeCheck_AlreadyUpToDate">
+<action name="Upgrade_Started">
   <obsolete>Removed from codebase; see GoogleUpdate.UpgradeResult.</obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="UpgradeCheck_AlreadyUpgraded">
+  <obsolete>Removed from codebase; see GoogleUpdate.UpgradeResult.</obsolete>
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="UpgradeCheck_AlreadyUpToDate">
   <obsolete>Removed from codebase; see GoogleUpdate.UpgradeResult.</obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -19810,19 +19745,13 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="UpgradeCheck_UpgradeIsAvailable">
-  <obsolete>Removed from codebase; see GoogleUpdate.UpgradeResult.</obsolete>
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
 <action name="UpgradeCheck_Upgraded">
   <obsolete>Removed from codebase; see GoogleUpdate.UpgradeResult.</obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="Upgrade_Started">
+<action name="UpgradeCheck_UpgradeIsAvailable">
   <obsolete>Removed from codebase; see GoogleUpdate.UpgradeResult.</obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -19835,30 +19764,6 @@ should be able to be added at any place in this file.
     prefs::kBrowserAddPersonEnabled are cleared because they no longer exist in
     the Material Design settings page.
   </description>
-</action>
-
-<action name="VR.DOFF">
-  <owner>billorr@chromium.org</owner>
-  <description>
-    The user has successfully completed the VR DOFF flow.
-  </description>
-</action>
-
-<action name="VR.DON">
-  <owner>billorr@chromium.org</owner>
-  <description>
-    The user has successfully completed the VR DON flow.
-  </description>
-</action>
-
-<action name="VR.WebVR.StopPresenting">
-  <owner>billorr@chromium.org</owner>
-  <description>The user (or site) has stopped WebVR presentation.</description>
-</action>
-
-<action name="VR.WebVR.requestPresent">
-  <owner>billorr@chromium.org</owner>
-  <description>The user has initiated WebVR presentation.</description>
 </action>
 
 <action name="VideoPlayer.CastVideoError">
@@ -19938,14 +19843,112 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="WP_EditImage">
+<action name="VR.DOFF">
+  <owner>billorr@chromium.org</owner>
+  <description>
+    The user has successfully completed the VR DOFF flow.
+  </description>
+</action>
+
+<action name="VR.DON">
+  <owner>billorr@chromium.org</owner>
+  <description>
+    The user has successfully completed the VR DON flow.
+  </description>
+</action>
+
+<action name="VR.WebVR.requestPresent">
+  <owner>billorr@chromium.org</owner>
+  <description>The user has initiated WebVR presentation.</description>
+</action>
+
+<action name="VR.WebVR.StopPresenting">
+  <owner>billorr@chromium.org</owner>
+  <description>The user (or site) has stopped WebVR presentation.</description>
+</action>
+
+<action name="Webapp.NotificationFocused">
+  <owner>piotrs@chromium.org</owner>
+  <description>
+    The user tapped on the main area of a Webapp actions notification.
+  </description>
+</action>
+
+<action name="Webapp.NotificationOpenInChrome">
+  <owner>piotrs@chromium.org</owner>
+  <description>
+    The user tapped on Open in Chrome action in a Webapp actions notification.
+  </description>
+</action>
+
+<action name="Webapp.NotificationShare">
+  <owner>piotrs@chromium.org</owner>
+  <description>
+    The user tapped on Share action in a Webapp actions notification.
+  </description>
+</action>
+
+<action name="WebappMenuOpenInChrome">
+  <owner>piotrs@chromium.org</owner>
+  <description>
+    Tracks when Open in Chrome menu option is clicked in WebApps.
+  </description>
+</action>
+
+<action name="webapps.AddShortcut.AppShortcut">
+  <owner>dfalcantara@chromium.org</owner>
+  <description>
+    Shortcut added to the homescreen for a page containing the
+    mobile-webapp-capable meta tag.
+  </description>
+</action>
+
+<action name="webapps.AddShortcut.AppShortcutApple">
+  <owner>dfalcantara@chromium.org</owner>
+  <description>
+    Shortcut added to the homescreen for a page containing only the
+    apple-mobile-webapp-capable meta tag.
+  </description>
+</action>
+
+<action name="webapps.AddShortcut.Bookmark">
+  <owner>dfalcantara@chromium.org</owner>
+  <description>
+    Shortcut added to the homescreen for a page containing neither
+    mobile-webapp-capable nor apple-mobile-webapp-capable meta tags.
+  </description>
+</action>
+
+<action name="webapps.AddShortcut.Manifest">
+  <owner>mlamouri@chromium.org</owner>
+  <description>
+    Shortcut added to the homescreen with a valid Manifest. This action will be
+    recorded in addition to AppShortcut, AppShortcutApple and Bookmark actions
+    to keep a trend of whether the webapp also add meta tags.
+  </description>
+</action>
+
+<action name="WebsiteSettings_CookiesDialogOpened">
+  <obsolete>
+    Superseded by the WebsiteSettings.Action histogram on 2014-10-30.
+  </obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="WP_Gallery">
+<action name="WebsiteSettings_Opened">
+  <obsolete>
+    Superseded by the WebsiteSettings.Action histogram on 2014-10-30.
+  </obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="WebstoreWidgetApp.ShowDialog">
+  <owner>tbarzic@google.com</owner>
+  <description>
+    Tracks Chrome Webstore Gallery Widget app being launched.
+  </description>
 </action>
 
 <action name="WebView.CaptureVisibleRegion">
@@ -20140,57 +20143,6 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="Webapp.NotificationFocused">
-  <owner>piotrs@chromium.org</owner>
-  <description>
-    The user tapped on the main area of a Webapp actions notification.
-  </description>
-</action>
-
-<action name="Webapp.NotificationOpenInChrome">
-  <owner>piotrs@chromium.org</owner>
-  <description>
-    The user tapped on Open in Chrome action in a Webapp actions notification.
-  </description>
-</action>
-
-<action name="Webapp.NotificationShare">
-  <owner>piotrs@chromium.org</owner>
-  <description>
-    The user tapped on Share action in a Webapp actions notification.
-  </description>
-</action>
-
-<action name="WebappMenuOpenInChrome">
-  <owner>piotrs@chromium.org</owner>
-  <description>
-    Tracks when Open in Chrome menu option is clicked in WebApps.
-  </description>
-</action>
-
-<action name="WebsiteSettings_CookiesDialogOpened">
-  <obsolete>
-    Superseded by the WebsiteSettings.Action histogram on 2014-10-30.
-  </obsolete>
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="WebsiteSettings_Opened">
-  <obsolete>
-    Superseded by the WebsiteSettings.Action histogram on 2014-10-30.
-  </obsolete>
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="WebstoreWidgetApp.ShowDialog">
-  <owner>tbarzic@google.com</owner>
-  <description>
-    Tracks Chrome Webstore Gallery Widget app being launched.
-  </description>
-</action>
-
 <action name="WelcomePage_SignInClicked">
   <owner>tmartino@chromium.org</owner>
   <description>
@@ -20311,7 +20263,24 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="WindowSelector_SwipeToClose">
+  <owner>sammiequon@chromium.org</owner>
+  <description>
+    Vertically swiping or flinging a window in overview to close the window.
+  </description>
+</action>
+
 <action name="WorkerProcess_BadProcessToKill">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="WP_EditImage">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="WP_Gallery">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -20362,82 +20331,43 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="justifyFull">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="mceAddControl">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="mceBeginUndoLevel">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="mceEndUndoLevel">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="mceInsertContent">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="mceRepaint">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="mceSave">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="mceSetStyleInfo">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="styleWithCSS">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
-</action>
-
-<action name="webapps.AddShortcut.AppShortcut">
-  <owner>dfalcantara@chromium.org</owner>
-  <description>
-    Shortcut added to the homescreen for a page containing the
-    mobile-webapp-capable meta tag.
-  </description>
-</action>
-
-<action name="webapps.AddShortcut.AppShortcutApple">
-  <owner>dfalcantara@chromium.org</owner>
-  <description>
-    Shortcut added to the homescreen for a page containing only the
-    apple-mobile-webapp-capable meta tag.
-  </description>
-</action>
-
-<action name="webapps.AddShortcut.Bookmark">
-  <owner>dfalcantara@chromium.org</owner>
-  <description>
-    Shortcut added to the homescreen for a page containing neither
-    mobile-webapp-capable nor apple-mobile-webapp-capable meta tags.
-  </description>
-</action>
-
-<action name="webapps.AddShortcut.Manifest">
-  <owner>mlamouri@chromium.org</owner>
-  <description>
-    Shortcut added to the homescreen with a valid Manifest. This action will be
-    recorded in addition to AppShortcut, AppShortcutApple and Bookmark actions
-    to keep a trend of whether the webapp also add meta tags.
-  </description>
-</action>
+<action-suffix separator="_" ordering="suffix">
+  <suffix name="BadgedReadingList" label="For BadgedReadingList feature."/>
+  <suffix name="Bookmark" label="For Bookmark feature."/>
+  <suffix name="ChromeHomeExpand" label="For ChromeHomeExpand feature."/>
+  <suffix name="ChromeHomeMenuHeader"
+      label="For ChromeHomeMenuHeader feature."/>
+  <suffix name="ChromeHomePullToRefresh"
+      label="For ChromeHomePullToRefresh feature."/>
+  <suffix name="ContextualSearch" label="For ContextualSearch feature."/>
+  <suffix name="ContextualSearchOptIn"
+      label="For ContextualSearchOptIn feature."/>
+  <suffix name="ContextualSearchPanel"
+      label="For ContextualSearchPanel feature."/>
+  <suffix name="ContextualSearchPromotePanelOpen"
+      label="For ContextualSearchPromotePanelOpen feature."/>
+  <suffix name="ContextualSearchPromoteTap"
+      label="For ContextualSearchPromoteTap feature."/>
+  <suffix name="ContextualSearchTap" label="For ContextualSearchTap feature."/>
+  <suffix name="ContextualSearchWebSearch"
+      label="For ContextualSearchWebSearch feature."/>
+  <suffix name="ContextualSuggestions"
+      label="For ContextualSuggestions feature."/>
+  <suffix name="DataSaverDetail" label="For DataSaverDetail feature."/>
+  <suffix name="DataSaverPreview" label="For DataSaverPreview feature."/>
+  <suffix name="DownloadHome" label="For DownloadHome feature."/>
+  <suffix name="DownloadPage" label="For DownloadPage feature."/>
+  <suffix name="DownloadPageScreenshot"
+      label="For DownloadPageScreenshot feature."/>
+  <suffix name="HomePageButton" label="For HomePageButton feature."/>
+  <suffix name="IncognitoWindow" label="For IncognitoWindow feature."/>
+  <suffix name="MediaDownload" label="For MediaDownload feature."/>
+  <suffix name="NewIncognitoTabTip" label="For NewIncognitoTabTip feature."/>
+  <suffix name="NewTab" label="For NewTab feature."/>
+  <suffix name="NewTabPageButton" label="For NewTabPageButton feature."/>
+  <suffix name="NewTabTip" label="For NewTabTip feature."/>
+  <affected-action name="InProductHelp.NotifyEvent.IPH"/>
+  <affected-action name="InProductHelp.NotifyUsedEvent.IPH"/>
+</action-suffix>
 
 </actions>

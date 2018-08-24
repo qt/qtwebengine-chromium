@@ -29,7 +29,9 @@
 
 #include "third_party/blink/renderer/core/css/selector_checker.h"
 
+#include "base/auto_reset.h"
 #include "third_party/blink/renderer/core/css/css_selector_list.h"
+#include "third_party/blink/renderer/core/css/part_names.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
@@ -61,7 +63,6 @@
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scroll/scrollable_area.h"
 #include "third_party/blink/renderer/platform/scroll/scrollbar_theme.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 
 namespace blink {
 
@@ -235,8 +236,8 @@ SelectorChecker::MatchStatus SelectorChecker::MatchSelector(
         context.pseudo_id != result.dynamic_pseudo)
       return kSelectorFailsCompletely;
 
-    AutoReset<PseudoId> dynamic_pseudo_scope(&result.dynamic_pseudo,
-                                             kPseudoIdNone);
+    base::AutoReset<PseudoId> dynamic_pseudo_scope(&result.dynamic_pseudo,
+                                                   kPseudoIdNone);
     match = MatchForRelation(context, result);
   } else {
     match = MatchForSubSelector(context, result);
@@ -1118,6 +1119,7 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
       return false;
     case CSSSelector::kPseudoUnknown:
     case CSSSelector::kPseudoMatches:
+    case CSSSelector::kPseudoIS:
     default:
       NOTREACHED();
       break;
@@ -1148,15 +1150,8 @@ bool SelectorChecker::CheckPseudoElement(const SelectorCheckingContext& context,
     case CSSSelector::kPseudoPart:
       if (!RuntimeEnabledFeatures::CSSPartPseudoElementEnabled())
         return false;
-      if (const SpaceSplitString* part_names = element.PartNames()) {
-        if (part_names->Contains(selector.Argument())) {
-          // TODO(crbug/805271): Until partmap is implemented, only consider
-          // styling parts from scope directly containing the shadow host.
-          Element* host = element.OwnerShadowHost();
-          return host && host->GetTreeScope() == context.scope->GetTreeScope();
-        }
-      }
-      return false;
+      DCHECK(part_names_);
+      return part_names_->Contains(selector.Argument());
     case CSSSelector::kPseudoPlaceholder:
       if (ShadowRoot* root = element.ContainingShadowRoot()) {
         return root->IsUserAgent() &&

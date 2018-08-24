@@ -34,11 +34,11 @@ namespace ui {
 // InputMethodChromeOS implementation -----------------------------------------
 InputMethodChromeOS::InputMethodChromeOS(
     internal::InputMethodDelegate* delegate)
-    : composing_text_(false),
+    : InputMethodBase(delegate),
+      composing_text_(false),
       composition_changed_(false),
       handling_key_event_(false),
       weak_ptr_factory_(this) {
-  SetDelegate(delegate);
   ui::IMEBridge::Get()->SetInputContextHandler(this);
 
   UpdateContextFocusState();
@@ -192,7 +192,8 @@ void InputMethodChromeOS::OnTextInputTypeChanged(
     // The focus in to or out from password field should also notify engine.
     engine->FocusOut();
     ui::IMEEngineHandlerInterface::InputContext context(
-        GetTextInputType(), GetTextInputMode(), GetTextInputFlags());
+        GetTextInputType(), GetTextInputMode(), GetTextInputFlags(),
+        GetClientFocusReason(), GetClientShouldDoLearning());
     engine->FocusIn(context);
   }
 
@@ -278,6 +279,17 @@ bool InputMethodChromeOS::IsCandidatePopupOpen() const {
   return false;
 }
 
+InputMethodKeyboardController*
+InputMethodChromeOS::GetInputMethodKeyboardController() {
+  chromeos::input_method::InputMethodManager* manager =
+      chromeos::input_method::InputMethodManager::Get();
+  if (manager) {
+    if (auto* controller = manager->GetInputMethodKeyboardController())
+      return controller;
+  }
+  return InputMethodBase::GetInputMethodKeyboardController();
+}
+
 void InputMethodChromeOS::OnWillChangeFocusedClient(
     TextInputClient* focused_before,
     TextInputClient* focused) {
@@ -297,7 +309,8 @@ void InputMethodChromeOS::OnDidChangeFocusedClient(
 
   if (GetEngine()) {
     ui::IMEEngineHandlerInterface::InputContext context(
-        GetTextInputType(), GetTextInputMode(), GetTextInputFlags());
+        GetTextInputType(), GetTextInputMode(), GetTextInputFlags(),
+        GetClientFocusReason(), GetClientShouldDoLearning());
     GetEngine()->FocusIn(context);
   }
 }
@@ -341,7 +354,8 @@ void InputMethodChromeOS::UpdateContextFocusState() {
     candidate_window->FocusStateChanged(IsNonPasswordInputFieldFocused());
 
   ui::IMEEngineHandlerInterface::InputContext context(
-      GetTextInputType(), GetTextInputMode(), GetTextInputFlags());
+      GetTextInputType(), GetTextInputMode(), GetTextInputFlags(),
+      GetClientFocusReason(), GetClientShouldDoLearning());
   ui::IMEBridge::Get()->SetCurrentInputContext(context);
 
   if (!IsTextInputTypeNone())
@@ -736,6 +750,11 @@ bool InputMethodChromeOS::IsNonPasswordInputFieldFocused() {
 
 bool InputMethodChromeOS::IsInputFieldFocused() {
   return GetTextInputType() != TEXT_INPUT_TYPE_NONE;
+}
+
+TextInputClient::FocusReason InputMethodChromeOS::GetClientFocusReason() const {
+  TextInputClient* client = GetTextInputClient();
+  return client ? client->GetFocusReason() : TextInputClient::FOCUS_REASON_NONE;
 }
 
 }  // namespace ui

@@ -39,6 +39,18 @@ namespace cache_storage_manager_unittest {
 class CacheStorageManagerTest;
 }
 
+enum class CacheStorageOwner {
+  kMinValue,
+
+  // Caches that can be accessed by the JS CacheStorage API (developer facing).
+  kCacheAPI = kMinValue,
+
+  // Private cache to store background fetch downloads.
+  kBackgroundFetch,
+
+  kMaxValue = kBackgroundFetch
+};
+
 // Keeps track of a CacheStorage per origin. There is one
 // CacheStorageManager per ServiceWorkerContextCore.
 // TODO(jkarlin): Remove CacheStorage from memory once they're no
@@ -55,32 +67,49 @@ class CONTENT_EXPORT CacheStorageManager {
 
   // Map a database identifier (computed from an origin) to the path.
   static base::FilePath ConstructOriginPath(const base::FilePath& root_path,
-                                            const url::Origin& origin);
+                                            const url::Origin& origin,
+                                            CacheStorageOwner owner);
 
   virtual ~CacheStorageManager();
 
   // Methods to support the CacheStorage spec. These methods call the
   // corresponding CacheStorage method on the appropriate thread.
   void OpenCache(const url::Origin& origin,
+                 CacheStorageOwner owner,
                  const std::string& cache_name,
                  CacheStorage::CacheAndErrorCallback callback);
   void HasCache(const url::Origin& origin,
+                CacheStorageOwner owner,
                 const std::string& cache_name,
                 CacheStorage::BoolAndErrorCallback callback);
   void DeleteCache(const url::Origin& origin,
+                   CacheStorageOwner owner,
                    const std::string& cache_name,
                    CacheStorage::ErrorCallback callback);
   void EnumerateCaches(const url::Origin& origin,
+                       CacheStorageOwner owner,
                        CacheStorage::IndexCallback callback);
   void MatchCache(const url::Origin& origin,
+                  CacheStorageOwner owner,
                   const std::string& cache_name,
                   std::unique_ptr<ServiceWorkerFetchRequest> request,
-                  const CacheStorageCacheQueryParams& match_params,
+                  blink::mojom::QueryParamsPtr match_params,
                   CacheStorageCache::ResponseCallback callback);
   void MatchAllCaches(const url::Origin& origin,
+                      CacheStorageOwner owner,
                       std::unique_ptr<ServiceWorkerFetchRequest> request,
-                      const CacheStorageCacheQueryParams& match_params,
+                      blink::mojom::QueryParamsPtr match_params,
                       CacheStorageCache::ResponseCallback callback);
+
+  // Method to support writing to a cache directly from CacheStorageManager.
+  // This should be used by non-CacheAPI owners. The Cache API writes are
+  // handled via the dispatcher.
+  void WriteToCache(const url::Origin& origin,
+                    CacheStorageOwner owner,
+                    const std::string& cache_name,
+                    std::unique_ptr<ServiceWorkerFetchRequest> request,
+                    std::unique_ptr<ServiceWorkerResponse> response,
+                    CacheStorage::ErrorCallback callback);
 
   // This must be called before creating any of the public *Cache functions
   // above.
@@ -106,7 +135,9 @@ class CONTENT_EXPORT CacheStorageManager {
   friend class cache_storage_manager_unittest::CacheStorageManagerTest;
   friend class CacheStorageQuotaClient;
 
-  typedef std::map<url::Origin, std::unique_ptr<CacheStorage>> CacheStorageMap;
+  typedef std::map<std::pair<url::Origin, CacheStorageOwner>,
+                   std::unique_ptr<CacheStorage>>
+      CacheStorageMap;
 
   CacheStorageManager(
       const base::FilePath& path,
@@ -114,23 +145,30 @@ class CONTENT_EXPORT CacheStorageManager {
       scoped_refptr<storage::QuotaManagerProxy> quota_manager_proxy);
 
   // The returned CacheStorage* is owned by this manager.
-  CacheStorage* FindOrCreateCacheStorage(const url::Origin& origin);
+  CacheStorage* FindOrCreateCacheStorage(const url::Origin& origin,
+                                         CacheStorageOwner owner);
 
   // QuotaClient and Browsing Data Deletion support
-  void GetAllOriginsUsage(CacheStorageContext::GetUsageInfoCallback callback);
+  void GetAllOriginsUsage(CacheStorageOwner owner,
+                          CacheStorageContext::GetUsageInfoCallback callback);
   void GetAllOriginsUsageGetSizes(
       std::unique_ptr<std::vector<CacheStorageUsageInfo>> usage_info,
       CacheStorageContext::GetUsageInfoCallback callback);
 
   void GetOriginUsage(const url::Origin& origin_url,
+                      CacheStorageOwner owner,
                       storage::QuotaClient::GetUsageCallback callback);
-  void GetOrigins(storage::QuotaClient::GetOriginsCallback callback);
+  void GetOrigins(CacheStorageOwner owner,
+                  storage::QuotaClient::GetOriginsCallback callback);
   void GetOriginsForHost(const std::string& host,
+                         CacheStorageOwner owner,
                          storage::QuotaClient::GetOriginsCallback callback);
   void DeleteOriginData(const url::Origin& origin,
+                        CacheStorageOwner owner,
                         storage::QuotaClient::DeletionCallback callback);
-  void DeleteOriginData(const url::Origin& origin);
+  void DeleteOriginData(const url::Origin& origin, CacheStorageOwner owner);
   void DeleteOriginDidClose(const url::Origin& origin,
+                            CacheStorageOwner owner,
                             storage::QuotaClient::DeletionCallback callback,
                             std::unique_ptr<CacheStorage> cache_storage,
                             int64_t origin_size);

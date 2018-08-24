@@ -118,7 +118,8 @@ void XRFrameTransport::FrameSubmit(
     if (!frame_copier_ || !last_transfer_succeeded_) {
       frame_copier_ = std::make_unique<GpuMemoryBufferImageCopy>(gl);
     }
-    auto gpu_memory_buffer = frame_copier_->CopyImage(image_ref.get());
+    gfx::GpuMemoryBuffer* gpu_memory_buffer =
+        frame_copier_->CopyImage(image_ref.get());
     drawing_buffer_client->DrawingBufferClientRestoreTexture2DBinding();
     drawing_buffer_client->DrawingBufferClientRestoreFramebufferBinding();
     drawing_buffer_client->DrawingBufferClientRestoreRenderbufferBinding();
@@ -134,7 +135,8 @@ void XRFrameTransport::FrameSubmit(
       gfx::GpuMemoryBufferHandle gpu_handle =
           CloneHandleForIPC(gpu_memory_buffer->GetHandle());
       vr_presentation_provider->SubmitFrameWithTextureHandle(
-          vr_frame_id, mojo::WrapPlatformFile(gpu_handle.handle.GetHandle()));
+          vr_frame_id,
+          mojo::WrapPlatformFile(gpu_handle.dxgi_handle.GetHandle()));
     }
 #else
     NOTIMPLEMENTED();

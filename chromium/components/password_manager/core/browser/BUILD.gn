@@ -77,16 +77,20 @@ static_library("browser") {
     "login_database.h",
     "login_database_ios.cc",
     "login_database_mac.cc",
-    "login_database_posix.cc",
     "login_database_win.cc",
     "login_model.cc",
     "login_model.h",
+    "new_password_form_manager.cc",
+    "new_password_form_manager.h",
     "password_autofill_manager.cc",
     "password_autofill_manager.h",
     "password_bubble_experiment.cc",
     "password_bubble_experiment.h",
+    "password_form_filling.cc",
+    "password_form_filling.h",
     "password_form_manager.cc",
     "password_form_manager.h",
+    "password_form_manager_for_ui.h",
     "password_form_metrics_recorder.cc",
     "password_form_metrics_recorder.h",
     "password_form_user_action.h",
@@ -181,6 +185,7 @@ static_library("browser") {
     "//components/autofill/core/common",
     "//components/keyed_service/core",
     "//components/os_crypt",
+    "//components/password_manager/core/browser/form_parsing",
     "//components/password_manager/core/common",
     "//components/pref_registry",
     "//components/prefs",
@@ -202,6 +207,13 @@ static_library("browser") {
     "//url",
   ]
 
+  if (password_reuse_detection_support) {
+    deps += [
+      "//components/safe_browsing:features",
+      "//components/safe_browsing/common:safe_browsing_prefs",
+    ]
+  }
+
   if (!is_ios) {
     sources += [
       "hsts_query.cc",
@@ -209,8 +221,8 @@ static_library("browser") {
     ]
   }
 
-  if (is_mac || is_ios) {
-    sources -= [ "login_database_posix.cc" ]
+  if (is_posix && !is_mac && !is_ios) {
+    sources += [ "login_database_posix.cc" ]
   }
 
   # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
@@ -270,6 +282,7 @@ static_library("test_support") {
 
   public_deps = [
     ":browser",
+    ":hash_password_manager",
     "//components/ukm",
     "//testing/gmock",
     "//url:url",
@@ -346,8 +359,10 @@ source_set("unit_tests") {
     "log_router_unittest.cc",
     "login_database_unittest.cc",
     "login_model_unittest.cc",
+    "new_password_form_manager_unittest.cc",
     "password_autofill_manager_unittest.cc",
     "password_bubble_experiment_unittest.cc",
+    "password_form_filling_unittest.cc",
     "password_form_manager_unittest.cc",
     "password_form_metrics_recorder_unittest.cc",
     "password_generation_manager_unittest.cc",
@@ -394,8 +409,10 @@ source_set("unit_tests") {
     "//components/autofill/core/browser:test_support",
     "//components/autofill/core/browser/proto",
     "//components/autofill/core/common",
+    "//components/os_crypt",
     "//components/os_crypt:test_support",
     "//components/password_manager/core/browser:proto",
+    "//components/password_manager/core/browser/form_parsing:unit_tests",
     "//components/password_manager/core/browser/form_parsing/fuzzer:unit_tests",
     "//components/password_manager/core/common",
     "//components/prefs:test_support",
@@ -413,6 +430,13 @@ source_set("unit_tests") {
     "//ui/base",
     "//url",
   ]
+
+  if (password_reuse_detection_support) {
+    deps += [
+      "//components/safe_browsing:features",
+      "//components/safe_browsing/common:safe_browsing_prefs",
+    ]
+  }
 
   if (is_ios) {
     deps +=

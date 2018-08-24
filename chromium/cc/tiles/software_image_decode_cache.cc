@@ -586,31 +586,6 @@ size_t SoftwareImageDecodeCache::GetMaximumMemoryLimitBytes() const {
   return locked_images_budget_.total_limit_bytes();
 }
 
-void SoftwareImageDecodeCache::NotifyImageUnused(
-    const PaintImage::FrameKey& frame_key) {
-  base::AutoLock lock(lock_);
-
-  auto it = frame_key_to_image_keys_.find(frame_key);
-  if (it == frame_key_to_image_keys_.end())
-    return;
-
-  for (auto key_it = it->second.begin(); key_it != it->second.end();) {
-    // This iterates over the CacheKey vector for the given skimage_id,
-    // and deletes all entries from decoded_images_ corresponding to the
-    // skimage_id.
-    auto image_it = decoded_images_.Peek(*key_it);
-    // TODO(sohanjg): Find an optimized way to cleanup locked images.
-    if (image_it != decoded_images_.end() && image_it->second->ref_count == 0) {
-      decoded_images_.Erase(image_it);
-      key_it = it->second.erase(key_it);
-    } else {
-      ++key_it;
-    }
-  }
-  if (it->second.empty())
-    frame_key_to_image_keys_.erase(it);
-}
-
 void SoftwareImageDecodeCache::OnImageDecodeTaskCompleted(
     const CacheKey& key,
     DecodeTaskType task_type) {

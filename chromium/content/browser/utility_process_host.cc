@@ -28,21 +28,24 @@
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/common/service_names.mojom.h"
-#include "content/public/common/zygote_buildflags.h"
 #include "media/base/media_switches.h"
 #include "services/network/public/cpp/network_switches.h"
+#include "services/service_manager/embedder/switches.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/service_manager/sandbox/sandbox_type.h"
+#include "services/service_manager/sandbox/switches.h"
+#include "services/service_manager/zygote/common/zygote_buildflags.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gl/gl_switches.h"
 
 #if defined(OS_WIN)
 #include "sandbox/win/src/sandbox_policy.h"
 #include "sandbox/win/src/sandbox_types.h"
+#include "services/network/network_sandbox_win.h"
 #endif
 
 #if BUILDFLAG(USE_ZYGOTE_HANDLE)
-#include "content/public/common/zygote_handle.h"
+#include "services/service_manager/zygote/common/zygote_handle.h"  // nogncheck
 #endif
 
 namespace content {
@@ -84,16 +87,21 @@ class UtilitySandboxedProcessLauncherDelegate
            service_manager::SANDBOX_TYPE_NO_SANDBOX_AND_ELEVATED_PRIVILEGES;
   }
 
-  bool PreSpawnTarget(sandbox::TargetPolicy* policy) override { return true; }
+  bool PreSpawnTarget(sandbox::TargetPolicy* policy) override {
+    if (sandbox_type_ == service_manager::SANDBOX_TYPE_NETWORK)
+      return network::NetworkPreSpawnTarget(policy);
+
+    return true;
+  }
 #endif  // OS_WIN
 
 #if BUILDFLAG(USE_ZYGOTE_HANDLE)
-  ZygoteHandle GetZygote() override {
+  service_manager::ZygoteHandle GetZygote() override {
     if (service_manager::IsUnsandboxedSandboxType(sandbox_type_) ||
         sandbox_type_ == service_manager::SANDBOX_TYPE_NETWORK) {
       return nullptr;
     }
-    return GetGenericZygote();
+    return service_manager::GetGenericZygote();
   }
 #endif  // BUILDFLAG(USE_ZYGOTE_HANDLE)
 
@@ -267,13 +275,14 @@ bool UtilityProcessHost::StartProcess() {
       network::switches::kIgnoreCertificateErrorsSPKIList,
       network::switches::kLogNetLog,
       network::switches::kNoReferrers,
-      switches::kIgnoreCertificateErrors,
-      switches::kNoSandbox,
-      switches::kOverrideUseSoftwareGLForTests,
-      switches::kProxyServer,
+      service_manager::switches::kNoSandbox,
 #if defined(OS_MACOSX)
-      switches::kEnableSandboxLogging,
+      service_manager::switches::kEnableSandboxLogging,
 #endif
+      switches::kIgnoreCertificateErrors,
+      switches::kOverrideUseSoftwareGLForTests,
+      switches::kOverrideEnabledCdmInterfaceVersion,
+      switches::kProxyServer,
       switches::kUseFakeDeviceForMediaStream,
       switches::kUseFileForFakeVideoCapture,
       switches::kUseMockCertVerifierForTesting,
@@ -281,6 +290,23 @@ bool UtilityProcessHost::StartProcess() {
       switches::kUseGL,
 #if defined(OS_ANDROID)
       switches::kOrderfileMemoryOptimization,
+#endif
+      // These flags are used by the audio service:
+      switches::kAudioBufferSize,
+      switches::kAudioServiceQuitTimeoutMs,
+      switches::kDisableAudioOutput,
+      switches::kFailAudioStreamCreation,
+      switches::kMuteAudio,
+      switches::kUseFileForFakeAudioCapture,
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SOLARIS)
+      switches::kAlsaInputDevice,
+      switches::kAlsaOutputDevice,
+#endif
+#if defined(OS_WIN)
+      switches::kEnableExclusiveAudio,
+      switches::kForceWaveAudio,
+      switches::kTrySupportedChannelLayouts,
+      switches::kWaveOutBuffers,
 #endif
     };
     cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames,

@@ -19,7 +19,6 @@
 #include "headless/public/headless_devtools_target.h"
 #include "headless/public/headless_export.h"
 #include "headless/public/headless_web_contents.h"
-#include "services/service_manager/public/cpp/binder_registry.h"
 #include "ui/compositor/external_begin_frame_client.h"
 
 class SkBitmap;
@@ -36,7 +35,6 @@ class Rect;
 namespace headless {
 class HeadlessBrowser;
 class HeadlessBrowserImpl;
-class HeadlessTabSocketImpl;
 
 // Exported for tests.
 class HEADLESS_EXPORT HeadlessWebContentsImpl
@@ -59,20 +57,18 @@ class HEADLESS_EXPORT HeadlessWebContentsImpl
   // Takes ownership of |child_contents|.
   static std::unique_ptr<HeadlessWebContentsImpl> CreateForChildContents(
       HeadlessWebContentsImpl* parent,
-      content::WebContents* child_contents);
+      std::unique_ptr<content::WebContents> child_contents);
 
   // HeadlessWebContents implementation:
   void AddObserver(Observer* observer) override;
   void RemoveObserver(Observer* observer) override;
   HeadlessDevToolsTarget* GetDevToolsTarget() override;
-  HeadlessTabSocket* GetHeadlessTabSocket() const override;
   int GetMainFrameRenderProcessId() const override;
   int GetMainFrameTreeNodeId() const override;
   std::string GetMainFrameDevToolsId() const override;
 
   // HeadlessDevToolsTarget implementation:
-  bool AttachClient(HeadlessDevToolsClient* client) override;
-  void ForceAttachClient(HeadlessDevToolsClient* client) override;
+  void AttachClient(HeadlessDevToolsClient* client) override;
   void DetachClient(HeadlessDevToolsClient* client) override;
   bool IsAttached() override;
 
@@ -83,19 +79,15 @@ class HEADLESS_EXPORT HeadlessWebContentsImpl
       content::DevToolsAgentHost* agent_host) override;
 
   // content::RenderProcessHostObserver implementation:
-  void RenderProcessExited(content::RenderProcessHost* host,
-                           base::TerminationStatus status,
-                           int exit_code) override;
+  void RenderProcessExited(
+      content::RenderProcessHost* host,
+      const content::ChildProcessTerminationInfo& info) override;
   void RenderProcessHostDestroyed(content::RenderProcessHost* host) override;
 
   // content::WebContentsObserver implementation:
   void RenderFrameCreated(content::RenderFrameHost* render_frame_host) override;
   void RenderFrameDeleted(content::RenderFrameHost* render_frame_host) override;
   void RenderViewReady() override;
-  void OnInterfaceRequestFromFrame(
-      content::RenderFrameHost* render_frame_host,
-      const std::string& interface_name,
-      mojo::ScopedMessagePipeHandle* interface_pipe) override;
 
   // ui::ExternalBeginFrameClient implementation:
   void OnDisplayDidFinishFrame(const viz::BeginFrameAck& ack) override;
@@ -130,8 +122,6 @@ class HEADLESS_EXPORT HeadlessWebContentsImpl
   // Set bounds of WebContent's platform window.
   void SetBounds(const gfx::Rect& bounds);
 
-  void CreateTabSocketMojoService(mojo::ScopedMessagePipeHandle handle);
-
   bool begin_frame_control_enabled() const {
     return begin_frame_control_enabled_;
   }
@@ -155,15 +145,10 @@ class HEADLESS_EXPORT HeadlessWebContentsImpl
   struct PendingFrame;
 
   // Takes ownership of |web_contents|.
-  HeadlessWebContentsImpl(content::WebContents* web_contents,
+  HeadlessWebContentsImpl(std::unique_ptr<content::WebContents> web_contents,
                           HeadlessBrowserContextImpl* browser_context);
 
   void InitializeWindow(const gfx::Rect& initial_bounds);
-
-  using MojoService = HeadlessWebContents::Builder::MojoService;
-  void CreateMojoService(
-      const MojoService::ServiceFactoryCallback& service_factory,
-      mojo::ScopedMessagePipeHandle handle);
 
   void PendingFrameReadbackComplete(PendingFrame* pending_frame,
                                     const SkBitmap& bitmap);
@@ -180,11 +165,8 @@ class HEADLESS_EXPORT HeadlessWebContentsImpl
   std::unique_ptr<HeadlessWindowTreeHost> window_tree_host_;
   int window_id_ = 0;
   std::string window_state_;
-  std::unique_ptr<HeadlessTabSocketImpl> headless_tab_socket_;
   std::unique_ptr<content::WebContents> web_contents_;
   scoped_refptr<content::DevToolsAgentHost> agent_host_;
-  std::list<MojoService> mojo_services_;
-  bool inject_mojo_services_into_isolated_world_;
   bool devtools_target_ready_notification_sent_ = false;
   bool render_process_exited_ = false;
 
@@ -196,8 +178,6 @@ class HEADLESS_EXPORT HeadlessWebContentsImpl
   base::ObserverList<HeadlessWebContents::Observer> observers_;
 
   base::Closure quit_closure_;
-
-  service_manager::BinderRegistry registry_;
 
   base::WeakPtrFactory<HeadlessWebContentsImpl> weak_ptr_factory_;
 

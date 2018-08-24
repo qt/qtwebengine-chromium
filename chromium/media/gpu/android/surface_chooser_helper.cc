@@ -89,6 +89,10 @@ void SurfaceChooserHelper::SetIsFullscreen(bool is_fullscreen) {
   surface_chooser_state_.is_fullscreen = is_fullscreen;
 }
 
+void SurfaceChooserHelper::SetVideoRotation(VideoRotation video_rotation) {
+  surface_chooser_state_.video_rotation = video_rotation;
+}
+
 void SurfaceChooserHelper::UpdateChooserState(
     base::Optional<AndroidOverlayFactoryCB> new_factory) {
   surface_chooser_->UpdateState(std::move(new_factory), surface_chooser_state_);
@@ -143,8 +147,8 @@ SurfaceChooserHelper::ComputeFrameInformation(bool is_using_overlay) {
   if (!is_using_overlay) {
     // Not an overlay.
     return surface_chooser_state_.is_secure
-               ? FrameInformation::SURFACETEXTURE_L3
-               : FrameInformation::SURFACETEXTURE_INSECURE;
+               ? FrameInformation::NON_OVERLAY_L3
+               : FrameInformation::NON_OVERLAY_INSECURE;
   }
 
   // Overlay.

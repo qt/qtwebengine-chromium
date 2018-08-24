@@ -21,6 +21,10 @@ TEST(WideString, ElementAccess) {
   EXPECT_DEATH({ abc[4]; }, ".*");
 #endif
 
+  pdfium::span<const wchar_t> abc_span = abc.AsSpan();
+  EXPECT_EQ(3u, abc_span.size());
+  EXPECT_EQ(0, wmemcmp(abc_span.data(), L"abc", 3));
+
   WideString mutable_abc = abc;
   EXPECT_EQ(abc.c_str(), mutable_abc.c_str());
   EXPECT_EQ(L'a', mutable_abc[0]);
@@ -813,20 +817,21 @@ TEST(WideString, Reserve) {
 }
 
 TEST(WideString, GetBuffer) {
+  WideString str1;
   {
-    WideString str;
-    wchar_t* buffer = str.GetBuffer(12);
-    wcscpy(buffer, L"clams");
-    str.ReleaseBuffer(str.GetStringLength());
-    EXPECT_EQ(L"clams", str);
+    pdfium::span<wchar_t> buffer = str1.GetBuffer(12);
+    wcscpy(buffer.data(), L"clams");
   }
+  str1.ReleaseBuffer(str1.GetStringLength());
+  EXPECT_EQ(L"clams", str1);
+
+  WideString str2(L"cl");
   {
-    WideString str(L"cl");
-    wchar_t* buffer = str.GetBuffer(12);
-    wcscpy(buffer + 2, L"ams");
-    str.ReleaseBuffer(str.GetStringLength());
-    EXPECT_EQ(L"clams", str);
+    pdfium::span<wchar_t> buffer = str2.GetBuffer(12);
+    wcscpy(buffer.data() + 2, L"ams");
   }
+  str2.ReleaseBuffer(str2.GetStringLength());
+  EXPECT_EQ(L"clams", str2);
 }
 
 TEST(WideString, ReleaseBuffer) {
@@ -1348,8 +1353,14 @@ TEST(WideString, Empty) {
   WideString empty_str;
   EXPECT_TRUE(empty_str.IsEmpty());
   EXPECT_EQ(0u, empty_str.GetLength());
+
   const wchar_t* cstr = empty_str.c_str();
+  EXPECT_NE(nullptr, cstr);
   EXPECT_EQ(0u, wcslen(cstr));
+
+  pdfium::span<const wchar_t> cspan = empty_str.AsSpan();
+  EXPECT_TRUE(cspan.empty());
+  EXPECT_EQ(nullptr, cspan.data());
 }
 
 TEST(CFX_WidString, InitializerList) {

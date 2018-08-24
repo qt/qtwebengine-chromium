@@ -17,7 +17,6 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/message_loop/timer_slack.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_macros.h"
@@ -44,7 +43,6 @@
 #include "content/public/common/connection_filter.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/common/mojo_channel_switches.h"
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/common/service_names.mojom.h"
 #include "content/public/common/simple_connection_filter.h"
@@ -64,6 +62,7 @@
 #include "services/resource_coordinator/public/cpp/memory_instrumentation/client_process_impl.h"
 #include "services/resource_coordinator/public/mojom/memory_instrumentation/memory_instrumentation.mojom.h"
 #include "services/resource_coordinator/public/mojom/service_constants.mojom.h"
+#include "services/service_manager/embedder/switches.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/service_manager/runner/common/client_util.h"
@@ -74,12 +73,18 @@
 #include "content/public/common/content_descriptors.h"
 #endif
 
-#if defined(OS_MACOSX)
-#include "base/allocator/allocator_interception_mac.h"
+#if defined(CLANG_COVERAGE)
+extern "C" int __llvm_profile_write_file(void);
 #endif
 
 namespace content {
 namespace {
+
+void WriteClangCoverageProfile() {
+#if defined(CLANG_COVERAGE)
+  __llvm_profile_write_file();
+#endif
+}
 
 // How long to wait for a connection to the browser process before giving up.
 const int kConnectionTimeoutS = 15;
@@ -104,6 +109,7 @@ class WaitAndExitDelegate : public base::PlatformThread::Delegate {
 
   void ThreadMain() override {
     base::PlatformThread::Sleep(duration_);
+    WriteClangCoverageProfile();
     _exit(0);
   }
 
@@ -164,6 +170,7 @@ class SuicideOnChannelErrorFilter : public IPC::MessageFilter {
     __lsan_do_leak_check();
 #endif
 #else
+    WriteClangCoverageProfile();
     _exit(0);
 #endif
   }
@@ -212,7 +219,7 @@ void QuitClosure::BindToMainThread() {
   scoped_refptr<base::SingleThreadTaskRunner> task_runner(
       base::ThreadTaskRunnerHandle::Get());
   base::Closure quit_closure =
-      base::MessageLoop::current()->QuitWhenIdleClosure();
+      base::RunLoop::QuitCurrentWhenIdleClosureDeprecated();
   closure_ = base::Bind(&QuitClosure::PostClosure, task_runner, quit_closure);
   cond_var_.Signal();
 }
@@ -232,7 +239,7 @@ base::LazyInstance<QuitClosure>::DestructorAtExit g_quit_closure =
 std::unique_ptr<mojo::edk::IncomingBrokerClientInvitation>
 InitializeMojoIPCChannel() {
   TRACE_EVENT0("startup", "InitializeMojoIPCChannel");
-  mojo::edk::ScopedPlatformHandle platform_channel;
+  mojo::edk::ScopedInternalPlatformHandle platform_channel;
 #if defined(OS_WIN)
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
       mojo::edk::PlatformChannelPair::kMojoPlatformChannelHandleSwitch)) {
@@ -251,8 +258,9 @@ InitializeMojoIPCChannel() {
       mojo::edk::PlatformChannelPair::PassClientHandleFromParentProcess(
           *base::CommandLine::ForCurrentProcess());
 #elif defined(OS_POSIX)
-  platform_channel.reset(mojo::edk::PlatformHandle(
-      base::GlobalDescriptors::GetInstance()->Get(kMojoIPCChannel)));
+  platform_channel.reset(mojo::edk::InternalPlatformHandle(
+      base::GlobalDescriptors::GetInstance()->Get(
+          service_manager::kMojoIPCChannel)));
 #endif
   // Mojo isn't supported on all child process types.
   // TODO(crbug.com/604282): Support Mojo in the remaining processes.
@@ -432,7 +440,7 @@ void ChildThreadImpl::Init(const Options& options) {
   TRACE_EVENT0("startup", "ChildThreadImpl::Init");
   g_lazy_tls.Pointer()->Set(this);
   on_channel_error_called_ = false;
-  message_loop_ = base::MessageLoop::current();
+  main_thread_runner_ = base::ThreadTaskRunnerHandle::Get();
 #if BUILDFLAG(IPC_MESSAGE_LOG_ENABLED)
   // We must make sure to instantiate the IPC Logger *before* we create the
   // channel, otherwise we can get a callback on the IO thread which creates
@@ -458,7 +466,7 @@ void ChildThreadImpl::Init(const Options& options) {
 
     std::string service_request_token =
         base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-            switches::kServiceRequestChannelToken);
+            service_manager::switches::kServiceRequestChannelToken);
     if (!service_request_token.empty() && invitation) {
       service_request_pipe =
           invitation->ExtractMessagePipe(service_request_token);
@@ -476,8 +484,8 @@ void ChildThreadImpl::Init(const Options& options) {
   }
 
   sync_message_filter_ = channel_->CreateSyncMessageFilter();
-  thread_safe_sender_ = new ThreadSafeSender(
-      message_loop_->task_runner(), sync_message_filter_.get());
+  thread_safe_sender_ =
+      new ThreadSafeSender(main_thread_runner_, sync_message_filter_.get());
 
   auto registry = std::make_unique<service_manager::BinderRegistry>();
   registry->AddInterface(base::Bind(&ChildHistogramFetcherFactoryImpl::Create),
@@ -562,15 +570,7 @@ void ChildThreadImpl::Init(const Options& options) {
       connection_timeout = temp;
   }
 
-#if defined(OS_MACOSX)
-  if (base::CommandLine::InitializedForCurrentProcess() &&
-      base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableHeapProfiling)) {
-    base::allocator::PeriodicallyShimNewMallocZones();
-  }
-#endif
-
-  message_loop_->task_runner()->PostDelayedTask(
+  main_thread_runner_->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&ChildThreadImpl::EnsureConnected,
                      channel_connected_factory_->GetWeakPtr()),
@@ -608,7 +608,7 @@ void ChildThreadImpl::InitTracing() {
   channel_->AddFilter(new tracing::ChildTraceMessageFilter(
       ChildProcess::current()->io_task_runner()));
 
-  chrome_trace_event_agent_ = std::make_unique<tracing::ChromeTraceEventAgent>(
+  trace_event_agent_ = tracing::TraceEventAgent::Create(
       GetConnector(), false /* request_clock_sync_marker_on_android */);
 }
 
@@ -632,8 +632,10 @@ ChildThreadImpl::~ChildThreadImpl() {
 }
 
 void ChildThreadImpl::Shutdown() {
-  // Delete objects that hold references to blink so derived classes can
-  // safely shutdown blink in their Shutdown implementation.
+  // The renderer process (and others) can to fast shutdown by calling _exit(0),
+  // in which case the clang-coverage profile does not get written to the file.
+  // So force write the profile here before shutting down.
+  WriteClangCoverageProfile();
 }
 
 bool ChildThreadImpl::ShouldBeDestroyed() {
@@ -653,7 +655,7 @@ void ChildThreadImpl::OnChannelError() {
 }
 
 bool ChildThreadImpl::Send(IPC::Message* msg) {
-  DCHECK(message_loop_->task_runner()->BelongsToCurrentThread());
+  DCHECK(main_thread_runner_->BelongsToCurrentThread());
   if (!channel_) {
     delete msg;
     return false;
@@ -713,7 +715,7 @@ service_manager::Connector* ChildThreadImpl::GetConnector() {
 }
 
 IPC::MessageRouter* ChildThreadImpl::GetRouter() {
-  DCHECK(message_loop_->task_runner()->BelongsToCurrentThread());
+  DCHECK(main_thread_runner_->BelongsToCurrentThread());
   return &router_;
 }
 

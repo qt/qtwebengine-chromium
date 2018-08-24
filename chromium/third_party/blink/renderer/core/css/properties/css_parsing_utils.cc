@@ -33,6 +33,7 @@
 #include "third_party/blink/renderer/core/css/parser/css_parser_token_range.h"
 #include "third_party/blink/renderer/core/css/parser/css_property_parser_helpers.h"
 #include "third_party/blink/renderer/core/css/properties/css_property.h"
+#include "third_party/blink/renderer/core/css/properties/longhand.h"
 #include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/core/css_value_keywords.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
@@ -235,9 +236,9 @@ CSSBasicShapeCircleValue* ConsumeBasicShapeCircle(
   if (CSSPropertyParserHelpers::ConsumeIdent<CSSValueAt>(args)) {
     CSSValue* center_x = nullptr;
     CSSValue* center_y = nullptr;
-    if (!ConsumePosition(
-            args, context, CSSPropertyParserHelpers::UnitlessQuirk::kForbid,
-            WebFeature::kThreeValuedPositionBasicShape, center_x, center_y))
+    if (!ConsumePosition(args, context,
+                         CSSPropertyParserHelpers::UnitlessQuirk::kForbid,
+                         base::Optional<WebFeature>(), center_x, center_y))
       return nullptr;
     shape->SetCenterX(center_x);
     shape->SetCenterY(center_y);
@@ -263,9 +264,9 @@ CSSBasicShapeEllipseValue* ConsumeBasicShapeEllipse(
   if (CSSPropertyParserHelpers::ConsumeIdent<CSSValueAt>(args)) {
     CSSValue* center_x = nullptr;
     CSSValue* center_y = nullptr;
-    if (!ConsumePosition(
-            args, context, CSSPropertyParserHelpers::UnitlessQuirk::kForbid,
-            WebFeature::kThreeValuedPositionBasicShape, center_x, center_y))
+    if (!ConsumePosition(args, context,
+                         CSSPropertyParserHelpers::UnitlessQuirk::kForbid,
+                         base::Optional<WebFeature>(), center_x, center_y))
       return nullptr;
     shape->SetCenterX(center_x);
     shape->SetCenterY(center_y);
@@ -570,28 +571,6 @@ CSSValue* ConsumeSelfPositionOverflowPosition(
   return self_position;
 }
 
-CSSValue* ConsumeSimplifiedDefaultPosition(
-    CSSParserTokenRange& range,
-    IsPositionKeyword is_position_keyword) {
-  DCHECK(is_position_keyword);
-  CSSValueID id = range.Peek().Id();
-  if (IsNormalOrStretch(id) || is_position_keyword(id))
-    return CSSPropertyParserHelpers::ConsumeIdent(range);
-
-  if (IsBaselineKeyword(id))
-    return ConsumeBaselineKeyword(range);
-
-  return nullptr;
-}
-
-CSSValue* ConsumeSimplifiedSelfPosition(CSSParserTokenRange& range,
-                                        IsPositionKeyword is_position_keyword) {
-  DCHECK(is_position_keyword);
-  return IsAuto(range.Peek().Id())
-             ? CSSPropertyParserHelpers::ConsumeIdent(range)
-             : ConsumeSimplifiedDefaultPosition(range, is_position_keyword);
-}
-
 CSSValue* ConsumeContentDistributionOverflowPosition(
     CSSParserTokenRange& range,
     IsPositionKeyword is_position_keyword) {
@@ -623,35 +602,6 @@ CSSValue* ConsumeContentDistributionOverflowPosition(
   if (is_position_keyword(range.Peek().Id())) {
     return CSSContentDistributionValue::Create(
         CSSValueInvalid, range.ConsumeIncludingWhitespace().Id(), overflow);
-  }
-
-  return nullptr;
-}
-
-CSSValue* ConsumeSimplifiedContentPosition(
-    CSSParserTokenRange& range,
-    IsPositionKeyword is_position_keyword) {
-  DCHECK(is_position_keyword);
-  CSSValueID id = range.Peek().Id();
-  if (CSSPropertyParserHelpers::IdentMatches<CSSValueNormal>(id) ||
-      is_position_keyword(id)) {
-    return CSSContentDistributionValue::Create(
-        CSSValueInvalid, range.ConsumeIncludingWhitespace().Id(),
-        CSSValueInvalid);
-  }
-
-  if (IsBaselineKeyword(id)) {
-    CSSValue* baseline = ConsumeBaselineKeyword(range);
-    if (!baseline)
-      return nullptr;
-    return CSSContentDistributionValue::Create(
-        CSSValueInvalid, GetBaselineKeyword(*baseline), CSSValueInvalid);
-  }
-
-  if (IsContentDistributionKeyword(id)) {
-    return CSSContentDistributionValue::Create(
-        range.ConsumeIncludingWhitespace().Id(), CSSValueInvalid,
-        CSSValueInvalid);
   }
 
   return nullptr;
@@ -738,10 +688,11 @@ bool ConsumeAnimationShorthand(
         return false;
     } while (!range.AtEnd() && range.Peek().GetType() != kCommaToken);
 
-    // TODO(timloh): This will make invalid longhands, see crbug.com/386459
     for (size_t i = 0; i < longhand_count; ++i) {
-      if (!parsed_longhand[i])
-        longhands[i]->Append(*CSSInitialValue::Create());
+      if (!parsed_longhand[i]) {
+        longhands[i]->Append(
+            *ToLonghand(shorthand.properties()[i])->InitialValue());
+      }
       parsed_longhand[i] = false;
     }
   } while (CSSPropertyParserHelpers::ConsumeCommaIncludingWhitespace(range));
@@ -795,11 +746,11 @@ CSSValue* ConsumeMaskSourceType(CSSParserTokenRange& range) {
 CSSPrimitiveValue* ConsumeLengthOrPercentCountNegative(
     CSSParserTokenRange& range,
     const CSSParserContext& context,
-    WTF::Optional<WebFeature> negativeSize) {
+    base::Optional<WebFeature> negative_size) {
   CSSPrimitiveValue* result =
       ConsumeLengthOrPercent(range, context.Mode(), kValueRangeNonNegative,
                              CSSPropertyParserHelpers::UnitlessQuirk::kForbid);
-  if (result || !negativeSize)
+  if (result || !negative_size)
     return result;
 
   result =
@@ -807,13 +758,13 @@ CSSPrimitiveValue* ConsumeLengthOrPercentCountNegative(
                              CSSPropertyParserHelpers::UnitlessQuirk::kForbid);
 
   if (result)
-    context.Count(*negativeSize);
+    context.Count(*negative_size);
   return result;
 }
 
 CSSValue* ConsumeBackgroundSize(CSSParserTokenRange& range,
                                 const CSSParserContext& context,
-                                WTF::Optional<WebFeature> negativeSize,
+                                base::Optional<WebFeature> negative_size,
                                 ParsingStyle parsing_style) {
   if (CSSPropertyParserHelpers::IdentMatches<CSSValueContain, CSSValueCover>(
           range.Peek().Id())) {
@@ -824,7 +775,7 @@ CSSValue* ConsumeBackgroundSize(CSSParserTokenRange& range,
       CSSPropertyParserHelpers::ConsumeIdent<CSSValueAuto>(range);
   if (!horizontal) {
     horizontal =
-        ConsumeLengthOrPercentCountNegative(range, context, negativeSize);
+        ConsumeLengthOrPercentCountNegative(range, context, negative_size);
   }
 
   CSSValue* vertical = nullptr;
@@ -833,7 +784,7 @@ CSSValue* ConsumeBackgroundSize(CSSParserTokenRange& range,
       range.ConsumeIncludingWhitespace();
     } else {
       vertical =
-          ConsumeLengthOrPercentCountNegative(range, context, negativeSize);
+          ConsumeLengthOrPercentCountNegative(range, context, negative_size);
     }
   } else if (parsing_style == ParsingStyle::kLegacy) {
     // Legacy syntax: "-webkit-background-size: 10px" is equivalent to
@@ -892,9 +843,9 @@ CSSValue* ParseBackgroundBox(CSSParserTokenRange& range,
 CSSValue* ParseBackgroundOrMaskSize(CSSParserTokenRange& range,
                                     const CSSParserContext& context,
                                     const CSSParserLocalContext& local_context,
-                                    WTF::Optional<WebFeature> negativeSize) {
+                                    base::Optional<WebFeature> negative_size) {
   return CSSPropertyParserHelpers::ConsumeCommaSeparatedList(
-      ConsumeBackgroundSize, range, context, negativeSize,
+      ConsumeBackgroundSize, range, context, negative_size,
       local_context.UseAliasParsing() ? ParsingStyle::kLegacy
                                       : ParsingStyle::kNotLegacy);
 }
@@ -1369,8 +1320,7 @@ CSSValue* ConsumeColumnWidth(CSSParserTokenRange& range) {
   // otherwise when used in the 'columns' shorthand property.
   CSSPrimitiveValue* column_width = CSSPropertyParserHelpers::ConsumeLength(
       range, kHTMLStandardMode, kValueRangeNonNegative);
-  if (!column_width ||
-      (!column_width->IsCalculated() && column_width->GetDoubleValue() == 0))
+  if (!column_width)
     return nullptr;
   return column_width;
 }
@@ -1531,7 +1481,7 @@ CSSValue* ConsumeFontStyle(CSSParserTokenRange& range,
       CSSPropertyParserHelpers::ConsumeIdent<CSSValueOblique>(range);
 
   CSSPrimitiveValue* start_angle =
-      CSSPropertyParserHelpers::ConsumeAngle(range, nullptr, WTF::nullopt);
+      CSSPropertyParserHelpers::ConsumeAngle(range, nullptr, base::nullopt);
   if (!start_angle)
     return oblique_identifier;
   if (!IsAngleWithinLimits(start_angle))
@@ -1544,7 +1494,7 @@ CSSValue* ConsumeFontStyle(CSSParserTokenRange& range,
   }
 
   CSSPrimitiveValue* end_angle =
-      CSSPropertyParserHelpers::ConsumeAngle(range, nullptr, WTF::nullopt);
+      CSSPropertyParserHelpers::ConsumeAngle(range, nullptr, base::nullopt);
   if (!end_angle || !IsAngleWithinLimits(end_angle))
     return nullptr;
 
@@ -1570,7 +1520,7 @@ CSSValue* ConsumeFontStretch(CSSParserTokenRange& range,
 
   CSSPrimitiveValue* start_percent =
       CSSPropertyParserHelpers::ConsumePercent(range, kValueRangeNonNegative);
-  if (!start_percent || start_percent->GetFloatValue() <= 0)
+  if (!start_percent)
     return nullptr;
 
   // In a non-font-face context, more than one percentage is not allowed.
@@ -1579,7 +1529,7 @@ CSSValue* ConsumeFontStretch(CSSParserTokenRange& range,
 
   CSSPrimitiveValue* end_percent =
       CSSPropertyParserHelpers::ConsumePercent(range, kValueRangeNonNegative);
-  if (!end_percent || end_percent->GetFloatValue() <= 0)
+  if (!end_percent)
     return nullptr;
 
   return CombineToRangeListOrNull(start_percent, end_percent);
@@ -2318,7 +2268,7 @@ CSSValue* ConsumeRay(CSSParserTokenRange& range,
   while (!function_args.AtEnd()) {
     if (!angle) {
       angle = CSSPropertyParserHelpers::ConsumeAngle(
-          function_args, &context, WTF::Optional<WebFeature>());
+          function_args, &context, base::Optional<WebFeature>());
       if (angle)
         continue;
     }
@@ -2401,7 +2351,7 @@ CSSValue* ConsumePathOrNone(CSSParserTokenRange& range) {
 CSSValue* ConsumeOffsetRotate(CSSParserTokenRange& range,
                               const CSSParserContext& context) {
   CSSValue* angle = CSSPropertyParserHelpers::ConsumeAngle(
-      range, &context, Optional<WebFeature>());
+      range, &context, base::Optional<WebFeature>());
   CSSValue* keyword =
       CSSPropertyParserHelpers::ConsumeIdent<CSSValueAuto, CSSValueReverse>(
           range);
@@ -2409,8 +2359,8 @@ CSSValue* ConsumeOffsetRotate(CSSParserTokenRange& range,
     return nullptr;
 
   if (!angle) {
-    angle = CSSPropertyParserHelpers::ConsumeAngle(range, &context,
-                                                   Optional<WebFeature>());
+    angle = CSSPropertyParserHelpers::ConsumeAngle(
+        range, &context, base::Optional<WebFeature>());
   }
 
   CSSValueList* list = CSSValueList::CreateSpaceSeparated();
@@ -2419,41 +2369,6 @@ CSSValue* ConsumeOffsetRotate(CSSParserTokenRange& range,
   if (angle)
     list->Append(*angle);
   return list;
-}
-
-bool ConsumePlaceAlignment(CSSParserTokenRange& range,
-                           ConsumePlaceAlignmentValue consume_alignment_value,
-                           CSSValue*& align_value,
-                           CSSValue*& justify_value) {
-  DCHECK(consume_alignment_value);
-  DCHECK(!align_value);
-  DCHECK(!justify_value);
-
-  bool is_baseline = IsBaselineKeyword(range.Peek().Id());
-  bool is_content_alignment =
-      consume_alignment_value == ConsumeSimplifiedContentPosition;
-  align_value = consume_alignment_value(range, is_content_alignment
-                                                   ? IsContentPositionKeyword
-                                                   : IsSelfPositionKeyword);
-  if (!align_value)
-    return false;
-
-  // justify-content property does not allow the <baseline-position> values.
-  if (is_content_alignment) {
-    if (range.AtEnd() && is_baseline)
-      return false;
-    if (IsBaselineKeyword(range.Peek().Id()))
-      return false;
-  }
-
-  justify_value = range.AtEnd()
-                      ? align_value
-                      : consume_alignment_value(
-                            range, is_content_alignment
-                                       ? IsContentPositionOrLeftOrRightKeyword
-                                       : IsSelfPositionOrLeftOrRightKeyword);
-
-  return justify_value && range.AtEnd();
 }
 
 bool ConsumeRadii(CSSValue* horizontal_radii[4],

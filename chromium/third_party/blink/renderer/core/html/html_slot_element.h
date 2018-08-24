@@ -101,7 +101,7 @@ class CORE_EXPORT HTMLSlotElement final : public HTMLElement {
   static const AtomicString& UserAgentCustomAssignSlotName();
   static const AtomicString& UserAgentDefaultSlotName();
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
   // For Incremental Shadow DOM
   void ClearAssignedNodes();
@@ -145,8 +145,8 @@ class CORE_EXPORT HTMLSlotElement final : public HTMLElement {
 
   const HeapVector<Member<Node>>& ChildrenInFlatTreeIfAssignmentIsSupported();
 
-  static void LazyReattachNodesIfNeeded(const HeapVector<Member<Node>>& nodes1,
-                                        const HeapVector<Member<Node>>& nodes2);
+  void LazyReattachNodesIfNeeded(const HeapVector<Member<Node>>& nodes1,
+                                 const HeapVector<Member<Node>>& nodes2);
   static void LazyReattachNodesNaive(const HeapVector<Member<Node>>& nodes1,
                                      const HeapVector<Member<Node>>& nodes2);
   static void LazyReattachNodesByDynamicProgramming(

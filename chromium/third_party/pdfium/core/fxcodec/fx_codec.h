@@ -15,7 +15,26 @@
 
 #include "core/fxcodec/fx_codec_def.h"
 #include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/fx_string.h"
+
+#ifdef PDF_ENABLE_XFA
+#ifdef PDF_ENABLE_XFA_BMP
+#include "core/fxcodec/codec/ccodec_bmpmodule.h"
+#endif  // PDF_ENABLE_XFA_BMP
+
+#ifdef PDF_ENABLE_XFA_GIF
+#include "core/fxcodec/codec/ccodec_gifmodule.h"
+#endif  // PDF_ENABLE_XFA_GIF
+
+#ifdef PDF_ENABLE_XFA_PNG
+#include "core/fxcodec/codec/ccodec_pngmodule.h"
+#endif  // PDF_ENABLE_XFA_PNG
+
+#ifdef PDF_ENABLE_XFA_TIFF
+#include "core/fxcodec/codec/ccodec_tiffmodule.h"
+#endif  // PDF_ENABLE_XFA_TIFF
+#endif  // PDF_ENABLE_XFA
 
 class CCodec_BasicModule;
 class CCodec_FaxModule;
@@ -30,26 +49,27 @@ class CPDF_ColorSpace;
 class CPDF_StreamAcc;
 
 #ifdef PDF_ENABLE_XFA
-class CCodec_BmpModule;
-class CCodec_GifModule;
-class CCodec_PngModule;
 class CCodec_ProgressiveDecoder;
-class CCodec_TiffModule;
 
 class CFX_DIBAttribute {
  public:
   CFX_DIBAttribute();
   ~CFX_DIBAttribute();
 
-  int32_t m_nXDPI;
-  int32_t m_nYDPI;
-  float m_fAspectRatio;
-  uint16_t m_wDPIUnit;
-  int32_t m_nGifLeft;
-  int32_t m_nGifTop;
-  uint32_t* m_pGifLocalPalette;
-  uint32_t m_nGifLocalPalNum;
-  int32_t m_nBmpCompressType;
+#ifdef PDF_ENABLE_XFA_BMP
+  int32_t m_nBmpCompressType = 0;
+#endif  // PDF_ENABLE_XFA_BMP
+#ifdef PDF_ENABLE_XFA_GIF
+  int32_t m_nGifLeft = 0;
+  int32_t m_nGifTop = 0;
+  uint32_t* m_pGifLocalPalette = nullptr;
+  uint32_t m_nGifLocalPalNum = 0;
+#endif  // PDF_ENABLE_XFA_GIF
+
+  int32_t m_nXDPI = -1;
+  int32_t m_nYDPI = -1;
+  float m_fAspectRatio = -1.0f;
+  uint16_t m_wDPIUnit = 0;
   std::map<uint32_t, void*> m_Exif;
 };
 #endif  // PDF_ENABLE_XFA
@@ -69,14 +89,34 @@ class CCodec_ModuleMgr {
 
 #ifdef PDF_ENABLE_XFA
   std::unique_ptr<CCodec_ProgressiveDecoder> CreateProgressiveDecoder();
-  void SetBmpModule(std::unique_ptr<CCodec_BmpModule> module);
-  void SetGifModule(std::unique_ptr<CCodec_GifModule> module);
-  void SetPngModule(std::unique_ptr<CCodec_PngModule> module);
-  void SetTiffModule(std::unique_ptr<CCodec_TiffModule> module);
+
+#ifdef PDF_ENABLE_XFA_BMP
   CCodec_BmpModule* GetBmpModule() const { return m_pBmpModule.get(); }
+  void SetBmpModule(std::unique_ptr<CCodec_BmpModule> module) {
+    m_pBmpModule = std::move(module);
+  }
+#endif  // PDF_ENABLE_XFA_BMP
+
+#ifdef PDF_ENABLE_XFA_GIF
   CCodec_GifModule* GetGifModule() const { return m_pGifModule.get(); }
+  void SetGifModule(std::unique_ptr<CCodec_GifModule> module) {
+    m_pGifModule = std::move(module);
+  }
+#endif  // PDF_ENABLE_XFA_GIF
+
+#ifdef PDF_ENABLE_XFA_PNG
   CCodec_PngModule* GetPngModule() const { return m_pPngModule.get(); }
+  void SetPngModule(std::unique_ptr<CCodec_PngModule> module) {
+    m_pPngModule = std::move(module);
+  }
+#endif  // PDF_ENABLE_XFA_PNG
+
+#ifdef PDF_ENABLE_XFA_TIFF
   CCodec_TiffModule* GetTiffModule() const { return m_pTiffModule.get(); }
+  void SetTiffModule(std::unique_ptr<CCodec_TiffModule> module) {
+    m_pTiffModule = std::move(module);
+  }
+#endif  // PDF_ENABLE_XFA_TIFF
 #endif  // PDF_ENABLE_XFA
 
  protected:
@@ -88,10 +128,21 @@ class CCodec_ModuleMgr {
   std::unique_ptr<CCodec_IccModule> m_pIccModule;
 
 #ifdef PDF_ENABLE_XFA
+#ifdef PDF_ENABLE_XFA_BMP
   std::unique_ptr<CCodec_BmpModule> m_pBmpModule;
+#endif  // PDF_ENABLE_XFA_BMP
+
+#ifdef PDF_ENABLE_XFA_GIF
   std::unique_ptr<CCodec_GifModule> m_pGifModule;
+#endif  // PDF_ENABLE_XFA_GIF
+
+#ifdef PDF_ENABLE_XFA_PNG
   std::unique_ptr<CCodec_PngModule> m_pPngModule;
+#endif  // PDF_ENABLE_XFA_PNG
+
+#ifdef PDF_ENABLE_XFA_TIFF
   std::unique_ptr<CCodec_TiffModule> m_pTiffModule;
+#endif  // PDF_ENABLE_XFA_TIFF
 #endif  // PDF_ENABLE_XFA
 
   std::unique_ptr<CCodec_FlateModule> m_pFlateModule;
@@ -114,5 +165,8 @@ void FaxG4Decode(const uint8_t* src_buf,
                  int width,
                  int height,
                  int pitch);
+
+FX_SAFE_UINT32 CalculatePitch8(uint32_t bpc, uint32_t components, int width);
+FX_SAFE_UINT32 CalculatePitch32(int bpp, int width);
 
 #endif  // CORE_FXCODEC_FX_CODEC_H_

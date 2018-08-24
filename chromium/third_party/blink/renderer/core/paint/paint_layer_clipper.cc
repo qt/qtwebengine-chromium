@@ -418,13 +418,6 @@ void PaintLayerClipper::CalculateRects(
 void PaintLayerClipper::CalculateClipRects(const ClipRectsContext& context,
                                            ClipRects& clip_rects) const {
   const LayoutBoxModelObject& layout_object = layer_.GetLayoutObject();
-  if (!layer_.Parent() &&
-      !RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-    // The root layer's clip rect is always infinite.
-    clip_rects.Reset(LayoutRect(LayoutRect::InfiniteIntRect()));
-    return;
-  }
-
   bool is_clipping_root = &layer_ == context.root_layer;
 
   if (is_clipping_root && !context.ShouldRespectRootLayerClip()) {
@@ -540,25 +533,6 @@ void PaintLayerClipper::CalculateBackgroundClipRectWithGeometryMapper(
   // TODO(chrishtr): generalize to multiple fragments.
   output.MoveBy(
       -context.root_layer->GetLayoutObject().FirstFragment().PaintOffset());
-
-  // The root LayoutView clip node does not store a rect excluding scrollbars
-  // for hit testing (see FragmentPaintPropertyTreeBuilder::UpdateOverflowClip).
-  // To calculate the correct clip at the root, we need to apply the LayoutView
-  // overflow clip excluding scrollbars here.
-  auto& root = context.root_layer->GetLayoutObject();
-  bool is_root_layout_view =
-      root.IsLayoutView() && !root.GetFrame()->Tree().Parent();
-  bool root_should_clip = HasOverflowClip(*context.root_layer) &&
-                          !is_clipping_root &&
-                          context.ShouldRespectRootLayerClip();
-  if (context.overlay_scrollbar_clip_behavior ==
-          kExcludeOverlayScrollbarSizeForHitTesting &&
-      is_root_layout_view && root_should_clip) {
-    ClipRect root_overflow_clip = ToLayoutView(root).OverflowClipRect(
-        LayoutPoint(), kExcludeOverlayScrollbarSizeForHitTesting);
-    output.Intersect(root_overflow_clip);
-  }
-
   output.Move(context.sub_pixel_accumulation);
 }
 

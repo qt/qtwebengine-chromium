@@ -239,7 +239,7 @@ struct PackedColorBlendStateInfo final
 
 static_assert(sizeof(PackedColorBlendStateInfo) == 96, "Size check failed");
 
-using ShaderStageInfo       = std::array<PackedShaderStageInfo, 2>;
+using ShaderStageInfo       = vk::ShaderMap<PackedShaderStageInfo>;
 using VertexInputBindings   = gl::AttribArray<PackedVertexInputBindingDesc>;
 using VertexInputAttributes = gl::AttribArray<PackedVertexInputAttributeDesc>;
 
@@ -269,10 +269,11 @@ class PipelineDesc final
                              Pipeline *pipelineOut) const;
 
     void updateViewport(const gl::Rectangle &viewport, float nearPlane, float farPlane);
+    void updateDepthRange(float nearPlane, float farPlane);
 
     // Shader stage info
     const ShaderStageInfo &getShaderStageInfo() const;
-    void updateShaders(ProgramVk *programVk);
+    void updateShaders(Serial vertexSerial, Serial fragmentSerial);
 
     // Vertex input state
     void updateVertexInputInfo(const VertexInputBindings &bindings,
@@ -299,7 +300,7 @@ class PipelineDesc final
     void updateBlendColor(const gl::ColorF &color);
     void updateBlendFuncs(const gl::BlendState &blend_state);
     void updateBlendEquations(const gl::BlendState &blend_state);
-    void updateColorWriteMask(const gl::BlendState &blendState);
+    void updateColorWriteMask(VkColorComponentFlags colorComponentFlags);
 
     // Depth/stencil states.
     void updateDepthTestEnabled(const gl::DepthStencilState &depthStencilState);
@@ -314,7 +315,7 @@ class PipelineDesc final
     void updateStencilBackWriteMask(const gl::DepthStencilState &depthStencilState);
 
   private:
-    // TODO(jmadill): Handle Geometry/Compute shaders when necessary.
+    // TODO(jmadill): Use gl::ShaderMap when we can pack into fewer bits. http://anglebug.com/2522
     ShaderStageInfo mShaderStageInfo;
     VertexInputBindings mVertexInputBindings;
     VertexInputAttributes mVertexInputAttribs;

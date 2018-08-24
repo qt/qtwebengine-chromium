@@ -16,7 +16,11 @@
 
 #include "src/ipc/client_impl.h"
 
+#include <fcntl.h>
 #include <inttypes.h>
+#include <unistd.h>
+
+#include <utility>
 
 #include "perfetto/base/task_runner.h"
 #include "perfetto/base/utils.h"
@@ -44,14 +48,18 @@ ClientImpl::ClientImpl(const char* socket_name, base::TaskRunner* task_runner)
 }
 
 ClientImpl::~ClientImpl() {
+  // Ensure we are not destroyed in the middle of invoking a reply.
+  PERFETTO_DCHECK(!invoking_method_reply_);
   OnDisconnect(nullptr);  // The UnixSocket* ptr is not used in OnDisconnect().
 }
 
 void ClientImpl::BindService(base::WeakPtr<ServiceProxy> service_proxy) {
   if (!service_proxy)
     return;
-  if (!sock_->is_connected())
-    return queued_bindings_.emplace_back(service_proxy);
+  if (!sock_->is_connected()) {
+    queued_bindings_.emplace_back(service_proxy);
+    return;
+  }
   RequestID request_id = ++last_request_id_;
   Frame frame;
   frame.set_request_id(request_id);
@@ -77,7 +85,9 @@ RequestID ClientImpl::BeginInvoke(ServiceID service_id,
                                   const std::string& method_name,
                                   MethodID remote_method_id,
                                   const ProtoMessage& method_args,
-                                  base::WeakPtr<ServiceProxy> service_proxy) {
+                                  bool drop_reply,
+                                  base::WeakPtr<ServiceProxy> service_proxy,
+                                  int fd) {
   std::string args_proto;
   RequestID request_id = ++last_request_id_;
   Frame frame;
@@ -85,22 +95,25 @@ RequestID ClientImpl::BeginInvoke(ServiceID service_id,
   Frame::InvokeMethod* req = frame.mutable_msg_invoke_method();
   req->set_service_id(service_id);
   req->set_method_id(remote_method_id);
+  req->set_drop_reply(drop_reply);
   bool did_serialize = method_args.SerializeToString(&args_proto);
   req->set_args_proto(args_proto);
-  if (!did_serialize || !SendFrame(frame)) {
+  if (!did_serialize || !SendFrame(frame, fd)) {
     PERFETTO_DLOG("BeginInvoke() failed while sending the frame");
     return 0;
   }
+  if (drop_reply)
+    return 0;
   QueuedRequest qr;
   qr.type = Frame::kMsgInvokeMethod;
   qr.request_id = request_id;
   qr.method_name = method_name;
-  qr.service_proxy = service_proxy;
+  qr.service_proxy = std::move(service_proxy);
   queued_requests_.emplace(request_id, std::move(qr));
   return request_id;
 }
 
-bool ClientImpl::SendFrame(const Frame& frame) {
+bool ClientImpl::SendFrame(const Frame& frame, int fd) {
   // Serialize the frame into protobuf, add the size header, and send it.
   std::string buf = BufferedFrameDeserializer::Serialize(frame);
 
@@ -108,7 +121,7 @@ bool ClientImpl::SendFrame(const Frame& frame) {
   // socket buffer is full? We might want to either drop the request or throttle
   // the send and PostTask the reply later? Right now we are making Send()
   // blocking as a workaround. Propagate bakpressure to the caller instead.
-  bool res = sock_->Send(buf.data(), buf.size(), -1 /*fd*/,
+  bool res = sock_->Send(buf.data(), buf.size(), fd,
                          UnixSocket::BlockingMode::kBlocking);
   PERFETTO_CHECK(res || !sock_->is_connected());
   return res;
@@ -147,12 +160,14 @@ void ClientImpl::OnDataAvailable(UnixSocket*) {
     rsize = sock_->Receive(buf.data, buf.size, &fd);
     if (fd) {
       PERFETTO_DCHECK(!received_fd_);
+      int res = fcntl(*fd, F_SETFD, FD_CLOEXEC);
+      PERFETTO_DCHECK(res == 0);
       received_fd_ = std::move(fd);
     }
     if (!frame_deserializer_.EndReceive(rsize)) {
       // The endpoint tried to send a frame that is way too large.
-      return sock_->Shutdown();  // In turn will trigger an OnDisconnect().
-      // TODO check this.
+      return sock_->Shutdown(true);  // In turn will trigger an OnDisconnect().
+      // TODO(fmayer): check this.
     }
   } while (rsize > 0);
 
@@ -213,8 +228,8 @@ void ClientImpl::OnBindServiceReply(QueuedRequest req,
   std::map<std::string, MethodID> methods;
   for (const auto& method : reply.methods()) {
     if (method.name().empty() || method.id() <= 0) {
-      PERFETTO_DLOG("OnBindServiceReply(): invalid method \"%s\" -> %" PRIu32,
-                    method.name().c_str(), method.id());
+      PERFETTO_DLOG("OnBindServiceReply(): invalid method \"%s\" -> %" PRIu64,
+                    method.name().c_str(), static_cast<uint64_t>(method.id()));
       continue;
     }
     methods[method.name()] = method.id();
@@ -232,7 +247,7 @@ void ClientImpl::OnInvokeMethodReply(QueuedRequest req,
     return;
   std::unique_ptr<ProtoMessage> decoded_reply;
   if (reply.success()) {
-    // TODO this could be optimized, stop doing method name string lookups.
+    // If this becomes a hotspot, optimize by maintaining a dedicated hashtable.
     for (const auto& method : service_proxy->GetDescriptor().methods) {
       if (req.method_name == method.name) {
         decoded_reply = method.reply_proto_decoder(reply.reply_proto());
@@ -241,8 +256,10 @@ void ClientImpl::OnInvokeMethodReply(QueuedRequest req,
     }
   }
   const RequestID request_id = req.request_id;
+  invoking_method_reply_ = true;
   service_proxy->EndInvoke(request_id, std::move(decoded_reply),
                            reply.has_more());
+  invoking_method_reply_ = false;
 
   // If this is a streaming method and future replies will be resolved, put back
   // the |req| with the callback into the set of active requests.

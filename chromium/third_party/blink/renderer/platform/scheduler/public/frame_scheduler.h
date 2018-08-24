@@ -11,26 +11,36 @@
 #include "base/single_thread_task_runner.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_scoped_virtual_time_pauser.h"
-#include "third_party/blink/renderer/platform/scheduler/public/frame_or_worker_global_scope_scheduler.h"
+#include "third_party/blink/renderer/platform/platform_export.h"
+#include "third_party/blink/renderer/platform/scheduler/public/frame_or_worker_scheduler.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
 
 class PageScheduler;
 
-class FrameScheduler : public FrameOrWorkerGlobalScopeScheduler {
+class FrameScheduler : public FrameOrWorkerScheduler {
  public:
-  virtual ~FrameScheduler() = default;
+  ~FrameScheduler() override = default;
 
   // Observer type that regulates conditions to invoke callbacks.
   enum class ObserverType { kLoader, kWorkerScheduler };
 
   // Represents throttling state.
+  // TODO(altimin): Move it into standalone LifecycleState.
   enum class ThrottlingState {
-    kThrottled,
+    // Frame is active and should not be throttled.
     kNotThrottled,
+    // Frame has just been backgrounded and can be throttled non-aggressively.
+    kHidden,
+    // Frame spent some time in background and can be fully throttled.
+    kThrottled,
+    // Frame is stopped, no tasks associated with it can run.
     kStopped,
   };
+
+  PLATFORM_EXPORT static const char* ThrottlingStateToString(
+      ThrottlingState state);
 
   // Represents the type of frame: main (top-level) vs not.
   enum class FrameType {
@@ -43,7 +53,8 @@ class FrameScheduler : public FrameOrWorkerGlobalScopeScheduler {
    public:
     virtual ~Observer() = default;
 
-    // Notified when throttling state is changed.
+    // Notified when throttling state is changed. May be called consecutively
+    // with the same value.
     virtual void OnThrottlingStateChanged(ThrottlingState) = 0;
   };
 
@@ -72,20 +83,12 @@ class FrameScheduler : public FrameOrWorkerGlobalScopeScheduler {
   // Query the page visibility state for the page associated with this frame.
   // The scheduler may throttle tasks associated with pages that are not
   // visible.
+  // TODO(altimin): Remove this method.
   virtual bool IsPageVisible() const = 0;
 
   // Set whether this frame is suspended. Only unthrottledTaskRunner tasks are
   // allowed to run on a suspended frame.
   virtual void SetPaused(bool) = 0;
-
-  // Notifies observers of transitioning to and from FROZEN state in
-  // background.
-  virtual void SetPageFrozen(bool) {}
-
-  // Tells the scheduler about "keep-alive" state which can be due to:
-  // service workers, shared workers, or fetch keep-alive.
-  // If true, then the scheduler should not freeze relevant task queues.
-  virtual void SetKeepActive(bool) {}
 
   // Set whether this frame is cross origin w.r.t. the top level frame. Cross
   // origin frames may use a different scheduling policy from same origin

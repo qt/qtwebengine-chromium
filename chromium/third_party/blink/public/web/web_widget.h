@@ -31,6 +31,8 @@
 #ifndef THIRD_PARTY_BLINK_PUBLIC_WEB_WEB_WIDGET_H_
 #define THIRD_PARTY_BLINK_PUBLIC_WEB_WEB_WIDGET_H_
 
+#include "base/callback.h"
+#include "base/time/time.h"
 #include "third_party/blink/public/platform/web_browser_controls_state.h"
 #include "third_party/blink/public/platform/web_canvas.h"
 #include "third_party/blink/public/platform/web_common.h"
@@ -46,12 +48,12 @@
 #include "third_party/blink/public/web/web_range.h"
 #include "third_party/blink/public/web/web_text_direction.h"
 
+class SkBitmap;
+
 namespace blink {
 
-class WebCompositeAndReadbackAsyncCallback;
 class WebCoalescedInputEvent;
 class WebLayerTreeView;
-class WebLayoutAndPaintAsyncCallback;
 class WebPagePopup;
 struct WebPoint;
 
@@ -83,7 +85,7 @@ class WebWidget {
   // Called to update imperative animation state. This should be called before
   // paint, although the client can rate-limit these calls.
   // |lastFrameTimeMonotonic| is in seconds.
-  virtual void BeginFrame(double last_frame_time_monotonic) {}
+  virtual void BeginFrame(base::TimeTicks last_frame_time) {}
 
   // Called to run through the entire set of document lifecycle phases needed
   // to render a frame of the web widget. This MUST be called before Paint,
@@ -100,6 +102,9 @@ class WebWidget {
   // Performs the complete set of document lifecycle phases, including updates
   // to the compositor state except rasterization.
   virtual void UpdateAllLifecyclePhasesAndCompositeForTesting() {}
+
+  // Synchronously rasterizes and composites a frame.
+  virtual void CompositeWithRasterForTesting() {}
 
   // Called to paint the rectangular region within the WebWidget
   // onto the specified canvas at (viewPort.x,viewPort.y).
@@ -121,15 +126,11 @@ class WebWidget {
   virtual void PaintIgnoringCompositing(WebCanvas*, const WebRect&) {}
 
   // Run layout and paint of all pending document changes asynchronously.
-  // The caller is resposible for keeping the WebLayoutAndPaintAsyncCallback
-  // object alive until it is called.
-  virtual void LayoutAndPaintAsync(WebLayoutAndPaintAsyncCallback*) {}
+  virtual void LayoutAndPaintAsync(base::OnceClosure callback) {}
 
-  // The caller is responsible for keeping the
-  // WebCompositeAndReadbackAsyncCallback object alive until it is called. This
-  // should only be called when isAcceleratedCompositingActive() is true.
+  // This should only be called when isAcceleratedCompositingActive() is true.
   virtual void CompositeAndReadbackAsync(
-      WebCompositeAndReadbackAsyncCallback*) {}
+      base::OnceCallback<void(const SkBitmap&)> callback) {}
 
   // Called to inform the WebWidget of a change in theme.
   // Implementors that cache rendered copies of widgets need to re-render
@@ -214,7 +215,7 @@ class WebWidget {
 
   // The page background color. Can be used for filling in areas without
   // content.
-  virtual WebColor BackgroundColor() const {
+  virtual SkColor BackgroundColor() const {
     return 0xFFFFFFFF; /* SK_ColorWHITE */
   }
 

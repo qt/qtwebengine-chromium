@@ -31,10 +31,17 @@ void CompositingLayerPropertyUpdater::Update(const LayoutObject& object) {
   LayoutPoint layout_snapped_paint_offset =
       fragment_data.PaintOffset() - mapping->SubpixelAccumulation();
   IntPoint snapped_paint_offset = RoundedIntPoint(layout_snapped_paint_offset);
-  // TODO(crbug.com/816490): Re-enable this check once it is fixed.
-  // DCHECK(layout_snapped_paint_offset == snapped_paint_offset);
 
-  Optional<PropertyTreeState> container_layer_state;
+  // A layer without visible contents can be composited due to animation.
+  // Since the layer itself has no visible subtree, there is no guarantee
+  // that all of its ancestors have a visible subtree. An ancestor with no
+  // visible subtree can be non-composited despite we expected it to, this
+  // resulted in the paint offset used by CompositedLayerMapping to mismatch.
+  bool subpixel_accumulation_may_be_bogus = paint_layer->SubtreeIsInvisible();
+  DCHECK(layout_snapped_paint_offset == snapped_paint_offset ||
+         subpixel_accumulation_may_be_bogus);
+
+  base::Optional<PropertyTreeState> container_layer_state;
   auto SetContainerLayerState =
       [&fragment_data, &snapped_paint_offset,
        &container_layer_state](GraphicsLayer* graphics_layer) {
@@ -53,12 +60,41 @@ void CompositingLayerPropertyUpdater::Update(const LayoutObject& object) {
         }
       };
   SetContainerLayerState(mapping->MainGraphicsLayer());
-  SetContainerLayerState(mapping->LayerForHorizontalScrollbar());
-  SetContainerLayerState(mapping->LayerForVerticalScrollbar());
-  SetContainerLayerState(mapping->LayerForScrollCorner());
   SetContainerLayerState(mapping->DecorationOutlineLayer());
-  SetContainerLayerState(mapping->BackgroundLayer());
   SetContainerLayerState(mapping->ChildClippingMaskLayer());
+
+  base::Optional<PropertyTreeState> scrollbar_layer_state;
+
+  auto SetContainerLayerStateForScrollbars =
+      [&fragment_data, &snapped_paint_offset, &container_layer_state,
+       &scrollbar_layer_state](GraphicsLayer* graphics_layer) {
+        if (graphics_layer) {
+          if (!scrollbar_layer_state) {
+            // OverflowControlsClip should be applied within the scrollbar
+            // layers.
+            if (container_layer_state) {
+              scrollbar_layer_state = container_layer_state;
+            } else {
+              scrollbar_layer_state = fragment_data.LocalBorderBoxProperties();
+            }
+
+            if (const auto* properties = fragment_data.PaintProperties()) {
+              if (const auto* clip = properties->OverflowControlsClip()) {
+                scrollbar_layer_state->SetClip(clip);
+              } else if (const auto* css_clip = properties->CssClip()) {
+                scrollbar_layer_state->SetClip(css_clip->Parent());
+              }
+            }
+          }
+          graphics_layer->SetLayerState(
+              *scrollbar_layer_state,
+              snapped_paint_offset + graphics_layer->OffsetFromLayoutObject());
+        }
+      };
+
+  SetContainerLayerStateForScrollbars(mapping->LayerForHorizontalScrollbar());
+  SetContainerLayerStateForScrollbars(mapping->LayerForVerticalScrollbar());
+  SetContainerLayerStateForScrollbars(mapping->LayerForScrollCorner());
 
   if (mapping->ScrollingContentsLayer()) {
     auto paint_offset = snapped_paint_offset;
@@ -91,17 +127,10 @@ void CompositingLayerPropertyUpdater::Update(const LayoutObject& object) {
     // any control clips on the squashing layer's object which should not apply
     // on squashed layers.
     const auto* clipping_container = paint_layer->ClippingContainer();
-    if (RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-      state.SetClip(
-          clipping_container
-              ? clipping_container->FirstFragment().ContentsProperties().Clip()
-              : ClipPaintPropertyNode::Root());
-    } else {
-      state.SetClip(
-          clipping_container
-              ? clipping_container->FirstFragment().ContentsProperties().Clip()
-              : paint_layer->GetLayoutObject().GetFrameView()->ContentClip());
-    }
+    state.SetClip(
+        clipping_container
+            ? clipping_container->FirstFragment().ContentsProperties().Clip()
+            : ClipPaintPropertyNode::Root());
     squashing_layer->SetLayerState(
         state,
         snapped_paint_offset + mapping->SquashingLayerOffsetFromLayoutObject());
@@ -142,25 +171,6 @@ void CompositingLayerPropertyUpdater::Update(const LayoutObject& object) {
         state, snapped_paint_offset +
                    child_clipping_mask_layer->OffsetFromLayoutObject());
   }
-}
-
-void CompositingLayerPropertyUpdater::Update(const LocalFrameView& frame_view) {
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled() ||
-      RuntimeEnabledFeatures::SlimmingPaintV2Enabled() ||
-      RuntimeEnabledFeatures::RootLayerScrollingEnabled())
-    return;
-
-  auto SetOverflowControlLayerState =
-      [&frame_view](GraphicsLayer* graphics_layer) {
-        if (graphics_layer) {
-          graphics_layer->SetLayerState(
-              frame_view.PreContentClipProperties(),
-              IntPoint(graphics_layer->OffsetFromLayoutObject()));
-        }
-      };
-  SetOverflowControlLayerState(frame_view.LayerForHorizontalScrollbar());
-  SetOverflowControlLayerState(frame_view.LayerForVerticalScrollbar());
-  SetOverflowControlLayerState(frame_view.LayerForScrollCorner());
 }
 
 }  // namespace blink

@@ -6,6 +6,7 @@
 
 #include "base/allocator/allocator_interception_mac.h"
 #include "base/files/platform_file.h"
+#include "base/single_thread_task_runner.h"
 #include "base/task_scheduler/post_task.h"
 #include "base/task_scheduler/task_traits.h"
 #include "base/trace_event/malloc_dump_provider.h"
@@ -43,15 +44,17 @@ void EnsureCFIInitializedOnBackgroundThread(
 Client::Client() : started_profiling_(false), weak_factory_(this) {}
 
 Client::~Client() {
-  StopAllocatorShimDangerous();
+  if (started_profiling_) {
+    StopAllocatorShimDangerous();
 
-  base::trace_event::MallocDumpProvider::GetInstance()->EnableMetrics();
+    base::trace_event::MallocDumpProvider::GetInstance()->EnableMetrics();
 
-  // The allocator shim cannot be synchronously, consistently stopped. We leak
-  // the sender_pipe_, with the idea that very few future messages will
-  // be sent to it. This happens at shutdown, so resources will be reclaimed by
-  // the OS after the process is terminated.
-  sender_pipe_.release();
+    // The allocator shim cannot be synchronously, consistently stopped. We leak
+    // the sender_pipe_, with the idea that very few future messages will
+    // be sent to it. This happens at shutdown, so resources will be reclaimed
+    // by the OS after the process is terminated.
+    sender_pipe_.release();
+  }
 }
 
 void Client::BindToInterface(mojom::ProfilingClientRequest request) {

@@ -18,35 +18,56 @@
 namespace rx
 {
 
-class StagingStorage final : angle::NonCopyable
+class PixelBuffer final : angle::NonCopyable
 {
   public:
-    StagingStorage();
-    ~StagingStorage();
+    PixelBuffer(RendererVk *renderer);
+    ~PixelBuffer();
 
     void release(RendererVk *renderer);
 
     gl::Error stageSubresourceUpdate(ContextVk *contextVk,
+                                     const gl::ImageIndex &index,
                                      const gl::Extents &extents,
+                                     const gl::Offset &offset,
                                      const gl::InternalFormat &formatInfo,
                                      const gl::PixelUnpackState &unpack,
                                      GLenum type,
                                      const uint8_t *pixels);
 
+    gl::Error stageSubresourceUpdateFromFramebuffer(const gl::Context *context,
+                                                    const gl::ImageIndex &index,
+                                                    const gl::Rectangle &sourceArea,
+                                                    const gl::Offset &dstOffset,
+                                                    const gl::Extents &dstExtent,
+                                                    const gl::InternalFormat &formatInfo,
+                                                    FramebufferVk *framebufferVk);
+
     vk::Error flushUpdatesToImage(RendererVk *renderer,
                                   vk::ImageHelper *image,
                                   vk::CommandBuffer *commandBuffer);
 
+    bool empty() const;
+
   private:
+    struct SubresourceUpdate
+    {
+        SubresourceUpdate();
+        SubresourceUpdate(VkBuffer bufferHandle, const VkBufferImageCopy &copyRegion);
+        SubresourceUpdate(const SubresourceUpdate &other);
+
+        VkBuffer bufferHandle;
+        VkBufferImageCopy copyRegion;
+    };
+
     vk::DynamicBuffer mStagingBuffer;
-    VkBuffer mCurrentBufferHandle;
-    VkBufferImageCopy mCurrentCopyRegion;
+    std::vector<SubresourceUpdate> mSubresourceUpdates;
 };
 
 class TextureVk : public TextureImpl, public vk::CommandGraphResource
 {
   public:
-    TextureVk(const gl::TextureState &state);
+    TextureVk(const gl::TextureState &state, RendererVk *renderer);
     ~TextureVk() override;
     gl::Error onDestroy(const gl::Context *context) override;
 
@@ -91,7 +112,6 @@ class TextureVk : public TextureImpl, public vk::CommandGraphResource
                            const gl::Offset &destOffset,
                            const gl::Rectangle &sourceArea,
                            gl::Framebuffer *source) override;
-
     gl::Error setStorage(const gl::Context *context,
                          gl::TextureType type,
                          size_t levels,
@@ -119,7 +139,8 @@ class TextureVk : public TextureImpl, public vk::CommandGraphResource
                                         const gl::ImageIndex &imageIndex,
                                         FramebufferAttachmentRenderTarget **rtOut) override;
 
-    void syncState(const gl::Texture::DirtyBits &dirtyBits) override;
+    gl::Error syncState(const gl::Context *context,
+                        const gl::Texture::DirtyBits &dirtyBits) override;
 
     gl::Error setStorageMultisample(const gl::Context *context,
                                     gl::TextureType type,
@@ -138,15 +159,29 @@ class TextureVk : public TextureImpl, public vk::CommandGraphResource
     vk::Error ensureImageInitialized(RendererVk *renderer);
 
   private:
+    gl::Error copySubImageImpl(const gl::Context *context,
+                               const gl::ImageIndex &index,
+                               const gl::Offset &destOffset,
+                               const gl::Rectangle &sourceArea,
+                               const gl::InternalFormat &internalFormat,
+                               gl::Framebuffer *source);
+    vk::Error initImage(RendererVk *renderer,
+                        const vk::Format &format,
+                        const gl::Extents &extents,
+                        const uint32_t levelCount,
+                        vk::CommandBuffer *commandBuffer);
     void releaseImage(const gl::Context *context, RendererVk *renderer);
+    vk::Error getCommandBufferForWrite(RendererVk *renderer, vk::CommandBuffer **outCommandBuffer);
+    uint32_t getLevelCount() const;
 
     vk::ImageHelper mImage;
-    vk::ImageView mImageView;
+    vk::ImageView mBaseLevelImageView;
+    vk::ImageView mMipmapImageView;
     vk::Sampler mSampler;
 
     RenderTargetVk mRenderTarget;
 
-    StagingStorage mStagingStorage;
+    PixelBuffer mPixelBuffer;
 };
 
 }  // namespace rx

@@ -241,6 +241,12 @@ void XRWebGLLayer::UpdateViewports() {
   }
 }
 
+void XRWebGLLayer::OverwriteColorBufferFromMailboxTexture(
+    const gpu::MailboxHolder& mailbox_holder,
+    const IntSize& size) {
+  drawing_buffer_->OverwriteColorBufferFromMailboxTexture(mailbox_holder, size);
+}
+
 void XRWebGLLayer::OnFrameStart(
     const base::Optional<gpu::MailboxHolder>& buffer_mailbox_holder) {
   // If the requested scale has changed since the last from, update it now.
@@ -327,7 +333,7 @@ void XRWebGLLayer::Trace(blink::Visitor* visitor) {
   XRLayer::Trace(visitor);
 }
 
-void XRWebGLLayer::TraceWrappers(const ScriptWrappableVisitor* visitor) const {
+void XRWebGLLayer::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(webgl_context_);
   XRLayer::TraceWrappers(visitor);
 }

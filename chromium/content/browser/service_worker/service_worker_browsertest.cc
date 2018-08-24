@@ -227,7 +227,8 @@ class WorkerActivatedObserver
 std::unique_ptr<net::test_server::HttpResponse>
 VerifyServiceWorkerHeaderInRequest(
     const net::test_server::HttpRequest& request) {
-  EXPECT_EQ(request.relative_url, "/service_worker/generated_sw.js");
+  if (request.relative_url != "/service_worker/generated_sw.js")
+    return nullptr;
   auto it = request.headers.find("Service-Worker");
   EXPECT_TRUE(it != request.headers.end());
   EXPECT_EQ("script", it->second);
@@ -240,6 +241,8 @@ VerifyServiceWorkerHeaderInRequest(
 
 std::unique_ptr<net::test_server::HttpResponse> VerifySaveDataHeaderInRequest(
     const net::test_server::HttpRequest& request) {
+  if (request.relative_url != "/service_worker/generated_sw.js")
+    return nullptr;
   auto it = request.headers.find("Save-Data");
   EXPECT_NE(request.headers.end(), it);
   EXPECT_EQ("on", it->second);
@@ -252,6 +255,8 @@ std::unique_ptr<net::test_server::HttpResponse> VerifySaveDataHeaderInRequest(
 
 std::unique_ptr<net::test_server::HttpResponse>
 VerifySaveDataHeaderNotInRequest(const net::test_server::HttpRequest& request) {
+  if (request.relative_url != "/service_worker/generated_sw.js")
+    return nullptr;
   auto it = request.headers.find("Save-Data");
   EXPECT_EQ(request.headers.end(), it);
   return std::make_unique<net::test_server::BasicHttpResponse>();
@@ -1160,7 +1165,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest,
                                "/service_worker/worker_install_rejected.js"));
 
   ConsoleListener console_listener;
-  RunOnIOThread(base::BindOnce(&EmbeddedWorkerInstance::AddListener,
+  RunOnIOThread(base::BindOnce(&EmbeddedWorkerInstance::AddObserver,
                                base::Unretained(version_->embedded_worker()),
                                &console_listener));
 
@@ -1179,7 +1184,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest,
   console_listener.WaitForConsoleMessages(1);
   ASSERT_NE(base::string16::npos,
             console_listener.messages()[0].find(expected));
-  RunOnIOThread(base::BindOnce(&EmbeddedWorkerInstance::RemoveListener,
+  RunOnIOThread(base::BindOnce(&EmbeddedWorkerInstance::RemoveObserver,
                                base::Unretained(version_->embedded_worker()),
                                &console_listener));
 }
@@ -1208,7 +1213,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest, TimeoutStartingWorker) {
   base::RunLoop start_run_loop;
   base::RunLoop load_run_loop;
   WaitForLoaded wait_for_load(load_run_loop.QuitClosure());
-  RunOnIOThread(base::BindOnce(&EmbeddedWorkerInstance::AddListener,
+  RunOnIOThread(base::BindOnce(&EmbeddedWorkerInstance::AddObserver,
                                base::Unretained(version_->embedded_worker()),
                                &wait_for_load));
   BrowserThread::PostTask(
@@ -1216,7 +1221,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest, TimeoutStartingWorker) {
       base::BindOnce(&self::StartOnIOThread, base::Unretained(this),
                      start_run_loop.QuitClosure(), &status));
   load_run_loop.Run();
-  RunOnIOThread(base::BindOnce(&EmbeddedWorkerInstance::RemoveListener,
+  RunOnIOThread(base::BindOnce(&EmbeddedWorkerInstance::RemoveObserver,
                                base::Unretained(version_->embedded_worker()),
                                &wait_for_load));
 
@@ -1337,7 +1342,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest,
                      SERVICE_WORKER_OK);
 
   ConsoleListener console_listener;
-  RunOnIOThread(base::BindOnce(&EmbeddedWorkerInstance::AddListener,
+  RunOnIOThread(base::BindOnce(&EmbeddedWorkerInstance::AddObserver,
                                base::Unretained(version_->embedded_worker()),
                                &console_listener));
 
@@ -1350,7 +1355,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest,
   ASSERT_NE(base::string16::npos,
             console_listener.messages()[0].find(expected1));
   ASSERT_EQ(0u, console_listener.messages()[1].find(expected2));
-  RunOnIOThread(base::BindOnce(&EmbeddedWorkerInstance::RemoveListener,
+  RunOnIOThread(base::BindOnce(&EmbeddedWorkerInstance::RemoveObserver,
                                base::Unretained(version_->embedded_worker()),
                                &console_listener));
 
@@ -2347,8 +2352,8 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerBrowserTest,
   EXPECT_TRUE(entry->GetSSL().initialized);
   EXPECT_FALSE(!!(entry->GetSSL().content_status &
                   SSLStatus::DISPLAYED_INSECURE_CONTENT));
-  EXPECT_TRUE(
-      https_server.GetCertificate()->Equals(entry->GetSSL().certificate.get()));
+  EXPECT_TRUE(https_server.GetCertificate()->EqualsExcludingChain(
+      entry->GetSSL().certificate.get()));
   EXPECT_FALSE(net::IsCertStatusError(entry->GetSSL().cert_status));
 
   shell()->Close();
@@ -2796,7 +2801,7 @@ class CacheStorageSideDataSizeChecker
 
   void OpenCacheOnIOThread(int* result, const base::Closure& continuation) {
     cache_storage_context_->cache_manager()->OpenCache(
-        url::Origin::Create(origin_), cache_name_,
+        url::Origin::Create(origin_), CacheStorageOwner::kCacheAPI, cache_name_,
         base::BindOnce(&self::OnCacheStorageOpenCallback, this, result,
                        continuation));
   }
@@ -2810,7 +2815,7 @@ class CacheStorageSideDataSizeChecker
         new ServiceWorkerFetchRequest());
     scoped_request->url = url_;
     CacheStorageCache* cache = cache_handle.value();
-    cache->Match(std::move(scoped_request), CacheStorageCacheQueryParams(),
+    cache->Match(std::move(scoped_request), nullptr,
                  base::BindOnce(&self::OnCacheStorageCacheMatchCallback, this,
                                 result, continuation, std::move(cache_handle)));
   }

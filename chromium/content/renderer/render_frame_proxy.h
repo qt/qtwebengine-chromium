@@ -10,7 +10,7 @@
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "content/common/content_export.h"
 #include "content/common/frame_messages.h"
-#include "content/common/frame_resize_params.h"
+#include "content/common/frame_visual_properties.h"
 #include "content/public/common/screen_info.h"
 #include "content/renderer/child_frame_compositor.h"
 #include "ipc/ipc_listener.h"
@@ -123,6 +123,9 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   // IPC::Sender
   bool Send(IPC::Message* msg) override;
 
+  // IPC::Listener
+  bool OnMessageReceived(const IPC::Message& msg) override;
+
   // Out-of-process child frames receive a signal from RenderWidgetCompositor
   // when a compositor frame will begin.
   void WillBeginCompositorFrame();
@@ -130,6 +133,10 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   // Out-of-process child frames receive a signal from RenderWidget when the
   // ScreenInfo has changed.
   void OnScreenInfoChanged(const ScreenInfo& screen_info);
+
+  // Invoked by RenderWidget when a new capture sequence number was set,
+  // indicating that surfaces should be synchronized.
+  void UpdateCaptureSequenceNumber(uint32_t capture_sequence_number);
 
   // Pass replicated information, such as security origin, to this
   // RenderFrameProxy's WebRemoteFrame.
@@ -154,22 +161,18 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
       std::unique_ptr<MusEmbeddedFrame> mus_embedded_frame);
 #endif
 
-  void WasResized();
+  void SynchronizeVisualProperties();
 
   const gfx::Rect& screen_space_rect() const {
-    return pending_resize_params_.screen_space_rect;
+    return pending_visual_properties_.screen_space_rect;
   }
 
   const gfx::Size& local_frame_size() const {
-    return pending_resize_params_.local_frame_size;
+    return pending_visual_properties_.local_frame_size;
   }
 
   const ScreenInfo& screen_info() const {
-    return pending_resize_params_.screen_info;
-  }
-
-  uint64_t auto_size_sequence_number() const {
-    return pending_resize_params_.auto_resize_sequence_number;
+    return pending_visual_properties_.screen_info;
   }
 
   const viz::FrameSinkId& frame_sink_id() const { return frame_sink_id_; }
@@ -183,13 +186,15 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
                           blink::WebDOMMessageEvent event,
                           bool has_user_gesture) override;
   void Navigate(const blink::WebURLRequest& request,
-                bool should_replace_current_entry) override;
+                bool should_replace_current_entry,
+                mojo::ScopedMessagePipeHandle blob_url_token) override;
   void FrameRectsChanged(const blink::WebRect& local_frame_rect,
                          const blink::WebRect& screen_space_rect) override;
   void UpdateRemoteViewportIntersection(
       const blink::WebRect& viewport_intersection) override;
   void VisibilityChanged(bool visible) override;
   void SetIsInert(bool) override;
+  void SetInheritedEffectiveTouchAction(cc::TouchAction) override;
   void UpdateRenderThrottlingStatus(bool is_throttled,
                                     bool subtree_throttled) override;
   void DidChangeOpener(blink::WebFrame* opener) override;
@@ -212,9 +217,6 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   void ResendResizeParams();
 
   void SetChildFrameSurface(const viz::SurfaceInfo& surface_info);
-
-  // IPC::Listener
-  bool OnMessageReceived(const IPC::Message& msg) override;
 
   // IPC handlers
   void OnDeleteProxy();
@@ -250,7 +252,9 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   void OnSetHasReceivedUserGesture();
   void OnScrollRectToVisible(const gfx::Rect& rect_to_scroll,
                              const blink::WebScrollIntoViewParams& params);
-  void OnResizeDueToAutoResize(uint64_t sequence_number);
+  void OnBubbleLogicalScroll(blink::WebScrollDirection direction,
+                             blink::WebScrollGranularity granularity);
+  void OnDidUpdateVisualProperties(const cc::RenderFrameMetadata& metadata);
   void OnEnableAutoResize(const gfx::Size& min_size, const gfx::Size& max_size);
   void OnDisableAutoResize();
   void OnSetHasReceivedUserGestureBeforeNavigation(bool value);
@@ -264,9 +268,12 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
 #endif
 
   // ChildFrameCompositor:
-  blink::WebLayer* GetLayer() override;
-  void SetLayer(std::unique_ptr<blink::WebLayer> web_layer) override;
+  cc::Layer* GetLayer() override;
+  void SetLayer(scoped_refptr<cc::Layer> layer,
+                bool prevent_contents_opaque_changes) override;
   SkBitmap* GetSadPageBitmap() override;
+
+  const viz::LocalSurfaceId& GetLocalSurfaceId() const;
 
   // The routing ID by which this RenderFrameProxy is known.
   const int routing_id_;
@@ -292,16 +299,15 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   // therefore don't care to synchronize ResizeParams with viz::LocalSurfaceIds.
   // Perhaps this can be moved to ChildFrameCompositingHelper?
   // The last ResizeParams sent to the browser process, if any.
-  base::Optional<FrameResizeParams> sent_resize_params_;
+  base::Optional<FrameVisualProperties> sent_visual_properties_;
 
   // The current set of ResizeParams. This may or may not match
-  // |sent_resize_params_|.
-  FrameResizeParams pending_resize_params_;
+  // |sent_visual_properties_|.
+  FrameVisualProperties pending_visual_properties_;
 
   bool crashed_ = false;
 
   viz::FrameSinkId frame_sink_id_;
-  viz::LocalSurfaceId local_surface_id_;
   viz::ParentLocalSurfaceIdAllocator parent_local_surface_id_allocator_;
 
   bool enable_surface_synchronization_ = false;
@@ -314,7 +320,7 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
 #endif
 
   // The layer used to embed the out-of-process content.
-  std::unique_ptr<blink::WebLayer> web_layer_;
+  scoped_refptr<cc::Layer> embedded_layer_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderFrameProxy);
 };

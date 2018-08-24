@@ -4,9 +4,11 @@
 
 #include "third_party/blink/renderer/core/paint/pre_paint_tree_walk.h"
 
+#include "base/auto_reset.h"
 #include "third_party/blink/renderer/core/dom/document_lifecycle.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
+#include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
 #include "third_party/blink/renderer/core/layout/layout_multi_column_spanner_placeholder.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
@@ -16,7 +18,6 @@
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/paint_property_tree_printer.h"
 #include "third_party/blink/renderer/platform/graphics/paint/geometry_mapper.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 
 namespace blink {
 
@@ -94,12 +95,16 @@ void PrePaintTreeWalk::Walk(LocalFrameView& frame_view) {
   // ancestorOverflowLayer does not cross frame boundaries.
   context().ancestor_overflow_paint_layer = nullptr;
   if (context().tree_builder_context) {
-    FrameViewPaintPropertyTreeBuilder::Update(frame_view,
-                                              *context().tree_builder_context);
+    PaintPropertyTreeBuilder::SetupContextForFrame(
+        frame_view, *context().tree_builder_context);
   }
   paint_invalidator_.InvalidatePaint(
-      frame_view, WTF::OptionalOrNullptr(context().tree_builder_context),
+      frame_view, base::OptionalOrNullptr(context().tree_builder_context),
       context().paint_invalidator_context);
+  if (context().tree_builder_context) {
+    context().tree_builder_context->supports_composited_raster_invalidation =
+        frame_view.GetFrame().GetSettings()->GetAcceleratedCompositingEnabled();
+  }
 
   if (LayoutView* view = frame_view.GetLayoutView()) {
 #ifndef NDEBUG
@@ -117,7 +122,8 @@ void PrePaintTreeWalk::Walk(LocalFrameView& frame_view) {
   }
 
   frame_view.ClearNeedsPaintPropertyUpdate();
-  CompositingLayerPropertyUpdater::Update(frame_view);
+  if (RuntimeEnabledFeatures::JankTrackingEnabled())
+    frame_view.GetJankTracker().NotifyPrePaintFinished();
   context_storage_.pop_back();
 }
 
@@ -207,47 +213,68 @@ bool PrePaintTreeWalk::NeedsTreeBuilderContextUpdate(
 
 void PrePaintTreeWalk::WalkInternal(const LayoutObject& object,
                                     PrePaintTreeWalkContext& context) {
+  PaintInvalidatorContext& paint_invalidator_context =
+      context.paint_invalidator_context;
+
   // This must happen before updatePropertiesForSelf, because the latter reads
   // some of the state computed here.
   UpdateAuxiliaryObjectProperties(object, context);
 
-  Optional<ObjectPaintPropertyTreeBuilder> property_tree_builder;
+  base::Optional<PaintPropertyTreeBuilder> property_tree_builder;
   bool property_changed = false;
   if (context.tree_builder_context) {
     property_tree_builder.emplace(object, *context.tree_builder_context);
     property_changed = property_tree_builder->UpdateForSelf();
 
     if (context.tree_builder_context->clip_changed) {
-      context.paint_invalidator_context.subtree_flags |=
+      paint_invalidator_context.subtree_flags |=
           PaintInvalidatorContext::kSubtreeVisualRectUpdate;
+    }
+
+    if (property_changed &&
+        RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
+        !context.tree_builder_context
+             ->supports_composited_raster_invalidation) {
+      paint_invalidator_context.subtree_flags |=
+          PaintInvalidatorContext::kSubtreeFullInvalidation;
     }
   }
 
   paint_invalidator_.InvalidatePaint(
-      object, WTF::OptionalOrNullptr(context.tree_builder_context),
-      context.paint_invalidator_context);
+      object, base::OptionalOrNullptr(context.tree_builder_context),
+      paint_invalidator_context);
 
   if (context.tree_builder_context) {
     property_changed |= property_tree_builder->UpdateForChildren();
     InvalidatePaintLayerOptimizationsIfNeeded(object, context);
 
     if (property_changed &&
-        RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
-        !RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
-      const auto* paint_invalidation_layer =
-          context.paint_invalidator_context.paint_invalidation_container
-              ->Layer();
-      if (!paint_invalidation_layer->NeedsRepaint()) {
-        auto* mapping = paint_invalidation_layer->GetCompositedLayerMapping();
-        if (!mapping)
-          mapping = paint_invalidation_layer->GroupedMapping();
-        if (mapping)
-          mapping->SetNeedsCheckRasterInvalidation();
+        RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
+      if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+        const auto* paint_invalidation_layer =
+            paint_invalidator_context.paint_invalidation_container->Layer();
+        if (!paint_invalidation_layer->NeedsRepaint()) {
+          auto* mapping = paint_invalidation_layer->GetCompositedLayerMapping();
+          if (!mapping)
+            mapping = paint_invalidation_layer->GroupedMapping();
+          if (mapping)
+            mapping->SetNeedsCheckRasterInvalidation();
+        }
+      } else if (!context.tree_builder_context
+                      ->supports_composited_raster_invalidation) {
+        paint_invalidator_context.subtree_flags |=
+            PaintInvalidatorContext::kSubtreeFullInvalidation;
       }
     }
   }
 
   CompositingLayerPropertyUpdater::Update(object);
+
+  if (RuntimeEnabledFeatures::JankTrackingEnabled()) {
+    object.GetFrameView()->GetJankTracker().NotifyObjectPrePaint(
+        object, paint_invalidator_context.old_visual_rect,
+        *paint_invalidator_context.painting_layer);
+  }
 }
 
 void PrePaintTreeWalk::Walk(const LayoutObject& object) {

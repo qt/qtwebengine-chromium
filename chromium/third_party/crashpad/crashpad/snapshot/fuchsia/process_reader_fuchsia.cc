@@ -20,8 +20,56 @@
 #include "base/fuchsia/fuchsia_logging.h"
 #include "base/fuchsia/scoped_zx_handle.h"
 #include "base/logging.h"
+#include "util/fuchsia/koid_utilities.h"
 
 namespace crashpad {
+
+namespace {
+
+// Based on the thread's SP and the process's memory map, attempts to figure out
+// the stack regions for the thread. Fuchsia's C ABI specifies
+// https://fuchsia.googlesource.com/zircon/+/master/docs/safestack.md so the
+// callstack and locals-that-have-their-address-taken are in two different
+// stacks.
+void GetStackRegions(
+    const zx_thread_state_general_regs_t& regs,
+    const MemoryMapFuchsia& memory_map,
+    std::vector<CheckedRange<zx_vaddr_t, size_t>>* stack_regions) {
+  stack_regions->clear();
+
+  uint64_t sp;
+#if defined(ARCH_CPU_X86_64)
+  sp = regs.rsp;
+#elif defined(ARCH_CPU_ARM64)
+  sp = regs.sp;
+#else
+#error Port
+#endif
+
+  zx_info_maps_t range_with_sp;
+  if (!memory_map.FindMappingForAddress(sp, &range_with_sp)) {
+    LOG(ERROR) << "stack pointer not found in mapping";
+    return;
+  }
+
+  if (range_with_sp.type != ZX_INFO_MAPS_TYPE_MAPPING) {
+    LOG(ERROR) << "stack range has unexpected type, continuing anyway";
+  }
+
+  if (range_with_sp.u.mapping.mmu_flags & ZX_VM_FLAG_PERM_EXECUTE) {
+    LOG(ERROR)
+        << "stack range is unexpectedly marked executable, continuing anyway";
+  }
+
+  stack_regions->push_back(
+      CheckedRange<zx_vaddr_t, size_t>(range_with_sp.base, range_with_sp.size));
+
+  // TODO(scottmg): https://crashpad.chromium.org/bug/196, once the retrievable
+  // registers include FS and similar for ARM, retrieve the region for the
+  // unsafe part of the stack too.
+}
+
+}  // namespace
 
 ProcessReaderFuchsia::Module::Module() = default;
 
@@ -42,6 +90,8 @@ bool ProcessReaderFuchsia::Initialize(zx_handle_t process) {
 
   process_memory_.reset(new ProcessMemoryFuchsia());
   process_memory_->Initialize(process_);
+
+  memory_map_.Initialize(process_);
 
   INITIALIZATION_STATE_SET_VALID(initialized_);
   return true;
@@ -80,7 +130,7 @@ void ProcessReaderFuchsia::InitializeModules() {
   // retrieves (some of) the data into internal structures. It may be worth
   // trying to refactor/upstream some of this into Fuchsia.
 
-  std::string app_name("app:");
+  std::string app_name;
   {
     char name[ZX_MAX_NAME_LEN];
     zx_status_t status =
@@ -90,7 +140,7 @@ void ProcessReaderFuchsia::InitializeModules() {
       return;
     }
 
-    app_name += name;
+    app_name = name;
   }
 
   // Starting from the ld.so's _dl_debug_addr, read the link_map structure and
@@ -156,6 +206,16 @@ void ProcessReaderFuchsia::InitializeModules() {
       LOG(ERROR) << "ReadCString name";
     }
 
+    // The vDSO is libzircon.so, but it's not actually loaded normally, it's
+    // injected by the kernel, so doesn't have a normal name. When dump_syms is
+    // run on libzircon.so, it uses that file name, and in order for the crash
+    // server to match symbols both the debug id and the name of the binary have
+    // to match. So, map from "<vDSO>" to "libzircon.so" so that symbol
+    // resolution works correctly.
+    if (dsoname == "<vDSO>") {
+      dsoname = "libzircon.so";
+    }
+
     Module module;
     if (dsoname.empty()) {
       module.name = app_name;
@@ -189,74 +249,51 @@ void ProcessReaderFuchsia::InitializeThreads() {
 
   initialized_threads_ = true;
 
-  // Retrieve the thread koids. This is racy; better if the process is suspended
-  // itself, but threads could still be externally created. As there's no
-  // maximum, this needs to be retried in a loop until the actual threads
-  // retrieved is equal to the available threads.
+  std::vector<zx_koid_t> thread_koids =
+      GetChildKoids(process_, ZX_INFO_PROCESS_THREADS);
+  std::vector<base::ScopedZxHandle> thread_handles =
+      GetHandlesForChildKoids(process_, thread_koids);
+  DCHECK_EQ(thread_koids.size(), thread_handles.size());
 
-  std::vector<zx_koid_t> threads(100);
-  size_t actual_num_threads, available_num_threads;
-  for (;;) {
-    zx_status_t status = zx_object_get_info(process_,
-                                            ZX_INFO_PROCESS_THREADS,
-                                            &threads[0],
-                                            sizeof(threads[0]) * threads.size(),
-                                            &actual_num_threads,
-                                            &available_num_threads);
-    // If the buffer is too small (even zero), the result is still ZX_OK, not
-    // ZX_ERR_BUFFER_TOO_SMALL.
-    if (status != ZX_OK) {
-      ZX_LOG(ERROR, status) << "zx_object_get_info ZX_INFO_PROCESS_THREADS";
-      break;
-    }
-    if (actual_num_threads == available_num_threads) {
-      threads.resize(actual_num_threads);
-      break;
-    }
-
-    // Resize to the expected number next time with a bit extra to attempt to
-    // handle the race between here and the next request.
-    threads.resize(available_num_threads + 10);
-  }
-
-  for (const zx_koid_t thread_koid : threads) {
-    zx_handle_t raw_handle;
-    zx_status_t status = zx_object_get_child(
-        process_, thread_koid, ZX_RIGHT_SAME_RIGHTS, &raw_handle);
-    if (status != ZX_OK) {
-      ZX_LOG(ERROR, status) << "zx_object_get_child";
-      // TODO(scottmg): Decide if it's worthwhile adding a mostly-empty Thread
-      // here, consisting only of the koid, but no other information. The only
-      // time this is expected to happen is when there's a race between getting
-      // the koid above, and requesting the handle here.
-      continue;
-    }
-
-    base::ScopedZxHandle thread_handle(raw_handle);
-
+  for (size_t i = 0; i < thread_handles.size(); ++i) {
     Thread thread;
-    thread.id = thread_koid;
+    thread.id = thread_koids[i];
 
-    char name[ZX_MAX_NAME_LEN] = {0};
-    status = zx_object_get_property(
-        thread_handle.get(), ZX_PROP_NAME, &name, sizeof(name));
-    if (status != ZX_OK) {
-      ZX_LOG(WARNING, status) << "zx_object_get_property ZX_PROP_NAME";
-    } else {
-      thread.name.assign(name);
-    }
+    if (thread_handles[i].is_valid()) {
+      char name[ZX_MAX_NAME_LEN] = {0};
+      zx_status_t status = zx_object_get_property(
+          thread_handles[i].get(), ZX_PROP_NAME, &name, sizeof(name));
+      if (status != ZX_OK) {
+        ZX_LOG(WARNING, status) << "zx_object_get_property ZX_PROP_NAME";
+      } else {
+        thread.name.assign(name);
+      }
 
-    zx_info_thread_t thread_info;
-    status = zx_object_get_info(thread_handle.get(),
-                                ZX_INFO_THREAD,
-                                &thread_info,
-                                sizeof(thread_info),
-                                nullptr,
-                                nullptr);
-    if (status != ZX_OK) {
-      ZX_LOG(WARNING, status) << "zx_object_get_info ZX_INFO_THREAD";
-    } else {
-      thread.state = thread_info.state;
+      zx_info_thread_t thread_info;
+      status = zx_object_get_info(thread_handles[i].get(),
+                                  ZX_INFO_THREAD,
+                                  &thread_info,
+                                  sizeof(thread_info),
+                                  nullptr,
+                                  nullptr);
+      if (status != ZX_OK) {
+        ZX_LOG(WARNING, status) << "zx_object_get_info ZX_INFO_THREAD";
+      } else {
+        thread.state = thread_info.state;
+      }
+
+      zx_thread_state_general_regs_t regs;
+      status = zx_thread_read_state(thread_handles[i].get(),
+                                    ZX_THREAD_STATE_GENERAL_REGS,
+                                    &regs,
+                                    sizeof(regs));
+      if (status != ZX_OK) {
+        ZX_LOG(WARNING, status) << "zx_thread_read_state";
+      } else {
+        thread.general_registers = regs;
+
+        GetStackRegions(regs, memory_map_, &thread.stack_regions);
+      }
     }
 
     threads_.push_back(thread);

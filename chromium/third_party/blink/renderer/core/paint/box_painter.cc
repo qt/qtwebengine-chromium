@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/paint/box_painter.h"
 
+#include "base/optional.h"
 #include "third_party/blink/renderer/core/layout/background_bleed_avoidance.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
@@ -28,7 +29,6 @@
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/scoped_paint_chunk_properties.h"
 #include "third_party/blink/renderer/platform/length_functions.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 
 namespace blink {
 
@@ -57,8 +57,8 @@ void BoxPainter::PaintChildren(const PaintInfo& paint_info,
 void BoxPainter::PaintBoxDecorationBackground(const PaintInfo& paint_info,
                                               const LayoutPoint& paint_offset) {
   LayoutRect paint_rect;
-  Optional<ScrollRecorder> scroll_recorder;
-  Optional<ScopedPaintChunkProperties> scoped_scroll_property;
+  base::Optional<ScrollRecorder> scroll_recorder;
+  base::Optional<ScopedPaintChunkProperties> scoped_scroll_property;
   if (BoxModelObjectPainter::
           IsPaintingBackgroundOfPaintContainerIntoScrollingContentsLayer(
               &layout_box_, paint_info)) {
@@ -70,10 +70,6 @@ void BoxPainter::PaintBoxDecorationBackground(const PaintInfo& paint_info,
     scroll_recorder.emplace(paint_info.context, layout_box_, paint_info.phase,
                             layout_box_.ScrolledContentOffset());
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      DCHECK_EQ(layout_box_.HasHiddenBackface(),
-                paint_info.context.GetPaintController()
-                    .CurrentPaintChunkProperties()
-                    .backface_hidden);
       if (const auto* fragment = paint_info.FragmentToPaint(layout_box_)) {
         scoped_scroll_property.emplace(
             paint_info.context.GetPaintController(),
@@ -116,7 +112,7 @@ void BoxPainter::PaintBoxDecorationBackgroundWithRect(
           &layout_box_, paint_info);
   const ComputedStyle& style = layout_box_.StyleRef();
 
-  Optional<DisplayItemCacheSkipper> cache_skipper;
+  base::Optional<DisplayItemCacheSkipper> cache_skipper;
   // Disable cache in under-invalidation checking mode for MediaSliderPart
   // because we always paint using the latest data (buffered ranges, current
   // time and duration) which may be different from the cached data, and for
@@ -255,9 +251,17 @@ void BoxPainter::PaintMask(const PaintInfo& paint_info,
 
 void BoxPainter::PaintMaskImages(const PaintInfo& paint_info,
                                  const LayoutRect& paint_rect) {
+  // For mask images legacy layout painting handles multi-line boxes by giving
+  // the full width of the element, not the current line box, thereby clipping
+  // the offending edges.
+  bool include_logical_left_edge = true;
+  bool include_logical_right_edge = true;
+
   BackgroundImageGeometry geometry(layout_box_);
   BoxModelObjectPainter painter(layout_box_);
-  painter.PaintMaskImages(paint_info, paint_rect, layout_box_, geometry);
+  painter.PaintMaskImages(paint_info, paint_rect, layout_box_, geometry,
+                          include_logical_left_edge,
+                          include_logical_right_edge);
 }
 
 void BoxPainter::PaintClippingMask(const PaintInfo& paint_info,

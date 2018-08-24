@@ -28,6 +28,7 @@
 #include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/account_id/account_id.h"
 #include "components/browser_sync/profile_sync_service_mock.h"
 #include "components/prefs/pref_service.h"
 #include "components/signin/core/browser/account_tracker_service.h"
@@ -150,7 +151,7 @@ class FakeUserPolicySigninService : public policy::UserPolicySigninService {
 
   // policy::UserPolicySigninServiceBase:
   void FetchPolicyForSignedInUser(
-      const std::string& username,
+      const AccountId& account_id,
       const std::string& dm_token,
       const std::string& client_id,
       scoped_refptr<net::URLRequestContextGetter> profile_request_context,

@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_SCRIPT_WRAPPABLE_MARKING_VISITOR_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_SCRIPT_WRAPPABLE_MARKING_VISITOR_H_
 
+#include "base/gtest_prod_util.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable_visitor.h"
 #include "third_party/blink/renderer/platform/heap/heap_page.h"
 #include "third_party/blink/renderer/platform/heap/threading_traits.h"
@@ -55,14 +56,14 @@ class PLATFORM_EXPORT ScriptWrappableMarkingVisitor
   // alive in the current GC cycle.
   template <typename T>
   static void WriteBarrier(const T* dst_object) {
-    if (!dst_object)
+    if (!ThreadState::IsAnyWrapperTracing() || !dst_object)
       return;
 
     const ThreadState* thread_state =
         ThreadStateFor<ThreadingTrait<T>::kAffinity>::GetState();
     DCHECK(thread_state);
     // Bail out if tracing is not in progress.
-    if (!thread_state->WrapperTracingInProgress())
+    if (!thread_state->IsWrapperTracing())
       return;
 
     // If the wrapper is already marked we can bail out here.
@@ -71,7 +72,8 @@ class PLATFORM_EXPORT ScriptWrappableMarkingVisitor
       return;
 
     CurrentVisitor(thread_state->GetIsolate())
-        ->Visit(WrapperDescriptorFor(dst_object));
+        ->Visit(const_cast<T*>(dst_object),
+                TraceWrapperDescriptorFor(dst_object));
   }
 
   static void WriteBarrier(v8::Isolate*,
@@ -97,12 +99,14 @@ class PLATFORM_EXPORT ScriptWrappableMarkingVisitor
   void EnterFinalPause() override;
   size_t NumberOfWrappersToTrace() override;
 
- protected:
-  // ScriptWrappableVisitor interface.
-  void Visit(const TraceWrapperV8Reference<v8::Value>&) const override;
-  void Visit(const TraceWrapperDescriptor&) const override;
+  // Visitor interface.
+  void Visit(const TraceWrapperV8Reference<v8::Value>&) override;
+  void Visit(void*, TraceWrapperDescriptor) override;
   void Visit(DOMWrapperMap<ScriptWrappable>*,
-             const ScriptWrappable* key) const override;
+             const ScriptWrappable* key) override;
+
+ protected:
+  using Visitor::Visit;
 
   v8::Isolate* isolate() const { return isolate_; }
 
@@ -145,7 +149,7 @@ class PLATFORM_EXPORT ScriptWrappableMarkingVisitor
     TraceWrappersCallback trace_wrappers_callback_;
   };
 
-  void MarkWrapperHeader(HeapObjectHeader*) const;
+  void MarkWrapperHeader(HeapObjectHeader*);
 
   // Schedule an idle task to perform a lazy (incremental) clean up of
   // wrappers.
@@ -157,10 +161,7 @@ class PLATFORM_EXPORT ScriptWrappableMarkingVisitor
   // Immediately cleans up all wrappers if necessary.
   void PerformCleanup();
 
-  WTF::Deque<MarkingDequeItem>* MarkingDeque() const { return &marking_deque_; }
-  WTF::Vector<HeapObjectHeader*>* HeadersToUnmark() const {
-    return &headers_to_unmark_;
-  }
+  WTF::Deque<MarkingDequeItem>* MarkingDeque() { return &marking_deque_; }
 
   bool MarkingDequeContains(void* needle);
 
@@ -187,7 +188,7 @@ class PLATFORM_EXPORT ScriptWrappableMarkingVisitor
   // - oilpan object cannot move
   // - oilpan gc will call invalidateDeadObjectsInMarkingDeque to delete all
   //   obsolete objects
-  mutable WTF::Deque<MarkingDequeItem> marking_deque_;
+  WTF::Deque<MarkingDequeItem> marking_deque_;
 
   // Collection of objects we started tracing from. We assume it is safe to
   // hold on to the raw pointers because:
@@ -198,14 +199,14 @@ class PLATFORM_EXPORT ScriptWrappableMarkingVisitor
   // These objects are used when TraceWrappablesVerifier feature is enabled to
   // verify that all objects reachable in the atomic pause were marked
   // incrementally. If not, there is one or multiple write barriers missing.
-  mutable WTF::Deque<MarkingDequeItem> verifier_deque_;
+  WTF::Deque<MarkingDequeItem> verifier_deque_;
 
   // Collection of headers we need to unmark after the tracing finished. We
   // assume it is safe to hold on to the headers because:
   // - oilpan objects cannot move
   // - objects this headers belong to are invalidated by the oilpan GC in
   //   invalidateDeadObjectsInMarkingDeque.
-  mutable WTF::Vector<HeapObjectHeader*> headers_to_unmark_;
+  WTF::Vector<HeapObjectHeader*> headers_to_unmark_;
   v8::Isolate* isolate_;
 
   FRIEND_TEST_ALL_PREFIXES(ScriptWrappableMarkingVisitorTest, MixinTracing);

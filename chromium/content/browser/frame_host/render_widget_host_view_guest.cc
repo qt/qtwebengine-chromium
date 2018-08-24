@@ -10,7 +10,6 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
 #include "build/build_config.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "components/viz/service/surfaces/surface.h"
@@ -95,6 +94,10 @@ RenderWidgetHostViewBase* RenderWidgetHostViewGuest::GetRootView(
                ->GetRootRenderWidgetHostView();
   }
   return rwhv;
+}
+
+RenderWidgetHostViewBase* RenderWidgetHostViewGuest::GetParentView() {
+  return GetOwnerRenderWidgetHostView();
 }
 
 RenderWidgetHostViewGuest::RenderWidgetHostViewGuest(
@@ -246,8 +249,11 @@ gfx::Rect RenderWidgetHostViewGuest::GetBoundsInRootWindow() {
 
 gfx::PointF RenderWidgetHostViewGuest::TransformPointToRootCoordSpaceF(
     const gfx::PointF& point) {
-  if (!guest_ || !last_received_local_surface_id_.is_valid())
+  // LocalSurfaceId is not needed in Viz hit-test.
+  if (!guest_ ||
+      (!use_viz_hit_test_ && !last_received_local_surface_id_.is_valid())) {
     return point;
+  }
 
   RenderWidgetHostViewBase* root_rwhv = GetRootView(this);
   if (!root_rwhv)
@@ -266,7 +272,7 @@ gfx::PointF RenderWidgetHostViewGuest::TransformPointToRootCoordSpaceF(
   return transformed_point;
 }
 
-bool RenderWidgetHostViewGuest::TransformPointToLocalCoordSpace(
+bool RenderWidgetHostViewGuest::TransformPointToLocalCoordSpaceLegacy(
     const gfx::PointF& point,
     const viz::SurfaceId& original_surface,
     gfx::PointF* transformed_point) {
@@ -369,6 +375,13 @@ void RenderWidgetHostViewGuest::SendSurfaceInfoToEmbedderImpl(
     const viz::SurfaceInfo& surface_info) {
   if (guest_ && !guest_->is_in_destruction())
     guest_->SetChildFrameSurface(surface_info);
+}
+
+void RenderWidgetHostViewGuest::OnDidUpdateVisualPropertiesComplete(
+    const cc::RenderFrameMetadata& metadata) {
+  if (guest_)
+    guest_->DidUpdateVisualProperties(metadata);
+  host()->SynchronizeVisualProperties();
 }
 
 void RenderWidgetHostViewGuest::OnAttached() {
@@ -548,6 +561,13 @@ void RenderWidgetHostViewGuest::UnlockMouse() {
   platform_view_->UnlockMouse();
 }
 
+viz::FrameSinkId RenderWidgetHostViewGuest::GetRootFrameSinkId() {
+  RenderWidgetHostViewBase* root_rwhv = GetRootView(this);
+  if (root_rwhv)
+    return root_rwhv->GetRootFrameSinkId();
+  return viz::FrameSinkId();
+}
+
 viz::LocalSurfaceId RenderWidgetHostViewGuest::GetLocalSurfaceId() const {
   if (guest_)
     return guest_->local_surface_id();
@@ -605,8 +625,7 @@ void RenderWidgetHostViewGuest::MaybeSendSyntheticTapGesture(
         GetOwnerRenderWidgetHostView()->GetBoundsInRootWindow().origin();
     blink::WebGestureEvent gesture_tap_event(
         blink::WebGestureEvent::kGestureTapDown,
-        blink::WebInputEvent::kNoModifiers,
-        ui::EventTimeStampToSeconds(ui::EventTimeForNow()),
+        blink::WebInputEvent::kNoModifiers, ui::EventTimeForNow(),
         blink::kWebGestureDeviceTouchscreen);
     gesture_tap_event.SetPositionInWidget(
         blink::WebFloatPoint(position.x + offset.x(), position.y + offset.y()));
@@ -689,16 +708,12 @@ void RenderWidgetHostViewGuest::DisableAutoResize(const gfx::Size& new_size) {
     guest_->DisableAutoResize();
 }
 
-viz::ScopedSurfaceIdAllocator RenderWidgetHostViewGuest::ResizeDueToAutoResize(
-    const gfx::Size& new_size,
-    uint64_t sequence_number) {
-  // TODO(cblume): This doesn't currently suppress allocation.
-  // It maintains existing behavior while using the suppression style.
-  // This will be addressed in a follow-up patch.
-  // See https://crbug.com/805073
-  base::OnceCallback<void()> allocation_task =
-      base::BindOnce(&BrowserPluginGuest::ResizeDueToAutoResize, guest_,
-                     new_size, sequence_number);
+viz::ScopedSurfaceIdAllocator
+RenderWidgetHostViewGuest::DidUpdateVisualProperties(
+    const cc::RenderFrameMetadata& metadata) {
+  base::OnceCallback<void()> allocation_task = base::BindOnce(
+      &RenderWidgetHostViewGuest::OnDidUpdateVisualPropertiesComplete,
+      weak_ptr_factory_.GetWeakPtr(), metadata);
   return viz::ScopedSurfaceIdAllocator(std::move(allocation_task));
 }
 

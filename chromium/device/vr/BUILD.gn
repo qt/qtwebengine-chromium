@@ -65,16 +65,21 @@ if (enable_vr) {
         "android/gvr/gvr_gamepad_data_provider.h",
       ]
 
+      if (enable_arcore) {
+        sources += [
+          "android/arcore/arcore_device_provider_factory.cc",
+          "android/arcore/arcore_device_provider_factory.h",
+        ]
+      }
+
       deps += [
         ":jni_headers",
         "//device/gamepad",
         "//device/gamepad/public/cpp:shared_with_blink",
         "//third_party/blink/public:blink_headers",
+        "//third_party/gvr-android-sdk:gvr_shim",
       ]
       ldflags = [ "-landroid" ]
-      libs = [
-        "//third_party/gvr-android-sdk/libgvr_shim_static_${current_cpu}.a",
-      ]
       configs += [ "//third_party/gvr-android-sdk:libgvr_config" ]
     }
 

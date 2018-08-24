@@ -40,49 +40,48 @@ state.Style()->{{property.setter}}
   {{declare_value()}};
   {% else %}
     {# full implementation #}
-    {% if not property.custom_apply_functions_initial %}
+    {% if not property.style_builder_template %}
+      {% if property.style_builder_generate_initial %}
   {{declare_initial()}} {
-      {% if property.svg %}
+        {% if property.svg %}
     {{set_value(property)}}(SVGComputedStyle::{{property.initial}}());
-      {% elif property.font %}
+        {% elif property.font %}
     {{set_value(property)}}(FontBuilder::{{property.initial}}());
-      {% else %}
+        {% else %}
     {{set_value(property)}}(ComputedStyleInitialValues::{{property.initial}}());
-      {% endif %}
-      {% if property.independent %}
-    state.Style()->{{property.is_inherited_setter}}(false);
-      {% endif %}
-  }
-    {% endif %}
-    {% if not property.custom_apply_functions_inherit %}
-  {{declare_inherit()}} {
-      {% if property.svg %}
-    {{set_value(property)}}(state.ParentStyle()->SvgStyle().{{property.getter}}());
-      {% elif property.font %}
-    {{set_value(property)}}(state.ParentFontDescription().{{property.getter}}());
-      {% else %}
-    {{set_value(property)}}(state.ParentStyle()->{{property.getter}}());
-      {% endif %}
-      {% if property.independent %}
-    state.Style()->{{property.is_inherited_setter}}(true);
-      {% endif %}
-  }
-    {% endif %}
-    {% if not property.custom_apply_functions_value %}
-  {{declare_value()}} {
-    {{convert_and_set_value(property)}}
+        {% endif %}
         {% if property.independent %}
     state.Style()->{{property.is_inherited_setter}}(false);
         {% endif %}
   }
-    {% endif %}
-    {% if property.custom_apply == "auto" %}
-      {% set auto_getter = property.custom_apply_args['auto_getter'] or
+      {% endif %}
+      {% if property.style_builder_generate_inherit %}
+  {{declare_inherit()}} {
+        {% if property.svg %}
+    {{set_value(property)}}(state.ParentStyle()->SvgStyle().{{property.getter}}());
+        {% elif property.font %}
+    {{set_value(property)}}(state.ParentFontDescription().{{property.getter}}());
+        {% else %}
+    {{set_value(property)}}(state.ParentStyle()->{{property.getter}}());
+        {% endif %}
+        {% if property.independent %}
+    state.Style()->{{property.is_inherited_setter}}(true);
+        {% endif %}
+  }
+      {% endif %}
+      {% if property.style_builder_generate_value %}
+  {{declare_value()}} {
+    {{convert_and_set_value(property)}}
+          {% if property.independent %}
+    state.Style()->{{property.is_inherited_setter}}(false);
+          {% endif %}
+  }
+      {% endif %}
+    {% elif property.style_builder_template == "auto" %}
+      {% set auto_getter = property.style_builder_template_args['auto_getter'] or
                          'HasAuto' + property.name_for_methods %}
-      {% set auto_setter = property.custom_apply_args['auto_setter'] or
+      {% set auto_setter = property.style_builder_template_args['auto_setter'] or
                          'SetHasAuto' + property.name_for_methods %}
-      {% set auto_identity = property.custom_apply_args['auto_identity'] or
-                           'CSSValueAuto' %}
   {{declare_initial()}} {
     state.Style()->{{auto_setter}}();
   }
@@ -94,16 +93,16 @@ state.Style()->{{property.setter}}
   }
   {{declare_value()}} {
     if (value.IsIdentifierValue() &&
-        ToCSSIdentifierValue(value).GetValueID() == {{auto_identity}})
+        ToCSSIdentifierValue(value).GetValueID() == CSSValueAuto)
       state.Style()->{{auto_setter}}();
     else
       {{convert_and_set_value(property)}}
   }
-    {% elif property.custom_apply == "border_image" %}
-    {% set is_mask_box = property.custom_apply_args['is_mask_box'] %}
-    {% set modifier_type = property.custom_apply_args['modifier_type'] %}
-    {% set getter = property.custom_apply_args['getter'] %}
-    {% set setter = property.custom_apply_args['setter'] %}
+    {% elif property.style_builder_template in ['border_image', 'mask_box'] %}
+    {% set is_mask_box = property.style_builder_template == 'mask_box' %}
+    {% set modifier_type = property.style_builder_template_args['modifier_type'] %}
+    {% set getter = 'MaskBoxImage' if is_mask_box else 'BorderImage' %}
+    {% set setter = 'Set' + getter %}
   {{declare_initial()}} {
     const NinePieceImage& currentImage = state.Style()->{{getter}}();
     {# Check for equality in case we can bail out before creating a new NinePieceImage. #}
@@ -178,6 +177,30 @@ state.Style()->{{property.setter}}
     image.SetBorderSlices(CSSToStyleMap::MapNinePieceImageQuad(state, value));
       {% endif %}
     state.Style()->{{setter}}(image);
+  }
+    {% elif property.style_builder_template in ['animation', 'transition'] %}
+    {% set attribute = property.style_builder_template_args['attribute'] %}
+    {% set animation = 'Animation' if property.style_builder_template == 'animation' else 'Transition' %}
+    {% set vector = attribute + "List()" %}
+  {{declare_initial()}} {
+    CSS{{animation}}Data& data = state.Style()->Access{{animation}}s();
+    data.{{vector}}.clear();
+    data.{{vector}}.push_back(CSS{{animation}}Data::Initial{{attribute}}());
+  }
+
+  {{declare_inherit()}} {
+    const CSS{{animation}}Data* parentData = state.ParentStyle()->{{animation}}s();
+    if (!parentData)
+      ApplyInitial{{property_id}}(state);
+    else
+      state.Style()->Access{{animation}}s().{{vector}} = parentData->{{vector}};
+  }
+
+  {{declare_value()}} {
+    CSS{{animation}}Data& data = state.Style()->Access{{animation}}s();
+    data.{{vector}}.clear();
+    for (auto& listValue : ToCSSValueList(value))
+      data.{{vector}}.push_back(CSSToStyleMap::MapAnimation{{attribute}}(*listValue));
   }
     {% endif %}
   {%- endif %}

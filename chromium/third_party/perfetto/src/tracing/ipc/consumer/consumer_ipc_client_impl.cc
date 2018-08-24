@@ -23,10 +23,9 @@
 #include "perfetto/ipc/client.h"
 #include "perfetto/tracing/core/consumer.h"
 #include "perfetto/tracing/core/trace_config.h"
-#include "perfetto/tracing/core/trace_packet.h"
 
-// TODO Add a test to check to what happens when ConsumerIPCClientImpl gets
-// destroyed w.r.t. the Consumer pointer. Also think to lifetime of the
+// TODO(fmayer): Add a test to check to what happens when ConsumerIPCClientImpl
+// gets destroyed w.r.t. the Consumer pointer. Also think to lifetime of the
 // Consumer* during the callbacks.
 
 namespace perfetto {
@@ -64,22 +63,28 @@ void ConsumerIPCClientImpl::OnDisconnect() {
   consumer_->OnDisconnect();
 }
 
-void ConsumerIPCClientImpl::EnableTracing(const TraceConfig& trace_config) {
+void ConsumerIPCClientImpl::EnableTracing(const TraceConfig& trace_config,
+                                          base::ScopedFile fd) {
   if (!connected_) {
     PERFETTO_DLOG("Cannot EnableTracing(), not connected to tracing service");
     return;
   }
 
-  // Serialize the |trace_config| into a EnableTracingRequest protobuf.
-  // Keep this in sync with changes in consumer_port.proto.
-  EnableTracingRequest req;
+  protos::EnableTracingRequest req;
   trace_config.ToProto(req.mutable_trace_config());
-  ipc::Deferred<EnableTracingResponse> async_response;
-  async_response.Bind([](ipc::AsyncResult<EnableTracingResponse> response) {
-    if (!response)
-      PERFETTO_DLOG("EnableTracing() failed");
-  });
-  consumer_port_.EnableTracing(req, std::move(async_response));
+  ipc::Deferred<protos::EnableTracingResponse> async_response;
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  async_response.Bind(
+      [weak_this](ipc::AsyncResult<protos::EnableTracingResponse> response) {
+        if (!weak_this)
+          return;
+        if (!response || response->disabled())
+          weak_this->consumer_->OnTracingDisabled();
+      });
+
+  // |fd| will be closed when this function returns, but it's fine because the
+  // IPC layer dup()'s it when sending the IPC.
+  consumer_port_.EnableTracing(req, std::move(async_response), *fd);
 }
 
 void ConsumerIPCClientImpl::DisableTracing() {
@@ -88,12 +93,13 @@ void ConsumerIPCClientImpl::DisableTracing() {
     return;
   }
 
-  ipc::Deferred<DisableTracingResponse> async_response;
-  async_response.Bind([](ipc::AsyncResult<DisableTracingResponse> response) {
-    if (!response)
-      PERFETTO_DLOG("DisableTracing() failed");
-  });
-  consumer_port_.DisableTracing(DisableTracingRequest(),
+  ipc::Deferred<protos::DisableTracingResponse> async_response;
+  async_response.Bind(
+      [](ipc::AsyncResult<protos::DisableTracingResponse> response) {
+        if (!response)
+          PERFETTO_DLOG("DisableTracing() failed");
+      });
+  consumer_port_.DisableTracing(protos::DisableTracingRequest(),
                                 std::move(async_response));
 }
 
@@ -103,34 +109,35 @@ void ConsumerIPCClientImpl::ReadBuffers() {
     return;
   }
 
-  ipc::Deferred<ReadBuffersResponse> async_response;
+  ipc::Deferred<protos::ReadBuffersResponse> async_response;
 
   // The IPC layer guarantees that callbacks are destroyed after this object
   // is destroyed (by virtue of destroying the |consumer_port_|). In turn the
   // contract of this class expects the caller to not destroy the Consumer class
   // before having destroyed this class. Hence binding |this| here is safe.
-  async_response.Bind([this](ipc::AsyncResult<ReadBuffersResponse> response) {
-    OnReadBuffersResponse(std::move(response));
-  });
-  consumer_port_.ReadBuffers(ReadBuffersRequest(), std::move(async_response));
+  async_response.Bind(
+      [this](ipc::AsyncResult<protos::ReadBuffersResponse> response) {
+        OnReadBuffersResponse(std::move(response));
+      });
+  consumer_port_.ReadBuffers(protos::ReadBuffersRequest(),
+                             std::move(async_response));
 }
 
 void ConsumerIPCClientImpl::OnReadBuffersResponse(
-    ipc::AsyncResult<ReadBuffersResponse> response) {
+    ipc::AsyncResult<protos::ReadBuffersResponse> response) {
   if (!response) {
     PERFETTO_DLOG("ReadBuffers() failed");
     return;
   }
-  // TODO(primiano): We have to guarantee that the log buffer stays alive at
-  // least as long as these requests are on flights.
   std::vector<TracePacket> trace_packets;
-  trace_packets.reserve(response->trace_packets().size());
-  for (const std::string& bytes : response->trace_packets()) {
-    trace_packets.emplace_back();
-    trace_packets.back().AddChunk(
-        Chunk(reinterpret_cast<const void*>(bytes.data()), bytes.size()));
+  for (auto& resp_slice : *response->mutable_slices()) {
+    partial_packet_.AddSlice(
+        Slice(std::unique_ptr<std::string>(resp_slice.release_data())));
+    if (resp_slice.last_slice_for_packet())
+      trace_packets.emplace_back(std::move(partial_packet_));
   }
-  consumer_->OnTraceData(std::move(trace_packets), response.has_more());
+  if (!trace_packets.empty() || !response.has_more())
+    consumer_->OnTraceData(std::move(trace_packets), response.has_more());
 }
 
 void ConsumerIPCClientImpl::FreeBuffers() {
@@ -139,13 +146,30 @@ void ConsumerIPCClientImpl::FreeBuffers() {
     return;
   }
 
-  FreeBuffersRequest req;
-  ipc::Deferred<FreeBuffersResponse> async_response;
-  async_response.Bind([](ipc::AsyncResult<FreeBuffersResponse> response) {
-    if (!response)
-      PERFETTO_DLOG("FreeBuffers() failed");
-  });
+  protos::FreeBuffersRequest req;
+  ipc::Deferred<protos::FreeBuffersResponse> async_response;
+  async_response.Bind(
+      [](ipc::AsyncResult<protos::FreeBuffersResponse> response) {
+        if (!response)
+          PERFETTO_DLOG("FreeBuffers() failed");
+      });
   consumer_port_.FreeBuffers(req, std::move(async_response));
+}
+
+void ConsumerIPCClientImpl::Flush(uint32_t timeout_ms, FlushCallback callback) {
+  if (!connected_) {
+    PERFETTO_DLOG("Cannot Flush(), not connected to tracing service");
+    return callback(/*success=*/false);
+  }
+
+  protos::FlushRequest req;
+  req.set_timeout_ms(static_cast<uint32_t>(timeout_ms));
+  ipc::Deferred<protos::FlushResponse> async_response;
+  async_response.Bind(
+      [callback](ipc::AsyncResult<protos::FlushResponse> response) {
+        callback(!!response);
+      });
+  consumer_port_.Flush(req, std::move(async_response));
 }
 
 }  // namespace perfetto

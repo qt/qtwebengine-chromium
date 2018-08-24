@@ -16,7 +16,6 @@
 #include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "content/browser/child_process_security_policy_impl.h"
@@ -60,20 +59,6 @@ namespace content {
 namespace {
 
 constexpr int kChildId = 99;
-
-class RejectingResourceDispatcherHostDelegate final
-    : public ResourceDispatcherHostDelegate {
- public:
-  RejectingResourceDispatcherHostDelegate() {}
-  bool ShouldBeginRequest(const std::string& method,
-                          const GURL& url,
-                          ResourceType resource_type,
-                          ResourceContext* resource_context) override {
-    return false;
-  }
-
-  DISALLOW_COPY_AND_ASSIGN(RejectingResourceDispatcherHostDelegate);
-};
 
 // The test parameter is the number of bytes allocated for the buffer in the
 // data pipe, for testing the case where the allocated size is smaller than the
@@ -149,7 +134,7 @@ TEST_P(URLLoaderFactoryImplTest, GetResponse) {
   constexpr int32_t kRequestId = 28;
   network::mojom::URLLoaderPtr loader;
   base::FilePath root;
-  PathService::Get(DIR_TEST_DATA, &root);
+  base::PathService::Get(DIR_TEST_DATA, &root);
   net::URLRequestMockHTTPJob::AddUrlHandlers(root);
   network::ResourceRequest request;
   network::TestURLLoaderClient client;
@@ -310,11 +295,13 @@ TEST_P(URLLoaderFactoryImplTest, InvalidURL) {
 // This test tests a case where resource loading is cancelled before started.
 TEST_P(URLLoaderFactoryImplTest, ShouldNotRequestURL) {
   network::mojom::URLLoaderPtr loader;
-  RejectingResourceDispatcherHostDelegate rdh_delegate;
-  rdh_.SetDelegate(&rdh_delegate);
   network::ResourceRequest request;
   network::TestURLLoaderClient client;
-  request.url = GURL("http://localhost/");
+
+  // Child processes cannot request URLs with pseudo schemes like "about",
+  // except for about:blank. See ChildProcessSecurityPolicyImpl::CanRequestURL
+  // for details.
+  request.url = GURL("about:version");
   request.method = "GET";
   // |resource_type| can't be a frame type. It is because when PlzNavigate is
   // enabled, the url scheme of frame type requests from the renderer process
@@ -328,7 +315,6 @@ TEST_P(URLLoaderFactoryImplTest, ShouldNotRequestURL) {
       net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
 
   client.RunUntilComplete();
-  rdh_.SetDelegate(nullptr);
 
   ASSERT_FALSE(client.has_received_response());
   ASSERT_FALSE(client.response_body().is_valid());
@@ -342,7 +328,7 @@ TEST_P(URLLoaderFactoryImplTest, DownloadToFile) {
 
   network::mojom::URLLoaderPtr loader;
   base::FilePath root;
-  PathService::Get(DIR_TEST_DATA, &root);
+  base::PathService::Get(DIR_TEST_DATA, &root);
   net::URLRequestMockHTTPJob::AddUrlHandlers(root);
 
   network::ResourceRequest request;
@@ -410,7 +396,7 @@ TEST_P(URLLoaderFactoryImplTest, DownloadToFileFailure) {
 
   network::mojom::URLLoaderPtr loader;
   base::FilePath root;
-  PathService::Get(DIR_TEST_DATA, &root);
+  base::PathService::Get(DIR_TEST_DATA, &root);
   net::URLRequestSlowDownloadJob::AddUrlHandler();
 
   network::ResourceRequest request;
@@ -468,7 +454,7 @@ TEST_P(URLLoaderFactoryImplTest, OnTransferSizeUpdated) {
   constexpr int32_t kRequestId = 28;
   network::mojom::URLLoaderPtr loader;
   base::FilePath root;
-  PathService::Get(DIR_TEST_DATA, &root);
+  base::PathService::Get(DIR_TEST_DATA, &root);
   net::URLRequestMockHTTPJob::AddUrlHandlers(root);
   network::ResourceRequest request;
   network::TestURLLoaderClient client;
@@ -528,7 +514,7 @@ TEST_P(URLLoaderFactoryImplTest, CancelFromRenderer) {
   constexpr int32_t kRequestId = 28;
   network::mojom::URLLoaderPtr loader;
   base::FilePath root;
-  PathService::Get(DIR_TEST_DATA, &root);
+  base::PathService::Get(DIR_TEST_DATA, &root);
   net::URLRequestFailedJob::AddUrlHandler();
   network::ResourceRequest request;
   network::TestURLLoaderClient client;

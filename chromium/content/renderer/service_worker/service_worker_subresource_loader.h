@@ -51,7 +51,7 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoader
       network::mojom::URLLoaderClientPtr client,
       const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
       scoped_refptr<ControllerServiceWorkerConnector> controller_connector,
-      scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory);
+      scoped_refptr<network::SharedURLLoaderFactory> fallback_factory);
 
   ~ServiceWorkerSubresourceLoader() override;
 
@@ -89,7 +89,8 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoader
                      blink::mojom::ServiceWorkerStreamHandlePtr body_as_stream);
 
   // network::mojom::URLLoader overrides:
-  void FollowRedirect() override;
+  void FollowRedirect(const base::Optional<net::HttpRequestHeaders>&
+                          modified_request_headers) override;
   void ProceedWithResponse() override;
   void SetPriority(net::RequestPriority priority,
                    int intra_priority_value) override;
@@ -138,7 +139,7 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoader
   std::unique_ptr<StreamWaiter> stream_waiter_;
 
   // For network fallback.
-  scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory_;
+  scoped_refptr<network::SharedURLLoaderFactory> fallback_factory_;
 
   enum class Status {
     kNotStarted,
@@ -160,7 +161,7 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoader
 class CONTENT_EXPORT ServiceWorkerSubresourceLoaderFactory
     : public network::mojom::URLLoaderFactory {
  public:
-  // |controller_connector_| is used to get a connection to the controller
+  // |controller_connector| is used to get a connection to the controller
   // ServiceWorker.
   // |network_loader_factory| is used to get the associated loading context's
   // default URLLoaderFactory for network fallback. This should be the
@@ -168,7 +169,7 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoaderFactory
   // any custom URLLoader factories.
   static void Create(
       scoped_refptr<ControllerServiceWorkerConnector> controller_connector,
-      scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory,
+      scoped_refptr<network::SharedURLLoaderFactory> fallback_factory,
       network::mojom::URLLoaderFactoryRequest request);
 
   ~ServiceWorkerSubresourceLoaderFactory() override;
@@ -187,16 +188,15 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoaderFactory
  private:
   ServiceWorkerSubresourceLoaderFactory(
       scoped_refptr<ControllerServiceWorkerConnector> controller_connector,
-      scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory,
+      scoped_refptr<network::SharedURLLoaderFactory> fallback_factory,
       network::mojom::URLLoaderFactoryRequest request);
 
   void OnConnectionError();
 
   scoped_refptr<ControllerServiceWorkerConnector> controller_connector_;
 
-  // A URLLoaderFactory that directly goes to network, used when a request
-  // falls back to network.
-  scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory_;
+  // Used when a request falls back to network.
+  scoped_refptr<network::SharedURLLoaderFactory> fallback_factory_;
 
   mojo::BindingSet<network::mojom::URLLoaderFactory> bindings_;
 

@@ -9,6 +9,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/devtools/protocol/network_handler.h"
 #include "content/browser/devtools/protocol/page.h"
+#include "content/browser/loader/navigation_loader_util.h"
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "ipc/ipc_channel.h"
 #include "net/base/completion_once_callback.h"
@@ -21,6 +22,7 @@
 #include "net/http/http_util.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/url_request_context.h"
+#include "third_party/blink/public/platform/resource_request_blocked_reason.h"
 
 namespace {
 static const int kInitialBufferSize = 4096;
@@ -119,6 +121,13 @@ DevToolsURLInterceptorRequestJob::SubRequest::SubRequest(
   request_->SetResponseHeadersCallback(
       devtools_interceptor_request_job->response_headers_callback_);
 
+  net::URLRequest* original_request =
+      devtools_interceptor_request_job_->request();
+  request_->set_attach_same_site_cookies(
+      original_request->attach_same_site_cookies());
+  request_->set_site_for_cookies(original_request->site_for_cookies());
+  request_->set_initiator(original_request->initiator());
+
   // Mimic the ResourceRequestInfoImpl of the original request.
   const ResourceRequestInfoImpl* resource_request_info =
       static_cast<const ResourceRequestInfoImpl*>(
@@ -134,7 +143,6 @@ DevToolsURLInterceptorRequestJob::SubRequest::SubRequest(
       resource_request_info->IsMainFrame(),
       resource_request_info->GetResourceType(),
       resource_request_info->GetPageTransition(),
-      resource_request_info->should_replace_current_entry(),
       resource_request_info->IsDownload(), resource_request_info->is_stream(),
       resource_request_info->allow_download(),
       resource_request_info->HasUserGesture(),
@@ -146,10 +154,10 @@ DevToolsURLInterceptorRequestJob::SubRequest::SubRequest(
       resource_request_info->IsPrerendering(),
       resource_request_info->GetContext(),
       resource_request_info->ShouldReportRawHeaders(),
+      resource_request_info->ShouldReportSecurityInfo(),
       resource_request_info->IsAsync(),
       resource_request_info->GetPreviewsState(), resource_request_info->body(),
-      resource_request_info->initiated_in_secure_context(),
-      resource_request_info->suggested_filename());
+      resource_request_info->initiated_in_secure_context());
   extra_data->AssociateWithRequest(request_.get());
 
   if (request_details.post_data)
@@ -531,6 +539,22 @@ void SetDevToolsStatus(net::URLRequest* request,
   resource_request_info->set_devtools_status(devtools_status);
 }
 
+bool IsDownload(net::URLRequest* orig_request, net::URLRequest* subrequest) {
+  auto* req_info = ResourceRequestInfoImpl::ForRequest(orig_request);
+  // Only happens to downloads that are initiated by the download manager.
+  if (req_info->IsDownload())
+    return true;
+
+  // Note this will not correctly identify a download for the MIME types
+  // inferred with content sniffing. The new interception implementation
+  // should not have this problem, as it's on top of MIME sniffer.
+  std::string mime_type;
+  subrequest->GetMimeType(&mime_type);
+  return req_info->allow_download() &&
+         navigation_loader_util::IsDownload(
+             orig_request->url(), subrequest->response_headers(), mime_type);
+}
+
 }  // namespace
 
 DevToolsURLInterceptorRequestJob::DevToolsURLInterceptorRequestJob(
@@ -622,9 +646,7 @@ void DevToolsURLInterceptorRequestJob::Start() {
 }
 
 void DevToolsURLInterceptorRequestJob::Kill() {
-  if (sub_request_)
-    sub_request_->Cancel();
-
+  sub_request_.reset();
   URLRequestJob::Kill();
 }
 
@@ -839,6 +861,7 @@ void DevToolsURLInterceptorRequestJob::OnInterceptedRequestResponseStarted(
         sub_request_->request()->GetResponseCode();
     request_info->response_headers =
         protocol::Object::fromValue(headers_dict.get(), nullptr);
+    request_info->is_download = IsDownload(request(), sub_request_->request());
   }
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                           base::BindOnce(callback_, std::move(request_info)));
@@ -1055,6 +1078,16 @@ void DevToolsURLInterceptorRequestJob::ProcessInterceptionResponse(
     if (sub_request_) {
       sub_request_->Cancel();
       sub_request_.reset();
+    }
+    if (modifications->error_reason == net::ERR_BLOCKED_BY_CLIENT) {
+      // So we know that these modifications originated from devtools
+      // (also known as inspector), and can therefore annotate the
+      // request. We only do this for one specific error code thus
+      // far, to minimize risk of breaking other usages.
+      ResourceRequestInfoImpl* resource_request_info =
+          ResourceRequestInfoImpl::ForRequest(request());
+      resource_request_info->set_resource_request_blocked_reason(
+          blink::ResourceRequestBlockedReason::kInspector);
     }
     NotifyStartError(net::URLRequestStatus(net::URLRequestStatus::FAILED,
                                            *modifications->error_reason));

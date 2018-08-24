@@ -127,6 +127,8 @@ jumbo_source_set("browser_sources") {
     "extension_file_task_runner.h",
     "extension_function.cc",
     "extension_function.h",
+    "extension_function_constants.cc",
+    "extension_function_constants.h",
     "extension_function_dispatcher.cc",
     "extension_function_dispatcher.h",
     "extension_function_registry.cc",
@@ -276,6 +278,8 @@ jumbo_source_set("browser_sources") {
     "load_monitoring_extension_host_queue.h",
     "management_policy.cc",
     "management_policy.h",
+    "media_capture_util.cc",
+    "media_capture_util.h",
     "mojo/interface_registration.cc",
     "mojo/interface_registration.h",
     "mojo/keep_alive_impl.cc",
@@ -476,6 +480,7 @@ source_set("browser_tests") {
   }
   if (is_chromeos) {
     sources += [
+      "api/cec_private/cec_private_apitest.cc",
       "api/media_perception_private/media_perception_private_apitest.cc",
       "api/virtual_keyboard/virtual_keyboard_apitest.cc",
     ]

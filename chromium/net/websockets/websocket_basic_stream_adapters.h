@@ -10,8 +10,8 @@
 #include "base/memory/weak_ptr.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
-#include "net/spdy/chromium/spdy_read_queue.h"
-#include "net/spdy/chromium/spdy_stream.h"
+#include "net/spdy/spdy_read_queue.h"
+#include "net/spdy/spdy_stream.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/websockets/websocket_basic_stream.h"
 
@@ -60,7 +60,8 @@ class NET_EXPORT_PRIVATE WebSocketSpdyStreamAdapter
    public:
     virtual ~Delegate() = default;
     virtual void OnHeadersSent() = 0;
-    virtual void OnHeadersReceived(const SpdyHeaderBlock& response_headers) = 0;
+    virtual void OnHeadersReceived(
+        const spdy::SpdyHeaderBlock& response_headers) = 0;
     // Might destroy |this|.
     virtual void OnClose(int status) = 0;
   };
@@ -93,10 +94,12 @@ class NET_EXPORT_PRIVATE WebSocketSpdyStreamAdapter
   // SpdyStream::Delegate methods.
 
   void OnHeadersSent() override;
-  void OnHeadersReceived(const SpdyHeaderBlock& response_headers) override;
+  void OnHeadersReceived(
+      const spdy::SpdyHeaderBlock& response_headers,
+      const spdy::SpdyHeaderBlock* pushed_request_headers) override;
   void OnDataReceived(std::unique_ptr<SpdyBuffer> buffer) override;
   void OnDataSent() override;
-  void OnTrailers(const SpdyHeaderBlock& trailers) override;
+  void OnTrailers(const spdy::SpdyHeaderBlock& trailers) override;
   void OnClose(int status) override;
   NetLogSource source_dependency() const override;
 

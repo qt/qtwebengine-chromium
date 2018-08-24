@@ -10,9 +10,9 @@
 
 #include "audio/utility/audio_frame_operations.h"
 
+#include <string.h>
 #include <algorithm>
 
-#include "modules/include/module_common_types.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_conversions.h"
 

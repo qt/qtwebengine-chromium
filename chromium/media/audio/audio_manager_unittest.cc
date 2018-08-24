@@ -218,7 +218,7 @@ class AudioManagerTest : public ::testing::Test {
  public:
   void HandleDefaultDeviceIDsTest() {
     AudioParameters params(AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                           CHANNEL_LAYOUT_STEREO, 48000, 16, 2048);
+                           CHANNEL_LAYOUT_STEREO, 48000, 2048);
 
     // Create a stream with the default device id "".
     AudioOutputStream* stream =
@@ -288,9 +288,6 @@ class AudioManagerTest : public ::testing::Test {
       AudioDeviceDescriptions::const_iterator it = device_descriptions.begin();
 
       // The first device in the list should always be the default device.
-      EXPECT_TRUE(base::StartsWith(
-          it->device_name, AudioDeviceDescription::GetDefaultDeviceName(),
-          base::CompareCase::SENSITIVE));
       EXPECT_EQ(std::string(AudioDeviceDescription::kDefaultDeviceId),
                 it->unique_id);
       ++it;

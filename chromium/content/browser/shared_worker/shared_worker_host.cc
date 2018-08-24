@@ -54,6 +54,31 @@ bool AllowIndexedDBOnIOThread(const GURL& url,
 
 }  // namespace
 
+// RAII helper class for talking to SharedWorkerDevToolsManager.
+class SharedWorkerHost::ScopedDevToolsHandle {
+ public:
+  ScopedDevToolsHandle(SharedWorkerHost* owner,
+                       bool* out_pause_on_start,
+                       base::UnguessableToken* out_devtools_worker_token)
+      : owner_(owner) {
+    SharedWorkerDevToolsManager::GetInstance()->WorkerCreated(
+        owner, out_pause_on_start, out_devtools_worker_token);
+  }
+
+  ~ScopedDevToolsHandle() {
+    SharedWorkerDevToolsManager::GetInstance()->WorkerDestroyed(owner_);
+  }
+
+  void WorkerReadyForInspection() {
+    SharedWorkerDevToolsManager::GetInstance()->WorkerReadyForInspection(
+        owner_);
+  }
+
+ private:
+  SharedWorkerHost* owner_;
+  DISALLOW_COPY_AND_ASSIGN(ScopedDevToolsHandle);
+};
+
 SharedWorkerHost::SharedWorkerHost(
     SharedWorkerServiceImpl* service,
     std::unique_ptr<SharedWorkerInstance> instance,
@@ -67,13 +92,29 @@ SharedWorkerHost::SharedWorkerHost(
       interface_provider_binding_(this),
       weak_factory_(this) {
   DCHECK(instance_);
+  // Set up the worker interface request. This is needed first in either
+  // AddClient() or Start(). AddClient() can sometimes be called before Start()
+  // when two clients call new SharedWorker() at around the same time.
+  worker_request_ = mojo::MakeRequest(&worker_);
 }
 
 SharedWorkerHost::~SharedWorkerHost() {
   UMA_HISTOGRAM_LONG_TIMES("SharedWorker.TimeToDeleted",
                            base::TimeTicks::Now() - creation_time_);
-  if (!closed_ && !termination_message_sent_)
-    SharedWorkerDevToolsManager::GetInstance()->WorkerDestroyed(this);
+  switch (phase_) {
+    case Phase::kInitial:
+      // Tell clients that this worker failed to start. This is only needed in
+      // kInitial. Once in kStarted, the worker in the renderer would alert this
+      // host if script loading failed.
+      for (const ClientInfo& info : clients_)
+        info.client->OnScriptLoadFailed();
+      break;
+    case Phase::kStarted:
+    case Phase::kClosed:
+    case Phase::kTerminationSent:
+    case Phase::kTerminationSentAndClosed:
+      break;
+  }
 }
 
 void SharedWorkerHost::Start(
@@ -82,6 +123,7 @@ void SharedWorkerHost::Start(
         service_worker_provider_info,
     network::mojom::URLLoaderFactoryAssociatedPtrInfo script_loader_factory) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  AdvanceTo(Phase::kStarted);
 
   mojom::SharedWorkerInfoPtr info(mojom::SharedWorkerInfo::New(
       instance_->url(), instance_->name(), instance_->content_security_policy(),
@@ -91,7 +133,7 @@ void SharedWorkerHost::Start(
   // Register with DevTools.
   bool pause_on_start;
   base::UnguessableToken devtools_worker_token;
-  SharedWorkerDevToolsManager::GetInstance()->WorkerCreated(
+  devtools_handle_ = std::make_unique<ScopedDevToolsHandle>(
       this, &pause_on_start, &devtools_worker_token);
 
   // Set up content settings interface.
@@ -115,7 +157,7 @@ void SharedWorkerHost::Start(
       std::move(info), pause_on_start, devtools_worker_token,
       std::move(content_settings), std::move(service_worker_provider_info),
       std::move(script_loader_factory), std::move(host),
-      mojo::MakeRequest(&worker_), std::move(interface_provider));
+      std::move(worker_request_), std::move(interface_provider));
 
   // Monitor the lifetime of the worker.
   worker_.set_connection_error_handler(base::BindOnce(
@@ -148,14 +190,55 @@ void SharedWorkerHost::AllowIndexedDB(const GURL& url,
 }
 
 void SharedWorkerHost::TerminateWorker() {
-  // This can be called twice in tests while cleaning up all the workers.
-  if (termination_message_sent_)
-    return;
-  termination_message_sent_ = true;
-  if (!closed_)
-    SharedWorkerDevToolsManager::GetInstance()->WorkerDestroyed(this);
+  switch (phase_) {
+    case Phase::kInitial:
+      // The host is being asked to terminate the worker before it started.
+      // Tell clients that this worker failed to start.
+      for (const ClientInfo& info : clients_)
+        info.client->OnScriptLoadFailed();
+      // Tell the caller it terminated, so the caller doesn't wait forever.
+      AdvanceTo(Phase::kTerminationSentAndClosed);
+      OnWorkerConnectionLost();
+      // |this| is destroyed here.
+      return;
+    case Phase::kStarted:
+      AdvanceTo(Phase::kTerminationSent);
+      break;
+    case Phase::kClosed:
+      AdvanceTo(Phase::kTerminationSentAndClosed);
+      break;
+    case Phase::kTerminationSent:
+    case Phase::kTerminationSentAndClosed:
+      // Termination was already sent. TerminateWorker can be called twice in
+      // tests while cleaning up all the workers.
+      return;
+  }
+
+  devtools_handle_.reset();
   worker_->Terminate();
   // Now, we wait to observe OnWorkerConnectionLost.
+}
+
+void SharedWorkerHost::AdvanceTo(Phase phase) {
+  switch (phase_) {
+    case Phase::kInitial:
+      DCHECK(phase == Phase::kStarted ||
+             phase == Phase::kTerminationSentAndClosed);
+      break;
+    case Phase::kStarted:
+      DCHECK(phase == Phase::kClosed || phase == Phase::kTerminationSent);
+      break;
+    case Phase::kClosed:
+      DCHECK(phase == Phase::kTerminationSentAndClosed);
+      break;
+    case Phase::kTerminationSent:
+      DCHECK(phase == Phase::kTerminationSentAndClosed);
+      break;
+    case Phase::kTerminationSentAndClosed:
+      NOTREACHED();
+      break;
+  }
+  phase_ = phase;
 }
 
 SharedWorkerHost::ClientInfo::ClientInfo(mojom::SharedWorkerClientPtr client,
@@ -182,17 +265,33 @@ void SharedWorkerHost::OnConnected(int connection_request_id) {
 }
 
 void SharedWorkerHost::OnContextClosed() {
-  // Set the closed flag - this will stop any further messages from
-  // being sent to the worker (messages can still be sent from the worker,
-  // for exception reporting, etc).
-  closed_ = true;
-  if (!termination_message_sent_)
-    SharedWorkerDevToolsManager::GetInstance()->WorkerDestroyed(this);
+  devtools_handle_.reset();
+
+  // Mark as closed - this will stop any further messages from being sent to the
+  // worker (messages can still be sent from the worker, for exception
+  // reporting, etc).
+  switch (phase_) {
+    case Phase::kInitial:
+      // Not possible: there is no Mojo connection on which OnContextClosed can
+      // be called.
+      NOTREACHED();
+      break;
+    case Phase::kStarted:
+      AdvanceTo(Phase::kClosed);
+      break;
+    case Phase::kTerminationSent:
+      AdvanceTo(Phase::kTerminationSentAndClosed);
+      break;
+    case Phase::kClosed:
+    case Phase::kTerminationSentAndClosed:
+      // Already closed, just ignore.
+      break;
+  }
 }
 
 void SharedWorkerHost::OnReadyForInspection() {
-  if (!closed_ && !termination_message_sent_)
-    SharedWorkerDevToolsManager::GetInstance()->WorkerReadyForInspection(this);
+  if (devtools_handle_)
+    devtools_handle_->WorkerReadyForInspection();
 }
 
 void SharedWorkerHost::OnScriptLoaded() {
@@ -225,7 +324,21 @@ SharedWorkerHost::GetRenderFrameIDsForWorker() {
 }
 
 bool SharedWorkerHost::IsAvailable() const {
-  return !termination_message_sent_ && !closed_;
+  switch (phase_) {
+    case Phase::kInitial:
+    case Phase::kStarted:
+      return true;
+    case Phase::kClosed:
+    case Phase::kTerminationSent:
+    case Phase::kTerminationSentAndClosed:
+      return false;
+  }
+  NOTREACHED();
+  return false;
+}
+
+base::WeakPtr<SharedWorkerHost> SharedWorkerHost::AsWeakPtr() {
+  return weak_factory_.GetWeakPtr();
 }
 
 void SharedWorkerHost::AddClient(mojom::SharedWorkerClientPtr client,

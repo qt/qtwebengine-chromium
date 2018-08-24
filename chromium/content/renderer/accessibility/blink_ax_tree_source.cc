@@ -38,6 +38,7 @@
 #include "third_party/blink/public/web/web_plugin_container.h"
 #include "third_party/blink/public/web/web_view.h"
 #include "ui/accessibility/ax_enum_util.h"
+#include "ui/accessibility/ax_role_properties.h"
 
 using base::ASCIIToUTF16;
 using base::UTF16ToUTF8;
@@ -549,6 +550,11 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
       dst->AddFloatAttribute(ax::mojom::FloatAttribute::kFontSize,
                              src.FontSize());
 
+    if (src.HasPopup())
+      dst->SetHasPopup(AXHasPopupFromBlink(src.HasPopup()));
+    else if (src.Role() == blink::kWebAXRolePopUpButton)
+      dst->SetHasPopup(ax::mojom::HasPopup::kMenu);
+
     if (src.AriaCurrentState()) {
       dst->AddIntAttribute(ax::mojom::IntAttribute::kAriaCurrentState,
                            static_cast<int32_t>(AXAriaCurrentStateFromBlink(
@@ -570,6 +576,12 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
 
     if (src.GetTextDirection()) {
       dst->SetTextDirection(AXTextDirectionFromBlink(src.GetTextDirection()));
+    }
+
+    if (src.GetTextPosition()) {
+      dst->AddIntAttribute(
+          ax::mojom::IntAttribute::kTextPosition,
+          static_cast<int32_t>(AXTextPositionFromBlink(src.GetTextPosition())));
     }
 
     if (src.TextStyle()) {
@@ -651,7 +663,7 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
                            src.AriaActiveDescendant().AxID());
     }
 
-    if (dst->role == ax::mojom::Role::kHeading && src.HeadingLevel()) {
+    if (ui::IsHeading(dst->role) && src.HeadingLevel()) {
       dst->AddIntAttribute(ax::mojom::IntAttribute::kHierarchicalLevel,
                            src.HeadingLevel());
     } else if ((dst->role == ax::mojom::Role::kTreeItem ||
@@ -772,9 +784,6 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
       int column_count = src.ColumnCount();
       int row_count = src.RowCount();
       if (column_count > 0 && row_count > 0) {
-        std::set<int32_t> unique_cell_id_set;
-        std::vector<int32_t> cell_ids;
-        std::vector<int32_t> unique_cell_ids;
         dst->AddIntAttribute(ax::mojom::IntAttribute::kTableColumnCount,
                              column_count);
         dst->AddIntAttribute(ax::mojom::IntAttribute::kTableRowCount,
@@ -783,23 +792,6 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
         if (!header.IsDetached())
           dst->AddIntAttribute(ax::mojom::IntAttribute::kTableHeaderId,
                                header.AxID());
-        for (int i = 0; i < column_count * row_count; ++i) {
-          WebAXObject cell =
-              src.CellForColumnAndRow(i % column_count, i / column_count);
-          int cell_id = -1;
-          if (!cell.IsDetached()) {
-            cell_id = cell.AxID();
-            if (unique_cell_id_set.find(cell_id) == unique_cell_id_set.end()) {
-              unique_cell_id_set.insert(cell_id);
-              unique_cell_ids.push_back(cell_id);
-            }
-          }
-          cell_ids.push_back(cell_id);
-        }
-        dst->AddIntListAttribute(ax::mojom::IntListAttribute::kCellIds,
-                                 cell_ids);
-        dst->AddIntListAttribute(ax::mojom::IntListAttribute::kUniqueCellIds,
-                                 unique_cell_ids);
       }
 
       int aria_colcount = src.AriaColumnCount();
@@ -957,21 +949,21 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
   }
 
   if (src.IsScrollableContainer()) {
-    const gfx::Point& scrollOffset = src.GetScrollOffset();
-    dst->AddIntAttribute(ax::mojom::IntAttribute::kScrollX, scrollOffset.x());
-    dst->AddIntAttribute(ax::mojom::IntAttribute::kScrollY, scrollOffset.y());
+    const gfx::Point& scroll_offset = src.GetScrollOffset();
+    dst->AddIntAttribute(ax::mojom::IntAttribute::kScrollX, scroll_offset.x());
+    dst->AddIntAttribute(ax::mojom::IntAttribute::kScrollY, scroll_offset.y());
 
-    const gfx::Point& minScrollOffset = src.MinimumScrollOffset();
+    const gfx::Point& min_scroll_offset = src.MinimumScrollOffset();
     dst->AddIntAttribute(ax::mojom::IntAttribute::kScrollXMin,
-                         minScrollOffset.x());
+                         min_scroll_offset.x());
     dst->AddIntAttribute(ax::mojom::IntAttribute::kScrollYMin,
-                         minScrollOffset.y());
+                         min_scroll_offset.y());
 
-    const gfx::Point& maxScrollOffset = src.MaximumScrollOffset();
+    const gfx::Point& max_scroll_offset = src.MaximumScrollOffset();
     dst->AddIntAttribute(ax::mojom::IntAttribute::kScrollXMax,
-                         maxScrollOffset.x());
+                         max_scroll_offset.x());
     dst->AddIntAttribute(ax::mojom::IntAttribute::kScrollYMax,
-                         maxScrollOffset.y());
+                         max_scroll_offset.y());
   }
 
   if (dst->id == image_data_node_id_) {

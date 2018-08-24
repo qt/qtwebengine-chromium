@@ -891,7 +891,7 @@ void AutofillMetrics::LogServerPredictionQualityMetrics(
     QualityMetricType metric_type) {
   LogPredictionQualityMetrics(
       PREDICTION_SOURCE_SERVER,
-      AutofillType(field.overall_server_type()).GetStorableType(),
+      AutofillType(field.server_type()).GetStorableType(),
       form_interactions_ukm_logger, form, field, metric_type,
       false /*log_rationalization_metrics*/);
 }
@@ -1150,6 +1150,12 @@ void AutofillMetrics::LogNumberOfCreditCardsDeletedForDisuse(size_t num_cards) {
 }
 
 // static
+void AutofillMetrics::LogHiddenOrPresentationalSelectFieldsFilled() {
+  UMA_HISTOGRAM_BOOLEAN("Autofill.HiddenOrPresentationalSelectFieldsFilled",
+                        true);
+}
+
+// static
 void AutofillMetrics::LogNumberOfProfilesAtAutofillableFormSubmission(
     size_t num_profiles) {
   UMA_HISTOGRAM_COUNTS(
@@ -1230,6 +1236,7 @@ void AutofillMetrics::LogAutofillFormSubmittedState(
     bool is_for_credit_card,
     const std::set<FormType>& form_types,
     const base::TimeTicks& form_parsed_timestamp,
+    FormSignature form_signature,
     AutofillMetrics::FormInteractionsUkmLogger* form_interactions_ukm_logger) {
   UMA_HISTOGRAM_ENUMERATION("Autofill.FormSubmittedState", state,
                             AUTOFILL_FORM_SUBMITTED_STATE_ENUM_SIZE);
@@ -1265,7 +1272,8 @@ void AutofillMetrics::LogAutofillFormSubmittedState(
       break;
   }
   form_interactions_ukm_logger->LogFormSubmitted(is_for_credit_card, form_types,
-                                                 state, form_parsed_timestamp);
+                                                 state, form_parsed_timestamp,
+                                                 form_signature);
 }
 
 // static
@@ -1334,7 +1342,8 @@ void AutofillMetrics::LogDeveloperEngagementUkm(
     const GURL& url,
     bool is_for_credit_card,
     std::set<FormType> form_types,
-    int developer_engagement_metrics) {
+    int developer_engagement_metrics,
+    FormSignature form_signature) {
   DCHECK(developer_engagement_metrics);
   DCHECK_LT(developer_engagement_metrics,
             1 << NUM_DEVELOPER_ENGAGEMENT_METRICS);
@@ -1345,6 +1354,7 @@ void AutofillMetrics::LogDeveloperEngagementUkm(
       .SetDeveloperEngagement(developer_engagement_metrics)
       .SetIsForCreditCard(is_for_credit_card)
       .SetFormTypes(FormTypesToBitVector(form_types))
+      .SetFormSignature(HashFormSignature(form_signature))
       .Record(ukm_recorder);
 }
 
@@ -1366,12 +1376,13 @@ AutofillMetrics::FormEventLogger::FormEventLogger(
       logged_suggestion_filled_was_masked_server_card_(false),
       form_interactions_ukm_logger_(form_interactions_ukm_logger) {}
 
-void AutofillMetrics::FormEventLogger::OnDidInteractWithAutofillableForm() {
+void AutofillMetrics::FormEventLogger::OnDidInteractWithAutofillableForm(
+    FormSignature form_signature) {
   if (!has_logged_interacted_) {
     has_logged_interacted_ = true;
     form_interactions_ukm_logger_->LogInteractedWithForm(
         is_for_credit_card_, local_record_type_count_,
-        server_record_type_count_);
+        server_record_type_count_, form_signature);
     Log(AutofillMetrics::FORM_EVENT_INTERACTED_ONCE);
   }
 }
@@ -1396,10 +1407,11 @@ void AutofillMetrics::FormEventLogger::OnDidPollSuggestions(
 }
 
 void AutofillMetrics::FormEventLogger::OnDidShowSuggestions(
+    const FormStructure& form,
     const AutofillField& field,
     const base::TimeTicks& form_parsed_timestamp) {
-  form_interactions_ukm_logger_->LogSuggestionsShown(field,
-                                                     form_parsed_timestamp);
+  form_interactions_ukm_logger_->LogSuggestionsShown(
+      form, field, form_parsed_timestamp);
 
   Log(AutofillMetrics::FORM_EVENT_SUGGESTIONS_SHOWN);
   if (!has_logged_suggestions_shown_) {
@@ -1436,10 +1448,11 @@ void AutofillMetrics::FormEventLogger::OnDidSelectMaskedServerCardSuggestion(
 
 void AutofillMetrics::FormEventLogger::OnDidFillSuggestion(
     const CreditCard& credit_card,
-    const base::TimeTicks& form_parsed_timestamp) {
+    const FormStructure& form,
+    const AutofillField& field) {
   DCHECK(is_for_credit_card_);
   form_interactions_ukm_logger_->LogDidFillSuggestion(
-      static_cast<int>(credit_card.record_type()), form_parsed_timestamp);
+      static_cast<int>(credit_card.record_type()), form, field);
 
   if (credit_card.record_type() == CreditCard::MASKED_SERVER_CARD)
     Log(AutofillMetrics::FORM_EVENT_MASKED_SERVER_CARD_SUGGESTION_FILLED);
@@ -1479,10 +1492,11 @@ void AutofillMetrics::FormEventLogger::OnDidFillSuggestion(
 
 void AutofillMetrics::FormEventLogger::OnDidFillSuggestion(
     const AutofillProfile& profile,
-    const base::TimeTicks& form_parsed_timestamp) {
+    const FormStructure& form,
+    const AutofillField& field) {
   DCHECK(!is_for_credit_card_);
   form_interactions_ukm_logger_->LogDidFillSuggestion(
-      static_cast<int>(profile.record_type()), form_parsed_timestamp);
+      static_cast<int>(profile.record_type()), form, field);
 
   if (profile.record_type() == AutofillProfile::SERVER_PROFILE)
     Log(AutofillMetrics::FORM_EVENT_SERVER_SUGGESTION_FILLED);
@@ -1565,6 +1579,22 @@ void AutofillMetrics::FormEventLogger::SetBankNameAvailable() {
   has_logged_bank_name_available_ = true;
 }
 
+void AutofillMetrics::FormEventLogger::OnDidSeeDynamicForm() {
+  Log(AutofillMetrics::FORM_EVENT_DID_SEE_DYNAMIC_FORM);
+}
+
+void AutofillMetrics::FormEventLogger::OnDidSeeFillableDynamicForm() {
+  Log(AutofillMetrics::FORM_EVENT_DID_SEE_FILLABLE_DYNAMIC_FORM);
+}
+
+void AutofillMetrics::FormEventLogger::OnDidRefill() {
+  Log(AutofillMetrics::FORM_EVENT_DID_DYNAMIC_REFILL);
+}
+
+void AutofillMetrics::FormEventLogger::OnSubsequentRefillAttempt() {
+  Log(AutofillMetrics::FORM_EVENT_DYNAMIC_CHANGE_AFTER_REFILL);
+}
+
 void AutofillMetrics::FormEventLogger::Log(FormEvent event) const {
   DCHECK_LT(event, NUM_FORM_EVENTS);
   std::string name("Autofill.FormEvents.");
@@ -1616,7 +1646,8 @@ void AutofillMetrics::FormInteractionsUkmLogger::OnFormsParsed(
 void AutofillMetrics::FormInteractionsUkmLogger::LogInteractedWithForm(
     bool is_for_credit_card,
     size_t local_record_type_count,
-    size_t server_record_type_count) {
+    size_t server_record_type_count,
+    FormSignature form_signature) {
   if (!CanLog())
     return;
 
@@ -1627,10 +1658,12 @@ void AutofillMetrics::FormInteractionsUkmLogger::LogInteractedWithForm(
       .SetIsForCreditCard(is_for_credit_card)
       .SetLocalRecordTypeCount(local_record_type_count)
       .SetServerRecordTypeCount(server_record_type_count)
+      .SetFormSignature(HashFormSignature(form_signature))
       .Record(ukm_recorder_);
 }
 
 void AutofillMetrics::FormInteractionsUkmLogger::LogSuggestionsShown(
+    const FormStructure& form,
     const AutofillField& field,
     const base::TimeTicks& form_parsed_timestamp) {
   if (!CanLog())
@@ -1642,7 +1675,9 @@ void AutofillMetrics::FormInteractionsUkmLogger::LogSuggestionsShown(
   ukm::builders::Autofill_SuggestionsShown(source_id_)
       .SetHeuristicType(static_cast<int>(field.heuristic_type()))
       .SetHtmlFieldType(static_cast<int>(field.html_type()))
-      .SetServerType(static_cast<int>(field.overall_server_type()))
+      .SetServerType(static_cast<int>(field.server_type()))
+      .SetFormSignature(HashFormSignature(form.form_signature()))
+      .SetFieldSignature(HashFieldSignature(field.GetFieldSignature()))
       .SetMillisecondsSinceFormParsed(
           MillisecondsSinceFormParsed(form_parsed_timestamp))
       .Record(ukm_recorder_);
@@ -1664,7 +1699,8 @@ void AutofillMetrics::FormInteractionsUkmLogger::LogSelectedMaskedServerCard(
 
 void AutofillMetrics::FormInteractionsUkmLogger::LogDidFillSuggestion(
     int record_type,
-    const base::TimeTicks& form_parsed_timestamp) {
+    const FormStructure& form,
+    const AutofillField& field) {
   if (!CanLog())
     return;
 
@@ -1674,7 +1710,9 @@ void AutofillMetrics::FormInteractionsUkmLogger::LogDidFillSuggestion(
   ukm::builders::Autofill_SuggestionFilled(source_id_)
       .SetRecordType(record_type)
       .SetMillisecondsSinceFormParsed(
-          MillisecondsSinceFormParsed(form_parsed_timestamp))
+          MillisecondsSinceFormParsed(form.form_parsed_timestamp()))
+      .SetFormSignature(HashFormSignature(form.form_signature()))
+      .SetFieldSignature(HashFieldSignature(field.GetFieldSignature()))
       .Record(ukm_recorder_);
 }
 
@@ -1690,7 +1728,7 @@ void AutofillMetrics::FormInteractionsUkmLogger::LogTextFieldDidChange(
   ukm::builders::Autofill_TextFieldDidChange(source_id_)
       .SetFieldTypeGroup(static_cast<int>(field.Type().group()))
       .SetHeuristicType(static_cast<int>(field.heuristic_type()))
-      .SetServerType(static_cast<int>(field.overall_server_type()))
+      .SetServerType(static_cast<int>(field.server_type()))
       .SetHtmlFieldType(static_cast<int>(field.html_type()))
       .SetHtmlFieldMode(static_cast<int>(field.html_mode()))
       .SetIsAutofilled(field.is_autofilled)
@@ -1764,7 +1802,8 @@ void AutofillMetrics::FormInteractionsUkmLogger::LogFormSubmitted(
     bool is_for_credit_card,
     const std::set<FormType>& form_types,
     AutofillFormSubmittedState state,
-    const base::TimeTicks& form_parsed_timestamp) {
+    const base::TimeTicks& form_parsed_timestamp,
+    FormSignature form_signature) {
   if (!CanLog())
     return;
 
@@ -1774,7 +1813,8 @@ void AutofillMetrics::FormInteractionsUkmLogger::LogFormSubmitted(
   ukm::builders::Autofill_FormSubmitted builder(source_id_);
   builder.SetAutofillFormSubmittedState(static_cast<int>(state))
       .SetIsForCreditCard(is_for_credit_card)
-      .SetFormTypes(FormTypesToBitVector(form_types));
+      .SetFormTypes(FormTypesToBitVector(form_types))
+      .SetFormSignature(HashFormSignature(form_signature));
   if (form_parsed_timestamp.is_null())
     DCHECK(state == NON_FILLABLE_FORM_OR_NEW_DATA ||
            state == FILLABLE_FORM_AUTOFILLED_NONE_DID_NOT_SHOW_SUGGESTIONS)

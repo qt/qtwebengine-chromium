@@ -23,7 +23,7 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/singleton.h"
-#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_current.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
@@ -71,7 +71,7 @@ constexpr int kNetWMStateAdd = 1;
 constexpr int kNetWMStateRemove = 0;
 
 int DefaultX11ErrorHandler(XDisplay* d, XErrorEvent* e) {
-  if (base::MessageLoop::current()) {
+  if (base::MessageLoopCurrent::Get()) {
     base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE, base::BindOnce(&LogErrorEventDescription, d, *e));
   } else {
@@ -156,6 +156,22 @@ bool GetWindowManagerName(std::string* wm_name) {
   bool result = GetStringProperty(
       static_cast<XID>(wm_window), "_NET_WM_NAME", wm_name);
   return !err_tracker.FoundNewError() && result;
+}
+
+unsigned int GetMaxCursorSize() {
+  // Although XQueryBestCursor() takes unsigned ints, the width and height will
+  // be sent over the wire as 16 bit integers.
+  constexpr unsigned int kQuerySize = std::numeric_limits<uint16_t>::max();
+  XDisplay* display = gfx::GetXDisplay();
+  unsigned int width = 0;
+  unsigned int height = 0;
+  XQueryBestCursor(display, DefaultRootWindow(display), kQuerySize, kQuerySize,
+                   &width, &height);
+  unsigned int min_dimension = std::min(width, height);
+  // libXcursor defines MAX_BITMAP_CURSOR_SIZE to 64 in src/xcursorint.h, so use
+  // this as a fallback in case the X server returns zero size, which can happen
+  // on some buggy implementations of XWayland/XMir.
+  return min_dimension > 0 ? min_dimension : 64;
 }
 
 struct XImageDeleter {
@@ -292,7 +308,7 @@ XcursorImage* SkBitmapToXcursorImage(const SkBitmap* cursor_image,
 
   // X11 seems to have issues with cursors when images get larger than 64
   // pixels. So rescale the image if necessary.
-  const float kMaxPixel = 64.f;
+  static const float kMaxPixel = GetMaxCursorSize();
   bool needs_scale = false;
   if (cursor_image->width() > kMaxPixel || cursor_image->height() > kMaxPixel) {
     float scale = 1.f;

@@ -15,9 +15,8 @@
 #include <string>
 #include <vector>
 
-#include "modules/congestion_controller/network_control/include/network_units.h"
-#include "modules/congestion_controller/network_control/include/network_units_to_string.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/experiments/congestion_controller_experiment.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/system/fallthrough.h"
 
@@ -62,42 +61,33 @@ const size_t kGainCycleLength = 8;
 const BbrRoundTripCount kBandwidthWindowSize = kGainCycleLength + 2;
 
 // The time after which the current min_rtt value expires.
-const TimeDelta kMinRttExpiry = TimeDelta::seconds(10);
+constexpr int64_t kMinRttExpirySeconds = 10;
 // The minimum time the connection can spend in PROBE_RTT mode.
-const TimeDelta kProbeRttTime = TimeDelta::ms(200);
+constexpr int64_t kProbeRttTimeMs = 200;
 // If the bandwidth does not increase by the factor of |kStartupGrowthTarget|
 // within |kRoundTripsWithoutGrowthBeforeExitingStartup| rounds, the connection
 // will exit the STARTUP mode.
 const double kStartupGrowthTarget = 1.25;
-// Coefficient of target congestion window to use when basing PROBE_RTT on BDP.
-const double kModerateProbeRttMultiplier = 0.75;
 // Coefficient to determine if a new RTT is sufficiently similar to min_rtt that
 // we don't need to enter PROBE_RTT.
 const double kSimilarMinRttThreshold = 1.125;
 
-const TimeDelta kInitialRtt = TimeDelta::ms(200);
-const DataRate kInitialBandwidth = DataRate::kbps(300);
+constexpr int64_t kInitialRttMs = 200;
+constexpr int64_t kInitialBandwidthKbps = 300;
 
-const TimeDelta kMaxRtt = TimeDelta::ms(1000);
-const DataRate kMaxBandwidth = DataRate::kbps(5000);
+constexpr int64_t kMaxRttMs = 1000;
+constexpr int64_t kMaxBandwidthKbps = 5000;
 
-const DataSize kInitialCongestionWindow = kInitialRtt * kInitialBandwidth;
-const DataSize kDefaultMaxCongestionWindow = kMaxRtt * kMaxBandwidth;
-
-static std::string ModeToString(BbrNetworkController::Mode mode) {
-  switch (mode) {
-    case BbrNetworkController::STARTUP:
-      return "STARTUP";
-    case BbrNetworkController::DRAIN:
-      return "DRAIN";
-    case BbrNetworkController::PROBE_BW:
-      return "PROBE_BW";
-    case BbrNetworkController::PROBE_RTT:
-      return "PROBE_RTT";
-  }
-  return "???";
-}
+constexpr int64_t kInitialCongestionWindowBytes =
+    (kInitialRttMs * kInitialBandwidthKbps) / 8;
+constexpr int64_t kDefaultMaxCongestionWindowBytes =
+    (kMaxRttMs * kMaxBandwidthKbps) / 8;
 }  // namespace
+
+BbrNetworkController::UpdateState::UpdateState() = default;
+BbrNetworkController::UpdateState::UpdateState(
+    const BbrNetworkController::UpdateState&) = default;
+BbrNetworkController::UpdateState::~UpdateState() = default;
 
 BbrNetworkController::BbrControllerConfig
 BbrNetworkController::BbrControllerConfig::DefaultConfig() {
@@ -123,6 +113,40 @@ BbrNetworkController::BbrControllerConfig::DefaultConfig() {
   return config;
 }
 
+BbrNetworkController::BbrControllerConfig
+BbrNetworkController::BbrControllerConfig::ExperimentConfig() {
+  auto exp = CongestionControllerExperiment::GetBbrExperimentConfig();
+  if (exp) {
+    BbrControllerConfig config;
+    config.exit_startup_on_loss = exp->exit_startup_on_loss;
+    config.exit_startup_rtt_threshold_ms = exp->exit_startup_rtt_threshold_ms;
+    config.fully_drain_queue = exp->fully_drain_queue;
+    config.initial_conservation_in_startup =
+        static_cast<RecoveryState>(exp->initial_conservation_in_startup);
+    config.num_startup_rtts = exp->num_startup_rtts;
+    config.probe_rtt_based_on_bdp = exp->probe_rtt_based_on_bdp;
+    config.probe_rtt_disabled_if_app_limited =
+        exp->probe_rtt_disabled_if_app_limited;
+    config.probe_rtt_skipped_if_similar_rtt =
+        exp->probe_rtt_skipped_if_similar_rtt;
+    config.rate_based_recovery = exp->rate_based_recovery;
+    config.rate_based_startup = exp->rate_based_startup;
+    config.slower_startup = exp->slower_startup;
+    config.encoder_rate_gain = exp->encoder_rate_gain;
+    config.encoder_rate_gain_in_probe_rtt = exp->encoder_rate_gain_in_probe_rtt;
+    config.max_ack_height_window_multiplier =
+        exp->max_ack_height_window_multiplier;
+    config.max_aggregation_bytes_multiplier =
+        exp->max_aggregation_bytes_multiplier;
+    config.probe_bw_pacing_gain_offset = exp->probe_bw_pacing_gain_offset;
+    config.probe_rtt_congestion_window_gain =
+        exp->probe_rtt_congestion_window_gain;
+    return config;
+  } else {
+    return DefaultConfig();
+  }
+}
+
 BbrNetworkController::DebugState::DebugState(const BbrNetworkController& sender)
     : mode(sender.mode_),
       max_bandwidth(sender.max_bandwidth_.GetBest()),
@@ -141,26 +165,29 @@ BbrNetworkController::DebugState::DebugState(const BbrNetworkController& sender)
 
 BbrNetworkController::DebugState::DebugState(const DebugState& state) = default;
 
-BbrNetworkController::BbrNetworkController(NetworkControllerObserver* observer,
-                                           NetworkControllerConfig config)
-    : observer_(observer),
-      random_(10),
+BbrNetworkController::BbrNetworkController(NetworkControllerConfig config)
+    : random_(10),
       max_bandwidth_(kBandwidthWindowSize, DataRate::Zero(), 0),
-      default_bandwidth_(kInitialBandwidth),
+      default_bandwidth_(DataRate::kbps(kInitialBandwidthKbps)),
       max_ack_height_(kBandwidthWindowSize, DataSize::Zero(), 0),
-      congestion_window_(kInitialCongestionWindow),
-      initial_congestion_window_(kInitialCongestionWindow),
-      max_congestion_window_(kDefaultMaxCongestionWindow),
+      congestion_window_(DataSize::bytes(kInitialCongestionWindowBytes)),
+      initial_congestion_window_(
+          DataSize::bytes(kInitialCongestionWindowBytes)),
+      max_congestion_window_(DataSize::bytes(kDefaultMaxCongestionWindowBytes)),
       congestion_window_gain_constant_(kProbeBWCongestionWindowGain),
       rtt_variance_weight_(kBbrRttVariationWeight),
       recovery_window_(max_congestion_window_) {
-  config_ = BbrControllerConfig::DefaultConfig();
+  RTC_LOG(LS_INFO) << "Creating BBR controller";
+  config_ = BbrControllerConfig::ExperimentConfig();
   if (config.starting_bandwidth.IsFinite())
     default_bandwidth_ = config.starting_bandwidth;
   constraints_ = config.constraints;
   Reset();
-  EnterStartupMode();
-  SignalUpdatedRates(config.constraints.at_time);
+  if (config_.num_startup_rtts > 0) {
+    EnterStartupMode();
+  } else {
+    EnterProbeBandwidthMode(constraints_->at_time);
+  }
 }
 
 BbrNetworkController::~BbrNetworkController() {}
@@ -170,15 +197,15 @@ void BbrNetworkController::Reset() {
   rounds_without_bandwidth_gain_ = 0;
   is_at_full_bandwidth_ = false;
   last_update_state_.mode = Mode::STARTUP;
-  last_update_state_.bandwidth = DataRate();
-  last_update_state_.rtt = TimeDelta();
-  last_update_state_.pacing_rate = DataRate();
-  last_update_state_.target_rate = DataRate();
+  last_update_state_.bandwidth.reset();
+  last_update_state_.rtt.reset();
+  last_update_state_.pacing_rate.reset();
+  last_update_state_.target_rate.reset();
   last_update_state_.probing_for_bandwidth = false;
   EnterStartupMode();
 }
 
-void BbrNetworkController::SignalUpdatedRates(Timestamp at_time) {
+NetworkControlUpdate BbrNetworkController::CreateRateUpdate(Timestamp at_time) {
   DataRate bandwidth = BandwidthEstimate();
   if (bandwidth.IsZero())
     bandwidth = default_bandwidth_;
@@ -192,8 +219,10 @@ void BbrNetworkController::SignalUpdatedRates(Timestamp at_time) {
   target_rate = std::min(target_rate, pacing_rate);
 
   if (constraints_) {
-    target_rate = std::min(target_rate, constraints_->max_data_rate);
-    target_rate = std::max(target_rate, constraints_->min_data_rate);
+    if (constraints_->max_data_rate)
+      target_rate = std::min(target_rate, *constraints_->max_data_rate);
+    if (constraints_->min_data_rate)
+      target_rate = std::max(target_rate, *constraints_->min_data_rate);
   }
   bool probing_for_bandwidth = IsProbingForMoreBandwidth();
   if (last_update_state_.mode == mode_ &&
@@ -202,7 +231,7 @@ void BbrNetworkController::SignalUpdatedRates(Timestamp at_time) {
       last_update_state_.pacing_rate == pacing_rate &&
       last_update_state_.target_rate == target_rate &&
       last_update_state_.probing_for_bandwidth == probing_for_bandwidth)
-    return;
+    return NetworkControlUpdate();
   last_update_state_.mode = mode_;
   last_update_state_.bandwidth = bandwidth;
   last_update_state_.rtt = rtt;
@@ -210,14 +239,7 @@ void BbrNetworkController::SignalUpdatedRates(Timestamp at_time) {
   last_update_state_.target_rate = target_rate;
   last_update_state_.probing_for_bandwidth = probing_for_bandwidth;
 
-  RTC_LOG(LS_INFO) << "RateUpdate, mode: " << ModeToString(mode_)
-                   << ", bw: " << ToString(bandwidth)
-                   << ", min_rtt: " << ToString(rtt)
-                   << ", last_rtt: " << ToString(last_rtt_)
-                   << ", pacing_rate: " << ToString(pacing_rate)
-                   << ", target_rate: " << ToString(target_rate)
-                   << ", Probing:" << probing_for_bandwidth
-                   << ", pacing_gain: " << pacing_gain_;
+  NetworkControlUpdate update;
 
   TargetTransferRate target_rate_msg;
   target_rate_msg.network_estimate.at_time = at_time;
@@ -230,7 +252,7 @@ void BbrNetworkController::SignalUpdatedRates(Timestamp at_time) {
 
   target_rate_msg.target_rate = target_rate;
   target_rate_msg.at_time = at_time;
-  observer_->OnTargetTransferRate(target_rate_msg);
+  update.target_rate = target_rate_msg;
 
   PacerConfig pacer_config;
   // A small time window ensures an even pacing rate.
@@ -243,46 +265,56 @@ void BbrNetworkController::SignalUpdatedRates(Timestamp at_time) {
     pacer_config.pad_window = DataSize::Zero();
 
   pacer_config.at_time = at_time;
-  observer_->OnPacerConfig(pacer_config);
+  update.pacer_config = pacer_config;
 
-  CongestionWindow congestion_window;
-  congestion_window.data_window = GetCongestionWindow();
-  observer_->OnCongestionWindow(congestion_window);
+  update.congestion_window = GetCongestionWindow();
+  return update;
 }
 
-void BbrNetworkController::OnNetworkAvailability(NetworkAvailability msg) {
+NetworkControlUpdate BbrNetworkController::OnNetworkAvailability(
+    NetworkAvailability msg) {
   Reset();
   rtt_stats_.OnConnectionMigration();
-  SignalUpdatedRates(msg.at_time);
+  return CreateRateUpdate(msg.at_time);
 }
 
-void BbrNetworkController::OnNetworkRouteChange(NetworkRouteChange msg) {
+NetworkControlUpdate BbrNetworkController::OnNetworkRouteChange(
+    NetworkRouteChange msg) {
   constraints_ = msg.constraints;
   Reset();
-  if (msg.starting_rate.IsFinite())
-    default_bandwidth_ = msg.starting_rate;
+  if (msg.starting_rate)
+    default_bandwidth_ = *msg.starting_rate;
+
   rtt_stats_.OnConnectionMigration();
-  SignalUpdatedRates(msg.at_time);
+  return CreateRateUpdate(msg.at_time);
 }
 
-void BbrNetworkController::OnProcessInterval(ProcessInterval) {}
+NetworkControlUpdate BbrNetworkController::OnProcessInterval(
+    ProcessInterval msg) {
+  return CreateRateUpdate(msg.at_time);
+}
 
-void BbrNetworkController::OnStreamsConfig(StreamsConfig msg) {}
+NetworkControlUpdate BbrNetworkController::OnStreamsConfig(StreamsConfig msg) {
+  return NetworkControlUpdate();
+}
 
-void BbrNetworkController::OnTargetRateConstraints(TargetRateConstraints msg) {
+NetworkControlUpdate BbrNetworkController::OnTargetRateConstraints(
+    TargetRateConstraints msg) {
   constraints_ = msg;
-  SignalUpdatedRates(msg.at_time);
+  return CreateRateUpdate(msg.at_time);
 }
 
 bool BbrNetworkController::InSlowStart() const {
   return mode_ == STARTUP;
 }
 
-void BbrNetworkController::OnSentPacket(SentPacket msg) {
+NetworkControlUpdate BbrNetworkController::OnSentPacket(SentPacket msg) {
   last_send_time_ = msg.send_time;
-  if (!aggregation_epoch_start_time_.IsInitialized()) {
+  if (!aggregation_epoch_start_time_) {
     aggregation_epoch_start_time_ = msg.send_time;
+    aggregation_epoch_bytes_ = DataSize::Zero();
   }
+  return NetworkControlUpdate();
 }
 
 bool BbrNetworkController::CanSend(DataSize bytes_in_flight) {
@@ -330,7 +362,7 @@ bool BbrNetworkController::IsProbingForMoreBandwidth() const {
   return (mode_ == PROBE_BW && pacing_gain_ > 1) || mode_ == STARTUP;
 }
 
-void BbrNetworkController::OnTransportPacketsFeedback(
+NetworkControlUpdate BbrNetworkController::OnTransportPacketsFeedback(
     TransportPacketsFeedback msg) {
   Timestamp feedback_recv_time = msg.feedback_time;
   rtc::Optional<SentPacket> last_sent_packet =
@@ -398,7 +430,7 @@ void BbrNetworkController::OnTransportPacketsFeedback(
   MaybeEnterOrExitProbeRtt(msg, is_round_start, min_rtt_expired);
 
   // Calculate number of packets acked and lost.
-  DataSize bytes_lost = DataSize();
+  DataSize bytes_lost = DataSize::Zero();
   for (const PacketResult& packet : lost_packets) {
     bytes_lost += packet.sent_packet->size;
   }
@@ -408,12 +440,21 @@ void BbrNetworkController::OnTransportPacketsFeedback(
   CalculatePacingRate();
   CalculateCongestionWindow(total_acked_size);
   CalculateRecoveryWindow(total_acked_size, bytes_lost, bytes_in_flight);
-  SignalUpdatedRates(msg.feedback_time);
+  return CreateRateUpdate(msg.feedback_time);
 }
 
-void BbrNetworkController::OnRemoteBitrateReport(RemoteBitrateReport msg) {}
-void BbrNetworkController::OnRoundTripTimeUpdate(RoundTripTimeUpdate msg) {}
-void BbrNetworkController::OnTransportLossReport(TransportLossReport msg) {}
+NetworkControlUpdate BbrNetworkController::OnRemoteBitrateReport(
+    RemoteBitrateReport msg) {
+  return NetworkControlUpdate();
+}
+NetworkControlUpdate BbrNetworkController::OnRoundTripTimeUpdate(
+    RoundTripTimeUpdate msg) {
+  return NetworkControlUpdate();
+}
+NetworkControlUpdate BbrNetworkController::OnTransportLossReport(
+    TransportLossReport msg) {
+  return NetworkControlUpdate();
+}
 
 TimeDelta BbrNetworkController::GetMinRtt() const {
   return !min_rtt_.IsZero() ? min_rtt_
@@ -434,7 +475,7 @@ DataSize BbrNetworkController::GetTargetCongestionWindow(double gain) const {
 
 DataSize BbrNetworkController::ProbeRttCongestionWindow() const {
   if (config_.probe_rtt_based_on_bdp) {
-    return GetTargetCongestionWindow(kModerateProbeRttMultiplier);
+    return GetTargetCongestionWindow(config_.probe_rtt_congestion_window_gain);
   }
   return kMinimumCongestionWindow;
 }
@@ -484,13 +525,11 @@ bool BbrNetworkController::UpdateMinRtt(Timestamp ack_time,
 
   // Do not expire min_rtt if none was ever available.
   bool min_rtt_expired =
-      !min_rtt_.IsZero() && (ack_time > (min_rtt_timestamp_ + kMinRttExpiry));
+      !min_rtt_.IsZero() &&
+      (ack_time >
+       (min_rtt_timestamp_ + TimeDelta::seconds(kMinRttExpirySeconds)));
 
   if (min_rtt_expired || sample_rtt < min_rtt_ || min_rtt_.IsZero()) {
-    RTC_LOG(LS_INFO) << "Min RTT updated, old value: " << ToString(min_rtt_)
-                     << ", new value: " << ToString(sample_rtt)
-                     << ", current time: " << ToString(ack_time);
-
     if (ShouldExtendMinRttExpiry()) {
       min_rtt_expired = false;
     } else {
@@ -641,30 +680,28 @@ void BbrNetworkController::MaybeEnterOrExitProbeRtt(
     pacing_gain_ = 1;
     // Do not decide on the time to exit PROBE_RTT until the |bytes_in_flight|
     // is at the target small value.
-    exit_probe_rtt_at_ = Timestamp();
-    RTC_LOG(LS_INFO) << "Entering RTT Probe";
+    exit_probe_rtt_at_.reset();
   }
 
   if (mode_ == PROBE_RTT) {
     is_app_limited_ = true;
     end_of_app_limited_phase_ = last_send_time_;
 
-    if (!exit_probe_rtt_at_.IsInitialized()) {
+    if (!exit_probe_rtt_at_) {
       // If the window has reached the appropriate size, schedule exiting
       // PROBE_RTT.  The CWND during PROBE_RTT is kMinimumCongestionWindow, but
       // we allow an extra packet since QUIC checks CWND before sending a
       // packet.
       if (msg.data_in_flight < ProbeRttCongestionWindow() + kMaxPacketSize) {
-        exit_probe_rtt_at_ = msg.feedback_time + kProbeRttTime;
+        exit_probe_rtt_at_ = msg.feedback_time + TimeDelta::ms(kProbeRttTimeMs);
         probe_rtt_round_passed_ = false;
       }
     } else {
       if (is_round_start) {
         probe_rtt_round_passed_ = true;
       }
-      if (msg.feedback_time >= exit_probe_rtt_at_ && probe_rtt_round_passed_) {
+      if (msg.feedback_time >= *exit_probe_rtt_at_ && probe_rtt_round_passed_) {
         min_rtt_timestamp_ = msg.feedback_time;
-        RTC_LOG(LS_INFO) << "Exiting RTT Probe";
         if (!is_at_full_bandwidth_) {
           EnterStartupMode();
         } else {
@@ -708,7 +745,8 @@ void BbrNetworkController::UpdateRecoveryState(Timestamp last_acked_send_time,
       RTC_FALLTHROUGH();
     case GROWTH:
       // Exit recovery if appropriate.
-      if (!has_losses && last_acked_send_time > end_recovery_at_) {
+      if (!has_losses && end_recovery_at_ &&
+          last_acked_send_time > *end_recovery_at_) {
         recovery_state_ = NOT_IN_RECOVERY;
       }
 
@@ -719,10 +757,16 @@ void BbrNetworkController::UpdateRecoveryState(Timestamp last_acked_send_time,
 void BbrNetworkController::UpdateAckAggregationBytes(
     Timestamp ack_time,
     DataSize newly_acked_bytes) {
+  if (!aggregation_epoch_start_time_) {
+    RTC_LOG(LS_ERROR)
+        << "Received feedback before information about sent packets.";
+    RTC_DCHECK(aggregation_epoch_start_time_.has_value());
+    return;
+  }
   // Compute how many bytes are expected to be delivered, assuming max bandwidth
   // is correct.
   DataSize expected_bytes_acked =
-      max_bandwidth_.GetBest() * (ack_time - aggregation_epoch_start_time_);
+      max_bandwidth_.GetBest() * (ack_time - *aggregation_epoch_start_time_);
   // Reset the current aggregation epoch as soon as the ack arrival rate is less
   // than or equal to the max bandwidth.
   if (aggregation_epoch_bytes_ <= expected_bytes_acked) {
@@ -760,7 +804,7 @@ void BbrNetworkController::CalculatePacingRate() {
     return;
   }
   // Slow the pacing rate in STARTUP once loss has ever been detected.
-  const bool has_ever_detected_loss = end_recovery_at_.IsInitialized();
+  const bool has_ever_detected_loss = end_recovery_at_.has_value();
   if (config_.slower_startup && has_ever_detected_loss) {
     pacing_rate_ = kStartupAfterLossGain * BandwidthEstimate();
     return;

@@ -10,14 +10,17 @@
 #include <cmath>
 #include <utility>
 
+#include "base/base_switches.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/location.h"
+#include "base/memory/memory_pressure_listener.h"
 #include "base/memory/ptr_util.h"
 #include "base/optional.h"
 #include "base/run_loop.h"
 #include "base/test/histogram_tester.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "build/build_config.h"
 #include "cc/animation/animation_host.h"
 #include "cc/animation/animation_id_provider.h"
 #include "cc/animation/transform_operations.h"
@@ -69,11 +72,13 @@
 #include "components/viz/common/quads/solid_color_draw_quad.h"
 #include "components/viz/common/quads/texture_draw_quad.h"
 #include "components/viz/common/quads/tile_draw_quad.h"
+#include "components/viz/common/surfaces/frame_sink_id.h"
 #include "components/viz/service/display/gl_renderer.h"
 #include "components/viz/test/begin_frame_args_test.h"
 #include "components/viz/test/fake_output_surface.h"
 #include "components/viz/test/test_layer_tree_frame_sink.h"
 #include "components/viz/test/test_web_graphics_context_3d.h"
+#include "gpu/GLES2/gl2extchromium.h"
 #include "media/base/media.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -180,7 +185,7 @@ class LayerTreeHostImplTest : public testing::Test,
   }
   void DidActivateSyncTree() override {
     // Make sure the active tree always has a valid LocalSurfaceId.
-    host_impl_->active_tree()->set_local_surface_id(
+    host_impl_->active_tree()->SetLocalSurfaceIdFromParent(
         viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)));
   }
   void WillPrepareTiles() override {}
@@ -242,7 +247,7 @@ class LayerTreeHostImplTest : public testing::Test,
     bool init = host_impl_->InitializeRenderer(layer_tree_frame_sink_.get());
     host_impl_->SetViewportSize(gfx::Size(10, 10));
     host_impl_->active_tree()->PushPageScaleFromMainThread(1.f, 1.f, 1.f);
-    host_impl_->active_tree()->set_local_surface_id(
+    host_impl_->active_tree()->SetLocalSurfaceIdFromParent(
         viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)));
     // Set the viz::BeginFrameArgs so that methods which use it are able to.
     host_impl_->WillBeginImplFrame(viz::CreateBeginFrameArgsForTesting(
@@ -1063,15 +1068,23 @@ TEST_F(LayerTreeHostImplTest, ScrollWithoutRootLayer) {
             status.main_thread_scrolling_reasons);
 }
 
+class LostGLES2Interface : public viz::TestGLES2Interface {
+ public:
+  LostGLES2Interface() = default;
+
+  void InitializeTestContext() override {
+    LoseContextCHROMIUM(GL_GUILTY_CONTEXT_RESET_ARB,
+                        GL_INNOCENT_CONTEXT_RESET_ARB);
+  }
+};
+
 TEST_F(LayerTreeHostImplTest, ScrollWithoutRenderer) {
-  std::unique_ptr<TestWebGraphicsContext3D> context_owned =
-      TestWebGraphicsContext3D::Create();
-  context_owned->set_context_lost(true);
+  auto gl_owned = std::make_unique<LostGLES2Interface>();
 
   // Initialization will fail.
-  EXPECT_FALSE(CreateHostImpl(
-      DefaultSettings(),
-      FakeLayerTreeFrameSink::Create3d(std::move(context_owned))));
+  EXPECT_FALSE(
+      CreateHostImpl(DefaultSettings(),
+                     FakeLayerTreeFrameSink::Create3d(std::move(gl_owned))));
 
   SetupScrollAndContentsLayers(gfx::Size(100, 100));
 
@@ -1643,7 +1656,7 @@ TEST_F(LayerTreeHostImplTest, GetSnapFlingInfoWhenZoomed) {
   InputHandlerScrollResult result =
       host_impl_->ScrollBy(UpdateState(scroll_position, delta).get());
   EXPECT_VECTOR_EQ(gfx::Vector2dF(20, 20), overflow->CurrentScrollOffset());
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(4, 4), result.current_offset);
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(4, 4), result.current_visual_offset);
 
   gfx::Vector2dF initial_offset, target_offset;
   EXPECT_TRUE(host_impl_->GetSnapFlingInfo(gfx::Vector2dF(10, 10),
@@ -2589,8 +2602,7 @@ TEST_F(LayerTreeHostImplTest, ImplPinchZoomWheelBubbleBetweenViewports) {
 TEST_F(LayerTreeHostImplTest, ScrollWithSwapPromises) {
   ui::LatencyInfo latency_info;
   latency_info.set_trace_id(5);
-  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT, 0,
-                                1234);
+  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT, 0);
   std::unique_ptr<SwapPromise> swap_promise(
       new LatencyInfoSwapPromise(latency_info));
 
@@ -3532,7 +3544,7 @@ class LayerTreeHostImplTestScrollbarAnimation : public LayerTreeHostImplTest {
     host_impl_->active_tree()->BuildPropertyTreesForTesting();
     host_impl_->active_tree()->DidBecomeActive();
     host_impl_->active_tree()->HandleScrollbarShowRequestsFromMain();
-    host_impl_->active_tree()->set_local_surface_id(
+    host_impl_->active_tree()->SetLocalSurfaceIdFromParent(
         viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)));
     DrawFrame();
 
@@ -4884,11 +4896,9 @@ class MissingTextureAnimatingLayer : public DidDrawCheckLayer {
       bool tile_missing,
       bool had_incomplete_tile,
       bool animating,
-      ResourceProvider* resource_provider,
       scoped_refptr<AnimationTimeline> timeline) {
     return base::WrapUnique(new MissingTextureAnimatingLayer(
-        tree_impl, id, tile_missing, had_incomplete_tile, animating,
-        resource_provider, timeline));
+        tree_impl, id, tile_missing, had_incomplete_tile, animating, timeline));
   }
 
   void AppendQuads(viz::RenderPass* render_pass,
@@ -4906,7 +4916,6 @@ class MissingTextureAnimatingLayer : public DidDrawCheckLayer {
                                bool tile_missing,
                                bool had_incomplete_tile,
                                bool animating,
-                               ResourceProvider* resource_provider,
                                scoped_refptr<AnimationTimeline> timeline)
       : DidDrawCheckLayer(tree_impl, id),
         tile_missing_(tile_missing),
@@ -4946,8 +4955,7 @@ static void CreateLayerFromState(
   static int layer_id = 2;
   root->test_properties()->AddChild(MissingTextureAnimatingLayer::Create(
       root->layer_tree_impl(), layer_id++, state.has_missing_tile,
-      state.has_incomplete_tile, state.is_animating,
-      root->layer_tree_impl()->resource_provider(), timeline));
+      state.has_incomplete_tile, state.is_animating, timeline));
   auto* layer =
       static_cast<DidDrawCheckLayer*>(root->test_properties()->children.back());
   if (state.has_copy_request)
@@ -6692,9 +6700,11 @@ TEST_F(LayerTreeHostImplTimelinesTest, ScrollAnimatedLatchToChild) {
   EXPECT_EQ(gfx::ScrollOffset(0, 50), child_layer->CurrentScrollOffset());
   host_impl_->DidFinishImplFrame();
 
-  // Second ScrollAnimated should still latch to the grand_child_layer.
+  // Second ScrollAnimated should still latch to the grand_child_layer. Since it
+  // is already at its extent and no scrolling happens, the scroll result must
+  // be ignored.
   EXPECT_EQ(
-      InputHandler::SCROLL_ON_IMPL_THREAD,
+      InputHandler::SCROLL_IGNORED,
       host_impl_->ScrollAnimated(gfx::Point(), gfx::Vector2d(0, -100)).thread);
 
   begin_frame_args.frame_time =
@@ -8364,15 +8374,10 @@ class BlendStateCheckLayer : public LayerImpl {
         quads_appended_(false),
         quad_rect_(5, 5, 5, 5),
         quad_visible_rect_(5, 5, 5, 5) {
-    if (tree_impl->context_provider()) {
-      resource_id_ = resource_provider->CreateGpuTextureResource(
-          gfx::Size(1, 1), viz::ResourceTextureHint::kDefault, viz::RGBA_8888,
-          gfx::ColorSpace());
-    } else {
-      resource_id_ = resource_provider->CreateBitmapResource(
-          gfx::Size(1, 1), gfx::ColorSpace(), viz::RGBA_8888);
-    }
-    resource_provider->AllocateForTesting(resource_id_);
+    resource_id_ = resource_provider->ImportResource(
+        viz::TransferableResource::MakeSoftware(
+            viz::SharedBitmap::GenerateId(), gfx::Size(1, 1), viz::RGBA_8888),
+        viz::SingleReleaseCallback::Create(base::DoNothing()));
     SetBounds(gfx::Size(10, 10));
     SetDrawsContent(true);
   }
@@ -9053,10 +9058,11 @@ class FakeDrawableLayerImpl : public LayerImpl {
 // submitted to the LayerTreeFrameSink, where it should request to swap only
 // the sub-buffer that is damaged.
 TEST_F(LayerTreeHostImplTest, PartialSwapReceivesDamageRect) {
+  auto gl_owned = std::make_unique<viz::TestGLES2Interface>();
+  gl_owned->set_have_post_sub_buffer(true);
   scoped_refptr<viz::TestContextProvider> context_provider(
-      viz::TestContextProvider::Create());
+      viz::TestContextProvider::Create(std::move(gl_owned)));
   context_provider->BindToCurrentThread();
-  context_provider->TestContext3d()->set_have_post_sub_buffer(true);
 
   std::unique_ptr<FakeLayerTreeFrameSink> layer_tree_frame_sink(
       FakeLayerTreeFrameSink::Create3d(context_provider));
@@ -9090,7 +9096,7 @@ TEST_F(LayerTreeHostImplTest, PartialSwapReceivesDamageRect) {
   root->test_properties()->AddChild(std::move(child));
   layer_tree_host_impl->active_tree()->SetRootLayerForTesting(std::move(root));
   layer_tree_host_impl->active_tree()->BuildPropertyTreesForTesting();
-  layer_tree_host_impl->active_tree()->set_local_surface_id(
+  layer_tree_host_impl->active_tree()->SetLocalSurfaceIdFromParent(
       viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)));
 
   TestFrameData frame;
@@ -9190,11 +9196,10 @@ class FakeLayerWithQuads : public LayerImpl {
 };
 
 TEST_F(LayerTreeHostImplTest, LayersFreeTextures) {
-  std::unique_ptr<TestWebGraphicsContext3D> context =
-      TestWebGraphicsContext3D::Create();
-  TestWebGraphicsContext3D* context3d = context.get();
+  auto gl_owned = std::make_unique<viz::TestGLES2Interface>();
+  viz::TestGLES2Interface* gl = gl_owned.get();
   std::unique_ptr<LayerTreeFrameSink> layer_tree_frame_sink(
-      FakeLayerTreeFrameSink::Create3d(std::move(context)));
+      FakeLayerTreeFrameSink::Create3d(std::move(gl_owned)));
   CreateHostImpl(DefaultSettings(), std::move(layer_tree_frame_sink));
 
   std::unique_ptr<LayerImpl> root_layer =
@@ -9215,27 +9220,21 @@ TEST_F(LayerTreeHostImplTest, LayersFreeTextures) {
   host_impl_->active_tree()->SetRootLayerForTesting(std::move(root_layer));
   host_impl_->active_tree()->BuildPropertyTreesForTesting();
 
-  EXPECT_EQ(0u, context3d->NumTextures());
+  EXPECT_EQ(0u, gl->NumTextures());
 
   TestFrameData frame;
   EXPECT_EQ(DRAW_SUCCESS, host_impl_->PrepareToDraw(&frame));
   host_impl_->DrawLayers(&frame);
   host_impl_->DidDrawAllLayers(frame);
 
-  EXPECT_GT(context3d->NumTextures(), 0u);
+  EXPECT_GT(gl->NumTextures(), 0u);
 
   // Kill the layer tree.
   host_impl_->active_tree()->DetachLayers();
   // There should be no textures left in use after.
-  EXPECT_EQ(0u, context3d->NumTextures());
+  EXPECT_EQ(0u, gl->NumTextures());
 }
 
-class MockDrawQuadsToFillScreenContext : public TestWebGraphicsContext3D {
- public:
-  MOCK_METHOD1(useProgram, void(GLuint program));
-  MOCK_METHOD4(drawElements,
-               void(GLenum mode, GLsizei count, GLenum type, GLintptr offset));
-};
 
 TEST_F(LayerTreeHostImplTest, HasTransparentBackground) {
   SetupRootLayerImpl(LayerImpl::Create(host_impl_->active_tree(), 1));
@@ -9548,8 +9547,7 @@ TEST_F(LayerTreeHostImplTest, MemoryLimits) {
       AnimationHost::CreateForTesting(ThreadInstance::IMPL), 0, nullptr);
 
   // Gpu compositing.
-  layer_tree_frame_sink_ =
-      FakeLayerTreeFrameSink::Create3d(TestWebGraphicsContext3D::Create());
+  layer_tree_frame_sink_ = FakeLayerTreeFrameSink::Create3d();
   host_impl_->SetVisible(true);
   host_impl_->InitializeRenderer(layer_tree_frame_sink_.get());
   {
@@ -9712,58 +9710,58 @@ TEST_F(LayerTreeHostImplTestPrepareTiles, PrepareTilesWhenInvisible) {
 }
 
 TEST_F(LayerTreeHostImplTest, UIResourceManagement) {
-  std::unique_ptr<TestWebGraphicsContext3D> context =
-      TestWebGraphicsContext3D::Create();
-  TestWebGraphicsContext3D* context3d = context.get();
+  auto gl_owned = std::make_unique<viz::TestGLES2Interface>();
+  viz::TestGLES2Interface* gl = gl_owned.get();
+
   std::unique_ptr<FakeLayerTreeFrameSink> layer_tree_frame_sink =
-      FakeLayerTreeFrameSink::Create3d();
+      FakeLayerTreeFrameSink::Create3d(std::move(gl_owned));
   CreateHostImpl(DefaultSettings(), std::move(layer_tree_frame_sink));
 
-  EXPECT_EQ(0u, context3d->NumTextures());
+  EXPECT_EQ(0u, gl->NumTextures());
 
   UIResourceId ui_resource_id = 1;
   bool is_opaque = false;
   UIResourceBitmap bitmap(gfx::Size(1, 1), is_opaque);
   host_impl_->CreateUIResource(ui_resource_id, bitmap);
-  EXPECT_EQ(1u, context3d->NumTextures());
+  EXPECT_EQ(1u, gl->NumTextures());
   viz::ResourceId id1 = host_impl_->ResourceIdForUIResource(ui_resource_id);
   EXPECT_NE(0u, id1);
 
   // Multiple requests with the same id is allowed.  The previous texture is
   // deleted.
   host_impl_->CreateUIResource(ui_resource_id, bitmap);
-  EXPECT_EQ(1u, context3d->NumTextures());
+  EXPECT_EQ(1u, gl->NumTextures());
   viz::ResourceId id2 = host_impl_->ResourceIdForUIResource(ui_resource_id);
   EXPECT_NE(0u, id2);
   EXPECT_NE(id1, id2);
 
   // Deleting invalid UIResourceId is allowed and does not change state.
   host_impl_->DeleteUIResource(-1);
-  EXPECT_EQ(1u, context3d->NumTextures());
+  EXPECT_EQ(1u, gl->NumTextures());
 
   // Should return zero for invalid UIResourceId.  Number of textures should
   // not change.
   EXPECT_EQ(0u, host_impl_->ResourceIdForUIResource(-1));
-  EXPECT_EQ(1u, context3d->NumTextures());
+  EXPECT_EQ(1u, gl->NumTextures());
 
   host_impl_->DeleteUIResource(ui_resource_id);
   EXPECT_EQ(0u, host_impl_->ResourceIdForUIResource(ui_resource_id));
-  EXPECT_EQ(0u, context3d->NumTextures());
+  EXPECT_EQ(0u, gl->NumTextures());
 
   // Should not change state for multiple deletion on one UIResourceId
   host_impl_->DeleteUIResource(ui_resource_id);
-  EXPECT_EQ(0u, context3d->NumTextures());
+  EXPECT_EQ(0u, gl->NumTextures());
 }
 
 TEST_F(LayerTreeHostImplTest, CreateETC1UIResource) {
-  std::unique_ptr<TestWebGraphicsContext3D> context =
-      TestWebGraphicsContext3D::Create();
-  TestWebGraphicsContext3D* context3d = context.get();
-  context3d->set_support_compressed_texture_etc1(true);
-  CreateHostImpl(DefaultSettings(),
-                 FakeLayerTreeFrameSink::Create3d(std::move(context)));
+  auto gl_owned = std::make_unique<viz::TestGLES2Interface>();
+  gl_owned->set_support_compressed_texture_etc1(true);
+  viz::TestGLES2Interface* gl = gl_owned.get();
 
-  EXPECT_EQ(0u, context3d->NumTextures());
+  CreateHostImpl(DefaultSettings(),
+                 FakeLayerTreeFrameSink::Create3d(std::move(gl_owned)));
+
+  EXPECT_EQ(0u, gl->NumTextures());
 
   gfx::Size size(4, 4);
   // SkImageInfo has no support for ETC1.  The |info| below contains the right
@@ -9776,7 +9774,7 @@ TEST_F(LayerTreeHostImplTest, CreateETC1UIResource) {
   UIResourceBitmap bitmap(std::move(pixel_ref), size);
   UIResourceId ui_resource_id = 1;
   host_impl_->CreateUIResource(ui_resource_id, bitmap);
-  EXPECT_EQ(1u, context3d->NumTextures());
+  EXPECT_EQ(1u, gl->NumTextures());
   viz::ResourceId id1 = host_impl_->ResourceIdForUIResource(ui_resource_id);
   EXPECT_NE(0u, id1);
 }
@@ -9854,9 +9852,8 @@ TEST_F(LayerTreeHostImplTest, ShutdownReleasesContext) {
   constexpr double refresh_rate = 60.0;
   auto layer_tree_frame_sink = std::make_unique<viz::TestLayerTreeFrameSink>(
       context_provider, viz::TestContextProvider::CreateWorker(), nullptr,
-      nullptr, viz::RendererSettings(),
-      base::ThreadTaskRunnerHandle::Get().get(), synchronous_composite,
-      disable_display_vsync, refresh_rate);
+      viz::RendererSettings(), base::ThreadTaskRunnerHandle::Get().get(),
+      synchronous_composite, disable_display_vsync, refresh_rate);
   layer_tree_frame_sink->SetClient(&test_client);
 
   CreateHostImpl(DefaultSettings(), std::move(layer_tree_frame_sink));
@@ -10257,8 +10254,7 @@ TEST_F(LayerTreeHostImplLatencyInfoRendererTest,
   // component attached via LatencyInfoSwapPromise.
   ui::LatencyInfo latency_info;
   latency_info.set_trace_id(5);
-  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT, 0,
-                                0);
+  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT, 0);
   std::unique_ptr<SwapPromise> swap_promise(
       new LatencyInfoSwapPromise(latency_info));
   host_impl_->active_tree()->QueuePinnedSwapPromise(std::move(swap_promise));
@@ -10313,8 +10309,7 @@ TEST_F(LayerTreeHostImplLatencyInfoUITest,
   // component attached via LatencyInfoSwapPromise.
   ui::LatencyInfo latency_info;
   latency_info.set_trace_id(5);
-  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT, 0,
-                                0);
+  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT, 0);
   std::unique_ptr<SwapPromise> swap_promise(
       new LatencyInfoSwapPromise(latency_info));
   host_impl_->active_tree()->QueuePinnedSwapPromise(std::move(swap_promise));
@@ -11624,6 +11619,52 @@ TEST_F(LayerTreeHostImplTest, OnDrawConstraintSetNeedsRedraw) {
                      resourceless_software_draw);
   EXPECT_TRUE(did_request_redraw_);
   EXPECT_FALSE(last_on_draw_frame_->has_no_damage);
+}
+
+// TODO(gyuyoung): OnMemoryPressure disabled on ASAN, TSAN, Android, windows
+//                 due to the test failure. Will be handled on
+//                 http://crbug.com/839687.
+#if defined(OS_WIN) || defined(OS_ANDROID) || defined(ADDRESS_SANITIZER) || \
+    defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) ||               \
+    defined(LEAK_SANITIZER)
+#define MAYBE_OnMemoryPressure DISABLED_OnMemoryPressure
+#else
+#define MAYBE_OnMemoryPressure OnMemoryPressure
+#endif
+
+TEST_F(LayerTreeHostImplTest, MAYBE_OnMemoryPressure) {
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableLowEndDeviceMode);
+
+  const gfx::Size viewport_size(100, 100);
+  host_impl_->SetViewportSize(viewport_size);
+  host_impl_->CreatePendingTree();
+  scoped_refptr<FakeRasterSource> raster_source(
+      FakeRasterSource::CreateFilled(viewport_size));
+  std::unique_ptr<FakePictureLayerImpl> layer(
+      FakePictureLayerImpl::CreateWithRasterSource(host_impl_->pending_tree(),
+                                                   11, raster_source));
+  layer->SetBounds(viewport_size);
+  layer->SetDrawsContent(true);
+  host_impl_->pending_tree()->SetRootLayerForTesting(std::move(layer));
+  host_impl_->pending_tree()->BuildPropertyTreesForTesting();
+  host_impl_->ActivateSyncTree();
+  const gfx::Transform draw_transform;
+  host_impl_->OnDraw(draw_transform, gfx::Rect(viewport_size), false);
+
+  std::unique_ptr<base::ProcessMetrics> metric(
+      base::ProcessMetrics::CreateCurrentProcessMetrics());
+  size_t current_memory_usage = metric->GetMallocUsage();
+
+  base::MemoryPressureListener::SimulatePressureNotification(
+      base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL);
+  base::RunLoop().RunUntilIdle();
+
+  size_t memory_usage_after_memory_pressure = metric->GetMallocUsage();
+
+  // Memory usage after the memory pressure should be less than previous one.
+  EXPECT_LT(memory_usage_after_memory_pressure, current_memory_usage);
+  EXPECT_FALSE(host_impl_->use_gpu_rasterization());
 }
 
 // We will force the touch event handler to be passive if we touch on a layer
@@ -13464,8 +13505,7 @@ TEST_F(LayerTreeHostImplTest, RecomputeGpuRasterOnLayerTreeFrameSinkChange) {
   host_impl_->SetVisible(true);
 
   // InitializeRenderer with a gpu-raster enabled output surface.
-  auto gpu_raster_layer_tree_frame_sink =
-      FakeLayerTreeFrameSink::Create3d(TestWebGraphicsContext3D::Create());
+  auto gpu_raster_layer_tree_frame_sink = FakeLayerTreeFrameSink::Create3d();
   host_impl_->InitializeRenderer(gpu_raster_layer_tree_frame_sink.get());
   EXPECT_TRUE(host_impl_->use_gpu_rasterization());
 
@@ -13743,7 +13783,10 @@ TEST_F(LayerTreeHostImplTest, CheckerImagingTileInvalidation) {
   std::unique_ptr<FakeRecordingSource> recording_source =
       FakeRecordingSource::CreateFilledRecordingSource(layer_size);
   PaintImage checkerable_image =
-      CreateDiscardablePaintImage(gfx::Size(500, 500));
+      PaintImageBuilder::WithCopy(
+          CreateDiscardablePaintImage(gfx::Size(500, 500)))
+          .set_decoding_mode(PaintImage::DecodingMode::kAsync)
+          .TakePaintImage();
   recording_source->add_draw_image(checkerable_image, gfx::Point(0, 0));
 
   SkColor non_solid_color = SkColorSetARGB(128, 45, 56, 67);
@@ -13772,6 +13815,11 @@ TEST_F(LayerTreeHostImplTest, CheckerImagingTileInvalidation) {
   root->SetBounds(layer_size);
   root->SetDrawsContent(true);
   pending_tree->BuildPropertyTreesForTesting();
+
+  // Update the decoding state map for the tracker so it knows the correct
+  // decoding preferences for the image.
+  host_impl_->tile_manager()->checker_image_tracker().UpdateImageDecodingHints(
+      raster_source->TakeDecodingModeMap());
 
   // CompleteCommit which should perform a PrepareTiles, adding tilings for the
   // root layer, each one having a raster task.
@@ -14249,6 +14297,212 @@ TEST_F(LayerTreeHostImplTest, SelectionBoundsPassedToRenderFrameMetadata) {
   EXPECT_EQ(gfx::PointF(selection_top), selection_2.start.edge_top());
   EXPECT_TRUE(selection_2.start.visible());
   EXPECT_TRUE(selection_2.end.visible());
+}
+
+// Tests ScrollBy() to see if the method sets the scroll tree's currently
+// scrolling node and the ScrollState properly.
+TEST_F(LayerTreeHostImplTest, ScrollByScrollingNode) {
+  SetupScrollAndContentsLayers(gfx::Size(100, 100));
+  host_impl_->active_tree()->BuildPropertyTreesForTesting();
+
+  // Create a ScrollState object with no scrolling element.
+  ScrollStateData scroll_state_data;
+  scroll_state_data.set_current_native_scrolling_element(ElementId());
+  std::unique_ptr<ScrollState> scroll_state(new ScrollState(scroll_state_data));
+
+  ScrollTree& scroll_tree =
+      host_impl_->active_tree()->property_trees()->scroll_tree;
+
+  EXPECT_EQ(InputHandler::SCROLL_ON_IMPL_THREAD,
+            host_impl_
+                ->ScrollBegin(BeginState(gfx::Point()).get(),
+                              InputHandler::TOUCHSCREEN)
+                .thread);
+
+  ScrollNode* scroll_node = scroll_tree.CurrentlyScrollingNode();
+  EXPECT_TRUE(scroll_node);
+
+  host_impl_->ScrollBy(scroll_state.get());
+
+  // Check to see the scroll tree's currently scrolling node is
+  // still the same. |scroll_state|'s scrolling node should match
+  // it.
+  EXPECT_EQ(scroll_node, scroll_tree.CurrentlyScrollingNode());
+  EXPECT_EQ(scroll_state->data()->current_native_scrolling_node(),
+            scroll_tree.CurrentlyScrollingNode());
+  EXPECT_EQ(scroll_state->data()->current_native_scrolling_element(),
+            scroll_tree.CurrentlyScrollingNode()->element_id);
+
+  // Set the scroll tree's currently scrolling node to null. Calling
+  // ScrollBy() should set the node to the one inside |scroll_state|.
+  host_impl_->active_tree()->SetCurrentlyScrollingNode(nullptr);
+  EXPECT_FALSE(scroll_tree.CurrentlyScrollingNode());
+
+  host_impl_->ScrollBy(scroll_state.get());
+
+  EXPECT_EQ(scroll_node, scroll_tree.CurrentlyScrollingNode());
+  EXPECT_EQ(scroll_state->data()->current_native_scrolling_node(),
+            scroll_tree.CurrentlyScrollingNode());
+  EXPECT_EQ(scroll_state->data()->current_native_scrolling_element(),
+            scroll_tree.CurrentlyScrollingNode()->element_id);
+}
+
+class HitTestRegionListGeneratingLayerTreeHostImplTest
+    : public LayerTreeHostImplTest {
+ public:
+  bool CreateHostImpl(
+      const LayerTreeSettings& settings,
+      std::unique_ptr<LayerTreeFrameSink> layer_tree_frame_sink) override {
+    // Enable hit test data generation with the CompositorFrame.
+    LayerTreeSettings new_settings = settings;
+    new_settings.build_hit_test_data = true;
+    return CreateHostImplWithTaskRunnerProvider(
+        new_settings, std::move(layer_tree_frame_sink), &task_runner_provider_);
+  }
+};
+
+// When disabled, no HitTestRegionList should be generated.
+// Test to ensure that hit test data is created correctly from the active layer
+// tree.
+TEST_F(LayerTreeHostImplTest, DisabledBuildHitTestData) {
+  // Setup surface layers in LayerTreeHostImpl.
+  host_impl_->CreatePendingTree();
+  host_impl_->ActivateSyncTree();
+  host_impl_->SetViewportSize(gfx::Size(1024, 768));
+
+  std::unique_ptr<LayerImpl> root =
+      LayerImpl::Create(host_impl_->active_tree(), 1);
+  std::unique_ptr<SurfaceLayerImpl> surface_child =
+      SurfaceLayerImpl::Create(host_impl_->active_tree(), 3);
+
+  surface_child->SetPosition(gfx::PointF(50, 50));
+  surface_child->SetBounds(gfx::Size(100, 100));
+  surface_child->SetDrawsContent(true);
+  surface_child->SetSurfaceHitTestable(true);
+
+  root->test_properties()->AddChild(std::move(surface_child));
+  host_impl_->active_tree()->SetRootLayerForTesting(std::move(root));
+
+  host_impl_->active_tree()->BuildPropertyTreesForTesting();
+
+  base::Optional<viz::HitTestRegionList> hit_test_region_list =
+      host_impl_->BuildHitTestData();
+  EXPECT_FALSE(hit_test_region_list);
+}
+
+// Test to ensure that hit test data is created correctly from the active layer
+// tree.
+TEST_F(HitTestRegionListGeneratingLayerTreeHostImplTest, BuildHitTestData) {
+  // Setup surface layers in LayerTreeHostImpl.
+  host_impl_->CreatePendingTree();
+  host_impl_->ActivateSyncTree();
+
+  // The structure of the layer tree:
+  // +-Root (1024x768)
+  // +---intermediate_layer (200, 300), 200x200
+  // +-----surface_child1 (50, 50), 100x100, Rotate(45)
+  // +---surface_child2 (450, 300), 100x100
+  // +---overlapping_layer (500, 350), 200x200
+  std::unique_ptr<LayerImpl> intermediate_layer =
+      LayerImpl::Create(host_impl_->active_tree(), 2);
+  std::unique_ptr<SurfaceLayerImpl> surface_child1 =
+      SurfaceLayerImpl::Create(host_impl_->active_tree(), 3);
+  std::unique_ptr<SurfaceLayerImpl> surface_child2 =
+      SurfaceLayerImpl::Create(host_impl_->active_tree(), 4);
+  std::unique_ptr<LayerImpl> overlapping_layer =
+      LayerImpl::Create(host_impl_->active_tree(), 5);
+
+  host_impl_->SetViewportSize(gfx::Size(1024, 768));
+
+  intermediate_layer->SetPosition(gfx::PointF(200, 300));
+  intermediate_layer->SetBounds(gfx::Size(200, 200));
+
+  surface_child1->SetPosition(gfx::PointF(50, 50));
+  surface_child1->SetBounds(gfx::Size(100, 100));
+  gfx::Transform rotate;
+  rotate.Rotate(45);
+  surface_child1->test_properties()->transform = rotate;
+  surface_child1->SetDrawsContent(true);
+  surface_child1->SetSurfaceHitTestable(true);
+
+  surface_child2->SetPosition(gfx::PointF(450, 300));
+  surface_child2->SetBounds(gfx::Size(100, 100));
+  surface_child2->SetDrawsContent(true);
+  surface_child2->SetSurfaceHitTestable(true);
+
+  overlapping_layer->SetPosition(gfx::PointF(500, 350));
+  overlapping_layer->SetBounds(gfx::Size(200, 200));
+  overlapping_layer->SetDrawsContent(true);
+
+  viz::LocalSurfaceId child_local_surface_id(2,
+                                             base::UnguessableToken::Create());
+  viz::FrameSinkId frame_sink_id(2, 0);
+  viz::SurfaceId child_surface_id(frame_sink_id, child_local_surface_id);
+  surface_child1->SetPrimarySurfaceId(child_surface_id, base::nullopt);
+  surface_child2->SetPrimarySurfaceId(child_surface_id, base::nullopt);
+
+  std::unique_ptr<LayerImpl> root =
+      LayerImpl::Create(host_impl_->active_tree(), 1);
+  host_impl_->active_tree()->SetRootLayerForTesting(std::move(root));
+  intermediate_layer->test_properties()->AddChild(std::move(surface_child1));
+  host_impl_->active_tree()
+      ->root_layer_for_testing()
+      ->test_properties()
+      ->AddChild(std::move(intermediate_layer));
+  host_impl_->active_tree()
+      ->root_layer_for_testing()
+      ->test_properties()
+      ->AddChild(std::move(surface_child2));
+  host_impl_->active_tree()
+      ->root_layer_for_testing()
+      ->test_properties()
+      ->AddChild(std::move(overlapping_layer));
+
+  host_impl_->active_tree()->BuildPropertyTreesForTesting();
+
+  constexpr gfx::Rect kFrameRect(0, 0, 1024, 768);
+
+  base::Optional<viz::HitTestRegionList> hit_test_region_list =
+      host_impl_->BuildHitTestData();
+  // Generating HitTestRegionList should have been enabled for this test.
+  ASSERT_TRUE(hit_test_region_list);
+
+  // Since surface_child2 draws in front of surface_child1, it should also be in
+  // the front of the hit test region list.
+  uint32_t expected_flags = viz::HitTestRegionFlags::kHitTestMouse |
+                            viz::HitTestRegionFlags::kHitTestTouch |
+                            viz::HitTestRegionFlags::kHitTestMine;
+  EXPECT_EQ(expected_flags, hit_test_region_list->flags);
+  EXPECT_EQ(kFrameRect, hit_test_region_list->bounds);
+  EXPECT_EQ(2u, hit_test_region_list->regions.size());
+
+  EXPECT_EQ(child_surface_id.frame_sink_id(),
+            hit_test_region_list->regions[1].frame_sink_id);
+  expected_flags = viz::HitTestRegionFlags::kHitTestMouse |
+                   viz::HitTestRegionFlags::kHitTestTouch |
+                   viz::HitTestRegionFlags::kHitTestChildSurface;
+  EXPECT_EQ(expected_flags, hit_test_region_list->regions[1].flags);
+  gfx::Transform child1_transform;
+  child1_transform.Rotate(-45);
+  child1_transform.Translate(-250, -350);
+  EXPECT_TRUE(child1_transform.ApproximatelyEqual(
+      hit_test_region_list->regions[1].transform));
+  EXPECT_EQ(gfx::Rect(0, 0, 100, 100).ToString(),
+            hit_test_region_list->regions[1].rect.ToString());
+
+  EXPECT_EQ(child_surface_id.frame_sink_id(),
+            hit_test_region_list->regions[0].frame_sink_id);
+  expected_flags = viz::HitTestRegionFlags::kHitTestMouse |
+                   viz::HitTestRegionFlags::kHitTestTouch |
+                   viz::HitTestRegionFlags::kHitTestChildSurface |
+                   viz::HitTestRegionFlags::kHitTestAsk;
+  EXPECT_EQ(expected_flags, hit_test_region_list->regions[0].flags);
+  gfx::Transform child2_transform;
+  child2_transform.Translate(-450, -300);
+  EXPECT_TRUE(child2_transform.ApproximatelyEqual(
+      hit_test_region_list->regions[0].transform));
+  EXPECT_EQ(gfx::Rect(0, 0, 100, 100).ToString(),
+            hit_test_region_list->regions[0].rect.ToString());
 }
 
 }  // namespace

@@ -96,6 +96,7 @@ class ArcImeService : public KeyedService,
       const base::string16& text_in_range,
       const gfx::Range& selection_range,
       bool is_screen_coordinates) override;
+  void RequestHideIme() override;
 
   // Overridden from keyboard::KeyboardControllerObserver.
   void OnKeyboardAppearanceChanged(
@@ -124,6 +125,7 @@ class ArcImeService : public KeyedService,
   bool GetCompositionCharacterBounds(uint32_t index,
                                      gfx::Rect* rect) const override;
   bool HasCompositionText() const override;
+  FocusReason GetFocusReason() const override;
   bool GetCompositionTextRange(gfx::Range* range) const override;
   bool SetSelectionRange(const gfx::Range& range) override;
   bool DeleteRange(const gfx::Range& range) override;
@@ -136,6 +138,7 @@ class ArcImeService : public KeyedService,
   void SetTextEditCommandForNextKeyEvent(ui::TextEditCommand command) override {
   }
   const std::string& GetClientSourceInfo() const override;
+  bool ShouldDoLearning() override;
 
   // Normally, the default device scale factor is used to convert from DPI to
   // physical pixels. This method provides a way to override it for testing.

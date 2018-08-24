@@ -58,7 +58,6 @@ namespace audio {
 namespace {
 
 constexpr int kSampleRate = AudioParameters::kAudioCDSampleRate;
-constexpr int kBitsPerSample = 16;
 constexpr media::ChannelLayout kChannelLayout = media::CHANNEL_LAYOUT_STEREO;
 constexpr int kSamplesPerPacket = kSampleRate / 1000;
 constexpr double kTestVolume = 0.25;
@@ -69,7 +68,7 @@ AudioParameters GetTestParams() {
   // behind-the-scenes. So, the use of PCM_LOW_LATENCY won't actually result in
   // any real system audio output during these tests.
   return AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY, kChannelLayout,
-                         kSampleRate, kBitsPerSample, kSamplesPerPacket);
+                         kSampleRate, kSamplesPerPacket);
 }
 
 class MockOutputControllerEventHandler : public OutputController::EventHandler {
@@ -79,7 +78,7 @@ class MockOutputControllerEventHandler : public OutputController::EventHandler {
   MOCK_METHOD0(OnControllerPlaying, void());
   MOCK_METHOD0(OnControllerPaused, void());
   MOCK_METHOD0(OnControllerError, void());
-  void OnLog(base::StringPiece) {}
+  void OnLog(base::StringPiece) override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockOutputControllerEventHandler);
@@ -283,11 +282,24 @@ class AudioManagerForControllerTest : public media::FakeAudioManager {
     return last_closed_stream_;
   }
 
+  AudioOutputStream* MakeAudioOutputStream(const AudioParameters& params,
+                                           const std::string& device_id,
+                                           const LogCallback& cb) final {
+    last_created_stream_ = new NiceMock<MockAudioOutputStream>(
+        media::FakeAudioManager::MakeAudioOutputStream(params, device_id, cb),
+        params.format());
+    last_created_stream_->set_close_callback(
+        base::BindOnce(&AudioManagerForControllerTest::SetLastClosedStream,
+                       base::Unretained(this), last_created_stream_));
+    return last_created_stream_;
+  }
+
   AudioOutputStream* MakeAudioOutputStreamProxy(
       const AudioParameters& params,
       const std::string& device_id) final {
     last_created_stream_ = new NiceMock<MockAudioOutputStream>(
-        media::FakeAudioManager::MakeAudioOutputStreamProxy(params, device_id),
+        media::FakeAudioManager::MakeAudioOutputStream(params, device_id,
+                                                       base::DoNothing()),
         params.format());
     last_created_stream_->set_close_callback(
         base::BindOnce(&AudioManagerForControllerTest::SetLastClosedStream,

@@ -8,15 +8,12 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_text_end_effect.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_physical_fragment.h"
-#include "third_party/blink/renderer/platform/fonts/font_baseline.h"
 #include "third_party/blink/renderer/platform/fonts/ng_text_fragment_paint_info.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_view.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
-
-class ShapeResult;
 
 struct NGPhysicalOffsetRect;
 
@@ -104,9 +101,6 @@ class CORE_EXPORT NGPhysicalTextFragment final : public NGPhysicalFragment {
   bool IsHorizontal() const {
     return LineOrientation() == NGLineOrientation::kHorizontal;
   }
-  FontBaseline BaselineType() const {
-    return IsHorizontal() ? kAlphabeticBaseline : kIdeographicBaseline;
-  }
 
   // Compute the inline position from text offset, in logical coordinate
   // relative to this fragment.
@@ -116,6 +110,7 @@ class CORE_EXPORT NGPhysicalTextFragment final : public NGPhysicalFragment {
   // Start and end offsets must be between StartOffset() and EndOffset().
   NGPhysicalOffsetRect LocalRect(unsigned start_offset,
                                  unsigned end_offset) const;
+  using NGPhysicalFragment::LocalRect;
 
   // The visual bounding box that includes glpyh bounding box and CSS
   // properties, in local coordinates.
@@ -124,6 +119,11 @@ class CORE_EXPORT NGPhysicalTextFragment final : public NGPhysicalFragment {
   NGTextEndEffect EndEffect() const {
     return static_cast<NGTextEndEffect>(end_effect_);
   }
+
+  // Create a new fragment that has part of the text of this fragment.
+  // All other properties are the same as this fragment.
+  scoped_refptr<NGPhysicalFragment> TrimText(unsigned start_offset,
+                                             unsigned end_offset) const;
 
   scoped_refptr<NGPhysicalFragment> CloneWithoutOffset() const;
 
@@ -139,12 +139,15 @@ class CORE_EXPORT NGPhysicalTextFragment final : public NGPhysicalFragment {
   // Returns the text offset in the fragment placed closest to the given point.
   unsigned TextOffsetForPoint(const NGPhysicalOffset&) const;
 
-  PositionWithAffinity PositionForPoint(const NGPhysicalOffset&) const override;
+  UBiDiLevel BidiLevel() const override;
+  TextDirection ResolvedDirection() const override;
 
  private:
   LayoutUnit InlinePositionForOffset(unsigned offset,
                                      LayoutUnit (*round)(float),
                                      AdjustMidCluster) const;
+
+  NGPhysicalOffsetRect ConvertToLocal(const LayoutRect&) const;
 
   // The text of NGInlineNode; i.e., of a parent block. The text for this
   // fragment is a substring(start_offset_, end_offset_) of this string.

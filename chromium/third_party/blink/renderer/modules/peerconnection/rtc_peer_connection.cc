@@ -36,6 +36,7 @@
 #include <utility>
 
 #include "base/memory/ptr_util.h"
+#include "base/optional.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_crypto_algorithm_params.h"
@@ -46,7 +47,6 @@
 #include "third_party/blink/public/platform/web_rtc_configuration.h"
 #include "third_party/blink/public/platform/web_rtc_data_channel_handler.h"
 #include "third_party/blink/public/platform/web_rtc_data_channel_init.h"
-#include "third_party/blink/public/platform/web_rtc_error.h"
 #include "third_party/blink/public/platform/web_rtc_ice_candidate.h"
 #include "third_party/blink/public/platform/web_rtc_key_params.h"
 #include "third_party/blink/public/platform/web_rtc_offer_options.h"
@@ -110,7 +110,6 @@
 #include "third_party/blink/renderer/platform/peerconnection/rtc_answer_options_platform.h"
 #include "third_party/blink/renderer/platform/peerconnection/rtc_offer_options_platform.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
@@ -466,7 +465,7 @@ RTCPeerConnection* RTCPeerConnection::Create(
   // Count number of PeerConnections that could potentially be impacted by CSP
   if (context) {
     auto& security_context = context->GetSecurityContext();
-    auto content_security_policy = security_context.GetContentSecurityPolicy();
+    auto* content_security_policy = security_context.GetContentSecurityPolicy();
     if (content_security_policy &&
         content_security_policy->IsActiveForConnections()) {
       UseCounter::Count(context, WebFeature::kRTCPeerConnectionWithActiveCsp);
@@ -544,19 +543,18 @@ RTCPeerConnection::RTCPeerConnection(ExecutionContext* context,
       sdp_semantics_(configuration.sdp_semantics) {
   Document* document = ToDocument(GetExecutionContext());
 
+  InstanceCounters::IncrementCounter(
+      InstanceCounters::kRTCPeerConnectionCounter);
   // If we fail, set |m_closed| and |m_stopped| to true, to avoid hitting the
   // assert in the destructor.
-
   if (InstanceCounters::CounterValue(
-          InstanceCounters::kRTCPeerConnectionCounter) >= kMaxPeerConnections) {
+          InstanceCounters::kRTCPeerConnectionCounter) > kMaxPeerConnections) {
     closed_ = true;
     stopped_ = true;
     exception_state.ThrowDOMException(kUnknownError,
                                       "Cannot create so many PeerConnections");
     return;
   }
-  InstanceCounters::IncrementCounter(
-      InstanceCounters::kRTCPeerConnectionCounter);
   if (!document->GetFrame()) {
     closed_ = true;
     stopped_ = true;
@@ -567,7 +565,7 @@ RTCPeerConnection::RTCPeerConnection(ExecutionContext* context,
   }
 
   peer_handler_ = Platform::Current()->CreateRTCPeerConnectionHandler(
-      this, document->GetTaskRunner(TaskType::kUnthrottled));
+      this, document->GetTaskRunner(TaskType::kInternalMedia));
   if (!peer_handler_) {
     closed_ = true;
     stopped_ = true;
@@ -599,6 +597,8 @@ RTCPeerConnection::~RTCPeerConnection() {
   DCHECK(closed_ || stopped_);
   InstanceCounters::DecrementCounter(
       InstanceCounters::kRTCPeerConnectionCounter);
+  DCHECK(InstanceCounters::CounterValue(
+             InstanceCounters::kRTCPeerConnectionCounter) >= 0);
 }
 
 void RTCPeerConnection::Dispose() {
@@ -931,10 +931,10 @@ void RTCPeerConnection::setConfiguration(
     return;
   }
 
-  WebRTCErrorType error = peer_handler_->SetConfiguration(configuration);
-  if (error != WebRTCErrorType::kNone) {
+  webrtc::RTCErrorType error = peer_handler_->SetConfiguration(configuration);
+  if (error != webrtc::RTCErrorType::NONE) {
     // All errors besides InvalidModification should have been detected above.
-    if (error == WebRTCErrorType::kInvalidModification) {
+    if (error == webrtc::RTCErrorType::INVALID_MODIFICATION) {
       exception_state.ThrowDOMException(
           kInvalidModificationError,
           "Attempted to modify the PeerConnection's "
@@ -967,7 +967,7 @@ ScriptPromise RTCPeerConnection::generateCertificate(
 
   // Check if |keygenAlgorithm| contains the optional DOMTimeStamp |expires|
   // attribute.
-  Optional<DOMTimeStamp> expires;
+  base::Optional<DOMTimeStamp> expires;
   if (keygen_algorithm.IsDictionary()) {
     Dictionary keygen_algorithm_dict = keygen_algorithm.GetAsDictionary();
     if (keygen_algorithm_dict.HasProperty("expires", exception_state)) {
@@ -994,7 +994,7 @@ ScriptPromise RTCPeerConnection::generateCertificate(
   const char* unsupported_params_string =
       "The 1st argument provided is an AlgorithmIdentifier with a supported "
       "algorithm name, but the parameters are not supported.";
-  Optional<WebRTCKeyParams> key_params;
+  base::Optional<WebRTCKeyParams> key_params;
   switch (crypto_algorithm.Id()) {
     case kWebCryptoAlgorithmIdRsaSsaPkcs1v1_5:
       // name: "RSASSA-PKCS1-v1_5"
@@ -1059,7 +1059,7 @@ ScriptPromise RTCPeerConnection::generateCertificate(
   // destruction as well as the resolver's destruction.
   scoped_refptr<base::SingleThreadTaskRunner> task_runner =
       ExecutionContext::From(script_state)
-          ->GetTaskRunner(blink::TaskType::kUnthrottled);
+          ->GetTaskRunner(blink::TaskType::kInternalMedia);
   if (!expires) {
     certificate_generator->GenerateCertificate(
         key_params.value(), std::move(certificate_observer), task_runner);
@@ -1225,7 +1225,7 @@ void RTCPeerConnection::removeStream(MediaStream* stream,
   if (ThrowExceptionIfSignalingStateClosed(signaling_state_, exception_state))
     return;
   for (const auto& track : stream->getTracks()) {
-    auto sender = FindSenderForTrackAndStream(track, stream);
+    auto* sender = FindSenderForTrackAndStream(track, stream);
     if (!sender)
       continue;
     removeTrack(sender, exception_state);
@@ -1299,7 +1299,7 @@ ScriptPromise RTCPeerConnection::getStats(
   // Custom binding for spec-compliant "getStats()" and "getStats(undefined)".
   if (argument->IsUndefined())
     return PromiseBasedGetStats(script_state, nullptr);
-  auto isolate = callback_or_selector.GetIsolate();
+  auto* isolate = callback_or_selector.GetIsolate();
   // Custom binding for spec-compliant "getStats(MediaStreamTrack? selector)".
   // null is a valid selector value, but value of wrong type isn't. |selector|
   // set to no value means type error.
@@ -1359,6 +1359,13 @@ ScriptPromise RTCPeerConnection::PromiseBasedGetStats(
     ExecutionContext* context = ExecutionContext::From(script_state);
     UseCounter::Count(context, WebFeature::kRTCPeerConnectionGetStats);
 
+    if (!peer_handler_) {
+      LOG(ERROR) << "Internal error: peer_handler_ has been discarded";
+      return ScriptPromise::RejectWithDOMException(
+          script_state,
+          DOMException::Create(kOperationError,
+                               "Internal error: release in progress"));
+    }
     ScriptPromiseResolver* resolver =
         ScriptPromiseResolver::Create(script_state);
     ScriptPromise promise = resolver->Promise();
@@ -1467,7 +1474,7 @@ void RTCPeerConnection::removeTrack(RTCRtpSender* sender,
   DCHECK(sender);
   if (ThrowExceptionIfSignalingStateClosed(signaling_state_, exception_state))
     return;
-  auto it = FindSender(*sender->web_sender());
+  auto* it = FindSender(*sender->web_sender());
   if (it == rtp_senders_.end()) {
     exception_state.ThrowDOMException(
         kInvalidAccessError,
@@ -1551,7 +1558,7 @@ RTCRtpSender* RTCPeerConnection::FindSenderForTrackAndStream(
 
 HeapVector<Member<RTCRtpSender>>::iterator RTCPeerConnection::FindSender(
     const WebRTCRtpSender& web_sender) {
-  for (auto it = rtp_senders_.begin(); it != rtp_senders_.end(); ++it) {
+  for (auto* it = rtp_senders_.begin(); it != rtp_senders_.end(); ++it) {
     if ((*it)->web_sender()->Id() == web_sender.Id())
       return it;
   }
@@ -1560,7 +1567,7 @@ HeapVector<Member<RTCRtpSender>>::iterator RTCPeerConnection::FindSender(
 
 HeapVector<Member<RTCRtpReceiver>>::iterator RTCPeerConnection::FindReceiver(
     const WebRTCRtpReceiver& web_receiver) {
-  for (auto it = rtp_receivers_.begin(); it != rtp_receivers_.end(); ++it) {
+  for (auto* it = rtp_receivers_.begin(); it != rtp_receivers_.end(); ++it) {
     if ((*it)->web_receiver().Id() == web_receiver.Id())
       return it;
   }
@@ -1630,7 +1637,7 @@ void RTCPeerConnection::OnStreamAddTrack(MediaStream* stream,
 
 void RTCPeerConnection::OnStreamRemoveTrack(MediaStream* stream,
                                             MediaStreamTrack* track) {
-  auto sender = FindSenderForTrackAndStream(track, stream);
+  auto* sender = FindSenderForTrackAndStream(track, stream);
   if (sender) {
     ExceptionState exception_state(v8::Isolate::GetCurrent(),
                                    ExceptionState::kExecutionContext, nullptr,
@@ -1778,7 +1785,7 @@ void RTCPeerConnection::DidRemoveRemoteTrack(
   DCHECK(GetExecutionContext()->IsContextThread());
 
   WebVector<WebMediaStream> web_streams = web_rtp_receiver->Streams();
-  auto it = FindReceiver(*web_rtp_receiver);
+  auto* it = FindReceiver(*web_rtp_receiver);
   DCHECK(it != rtp_receivers_.end());
   RTCRtpReceiver* rtp_receiver = *it;
   MediaStreamTrack* track = rtp_receiver->track();
@@ -1846,6 +1853,13 @@ void RTCPeerConnection::ReleasePeerConnectionHandler() {
 void RTCPeerConnection::ClosePeerConnection() {
   DCHECK(signaling_state_ != RTCPeerConnection::kSignalingStateClosed);
   CloseInternal();
+}
+
+RTCPeerConnection::WebRTCOriginTrials RTCPeerConnection::GetOriginTrials() {
+  RTCPeerConnection::WebRTCOriginTrials trials;
+  trials.vaapi_hwvp8_encoding_enabled =
+      OriginTrials::webRtcVaapiHWVP8EncodingEnabled(GetExecutionContext());
+  return trials;
 }
 
 const AtomicString& RTCPeerConnection::InterfaceName() const {

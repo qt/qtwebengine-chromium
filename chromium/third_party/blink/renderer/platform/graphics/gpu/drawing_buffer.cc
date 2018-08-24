@@ -46,10 +46,7 @@
 #include "gpu/command_buffer/common/gpu_memory_buffer_support.h"
 #include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "gpu/config/gpu_feature_info.h"
-#include "skia/ext/texture_handle.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_compositor_support.h"
-#include "third_party/blink/public/platform/web_external_texture_layer.h"
 #include "third_party/blink/renderer/platform/graphics/accelerated_static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/extensions_3d_util.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
@@ -190,8 +187,12 @@ DrawingBuffer::DrawingBuffer(
 
 DrawingBuffer::~DrawingBuffer() {
   DCHECK(destruction_in_progress_);
-  layer_.reset();
-  context_provider_.reset();
+  SwapPreviousFrameCallback(nullptr);
+  if (layer_) {
+    layer_->ClearClient();
+    layer_ = nullptr;
+  }
+  context_provider_ = nullptr;
 }
 
 bool DrawingBuffer::MarkContentsChanged() {
@@ -264,24 +265,32 @@ bool DrawingBuffer::DefaultBufferRequiresAlphaChannelToBePreserved() {
 
 DrawingBuffer::RegisteredBitmap DrawingBuffer::CreateOrRecycleBitmap(
     cc::SharedBitmapIdRegistrar* bitmap_registrar) {
-  auto it = std::remove_if(recycled_bitmaps_.begin(), recycled_bitmaps_.end(),
-                           [this](const RegisteredBitmap& registered) {
-                             return registered.bitmap->size() != size_;
-                           });
+  // When searching for a hit in SharedBitmap, we don't consider the bitmap
+  // format (RGBA 8888 vs F16). We expect to always have the same bitmap format,
+  // matching the back storage of the drawing buffer.
+  auto* it = std::remove_if(recycled_bitmaps_.begin(), recycled_bitmaps_.end(),
+                            [this](const RegisteredBitmap& registered) {
+                              return registered.bitmap->size() !=
+                                     static_cast<gfx::Size>(size_);
+                            });
   recycled_bitmaps_.Shrink(it - recycled_bitmaps_.begin());
 
   if (!recycled_bitmaps_.IsEmpty()) {
     RegisteredBitmap recycled = std::move(recycled_bitmaps_.back());
     recycled_bitmaps_.pop_back();
-    DCHECK(recycled.bitmap->size() == size_);
+    DCHECK(recycled.bitmap->size() == static_cast<gfx::Size>(size_));
     return recycled;
   }
 
   viz::SharedBitmapId id = viz::SharedBitmap::GenerateId();
+  viz::ResourceFormat format = viz::RGBA_8888;
+  if (use_half_float_storage_)
+    format = viz::RGBA_F16;
   std::unique_ptr<base::SharedMemory> shm =
-      viz::bitmap_allocation::AllocateMappedBitmap(size_, viz::RGBA_8888);
+      viz::bitmap_allocation::AllocateMappedBitmap(
+          static_cast<gfx::Size>(size_), format);
   auto bitmap = base::MakeRefCounted<cc::CrossThreadSharedBitmap>(
-      id, std::move(shm), size_, viz::RGBA_8888);
+      id, std::move(shm), static_cast<gfx::Size>(size_), format);
   RegisteredBitmap registered = {
       bitmap, bitmap_registrar->RegisterSharedBitmapId(id, bitmap)};
   return registered;
@@ -357,8 +366,11 @@ void DrawingBuffer::FinishPrepareTransferableResourceSoftware(
                         op);
   }
 
+  viz::ResourceFormat format = viz::RGBA_8888;
+  if (use_half_float_storage_)
+    format = viz::RGBA_F16;
   *out_resource = viz::TransferableResource::MakeSoftware(
-      registered.bitmap->id(), /*sequence_number=*/0, size_, viz::RGBA_8888);
+      registered.bitmap->id(), static_cast<gfx::Size>(size_), format);
   out_resource->color_space = storage_color_space_;
 
   // This holds a ref on the DrawingBuffer that will keep it alive until the
@@ -451,6 +463,8 @@ void DrawingBuffer::FinishPrepareTransferableResourceGpu(
         is_overlay_candidate);
     out_resource->color_space = sampler_color_space_;
     out_resource->format = viz::RGBA_8888;
+    if (use_half_float_storage_)
+      out_resource->format = viz::RGBA_F16;
 
     // This holds a ref on the DrawingBuffer that will keep it alive until the
     // mailbox is released (and while the release callback is running).
@@ -501,7 +515,7 @@ void DrawingBuffer::MailboxReleasedSoftware(RegisteredBitmap registered,
                                             bool lost_resource) {
   DCHECK(!sync_token.HasData());  // No sync tokens for software resources.
   if (destruction_in_progress_ || lost_resource || is_hidden_ ||
-      registered.bitmap->size() != size_) {
+      registered.bitmap->size() != static_cast<gfx::Size>(size_)) {
     // Just delete the RegisteredBitmap, which will free the memory and
     // unregister it with the compositor.
     return;
@@ -861,13 +875,12 @@ bool DrawingBuffer::CopyToPlatformTexture(gpu::gles2::GLES2Interface* dst_gl,
   return true;
 }
 
-WebLayer* DrawingBuffer::PlatformLayer() {
+cc::Layer* DrawingBuffer::CcLayer() {
   if (!layer_) {
-    layer_ =
-        Platform::Current()->CompositorSupport()->CreateExternalTextureLayer(
-            this);
+    layer_ = cc::TextureLayer::CreateForMailbox(this);
 
-    layer_->SetOpaque(!want_alpha_channel_);
+    layer_->SetIsDrawable(true);
+    layer_->SetContentsOpaque(!want_alpha_channel_);
     layer_->SetBlendBackgroundColor(want_alpha_channel_);
     // If premultiplied_alpha_false_texture_ exists, then premultiplied_alpha_
     // has already been handled via CopySubTextureCHROMIUM -- the alpha channel
@@ -882,13 +895,14 @@ WebLayer* DrawingBuffer::PlatformLayer() {
     layer_->SetPremultipliedAlpha(premultiplied_alpha_ ||
                                   premultiplied_alpha_false_texture_);
     layer_->SetNearestNeighbor(filter_quality_ == kNone_SkFilterQuality);
-    GraphicsLayer::RegisterContentsLayer(layer_->Layer());
+
+    GraphicsLayer::RegisterContentsLayer(layer_.get());
   }
 
-  return layer_->Layer();
+  return layer_.get();
 }
 
-void DrawingBuffer::ClearPlatformLayer() {
+void DrawingBuffer::ClearCcLayer() {
   if (layer_)
     layer_->ClearTexture();
 
@@ -899,7 +913,7 @@ void DrawingBuffer::BeginDestruction() {
   DCHECK(!destruction_in_progress_);
   destruction_in_progress_ = true;
 
-  ClearPlatformLayer();
+  ClearCcLayer();
   recycled_color_buffer_queue_.clear();
 
   // If the drawing buffer is being destroyed due to a real context loss these
@@ -930,7 +944,7 @@ void DrawingBuffer::BeginDestruction() {
   fbo_ = 0;
 
   if (layer_)
-    GraphicsLayer::UnregisterContentsLayer(layer_->Layer());
+    GraphicsLayer::UnregisterContentsLayer(layer_.get());
 
   client_ = nullptr;
 }
@@ -1592,6 +1606,15 @@ DrawingBuffer::ScopedStateRestorer::~ScopedStateRestorer() {
     client->DrawingBufferClientRestorePixelUnpackBufferBinding();
   if (pixel_pack_buffer_binding_dirty_)
     client->DrawingBufferClientRestorePixelPackBufferBinding();
+}
+
+void DrawingBuffer::SwapPreviousFrameCallback(
+    std::unique_ptr<viz::SingleReleaseCallback> release_callback) {
+  if (previous_image_release_callback_) {
+    previous_image_release_callback_->Run(gpu::SyncToken(), false);
+  }
+
+  previous_image_release_callback_ = std::move(release_callback);
 }
 
 bool DrawingBuffer::ShouldUseChromiumImage() {

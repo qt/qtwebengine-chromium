@@ -107,8 +107,8 @@ enum NotificationType {
 
   // Indicates that a render process was closed (meaning it exited, but the
   // RenderProcessHost might be reused).  The source will be the corresponding
-  // RenderProcessHost.  The details will be a RendererClosedDetails struct.
-  // This may get sent along with RENDERER_PROCESS_TERMINATED.
+  // RenderProcessHost.  The details will be a ChildProcessTerminationInfo
+  // struct. This may get sent along with RENDERER_PROCESS_TERMINATED.
   // DEPRECATED: Use RenderProcessHostObserver::RenderProcessExited()
   NOTIFICATION_RENDERER_PROCESS_CLOSED,
 
@@ -119,15 +119,20 @@ enum NotificationType {
 
   // This is sent when a RenderWidgetHost is being destroyed. The source is
   // the RenderWidgetHost, the details are not used.
+  // DEPRECATED: Use RenderWidgetHostObserver::RenderWidgetHostDestroyed()
   NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED,
 
-  // Sent after the backing store has been updated but before the widget has
-  // painted. The source is the RenderWidgetHost, the details are not used.
-  NOTIFICATION_RENDER_WIDGET_HOST_DID_COMPLETE_RESIZE_OR_REPAINT,
+  // Sent after the renderer has updated visual properties on the main thread
+  // and committed the change on the compositor thread. The source is the
+  // RenderWidgetHost, the details are not used.
+  NOTIFICATION_RENDER_WIDGET_HOST_DID_UPDATE_VISUAL_PROPERTIES,
 
   // Indicates a RenderWidgetHost has been hidden or restored. The source is
   // the RWH whose visibility changed, the details is a bool set to true if
   // the new state is "visible."
+  //
+  // DEPRECATED:
+  // Use RenderWidgetHostObserver::RenderWidgetHostVisibilityChanged()
   NOTIFICATION_RENDER_WIDGET_VISIBILITY_CHANGED,
 
   // The focused element inside a page has changed.  The source is the

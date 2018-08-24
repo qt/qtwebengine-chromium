@@ -82,7 +82,7 @@ base::ProcessId GetRealProcessId(int process_host_id) {
   if (!rph)
     return base::kNullProcessId;
 
-  base::ProcessHandle handle = rph->GetHandle();
+  base::ProcessHandle handle = rph->GetProcess().Handle();
   if (handle == base::kNullProcessHandle)
     return base::kNullProcessId;
   // TODO(nhiroki): On Windows, |rph->GetHandle()| does not duplicate ownership
@@ -306,11 +306,11 @@ class ServiceWorkerInternalsUI::PartitionObserver
     web_ui_->CallJavascriptFunctionUnsafe(
         "serviceworker.onConsoleMessageReported", ConvertToRawPtrVector(args));
   }
-  void OnRegistrationStored(int64_t registration_id,
-                            const GURL& pattern) override {
+  void OnRegistrationCompleted(int64_t registration_id,
+                               const GURL& pattern) override {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
-    web_ui_->CallJavascriptFunctionUnsafe("serviceworker.onRegistrationStored",
-                                          Value(pattern.spec()));
+    web_ui_->CallJavascriptFunctionUnsafe(
+        "serviceworker.onRegistrationCompleted", Value(pattern.spec()));
   }
   void OnRegistrationDeleted(int64_t registration_id,
                              const GURL& pattern) override {

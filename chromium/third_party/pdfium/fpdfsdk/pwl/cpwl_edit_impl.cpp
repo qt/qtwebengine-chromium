@@ -23,7 +23,6 @@
 #include "core/fpdfdoc/ipvt_fontmap.h"
 #include "core/fxcrt/autorestorer.h"
 #include "core/fxcrt/fx_codepage.h"
-#include "core/fxcrt/fx_fallthrough.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
@@ -31,6 +30,7 @@
 #include "fpdfsdk/pwl/cpwl_edit.h"
 #include "fpdfsdk/pwl/cpwl_edit_ctrl.h"
 #include "fpdfsdk/pwl/cpwl_scroll_bar.h"
+#include "third_party/base/compiler_specific.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 
@@ -1808,17 +1808,17 @@ CPVT_WordPlace CPWL_EditImpl::DoInsertText(const CPVT_WordPlace& place,
     for (int32_t i = 0, sz = sText.GetLength(); i < sz; i++) {
       uint16_t word = sText[i];
       switch (word) {
-        case 0x0D:
+        case '\r':
           wp = m_pVT->InsertSection(wp);
-          if (i + 1 < sz && sText[i + 1] == 0x0A)
+          if (i + 1 < sz && sText[i + 1] == '\n')
             i++;
           break;
-        case 0x0A:
+        case '\n':
           wp = m_pVT->InsertSection(wp);
           break;
-        case 0x09:
-          word = 0x20;
-          FX_FALLTHROUGH;
+        case '\t':
+          word = ' ';
+          FALLTHROUGH;
         default:
           wp =
               m_pVT->InsertWord(wp, word, GetCharSetFromUnicode(word, charset));

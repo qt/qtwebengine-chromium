@@ -25,13 +25,12 @@
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
 #include "build/build_config.h"
-#include "components/viz/service/display_embedder/shared_bitmap_allocation_notifier_impl.h"
 #include "content/browser/cache_storage/cache_storage_dispatcher_host.h"
 #include "content/browser/child_process_launcher.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
+#include "content/browser/renderer_host/embedded_frame_sink_provider_impl.h"
 #include "content/browser/renderer_host/frame_sink_provider_impl.h"
 #include "content/browser/renderer_host/media/renderer_audio_output_stream_factory_context_impl.h"
-#include "content/browser/renderer_host/offscreen_canvas_provider_impl.h"
 #include "content/common/associated_interface_registry_impl.h"
 #include "content/common/associated_interfaces.mojom.h"
 #include "content/common/child_control.mojom.h"
@@ -61,7 +60,6 @@
 #include "ui/gl/gpu_switching_observer.h"
 
 #if defined(OS_ANDROID)
-#include "content/browser/android/synchronous_compositor_browser_filter.h"
 #include "content/public/browser/android/child_process_importance.h"
 #endif
 
@@ -72,11 +70,13 @@ class SharedPersistentMemoryAllocator;
 }
 
 namespace content {
+class BrowserPluginMessageFilter;
 class ChildConnection;
-class GpuClient;
+class GpuClientImpl;
 class IndexedDBDispatcherHost;
 class InProcessChildThreadParams;
-class NotificationMessageFilter;
+class MediaStreamTrackMetricsHost;
+class P2PSocketDispatcherHost;
 class PermissionServiceContext;
 class PeerConnectionTrackerHost;
 class PushMessagingManager;
@@ -90,11 +90,7 @@ class SiteInstance;
 class SiteInstanceImpl;
 class StoragePartition;
 class StoragePartitionImpl;
-
-#if BUILDFLAG(ENABLE_WEBRTC)
-class MediaStreamTrackMetricsHost;
-class P2PSocketDispatcherHost;
-#endif
+struct ChildProcessTerminationInfo;
 
 typedef base::Thread* (*RendererMainThreadFactoryFunction)(
     const InProcessChildThreadParams& params);
@@ -153,13 +149,13 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void ShutdownForBadMessage(CrashReportMode crash_report_mode) override;
   void UpdateClientPriority(PriorityClient* client) override;
   int VisibleClientCount() const override;
-  unsigned int GetFrameDepthForTesting() const override;
+  unsigned int GetFrameDepth() const override;
   bool IsForGuestsOnly() const override;
   StoragePartition* GetStoragePartition() const override;
   bool Shutdown(int exit_code) override;
   bool FastShutdownIfPossible(size_t page_count = 0,
                               bool skip_unload_handlers = false) override;
-  base::ProcessHandle GetHandle() const override;
+  const base::Process& GetProcess() const override;
   bool IsReady() const override;
   BrowserContext* GetBrowserContext() const override;
   bool InSameStoragePartition(StoragePartition* partition) const override;
@@ -182,7 +178,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   bool FastShutdownStarted() const override;
   base::TimeDelta GetChildProcessIdleTime() const override;
   void FilterURL(bool empty_allowed, GURL* url) override;
-#if BUILDFLAG(ENABLE_WEBRTC)
   void EnableAudioDebugRecordings(const base::FilePath& file) override;
   void DisableAudioDebugRecordings() override;
   void SetEchoCanceller3(
@@ -193,8 +188,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
       bool outgoing,
       const WebRtcRtpPacketCallback& packet_callback) override;
   void SetWebRtcEventLogOutput(int lid, bool enabled) override;
-#endif
-  void ResumeDeferredNavigation(const GlobalRequestID& request_id) override;
   void BindInterface(const std::string& interface_name,
                      mojo::ScopedMessagePipeHandle interface_pipe) override;
   const service_manager::Identity& GetChildIdentity() const override;
@@ -220,6 +213,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void SetIsUsed() override;
 
   bool HostHasNotBeenUsed() override;
+  void BindCacheStorage(blink::mojom::CacheStorageRequest request,
+                        const url::Origin& origin) override;
 
   mojom::RouteProvider* GetRemoteRouteProvider();
 
@@ -311,7 +306,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
     kMismatchedStoragePartition = 2,
     kRefusedByEmbedder = 3,
     kSpareTaken = 4,
-    kMaxValue = kSpareTaken
+    kRefusedBySiteInstance = 5,
+    kMaxValue = kRefusedBySiteInstance
   };
 
   static base::MessageLoop* GetInProcessRendererThreadForTesting();
@@ -335,15 +331,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
     return render_frame_message_filter_.get();
   }
 
-  NotificationMessageFilter* notification_message_filter() const {
-    return notification_message_filter_.get();
-  }
-
-#if defined(OS_ANDROID)
-  SynchronousCompositorBrowserFilter* synchronous_compositor_filter() const {
-    return synchronous_compositor_filter_.get();
-  }
-#endif
+  void SetBrowserPluginMessageFilterSubFilterForTesting(
+      scoped_refptr<BrowserMessageFilter> message_filter) const;
 
   void set_is_for_guests_only_for_testing(bool is_for_guests_only) {
     is_for_guests_only_ = is_for_guests_only;
@@ -365,12 +354,17 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void OnMediaStreamRemoved() override;
   int get_media_stream_count_for_testing() const { return media_stream_count_; }
 
-  // Sets the global factory used to create new RenderProcessHosts.  It may be
-  // nullptr, in which case the default RenderProcessHost will be created (this
-  // is the behavior if you don't call this function).  The factory must be set
-  // back to nullptr before it's destroyed; ownership is not transferred.
-  static void set_render_process_host_factory(
+  // Sets the global factory used to create new RenderProcessHosts in unit
+  // tests.  It may be nullptr, in which case the default RenderProcessHost will
+  // be created (this is the behavior if you don't call this function).  The
+  // factory must be set back to nullptr before it's destroyed; ownership is not
+  // transferred.
+  static void set_render_process_host_factory_for_testing(
       const RenderProcessHostFactory* rph_factory);
+  // Gets the global factory used to create new RenderProcessHosts in unit
+  // tests.
+  static const RenderProcessHostFactory*
+  get_render_process_host_factory_for_testing();
 
   // Tracks which sites frames are hosted in which RenderProcessHosts.
   static void AddFrameWithSite(BrowserContext* browser_context,
@@ -391,9 +385,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
       RenderProcessHost* render_process_host,
       const GURL& site_url);
 
-  viz::SharedBitmapAllocationNotifierImpl* GetSharedBitmapAllocationNotifier()
-      override;
-
   // Return the spare RenderProcessHost, if it exists. There is at most one
   // globally-used spare RenderProcessHost at any time.
   static RenderProcessHost* GetSpareRenderProcessHostForTesting();
@@ -411,10 +402,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   bool is_initialized() const { return is_initialized_; }
 
-  // Binds Mojo request to Mojo implementation CacheStorageDispatcherHost
-  // instance, binding is sent to IO thread.
-  void BindCacheStorage(blink::mojom::CacheStorageRequest request,
-                        const url::Origin& origin);
+  // Ensures that this process is kept alive for the specified amount of time.
+  // This is used to ensure that unload handlers have a chance to execute
+  // before the process shuts down.
+  void DelayProcessShutdownForUnload(const base::TimeDelta& timeout);
 
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread.
@@ -486,13 +477,11 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   void BindRouteProvider(mojom::RouteProviderAssociatedRequest request);
 
-  void CreateOffscreenCanvasProvider(
-      blink::mojom::OffscreenCanvasProviderRequest request);
+  void CreateEmbeddedFrameSinkProvider(
+      blink::mojom::EmbeddedFrameSinkProviderRequest request);
   void BindFrameSinkProvider(mojom::FrameSinkProviderRequest request);
   void BindCompositingModeReporter(
       viz::mojom::CompositingModeReporterRequest request);
-  void BindSharedBitmapAllocationNotifier(
-      viz::mojom::SharedBitmapAllocationNotifierRequest request);
   void CreateStoragePartitionService(
       mojom::StoragePartitionServiceRequest request);
   void CreateRendererHost(mojom::RendererHostAssociatedRequest request);
@@ -529,7 +518,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void CreateSharedRendererHistogramAllocator();
 
   // Handle termination of our process.
-  void ProcessDied(bool already_dead, RendererClosedDetails* known_details);
+  void ProcessDied(bool already_dead,
+                   ChildProcessTerminationInfo* known_details);
 
   // Destroy all objects that can cause methods to be invoked on this object or
   // any other that hang off it.
@@ -566,7 +556,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
       BrowserContext* browser_context,
       const GURL& site_url);
 
-#if BUILDFLAG(ENABLE_WEBRTC)
   void CreateMediaStreamDispatcherHost(
       MediaStreamManager* media_stream_manager,
       mojom::MediaStreamDispatcherHostRequest request);
@@ -585,7 +574,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   base::FilePath GetAecDumpFilePathWithExtensions(const base::FilePath& file);
   base::SequencedTaskRunner& GetAecDumpFileTaskRunner();
   void OnAec3Enabled();
-#endif
 
   static void OnMojoError(int render_process_id, const std::string& error);
 
@@ -620,6 +608,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
         BrowserThread::GetTaskRunnerForThread(BrowserThread::UI));
   }
 
+  // Callback to unblock process shutdown after waiting for unload handlers to
+  // execute.
+  void CancelProcessShutdownDelayForUnload();
+
   std::unique_ptr<mojo::edk::OutgoingBrokerClientInvitation>
       broker_client_invitation_;
 
@@ -633,7 +625,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // TODO(panicker): Remove these after investigation in
   // https://crbug.com/823482.
-  static const size_t kNumKeepAliveClients = 3;
+  static const size_t kNumKeepAliveClients = 4;
   size_t keep_alive_client_count_[kNumKeepAliveClients];
   base::TimeTicks keep_alive_client_start_time_[kNumKeepAliveClients];
 
@@ -687,14 +679,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   scoped_refptr<RenderFrameMessageFilter> render_frame_message_filter_;
 
-  // The filter for Web Notification messages coming from the renderer. Holds a
-  // closure per notification that must be freed when the notification closes.
-  scoped_refptr<NotificationMessageFilter> notification_message_filter_;
-
-#if defined(OS_ANDROID)
-  scoped_refptr<SynchronousCompositorBrowserFilter>
-      synchronous_compositor_filter_;
-#endif
+  // The filter for messages coming from the browser plugin.
+  scoped_refptr<BrowserPluginMessageFilter> bp_message_filter_;
 
   // Used in single-process mode.
   std::unique_ptr<base::Thread> in_process_renderer_;
@@ -769,7 +755,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
                   BrowserThread::DeleteOnIOThread>
       audio_output_stream_factory_context_;
 
-#if BUILDFLAG(ENABLE_WEBRTC)
   scoped_refptr<P2PSocketDispatcherHost> p2p_socket_dispatcher_host_;
 
   // Must be accessed on UI thread.
@@ -783,7 +768,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   std::unique_ptr<MediaStreamTrackMetricsHost, BrowserThread::DeleteOnIOThread>
       media_stream_track_metrics_host_;
-#endif
 
   // Forwards messages between WebRTCInternals in the browser process
   // and PeerConnectionTracker in the renderer process.
@@ -819,11 +803,11 @@ class CONTENT_EXPORT RenderProcessHostImpl
 #endif
 
   scoped_refptr<ResourceMessageFilter> resource_message_filter_;
-  std::unique_ptr<GpuClient, BrowserThread::DeleteOnIOThread> gpu_client_;
+  std::unique_ptr<GpuClientImpl, BrowserThread::DeleteOnIOThread> gpu_client_;
   std::unique_ptr<PushMessagingManager, BrowserThread::DeleteOnIOThread>
       push_messaging_manager_;
 
-  std::unique_ptr<OffscreenCanvasProviderImpl> offscreen_canvas_provider_;
+  std::unique_ptr<EmbeddedFrameSinkProviderImpl> embedded_frame_sink_provider_;
 
   mojom::ChildControlPtr child_control_interface_;
   mojom::RouteProviderAssociatedPtr remote_route_provider_;
@@ -845,9 +829,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   FrameSinkProviderImpl frame_sink_provider_;
   std::unique_ptr<mojo::Binding<viz::mojom::CompositingModeReporter>>
       compositing_mode_reporter_;
-
-  viz::SharedBitmapAllocationNotifierImpl
-      shared_bitmap_allocation_notifier_impl_;
 
   base::WeakPtrFactory<RenderProcessHostImpl> weak_factory_;
 

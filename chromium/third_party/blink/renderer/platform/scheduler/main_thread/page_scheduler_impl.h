@@ -15,9 +15,9 @@
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/scheduler/base/task_queue.h"
 #include "third_party/blink/renderer/platform/scheduler/child/page_visibility_state.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/common/throttling/task_queue_throttler.h"
 #include "third_party/blink/renderer/platform/scheduler/public/page_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/util/tracing_helper.h"
 
 namespace base {
@@ -56,6 +56,7 @@ class PLATFORM_EXPORT PageSchedulerImpl : public PageScheduler {
   void DisableVirtualTimeForTesting() override;
   bool VirtualTimeAllowedToAdvance() const override;
   void SetVirtualTimePolicy(VirtualTimePolicy) override;
+  void SetInitialVirtualTime(base::Time time) override;
   void SetInitialVirtualTimeOffset(base::TimeDelta offset) override;
   void GrantVirtualTimeBudget(
       base::TimeDelta budget,
@@ -63,7 +64,7 @@ class PLATFORM_EXPORT PageSchedulerImpl : public PageScheduler {
   void SetMaxVirtualTimeTaskStarvationCount(
       int max_task_starvation_count) override;
   void AudioStateChanged(bool is_audio_playing) override;
-  bool IsPlayingAudio() const override;
+  bool IsAudioPlaying() const override;
   bool IsExemptFromBudgetBasedThrottling() const override;
   bool HasActiveConnectionForTest() const override;
   void RequestBeginMainFrameNotExpected(bool new_state) override;
@@ -73,7 +74,15 @@ class PLATFORM_EXPORT PageSchedulerImpl : public PageScheduler {
   // Virtual for testing.
   virtual void ReportIntervention(const std::string& message);
 
+  bool IsPageVisible() const;
   bool IsFrozen() const;
+  // PageSchedulerImpl::HasActiveConnection can be used in non-test code,
+  // while PageScheduler::HasActiveConnectionForTest can't.
+  bool HasActiveConnection() const;
+  // Note that the frame can throttle queues even when the page is not throttled
+  // (e.g. for offscreen frames or recently backgrounded pages).
+  bool IsThrottled() const;
+  bool KeepActive() const;
 
   std::unique_ptr<FrameSchedulerImpl> CreateFrameSchedulerImpl(
       base::trace_event::BlameContext*,
@@ -101,6 +110,18 @@ class PLATFORM_EXPORT PageSchedulerImpl : public PageScheduler {
  private:
   friend class FrameSchedulerImpl;
 
+  enum class AudioState {
+    kSilent,
+    kAudible,
+    kRecentlyAudible,
+  };
+
+  enum class NotificationPolicy { kNotifyFrames, kDoNotNotifyFrames };
+
+  // Support not issuing a notification to frames when we disable freezing as
+  // a part of foregrounding the page.
+  void SetPageFrozenImpl(bool frozen, NotificationPolicy notification_policy);
+
   CPUTimeBudgetPool* BackgroundCPUTimeBudgetPool();
   void MaybeInitializeBackgroundCPUTimeBudgetPool();
 
@@ -108,12 +129,26 @@ class PLATFORM_EXPORT PageSchedulerImpl : public PageScheduler {
 
   // Depending on page visibility, either turns throttling off, or schedules a
   // call to enable it after a grace period.
-  void UpdateBackgroundThrottlingState();
+  void UpdateBackgroundThrottlingState(NotificationPolicy notification_policy);
 
   // As a part of UpdateBackgroundThrottlingState set correct
   // background_time_budget_pool_ state depending on page visibility and
   // number of active connections.
   void UpdateBackgroundBudgetPoolThrottlingState();
+
+  // Callback for marking page is silent after a delay since last audible
+  // signal.
+  void OnAudioSilent();
+
+  // Callback for enabling throttling in background after specified delay.
+  // TODO(altimin): Trigger throttling depending on the loading state
+  // of the page.
+  void DoThrottlePage();
+
+  // Notify frames that the page scheduler state has been updated.
+  void NotifyFrames();
+
+  void EnableThrottling();
 
   TraceableVariableController tracing_controller_;
   std::set<FrameSchedulerImpl*> frame_schedulers_;
@@ -121,14 +156,18 @@ class PLATFORM_EXPORT PageSchedulerImpl : public PageScheduler {
 
   PageVisibilityState page_visibility_;
   bool disable_background_timer_throttling_;
-  bool is_audio_playing_;
+  AudioState audio_state_;
   bool is_frozen_;
   bool reported_background_throttling_since_navigation_;
   bool has_active_connection_;
   bool nested_runloop_;
   bool is_main_frame_local_;
+  bool is_throttled_;
+  bool keep_active_;
   CPUTimeBudgetPool* background_time_budget_pool_;  // Not owned.
   PageScheduler::Delegate* delegate_;               // Not owned.
+  CancelableClosureHolder do_throttle_page_callback_;
+  CancelableClosureHolder on_audio_silent_closure_;
   base::WeakPtrFactory<PageSchedulerImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PageSchedulerImpl);

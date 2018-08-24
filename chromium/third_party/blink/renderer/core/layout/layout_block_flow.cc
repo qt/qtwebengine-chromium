@@ -51,13 +51,17 @@
 #include "third_party/blink/renderer/core/layout/line/inline_iterator.h"
 #include "third_party/blink/renderer/core/layout/line/inline_text_box.h"
 #include "third_party/blink/renderer/core/layout/line/line_width.h"
+#include "third_party/blink/renderer/core/layout/ng/inline/ng_line_height_metrics.h"
 #include "third_party/blink/renderer/core/layout/ng/layout_ng_block_flow.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_fragmentation_utils.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_layout_result.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_physical_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_unpositioned_float.h"
 #include "third_party/blink/renderer/core/layout/shapes/shape_outside_info.h"
 #include "third_party/blink/renderer/core/layout/text_autosizer.h"
 #include "third_party/blink/renderer/core/paint/block_flow_paint_invalidator.h"
+#include "third_party/blink/renderer/core/paint/ng/ng_paint_fragment.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
@@ -2512,6 +2516,10 @@ scoped_refptr<NGLayoutResult> LayoutBlockFlow::CachedLayoutResult(
   return nullptr;
 }
 
+const NGConstraintSpace* LayoutBlockFlow::CachedConstraintSpace() const {
+  return nullptr;
+}
+
 scoped_refptr<NGLayoutResult> LayoutBlockFlow::CachedLayoutResultForTesting() {
   return nullptr;
 }
@@ -2522,11 +2530,6 @@ void LayoutBlockFlow::SetCachedLayoutResult(const NGConstraintSpace&,
 
 void LayoutBlockFlow::SetPaintFragment(
     scoped_refptr<const NGPhysicalFragment>) {}
-
-Vector<NGPaintFragment*> LayoutBlockFlow::GetPaintFragments(
-    const LayoutObject&) const {
-  return Vector<NGPaintFragment*>();
-}
 
 void LayoutBlockFlow::ComputeOverflow(LayoutUnit old_client_after_edge,
                                       bool recompute_floats) {
@@ -2663,6 +2666,19 @@ LayoutUnit LayoutBlockFlow::FirstLineBoxBaseline() const {
     }
     return FirstLineBox()->LogicalTop() +
            font_data->GetFontMetrics().Ascent(FirstRootBox()->BaselineType());
+  }
+  if (RuntimeEnabledFeatures::LayoutNGEnabled()) {
+    if (const NGPaintFragment* paint_fragment = PaintFragment()) {
+      NGBoxFragment box_fragment(
+          StyleRef().GetWritingMode(),
+          ToNGPhysicalBoxFragment(paint_fragment->PhysicalFragment()));
+      NGLineHeightMetrics metrics =
+          box_fragment.BaselineMetricsWithoutSynthesize(
+              {NGBaselineAlgorithmType::kFirstLine,
+               StyleRef().GetFontBaseline()});
+      if (!metrics.IsEmpty())
+        return metrics.ascent;
+    }
   }
   return LayoutUnit(-1);
 }
@@ -4767,10 +4783,12 @@ PositionWithAffinity LayoutBlockFlow::PositionForPoint(
     // We hit this case for Mac behavior when the Y coordinate is below the last
     // box.
     DCHECK(move_caret_to_boundary);
-    InlineBox* logically_last_box;
-    if (last_root_box_with_children->GetLogicalEndBoxWithNode(
-            logically_last_box))
-      return PositionWithAffinity(PositionForBox(logically_last_box, false));
+    if (const InlineBox* logically_last_box =
+            last_root_box_with_children->GetLogicalEndNonPseudoBox()) {
+      // TODO(layout-dev): Change |PositionForBox()| to take |const InlineBox*|.
+      return PositionWithAffinity(
+          PositionForBox(const_cast<InlineBox*>(logically_last_box), false));
+    }
   }
 
   // Can't reach this. We have a root line box, but it has no kids.

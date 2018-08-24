@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/python.gni")
 import("//build/config/ui.gni")
 import("//testing/test.gni")
 
@@ -152,8 +153,6 @@ source_set("automation_client_lib") {
     "net/adb_client_socket.h",
     "net/net_util.cc",
     "net/net_util.h",
-    "net/port_server.cc",
-    "net/port_server.h",
     "net/sync_websocket.h",
     "net/sync_websocket_factory.cc",
     "net/sync_websocket_factory.h",
@@ -326,23 +325,18 @@ executable("chromedriver") {
   ]
 }
 
-group("chromedriver_py_tests") {
+python_library("chromedriver_py_tests") {
   testonly = true
   deps = [
     ":chromedriver",
     "//chrome:chrome",
   ]
 
-  _py_files = read_file("test/run_py_tests.pydeps", "list lines")
-
-  # Filter out comments.
-  set_sources_assignment_filter([ "#*" ])
-  sources = _py_files
-  data = sources + [
-           "test/run_py_tests.pydeps",
-           "//chrome/test/data/chromedriver/",
-           "//testing/xvfb.py",
-         ]
+  pydeps_file = "test/run_py_tests.pydeps"
+  data = [
+    "//chrome/test/data/chromedriver/",
+    "//testing/xvfb.py",
+  ]
 
   data_deps = [
     "//chrome/test/chromedriver",
@@ -388,6 +382,7 @@ test("chromedriver_unittests") {
     "command_listener_proxy_unittest.cc",
     "commands_unittest.cc",
     "logging_unittest.cc",
+    "net/adb_client_socket_unittest.cc",
     "net/timeout_unittest.cc",
     "performance_logger_unittest.cc",
     "server/http_handler_unittest.cc",
@@ -409,6 +404,8 @@ test("chromedriver_unittests") {
     "//base/test:run_all_unittests",
     "//net",
     "//net:http_server",
+    "//net:test_support",
+    "//testing/gmock",
     "//testing/gtest",
     "//ui/base",
     "//ui/gfx",
@@ -423,7 +420,6 @@ test("chromedriver_tests") {
     "key_converter_unittest.cc",
     "keycode_text_conversion_unittest.cc",
     "net/net_util_unittest.cc",
-    "net/port_server_unittest.cc",
     "net/sync_websocket_impl_unittest.cc",
     "net/test_http_server.cc",
     "net/test_http_server.h",

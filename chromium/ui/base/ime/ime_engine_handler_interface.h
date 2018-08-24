@@ -13,9 +13,9 @@
 
 #include "base/callback.h"
 #include "build/build_config.h"
+#include "ui/base/ime/text_input_client.h"
 #include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
-#include "ui/base/ime/ui_base_ime_export.h"
 
 namespace gfx {
 class Rect;
@@ -35,10 +35,28 @@ class UI_BASE_IME_EXPORT IMEEngineHandlerInterface {
   // used to specify about a non html text field like Omnibox.
   struct InputContext {
     InputContext() {}
-    InputContext(TextInputType type_, TextInputMode mode_, int flags_)
-        : type(type_), mode(mode_), flags(flags_) {}
-    InputContext(int id_, TextInputType type_, TextInputMode mode_, int flags_)
-        : id(id_), type(type_), mode(mode_), flags(flags_) {}
+    InputContext(TextInputType type_,
+                 TextInputMode mode_,
+                 int flags_,
+                 TextInputClient::FocusReason focus_reason_,
+                 bool should_do_learning_)
+        : type(type_),
+          mode(mode_),
+          flags(flags_),
+          focus_reason(focus_reason_),
+          should_do_learning(should_do_learning_) {}
+    InputContext(int id_,
+                 TextInputType type_,
+                 TextInputMode mode_,
+                 int flags_,
+                 TextInputClient::FocusReason focus_reason_,
+                 bool should_do_learning_)
+        : id(id_),
+          type(type_),
+          mode(mode_),
+          flags(flags_),
+          focus_reason(focus_reason_),
+          should_do_learning(should_do_learning_) {}
     // An attribute of the context id which used for ChromeOS only.
     int id;
     // An attribute of the field defined at
@@ -52,6 +70,12 @@ class UI_BASE_IME_EXPORT IMEEngineHandlerInterface {
     // An antribute to indicate the flags for web input fields. Please refer to
     // WebTextInputType.
     int flags;
+    // An attribute to indicate how this input field was focused.
+    TextInputClient::FocusReason focus_reason =
+        TextInputClient::FOCUS_REASON_NONE;
+    // An attribute to indicate whether text entered in this field should be
+    // used to improve typing suggestions for the user.
+    bool should_do_learning = false;
   };
 
   virtual ~IMEEngineHandlerInterface() {}

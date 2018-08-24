@@ -10,10 +10,15 @@ import("../webrtc.gni")
 
 rtc_source_set("call_interfaces") {
   sources = [
+    "audio_receive_stream.cc",
     "audio_receive_stream.h",
     "audio_send_stream.h",
+    "audio_state.cc",
     "audio_state.h",
     "call.h",
+    "call_config.cc",
+    "call_config.h",
+    "flexfec_receive_stream.cc",
     "flexfec_receive_stream.h",
     "syncable.cc",
     "syncable.h",
@@ -32,6 +37,9 @@ rtc_source_set("call_interfaces") {
     "../api:transport_api",
     "../api/audio:audio_mixer_api",
     "../api/audio_codecs:audio_codecs_api",
+    "../api/transport:network_control",
+    "../modules/audio_device:audio_device",
+    "../modules/audio_processing:audio_processing",
     "../modules/audio_processing:audio_processing_statistics",
     "../rtc_base:audio_format_to_string",
     "../rtc_base:rtc_base",
@@ -43,7 +51,6 @@ rtc_source_set("call_interfaces") {
 # when interfaces have stabilized. See also TODO for |mock_rtp_interfaces|.
 rtc_source_set("rtp_interfaces") {
   sources = [
-    "bitrate_constraints.cc",
     "bitrate_constraints.h",
     "rtcp_packet_sink_interface.h",
     "rtp_config.cc",
@@ -55,6 +62,7 @@ rtc_source_set("rtp_interfaces") {
   deps = [
     "../api:array_view",
     "../api:optional",
+    "../api/transport:bitrate_settings",
     "../rtc_base:rtc_base_approved",
   ]
 }
@@ -96,13 +104,14 @@ rtc_source_set("rtp_sender") {
     ":bitrate_configurator",
     ":rtp_interfaces",
     "..:webrtc_common",
+    "../api/transport:network_control",
     "../modules/congestion_controller",
-    "../modules/congestion_controller/network_control",
     "../modules/congestion_controller/rtp:congestion_controller",
     "../modules/pacing",
     "../modules/utility",
     "../rtc_base:rtc_base",
     "../rtc_base:rtc_base_approved",
+    "../rtc_base:rtc_task_queue",
     "../system_wrappers:field_trial_api",
   ]
 }
@@ -114,6 +123,7 @@ rtc_source_set("bitrate_configurator") {
   ]
   deps = [
     ":rtp_interfaces",
+    "../api/transport:bitrate_settings",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
   ]
@@ -169,6 +179,7 @@ rtc_static_library("call") {
     "../api:callfactory_api",
     "../api:optional",
     "../api:transport_api",
+    "../api/transport:network_control",
     "../audio",
     "../logging:rtc_event_audio",
     "../logging:rtc_event_log_api",
@@ -177,7 +188,6 @@ rtc_static_library("call") {
     "../logging:rtc_stream_config",
     "../modules/bitrate_controller",
     "../modules/congestion_controller",
-    "../modules/congestion_controller/network_control",
     "../modules/pacing",
     "../modules/rtp_rtcp",
     "../modules/rtp_rtcp:rtp_rtcp_format",
@@ -199,7 +209,6 @@ rtc_static_library("call") {
 
 rtc_source_set("video_stream_api") {
   sources = [
-    "video_config.cc",
     "video_config.h",
     "video_receive_stream.cc",
     "video_receive_stream.h",
@@ -213,7 +222,7 @@ rtc_source_set("video_stream_api") {
     "../api:libjingle_peerconnection_api",
     "../api:optional",
     "../api:transport_api",
-    "../api:video_frame_api",
+    "../api/video:video_frame",
     "../api/video_codecs:video_codecs_api",
     "../common_video:common_video",
     "../modules/rtp_rtcp:rtp_rtcp_format",
@@ -233,7 +242,6 @@ rtc_source_set("fake_network") {
     "..:webrtc_common",
     "../api:transport_api",
     "../modules:module_api",
-    "../modules/rtp_rtcp",
     "../rtc_base:rtc_base_approved",
     "../rtc_base:sequenced_task_checker",
     "../system_wrappers",
@@ -319,6 +327,8 @@ if (rtc_include_tests) {
       ":video_stream_api",
       "..:webrtc_common",
       "../api/audio_codecs:builtin_audio_encoder_factory",
+      "../api/video:video_bitrate_allocation",
+      "../api/video_codecs:video_codecs_api",
       "../logging:rtc_event_log_api",
       "../modules/audio_coding",
       "../modules/audio_device",
@@ -363,7 +373,17 @@ if (rtc_include_tests) {
       "../test:test_support",
     ]
   }
+  rtc_source_set("mock_bitrate_allocator") {
+    testonly = true
 
+    sources = [
+      "test/mock_bitrate_allocator.h",
+    ]
+    deps = [
+      ":bitrate_allocator",
+      "//test:test_support",
+    ]
+  }
   rtc_source_set("mock_call_interfaces") {
     testonly = true
 

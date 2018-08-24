@@ -18,6 +18,7 @@
 #include "common/debug.h"
 #include "libANGLE/Error.h"
 #include "libANGLE/Observer.h"
+#include "libANGLE/PackedEnums.h"
 #include "libANGLE/renderer/renderer_utils.h"
 
 #define ANGLE_GL_OBJECTS_X(PROC) \
@@ -359,7 +360,11 @@ class CommandBuffer : public WrappedObject<CommandBuffer, VkCommandBuffer>
                            VkImageLayout dstImageLayout,
                            uint32_t regionCount,
                            const VkBufferImageCopy *regions);
-
+    void copyImageToBuffer(const Image &srcImage,
+                           VkImageLayout srcImageLayout,
+                           VkBuffer dstBuffer,
+                           uint32_t regionCount,
+                           const VkBufferImageCopy *regions);
     void copyImage(const Image &srcImage,
                    VkImageLayout srcImageLayout,
                    const Image &dstImage,
@@ -396,6 +401,15 @@ class CommandBuffer : public WrappedObject<CommandBuffer, VkCommandBuffer>
                             const uint32_t *dynamicOffsets);
 
     void executeCommands(uint32_t commandBufferCount, const CommandBuffer *commandBuffers);
+    void updateBuffer(const vk::Buffer &buffer,
+                      VkDeviceSize dstOffset,
+                      VkDeviceSize dataSize,
+                      const void *data);
+    void pushConstants(const PipelineLayout &layout,
+                       VkShaderStageFlags flag,
+                       uint32_t offset,
+                       uint32_t size,
+                       const void *data);
 };
 
 class Image final : public WrappedObject<Image, VkImage>
@@ -594,6 +608,8 @@ template <typename ObjT>
 class ObjectAndSerial final : angle::NonCopyable
 {
   public:
+    ObjectAndSerial() {}
+
     ObjectAndSerial(ObjT &&object, Serial queueSerial)
         : mObject(std::move(object)), mQueueSerial(queueSerial)
     {
@@ -633,8 +649,13 @@ Error AllocateBufferMemory(RendererVk *renderer,
                            DeviceMemory *deviceMemoryOut,
                            size_t *requiredSizeOut);
 
-struct BufferAndMemory final : private angle::NonCopyable
+struct BufferAndMemory final : angle::NonCopyable
 {
+    BufferAndMemory();
+    BufferAndMemory(Buffer &&buffer, DeviceMemory &&deviceMemory);
+    BufferAndMemory(BufferAndMemory &&other);
+    BufferAndMemory &operator=(BufferAndMemory &&other);
+
     Buffer buffer;
     DeviceMemory memory;
 };
@@ -645,11 +666,30 @@ Error AllocateImageMemory(VkDevice device,
                           Image *image,
                           DeviceMemory *deviceMemoryOut,
                           size_t *requiredSizeOut);
+
+using ShaderAndSerial = ObjectAndSerial<ShaderModule>;
+
+// TODO(jmadill): Use gl::ShaderType when possible. http://anglebug.com/2522
+enum class ShaderType
+{
+    VertexShader,
+    FragmentShader,
+    EnumCount,
+    InvalidEnum = EnumCount,
+};
+
+template <typename T>
+using ShaderMap = angle::PackedEnumMap<ShaderType, T>;
+
+using AllShaderTypes = angle::AllEnums<vk::ShaderType>;
 }  // namespace vk
 
 namespace gl_vk
 {
 VkRect2D GetRect(const gl::Rectangle &source);
+VkFilter GetFilter(const GLenum filter);
+VkSamplerMipmapMode GetSamplerMipmapMode(const GLenum filter);
+VkSamplerAddressMode GetSamplerAddressMode(const GLenum wrap);
 VkPrimitiveTopology GetPrimitiveTopology(GLenum mode);
 VkCullModeFlags GetCullMode(const gl::RasterizerState &rasterState);
 VkFrontFace GetFrontFace(GLenum frontFace);
@@ -658,6 +698,9 @@ VkComponentSwizzle GetSwizzle(const GLenum swizzle);
 VkIndexType GetIndexType(GLenum elementType);
 void GetOffset(const gl::Offset &glOffset, VkOffset3D *vkOffset);
 void GetExtent(const gl::Extents &glExtent, VkExtent3D *vkExtent);
+VkImageType GetImageType(gl::TextureType textureType);
+VkImageViewType GetImageViewType(gl::TextureType textureType);
+VkColorComponentFlags GetColorComponentFlags(bool red, bool green, bool blue, bool alpha);
 }  // namespace gl_vk
 
 }  // namespace rx
@@ -665,7 +708,7 @@ void GetExtent(const gl::Extents &glExtent, VkExtent3D *vkExtent);
 #define ANGLE_VK_TRY(command)                                          \
     {                                                                  \
         auto ANGLE_LOCAL_VAR = command;                                \
-        if (ANGLE_LOCAL_VAR != VK_SUCCESS)                             \
+        if (ANGLE_UNLIKELY(ANGLE_LOCAL_VAR != VK_SUCCESS))             \
         {                                                              \
             return rx::vk::Error(ANGLE_LOCAL_VAR, __FILE__, __LINE__); \
         }                                                              \

@@ -46,7 +46,6 @@
 <translation id="2587578672395088481">अपडेट लागू करण्यासाठी Chromium OS रीस्टार्ट करणे आवश्यक आहे.</translation>
 <translation id="2647554856022461007">Chromium आपला ब्राउझिंग अनुभव सुधारण्यासाठी वेब सेवा वापरू शकते. आपण या सेवा वैकल्पिकपणे अक्षम करू शकता. <ph name="BEGIN_LINK" />अधिक जाणून घ्या<ph name="END_LINK" /></translation>
 <translation id="2648074677641340862">स्‍थापनेदरम्‍यान ऑपरेटिंग प्रणाली एरर आली. कृपया Chromium पुन्‍हा डाउनलोड करा.</translation>
-<translation id="2705403826523567092">सर्व डिव्हाइसवर सिंक केलेला, पर्सनलाइझ केलेला ब्राउझिंग अनुभव मिळवण्यासाठी साइन इन करा</translation>
 <translation id="2711502716910134313">Chromium टॅब</translation>
 <translation id="2718390899429598676">अतिरिक्त सुरक्षिततेसाठी, Chromium आपला डेटा कूटबद्ध करेल.</translation>
 <translation id="2770231113462710648">डीफॉल्ट ब्राउझर यावर बदला:</translation>
@@ -144,6 +143,7 @@
 <translation id="5902536751647951209">प्रमाणीकरण प्रमाणपत्र अयशस्वी झाले. कृपया Chromium मध्ये पुन्हा साइन इन करा किंवा आणखी माहितीसाठी तुमच्या प्रशासकाशी संपर्क साधा. <ph name="ADDITIONAL_EXPLANATION" /></translation>
 <translation id="5906655207909574370">अद्ययावत करणे जवळजवळ पूर्ण झाले! अपडेट करणे समाप्त करण्यासाठी आपले डिव्हाइस रीस्टार्ट करा.</translation>
 <translation id="5987687638152509985">संकालित करण्यासाठी Chromium अपडेट करा</translation>
+<translation id="6040143037577758943">बंद करा</translation>
 <translation id="6055895534982063517">Chromium ची नवीन आवृत्ती उपलब्ध आहे आणि ही नेहमीपेक्षा जलद आहे.</translation>
 <translation id="6063093106622310249">आणि Chromium मध्ये उघडा</translation>
 <translation id="6072279588547424923"><ph name="EXTENSION_NAME" /> Chromium मध्‍ये जोडण्यात आले आहे</translation>
@@ -183,6 +183,7 @@
 <translation id="705851970750939768">Chromium अपडेट करा</translation>
 <translation id="7066436765290594559">Chromium OS आपला डेटा संकालित करू शकले नाही. कृपया आपला संकालन सांकेतिक वाक्यांश अपडेट करा.</translation>
 <translation id="7162152143154757523">आपण ब्राउझरमध्‍ये जे टाइप करता ते Google सर्व्हरला पाठवून, आपल्याला Google शोध द्वारे वापरलेल्या शब्दलेखन-तंत्रज्ञानासारखेच तंत्रज्ञान वापरण्याची अनुमती देऊन Chromium चाणाक्ष शब्दलेखन-तपासणी प्रदान करु शकते.</translation>
+<translation id="7196312274710523067">Chromium लाँच करता आले नाही. पुन्हा प्रयत्न करा.</translation>
 <translation id="7205698830395646142">Chromium मेनूमध्‍ये लपवा</translation>
 <translation id="7223968959479464213">कार्य व्यवस्थापक- Chromium </translation>
 <translation id="722928257909516027">Chromium मेनू दर्शवा</translation>
@@ -204,6 +205,7 @@ Chromium तुमची सेटिंग्ज पुनर्प्राप
 <translation id="7451052299415159299">या साइटसाठी Chromium ला तुमचा कॅमेरा अॅक्सेस करण्याची परवानगी हवी आहे</translation>
 <translation id="7483335560992089831">सध्‍या चालू असलेल्‍या सारख्याच Chromium आवृत्तीची स्‍थापना होऊ शकत नाही. कृपया Chromium बंद करा आणि पुन्‍हा प्रयत्‍न करा.</translation>
 <translation id="7549178288319965365">Chromium OS बद्दल</translation>
+<translation id="75551686469636272">Chromium लाँच करत आहे</translation>
 <translation id="7577193603922410712">Chromium साठी विशिष्ट सुरक्षा अपडेट आत्ताच लागू केले; ते प्रभावी होण्यासाठी आपण आता रीस्टार्ट करावे (आम्ही आपले टॅब पुनर्संचयित करू).</translation>
 <translation id="761356813943268536">Chromium आपला कॅमेरा आणि मायक्रोफोन वापरत आहे.</translation>
 <translation id="7617377681829253106">Chromium आता उत्कृष्ट झाले आहे</translation>

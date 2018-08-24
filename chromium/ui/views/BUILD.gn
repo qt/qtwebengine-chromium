@@ -115,7 +115,6 @@ jumbo_component("views") {
     "controls/combobox/combobox_listener.h",
     "controls/focus_ring.h",
     "controls/focusable_border.h",
-    "controls/glow_hover_controller.h",
     "controls/image_view.h",
     "controls/label.h",
     "controls/link.h",
@@ -245,6 +244,7 @@ jumbo_component("views") {
     "widget/widget_deletion_observer.h",
     "widget/widget_observer.h",
     "widget/widget_removals_observer.h",
+    "widget/widget_utils_mac.h",
     "window/client_view.h",
     "window/custom_frame_view.h",
     "window/dialog_client_view.h",
@@ -313,7 +313,6 @@ jumbo_component("views") {
     "controls/combobox/combobox.cc",
     "controls/focus_ring.cc",
     "controls/focusable_border.cc",
-    "controls/glow_hover_controller.cc",
     "controls/image_view.cc",
     "controls/label.cc",
     "controls/link.cc",
@@ -369,6 +368,8 @@ jumbo_component("views") {
     "controls/tree/tree_view_controller.cc",
     "controls/tree/tree_view_drawing_provider.cc",
     "controls/views_text_services_context_menu.cc",
+    "controls/views_text_services_context_menu_base.cc",
+    "controls/views_text_services_context_menu_base.h",
     "controls/views_text_services_context_menu_mac.mm",
     "debug_utils.cc",
     "drag_utils.cc",
@@ -418,6 +419,7 @@ jumbo_component("views") {
     "views_touch_selection_controller_factory_mac.cc",
     "widget/drop_helper.cc",
     "widget/native_widget_mac.mm",
+    "widget/native_widget_private.cc",
     "widget/root_view.cc",
     "widget/root_view_targeter.cc",
     "widget/tooltip_manager.cc",
@@ -425,6 +427,7 @@ jumbo_component("views") {
     "widget/widget_aura_utils.cc",
     "widget/widget_delegate.cc",
     "widget/widget_deletion_observer.cc",
+    "widget/widget_utils_mac.mm",
     "window/client_view.cc",
     "window/custom_frame_view.cc",
     "window/dialog_client_view.cc",
@@ -629,6 +632,7 @@ jumbo_component("views") {
       "widget/desktop_aura/desktop_focus_rules.cc",
       "widget/desktop_aura/desktop_native_cursor_manager.cc",
       "widget/desktop_aura/desktop_native_widget_aura.cc",
+      "widget/desktop_aura/desktop_screen.cc",
       "widget/desktop_aura/desktop_screen_position_client.cc",
       "widget/focus_manager_event_handler.cc",
       "widget/native_widget_aura.cc",
@@ -686,7 +690,8 @@ jumbo_component("views") {
           "widget/desktop_aura/desktop_window_tree_host_win.h",
         ]
       } else if (use_ozone) {
-        sources += [ "widget/desktop_aura/desktop_window_tree_host_ozone.cc" ]
+        public += [ "widget/desktop_aura/desktop_screen_ozone.h" ]
+        sources += [ "widget/desktop_aura/desktop_screen_ozone.cc" ]
       }
       if (is_linux) {
         sources += [
@@ -694,13 +699,14 @@ jumbo_component("views") {
           "widget/desktop_aura/window_event_filter.cc",
           "widget/desktop_aura/window_event_filter.h",
         ]
+        if (!use_x11) {
+          public +=
+              [ "widget/desktop_aura/desktop_window_tree_host_platform.h" ]
+          sources +=
+              [ "widget/desktop_aura/desktop_window_tree_host_platform.cc" ]
+        }
       }
     }
-  }
-
-  if (is_linux) {
-    sources += [ "widget/desktop_aura/desktop_window_tree_host_platform.cc" ]
-    public += [ "widget/desktop_aura/desktop_window_tree_host_platform.h" ]
   }
 
   if (is_mac) {

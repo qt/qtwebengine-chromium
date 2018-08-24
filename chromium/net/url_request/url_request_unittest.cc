@@ -108,6 +108,7 @@
 #include "net/test/gtest_util.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "net/test/test_data_directory.h"
+#include "net/test/test_with_scoped_task_environment.h"
 #include "net/test/url_request/url_request_failed_job.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/data_protocol_handler.h"
@@ -646,7 +647,7 @@ NetworkDelegate::AuthRequiredResponse BlockingNetworkDelegate::OnAuthRequired(
       auth_callback_ = callback;
       stage_blocked_for_callback_ = ON_AUTH_REQUIRED;
       base::ThreadTaskRunnerHandle::Get()->PostTask(
-          FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
+          FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated());
       return AUTH_REQUIRED_RESPONSE_IO_PENDING;
   }
   NOTREACHED();
@@ -685,7 +686,7 @@ int BlockingNetworkDelegate::MaybeBlockStage(
       callback_ = callback;
       stage_blocked_for_callback_ = stage;
       base::ThreadTaskRunnerHandle::Get()->PostTask(
-          FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
+          FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated());
       return ERR_IO_PENDING;
   }
   NOTREACHED();
@@ -768,7 +769,7 @@ class OCSPErrorTestDelegate : public TestDelegate {
 }  // namespace
 
 // Inherit PlatformTest since we require the autorelease pool on Mac OS X.
-class URLRequestTest : public PlatformTest {
+class URLRequestTest : public PlatformTest, public WithScopedTaskEnvironment {
  public:
   URLRequestTest() : default_context_(true) {
     default_context_.set_network_delegate(&default_network_delegate_);
@@ -1277,7 +1278,7 @@ TEST_F(URLRequestTest, FileDirCancelTest) {
   TestDelegate d;
   {
     base::FilePath file_path;
-    PathService::Get(base::DIR_SOURCE_ROOT, &file_path);
+    base::PathService::Get(base::DIR_SOURCE_ROOT, &file_path);
     file_path = file_path.Append(FILE_PATH_LITERAL("net"));
     file_path = file_path.Append(FILE_PATH_LITERAL("data"));
 
@@ -1303,7 +1304,7 @@ TEST_F(URLRequestTest, FileDirOutputSanity) {
   const char sentinel_name[] = "filedir-sentinel";
 
   base::FilePath path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &path);
+  base::PathService::Get(base::DIR_SOURCE_ROOT, &path);
   path = path.Append(kTestFilePath);
 
   TestDelegate d;
@@ -1338,7 +1339,7 @@ TEST_F(URLRequestTest, FileDirRedirectNoCrash) {
   // redirects does not crash.  See http://crbug.com/18686.
 
   base::FilePath path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &path);
+  base::PathService::Get(base::DIR_SOURCE_ROOT, &path);
   path = path.Append(kTestFilePath);
 
   TestDelegate d;
@@ -1404,7 +1405,7 @@ TEST_F(URLRequestTest, InvalidReferrerTest) {
 #if defined(OS_WIN)
 TEST_F(URLRequestTest, ResolveShortcutTest) {
   base::FilePath app_path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &app_path);
+  base::PathService::Get(base::DIR_SOURCE_ROOT, &app_path);
   app_path = app_path.Append(kTestFilePath);
   app_path = app_path.AppendASCII("with-headers.html");
 
@@ -5443,7 +5444,7 @@ TEST_F(URLRequestTestHTTP, GetZippedTest) {
       { true, true, false, false, true };
 
   base::FilePath file_path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &file_path);
+  base::PathService::Get(base::DIR_SOURCE_ROOT, &file_path);
   file_path = file_path.Append(kTestFilePath);
   file_path = file_path.Append(FILE_PATH_LITERAL("BullRunSpeech.txt"));
   std::string expected_content;
@@ -6496,13 +6497,13 @@ TEST_F(URLRequestTestHTTP, PostFileTest) {
     r->set_method("POST");
 
     base::FilePath dir;
-    PathService::Get(base::DIR_EXE, &dir);
+    base::PathService::Get(base::DIR_EXE, &dir);
     base::SetCurrentDirectory(dir);
 
     std::vector<std::unique_ptr<UploadElementReader>> element_readers;
 
     base::FilePath path;
-    PathService::Get(base::DIR_SOURCE_ROOT, &path);
+    base::PathService::Get(base::DIR_SOURCE_ROOT, &path);
     path = path.Append(kTestFilePath);
     path = path.Append(FILE_PATH_LITERAL("with-headers.html"));
     element_readers.push_back(std::make_unique<UploadFileElementReader>(
@@ -7215,7 +7216,7 @@ class MockCTPolicyEnforcer : public CTPolicyEnforcer {
 
   ct::CTPolicyCompliance CheckCompliance(
       X509Certificate* cert,
-      const SCTList& verified_scts,
+      const ct::SCTList& verified_scts,
       const NetLogWithSource& net_log) override {
     return default_result_;
   }
@@ -7448,6 +7449,8 @@ class TestReportingService : public ReportingService {
     NOTIMPLEMENTED();
   }
 
+  void RemoveAllBrowsingData(int data_type_mask) override { NOTIMPLEMENTED(); }
+
   int GetUploadDepth(const URLRequest& request) override {
     NOTIMPLEMENTED();
     return 0;
@@ -7604,6 +7607,8 @@ class TestNetworkErrorLoggingService : public NetworkErrorLoggingService {
                               origin_filter) override {
     NOTREACHED();
   }
+
+  void RemoveAllBrowsingData() override { NOTREACHED(); }
 
  private:
   std::vector<Header> headers_;
@@ -8255,7 +8260,7 @@ TEST_F(URLRequestTestHTTP, DeferredRedirect) {
     EXPECT_EQ(OK, d.request_status());
 
     base::FilePath path;
-    PathService::Get(base::DIR_SOURCE_ROOT, &path);
+    base::PathService::Get(base::DIR_SOURCE_ROOT, &path);
     path = path.Append(kTestFilePath);
     path = path.Append(FILE_PATH_LITERAL("with-headers.html"));
 
@@ -8293,7 +8298,7 @@ TEST_F(URLRequestTestHTTP, DeferredRedirect_GetFullRequestHeaders) {
     EXPECT_EQ(OK, d.request_status());
 
     base::FilePath path;
-    PathService::Get(base::DIR_SOURCE_ROOT, &path);
+    base::PathService::Get(base::DIR_SOURCE_ROOT, &path);
     path = path.Append(kTestFilePath);
     path = path.Append(FILE_PATH_LITERAL("with-headers.html"));
 
@@ -9712,7 +9717,7 @@ TEST_F(URLRequestTestReferrerPolicy, HTTPSToHTTP) {
   VerifyReferrerAfterRedirect(URLRequest::NO_REFERRER, GURL(), GURL());
 }
 
-class HTTPSRequestTest : public testing::Test {
+class HTTPSRequestTest : public TestWithScopedTaskEnvironment {
  public:
   HTTPSRequestTest() : default_context_(true) {
     default_context_.set_network_delegate(&default_network_delegate_);
@@ -10565,7 +10570,7 @@ TEST_F(HTTPSRequestTest, SSLSessionCacheShardTest) {
   }
 }
 
-class HTTPSFallbackTest : public testing::Test {
+class HTTPSFallbackTest : public TestWithScopedTaskEnvironment {
  public:
   HTTPSFallbackTest() : context_(true) {
     ssl_config_service_ = new TestSSLConfigService(
@@ -10664,7 +10669,7 @@ TEST_F(HTTPSFallbackTest, TLSv1_3InterferenceDisableVersion) {
   ExpectConnection(SSL_CONNECTION_VERSION_TLS1_2);
 }
 
-class HTTPSSessionTest : public testing::Test {
+class HTTPSSessionTest : public TestWithScopedTaskEnvironment {
  public:
   HTTPSSessionTest() : default_context_(true) {
     cert_verifier_.set_default_result(OK);
@@ -10776,8 +10781,7 @@ class HTTPSOCSPTest : public HTTPSRequestTest {
   }
 
   void SetUp() override {
-    context_.SetCTPolicyEnforcer(
-        std::make_unique<AllowAnyCertCTPolicyEnforcer>());
+    context_.SetCTPolicyEnforcer(std::make_unique<DefaultCTPolicyEnforcer>());
     SetupContext();
     context_.Init();
 
@@ -10844,18 +10848,6 @@ class HTTPSOCSPTest : public HTTPSRequestTest {
   }
 
  protected:
-  class AllowAnyCertCTPolicyEnforcer : public CTPolicyEnforcer {
-   public:
-    AllowAnyCertCTPolicyEnforcer() = default;
-    ~AllowAnyCertCTPolicyEnforcer() override = default;
-
-    ct::CTPolicyCompliance CheckCompliance(
-        X509Certificate* cert,
-        const SCTList& verified_scts,
-        const NetLogWithSource& net_log) override {
-      return ct::CTPolicyCompliance::CT_POLICY_COMPLIES_VIA_SCTS;
-    }
-  };
   // SetupContext configures the URLRequestContext that will be used for making
   // connetions to testserver. This can be overridden in test subclasses for
   // different behaviour.
@@ -11010,6 +11002,110 @@ TEST_F(HTTPSOCSPTest, Invalid) {
 
   // Without a positive OCSP response, we shouldn't show the EV status.
   EXPECT_FALSE(cert_status & CERT_STATUS_IS_EV);
+  EXPECT_TRUE(cert_status & CERT_STATUS_REV_CHECKING_ENABLED);
+}
+
+TEST_F(HTTPSOCSPTest, IntermediateValid) {
+  if (!SystemSupportsOCSP()) {
+    LOG(WARNING) << "Skipping test because system doesn't support OCSP";
+    return;
+  }
+
+  SpawnedTestServer::SSLOptions ssl_options(
+      SpawnedTestServer::SSLOptions::CERT_AUTO_WITH_INTERMEDIATE);
+  ssl_options.ocsp_status = SpawnedTestServer::SSLOptions::OCSP_OK;
+  ssl_options.ocsp_intermediate_status = SpawnedTestServer::SSLOptions::OCSP_OK;
+
+  CertStatus cert_status;
+  DoConnection(ssl_options, &cert_status);
+
+  EXPECT_EQ(0u, cert_status & CERT_STATUS_ALL_ERRORS);
+
+  EXPECT_EQ(SystemUsesChromiumEVMetadata(),
+            static_cast<bool>(cert_status & CERT_STATUS_IS_EV));
+
+  EXPECT_TRUE(cert_status & CERT_STATUS_REV_CHECKING_ENABLED);
+}
+
+TEST_F(HTTPSOCSPTest, IntermediateResponseOldButStillValid) {
+  if (!SystemSupportsOCSP()) {
+    LOG(WARNING) << "Skipping test because system doesn't support OCSP";
+    return;
+  }
+
+  SpawnedTestServer::SSLOptions ssl_options(
+      SpawnedTestServer::SSLOptions::CERT_AUTO_WITH_INTERMEDIATE);
+  ssl_options.ocsp_status = SpawnedTestServer::SSLOptions::OCSP_OK;
+  ssl_options.ocsp_intermediate_status = SpawnedTestServer::SSLOptions::OCSP_OK;
+  // Use an OCSP response for the intermediate that would be too old for a leaf
+  // cert, but is still valid for an intermediate.
+  ssl_options.ocsp_intermediate_date =
+      SpawnedTestServer::SSLOptions::OCSP_DATE_LONG;
+
+  CertStatus cert_status;
+  DoConnection(ssl_options, &cert_status);
+
+  EXPECT_EQ(0u, cert_status & CERT_STATUS_ALL_ERRORS);
+
+  EXPECT_EQ(SystemUsesChromiumEVMetadata(),
+            static_cast<bool>(cert_status & CERT_STATUS_IS_EV));
+
+  EXPECT_TRUE(cert_status & CERT_STATUS_REV_CHECKING_ENABLED);
+}
+
+TEST_F(HTTPSOCSPTest, IntermediateResponseTooOld) {
+  if (!SystemSupportsOCSP()) {
+    LOG(WARNING) << "Skipping test because system doesn't support OCSP";
+    return;
+  }
+
+  SpawnedTestServer::SSLOptions ssl_options(
+      SpawnedTestServer::SSLOptions::CERT_AUTO_WITH_INTERMEDIATE);
+  ssl_options.ocsp_status = SpawnedTestServer::SSLOptions::OCSP_OK;
+  ssl_options.ocsp_intermediate_status = SpawnedTestServer::SSLOptions::OCSP_OK;
+  ssl_options.ocsp_intermediate_date =
+      SpawnedTestServer::SSLOptions::OCSP_DATE_LONGER;
+
+  CertStatus cert_status;
+  DoConnection(ssl_options, &cert_status);
+
+#if defined(USE_BUILTIN_CERT_VERIFIER)
+  // The builtin verifier enforces the baseline requirements for max age of an
+  // intermediate's OCSP response.
+  EXPECT_EQ(CERT_STATUS_UNABLE_TO_CHECK_REVOCATION,
+            cert_status & CERT_STATUS_ALL_ERRORS);
+  EXPECT_EQ(0u, cert_status & CERT_STATUS_IS_EV);
+#else
+  // The platform verifiers are more lenient.
+  EXPECT_EQ(0u, cert_status & CERT_STATUS_ALL_ERRORS);
+  EXPECT_EQ(SystemUsesChromiumEVMetadata(),
+            static_cast<bool>(cert_status & CERT_STATUS_IS_EV));
+#endif
+  EXPECT_TRUE(cert_status & CERT_STATUS_REV_CHECKING_ENABLED);
+}
+
+TEST_F(HTTPSOCSPTest, IntermediateRevoked) {
+  if (!SystemSupportsOCSP()) {
+    LOG(WARNING) << "Skipping test because system doesn't support OCSP";
+    return;
+  }
+
+  SpawnedTestServer::SSLOptions ssl_options(
+      SpawnedTestServer::SSLOptions::CERT_AUTO_WITH_INTERMEDIATE);
+  ssl_options.ocsp_status = SpawnedTestServer::SSLOptions::OCSP_OK;
+  ssl_options.ocsp_intermediate_status =
+      SpawnedTestServer::SSLOptions::OCSP_REVOKED;
+
+  CertStatus cert_status;
+  DoConnection(ssl_options, &cert_status);
+
+#if defined(OS_WIN)
+  // TODO(mattm): why does CertVerifyProcWin accept this?
+  EXPECT_EQ(0u, cert_status & CERT_STATUS_ALL_ERRORS);
+#else
+  EXPECT_EQ(CERT_STATUS_REVOKED, cert_status & CERT_STATUS_ALL_ERRORS);
+#endif
+  EXPECT_EQ(0u, cert_status & CERT_STATUS_IS_EV);
   EXPECT_TRUE(cert_status & CERT_STATUS_REV_CHECKING_ENABLED);
 }
 
@@ -11998,7 +12094,7 @@ class URLRequestTestFTP : public URLRequestTest {
 
   std::string GetTestFileContents() {
     base::FilePath path;
-    EXPECT_TRUE(PathService::Get(base::DIR_SOURCE_ROOT, &path));
+    EXPECT_TRUE(base::PathService::Get(base::DIR_SOURCE_ROOT, &path));
     path = path.Append(kTestFilePath);
     path = path.AppendASCII(kFtpTestFile);
     std::string contents;

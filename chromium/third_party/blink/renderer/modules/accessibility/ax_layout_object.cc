@@ -39,7 +39,6 @@
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
 #include "third_party/blink/renderer/core/editing/iterators/character_iterator.h"
 #include "third_party/blink/renderer/core/editing/iterators/text_iterator.h"
-#include "third_party/blink/renderer/core/editing/rendered_position.h"
 #include "third_party/blink/renderer/core/editing/selection_template.h"
 #include "third_party/blink/renderer/core/editing/text_affinity.h"
 #include "third_party/blink/renderer/core/editing/visible_position.h"
@@ -86,13 +85,12 @@
 #include "third_party/blink/renderer/modules/accessibility/ax_image_map_link.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_inline_text_box.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_object_cache_impl.h"
-#include "third_party/blink/renderer/modules/accessibility/ax_spin_button.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_svg_root.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_table.h"
-#include "third_party/blink/renderer/platform/geometry/transform_state.h"
 #include "third_party/blink/renderer/platform/graphics/image_data_buffer.h"
 #include "third_party/blink/renderer/platform/text/platform_locale.h"
 #include "third_party/blink/renderer/platform/text/text_direction.h"
+#include "third_party/blink/renderer/platform/transforms/transform_state.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 
 using blink::WebLocalizedString;
@@ -259,7 +257,7 @@ AccessibilityRole AXLayoutObject::NativeAccessibilityRoleIgnoringAria() const {
     if (node && node->IsLink())
       return kImageMapRole;
     if (IsHTMLInputElement(node))
-      return AriaHasPopup() ? kPopUpButtonRole : kButtonRole;
+      return HasPopup() ? kPopUpButtonRole : kButtonRole;
     if (IsSVGImage())
       return kSVGRootRole;
     return kImageRole;
@@ -335,10 +333,17 @@ static bool IsLinkable(const AXObject& object) {
 // Requires layoutObject to be present because it relies on style
 // user-modify. Don't move this logic to AXNodeObject.
 bool AXLayoutObject::IsEditable() const {
-  if (GetLayoutObject() && GetLayoutObject()->IsTextControl())
+  if (IsDetached())
+    return false;
+
+  if (GetLayoutObject()->IsTextControl())
     return true;
 
-  if (GetNode() && HasEditableStyle(*GetNode()))
+  const Node* node = GetNodeOrContainingBlockNode();
+  if (!node)
+    return false;
+
+  if (HasEditableStyle(*node))
     return true;
 
   if (IsWebArea()) {
@@ -358,7 +363,14 @@ bool AXLayoutObject::IsEditable() const {
 // Requires layoutObject to be present because it relies on style
 // user-modify. Don't move this logic to AXNodeObject.
 bool AXLayoutObject::IsRichlyEditable() const {
-  if (GetNode() && HasRichlyEditableStyle(*GetNode()))
+  if (IsDetached())
+    return false;
+
+  const Node* node = GetNodeOrContainingBlockNode();
+  if (!node)
+    return false;
+
+  if (HasRichlyEditableStyle(*node))
     return true;
 
   if (IsWebArea()) {
@@ -446,16 +458,29 @@ AccessibilitySelectedState AXLayoutObject::IsSelected() const {
 
   // Selection follows focus, but ONLY in single selection containers,
   // and only if aria-selected was not present to override
+  return IsSelectedFromFocus() ? kSelectedStateTrue : kSelectedStateFalse;
+}
 
+// In single selection containers, selection follows focus unless aria_selected
+// is set to false.
+bool AXLayoutObject::IsSelectedFromFocus() const {
+  // If not a single selection container, selection does not follow focus.
   AXObject* container = ContainerWidget();
   if (!container || container->IsMultiSelectable())
-    return kSelectedStateFalse;
+    return false;
 
+  // If this object is not accessibility focused, then it is not selected from
+  // focus.
   AXObject* focused_object = AXObjectCache().FocusedObject();
-  return (focused_object == this ||
-          (focused_object && focused_object->ActiveDescendant() == this))
-             ? kSelectedStateTrue
-             : kSelectedStateFalse;
+  if (focused_object != this &&
+      (!focused_object || focused_object->ActiveDescendant() != this))
+    return false;
+
+  // In single selection container and accessibility focused => true if
+  // aria-selected wasn't used as an override.
+  bool is_selected;
+  return !HasAOMPropertyOrARIAAttribute(AOMBooleanProperty::kSelected,
+                                        is_selected);
 }
 
 //
@@ -485,6 +510,20 @@ AXObjectInclusion AXLayoutObject::DefaultObjectInclusion(
   }
 
   return AXObject::DefaultObjectInclusion(ignored_reasons);
+}
+
+bool HasAriaAttribute(Element* element) {
+  if (!element)
+    return false;
+
+  AttributeCollection attributes = element->AttributesWithoutUpdate();
+  for (const Attribute& attr : attributes) {
+    // Attributes cache their uppercase names.
+    if (attr.GetName().LocalNameUpper().StartsWith("ARIA-"))
+      return true;
+  }
+
+  return false;
 }
 
 bool AXLayoutObject::ComputeAccessibilityIsIgnored(
@@ -697,9 +736,8 @@ bool AXLayoutObject::ComputeAccessibilityIsIgnored(
   // These checks are simplified in the interest of execution speed;
   // for example, any element having an alt attribute will make it
   // not ignored, rather than just images.
-  if (!GetAttribute(aria_helpAttr).IsEmpty() ||
-      !GetAttribute(aria_describedbyAttr).IsEmpty() ||
-      !GetAttribute(altAttr).IsEmpty() || !GetAttribute(titleAttr).IsEmpty())
+  if (HasAriaAttribute(GetElement()) || !GetAttribute(altAttr).IsEmpty() ||
+      !GetAttribute(titleAttr).IsEmpty())
     return false;
 
   // <span> tags are inline tags and not meant to convey information if they
@@ -919,7 +957,7 @@ RGBA32 AXLayoutObject::GetColor() const {
   return color.Rgb();
 }
 
-String AXLayoutObject::FontFamily() const {
+AtomicString AXLayoutObject::FontFamily() const {
   if (!GetLayoutObject())
     return AXNodeObject::FontFamily();
 
@@ -953,13 +991,14 @@ String AXLayoutObject::ImageDataUrl(const IntSize& max_size) const {
   ImageBitmap* image_bitmap = nullptr;
   Document* document = &node->GetDocument();
   if (auto* image = ToHTMLImageElementOrNull(node)) {
-    image_bitmap =
-        ImageBitmap::Create(image, Optional<IntRect>(), document, options);
+    image_bitmap = ImageBitmap::Create(image, base::Optional<IntRect>(),
+                                       document, options);
   } else if (auto* canvas = ToHTMLCanvasElementOrNull(node)) {
-    image_bitmap = ImageBitmap::Create(canvas, Optional<IntRect>(), options);
-  } else if (auto* video = ToHTMLVideoElementOrNull(node)) {
     image_bitmap =
-        ImageBitmap::Create(video, Optional<IntRect>(), document, options);
+        ImageBitmap::Create(canvas, base::Optional<IntRect>(), options);
+  } else if (auto* video = ToHTMLVideoElementOrNull(node)) {
+    image_bitmap = ImageBitmap::Create(video, base::Optional<IntRect>(),
+                                       document, options);
   }
   if (!image_bitmap)
     return String();
@@ -1076,6 +1115,31 @@ AccessibilityTextDirection AXLayoutObject::GetTextDirection() const {
   }
 
   return AXNodeObject::GetTextDirection();
+}
+
+AXTextPosition AXLayoutObject::GetTextPosition() const {
+  if (!GetLayoutObject())
+    return AXNodeObject::GetTextPosition();
+
+  const ComputedStyle* style = GetLayoutObject()->Style();
+  if (!style)
+    return AXNodeObject::GetTextPosition();
+
+  switch (style->VerticalAlign()) {
+    case EVerticalAlign::kBaseline:
+    case EVerticalAlign::kMiddle:
+    case EVerticalAlign::kTextTop:
+    case EVerticalAlign::kTextBottom:
+    case EVerticalAlign::kTop:
+    case EVerticalAlign::kBottom:
+    case EVerticalAlign::kBaselineMiddle:
+    case EVerticalAlign::kLength:
+      return AXNodeObject::GetTextPosition();
+    case EVerticalAlign::kSub:
+      return kAXTextPositionSubscript;
+    case EVerticalAlign::kSuper:
+      return kAXTextPositionSuperscript;
+  }
 }
 
 int AXLayoutObject::TextLength() const {
@@ -1351,14 +1415,39 @@ void AXLayoutObject::AriaDescribedbyElements(
                                        describedby);
 }
 
-bool AXLayoutObject::AriaHasPopup() const {
+AXHasPopup AXLayoutObject::HasPopup() const {
   const AtomicString& has_popup =
       GetAOMPropertyOrARIAAttribute(AOMStringProperty::kHasPopUp);
-  if (!has_popup.IsNull())
-    return !has_popup.IsEmpty() && !EqualIgnoringASCIICase(has_popup, "false");
+  if (!has_popup.IsNull()) {
+    if (EqualIgnoringASCIICase(has_popup, "false"))
+      return kAXHasPopupFalse;
 
-  return RoleValue() == kComboBoxMenuButtonRole ||
-         RoleValue() == kTextFieldWithComboBoxRole;
+    if (EqualIgnoringASCIICase(has_popup, "listbox"))
+      return kAXHasPopupListbox;
+
+    if (EqualIgnoringASCIICase(has_popup, "tree"))
+      return kAXHasPopupTree;
+
+    if (EqualIgnoringASCIICase(has_popup, "grid"))
+      return kAXHasPopupGrid;
+
+    if (EqualIgnoringASCIICase(has_popup, "dialog"))
+      return kAXHasPopupDialog;
+
+    // To provide backward compatibility with ARIA 1.0 content,
+    // user agents MUST treat an aria-haspopup value of true
+    // as equivalent to a value of menu.
+    // And unknown value also return menu too.
+    if (EqualIgnoringASCIICase(has_popup, "true") ||
+        EqualIgnoringASCIICase(has_popup, "menu") || !has_popup.IsEmpty())
+      return kAXHasPopupMenu;
+  }
+
+  if (RoleValue() == kComboBoxMenuButtonRole ||
+      RoleValue() == kTextFieldWithComboBoxRole)
+    return kAXHasPopupMenu;
+
+  return AXObject::HasPopup();
 }
 
 // TODO : Aria-dropeffect and aria-grabbed are deprecated in aria 1.1
@@ -1655,7 +1744,6 @@ void AXLayoutObject::AddChildren() {
   AddHiddenChildren();
   AddPopupChildren();
   AddImageMapChildren();
-  AddTextFieldChildren();
   AddCanvasChildren();
   AddRemoteSVGChildren();
   AddInlineTextBoxChildren(false);
@@ -1713,6 +1801,16 @@ Node* AXLayoutObject::GetNode() const {
   return GetLayoutObject() ? GetLayoutObject()->GetNode() : nullptr;
 }
 
+Node* AXLayoutObject::GetNodeOrContainingBlockNode() const {
+  if (IsDetached())
+    return nullptr;
+  if (GetLayoutObject()->IsAnonymousBlock() &&
+      GetLayoutObject()->ContainingBlock()) {
+    return GetLayoutObject()->ContainingBlock()->GetNode();
+  }
+  return GetNode();
+}
+
 Document* AXLayoutObject::GetDocument() const {
   if (!GetLayoutObject())
     return nullptr;
@@ -1766,6 +1864,27 @@ Element* AXLayoutObject::AnchorElement() const {
   }
 
   return nullptr;
+}
+
+AtomicString AXLayoutObject::Language() const {
+  // Uses the style engine to figure out the object's language.
+  // The style engine relies on, for example, the "lang" attribute of the
+  // current node and its ancestors, and the document's "content-language"
+  // header. See the Language of a Node Spec at
+  // https://html.spec.whatwg.org/multipage/dom.html#language
+
+  if (!GetLayoutObject())
+    return AXNodeObject::Language();
+
+  const ComputedStyle* style = GetLayoutObject()->Style();
+  if (!style || !style->Locale())
+    return AXNodeObject::Language();
+
+  Vector<String> languages;
+  String(style->Locale()).Split(',', languages);
+  if (languages.IsEmpty())
+    return AXNodeObject::Language();
+  return AtomicString(languages[0].StripWhiteSpace());
 }
 
 //
@@ -2135,6 +2254,14 @@ void AXLayoutObject::HandleActiveDescendantChanged() {
 
   AXObject* focused_object = AXObjectCache().FocusedObject();
   if (focused_object == this && SupportsARIAActiveDescendant()) {
+    AXObject* active_descendant = ActiveDescendant();
+    if (active_descendant && active_descendant->IsSelectedFromFocus()) {
+      // In single selection containers, selection follows focus, so a selection
+      // changed event must be fired. This ensures the AT is notified that the
+      // selected state has changed, so that it does not read "unselected" as
+      // the user navigates through the items.
+      AXObjectCache().HandleAriaSelectedChanged(active_descendant->GetNode());
+    }
     AXObjectCache().PostNotification(
         GetLayoutObject(), AXObjectCacheImpl::kAXActiveDescendantChanged);
   }
@@ -2204,6 +2331,43 @@ void AXLayoutObject::TextChanged() {
 //
 // Text metrics. Most of these should be deprecated, needs major cleanup.
 //
+
+static LayoutObject* LayoutObjectFromPosition(const Position& position) {
+  DCHECK(position.IsNotNull());
+  Node* layout_object_node = nullptr;
+  switch (position.AnchorType()) {
+    case PositionAnchorType::kOffsetInAnchor:
+      layout_object_node = position.ComputeNodeAfterPosition();
+      if (!layout_object_node || !layout_object_node->GetLayoutObject())
+        layout_object_node = position.AnchorNode()->lastChild();
+      break;
+
+    case PositionAnchorType::kBeforeAnchor:
+    case PositionAnchorType::kAfterAnchor:
+      break;
+
+    case PositionAnchorType::kBeforeChildren:
+      layout_object_node = position.AnchorNode()->firstChild();
+      break;
+    case PositionAnchorType::kAfterChildren:
+      layout_object_node = position.AnchorNode()->lastChild();
+      break;
+  }
+  if (!layout_object_node || !layout_object_node->GetLayoutObject())
+    layout_object_node = position.AnchorNode();
+  return layout_object_node->GetLayoutObject();
+}
+
+static bool LayoutObjectContainsPosition(LayoutObject* target,
+                                         const Position& position) {
+  for (LayoutObject* layout_object = LayoutObjectFromPosition(position);
+       layout_object && layout_object->GetNode();
+       layout_object = layout_object->Parent()) {
+    if (layout_object == target)
+      return true;
+  }
+  return false;
+}
 
 // NOTE: Consider providing this utility method as AX API
 int AXLayoutObject::Index(const VisiblePosition& position) const {
@@ -2299,7 +2463,6 @@ void AXLayoutObject::LineBreaks(Vector<int>& line_breaks) const {
 //
 // Private.
 //
-
 
 bool AXLayoutObject::IsTabItemSelected() const {
   if (!IsTabItem() || !GetLayoutObject())
@@ -2502,27 +2665,6 @@ void AXLayoutObject::AddHiddenChildren() {
     InsertChild(AXObjectCache().GetOrCreate(&child), insertion_index);
     insertion_index += (children_.size() - previous_size);
   }
-}
-
-void AXLayoutObject::AddTextFieldChildren() {
-  Node* node = this->GetNode();
-  if (!IsHTMLInputElement(node))
-    return;
-
-  HTMLInputElement& input = ToHTMLInputElement(*node);
-  Element* spin_button_element =
-      input.UserAgentShadowRoot() ? input.UserAgentShadowRoot()->getElementById(
-                                        ShadowElementNames::SpinButton())
-                                  : nullptr;
-  if (!spin_button_element || !spin_button_element->IsSpinButtonElement())
-    return;
-
-  AXSpinButton* ax_spin_button =
-      ToAXSpinButton(AXObjectCache().GetOrCreate(kSpinButtonRole));
-  ax_spin_button->SetSpinButtonElement(
-      ToSpinButtonElement(spin_button_element));
-  ax_spin_button->SetParent(this);
-  children_.push_back(ax_spin_button);
 }
 
 void AXLayoutObject::AddImageMapChildren() {

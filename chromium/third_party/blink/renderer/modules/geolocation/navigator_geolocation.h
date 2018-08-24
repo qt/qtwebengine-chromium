@@ -43,8 +43,8 @@ class NavigatorGeolocation final
   static Geolocation* geolocation(Navigator&);
   Geolocation* geolocation();
 
-  void Trace(blink::Visitor*);
-  void TraceWrappers(const ScriptWrappableVisitor*) const override;
+  void Trace(blink::Visitor*) override;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override {
     return "NavigatorGeolocation";
   }

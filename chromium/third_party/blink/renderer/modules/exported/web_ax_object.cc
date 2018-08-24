@@ -437,11 +437,11 @@ WebAXObject WebAXObject::AriaActiveDescendant() const {
   return WebAXObject(private_->ActiveDescendant());
 }
 
-bool WebAXObject::AriaHasPopup() const {
+WebAXHasPopup WebAXObject::HasPopup() const {
   if (IsDetached())
-    return false;
+    return kWebAXHasPopupFalse;
 
-  return private_->AriaHasPopup();
+  return static_cast<WebAXHasPopup>(private_->HasPopup());
 }
 
 bool WebAXObject::IsEditableRoot() const {
@@ -684,6 +684,13 @@ WebString WebAXObject::Language() const {
   return private_->Language();
 }
 
+bool WebAXObject::ClearAccessibilityFocus() const {
+  if (IsDetached())
+    return false;
+
+  return private_->InternalClearAccessibilityFocusAction();
+}
+
 bool WebAXObject::Click() const {
   if (IsDetached())
     return false;
@@ -764,6 +771,13 @@ void WebAXObject::Selection(WebAXObject& anchor_object,
   focus_offset = ax_selection.focus_offset;
   focus_affinity = static_cast<WebAXTextAffinity>(ax_selection.focus_affinity);
   return;
+}
+
+bool WebAXObject::SetAccessibilityFocus() const {
+  if (IsDetached())
+    return false;
+
+  return private_->InternalSetAccessibilityFocusAction();
 }
 
 bool WebAXObject::SetSelected(bool selected) const {
@@ -873,6 +887,13 @@ WebAXTextDirection WebAXObject::GetTextDirection() const {
     return kWebAXTextDirectionLR;
 
   return static_cast<WebAXTextDirection>(private_->GetTextDirection());
+}
+
+WebAXTextPosition WebAXObject::GetTextPosition() const {
+  if (IsDetached())
+    return kWebAXTextPositionNone;
+
+  return static_cast<WebAXTextPosition>(private_->GetTextPosition());
 }
 
 WebAXTextStyle WebAXObject::TextStyle() const {

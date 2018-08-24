@@ -18,6 +18,7 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/format_macros.h"
 #include "rtc_base/platform_thread.h"
+#include "rtc_base/ptr_util.h"
 #include "rtc_base/timeutils.h"
 #include "sdk/android/src/jni/audio_device/audio_common.h"
 
@@ -40,7 +41,7 @@
 
 namespace webrtc {
 
-namespace android_adm {
+namespace jni {
 
 OpenSLESRecorder::OpenSLESRecorder(const AudioParameters& audio_parameters,
                                    OpenSLEngineManager* engine_manager)
@@ -80,9 +81,7 @@ int OpenSLESRecorder::Init() {
   ALOGD("Init[tid=%d]", rtc::CurrentThreadId());
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
   if (audio_parameters_.channels() == 2) {
-    // TODO(henrika): FineAudioBuffer needs more work to support stereo.
-    ALOGE("OpenSLESRecorder does not support stereo");
-    return -1;
+    ALOGD("Stereo mode is enabled");
   }
   return 0;
 }
@@ -204,13 +203,6 @@ bool OpenSLESRecorder::IsNoiseSuppressorSupported() const {
 
 int OpenSLESRecorder::EnableBuiltInAEC(bool enable) {
   ALOGD("EnableBuiltInAEC(%d)", enable);
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
-  ALOGE("Not implemented");
-  return 0;
-}
-
-int OpenSLESRecorder::EnableBuiltInAGC(bool enable) {
-  ALOGD("EnableBuiltInAGC(%d)", enable);
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
   ALOGE("Not implemented");
   return 0;
@@ -360,14 +352,13 @@ void OpenSLESRecorder::AllocateDataBuffers() {
         audio_parameters_.GetBytesPerBuffer());
   ALOGD("native sample rate: %d", audio_parameters_.sample_rate());
   RTC_DCHECK(audio_device_buffer_);
-  fine_audio_buffer_.reset(
-      new FineAudioBuffer(audio_device_buffer_, audio_parameters_.sample_rate(),
-                          2 * audio_parameters_.GetBytesPerBuffer()));
+  fine_audio_buffer_ = rtc::MakeUnique<FineAudioBuffer>(audio_device_buffer_);
   // Allocate queue of audio buffers that stores recorded audio samples.
-  const int data_size_bytes = audio_parameters_.GetBytesPerBuffer();
-  audio_buffers_.reset(new std::unique_ptr<SLint8[]>[kNumOfOpenSLESBuffers]);
+  const int buffer_size_samples =
+      audio_parameters_.frames_per_buffer() * audio_parameters_.channels();
+  audio_buffers_.reset(new std::unique_ptr<SLint16[]>[kNumOfOpenSLESBuffers]);
   for (int i = 0; i < kNumOfOpenSLESBuffers; ++i) {
-    audio_buffers_[i].reset(new SLint8[data_size_bytes]);
+    audio_buffers_[i].reset(new SLint16[buffer_size_samples]);
   }
 }
 
@@ -392,12 +383,11 @@ void OpenSLESRecorder::ReadBufferQueue() {
   // since there is no support to turn off built-in EC in combination with
   // OpenSL ES anyhow. Hence, as is, the WebRTC based AEC (which would use
   // these estimates) will never be active.
-  const size_t size_in_bytes =
-      static_cast<size_t>(audio_parameters_.GetBytesPerBuffer());
-  const int8_t* data =
-      static_cast<const int8_t*>(audio_buffers_[buffer_index_].get());
   fine_audio_buffer_->DeliverRecordedData(
-      rtc::ArrayView<const int8_t>(data, size_in_bytes), 25);
+      rtc::ArrayView<const int16_t>(
+          audio_buffers_[buffer_index_].get(),
+          audio_parameters_.frames_per_buffer() * audio_parameters_.channels()),
+      25);
   // Enqueue the utilized audio buffer and use if for recording again.
   EnqueueAudioBuffer();
 }
@@ -405,8 +395,10 @@ void OpenSLESRecorder::ReadBufferQueue() {
 bool OpenSLESRecorder::EnqueueAudioBuffer() {
   SLresult err =
       (*simple_buffer_queue_)
-          ->Enqueue(simple_buffer_queue_, audio_buffers_[buffer_index_].get(),
-                    audio_parameters_.GetBytesPerBuffer());
+          ->Enqueue(
+              simple_buffer_queue_,
+              reinterpret_cast<SLint8*>(audio_buffers_[buffer_index_].get()),
+              audio_parameters_.GetBytesPerBuffer());
   if (SL_RESULT_SUCCESS != err) {
     ALOGE("Enqueue failed: %s", GetSLErrorString(err));
     return false;
@@ -449,6 +441,6 @@ SLuint32 OpenSLESRecorder::GetBufferCount() {
   return state.count;
 }
 
-}  // namespace android_adm
+}  // namespace jni
 
 }  // namespace webrtc

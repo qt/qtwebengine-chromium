@@ -137,7 +137,7 @@ void CanvasRenderingContext2DState::Trace(blink::Visitor* visitor) {
 }
 
 void CanvasRenderingContext2DState::SetLineDashOffset(double offset) {
-  line_dash_offset_ = offset;
+  line_dash_offset_ = clampTo<float>(offset);
   line_dash_dirty_ = true;
 }
 
@@ -147,6 +147,9 @@ void CanvasRenderingContext2DState::SetLineDash(const Vector<double>& dash) {
   // number of elements is odd
   if (dash.size() % 2)
     line_dash_.AppendVector(dash);
+  // clamp the double values to float
+  std::transform(line_dash_.begin(), line_dash_.end(), line_dash_.begin(),
+                 [](double d) { return clampTo<float>(d); });
 
   line_dash_dirty_ = true;
 }
@@ -189,11 +192,10 @@ void CanvasRenderingContext2DState::UpdateStrokeStyle() const {
   if (!stroke_style_dirty_)
     return;
 
-  int clamped_alpha = ClampedAlphaForBlending(global_alpha_);
   DCHECK(stroke_style_);
   stroke_style_->ApplyToFlags(stroke_flags_);
   stroke_flags_.setColor(
-      ScaleAlpha(stroke_style_->PaintColor(), clamped_alpha));
+      ScaleAlpha(stroke_style_->PaintColor(), global_alpha_));
   stroke_style_dirty_ = false;
 }
 
@@ -201,10 +203,9 @@ void CanvasRenderingContext2DState::UpdateFillStyle() const {
   if (!fill_style_dirty_)
     return;
 
-  int clamped_alpha = ClampedAlphaForBlending(global_alpha_);
   DCHECK(fill_style_);
   fill_style_->ApplyToFlags(fill_flags_);
-  fill_flags_.setColor(ScaleAlpha(fill_style_->PaintColor(), clamped_alpha));
+  fill_flags_.setColor(ScaleAlpha(fill_style_->PaintColor(), global_alpha_));
   fill_style_dirty_ = false;
 }
 
@@ -237,8 +238,7 @@ void CanvasRenderingContext2DState::SetGlobalAlpha(double alpha) {
   global_alpha_ = alpha;
   stroke_style_dirty_ = true;
   fill_style_dirty_ = true;
-  int image_alpha = ClampedAlphaForBlending(alpha);
-  image_flags_.setAlpha(image_alpha > 255 ? 255 : image_alpha);
+  image_flags_.setColor(ScaleAlpha(SK_ColorBLACK, alpha));
 }
 
 void CanvasRenderingContext2DState::ClipPath(
@@ -402,7 +402,8 @@ SkDrawLooper* CanvasRenderingContext2DState::EmptyDrawLooper() const {
 SkDrawLooper* CanvasRenderingContext2DState::ShadowOnlyDrawLooper() const {
   if (!shadow_only_draw_looper_) {
     DrawLooperBuilder draw_looper_builder;
-    draw_looper_builder.AddShadow(shadow_offset_, shadow_blur_, shadow_color_,
+    draw_looper_builder.AddShadow(shadow_offset_, clampTo<float>(shadow_blur_),
+                                  shadow_color_,
                                   DrawLooperBuilder::kShadowIgnoresTransforms,
                                   DrawLooperBuilder::kShadowRespectsAlpha);
     shadow_only_draw_looper_ = draw_looper_builder.DetachDrawLooper();
@@ -414,7 +415,8 @@ SkDrawLooper* CanvasRenderingContext2DState::ShadowAndForegroundDrawLooper()
     const {
   if (!shadow_and_foreground_draw_looper_) {
     DrawLooperBuilder draw_looper_builder;
-    draw_looper_builder.AddShadow(shadow_offset_, shadow_blur_, shadow_color_,
+    draw_looper_builder.AddShadow(shadow_offset_, clampTo<float>(shadow_blur_),
+                                  shadow_color_,
                                   DrawLooperBuilder::kShadowIgnoresTransforms,
                                   DrawLooperBuilder::kShadowRespectsAlpha);
     draw_looper_builder.AddUnmodifiedContent();
@@ -455,17 +457,17 @@ void CanvasRenderingContext2DState::ShadowParameterChanged() {
 }
 
 void CanvasRenderingContext2DState::SetShadowOffsetX(double x) {
-  shadow_offset_.SetWidth(x);
+  shadow_offset_.SetWidth(clampTo<float>(x));
   ShadowParameterChanged();
 }
 
 void CanvasRenderingContext2DState::SetShadowOffsetY(double y) {
-  shadow_offset_.SetHeight(y);
+  shadow_offset_.SetHeight(clampTo<float>(y));
   ShadowParameterChanged();
 }
 
 void CanvasRenderingContext2DState::SetShadowBlur(double shadow_blur) {
-  shadow_blur_ = shadow_blur;
+  shadow_blur_ = clampTo<float>(shadow_blur);
   ShadowParameterChanged();
 }
 

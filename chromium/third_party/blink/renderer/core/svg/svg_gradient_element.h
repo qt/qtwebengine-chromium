@@ -21,7 +21,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_SVG_SVG_GRADIENT_ELEMENT_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_SVG_SVG_GRADIENT_ELEMENT_H_
 
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/svg/svg_animated_enumeration.h"
 #include "third_party/blink/renderer/core/svg/svg_animated_transform_list.h"
 #include "third_party/blink/renderer/core/svg/svg_element.h"
@@ -66,7 +66,7 @@ class SVGGradientElement : public SVGElement, public SVGURIReference {
   const SVGGradientElement* ReferencedElement() const;
   void CollectCommonAttributes(GradientAttributes&) const;
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  protected:
   SVGGradientElement(const QualifiedName&, Document&);
@@ -85,7 +85,7 @@ class SVGGradientElement : public SVGElement, public SVGURIReference {
   void RemovedFrom(ContainerNode*) final;
   void ChildrenChanged(const ChildrenChange&) final;
 
-  void BuildPendingResource();
+  void BuildPendingResource() override;
   void ClearResourceReferences();
 
   Vector<Gradient::ColorStop> BuildStops() const;

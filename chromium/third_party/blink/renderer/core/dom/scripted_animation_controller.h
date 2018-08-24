@@ -51,7 +51,7 @@ class CORE_EXPORT ScriptedAnimationController
   virtual ~ScriptedAnimationController() = default;
 
   void Trace(blink::Visitor*);
-  void TraceWrappers(const ScriptWrappableVisitor*) const override;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override {
     return "ScriptedAnimationController";
   }
@@ -77,7 +77,7 @@ class CORE_EXPORT ScriptedAnimationController
 
   // Invokes callbacks, dispatches events, etc. The order is defined by HTML:
   // https://html.spec.whatwg.org/multipage/webappapis.html#event-loop-processing-model
-  void ServiceScriptedAnimations(double monotonic_time_now);
+  void ServiceScriptedAnimations(base::TimeTicks monotonic_time_now);
 
   void Pause();
   void Unpause();
@@ -95,7 +95,7 @@ class CORE_EXPORT ScriptedAnimationController
   void RunTasks();
   void DispatchEvents(
       const AtomicString& event_interface_filter = AtomicString());
-  void ExecuteCallbacks(double monotonic_time_now);
+  void ExecuteCallbacks(base::TimeTicks monotonic_time_now);
   void CallMediaQueryListListeners();
 
   bool HasScheduledItems() const;

@@ -11,23 +11,28 @@
 #include <vector>
 
 #include "core/fxcrt/fx_string.h"
-#include "core/fxcrt/xml/cfx_xmlattributenode.h"
+#include "core/fxcrt/xml/cfx_xmlnode.h"
 
-class CFX_XMLInstruction : public CFX_XMLAttributeNode {
+class CFX_XMLDocument;
+
+class CFX_XMLInstruction : public CFX_XMLNode {
  public:
   explicit CFX_XMLInstruction(const WideString& wsTarget);
   ~CFX_XMLInstruction() override;
 
   // CFX_XMLNode
   FX_XMLNODETYPE GetType() const override;
-  std::unique_ptr<CFX_XMLNode> Clone() override;
-  void Save(const RetainPtr<CFX_SeekableStreamProxy>& pXMLStream) override;
+  CFX_XMLNode* Clone(CFX_XMLDocument* doc) override;
+  void Save(const RetainPtr<IFX_SeekableWriteStream>& pXMLStream) override;
+
+  bool IsOriginalXFAVersion() const;
+  bool IsAcrobat() const;
 
   const std::vector<WideString>& GetTargetData() const { return m_TargetData; }
   void AppendData(const WideString& wsData);
-  void RemoveData(int32_t index);
 
  private:
+  WideString name_;
   std::vector<WideString> m_TargetData;
 };
 

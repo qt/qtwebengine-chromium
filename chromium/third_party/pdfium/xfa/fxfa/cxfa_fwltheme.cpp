@@ -60,18 +60,24 @@ CXFA_FWLTheme::CXFA_FWLTheme(CXFA_FFApp* pApp)
       m_pCalendarFont(nullptr),
       m_pApp(pApp) {
   m_Rect.Reset();
+}
 
+bool CXFA_FWLTheme::LoadCalendarFont(CXFA_FFDoc* doc) {
   for (size_t i = 0; !m_pCalendarFont && i < FX_ArraySize(g_FWLTheme_CalFonts);
        ++i) {
-    m_pCalendarFont = CFGAS_GEFont::LoadFont(g_FWLTheme_CalFonts[i], 0, 0,
-                                             m_pApp->GetFDEFontMgr());
-  }
-  if (!m_pCalendarFont) {
-    m_pCalendarFont = m_pApp->GetFDEFontMgr()->GetFontByCodePage(
-        FX_CODEPAGE_MSWin_WesternEuropean, 0, nullptr);
+    m_pCalendarFont =
+        m_pApp->GetXFAFontMgr()->GetFont(doc, g_FWLTheme_CalFonts[i], 0);
   }
 
-  ASSERT(m_pCalendarFont);
+  if (!m_pCalendarFont) {
+    CFGAS_FontMgr* font_mgr = m_pApp->GetFDEFontMgr();
+    if (font_mgr) {
+      m_pCalendarFont = font_mgr->GetFontByCodePage(
+          FX_CODEPAGE_MSWin_WesternEuropean, 0, nullptr);
+    }
+  }
+
+  return m_pCalendarFont != nullptr;
 }
 
 CXFA_FWLTheme::~CXFA_FWLTheme() {
@@ -101,7 +107,7 @@ void CXFA_FWLTheme::DrawText(CFWL_ThemeText* pParams) {
         !(pParams->m_dwStates & FWL_ITEMSTATE_MCD_Flag) &&
         (pParams->m_dwStates &
          (CFWL_PartState_Hovered | CFWL_PartState_Selected))) {
-      m_pTextOut->SetTextColor(0xFFFFFFFF);
+      m_pTextOut->SetTextColor(0xFF888888);
     }
     if (pParams->m_iPart == CFWL_Part::Caption)
       m_pTextOut->SetTextColor(ArgbEncode(0xff, 0, 153, 255));
@@ -221,7 +227,7 @@ CFX_SizeF CXFA_FWLTheme::GetSpaceAboveBelow(CFWL_ThemePart* pThemePart) const {
   return sizeAboveBelow;
 }
 
-void CXFA_FWLTheme::CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF& rect) {
+void CXFA_FWLTheme::CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF* pRect) {
   if (pParams->m_pWidget->GetClassID() == FWL_Type::MonthCalendar) {
     CXFA_FFWidget* pWidget = XFA_ThemeGetOuterWidget(pParams->m_pWidget);
     if (!pWidget || !pParams || !m_pTextOut)
@@ -232,7 +238,8 @@ void CXFA_FWLTheme::CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF& rect) {
     m_pTextOut->SetTextColor(FWLTHEME_CAPACITY_TextColor);
     m_pTextOut->SetAlignment(pParams->m_iTTOAlign);
     m_pTextOut->SetStyles(pParams->m_dwTTOStyles);
-    m_pTextOut->CalcLogicSize(pParams->m_wsText, rect);
+    m_pTextOut->CalcLogicSize(pParams->m_wsText, pRect);
+    return;
   }
 
   CXFA_FFWidget* pWidget = XFA_ThemeGetOuterWidget(pParams->m_pWidget);
@@ -248,7 +255,7 @@ void CXFA_FWLTheme::CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF& rect) {
 
   m_pTextOut->SetAlignment(pParams->m_iTTOAlign);
   m_pTextOut->SetStyles(pParams->m_dwTTOStyles);
-  m_pTextOut->CalcLogicSize(pParams->m_wsText, rect);
+  m_pTextOut->CalcLogicSize(pParams->m_wsText, pRect);
 }
 
 CFWL_WidgetTP* CXFA_FWLTheme::GetTheme(CFWL_Widget* pWidget) const {

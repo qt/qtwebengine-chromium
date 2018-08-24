@@ -151,6 +151,7 @@ class MockSyntheticGestureTarget : public SyntheticGestureTarget {
   }
 
   float GetTouchSlopInDips() const override { return kTouchSlopInDips; }
+  float GetSpanSlopInDips() const override { return 2 * kTouchSlopInDips; }
 
   int GetMouseWheelMinimumGranularity() const override {
     return kMouseWheelTickMultiplier;
@@ -340,10 +341,10 @@ class MockSyntheticTouchscreenPinchTouchTarget
     switch (zoom_direction_) {
       case ZOOM_IN:
         return last_pointer_distance_ /
-               (initial_pointer_distance_ + 2 * GetTouchSlopInDips());
+               (initial_pointer_distance_ + GetSpanSlopInDips());
       case ZOOM_OUT:
         return last_pointer_distance_ /
-               (initial_pointer_distance_ - 2 * GetTouchSlopInDips());
+               (initial_pointer_distance_ - GetSpanSlopInDips());
       case ZOOM_DIRECTION_UNKNOWN:
         return 1.0f;
       default:
@@ -465,16 +466,14 @@ class MockSyntheticTapTouchTarget : public MockSyntheticTapGestureTarget {
       case NOT_STARTED:
         EXPECT_EQ(touch_event.GetType(), WebInputEvent::kTouchStart);
         position_ = gfx::PointF(touch_event.touches[0].PositionInWidget());
-        start_time_ = base::TimeDelta::FromMilliseconds(
-            static_cast<int64_t>(touch_event.TimeStampSeconds() * 1000));
+        start_time_ = touch_event.TimeStamp().since_origin();
         state_ = STARTED;
         break;
       case STARTED:
         EXPECT_EQ(touch_event.GetType(), WebInputEvent::kTouchEnd);
         EXPECT_EQ(position_,
                   gfx::PointF(touch_event.touches[0].PositionInWidget()));
-        stop_time_ = base::TimeDelta::FromMilliseconds(
-            static_cast<int64_t>(touch_event.TimeStampSeconds() * 1000));
+        stop_time_ = touch_event.TimeStamp().since_origin();
         state_ = FINISHED;
         break;
       case FINISHED:
@@ -499,8 +498,7 @@ class MockSyntheticTapMouseTarget : public MockSyntheticTapGestureTarget {
         EXPECT_EQ(mouse_event.button, WebMouseEvent::Button::kLeft);
         EXPECT_EQ(mouse_event.click_count, 1);
         position_ = gfx::PointF(mouse_event.PositionInWidget());
-        start_time_ = base::TimeDelta::FromMilliseconds(
-            static_cast<int64_t>(mouse_event.TimeStampSeconds() * 1000));
+        start_time_ = mouse_event.TimeStamp().since_origin();
         state_ = STARTED;
         break;
       case STARTED:
@@ -508,8 +506,7 @@ class MockSyntheticTapMouseTarget : public MockSyntheticTapGestureTarget {
         EXPECT_EQ(mouse_event.button, WebMouseEvent::Button::kLeft);
         EXPECT_EQ(mouse_event.click_count, 1);
         EXPECT_EQ(position_, gfx::PointF(mouse_event.PositionInWidget()));
-        stop_time_ = base::TimeDelta::FromMilliseconds(
-            static_cast<int64_t>(mouse_event.TimeStampSeconds() * 1000));
+        stop_time_ = mouse_event.TimeStamp().since_origin();
         state_ = FINISHED;
         break;
       case FINISHED:

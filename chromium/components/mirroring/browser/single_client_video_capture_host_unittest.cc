@@ -29,7 +29,7 @@ class MockVideoCaptureDevice final
   void SetPhotoOptions(
       media::mojom::PhotoSettingsPtr settings,
       VideoCaptureDevice::SetPhotoOptionsCallback callback) override {}
-  void TakePhoto(VideoCaptureDevice::TakePhotoCallback callback) {}
+  void TakePhoto(VideoCaptureDevice::TakePhotoCallback callback) override {}
   void SetDesktopCaptureWindowIdAsync(gfx::NativeViewId window_id,
                                       base::OnceClosure done_cb) override {}
   MOCK_METHOD0(MaybeSuspendDevice, void());
@@ -84,34 +84,6 @@ class FakeDeviceLauncher final : public content::VideoCaptureDeviceLauncher {
   DISALLOW_COPY_AND_ASSIGN(FakeDeviceLauncher);
 };
 
-class StubBufferHandleProvider final
-    : public VideoCaptureDevice::Client::Buffer::HandleProvider {
- public:
-  StubBufferHandleProvider() {}
-
-  ~StubBufferHandleProvider() override {}
-
-  mojo::ScopedSharedBufferHandle GetHandleForInterProcessTransit(
-      bool read_only) override {
-    return mojo::SharedBufferHandle::Create(10);
-  }
-
-  base::SharedMemoryHandle GetNonOwnedSharedMemoryHandleForLegacyIPC()
-      override {
-    NOTREACHED();
-    return base::SharedMemoryHandle();
-  }
-
-  std::unique_ptr<media::VideoCaptureBufferHandle> GetHandleForInProcessAccess()
-      override {
-    NOTREACHED();
-    return nullptr;
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(StubBufferHandleProvider);
-};
-
 class StubReadWritePermission final
     : public VideoCaptureDevice::Client::Buffer::ScopedAccessPermission {
  public:
@@ -128,14 +100,13 @@ class MockVideoCaptureObserver final
   explicit MockVideoCaptureObserver(media::mojom::VideoCaptureHostPtr host)
       : host_(std::move(host)), binding_(this) {}
   MOCK_METHOD1(OnBufferCreatedCall, void(int buffer_id));
-  void OnBufferCreated(int32_t buffer_id,
-                       mojo::ScopedSharedBufferHandle handle) override {
+  void OnNewBuffer(int32_t buffer_id,
+                   media::mojom::VideoBufferHandlePtr buffer_handle) override {
     EXPECT_EQ(buffers_.find(buffer_id), buffers_.end());
     EXPECT_EQ(frame_infos_.find(buffer_id), frame_infos_.end());
-    buffers_[buffer_id] = std::move(handle);
+    buffers_[buffer_id] = std::move(buffer_handle);
     OnBufferCreatedCall(buffer_id);
   }
-
   MOCK_METHOD1(OnBufferReadyCall, void(int buffer_id));
   void OnBufferReady(int32_t buffer_id,
                      media::mojom::VideoFrameInfoPtr info) override {
@@ -177,7 +148,7 @@ class MockVideoCaptureObserver final
  private:
   media::mojom::VideoCaptureHostPtr host_;
   mojo::Binding<media::mojom::VideoCaptureObserver> binding_;
-  base::flat_map<int, mojo::ScopedSharedBufferHandle> buffers_;
+  base::flat_map<int, media::mojom::VideoBufferHandlePtr> buffers_;
   base::flat_map<int, media::mojom::VideoFrameInfoPtr> frame_infos_;
 
   DISALLOW_COPY_AND_ASSIGN(MockVideoCaptureObserver);
@@ -186,8 +157,7 @@ class MockVideoCaptureObserver final
 media::mojom::VideoFrameInfoPtr GetVideoFrameInfo() {
   return media::mojom::VideoFrameInfo::New(
       base::TimeDelta(), base::Value(base::Value::Type::DICTIONARY),
-      media::PIXEL_FORMAT_I420, media::VideoPixelStorage::CPU,
-      gfx::Size(320, 180), gfx::Rect(320, 180));
+      media::PIXEL_FORMAT_I420, gfx::Size(320, 180), gfx::Rect(320, 180));
 }
 
 }  // namespace
@@ -197,7 +167,6 @@ class SingleClientVideoCaptureHostTest : public ::testing::Test {
   SingleClientVideoCaptureHostTest() : weak_factory_(this) {
     auto host_impl = std::make_unique<SingleClientVideoCaptureHost>(
         std::string(), content::MediaStreamType::MEDIA_TAB_VIDEO_CAPTURE,
-        VideoCaptureParams(),
         base::BindRepeating(
             &SingleClientVideoCaptureHostTest::CreateDeviceLauncher,
             base::Unretained(this)));
@@ -229,8 +198,11 @@ class SingleClientVideoCaptureHostTest : public ::testing::Test {
     base::RunLoop run_loop;
     EXPECT_CALL(*consumer_, OnBufferCreatedCall(expected_buffer_context_id))
         .WillOnce(InvokeWithoutArgs(&run_loop, &base::RunLoop::Quit));
-    frame_receiver_->OnNewBufferHandle(
-        buffer_id, std::make_unique<StubBufferHandleProvider>());
+    media::mojom::VideoBufferHandlePtr stub_buffer_handle =
+        media::mojom::VideoBufferHandle::New();
+    stub_buffer_handle->set_shared_buffer_handle(
+        mojo::SharedBufferHandle::Create(10));
+    frame_receiver_->OnNewBuffer(buffer_id, std::move(stub_buffer_handle));
     run_loop.Run();
   }
 
@@ -321,6 +293,13 @@ TEST_F(SingleClientVideoCaptureHostTest, ReuseBufferId) {
 
   FinishConsumingBuffer(1, 7, 0.5);
   RetireBuffer(0, 1);
+}
+
+TEST_F(SingleClientVideoCaptureHostTest, StopCapturingWhileBuffersInUse) {
+  for (int i = 0; i < 10; ++i) {
+    CreateBuffer(i, i);
+    FrameReadyInBuffer(i, i, i);
+  }
 }
 
 }  // namespace mirroring

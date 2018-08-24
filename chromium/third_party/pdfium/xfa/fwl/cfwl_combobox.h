@@ -9,7 +9,6 @@
 
 #include <memory>
 
-#include "xfa/fwl/cfwl_comboboxproxy.h"
 #include "xfa/fwl/cfwl_comboedit.h"
 #include "xfa/fwl/cfwl_combolist.h"
 #include "xfa/fwl/cfwl_form.h"
@@ -18,8 +17,6 @@
 
 class CFWL_WidgetProperties;
 class CFWL_ComboBox;
-class CFWL_ComboBoxProxy;
-class CFWL_FormProxy;
 class CFWL_ListBox;
 class CFWL_Widget;
 
@@ -94,10 +91,6 @@ class CFWL_ComboBox : public CFWL_Widget {
   void EditModifyStylesEx(uint32_t dwStylesExAdded, uint32_t dwStylesExRemoved);
 
   void DrawStretchHandler(CXFA_Graphics* pGraphics, const CFX_Matrix* pMatrix);
-  bool IsDropListVisible() const {
-    return m_pComboBoxProxy &&
-           !(m_pComboBoxProxy->GetStates() & FWL_WGTSTATE_Invisible);
-  }
   void ShowDropList(bool bActivate);
 
   CFWL_ComboEdit* GetComboEdit() const { return m_pEdit.get(); }
@@ -115,48 +108,26 @@ class CFWL_ComboBox : public CFWL_Widget {
   void ResetTheme();
   void ResetEditAlignment();
   void ResetListItemAlignment();
-  void InitProxyForm();
   void GetPopupPos(float fMinHeight,
                    float fMaxHeight,
                    const CFX_RectF& rtAnchor,
-                   CFX_RectF& rtPopup);
-
-  void OnFocusChanged(CFWL_Message* pMsg, bool bSet);
-  void OnLButtonDown(CFWL_MessageMouse* pMsg);
+                   CFX_RectF* pPopupRect);
   void OnLButtonUp(CFWL_MessageMouse* pMsg);
-  void OnMouseMove(CFWL_MessageMouse* pMsg);
-  void OnMouseLeave(CFWL_MessageMouse* pMsg);
-  void OnKey(CFWL_MessageKey* pMsg);
-  void DoSubCtrlKey(CFWL_MessageKey* pMsg);
 
-  void DisForm_InitComboList();
-  void DisForm_InitComboEdit();
-  void DisForm_ShowDropList(bool bActivate);
-  bool DisForm_IsDropListVisible() const {
+  void InitComboList();
+  void InitComboEdit();
+  bool IsDropListVisible() const {
     return !(m_pListBox->GetStates() & FWL_WGTSTATE_Invisible);
   }
-  void DisForm_ModifyStylesEx(uint32_t dwStylesExAdded,
-                              uint32_t dwStylesExRemoved);
-  void DisForm_Update();
-  FWL_WidgetHit DisForm_HitTest(const CFX_PointF& point);
-  void DisForm_DrawWidget(CXFA_Graphics* pGraphics, const CFX_Matrix* pMatrix);
-  CFX_RectF DisForm_GetBBox() const;
-  void DisForm_Layout();
-  void DisForm_OnProcessMessage(CFWL_Message* pMessage);
-  void DisForm_OnLButtonDown(CFWL_MessageMouse* pMsg);
-  void DisForm_OnFocusChanged(CFWL_Message* pMsg, bool bSet);
-  void DisForm_OnKey(CFWL_MessageKey* pMsg);
+  void OnLButtonDown(CFWL_MessageMouse* pMsg);
+  void OnFocusChanged(CFWL_Message* pMsg, bool bSet);
+  void OnKey(CFWL_MessageKey* pMsg);
 
   CFX_RectF m_rtClient;
   CFX_RectF m_rtContent;
   CFX_RectF m_rtBtn;
-  CFX_RectF m_rtList;
-  CFX_RectF m_rtProxy;
-  CFX_RectF m_rtHandler;
   std::unique_ptr<CFWL_ComboEdit> m_pEdit;
   std::unique_ptr<CFWL_ComboList> m_pListBox;
-  CFWL_ComboBoxProxy* m_pComboBoxProxy;  // Can this be a unique_ptr?
-  bool m_bLButtonDown;
   int32_t m_iCurSel;
   int32_t m_iBtnState;
 };

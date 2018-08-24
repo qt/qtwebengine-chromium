@@ -386,31 +386,6 @@ error::Error GLES2DecoderPassthroughImpl::HandleGetAttribLocation(
   return DoGetAttribLocation(program, name_str.c_str(), location);
 }
 
-error::Error GLES2DecoderPassthroughImpl::HandleGetBufferSubDataAsyncCHROMIUM(
-    uint32_t immediate_data_size,
-    const volatile void* cmd_data) {
-  if (!feature_info_->IsWebGL2OrES3Context()) {
-    return error::kUnknownCommand;
-  }
-  const volatile gles2::cmds::GetBufferSubDataAsyncCHROMIUM& c =
-      *static_cast<const volatile gles2::cmds::GetBufferSubDataAsyncCHROMIUM*>(
-          cmd_data);
-  GLenum target = static_cast<GLenum>(c.target);
-  GLintptr offset = static_cast<GLintptr>(c.offset);
-  GLsizeiptr size = static_cast<GLsizeiptr>(c.size);
-  uint32_t data_shm_id = c.data_shm_id;
-  uint32_t data_shm_offset = c.data_shm_offset;
-
-  uint8_t* mem =
-      GetSharedMemoryAs<uint8_t*>(data_shm_id, data_shm_offset, size);
-  if (!mem) {
-    return error::kOutOfBounds;
-  }
-
-  return DoGetBufferSubDataAsyncCHROMIUM(target, offset, size, mem);
-}
-
-
 error::Error GLES2DecoderPassthroughImpl::HandleGetFragDataLocation(
     uint32_t immediate_data_size,
     const volatile void* cmd_data) {
@@ -1586,8 +1561,10 @@ error::Error GLES2DecoderPassthroughImpl::HandlePostSubBufferCHROMIUM(
   GLint y = static_cast<GLint>(c.y);
   GLint width = static_cast<GLint>(c.width);
   GLint height = static_cast<GLint>(c.height);
+  GLuint64 swap_id = static_cast<GLuint64>(c.swap_id());
+  GLbitfield flags = static_cast<GLbitfield>(c.flags);
 
-  return DoPostSubBufferCHROMIUM(x, y, width, height);
+  return DoPostSubBufferCHROMIUM(swap_id, x, y, width, height, flags);
 }
 
 error::Error GLES2DecoderPassthroughImpl::HandleDrawArraysInstancedANGLE(
@@ -1754,10 +1731,12 @@ error::Error GLES2DecoderPassthroughImpl::HandleScheduleOverlayPlaneCHROMIUM(
   GLfloat uv_y = static_cast<GLfloat>(c.uv_y);
   GLfloat uv_width = static_cast<GLfloat>(c.uv_width);
   GLfloat uv_height = static_cast<GLfloat>(c.uv_height);
+  GLuint gpu_fence_id = static_cast<GLuint>(c.gpu_fence_id);
 
-  return DoScheduleOverlayPlaneCHROMIUM(
-      plane_z_order, plane_transform, overlay_texture_id, bounds_x, bounds_y,
-      bounds_width, bounds_height, uv_x, uv_y, uv_width, uv_height);
+  return DoScheduleOverlayPlaneCHROMIUM(plane_z_order, plane_transform,
+                                        overlay_texture_id, bounds_x, bounds_y,
+                                        bounds_width, bounds_height, uv_x, uv_y,
+                                        uv_width, uv_height, gpu_fence_id);
 }
 
 error::Error
@@ -1860,9 +1839,9 @@ error::Error GLES2DecoderPassthroughImpl::HandleScheduleDCLayerCHROMIUM(
       reinterpret_cast<const volatile GLuint*>(mem + 8);
   const GLfloat* contents_rect = mem;
   const GLfloat* bounds_rect = mem + 4;
-  return DoScheduleDCLayerCHROMIUM(num_textures, contents_texture_ids,
-                                   contents_rect, background_color,
-                                   edge_aa_mask, filter, bounds_rect);
+  return DoScheduleDCLayerCHROMIUM(
+      num_textures, contents_texture_ids, contents_rect, background_color,
+      edge_aa_mask, filter, bounds_rect, c.is_protected_video);
 }
 
 error::Error GLES2DecoderPassthroughImpl::HandleSetColorSpaceMetadataCHROMIUM(

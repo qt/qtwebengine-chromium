@@ -28,7 +28,6 @@ using TraceCallback = VisitorCallback;
 using TraceWrappersCallback = void (*)(ScriptWrappableVisitor*, void*);
 using WeakCallback = VisitorCallback;
 using EphemeronCallback = VisitorCallback;
-using MissedWriteBarrierCallback = void (*)();
 using NameCallback = const char* (*)(const void* self);
 
 // Callback used for unit testing the marking of conservative pointers
@@ -97,14 +96,15 @@ class PLATFORM_EXPORT BlinkGC final {
   };
 
   enum GCReason {
-    kIdleGC,
-    kPreciseGC,
-    kConservativeGC,
-    kForcedGC,
-    kMemoryPressureGC,
-    kPageNavigationGC,
-    kThreadTerminationGC,
-    kLastGCReason = kThreadTerminationGC,
+    kIdleGC = 0,
+    kPreciseGC = 1,
+    kConservativeGC = 2,
+    kForcedGC = 3,
+    kMemoryPressureGC = 4,
+    kPageNavigationGC = 5,
+    kThreadTerminationGC = 6,
+    kTesting = 7,
+    kLastGCReason = kTesting,
   };
 
   enum ArenaIndices {

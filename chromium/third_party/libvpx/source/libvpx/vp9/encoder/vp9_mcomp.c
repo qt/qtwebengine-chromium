@@ -1793,7 +1793,7 @@ static const MV search_pos[4] = {
 
 unsigned int vp9_int_pro_motion_estimation(const VP9_COMP *cpi, MACROBLOCK *x,
                                            BLOCK_SIZE bsize, int mi_row,
-                                           int mi_col) {
+                                           int mi_col, const MV *ref_mv) {
   MACROBLOCKD *xd = &x->e_mbd;
   MODE_INFO *mi = xd->mi[0];
   struct buf_2d backup_yv12[MAX_MB_PLANE] = { { 0, 0 } };
@@ -1815,6 +1815,7 @@ unsigned int vp9_int_pro_motion_estimation(const VP9_COMP *cpi, MACROBLOCK *x,
   const int norm_factor = 3 + (bw >> 5);
   const YV12_BUFFER_CONFIG *scaled_ref_frame =
       vp9_get_scaled_ref_frame(cpi, mi->ref_frame[0]);
+  MvLimits subpel_mv_limits;
 
   if (scaled_ref_frame) {
     int i;
@@ -1916,6 +1917,10 @@ unsigned int vp9_int_pro_motion_estimation(const VP9_COMP *cpi, MACROBLOCK *x,
 
   tmp_mv->row *= 8;
   tmp_mv->col *= 8;
+
+  vp9_set_subpel_mv_search_range(&subpel_mv_limits, &x->mv_limits, ref_mv);
+  clamp_mv(tmp_mv, subpel_mv_limits.col_min, subpel_mv_limits.col_max,
+           subpel_mv_limits.row_min, subpel_mv_limits.row_max);
 
   if (scaled_ref_frame) {
     int i;
@@ -2210,7 +2215,8 @@ int vp9_full_pixel_search(VP9_COMP *cpi, MACROBLOCK *x, BLOCK_SIZE bsize,
       var = bigdia_search(x, mvp_full, step_param, error_per_bit, 1, cost_list,
                           fn_ptr, 1, ref_mv, tmp_mv);
       break;
-    case NSTEP:
+    default:
+      assert(method == NSTEP);
       var = full_pixel_diamond(cpi, x, mvp_full, step_param, error_per_bit,
                                MAX_MVSEARCH_STEPS - 1 - step_param, 1,
                                cost_list, fn_ptr, ref_mv, tmp_mv);
@@ -2236,7 +2242,6 @@ int vp9_full_pixel_search(VP9_COMP *cpi, MACROBLOCK *x, BLOCK_SIZE bsize,
         }
       }
       break;
-    default: assert(0 && "Invalid search method.");
   }
 
   if (method != NSTEP && rd && var < var_max)

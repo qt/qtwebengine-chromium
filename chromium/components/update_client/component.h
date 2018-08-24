@@ -72,9 +72,9 @@ class Component {
 
   std::string id() const { return id_; }
 
-  const CrxComponent& crx_component() const { return crx_component_; }
-  void set_crx_component(const CrxComponent& crx_component) {
-    crx_component_ = crx_component;
+  const CrxComponent* crx_component() const { return crx_component_.get(); }
+  void set_crx_component(std::unique_ptr<CrxComponent> crx_component) {
+    crx_component_ = std::move(crx_component);
   }
 
   const base::Version& previous_version() const { return previous_version_; }
@@ -92,9 +92,10 @@ class Component {
   std::string next_fp() const { return next_fp_; }
   void set_next_fp(const std::string& next_fp) { next_fp_ = next_fp; }
 
-  int update_check_error() const { return update_check_error_; }
   void set_update_check_error(int update_check_error) {
-    update_check_error_ = update_check_error;
+    error_category_ = ErrorCategory::kUpdateCheck;
+    error_code_ = update_check_error;
+    extra_code1_ = 0;
   }
 
   bool is_foreground() const;
@@ -105,10 +106,10 @@ class Component {
 
   bool diff_update_failed() const { return !!diff_error_code_; }
 
-  int error_category() const { return error_category_; }
+  ErrorCategory error_category() const { return error_category_; }
   int error_code() const { return error_code_; }
   int extra_code1() const { return extra_code1_; }
-  int diff_error_category() const { return diff_error_category_; }
+  ErrorCategory diff_error_category() const { return diff_error_category_; }
   int diff_error_code() const { return diff_error_code_; }
   int diff_extra_code1() const { return diff_extra_code1_; }
 
@@ -292,7 +293,9 @@ class Component {
     // State overrides.
     void DoHandle() override;
 
-    void InstallComplete(int error_category, int error_code, int extra_code1);
+    void InstallComplete(ErrorCategory error_category,
+                         int error_code,
+                         int extra_code1);
 
     DISALLOW_COPY_AND_ASSIGN(StateUpdatingDiff);
   };
@@ -306,7 +309,9 @@ class Component {
     // State overrides.
     void DoHandle() override;
 
-    void InstallComplete(int error_category, int error_code, int extra_code1);
+    void InstallComplete(ErrorCategory error_category,
+                         int error_code,
+                         int extra_code1);
 
     DISALLOW_COPY_AND_ASSIGN(StateUpdating);
   };
@@ -369,7 +374,7 @@ class Component {
   base::ThreadChecker thread_checker_;
 
   const std::string id_;
-  CrxComponent crx_component_;
+  std::unique_ptr<CrxComponent> crx_component_;
 
   // The status of the updatecheck response.
   std::string status_;
@@ -412,10 +417,10 @@ class Component {
   // the |extra_code1| usually contains a system error, but it can contain
   // any extended information that is relevant to either the category or the
   // error itself.
-  int error_category_ = 0;
+  ErrorCategory error_category_ = ErrorCategory::kNone;
   int error_code_ = 0;
   int extra_code1_ = 0;
-  int diff_error_category_ = 0;
+  ErrorCategory diff_error_category_ = ErrorCategory::kNone;
   int diff_error_code_ = 0;
   int diff_extra_code1_ = 0;
 

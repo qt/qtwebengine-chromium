@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "constants/stream_dict_common.h"
 #include "core/fpdfapi/cpdf_modulemgr.h"
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
@@ -105,7 +106,8 @@ std::unique_ptr<CPDF_Dictionary> CPDF_Image::InitJPEG(uint8_t* pData,
   pDict->SetNewFor<CPDF_Number>("BitsPerComponent", bits);
   pDict->SetNewFor<CPDF_Name>("Filter", "DCTDecode");
   if (!color_trans) {
-    CPDF_Dictionary* pParms = pDict->SetNewFor<CPDF_Dictionary>("DecodeParms");
+    CPDF_Dictionary* pParms =
+        pDict->SetNewFor<CPDF_Dictionary>(pdfium::stream::kDecodeParms);
     pParms->SetNewFor<CPDF_Number>("ColorTransform", 0);
   }
   m_bIsMask = false;
@@ -200,13 +202,16 @@ void CPDF_Image::SetImage(const RetainPtr<CFX_DIBitmap>& pBitmap) {
       pCS->AddNew<CPDF_Name>("DeviceRGB");
       pCS->AddNew<CPDF_Number>(1);
       ByteString ct;
-      char* pBuf = ct.GetBuffer(6);
-      pBuf[0] = (char)reset_r;
-      pBuf[1] = (char)reset_g;
-      pBuf[2] = (char)reset_b;
-      pBuf[3] = (char)set_r;
-      pBuf[4] = (char)set_g;
-      pBuf[5] = (char)set_b;
+      {
+        // Span's lifetime must end before ReleaseBuffer() below.
+        pdfium::span<char> pBuf = ct.GetBuffer(6);
+        pBuf[0] = (char)reset_r;
+        pBuf[1] = (char)reset_g;
+        pBuf[2] = (char)reset_b;
+        pBuf[3] = (char)set_r;
+        pBuf[4] = (char)set_g;
+        pBuf[5] = (char)set_b;
+      }
       ct.ReleaseBuffer(6);
       pCS->AddNew<CPDF_String>(ct, true);
     }
@@ -348,7 +353,7 @@ RetainPtr<CFX_DIBSource> CPDF_Image::DetachMask() {
   return std::move(m_pMask);
 }
 
-bool CPDF_Image::StartLoadDIBSource(CPDF_Dictionary* pFormResource,
+bool CPDF_Image::StartLoadDIBSource(const CPDF_Dictionary* pFormResource,
                                     CPDF_Dictionary* pPageResource,
                                     bool bStdCS,
                                     uint32_t GroupFamily,

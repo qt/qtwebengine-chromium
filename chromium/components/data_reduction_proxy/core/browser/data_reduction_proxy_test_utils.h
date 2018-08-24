@@ -87,7 +87,7 @@ class MockDataReductionProxyRequestOptions
   MockDataReductionProxyRequestOptions(Client client,
                                        DataReductionProxyConfig* config);
 
-  ~MockDataReductionProxyRequestOptions();
+  ~MockDataReductionProxyRequestOptions() override;
 
   MOCK_CONST_METHOD1(PopulateConfigResponse, void(ClientConfig* config));
 };
@@ -155,7 +155,7 @@ class TestDataReductionProxyConfigServiceClient
     base::TimeTicks NowTicks() const override;
 
     // base::Clock implementation.
-    base::Time Now() override;
+    base::Time Now() const override;
 
     // Sets the current time.
     void SetTime(const base::Time& time);

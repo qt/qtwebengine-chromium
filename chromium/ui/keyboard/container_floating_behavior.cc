@@ -65,7 +65,7 @@ void ContainerFloatingBehavior::InitializeShowAnimationStartingState(
   container->layer()->SetOpacity(kAnimationStartOrAfterHideOpacity);
 }
 
-const gfx::Rect ContainerFloatingBehavior::AdjustSetBoundsRequest(
+gfx::Rect ContainerFloatingBehavior::AdjustSetBoundsRequest(
     const gfx::Rect& display_bounds,
     const gfx::Rect& requested_bounds) {
   gfx::Rect keyboard_bounds = requested_bounds;
@@ -215,8 +215,8 @@ bool ContainerFloatingBehavior::HandlePointerEvent(
         // If there is no active drag descriptor, start a new one.
         bool drag_started_by_touch = (type == ui::ET_TOUCH_PRESSED);
         drag_descriptor_.reset(
-            new DragDescriptor(keyboard_bounds.origin(), kb_offset,
-                               drag_started_by_touch, pointer_id));
+            new DragDescriptor{keyboard_bounds.origin(), kb_offset,
+                               drag_started_by_touch, pointer_id});
       }
       break;
 
@@ -224,28 +224,28 @@ bool ContainerFloatingBehavior::HandlePointerEvent(
     case ui::ET_TOUCH_MOVED:
       if (!drag_descriptor_) {
         // do nothing
-      } else if (drag_descriptor_->is_touch_drag() !=
+      } else if (drag_descriptor_->is_touch_drag !=
                  (type == ui::ET_TOUCH_MOVED)) {
         // If the event isn't of the same type that started the drag, end the
         // drag to prevent confusion.
         drag_descriptor_ = nullptr;
-      } else if (drag_descriptor_->pointer_id() != pointer_id) {
+      } else if (drag_descriptor_->pointer_id != pointer_id) {
         // do nothing.
       } else {
         // Drag continues.
         // If there is an active drag, use it to determine the new location
         // of the keyboard.
         const gfx::Point original_click_location =
-            drag_descriptor_->original_keyboard_location() +
-            drag_descriptor_->original_click_offset();
+            drag_descriptor_->original_keyboard_location +
+            drag_descriptor_->original_click_offset;
         const gfx::Point current_drag_location =
             keyboard_bounds.origin() + kb_offset;
         const gfx::Vector2d cumulative_drag_offset =
             current_drag_location - original_click_location;
         const gfx::Point new_keyboard_location =
-            drag_descriptor_->original_keyboard_location() +
+            drag_descriptor_->original_keyboard_location +
             cumulative_drag_offset;
-        gfx::Rect new_bounds =
+        gfx::Rect new_bounds_in_local =
             gfx::Rect(new_keyboard_location, keyboard_bounds.size());
 
         DisplayUtil display_util;
@@ -254,21 +254,28 @@ bool ContainerFloatingBehavior::HandlePointerEvent(
                 current_display, current_drag_location);
 
         if (current_display.id() == new_display.id()) {
-          controller_->MoveKeyboard(new_bounds);
-          return true;
+          controller_->MoveKeyboard(new_bounds_in_local);
         } else {
-          new_bounds =
-              ContainKeyboardToScreenBounds(new_bounds, new_display.bounds());
           // Since the keyboard has jumped across screens, cancel the current
           // drag descriptor as though the user has lifted their finger.
           drag_descriptor_ = nullptr;
 
+          gfx::Rect new_bounds_in_screen =
+              new_bounds_in_local +
+              current_display.bounds().origin().OffsetFromOrigin();
+          gfx::Rect contained_new_bounds_in_screen =
+              ContainKeyboardToScreenBounds(new_bounds_in_screen,
+                                            new_display.bounds());
+
           // Enqueue a transition to the adjacent display.
-          // TODO(blakeo): pass new_bounds to display transition.
-          controller_->MoveToDisplayWithTransition(new_display);
-          return true;
+          new_bounds_in_local =
+              contained_new_bounds_in_screen -
+              new_display.bounds().origin().OffsetFromOrigin();
+          controller_->MoveToDisplayWithTransition(new_display,
+                                                   new_bounds_in_local);
         }
         SavePosition(container->bounds(), new_display.size());
+        return true;
       }
       break;
 
@@ -294,11 +301,12 @@ bool ContainerFloatingBehavior::TextBlurHidesKeyboard() const {
   return true;
 }
 
-bool ContainerFloatingBehavior::BoundsObscureUsableRegion() const {
-  return false;
+gfx::Rect ContainerFloatingBehavior::GetOccludedBounds(
+    const gfx::Rect& visual_bounds_in_screen) const {
+  return {};
 }
 
-bool ContainerFloatingBehavior::BoundsAffectWorkspaceLayout() const {
+bool ContainerFloatingBehavior::OccludedBoundsAffectWorkspaceLayout() const {
   return false;
 }
 

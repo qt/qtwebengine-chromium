@@ -102,10 +102,9 @@ void decompressionOutputCallback(void *decoderRef,
 }
 
 - (NSInteger)decode:(RTCEncodedImage *)inputImage
-          missingFrames:(BOOL)missingFrames
-    fragmentationHeader:(RTCRtpFragmentationHeader *)fragmentationHeader
-      codecSpecificInfo:(nullable id<RTCCodecSpecificInfo>)info
-           renderTimeMs:(int64_t)renderTimeMs {
+        missingFrames:(BOOL)missingFrames
+    codecSpecificInfo:(nullable id<RTCCodecSpecificInfo>)info
+         renderTimeMs:(int64_t)renderTimeMs {
   RTC_DCHECK(inputImage.buffer);
 
   if (_error != noErr) {
@@ -242,6 +241,7 @@ void decompressionOutputCallback(void *decoderRef,
       nullptr, _videoFormat, nullptr, attributes, &record, &_decompressionSession);
   CFRelease(attributes);
   if (status != noErr) {
+    RTC_LOG(LS_ERROR) << "Failed to create decompression session: " << status;
     [self destroyDecompressionSession];
     return WEBRTC_VIDEO_CODEC_ERROR;
   }

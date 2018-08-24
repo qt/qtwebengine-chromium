@@ -26,7 +26,7 @@ class CORE_EXPORT CSSParserContext
     : public GarbageCollectedFinalized<CSSParserContext> {
  public:
   // https://drafts.csswg.org/selectors/#profiles
-  enum SelectorProfile { kDynamicProfile, kStaticProfile };
+  enum SelectorProfile { kLiveProfile, kSnapshotProfile };
 
   // All three of these factories copy the context and override the current
   // Document handle used for UseCounter.
@@ -43,6 +43,7 @@ class CORE_EXPORT CSSParserContext
 
   static CSSParserContext* Create(const CSSParserContext* other,
                                   const KURL& base_url_override,
+                                  bool is_opaque_response_from_service_worker,
                                   ReferrerPolicy referrer_policy_override,
                                   const WTF::TextEncoding& charset_override,
                                   const Document* use_counter_document);
@@ -50,15 +51,16 @@ class CORE_EXPORT CSSParserContext
   static CSSParserContext* Create(
       CSSParserMode,
       SecureContextMode,
-      SelectorProfile = kDynamicProfile,
+      SelectorProfile = kLiveProfile,
       const Document* use_counter_document = nullptr);
   static CSSParserContext* Create(const Document&);
   static CSSParserContext* Create(
       const Document&,
       const KURL& base_url_override,
+      bool is_opaque_response_from_service_worker,
       ReferrerPolicy referrer_policy_override,
       const WTF::TextEncoding& charset = WTF::TextEncoding(),
-      SelectorProfile = kDynamicProfile);
+      SelectorProfile = kLiveProfile);
   // This is used for workers, where we don't have a document.
   static CSSParserContext* Create(const ExecutionContext&);
 
@@ -73,8 +75,10 @@ class CORE_EXPORT CSSParserContext
   const WTF::TextEncoding& Charset() const { return charset_; }
   const Referrer& GetReferrer() const { return referrer_; }
   bool IsHTMLDocument() const { return is_html_document_; }
-  bool IsDynamicProfile() const { return profile_ == kDynamicProfile; }
-  bool IsStaticProfile() const { return profile_ == kStaticProfile; }
+  bool IsLiveProfile() const { return profile_ == kLiveProfile; }
+
+  // See documentation in StyleSheetContents for this function.
+  bool IsOpaqueResponseFromServiceWorker() const;
 
   bool IsSecureContext() const;
 
@@ -110,6 +114,7 @@ class CORE_EXPORT CSSParserContext
 
  private:
   CSSParserContext(const KURL& base_url,
+                   bool is_opaque_response_from_service_worker,
                    const WTF::TextEncoding& charset,
                    CSSParserMode,
                    CSSParserMode match_mode,
@@ -122,10 +127,11 @@ class CORE_EXPORT CSSParserContext
                    const Document* use_counter_document);
 
   KURL base_url_;
+  const bool is_opaque_response_from_service_worker_;
   WTF::TextEncoding charset_;
   CSSParserMode mode_;
   CSSParserMode match_mode_;
-  SelectorProfile profile_ = kDynamicProfile;
+  SelectorProfile profile_ = kLiveProfile;
   Referrer referrer_;
   bool is_html_document_;
   bool use_legacy_background_size_shorthand_behavior_;

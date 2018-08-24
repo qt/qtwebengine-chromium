@@ -26,11 +26,11 @@
 #include "net/log/net_log_with_source.h"
 #include "net/quic/chromium/crypto/proof_source_chromium.h"
 #include "net/quic/chromium/crypto/proof_verifier_chromium.h"
-#include "net/quic/core/crypto/crypto_utils.h"
-#include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/ssl/ssl_config_service.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/test_data_directory.h"
+#include "net/third_party/quic/core/crypto/crypto_utils.h"
+#include "net/third_party/quic/test_tools/crypto_test_utils.h"
 
 using std::string;
 
@@ -99,7 +99,7 @@ std::unique_ptr<ProofVerifier> ProofVerifierForTesting() {
   return std::make_unique<TestProofVerifierChromium>(
       std::move(cert_verifier), std::make_unique<TransportSecurityState>(),
       std::make_unique<MultiLogCTVerifier>(),
-      std::make_unique<CTPolicyEnforcer>(), "quic-root.pem");
+      std::make_unique<DefaultCTPolicyEnforcer>(), "quic-root.pem");
 }
 
 ProofVerifyContext* ProofVerifyContextForTesting() {

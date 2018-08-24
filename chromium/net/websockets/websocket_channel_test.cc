@@ -21,15 +21,16 @@
 #include "base/location.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_piece.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
+#include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/log/net_log_with_source.h"
+#include "net/test/test_with_scoped_task_environment.h"
 #include "net/url_request/url_request_context.h"
 #include "net/websockets/websocket_errors.h"
 #include "net/websockets/websocket_event_interface.h"
@@ -696,7 +697,7 @@ struct WebSocketStreamCreationCallbackArgumentSaver {
       std::unique_ptr<WebSocketHandshakeStreamCreateHelper> create_helper,
       const url::Origin& origin,
       const GURL& site_for_cookies,
-      const std::string& additional_headers,
+      const HttpRequestHeaders& additional_headers,
       URLRequestContext* url_request_context,
       const NetLogWithSource& net_log,
       std::unique_ptr<WebSocketStream::ConnectDelegate> connect_delegate) {
@@ -740,7 +741,7 @@ class FakeSSLErrorCallbacks
 };
 
 // Base class for all test fixtures.
-class WebSocketChannelTest : public ::testing::Test {
+class WebSocketChannelTest : public TestWithScopedTaskEnvironment {
  protected:
   WebSocketChannelTest() : stream_(std::make_unique<FakeWebSocketStream>()) {}
 
@@ -751,7 +752,8 @@ class WebSocketChannelTest : public ::testing::Test {
         CreateEventInterface(), &connect_data_.url_request_context);
     channel_->SendAddChannelRequestForTesting(
         connect_data_.socket_url, connect_data_.requested_subprotocols,
-        connect_data_.origin, connect_data_.site_for_cookies, "",
+        connect_data_.origin, connect_data_.site_for_cookies,
+        HttpRequestHeaders(),
         base::Bind(&WebSocketStreamCreationCallbackArgumentSaver::Create,
                    base::Unretained(&connect_data_.argument_saver)));
   }
@@ -1571,9 +1573,10 @@ TEST_F(WebSocketChannelEventInterfaceTest, FinishHandshakeRequest) {
 
   CreateChannelAndConnectSuccessfully();
 
-  auto response_headers = base::MakeRefCounted<HttpResponseHeaders>("");
+  auto response_headers =
+      base::MakeRefCounted<HttpResponseHeaders>("HTTP/1.1 200 OK");
   auto response_info = std::make_unique<WebSocketHandshakeResponseInfo>(
-      GURL("ws://www.example.com/"), 200, "OK", response_headers, base::Time());
+      GURL("ws://www.example.com/"), response_headers, base::Time());
   connect_data_.argument_saver.connect_delegate->OnFinishOpeningHandshake(
       std::move(response_info));
   base::RunLoop().RunUntilIdle();
@@ -1594,9 +1597,10 @@ TEST_F(WebSocketChannelEventInterfaceTest, FailJustAfterHandshake) {
   GURL url("ws://www.example.com/");
   auto request_info =
       std::make_unique<WebSocketHandshakeRequestInfo>(url, base::Time());
-  auto response_headers = base::MakeRefCounted<HttpResponseHeaders>("");
+  auto response_headers =
+      base::MakeRefCounted<HttpResponseHeaders>("HTTP/1.1 200 OK");
   auto response_info = std::make_unique<WebSocketHandshakeResponseInfo>(
-      url, 200, "OK", response_headers, base::Time());
+      url, response_headers, base::Time());
   connect_delegate->OnStartOpeningHandshake(std::move(request_info));
   connect_delegate->OnFinishOpeningHandshake(std::move(response_info));
 

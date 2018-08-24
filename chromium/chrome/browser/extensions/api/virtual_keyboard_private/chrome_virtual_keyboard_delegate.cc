@@ -182,6 +182,8 @@ ChromeVirtualKeyboardDelegate::ConvertKeyboardModeToContainerType(
       return keyboard::ContainerType::FULL_WIDTH;
     case keyboard_api::KEYBOARD_MODE_FLOATING:
       return keyboard::ContainerType::FLOATING;
+    case keyboard_api::KEYBOARD_MODE_FULLSCREEN:
+      return keyboard::ContainerType::FULLSCREEN;
   }
 
   NOTREACHED();
@@ -251,6 +253,9 @@ void ChromeVirtualKeyboardDelegate::OnHasInputDevices(
       "gestureediting", keyboard::IsGestureEditingEnabled()));
   features->AppendString(GenerateFeatureFlag(
       "experimental", keyboard::IsExperimentalInputViewEnabled()));
+  features->AppendString(GenerateFeatureFlag(
+      "fullscreenhandwriting",
+      keyboard::IsFullscreenHandwritingVirtualKeyboardEnabled()));
 
   const keyboard::KeyboardConfig config = keyboard::GetKeyboardConfig();
   // TODO(oka): Change this to use config.voice_input.

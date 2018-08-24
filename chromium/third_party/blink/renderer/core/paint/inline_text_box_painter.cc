@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/paint/inline_text_box_painter.h"
 
+#include "base/optional.h"
 #include "build/build_config.h"
 #include "third_party/blink/renderer/core/editing/editor.h"
 #include "third_party/blink/renderer/core/editing/markers/composition_marker.h"
@@ -26,7 +27,6 @@
 #include "third_party/blink/renderer/platform/graphics/paint/paint_record.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_shader.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 
 namespace blink {
@@ -158,7 +158,7 @@ void InlineTextBoxPainter::Paint(const PaintInfo& paint_info,
   // The text clip phase already has a DrawingRecorder. Text clips are initiated
   // only in BoxPainter::PaintFillLayer, which is already within a
   // DrawingRecorder.
-  Optional<DrawingRecorder> recorder;
+  base::Optional<DrawingRecorder> recorder;
   if (paint_info.phase != PaintPhase::kTextClip) {
     if (DrawingRecorder::UseCachedDrawingIfPossible(
             paint_info.context, inline_text_box_,
@@ -191,10 +191,10 @@ void InlineTextBoxPainter::Paint(const PaintInfo& paint_info,
   String first_line_string;
   if (inline_text_box_.IsFirstLineStyle()) {
     first_line_string = layout_item_string;
-    ApplyTextTransform(
-        inline_text_box_.GetLineLayoutItem().Style(
-            inline_text_box_.IsFirstLineStyle()),
-        first_line_string,
+    const ComputedStyle& style = inline_text_box_.GetLineLayoutItem().StyleRef(
+        inline_text_box_.IsFirstLineStyle());
+    style.ApplyTextTransform(
+        &first_line_string,
         inline_text_box_.GetLineLayoutItem().PreviousCharacter());
     // TODO(crbug.com/795498): this is a hack. The root issue is that
     // capitalizing letters can change the length of the backing string.
@@ -232,7 +232,6 @@ void InlineTextBoxPainter::Paint(const PaintInfo& paint_info,
         combined_text = nullptr;
     }
     if (combined_text) {
-      combined_text->UpdateFont();
       box_rect.SetWidth(combined_text->InlineWidthForLayout());
       // Justfication applies to before and after the combined text as if
       // it is an ideographic character, and is prohibited inside the

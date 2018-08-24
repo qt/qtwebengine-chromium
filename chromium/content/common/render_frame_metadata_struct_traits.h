@@ -8,6 +8,7 @@
 #include "base/optional.h"
 #include "cc/trees/render_frame_metadata.h"
 #include "content/common/render_frame_metadata.mojom-shared.h"
+#include "services/viz/public/cpp/compositing/local_surface_id_struct_traits.h"
 
 namespace mojo {
 
@@ -31,6 +32,42 @@ struct StructTraits<content::mojom::RenderFrameMetadataDataView,
   static const viz::Selection<gfx::SelectionBound>& selection(
       const cc::RenderFrameMetadata& metadata) {
     return metadata.selection;
+  }
+
+  static bool is_mobile_optimized(const cc::RenderFrameMetadata& metadata) {
+    return metadata.is_mobile_optimized;
+  }
+
+  static float device_scale_factor(const cc::RenderFrameMetadata& metadata) {
+    return metadata.device_scale_factor;
+  }
+
+  static const gfx::Size& viewport_size_in_pixels(
+      const cc::RenderFrameMetadata& metadata) {
+    return metadata.viewport_size_in_pixels;
+  }
+
+  static const base::Optional<viz::LocalSurfaceId>& local_surface_id(
+      const cc::RenderFrameMetadata& metadata) {
+    return metadata.local_surface_id;
+  }
+
+  static float top_controls_height(const cc::RenderFrameMetadata& metadata) {
+    return metadata.top_controls_height;
+  }
+
+  static float top_controls_shown_ratio(
+      const cc::RenderFrameMetadata& metadata) {
+    return metadata.top_controls_shown_ratio;
+  }
+
+  static float bottom_controls_height(const cc::RenderFrameMetadata& metadata) {
+    return metadata.bottom_controls_height;
+  }
+
+  static float bottom_controls_shown_ratio(
+      const cc::RenderFrameMetadata& metadata) {
+    return metadata.bottom_controls_shown_ratio;
   }
 
   static bool Read(content::mojom::RenderFrameMetadataDataView data,

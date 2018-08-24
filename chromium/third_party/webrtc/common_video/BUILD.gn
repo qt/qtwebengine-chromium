@@ -58,15 +58,14 @@ rtc_static_library("common_video") {
     "..:webrtc_common",
     "../:typedefs",
     "../api:optional",
-    "../api:video_frame_api",
-    "../api:video_frame_api_i420",
+    "../api/video:video_frame",
+    "../api/video:video_frame_i420",
     "../media:rtc_h264_profile_id",
     "../modules:module_api",
     "../rtc_base:checks",
     "../rtc_base:rtc_base",
     "../rtc_base:rtc_task_queue",
     "../rtc_base:safe_minmax",
-    "../system_wrappers",
     "//third_party/libyuv",
   ]
 }
@@ -109,12 +108,12 @@ if (rtc_include_tests) {
 
     deps = [
       ":common_video",
-      "../api:video_frame_api",
-      "../api:video_frame_api_i420",
+      "../api/video:video_frame",
+      "../api/video:video_frame_i420",
       "../modules/video_capture:video_capture",
       "../rtc_base:rtc_base",
       "../rtc_base:rtc_base_approved",
-      "../system_wrappers:system_wrappers",
+      "../rtc_base:rtc_base_tests_utils",
       "../test:fileutils",
       "../test:test_main",
       "../test:video_test_common",

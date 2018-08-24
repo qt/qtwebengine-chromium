@@ -33,6 +33,8 @@ class CORE_EXPORT PictureInPictureController
   enum class Status {
     kEnabled,
     kFrameDetached,
+    kMetadataNotLoaded,
+    kVideoTrackNotAvailable,
     kDisabledBySystem,
     kDisabledByFeaturePolicy,
     kDisabledByAttribute,
@@ -42,7 +44,13 @@ class CORE_EXPORT PictureInPictureController
   // controller is allowed to request Picture-in-Picture.
   virtual Status IsElementAllowed(const HTMLVideoElement&) const = 0;
 
-  virtual void Trace(blink::Visitor*);
+  // Should be called when an element has exited Picture-in-Picture.
+  virtual void OnExitedPictureInPicture(ScriptPromiseResolver*) = 0;
+
+  // Returns whether the given element is currently in Picture-in-Picture.
+  virtual bool IsPictureInPictureElement(const Element*) const = 0;
+
+  void Trace(blink::Visitor*) override;
 
  protected:
   explicit PictureInPictureController(Document&);

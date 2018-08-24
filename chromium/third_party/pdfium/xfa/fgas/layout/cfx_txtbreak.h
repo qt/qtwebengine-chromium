@@ -42,6 +42,7 @@ struct FX_TXTRUN {
   CFDE_TextEditEngine* pEdtEngine;
   WideString wsStr;
   int32_t* pWidths;
+  int32_t iStart;
   int32_t iLength;
   RetainPtr<CFGAS_GEFont> pFont;
   float fFontSize;
@@ -66,7 +67,7 @@ class CFX_TxtBreak : public CFX_Break {
   int32_t GetDisplayPos(const FX_TXTRUN* pTxtRun,
                         FXTEXT_CHARPOS* pCharPos) const;
   std::vector<CFX_RectF> GetCharRects(const FX_TXTRUN* pTxtRun,
-                                      bool bCharBBox = false) const;
+                                      bool bCharBBox) const;
   CFX_BreakType AppendChar(wchar_t wch);
 
  private:
@@ -83,12 +84,12 @@ class CFX_TxtBreak : public CFX_Break {
                           bool bAllChars,
                           CFX_BreakType dwStatus);
   int32_t GetBreakPos(std::vector<CFX_Char>& ca,
-                      int32_t& iEndPos,
-                      bool bAllChars = false,
-                      bool bOnlyBrk = false);
+                      bool bAllChars,
+                      bool bOnlyBrk,
+                      int32_t* pEndPos);
   void SplitTextLine(CFX_BreakLine* pCurLine,
                      CFX_BreakLine* pNextLine,
-                     bool bAllChars = false);
+                     bool bAllChars);
 
   int32_t m_iAlignment;
   int32_t m_iCombWidth;

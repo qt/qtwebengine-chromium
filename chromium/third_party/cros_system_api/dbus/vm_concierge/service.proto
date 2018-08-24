@@ -90,6 +90,9 @@ message StartVmRequest {
   // file descriptor will be used for storage.
   // Ignored unless |start_termina| is true.
   bool use_fd_for_storage = 6;
+
+  // The owner of the vm.
+  string owner_id = 7;
 }
 
 // Information sent back by vm_concierge in response to a StartVm dbus message.
@@ -109,6 +112,9 @@ message StartVmResponse {
 message StopVmRequest {
   // The name of the VM to be stopped.
   string name = 1;
+
+  // The owner of the vm.
+  string owner_id = 2;
 }
 
 // Response sent back by vm_concierge when it receives a StopVm dbus message.
@@ -124,6 +130,9 @@ message StopVmResponse {
 message GetVmInfoRequest {
   // The name of the VM to query.
   string name = 1;
+
+  // The owner of the vm.
+  string owner_id = 2;
 }
 
 // Response sent back by vm_concierge for a GetVmInfo dbus message.
@@ -239,13 +248,17 @@ message ListVmDisksResponse {
   string failure_reason = 3;
 }
 
-// Signal for when a container has started up.
+// Message used in the signal for when a container has started up or failed to
+// startup.
 message ContainerStartedSignal {
   // Name of the VM the container is in.
   string vm_name = 1;
 
   // Name of the container within the VM.
   string container_name = 2;
+
+  // The owner of the vm and container.
+  string owner_id = 3;
 }
 
 // Request to start a specified container image within a VM. If the container
@@ -265,6 +278,10 @@ message StartContainerRequest {
 
   // Async mode is always used now.
   bool async = 4 [deprecated=true];
+
+  // The cryptohome id for the user's encrypted storage. This is used for SSH
+  // key storage.
+  string cryptohome_id = 5;
 }
 
 enum ContainerStatus {
@@ -311,6 +328,9 @@ message LaunchContainerApplicationRequest {
   // ID of the application to launch, should map to the desktop_file_id that
   // is in the application list sent back from the container.
   string desktop_file_id = 3;
+
+  // The owner of the vm and container.
+  string owner_id = 4;
 }
 
 // Response sent back by vm_concierge when it receives a
@@ -321,4 +341,74 @@ message LaunchContainerApplicationResponse {
 
   // The failure_reason if the requested application could not be started.
   string failure_reason = 2;
+}
+
+// Request to get application icons in the specified VM/container. Used with the
+// GetContainerAppIcon D-Bus message into vm_concierge.
+message ContainerAppIconRequest {
+  // Name of the VM to target.
+  string vm_name = 1;
+
+  // Name of the container within the VM to target, if empty the default
+  // container name will be used.
+  string container_name = 2;
+
+  // IDs of the application to get icons for, should map to the desktop_file_id
+  // that is in the application list sent back from the container.
+  repeated string desktop_file_ids = 3;
+
+  // The icon size with both its height and width equals to this number.
+  int32 size = 4;
+
+  // The target scale of this icon. This is the scale at which this icon is
+  // designed to be used.
+  int32 scale = 5;
+
+  // The owner of the vm and container.
+  string owner_id = 6;
+}
+
+// One desktop file ID with its icon.
+message DesktopIcon {
+  string desktop_file_id = 1;
+  bytes icon = 2;
+}
+
+// Response sent back by vm_concierge when it receives a
+// GetContainerAppIcon D-Bus message.
+// Some desktop_file_id may not have an icon.
+message ContainerAppIconResponse {
+  repeated DesktopIcon icons = 1;
+}
+
+// Request to get the SSH keys associated with the host and a specific
+// container for the GetContainerSshKeys call. These keys will be generated
+// when StartContainer is called the first time for a container, so this should
+// not be called until after that call is invoked.
+message ContainerSshKeysRequest {
+  // Name of the VM to target.
+  string vm_name = 1;
+
+  // Name of the container within the VM to target, if empty the default
+  // container name will be used.
+  string container_name = 2;
+
+  // The cryptohome id for the user's encrypted storage.
+  string cryptohome_id = 3;
+}
+
+// Response sent back by vm_concierge when it receives a GetContainerSshKeys
+// call. If either of the keys do not exist, the empty string will be set for
+// that value.
+message ContainerSshKeysResponse {
+  // Public key of the container for verification of it as a known host. This
+  // will be a single line string equivalent to the contents in the ssh-keygen
+  // generated file.
+  string container_public_key = 1;
+
+  // Private key for the host, counterpart fo the public key which is stored in
+  // the container as an authorized host. This will be a multiline string that
+  // is equivalent to the contents in the ssh-keygen generated file. This will
+  // be the same for all VMs/containers.
+  string host_private_key = 2;
 }

@@ -46,12 +46,12 @@ class CJBig2_TRDProc {
   CJBig2_TRDProc();
   ~CJBig2_TRDProc();
 
-  std::unique_ptr<CJBig2_Image> decode_Huffman(CJBig2_BitStream* pStream,
-                                               JBig2ArithCtx* grContext);
+  std::unique_ptr<CJBig2_Image> DecodeHuffman(CJBig2_BitStream* pStream,
+                                              JBig2ArithCtx* grContext);
 
-  std::unique_ptr<CJBig2_Image> decode_Arith(CJBig2_ArithDecoder* pArithDecoder,
-                                             JBig2ArithCtx* grContext,
-                                             JBig2IntDecoderState* pIDS);
+  std::unique_ptr<CJBig2_Image> DecodeArith(CJBig2_ArithDecoder* pArithDecoder,
+                                            JBig2ArithCtx* grContext,
+                                            JBig2IntDecoderState* pIDS);
 
   bool SBHUFF;
   bool SBREFINE;
@@ -82,6 +82,17 @@ class CJBig2_TRDProc {
   CJBig2_HuffmanTable* SBHUFFRSIZE;
   bool SBRTEMPLATE;
   int8_t SBRAT[4];
+
+ private:
+  struct ComposeData {
+    int32_t x;
+    int32_t y;
+    uint32_t increment = 0;
+  };
+  ComposeData GetComposeData(int32_t SI,
+                             int32_t TI,
+                             uint32_t WI,
+                             uint32_t HI) const;
 };
 
 #endif  // CORE_FXCODEC_JBIG2_JBIG2_TRDPROC_H_

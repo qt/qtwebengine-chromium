@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/testing/dictionary_test.h"
 
+#include "third_party/blink/renderer/bindings/core/v8/script_iterator.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_object_builder.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/testing/internal_dictionary.h"
@@ -12,6 +13,26 @@
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 
 namespace blink {
+namespace {
+ScriptIterator GetIterator(const Dictionary& iterable,
+                           ExecutionContext* execution_context) {
+  v8::Local<v8::Value> iterator_getter;
+  v8::Isolate* isolate = iterable.GetIsolate();
+  if (!iterable.Get(v8::Symbol::GetIterator(isolate), iterator_getter) ||
+      !iterator_getter->IsFunction()) {
+    return nullptr;
+  }
+  v8::Local<v8::Value> iterator;
+  if (!V8ScriptRunner::CallFunction(
+           v8::Local<v8::Function>::Cast(iterator_getter), execution_context,
+           iterable.V8Value(), 0, nullptr, isolate)
+           .ToLocal(&iterator))
+    return nullptr;
+  if (!iterator->IsObject())
+    return nullptr;
+  return ScriptIterator(v8::Local<v8::Object>::Cast(iterator), isolate);
+}
+}  // namespace
 
 DictionaryTest::DictionaryTest() : required_boolean_member_(false) {}
 
@@ -183,7 +204,7 @@ String DictionaryTest::stringFromIterable(
     ExceptionState& exception_state) const {
   StringBuilder result;
   ExecutionContext* execution_context = ExecutionContext::From(script_state);
-  DictionaryIterator iterator = iterable.GetIterator(execution_context);
+  ScriptIterator iterator = GetIterator(iterable, execution_context);
   if (iterator.IsNull())
     return g_empty_string;
 
@@ -206,20 +227,20 @@ String DictionaryTest::stringFromIterable(
 }
 
 void DictionaryTest::Reset() {
-  long_member_ = WTF::nullopt;
-  long_member_with_clamp_ = WTF::nullopt;
-  long_member_with_enforce_range_ = WTF::nullopt;
+  long_member_ = base::nullopt;
+  long_member_with_clamp_ = base::nullopt;
+  long_member_with_enforce_range_ = base::nullopt;
   long_member_with_default_ = -1;  // This value should not be returned.
-  long_or_null_member_ = WTF::nullopt;
-  long_or_null_member_with_default_ = WTF::nullopt;
-  boolean_member_ = WTF::nullopt;
-  double_member_ = WTF::nullopt;
-  unrestricted_double_member_ = WTF::nullopt;
+  long_or_null_member_ = base::nullopt;
+  long_or_null_member_with_default_ = base::nullopt;
+  boolean_member_ = base::nullopt;
+  double_member_ = base::nullopt;
+  unrestricted_double_member_ = base::nullopt;
   string_member_ = String();
   string_member_with_default_ = String("Should not be returned");
-  string_sequence_member_ = WTF::nullopt;
+  string_sequence_member_ = base::nullopt;
   string_sequence_member_with_default_.Fill("Should not be returned", 1);
-  string_sequence_or_null_member_ = WTF::nullopt;
+  string_sequence_or_null_member_ = base::nullopt;
   enum_member_ = String();
   enum_member_with_default_ = String();
   enum_or_null_member_ = String();
@@ -232,7 +253,7 @@ void DictionaryTest::Reset() {
   derived_string_member_ = String();
   derived_string_member_with_default_ = String();
   required_boolean_member_ = false;
-  dictionary_member_properties_ = WTF::nullopt;
+  dictionary_member_properties_ = base::nullopt;
   internal_enum_or_internal_enum_sequence_ =
       InternalEnumOrInternalEnumSequence();
   any_member_ = ScriptValue();

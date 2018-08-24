@@ -74,21 +74,6 @@ class TestDataReductionProxyConfig : public DataReductionProxyConfig {
 
   base::TimeTicks GetTicksNow() const override;
 
-  bool WasDataReductionProxyUsed(
-      const net::URLRequest* request,
-      DataReductionProxyTypeInfo* proxy_info) const override;
-
-  // Sets the data reduction proxy as not used. Subsequent calls to
-  // WasDataReductionProxyUsed() would return false.
-  void SetWasDataReductionProxyNotUsed();
-
-  // Sets the proxy index of the data reduction proxy. Subsequent calls to
-  // WasDataReductionProxyUsed are affected.
-  void SetWasDataReductionProxyUsedProxyIndex(int proxy_index);
-
-  // Resets the behavior of WasDataReductionProxyUsed() calls.
-  void ResetWasDataReductionProxyUsed();
-
   // Sets if the captive portal probe has been blocked for the current network.
   void SetIsCaptivePortal(bool is_captive_portal);
 
@@ -132,9 +117,6 @@ class TestDataReductionProxyConfig : public DataReductionProxyConfig {
 
   base::Optional<size_t> previous_attempt_counts_;
 
-  base::Optional<bool> was_data_reduction_proxy_used_;
-  base::Optional<int> proxy_index_;
-
   base::Optional<std::string> current_network_id_;
 
   base::Optional<std::pair<bool /* is_secure_proxy */, bool /*is_core_proxy */>>
@@ -164,7 +146,7 @@ class MockDataReductionProxyConfig : public TestDataReductionProxyConfig {
       net::NetLog* net_log,
       DataReductionProxyConfigurator* configurator,
       DataReductionProxyEventCreator* event_creator);
-  ~MockDataReductionProxyConfig();
+  ~MockDataReductionProxyConfig() override;
 
   MOCK_CONST_METHOD2(WasDataReductionProxyUsed,
                      bool(const net::URLRequest*,

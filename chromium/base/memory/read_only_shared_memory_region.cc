@@ -32,7 +32,7 @@ MappedReadOnlyRegion ReadOnlySharedMemoryRegion::Create(size_t size) {
 #endif  // defined(OS_MACOSX) && !defined(OS_IOS)
   ReadOnlySharedMemoryRegion region(std::move(handle));
 
-  if (!region.IsValid())
+  if (!region.IsValid() || !mapping.IsValid())
     return {};
 
   return {std::move(region), std::move(mapping)};
@@ -88,8 +88,10 @@ bool ReadOnlySharedMemoryRegion::IsValid() const {
 ReadOnlySharedMemoryRegion::ReadOnlySharedMemoryRegion(
     subtle::PlatformSharedMemoryRegion handle)
     : handle_(std::move(handle)) {
-  CHECK_EQ(handle_.GetMode(),
-           subtle::PlatformSharedMemoryRegion::Mode::kReadOnly);
+  if (handle_.IsValid()) {
+    CHECK_EQ(handle_.GetMode(),
+             subtle::PlatformSharedMemoryRegion::Mode::kReadOnly);
+  }
 }
 
 }  // namespace base

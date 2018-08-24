@@ -13,7 +13,6 @@
 #include "base/location.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
@@ -38,6 +37,7 @@
 #include "net/log/net_log_with_source.h"
 #include "net/log/test_net_log.h"
 #include "net/test/gtest_util.h"
+#include "net/test/test_with_scoped_task_environment.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -297,7 +297,8 @@ class Request {
   int WaitForResult() {
     if (completed())
       return result_;
-    base::CancelableClosure closure(base::MessageLoop::QuitWhenIdleClosure());
+    base::CancelableClosure closure(
+        base::RunLoop::QuitCurrentWhenIdleClosureDeprecated());
     base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
         FROM_HERE, closure.callback(), TestTimeouts::action_max_timeout());
     quit_on_complete_ = true;
@@ -506,7 +507,7 @@ void TestIPv6LoopbackOnly(const std::string& host) {
 
 }  // namespace
 
-class HostResolverImplTest : public testing::Test {
+class HostResolverImplTest : public TestWithScopedTaskEnvironment {
  public:
   static const int kDefaultPort = 80;
 
@@ -915,7 +916,7 @@ TEST_F(HostResolverImplTest, DeleteWithinCallback) {
       // Quit after returning from OnCompleted (to give it a chance at
       // incorrectly running the cancelled tasks).
       base::ThreadTaskRunnerHandle::Get()->PostTask(
-          FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
+          FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated());
     }
   };
   set_handler(new MyHandler());
@@ -941,7 +942,7 @@ TEST_F(HostResolverImplTest, DeleteWithinAbortedCallback) {
       // Quit after returning from OnCompleted (to give it a chance at
       // incorrectly running the cancelled tasks).
       base::ThreadTaskRunnerHandle::Get()->PostTask(
-          FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
+          FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated());
     }
   };
   set_handler(new MyHandler());
@@ -1653,6 +1654,10 @@ class HostResolverImplDnsTest : public HostResolverImplTest {
  protected:
   // testing::Test implementation:
   void SetUp() override {
+    AddDnsRule("nodomain", dns_protocol::kTypeA, MockDnsClientRule::NODOMAIN,
+               false);
+    AddDnsRule("nodomain", dns_protocol::kTypeAAAA, MockDnsClientRule::NODOMAIN,
+               false);
     AddDnsRule("nx", dns_protocol::kTypeA, MockDnsClientRule::FAIL, false);
     AddDnsRule("nx", dns_protocol::kTypeAAAA, MockDnsClientRule::FAIL, false);
     AddDnsRule("ok", dns_protocol::kTypeA, MockDnsClientRule::OK, false);
@@ -1749,7 +1754,8 @@ class HostResolverImplDnsTest : public HostResolverImplTest {
   }
 
   void SetInitialDnsConfig(const DnsConfig& config) {
-    NetworkChangeNotifier::SetInitialDnsConfig(config);
+    NetworkChangeNotifier::ClearDnsConfigForTesting();
+    NetworkChangeNotifier::SetDnsConfig(config);
     // Notification is delivered asynchronously.
     base::RunLoop().RunUntilIdle();
   }
@@ -2687,6 +2693,37 @@ TEST_F(HostResolverImplDnsTest, NoIPv6OnWifi) {
   EXPECT_TRUE(requests_[3]->HasOneAddress("::3", 80));
   EXPECT_TRUE(requests_[4]->HasOneAddress("1.0.0.1", 80));
   EXPECT_TRUE(requests_[5]->HasOneAddress("::2", 80));
+}
+
+TEST_F(HostResolverImplDnsTest, NotFoundTTL) {
+  CreateResolver();
+  set_fallback_to_proctask(false);
+  ChangeDnsConfig(CreateValidDnsConfig());
+  // NODATA
+  Request* request = CreateRequest("empty");
+  EXPECT_THAT(request->Resolve(), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(request->WaitForResult(), IsError(ERR_NAME_NOT_RESOLVED));
+  EXPECT_THAT(request->NumberOfAddresses(), 0);
+  HostCache::Key key(request->info().hostname(), ADDRESS_FAMILY_UNSPECIFIED, 0);
+  HostCache::EntryStaleness staleness;
+  const HostCache::Entry* cache_entry =
+      resolver_->GetHostCache()->Lookup(key, base::TimeTicks::Now());
+  EXPECT_TRUE(!!cache_entry);
+  EXPECT_TRUE(cache_entry->has_ttl());
+  EXPECT_THAT(cache_entry->ttl(), base::TimeDelta::FromSeconds(86400));
+
+  // NXDOMAIN
+  request = CreateRequest("nodomain");
+  EXPECT_THAT(request->Resolve(), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(request->WaitForResult(), IsError(ERR_NAME_NOT_RESOLVED));
+  EXPECT_THAT(request->NumberOfAddresses(), 0);
+  HostCache::Key nxkey(request->info().hostname(), ADDRESS_FAMILY_UNSPECIFIED,
+                       0);
+  cache_entry =
+      resolver_->GetHostCache()->Lookup(nxkey, base::TimeTicks::Now());
+  EXPECT_TRUE(!!cache_entry);
+  EXPECT_TRUE(cache_entry->has_ttl());
+  EXPECT_THAT(cache_entry->ttl(), base::TimeDelta::FromSeconds(86400));
 }
 
 TEST_F(HostResolverImplTest, ResolveLocalHostname) {

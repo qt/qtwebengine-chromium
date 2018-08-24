@@ -62,7 +62,7 @@ class MODULES_EXPORT MediaControlOverlayPlayButtonElement final
     // iteration.
     void Show();
 
-    void Trace(Visitor*);
+    void Trace(Visitor*) override;
 
    private:
     void HideInternal();
@@ -86,7 +86,7 @@ class MODULES_EXPORT MediaControlOverlayPlayButtonElement final
   void MaybeJump(int);
 
   TaskRunnerTimer<MediaControlOverlayPlayButtonElement> tap_timer_;
-  WTF::Optional<bool> tap_was_touch_event_;
+  base::Optional<bool> tap_was_touch_event_;
 
   Member<HTMLDivElement> internal_button_;
   Member<AnimatedArrow> left_jump_arrow_;

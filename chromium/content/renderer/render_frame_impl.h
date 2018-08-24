@@ -49,6 +49,8 @@
 #include "content/public/common/request_context_type.h"
 #include "content/public/common/stop_find_action.h"
 #include "content/public/renderer/render_frame.h"
+#include "content/public/renderer/websocket_handshake_throttle_provider.h"
+#include "content/renderer/content_security_policy_util.h"
 #include "content/renderer/frame_blame_context.h"
 #include "content/renderer/input/input_target_client_impl.h"
 #include "content/renderer/loader/child_url_loader_factory_bundle.h"
@@ -69,9 +71,9 @@
 #include "services/service_manager/public/mojom/connector.mojom.h"
 #include "services/service_manager/public/mojom/interface_provider.mojom.h"
 #include "third_party/blink/public/common/feature_policy/feature_policy.h"
+#include "third_party/blink/public/mojom/manifest/manifest_manager.mojom.h"
 #include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
 #include "third_party/blink/public/platform/autoplay.mojom.h"
-#include "third_party/blink/public/platform/modules/manifest/manifest_manager.mojom.h"
 #include "third_party/blink/public/platform/site_engagement.mojom.h"
 #include "third_party/blink/public/platform/web_effective_connection_type.h"
 #include "third_party/blink/public/platform/web_focus_type.h"
@@ -111,7 +113,6 @@ class WebComputedAXTree;
 class WebContentDecryptionModule;
 class WebLayerTreeView;
 class WebLocalFrame;
-class WebPresentationClient;
 class WebPushClient;
 class WebRelatedAppsFetcher;
 class WebSecurityOrigin;
@@ -158,7 +159,6 @@ class MediaPermissionDispatcher;
 class MediaStreamDeviceObserver;
 class NavigationState;
 class PepperPluginInstanceImpl;
-class PresentationDispatcher;
 class PushMessagingClient;
 class RelatedAppsFetcher;
 class RenderAccessibilityImpl;
@@ -361,14 +361,6 @@ class CONTENT_EXPORT RenderFrameImpl
   void RenderWidgetWillHandleMouseEvent();
 
 #if BUILDFLAG(ENABLE_PLUGINS)
-  // Get/set the plugin which will be used to handle document find requests.
-  void set_plugin_find_handler(PepperPluginInstanceImpl* plugin) {
-    plugin_find_handler_ = plugin;
-  }
-  PepperPluginInstanceImpl* plugin_find_handler() {
-    return plugin_find_handler_;
-  }
-
   // Notification that a PPAPI plugin has been created.
   void PepperPluginCreated(RendererPpapiHost* host);
 
@@ -526,7 +518,6 @@ class CONTENT_EXPORT RenderFrameImpl
   // mojom::FrameNavigationControl implementation:
   void CommitNavigation(
       const network::ResourceResponseHead& head,
-      const GURL& body_url,
       const CommonNavigationParams& common_params,
       const RequestNavigationParams& request_params,
       network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
@@ -618,13 +609,15 @@ class CONTENT_EXPORT RenderFrameImpl
       override;
   void SetHasReceivedUserGesture() override;
   void SetHasReceivedUserGestureBeforeNavigation(bool value) override;
+  void SetMouseCapture(bool capture) override;
   bool ShouldReportDetailedMessageForSource(
       const blink::WebString& source) override;
   void DidAddMessageToConsole(const blink::WebConsoleMessage& message,
                               const blink::WebString& source_name,
                               unsigned source_line,
                               const blink::WebString& stack_trace) override;
-  void DownloadURL(const blink::WebURLRequest& request) override;
+  void DownloadURL(const blink::WebURLRequest& request,
+                   mojo::ScopedMessagePipeHandle blob_url_token) override;
   void LoadErrorPage(int reason) override;
   blink::WebNavigationPolicy DecidePolicyForNavigation(
       const NavigationPolicyInfo& info) override;
@@ -655,9 +648,9 @@ class CONTENT_EXPORT RenderFrameImpl
   void DidFailLoad(const blink::WebURLError& error,
                    blink::WebHistoryCommitType commit_type) override;
   void DidFinishLoad() override;
-  void DidNavigateWithinPage(const blink::WebHistoryItem& item,
-                             blink::WebHistoryCommitType commit_type,
-                             bool content_initiated) override;
+  void DidFinishSameDocumentNavigation(const blink::WebHistoryItem& item,
+                                       blink::WebHistoryCommitType commit_type,
+                                       bool content_initiated) override;
   void DidUpdateCurrentHistoryItem() override;
   void DidChangeThemeColor() override;
   void ForwardResourceTimingToParent(
@@ -717,7 +710,6 @@ class CONTENT_EXPORT RenderFrameImpl
                                  int active_match_ordinal,
                                  const blink::WebRect& sel) override;
   blink::WebPushClient* PushClient() override;
-  blink::WebPresentationClient* PresentationClient() override;
   blink::WebRelatedAppsFetcher* GetRelatedAppsFetcher() override;
   void WillStartUsingPeerConnectionHandler(
       blink::WebRTCPeerConnectionHandler* handler) override;
@@ -738,7 +730,7 @@ class CONTENT_EXPORT RenderFrameImpl
                                            const blink::WebNode& end_node,
                                            int end_offset) override;
   void DidChangeManifest() override;
-  void EnterFullscreen() override;
+  void EnterFullscreen(const blink::WebFullscreenOptions& options) override;
   void ExitFullscreen() override;
   void SuddenTerminationDisablerChanged(
       bool present,
@@ -750,7 +742,6 @@ class CONTENT_EXPORT RenderFrameImpl
                                  const blink::WebURL& url) override;
   void CheckIfAudioSinkExistsAndIsAuthorized(
       const blink::WebString& sink_id,
-      const blink::WebSecurityOrigin& security_origin,
       blink::WebSetSinkIdCallbacks* web_callbacks) override;
   blink::WebSpeechRecognizer* SpeechRecognizer() override;
   blink::mojom::PageVisibilityState VisibilityState() const override;
@@ -762,6 +753,9 @@ class CONTENT_EXPORT RenderFrameImpl
   void ScrollRectToVisibleInParentFrame(
       const blink::WebRect& rect_to_scroll,
       const blink::WebScrollIntoViewParams& params) override;
+  void BubbleLogicalScrollInParentFrame(
+      blink::WebScrollDirection direction,
+      blink::WebScrollGranularity granularity) override;
 
   // WebFrameSerializerClient implementation:
   void DidSerializeDataForFrame(
@@ -876,14 +870,6 @@ class CONTENT_EXPORT RenderFrameImpl
   // Called to notify a frame that it called |window.focus()| on a different
   // frame.
   void FrameDidCallFocus();
-
-  // Send viz::SurfaceId and video information to FrameHost to use for
-  // Picture-in-Picture.
-  void OnPictureInPictureSurfaceIdUpdated(const viz::SurfaceId& surface_id,
-                                          const gfx::Size& natural_size);
-
-  // Send signal that Picture-in-Picture mode has ended.
-  void OnExitPictureInPicture();
 
  protected:
   explicit RenderFrameImpl(CreateParams params);
@@ -1004,22 +990,7 @@ class CONTENT_EXPORT RenderFrameImpl
                                  unsigned action);
   void OnMoveCaret(const gfx::Point& point);
   void OnScrollFocusedEditableNodeIntoRect(const gfx::Rect& rect);
-  void OnUndo();
-  void OnRedo();
-  void OnCut();
-  void OnCopy();
-  void OnPaste();
-  void OnPasteAndMatchStyle();
-  void OnDelete();
-  void OnSelectAll();
   void OnSelectRange(const gfx::Point& base, const gfx::Point& extent);
-  void OnAdjustSelectionByCharacterOffset(int start_adjust,
-                                          int end_adjust,
-                                          bool show_selection_menu);
-  void OnCollapseSelection();
-  void OnMoveRangeSelectionExtent(const gfx::Point& point);
-  void OnReplace(const base::string16& text);
-  void OnReplaceMisspelling(const base::string16& text);
   void OnCopyImageAt(int x, int y);
   void OnSaveImageAt(int x, int y);
   void OnAddMessageToConsole(ConsoleMessageLevel level,
@@ -1036,15 +1007,6 @@ class CONTENT_EXPORT RenderFrameImpl
                                                  bool notify_result,
                                                  int world_id);
   void OnVisualStateRequest(uint64_t key);
-  void OnSetEditableSelectionOffsets(int start, int end);
-  void OnSetCompositionFromExistingText(
-      int start,
-      int end,
-      const std::vector<blink::WebImeTextSpan>& ime_text_spans);
-  void OnExecuteNoValueEditCommand(const std::string& name);
-  void OnExtendSelectionAndDelete(int before, int after);
-  void OnDeleteSurroundingText(int before, int after);
-  void OnDeleteSurroundingTextInCodePoints(int before, int after);
   void OnReload(bool bypass_cache);
   void OnReloadLoFiImages();
   void OnTextSurroundingSelectionRequest(uint32_t max_length);
@@ -1071,8 +1033,6 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnFind(int request_id,
               const base::string16& search_text,
               const blink::WebFindOptions& options);
-  void OnClearActiveFindMatch();
-  void OnStopFinding(StopFindAction action);
   void OnEnableViewSourceMode();
   void OnSuppressFurtherDialogs();
   void OnFileChooserResponse(
@@ -1080,11 +1040,6 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnClearFocusedElement();
   void OnBlinkFeatureUsageReport(const std::set<int>& features);
   void OnMixedContentFound(const FrameMsg_MixedContentFound_Params& params);
-#if defined(OS_ANDROID)
-  void OnActivateNearestFindResult(int request_id, float x, float y);
-  void OnGetNearestFindResult(int request_id, float x, float y);
-  void OnFindMatchRects(int current_version);
-#endif
   void OnSetOverlayRoutingToken(const base::UnguessableToken& token);
   void OnNotifyUserActivation();
 
@@ -1118,8 +1073,7 @@ class CONTENT_EXPORT RenderFrameImpl
       const CommonNavigationParams& common_params,
       const RequestNavigationParams& request_params,
       network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
-      const network::ResourceResponseHead& head,
-      const GURL& body_url);
+      const network::ResourceResponseHead& head);
 
   // Returns a ChildURLLoaderFactoryBundle which can be used to request
   // subresources for this frame.
@@ -1319,6 +1273,9 @@ class CONTENT_EXPORT RenderFrameImpl
 
   blink::WebComputedAXTree* GetOrCreateWebComputedAXTree() override;
 
+  std::unique_ptr<blink::WebSocketHandshakeThrottle>
+  CreateWebSocketHandshakeThrottle() override;
+
   // Updates the state of this frame when asked to commit a navigation.
   void PrepareFrameForCommit();
 
@@ -1351,6 +1308,9 @@ class CONTENT_EXPORT RenderFrameImpl
       const RequestNavigationParams& request_params,
       blink::WebHistoryItem* item_for_history_navigation,
       blink::WebFrameLoadType* load_type);
+
+  // Whether url download should be throttled.
+  bool ShouldThrottleDownload();
 
   // Stores the WebLocalFrame we are associated with.  This is null from the
   // constructor until BindToFrame() is called, and it is null after
@@ -1447,8 +1407,6 @@ class CONTENT_EXPORT RenderFrameImpl
   base::string16 pepper_composition_text_;
 
   PluginPowerSaverHelper* plugin_power_saver_helper_;
-
-  PepperPluginInstanceImpl* plugin_find_handler_;
 #endif
 
   RendererWebCookieJarImpl cookie_jar_;
@@ -1481,7 +1439,7 @@ class CONTENT_EXPORT RenderFrameImpl
   // could correspond to a substring of |selection_text_|; see above).
   gfx::Range selection_range_;
   // Used to inform didChangeSelection() when it is called in the context
-  // of handling a InputMsg_SelectRange IPC.
+  // of handling a FrameInputHandler::SelectRange IPC.
   bool handling_select_range_;
 
   // The next group of objects all implement RenderFrameObserver, so are deleted
@@ -1495,10 +1453,6 @@ class CONTENT_EXPORT RenderFrameImpl
 
   // The media permission dispatcher attached to this frame.
   std::unique_ptr<MediaPermissionDispatcher> media_permission_dispatcher_;
-
-  // The presentation dispatcher implementation attached to this frame, lazily
-  // initialized.
-  PresentationDispatcher* presentation_dispatcher_;
 
   // The PushMessagingClient attached to this frame, lazily initialized.
   PushMessagingClient* push_messaging_client_;
@@ -1703,6 +1657,13 @@ class CONTENT_EXPORT RenderFrameImpl
   uint32_t num_certificate_warning_messages_ = 0;
   // The origins for which a legacy certificate warning has been printed.
   std::set<url::Origin> certificate_warning_origins_;
+
+  std::unique_ptr<WebSocketHandshakeThrottleProvider>
+      websocket_handshake_throttle_provider_;
+
+  // Variable to control burst of download requests.
+  int num_burst_download_requests_ = 0;
+  base::TimeTicks burst_download_start_time_;
 
   base::WeakPtrFactory<RenderFrameImpl> weak_factory_;
 

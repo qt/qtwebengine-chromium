@@ -39,6 +39,7 @@ class PLATFORM_EXPORT CanvasResource : public WTF::RefCounted<CanvasResource> {
   virtual ~CanvasResource();
   virtual void Abandon() = 0;
   virtual bool IsRecycleable() const = 0;
+  virtual bool IsAccelerated() const = 0;
   virtual bool IsValid() const = 0;
   virtual IntSize Size() const = 0;
   virtual const gpu::Mailbox& GetOrCreateGpuMailbox() = 0;
@@ -47,6 +48,11 @@ class PLATFORM_EXPORT CanvasResource : public WTF::RefCounted<CanvasResource> {
       viz::TransferableResource* out_resource,
       std::unique_ptr<viz::SingleReleaseCallback>* out_callback);
   void SetSyncTokenForRelease(const gpu::SyncToken&);
+  virtual scoped_refptr<CanvasResource> MakeAccelerated(
+      base::WeakPtr<WebGraphicsContext3DProviderWrapper>) = 0;
+  virtual scoped_refptr<CanvasResource> MakeUnaccelerated() = 0;
+  virtual bool IsBitmap();
+  virtual scoped_refptr<StaticBitmapImage> Bitmap();
   void WaitSyncTokenBeforeRelease();
   virtual void CopyFromTexture(GLuint source_texture,
                                GLenum format,
@@ -55,7 +61,9 @@ class PLATFORM_EXPORT CanvasResource : public WTF::RefCounted<CanvasResource> {
   }
 
  protected:
-  CanvasResource(base::WeakPtr<CanvasResourceProvider>, SkFilterQuality);
+  CanvasResource(base::WeakPtr<CanvasResourceProvider>,
+                 SkFilterQuality,
+                 const CanvasColorParams&);
   virtual GLenum TextureTarget() const = 0;
   virtual bool IsOverlayCandidate() const { return false; }
   virtual bool HasGpuMailbox() const = 0;
@@ -67,29 +75,39 @@ class PLATFORM_EXPORT CanvasResource : public WTF::RefCounted<CanvasResource> {
   void PrepareTransferableResourceCommon(
       viz::TransferableResource* out_resource,
       std::unique_ptr<viz::SingleReleaseCallback>* out_callback);
+  SkFilterQuality FilterQuality() const { return filter_quality_; }
+  const CanvasColorParams& ColorParams() const { return color_params_; }
 
  private:
   // Sync token that was provided when resource was released
   gpu::SyncToken sync_token_for_release_;
   base::WeakPtr<CanvasResourceProvider> provider_;
   SkFilterQuality filter_quality_;
+  CanvasColorParams color_params_;
 };
 
 // Resource type for skia Bitmaps (RAM and texture backed)
-class PLATFORM_EXPORT CanvasResource_Bitmap final : public CanvasResource {
+class PLATFORM_EXPORT CanvasResourceBitmap final : public CanvasResource {
  public:
-  static scoped_refptr<CanvasResource_Bitmap> Create(
+  static scoped_refptr<CanvasResourceBitmap> Create(
       scoped_refptr<StaticBitmapImage>,
       base::WeakPtr<CanvasResourceProvider>,
-      SkFilterQuality);
-  virtual ~CanvasResource_Bitmap() { Abandon(); }
+      SkFilterQuality,
+      const CanvasColorParams&);
+  ~CanvasResourceBitmap() override { Abandon(); }
 
   // Not recyclable: Skia handles texture recycling internally and bitmaps are
   // cheap to allocate.
   bool IsRecycleable() const final { return false; }
+  bool IsAccelerated() const final;
   bool IsValid() const final;
   void Abandon() final { TearDown(); }
   IntSize Size() const final;
+  bool IsBitmap() final;
+  scoped_refptr<StaticBitmapImage> Bitmap() final;
+  scoped_refptr<CanvasResource> MakeAccelerated(
+      base::WeakPtr<WebGraphicsContext3DProviderWrapper>) final;
+  scoped_refptr<CanvasResource> MakeUnaccelerated() final;
 
  private:
   void TearDown();
@@ -100,26 +118,38 @@ class PLATFORM_EXPORT CanvasResource_Bitmap final : public CanvasResource {
   bool HasGpuMailbox() const override;
   const gpu::SyncToken& GetSyncToken() override;
 
-  CanvasResource_Bitmap(scoped_refptr<StaticBitmapImage>,
-                        base::WeakPtr<CanvasResourceProvider>,
-                        SkFilterQuality);
+  CanvasResourceBitmap(scoped_refptr<StaticBitmapImage>,
+                       base::WeakPtr<CanvasResourceProvider>,
+                       SkFilterQuality,
+                       const CanvasColorParams&);
 
   scoped_refptr<StaticBitmapImage> image_;
 };
 
 // Resource type for GpuMemoryBuffers
-class PLATFORM_EXPORT CanvasResource_GpuMemoryBuffer final
+class PLATFORM_EXPORT CanvasResourceGpuMemoryBuffer final
     : public CanvasResource {
  public:
-  static scoped_refptr<CanvasResource_GpuMemoryBuffer> Create(
+  static scoped_refptr<CanvasResourceGpuMemoryBuffer> Create(
       const IntSize&,
       const CanvasColorParams&,
       base::WeakPtr<WebGraphicsContext3DProviderWrapper>,
       base::WeakPtr<CanvasResourceProvider>,
       SkFilterQuality);
-  virtual ~CanvasResource_GpuMemoryBuffer();
+  ~CanvasResourceGpuMemoryBuffer() override;
   bool IsRecycleable() const final { return IsValid(); }
-  bool IsValid() const { return context_provider_wrapper_ && image_id_; }
+  bool IsAccelerated() const final { return true; }
+  bool IsValid() const override {
+    return context_provider_wrapper_ && image_id_;
+  }
+  scoped_refptr<CanvasResource> MakeAccelerated(
+      base::WeakPtr<WebGraphicsContext3DProviderWrapper>) final {
+    return base::WrapRefCounted(this);
+  };
+  scoped_refptr<CanvasResource> MakeUnaccelerated() final {
+    NOTREACHED();
+    return nullptr;
+  }
   void Abandon() final { TearDown(); }
   IntSize Size() const final;
 
@@ -136,7 +166,7 @@ class PLATFORM_EXPORT CanvasResource_GpuMemoryBuffer final
                        GLenum format,
                        GLenum type) override;
 
-  CanvasResource_GpuMemoryBuffer(
+  CanvasResourceGpuMemoryBuffer(
       const IntSize&,
       const CanvasColorParams&,
       base::WeakPtr<WebGraphicsContext3DProviderWrapper>,

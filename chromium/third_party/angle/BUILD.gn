@@ -8,6 +8,10 @@ import("//build/config/linux/pkg_config.gni")
 import("//build/config/ui.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 import("gni/angle.gni")
+if (is_android) {
+  # android/rules.gni can only be imported for Android targets
+  import("//build/config/android/rules.gni")
+}
 
 declare_args() {
   # Use the PCI lib to collect GPU information on Linux.
@@ -74,11 +78,10 @@ config("internal_config") {
     "EGL_EGLEXT_PROTOTYPES",
   ]
 
-  if (current_cpu == "x86" || current_cpu == "arm") {
-    defines += [ "ANGLE_IS_32_BIT_CPU" ]
-  }
-  if (current_cpu == "x64" || current_cpu == "arm64") {
+  if (angle_64bit_current_cpu) {
     defines += [ "ANGLE_IS_64_BIT_CPU" ]
+  } else {
+    defines += [ "ANGLE_IS_32_BIT_CPU" ]
   }
 }
 
@@ -99,8 +102,19 @@ config("extra_warnings") {
     cflags += [
       # Remove when crbug.com/428099 is resolved.
       "-Winconsistent-missing-override",
+      "-Wunneeded-internal-declaration",
+      "-Wnon-virtual-dtor",
     ]
   }
+}
+
+# This config adds build-ids to the associated library.
+# -Wl is a special option that indicates that clang should pass the associated
+# option --build-id to the linker. This will cause a build-id section to be added
+# to the associated library. The build-id makes it possible for a debugger to
+# find the right symbol file to use.
+config("build_id_config") {
+  ldflags = [ "-Wl,--build-id" ]
 }
 
 if (is_win) {
@@ -421,17 +435,25 @@ if (angle_enable_vulkan) {
     public_deps = [
       "$angle_root/third_party/vulkan-validation-layers:vulkan_headers",
     ]
-    data_deps = [
-      "$angle_root/third_party/vulkan-validation-layers:vulkan_validation_layers",
-    ]
     public_configs = [
       "$angle_root/third_party/glslang:glslang_config",
       "$angle_root/third_party/vulkan-validation-layers:vulkan_config",
     ]
+    data_deps = []
     if (!is_android) {
       deps += [ "$angle_root/third_party/vulkan-validation-layers:libvulkan" ]
-      data_deps += [ "$angle_root/third_party/vulkan-validation-layers:vulkan_gen_json_files" ]
-      public_configs += [ "$angle_root/third_party/vulkan-validation-layers:vulkan_loader_config" ]
+      data_deps +=
+          [ "$angle_root/third_party/vulkan-validation-layers:VkICD_mock_icd" ]
+      public_configs += [
+        "$angle_root/third_party/vulkan-validation-layers:vulkan_loader_config",
+      ]
+    }
+
+    if (angle_enable_vulkan_validation_layers) {
+      data_deps += [ "$angle_root/third_party/vulkan-validation-layers:vulkan_validation_layers" ]
+      if (!is_android) {
+        data_deps += [ "$angle_root/third_party/vulkan-validation-layers:vulkan_gen_json_files" ]
+      }
     }
   }
 }
@@ -508,10 +530,12 @@ static_library("libANGLE") {
       sources += rebase_path(gles_gypi.libangle_gl_egl_dl_sources, ".", "src")
       sources +=
           rebase_path(gles_gypi.libangle_gl_egl_android_sources, ".", "src")
-      libs += [
-        "android",
-        "log",
-      ]
+      if (ndk_supports_nativewindow) {
+        libs += [ "nativewindow" ]
+      } else {
+        libs += [ "android" ]
+      }
+      libs += [ "log" ]
     }
     if (ozone_platform_gbm) {
       configs += [ ":libdrm" ]
@@ -539,6 +563,10 @@ static_library("libANGLE") {
     deps += [ ":angle_vulkan" ]
     public_deps +=
         [ "$angle_root/third_party/vulkan-validation-layers:vulkan_headers" ]
+
+    # Include generated shaders.
+    import("src/libANGLE/renderer/vulkan/vk_internal_shaders_autogen.gni")
+    sources += angle_vulkan_internal_shaders
   }
 
   if (angle_enable_null) {
@@ -593,11 +621,12 @@ shared_library("libGLESv2${angle_libs_suffix}") {
 
   if (is_android) {
     configs -= [ "//build/config/android:hide_all_but_jni_onload" ]
+    configs += [ ":build_id_config" ]
   }
 
   if (is_win) {
-    ldflags =
-        [ "/DEF:" + rebase_path("src/libGLESv2/libGLESv2.def", root_build_dir) ]
+    ldflags = [ "/DEF:" + rebase_path("src/libGLESv2/libGLESv2_autogen.def",
+                                      root_build_dir) ]
   }
 
   if (is_mac && !is_component_build) {
@@ -660,6 +689,7 @@ shared_library("libGLESv1_CM${angle_libs_suffix}") {
 
   if (is_android) {
     configs -= [ "//build/config/android:hide_all_but_jni_onload" ]
+    configs += [ ":build_id_config" ]
   }
 
   if (is_mac && !is_component_build) {
@@ -722,6 +752,7 @@ shared_library("libEGL${angle_libs_suffix}") {
 
   if (is_android) {
     configs -= [ "//build/config/android:hide_all_but_jni_onload" ]
+    configs += [ ":build_id_config" ]
   }
   configs -= angle_undefine_configs
   configs += [
@@ -810,9 +841,10 @@ foreach(is_shared_library,
       sources += rebase_path(util_gypi.util_win32_sources, ".", "util")
     }
 
+    libs = []
     if (is_linux) {
       sources += rebase_path(util_gypi.util_linux_sources, ".", "util")
-      libs = [
+      libs += [
         "rt",
         "dl",
       ]
@@ -820,7 +852,7 @@ foreach(is_shared_library,
 
     if (is_mac) {
       sources += rebase_path(util_gypi.util_osx_sources, ".", "util")
-      libs = [
+      libs += [
         "AppKit.framework",
         "QuartzCore.framework",
       ]
@@ -839,10 +871,12 @@ foreach(is_shared_library,
       set_sources_assignment_filter([])
       sources += rebase_path(util_gypi.util_linux_sources, ".", "util")
       sources += rebase_path(util_gypi.util_android_sources, ".", "util")
-      libs = [
-        "android",
-        "log",
-      ]
+      if (ndk_supports_nativewindow) {
+        libs += [ "nativewindow" ]
+      } else {
+        libs += [ "android" ]
+      }
+      libs += [ "log" ]
     }
 
     if (use_ozone) {
@@ -895,4 +929,31 @@ executable("angle_shader_translator") {
     ":translator",
     "//build/config:exe_and_shlib_deps",
   ]
+}
+
+if (is_android) {
+  # Package ANGLE libraries for pre-installed system image
+  android_apk("angle_apk") {
+    if (build_apk_secondary_abi && android_64bit_target_cpu) {
+      secondary_abi_shared_libraries = [
+        "//third_party/angle:libEGL${angle_libs_suffix}($android_secondary_abi_toolchain)",
+        "//third_party/angle:libGLESv1_CM${angle_libs_suffix}($android_secondary_abi_toolchain)",
+        "//third_party/angle:libGLESv2${angle_libs_suffix}($android_secondary_abi_toolchain)",
+      ]
+    }
+
+    android_manifest = "AndroidManifest.xml"
+
+    # requires_sdk_api_level_23 tells the apk tool that this apk is only
+    # supported on M or later releases (which is true for Vulkan).
+    # Allows tool to optimize for that.
+    requires_sdk_api_level_23 = true
+    apk_name = "AngleLibraries"
+    uncompress_shared_libraries = true
+    shared_libraries = [
+      "//third_party/angle:libEGL${angle_libs_suffix}",
+      "//third_party/angle:libGLESv1_CM${angle_libs_suffix}",
+      "//third_party/angle:libGLESv2${angle_libs_suffix}",
+    ]
+  }
 }

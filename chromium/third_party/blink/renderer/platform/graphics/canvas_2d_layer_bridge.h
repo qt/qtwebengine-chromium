@@ -32,7 +32,7 @@
 #include "base/memory/weak_ptr.h"
 #include "build/build_config.h"
 #include "cc/layers/texture_layer_client.h"
-#include "third_party/blink/public/platform/web_external_texture_layer.h"
+#include "third_party/blink/renderer/platform/geometry/float_rect.h"
 #include "third_party/blink/renderer/platform/geometry/int_size.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_color_params.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_resource_host.h"
@@ -49,6 +49,11 @@
 #include "ui/gfx/color_space.h"
 
 struct SkImageInfo;
+
+namespace cc {
+class Layer;
+class TextureLayer;
+}
 
 namespace blink {
 
@@ -96,7 +101,7 @@ class PLATFORM_EXPORT Canvas2DLayerBridge : public cc::TextureLayerClient {
   void SetIsHidden(bool);
   void DidDraw(const FloatRect&);
   void DoPaintInvalidation(const FloatRect& dirty_rect);
-  WebLayer* Layer();
+  cc::Layer* Layer();
   bool Restore();
   void DisableDeferral(DisableDeferralReason);
   void SetFilterQuality(SkFilterQuality);
@@ -121,7 +126,6 @@ class PLATFORM_EXPORT Canvas2DLayerBridge : public cc::TextureLayerClient {
     resource_host_ = host;
   }
 
-  void BeginDestruction();
   void Hibernate();
   bool IsHibernating() const { return hibernation_image_; }
   const CanvasColorParams& ColorParams() const { return color_params_; }
@@ -138,7 +142,7 @@ class PLATFORM_EXPORT Canvas2DLayerBridge : public cc::TextureLayerClient {
   enum HibernationEvent {
     kHibernationScheduled = 0,
     kHibernationAbortedDueToDestructionWhileHibernatePending = 1,
-    kHibernationAbortedDueToPendingDestruction = 2,
+    // kHibernationAbortedDueToPendingDestruction = 2, (obsolete)
     kHibernationAbortedDueToVisibilityChange = 3,
     kHibernationAbortedDueGpuContextLoss = 4,
     kHibernationAbortedDueToSwitchToUnacceleratedRendering = 5,
@@ -181,15 +185,13 @@ class PLATFORM_EXPORT Canvas2DLayerBridge : public cc::TextureLayerClient {
   std::unique_ptr<CanvasResourceProvider> resource_provider_;
   std::unique_ptr<PaintRecorder> recorder_;
   sk_sp<SkImage> hibernation_image_;
-  std::unique_ptr<WebExternalTextureLayer> layer_;
+  scoped_refptr<cc::TextureLayer> layer_;
   std::unique_ptr<SharedContextRateLimiter> rate_limiter_;
   std::unique_ptr<Logger> logger_;
-  base::WeakPtrFactory<Canvas2DLayerBridge> weak_ptr_factory_;
   int msaa_sample_count_;
   int frames_since_last_commit_ = 0;
   size_t bytes_allocated_;
   bool have_recorded_draw_commands_;
-  bool destruction_in_progress_;
   SkFilterQuality filter_quality_;
   bool is_hidden_;
   bool is_deferral_enabled_;
@@ -216,6 +218,8 @@ class PLATFORM_EXPORT Canvas2DLayerBridge : public cc::TextureLayerClient {
   mutable SnapshotState snapshot_state_;
 
   CanvasResourceHost* resource_host_;
+
+  base::WeakPtrFactory<Canvas2DLayerBridge> weak_ptr_factory_;
 };
 
 }  // namespace blink

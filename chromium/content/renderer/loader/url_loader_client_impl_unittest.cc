@@ -7,13 +7,14 @@
 #include <vector>
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
-#include "content/public/common/weak_wrapper_shared_url_loader_factory.h"
+#include "content/renderer/loader/navigation_response_override_parameters.h"
 #include "content/renderer/loader/resource_dispatcher.h"
 #include "content/renderer/loader/test_request_peer.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/interface_ptr.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/redirect_info.h"
+#include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
@@ -30,9 +31,9 @@ class URLLoaderClientImplTest : public ::testing::Test,
         TRAFFIC_ANNOTATION_FOR_TESTS, false, false,
         std::make_unique<TestRequestPeer>(dispatcher_.get(),
                                           &request_peer_context_),
-        base::MakeRefCounted<WeakWrapperSharedURLLoaderFactory>(this),
+        base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(this),
         std::vector<std::unique_ptr<URLLoaderThrottle>>(),
-        network::mojom::URLLoaderClientEndpointsPtr(),
+        nullptr /* navigation_response_override_params */,
         nullptr /* continue_navigation_function */);
     request_peer_context_.request_id = request_id_;
 
@@ -62,7 +63,7 @@ class URLLoaderClientImplTest : public ::testing::Test,
   static MojoCreateDataPipeOptions DataPipeOptions() {
     MojoCreateDataPipeOptions options;
     options.struct_size = sizeof(MojoCreateDataPipeOptions);
-    options.flags = MOJO_CREATE_DATA_PIPE_OPTIONS_FLAG_NONE;
+    options.flags = MOJO_CREATE_DATA_PIPE_FLAG_NONE;
     options.element_num_bytes = 1;
     options.capacity_num_bytes = 4096;
     return options;

@@ -37,13 +37,14 @@ NGTextFragmentBuilder::NGTextFragmentBuilder(NGInlineNode node,
 
 void NGTextFragmentBuilder::SetItem(
     NGPhysicalTextFragment::NGTextType text_type,
+    const NGInlineItemsData& items_data,
     NGInlineItemResult* item_result,
     LayoutUnit line_height) {
   DCHECK(item_result);
   DCHECK(item_result->item->Style());
 
   text_type_ = text_type;
-  text_ = inline_node_.Text();
+  text_ = items_data.text_content;
   item_index_ = item_result->item_index;
   start_offset_ = item_result->start_offset;
   end_offset_ = item_result->end_offset;
@@ -71,11 +72,8 @@ void NGTextFragmentBuilder::SetText(
   end_offset_ = shape_result->EndIndexForResult();
   SetStyle(style, is_ellipsis_style ? NGStyleVariant::kEllipsis
                                     : NGStyleVariant::kStandard);
-  FontBaseline baseline_type = style->IsHorizontalWritingMode()
-                                   ? kAlphabeticBaseline
-                                   : kIdeographicBaseline;
   size_ = {shape_result->SnappedWidth(),
-           NGLineHeightMetrics(*style, baseline_type).LineHeight()};
+           NGLineHeightMetrics(*style).LineHeight()};
   shape_result_ = std::move(shape_result);
   layout_object_ = layout_object;
   end_effect_ = NGTextEndEffect::kNone;

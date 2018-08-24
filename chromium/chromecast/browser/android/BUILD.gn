@@ -112,6 +112,7 @@ android_library("cast_shell_java") {
     "$java_src_dir/org/chromium/chromecast/shell/CastWebContentsIntentUtils.java",
     "$java_src_dir/org/chromium/chromecast/shell/CastWebContentsService.java",
     "$java_src_dir/org/chromium/chromecast/shell/CastWebContentsSurfaceHelper.java",
+    "$java_src_dir/org/chromium/chromecast/shell/CastWebContentsView.java",
     "$java_src_dir/org/chromium/chromecast/shell/LogcatElision.java",
     "$java_src_dir/org/chromium/chromecast/shell/ElidedLogcatProvider.java",
   ]
@@ -150,6 +151,9 @@ android_library("cast_shell_java") {
   if (is_android_things_non_public) {
     java_files += [ "$java_src_dir/org/chromium/chromecast/shell/CastSysInfoAndroidThings.java" ]
     deps += [ "//chromecast/internal/android/prebuilt/things:support_lib_java" ]
+    if (enable_assistant) {
+      deps += [ "//chromecast/internal/assistant/ui:boot_parameters_java" ]
+    }
   }
 }
 
@@ -160,6 +164,7 @@ junit_binary("cast_shell_junit_tests") {
     "junit/src/org/chromium/chromecast/shell/CastWebContentsActivityTest.java",
     "junit/src/org/chromium/chromecast/shell/CastWebContentsComponentTest.java",
     "junit/src/org/chromium/chromecast/shell/CastWebContentsIntentUtilsTest.java",
+    "junit/src/org/chromium/chromecast/shell/CastWebContentsSurfaceHelperTest.java",
     "junit/src/org/chromium/chromecast/shell/LocalBroadcastReceiverScopeTest.java",
     "junit/src/org/chromium/chromecast/shell/LogcatElisionUnitTest.java",
     "junit/src/org/chromium/chromecast/shell/ElidedLogcatProviderUnitTest.java",
@@ -171,6 +176,7 @@ junit_binary("cast_shell_junit_tests") {
     ":cast_intents_java",
     ":cast_shell_java",
     "//base:base_java_test_support",
+    "//base:base_junit_test_support",
     "//content/public/android:content_java",
     "//third_party/android_tools:android_support_core_utils_java",
     "//third_party/hamcrest:hamcrest_java",

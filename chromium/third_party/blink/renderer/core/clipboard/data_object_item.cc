@@ -31,8 +31,7 @@
 #include "third_party/blink/renderer/core/clipboard/data_object_item.h"
 
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_clipboard.h"
-#include "third_party/blink/renderer/core/clipboard/pasteboard.h"
+#include "third_party/blink/renderer/core/clipboard/system_clipboard.h"
 #include "third_party/blink/renderer/core/fileapi/blob.h"
 #include "third_party/blink/renderer/platform/clipboard/clipboard_mime_types.h"
 #include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
@@ -93,8 +92,8 @@ DataObjectItem* DataObjectItem::CreateFromSharedBuffer(
   return item;
 }
 
-DataObjectItem* DataObjectItem::CreateFromPasteboard(const String& type,
-                                                     uint64_t sequence_number) {
+DataObjectItem* DataObjectItem::CreateFromClipboard(const String& type,
+                                                    uint64_t sequence_number) {
   if (type == kMimeTypeImagePng)
     return new DataObjectItem(kFileKind, type, sequence_number);
   return new DataObjectItem(kStringKind, type, sequence_number);
@@ -106,7 +105,7 @@ DataObjectItem::DataObjectItem(ItemKind kind, const String& type)
 DataObjectItem::DataObjectItem(ItemKind kind,
                                const String& type,
                                uint64_t sequence_number)
-    : source_(kPasteboardSource),
+    : source_(kClipboardSource),
       kind_(kind),
       type_(type),
       sequence_number_(sequence_number) {}
@@ -125,14 +124,14 @@ File* DataObjectItem::GetAsFile() const {
     return nullptr;
   }
 
-  DCHECK_EQ(source_, kPasteboardSource);
+  DCHECK_EQ(source_, kClipboardSource);
   if (GetType() == kMimeTypeImagePng) {
-    WebBlobInfo blob_info = Platform::Current()->Clipboard()->ReadImage(
-        mojom::ClipboardBuffer::kStandard);
-    if (blob_info.size() < 0)
+    scoped_refptr<BlobDataHandle> blob =
+        SystemClipboard::GetInstance().ReadImage(
+            mojom::ClipboardBuffer::kStandard);
+    if (!blob)
       return nullptr;
-    return File::Create("image.png", CurrentTimeMS(),
-                        blob_info.GetBlobHandle());
+    return File::Create("image.png", CurrentTimeMS(), std::move(blob));
   }
 
   return nullptr;
@@ -144,26 +143,24 @@ String DataObjectItem::GetAsString() const {
   if (source_ == kInternalSource)
     return data_;
 
-  DCHECK_EQ(source_, kPasteboardSource);
+  DCHECK_EQ(source_, kClipboardSource);
 
-  mojom::ClipboardBuffer buffer = Pasteboard::GeneralPasteboard()->GetBuffer();
   String data;
   // This is ugly but there's no real alternative.
   if (type_ == kMimeTypeTextPlain) {
-    data = Platform::Current()->Clipboard()->ReadPlainText(buffer);
+    data = SystemClipboard::GetInstance().ReadPlainText();
   } else if (type_ == kMimeTypeTextRTF) {
-    data = Platform::Current()->Clipboard()->ReadRTF(buffer);
+    data = SystemClipboard::GetInstance().ReadRTF();
   } else if (type_ == kMimeTypeTextHTML) {
-    WebURL ignored_source_url;
+    KURL ignored_source_url;
     unsigned ignored;
-    data = Platform::Current()->Clipboard()->ReadHTML(
-        buffer, &ignored_source_url, &ignored, &ignored);
+    data = SystemClipboard::GetInstance().ReadHTML(ignored_source_url, ignored,
+                                                   ignored);
   } else {
-    data = Platform::Current()->Clipboard()->ReadCustomData(buffer, type_);
+    data = SystemClipboard::GetInstance().ReadCustomData(type_);
   }
 
-  return Platform::Current()->Clipboard()->SequenceNumber(buffer) ==
-                 sequence_number_
+  return SystemClipboard::GetInstance().SequenceNumber() == sequence_number_
              ? data
              : String();
 }

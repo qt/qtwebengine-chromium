@@ -98,7 +98,7 @@ target("jumbo_" + modules_target_type, "modules") {
     "//third_party/blink/renderer/modules/bluetooth",
     "//third_party/blink/renderer/modules/broadcastchannel",
     "//third_party/blink/renderer/modules/budget",
-    "//third_party/blink/renderer/modules/cachestorage",
+    "//third_party/blink/renderer/modules/cache_storage",
     "//third_party/blink/renderer/modules/canvas",
     "//third_party/blink/renderer/modules/clipboard",
     "//third_party/blink/renderer/modules/cookie_store",
@@ -238,7 +238,7 @@ jumbo_source_set("unit_tests") {
     "background_fetch/background_fetch_icon_loader_test.cc",
     "background_fetch/background_fetch_manager_test.cc",
     "background_fetch/background_fetch_settled_fetches_test.cc",
-    "cachestorage/cache_test.cc",
+    "cache_storage/cache_test.cc",
     "canvas/canvas2d/canvas_rendering_context_2d_api_test.cc",
     "canvas/canvas2d/canvas_rendering_context_2d_test.cc",
     "canvas/htmlcanvas/html_canvas_element_module_test.cc",
@@ -288,7 +288,6 @@ jumbo_source_set("unit_tests") {
     "peerconnection/rtc_data_channel_test.cc",
     "peerconnection/rtc_peer_connection_test.cc",
     "presentation/mock_presentation_service.h",
-    "presentation/mock_web_presentation_client.h",
     "presentation/presentation_availability_state_test.cc",
     "presentation/presentation_availability_test.cc",
     "presentation/presentation_receiver_test.cc",
@@ -311,8 +310,8 @@ jumbo_source_set("unit_tests") {
     "webaudio/script_processor_node_test.cc",
     "webaudio/stereo_panner_node_test.cc",
     "webdatabase/quota_tracker_test.cc",
-    "websockets/document_web_socket_channel_test.cc",
-    "websockets/dom_web_socket_test.cc",
+    "websockets/dom_websocket_test.cc",
+    "websockets/websocket_channel_impl_test.cc",
   ]
 
   configs += [

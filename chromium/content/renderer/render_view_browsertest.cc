@@ -440,18 +440,21 @@ class RenderViewImplBlinkSettingsTest : public RenderViewImplTest {
 class RenderViewImplScaleFactorTest : public RenderViewImplBlinkSettingsTest {
  protected:
   void SetDeviceScaleFactor(float dsf) {
-    ResizeParams params;
-    params.screen_info.device_scale_factor = dsf;
-    params.new_size = gfx::Size(100, 100);
-    params.compositor_viewport_pixel_size = gfx::Size(200, 200);
-    params.visible_viewport_size = params.new_size;
-    params.auto_resize_enabled = view()->auto_resize_mode();
-    params.auto_resize_sequence_number = view()->auto_resize_sequence_number();
-    params.min_size_for_auto_resize = view()->min_size_for_auto_resize();
-    params.max_size_for_auto_resize = view()->max_size_for_auto_resize();
-    params.needs_resize_ack = false;
-    params.content_source_id = view()->GetContentSourceId();
-    view()->OnResize(params);
+    VisualProperties visual_properties;
+    visual_properties.screen_info.device_scale_factor = dsf;
+    visual_properties.new_size = gfx::Size(100, 100);
+    visual_properties.compositor_viewport_pixel_size = gfx::Size(200, 200);
+    visual_properties.visible_viewport_size = visual_properties.new_size;
+    visual_properties.auto_resize_enabled = view()->auto_resize_mode();
+    visual_properties.capture_sequence_number =
+        view()->capture_sequence_number();
+    visual_properties.min_size_for_auto_resize =
+        view()->min_size_for_auto_resize();
+    visual_properties.max_size_for_auto_resize =
+        view()->max_size_for_auto_resize();
+    visual_properties.local_surface_id = base::Optional<viz::LocalSurfaceId>(
+        viz::LocalSurfaceId(1, 1, base::UnguessableToken::Create()));
+    view()->OnSynchronizeVisualProperties(visual_properties);
     ASSERT_EQ(dsf, view()->GetWebScreenInfo().device_scale_factor);
     ASSERT_EQ(dsf, view()->GetOriginalScreenInfo().device_scale_factor);
   }
@@ -1497,8 +1500,7 @@ TEST_F(RenderViewImplTest, ContextMenu) {
   // Create a right click in the center of the iframe. (I'm hoping this will
   // make this a bit more robust in case of some other formatting or other bug.)
   WebMouseEvent mouse_event(WebInputEvent::kMouseDown,
-                            WebInputEvent::kNoModifiers,
-                            ui::EventTimeStampToSeconds(ui::EventTimeForNow()));
+                            WebInputEvent::kNoModifiers, ui::EventTimeForNow());
   mouse_event.button = WebMouseEvent::Button::kRight;
   mouse_event.SetPositionInWidget(250, 250);
   mouse_event.SetPositionInScreen(250, 250);
@@ -1523,9 +1525,9 @@ TEST_F(RenderViewImplTest, AndroidContextMenuSelectionOrdering) {
 
   // Create a long press in the center of the iframe. (I'm hoping this will
   // make this a bit more robust in case of some other formatting or other bug.)
-  WebGestureEvent gesture_event(
-      WebInputEvent::kGestureLongPress, WebInputEvent::kNoModifiers,
-      ui::EventTimeStampToSeconds(ui::EventTimeForNow()));
+  WebGestureEvent gesture_event(WebInputEvent::kGestureLongPress,
+                                WebInputEvent::kNoModifiers,
+                                ui::EventTimeForNow());
   gesture_event.SetPositionInWidget(gfx::PointF(250, 250));
 
   SendWebGestureEvent(gesture_event);
@@ -1698,8 +1700,9 @@ TEST_F(RenderViewImplTest, SetEditableSelectionAndComposition) {
            "</html>");
   ExecuteJavaScriptForTests("document.getElementById('test1').focus();");
   frame()->SetEditableSelectionOffsets(4, 8);
-  const std::vector<blink::WebImeTextSpan> empty_ime_text_span;
+  const std::vector<ui::ImeTextSpan> empty_ime_text_span;
   frame()->SetCompositionFromExistingText(7, 10, empty_ime_text_span);
+  base::RunLoop().RunUntilIdle();
   blink::WebInputMethodController* controller =
       frame()->GetWebFrame()->GetInputMethodController();
   blink::WebTextInputInfo info = controller->TextInputInfo();
@@ -1708,6 +1711,7 @@ TEST_F(RenderViewImplTest, SetEditableSelectionAndComposition) {
   EXPECT_EQ(7, info.composition_start);
   EXPECT_EQ(10, info.composition_end);
   frame()->CollapseSelection();
+  base::RunLoop().RunUntilIdle();
   info = controller->TextInputInfo();
   EXPECT_EQ(8, info.selection_start);
   EXPECT_EQ(8, info.selection_end);
@@ -1725,6 +1729,7 @@ TEST_F(RenderViewImplTest, OnExtendSelectionAndDelete) {
   ExecuteJavaScriptForTests("document.getElementById('test1').focus();");
   frame()->SetEditableSelectionOffsets(10, 10);
   frame()->ExtendSelectionAndDelete(3, 4);
+  base::RunLoop().RunUntilIdle();
   blink::WebInputMethodController* controller =
       frame()->GetWebFrame()->GetInputMethodController();
   blink::WebTextInputInfo info = controller->TextInputInfo();
@@ -1733,6 +1738,7 @@ TEST_F(RenderViewImplTest, OnExtendSelectionAndDelete) {
   EXPECT_EQ(7, info.selection_end);
   frame()->SetEditableSelectionOffsets(4, 8);
   frame()->ExtendSelectionAndDelete(2, 5);
+  base::RunLoop().RunUntilIdle();
   info = controller->TextInputInfo();
   EXPECT_EQ("abuvwxyz", info.value);
   EXPECT_EQ(2, info.selection_start);
@@ -1753,6 +1759,7 @@ TEST_F(RenderViewImplTest, OnDeleteSurroundingText) {
 
   frame()->SetEditableSelectionOffsets(10, 10);
   frame()->DeleteSurroundingText(3, 4);
+  base::RunLoop().RunUntilIdle();
   blink::WebInputMethodController* controller =
       frame()->GetWebFrame()->GetInputMethodController();
   blink::WebTextInputInfo info = controller->TextInputInfo();
@@ -1762,6 +1769,7 @@ TEST_F(RenderViewImplTest, OnDeleteSurroundingText) {
 
   frame()->SetEditableSelectionOffsets(4, 8);
   frame()->DeleteSurroundingText(2, 5);
+  base::RunLoop().RunUntilIdle();
   info = controller->TextInputInfo();
   EXPECT_EQ("abefgouvwxyz", info.value);
   EXPECT_EQ(2, info.selection_start);
@@ -1769,18 +1777,21 @@ TEST_F(RenderViewImplTest, OnDeleteSurroundingText) {
 
   frame()->SetEditableSelectionOffsets(5, 5);
   frame()->DeleteSurroundingText(10, 0);
+  base::RunLoop().RunUntilIdle();
   info = controller->TextInputInfo();
   EXPECT_EQ("ouvwxyz", info.value);
   EXPECT_EQ(0, info.selection_start);
   EXPECT_EQ(0, info.selection_end);
 
   frame()->DeleteSurroundingText(0, 10);
+  base::RunLoop().RunUntilIdle();
   info = controller->TextInputInfo();
   EXPECT_EQ("", info.value);
   EXPECT_EQ(0, info.selection_start);
   EXPECT_EQ(0, info.selection_end);
 
   frame()->DeleteSurroundingText(10, 10);
+  base::RunLoop().RunUntilIdle();
   info = controller->TextInputInfo();
   EXPECT_EQ("", info.value);
 
@@ -1797,6 +1808,7 @@ TEST_F(RenderViewImplTest, OnDeleteSurroundingTextInCodePoints) {
 
   frame()->SetEditableSelectionOffsets(4, 4);
   frame()->DeleteSurroundingTextInCodePoints(2, 2);
+  base::RunLoop().RunUntilIdle();
   blink::WebInputMethodController* controller =
       frame()->GetWebFrame()->GetInputMethodController();
   blink::WebTextInputInfo info = controller->TextInputInfo();
@@ -1807,6 +1819,7 @@ TEST_F(RenderViewImplTest, OnDeleteSurroundingTextInCodePoints) {
 
   frame()->SetEditableSelectionOffsets(1, 3);
   frame()->DeleteSurroundingTextInCodePoints(1, 4);
+  base::RunLoop().RunUntilIdle();
   info = controller->TextInputInfo();
   EXPECT_EQ("deh", info.value);
   EXPECT_EQ(0, info.selection_start);

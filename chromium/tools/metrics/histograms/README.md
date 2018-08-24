@@ -8,7 +8,39 @@ range and/or the range is not possible to specify a priori).
 
 [TOC]
 
-## Emitting to Histograms
+## Coding (Emitting to Histograms)
+
+### Don't Use the Same Histogram Logging Call in Multiple Places
+
+These logging macros and functions have long names and sometimes include extra
+parameters (defining the number of buckets for example).  Use a helper function
+if possible.  This leads to shorter, more readable code that's also more
+resilient to problems that could be introduced when making changes.  (One could,
+for example, erroneously change the bucketing of the histogram in one call but
+not the other.)
+
+### Use Fixed Strings When Using Histogram Macros
+
+When using histogram macros (calls such as `UMA_HISTOGRAM_ENUMERATION`), you're
+not allow to construct your string dynamically so that it can vary at a
+callsite.  At a given callsite (preferably you have only one), the string should
+be the same every time the macro is called.  If you need to use dynamic names,
+use the functions in histogram_functions.h instead of the macros.
+
+### Don't Use Same String in Multiple Places
+
+If you must use the histogram name in multiple places, use a compile-time
+constant of appropriate scope that can be referenced everywhere. Using inline
+strings in multiple places can lead to errors if you ever need to revise the
+name and you update one one location and forget another.
+
+### Efficiency
+
+Don't worry about it.  In general, the histogram code is highly optimized.  Do
+not be concerned about the processing cost of emitting to a histogram (unless
+you're using [sparse histograms](#When-To-Use-Sparse-Histograms)).
+
+## Picking Your Histogram Type
 
 ### Directly Measure What You Want
 
@@ -25,12 +57,6 @@ come with timestamps--we pair them up appropriately.  If you simply add up the
 two histograms to get the total histogram, you're implicitly assuming those
 values are independent, which may not be the case.  Directly measure what you
 care about; don't try to derive it from other data.
-
-### Efficiency
-
-In general, the histogram code is highly optimized.  Do not be concerned about
-the processing cost of emitting to a histogram (unless you're using [sparse
-histograms](#When-To-Use-Sparse-Histograms)).
 
 ### Enum Histograms
 
@@ -165,10 +191,11 @@ their buckets).
 
 ### Local Histograms
 
-Histograms can be added via [Local macros](https://codesearch.chromium.org/chromium/src/base/metrics/histogram_macros_local.h). These will still record
-locally, but will not be uploaded to UMA and will therefore not be available
-for analysis. This can be useful for metrics only needed for local debugging.
-We don't recommend using local histograms outside of that scenario.
+Histograms can be added via [Local macros](https://codesearch.chromium.org/chromium/src/base/metrics/histogram_macros_local.h).
+These will still record locally, but will not be uploaded to UMA and will
+therefore not be available for analysis. This can be useful for metrics only
+needed for local debugging. We don't recommend using local histograms outside
+of that scenario.
 
 ### Multidimensional Histograms
 
@@ -181,7 +208,56 @@ as well as the other three permutations.
 There is no general purpose solution for this type of analysis. We suggest
 using the workaround of using an enum of length MxN, where you log each unique
 pair {state, feature} as a separate entry in the same enum. If this causes a
-large explosion in data (i.e. >100 enum entries), a [sparse histogram](#When-To-Use-Sparse-Histograms) may be appropriate. If you are unsure of the best way to proceed, please contact someone from the OWNERS file.
+large explosion in data (i.e. >100 enum entries), a [sparse histogram](#When-To-Use-Sparse-Histograms)
+may be appropriate. If you are unsure of the best way to proceed, please
+contact someone from the OWNERS file.
+
+## Histogram Expiry
+
+Histogram expiry is specified by **'expires_after'** attribute in histogram
+descriptions in histograms.xml. The attribute can be specified as date in
+**YYYY-MM-DD** format or as Chrome milestone in **M**\*(e.g. M68) format. After
+a histogram expires, it will not be recorded (nor uploaded to the UMA servers).
+The code to record it becomes dead code, and should be removed from the
+codebase along with marking the histogram definition as obsolete. However, if
+histogram would remain useful, the expiration should be extended accordingly
+before it becomes expired. If histogram you care about already expired, see
+[Expired Histogram Whitelist](###Expired histogram whitelist).
+
+For all the new histograms the use of expiry attribute will be strongly
+encouraged and enforced by Chrome metrics team through reviews.
+
+#### How to choose expiry for histograms
+
+For new histograms if it is used for launching a project for which the timeline
+is known then pick an expiry based on your project timeline. Otherwise, we
+recommend choosing 3-6 months.
+
+For already existing histograms here are different scenarios:
+
+*   Owner moved to different project - find new owner
+*   Owner doesn’t use it, team doesn’t use it - remove
+*   Not in use now, but maybe useful in the far future - remove
+*   Not in use now, but maybe useful in the near future - pick 3 months or 2
+    milestone ahead
+*   Actively in use now, useful for short term - pick 3-6 month or appropriate
+    number of milestones ahead
+*   Actively in use, seems useful for indefinite time - pick 1 year or more
+
+### Expired histogram notifier
+
+Expired histogram notifier will notify owners in advance by creating crbugs so
+that the owners can extend the lifetime of the histogram if needed or deprecate
+it. It will regularly check all the histograms in histograms.xml and will
+determine expired histograms or histograms expiring soon. Based on that it will
+create or update crbugs that will be assigned to histogram owners.
+
+### Expired histogram whitelist
+
+If a histogram expires but turns out to be useful, you can add histogram name
+to the whitelist until the updated expiration date reaches to the stable
+channel. For adding histogram to the whitelist, see internal documentation
+[Histogram Expiry](https://goto.google.com/histogram-expiry-gdoc)
 
 ## Testing
 
@@ -194,6 +270,17 @@ In addition to testing interactively, you can have unit tests examine the
 values emitted to histograms.  See [histogram_tester.h](https://cs.chromium.org/chromium/src/base/test/histogram_tester.h)
 for details.
 
+## Interpreting the Resulting Data
+
+The top of [go/uma-guide](http://go/uma-guide) has good advice on how to go
+about analyzing and interpreting the results of UMA data uploaded by users.  If
+you're reading this page, you've probably just finished adding a histogram to
+the Chromium source code and you're waiting for users to update their version of
+Chrome to a version that includes your code.  In this case, the best advice is
+to remind you that users who update frequently / quickly are biased.  Best take
+the initial statistics with a grain of salt; they're probably *mostly* right but
+not entirely so.
+
 ## Revising Histograms
 
 When changing the semantics of a histogram (when it's emitted, what buckets
@@ -204,8 +291,8 @@ interpretations of the data and make no sense.
 ## Deleting Histograms
 
 Please delete the code that emits to histograms that are no longer needed.
-Histograms take up memory.  Cleaning up histograms that you no longer care about
-is good!  But see the note below on [Deleting Histogram Entries](#Deleting-Histogram-Entries).
+Histograms take up memory.  Cleaning up histograms that you no longer care
+about is good!  But see the note below on [Deleting Histogram Entries](#Deleting-Histogram-Entries).
 
 ## Documenting Histograms
 
@@ -227,8 +314,8 @@ with your feature.  Please add a sentence or two of background if necessary.
 
 It is good practice to note caveats associated with your histogram in this
 section, such as which platforms are supported (if the set of supported
-platforms is surprising).  E.g., a desktop feature that happens not to be logged
-on Mac.
+platforms is surprising).  E.g., a desktop feature that happens not to be
+logged on Mac.
 
 ### State When It Is Recorded
 

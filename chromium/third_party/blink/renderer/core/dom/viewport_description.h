@@ -29,6 +29,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_DOM_VIEWPORT_DESCRIPTION_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_DOM_VIEWPORT_DESCRIPTION_H_
 
+#include "base/optional.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/frame/page_scale_constraints.h"
 #include "third_party/blink/renderer/platform/geometry/float_size.h"
@@ -64,6 +65,20 @@ struct CORE_EXPORT ViewportDescription {
     kXhtmlMobileProfile = 6,
 
     kTypeCount = 7
+  };
+
+  // Stores the different possible |viewport-fit| configurations.
+  enum class ViewportFit {
+    // No effect - the whole web page is viewable (default).
+    kAuto = 0,
+
+    // The initial layout viewport and the visual viewport are set to the
+    // largest rectangle which is inscribed in the display of the device.
+    kContain,
+
+    // The initial layout viewport and the visual viewport are set to the
+    // circumscribed rectangle of the physical screen of the device.
+    kCover,
   };
 
   enum {
@@ -118,6 +133,11 @@ struct CORE_EXPORT ViewportDescription {
   bool max_zoom_is_explicit;
   bool user_zoom_is_explicit;
 
+  ViewportFit GetViewportFit() const {
+    return viewport_fit_.value_or(ViewportFit::kAuto);
+  }
+  void SetViewportFit(ViewportFit value) { viewport_fit_ = value; }
+
   bool operator==(const ViewportDescription& other) const {
     // Used for figuring out whether to reset the viewport or not,
     // thus we are not taking type into account.
@@ -131,7 +151,8 @@ struct CORE_EXPORT ViewportDescription {
            zoom_is_explicit == other.zoom_is_explicit &&
            min_zoom_is_explicit == other.min_zoom_is_explicit &&
            max_zoom_is_explicit == other.max_zoom_is_explicit &&
-           user_zoom_is_explicit == other.user_zoom_is_explicit;
+           user_zoom_is_explicit == other.user_zoom_is_explicit &&
+           viewport_fit_ == other.viewport_fit_;
   }
 
   bool operator!=(const ViewportDescription& other) const {
@@ -155,6 +176,8 @@ struct CORE_EXPORT ViewportDescription {
   static float ResolveViewportLength(const Length&,
                                      const FloatSize& initial_viewport_size,
                                      Direction);
+
+  base::Optional<ViewportFit> viewport_fit_;
 };
 
 }  // namespace blink

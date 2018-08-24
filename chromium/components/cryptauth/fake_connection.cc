@@ -11,11 +11,11 @@
 
 namespace cryptauth {
 
-FakeConnection::FakeConnection(const RemoteDevice& remote_device)
+FakeConnection::FakeConnection(RemoteDeviceRef remote_device)
     : FakeConnection(remote_device, /* should_auto_connect */ true) {}
 
-FakeConnection::FakeConnection(
-    const RemoteDevice& remote_device, bool should_auto_connect)
+FakeConnection::FakeConnection(RemoteDeviceRef remote_device,
+                               bool should_auto_connect)
     : Connection(remote_device), should_auto_connect_(should_auto_connect) {
   if (should_auto_connect_) {
     Connect();
@@ -28,14 +28,18 @@ FakeConnection::~FakeConnection() {
 
 void FakeConnection::Connect() {
   if (should_auto_connect_) {
-    SetStatus(CONNECTED);
+    SetStatus(Status::CONNECTED);
   } else {
-    SetStatus(IN_PROGRESS);
+    SetStatus(Status::IN_PROGRESS);
   }
 }
 
 void FakeConnection::Disconnect() {
-  SetStatus(DISCONNECTED);
+  SetStatus(Status::DISCONNECTED);
+}
+
+std::string FakeConnection::GetDeviceAddress() {
+  return std::string();
 }
 
 void FakeConnection::AddObserver(ConnectionObserver* observer) {
@@ -52,12 +56,12 @@ void FakeConnection::RemoveObserver(ConnectionObserver* observer) {
 
 void FakeConnection::CompleteInProgressConnection(bool success) {
   DCHECK(!should_auto_connect_);
-  DCHECK(status() == IN_PROGRESS);
+  DCHECK(status() == Status::IN_PROGRESS);
 
   if (success) {
-    SetStatus(CONNECTED);
+    SetStatus(Status::CONNECTED);
   } else {
-    SetStatus(DISCONNECTED);
+    SetStatus(Status::DISCONNECTED);
   }
 }
 

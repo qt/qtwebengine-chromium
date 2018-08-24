@@ -15,7 +15,12 @@
  */
 #include "perfetto/tracing/core/shared_memory_abi.h"
 
+#include "perfetto/base/build_config.h"
+#include "perfetto/base/time.h"
+
+#if !PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
 #include <sys/mman.h>
+#endif
 
 #include "perfetto/base/utils.h"
 #include "perfetto/tracing/core/basic_types.h"
@@ -23,6 +28,17 @@
 namespace perfetto {
 
 namespace {
+
+constexpr int kRetryAttempts = 64;
+
+inline void WaitBeforeNextAttempt(int attempt) {
+  if (attempt < kRetryAttempts / 2) {
+    std::this_thread::yield();
+  } else {
+    base::SleepMicroseconds((unsigned(attempt) / 10) * 1000);
+  }
+}
+
 // Returns the largest 4-bytes aligned chunk size <= |page_size| / |divider|
 // for each divider in PageLayout.
 constexpr size_t GetChunkSize(size_t page_size, size_t divider) {
@@ -30,15 +46,17 @@ constexpr size_t GetChunkSize(size_t page_size, size_t divider) {
 }
 
 // Initializer for the const |chunk_sizes_| array.
-std::array<size_t, SharedMemoryABI::kNumPageLayouts> InitChunkSizes(
+std::array<uint16_t, SharedMemoryABI::kNumPageLayouts> InitChunkSizes(
     size_t page_size) {
   static_assert(SharedMemoryABI::kNumPageLayouts ==
                     base::ArraySize(SharedMemoryABI::kNumChunksForLayout),
                 "kNumPageLayouts out of date");
-  std::array<size_t, SharedMemoryABI::kNumPageLayouts> res = {};
+  std::array<uint16_t, SharedMemoryABI::kNumPageLayouts> res = {};
   for (size_t i = 0; i < SharedMemoryABI::kNumPageLayouts; i++) {
     size_t num_chunks = SharedMemoryABI::kNumChunksForLayout[i];
-    res[i] = num_chunks == 0 ? 0 : GetChunkSize(page_size, num_chunks);
+    size_t size = num_chunks == 0 ? 0 : GetChunkSize(page_size, num_chunks);
+    PERFETTO_CHECK(size <= std::numeric_limits<uint16_t>::max());
+    res[i] = static_cast<uint16_t>(size);
   }
   return res;
 }
@@ -46,19 +64,33 @@ std::array<size_t, SharedMemoryABI::kNumPageLayouts> InitChunkSizes(
 }  // namespace
 
 // static
-constexpr size_t SharedMemoryABI::kNumChunksForLayout[];
+constexpr uint32_t SharedMemoryABI::kNumChunksForLayout[];
 constexpr const char* SharedMemoryABI::kChunkStateStr[];
 constexpr const size_t SharedMemoryABI::kInvalidPageIdx;
+constexpr const size_t SharedMemoryABI::kMaxPageSize;
 
-SharedMemoryABI::SharedMemoryABI(uint8_t* start, size_t size, size_t page_size)
-    : start_(start),
-      size_(size),
-      page_size_(page_size),
-      num_pages_(size / page_size),
-      chunk_sizes_(InitChunkSizes(page_size)) {
+SharedMemoryABI::SharedMemoryABI() = default;
+
+SharedMemoryABI::SharedMemoryABI(uint8_t* start,
+                                 size_t size,
+                                 size_t page_size) {
+  Initialize(start, size, page_size);
+}
+
+void SharedMemoryABI::Initialize(uint8_t* start,
+                                 size_t size,
+                                 size_t page_size) {
+  start_ = start;
+  size_ = size;
+  page_size_ = page_size;
+  num_pages_ = size / page_size;
+  chunk_sizes_ = InitChunkSizes(page_size);
   static_assert(sizeof(PageHeader) == 8, "PageHeader size");
   static_assert(sizeof(ChunkHeader) == 8, "ChunkHeader size");
-  static_assert(sizeof(ChunkHeader::PacketsState) == 4, "PacketsState size");
+  static_assert(sizeof(ChunkHeader::chunk_id) == sizeof(ChunkID),
+                "ChunkID size");
+
+  static_assert(sizeof(ChunkHeader::Packets) == 2, "ChunkHeader::Packets size");
   static_assert(alignof(ChunkHeader) == kChunkAlignment,
                 "ChunkHeader alignment");
 
@@ -85,16 +117,19 @@ SharedMemoryABI::SharedMemoryABI(uint8_t* start, size_t size, size_t page_size)
                 "kAllChunksComplete out of sync with kChunkComplete");
 
   // Sanity check the consistency of the kMax... constants.
-  ChunkHeader::Identifier chunk_id = {};
-  PERFETTO_CHECK((chunk_id.writer_id -= 1) == kMaxWriterID);
+  static_assert(sizeof(ChunkHeader::writer_id) == sizeof(WriterID),
+                "WriterID size");
+  ChunkHeader chunk_header{};
+  chunk_header.chunk_id.store(static_cast<uint32_t>(-1));
+  PERFETTO_CHECK(chunk_header.chunk_id.load() == kMaxChunkID);
 
-  PageHeader phdr;
-  phdr.target_buffer.store(-1);
-  PERFETTO_CHECK(phdr.target_buffer.load() >= kMaxTraceBufferID);
+  chunk_header.writer_id.store(static_cast<uint16_t>(-1));
+  PERFETTO_CHECK(kMaxWriterID <= chunk_header.writer_id.load());
 
-  PERFETTO_CHECK(page_size >= 4096);
-  PERFETTO_CHECK(page_size % 4096 == 0);
-  PERFETTO_CHECK(reinterpret_cast<uintptr_t>(start) % 4096 == 0);
+  PERFETTO_CHECK(page_size >= base::kPageSize);
+  PERFETTO_CHECK(page_size <= kMaxPageSize);
+  PERFETTO_CHECK(page_size % base::kPageSize == 0);
+  PERFETTO_CHECK(reinterpret_cast<uintptr_t>(start) % base::kPageSize == 0);
   PERFETTO_CHECK(size % page_size == 0);
 }
 
@@ -104,10 +139,11 @@ SharedMemoryABI::Chunk SharedMemoryABI::GetChunkUnchecked(size_t page_idx,
   const size_t num_chunks = GetNumChunksForLayout(page_layout);
   PERFETTO_DCHECK(chunk_idx < num_chunks);
   // Compute the chunk virtual address and write it into |chunk|.
-  const size_t chunk_size = GetChunkSizeForLayout(page_layout);
+  const uint16_t chunk_size = GetChunkSizeForLayout(page_layout);
   size_t chunk_offset_in_page = sizeof(PageHeader) + chunk_idx * chunk_size;
 
-  Chunk chunk(page_start(page_idx) + chunk_offset_in_page, chunk_size);
+  Chunk chunk(page_start(page_idx) + chunk_offset_in_page, chunk_size,
+              static_cast<uint8_t>(chunk_idx));
   PERFETTO_DCHECK(chunk.end() <= end());
   return chunk;
 }
@@ -115,100 +151,69 @@ SharedMemoryABI::Chunk SharedMemoryABI::GetChunkUnchecked(size_t page_idx,
 SharedMemoryABI::Chunk SharedMemoryABI::TryAcquireChunk(
     size_t page_idx,
     size_t chunk_idx,
-    size_t expected_target_buffer,
     ChunkState desired_chunk_state,
     const ChunkHeader* header) {
   PERFETTO_DCHECK(desired_chunk_state == kChunkBeingRead ||
                   desired_chunk_state == kChunkBeingWritten);
   PageHeader* phdr = page_header(page_idx);
-  uint32_t layout;
-  uint32_t attempts = 1000;
-  do {
-    layout = phdr->layout.load(std::memory_order_acquire);
-    if (__builtin_expect(
-            (layout & kLayoutMask) >> kLayoutShift != kPageBeingPartitioned,
-            true)) {
-      break;
-    }
-    std::this_thread::yield();
-  } while (--attempts);
-  // If |attempts| == 0, |num_chunks| below will become 0 and this function
-  // will return failing.
-  const size_t num_chunks = GetNumChunksForLayout(layout);
+  for (int attempt = 0; attempt < kRetryAttempts; attempt++) {
+    uint32_t layout = phdr->layout.load(std::memory_order_acquire);
+    const size_t num_chunks = GetNumChunksForLayout(layout);
 
-  // The page layout has changed (or the page is free).
-  if (chunk_idx >= num_chunks)
-    return Chunk();
+    // The page layout has changed (or the page is free).
+    if (chunk_idx >= num_chunks)
+      return Chunk();
 
-  // The page has been acquired by a writer that is targeting a different
-  // buffer. The caller has to try with another page.
-  if (phdr->target_buffer.load(std::memory_order_relaxed) !=
-      expected_target_buffer) {
-    return Chunk();
-  }
+    // Verify that the chunk is still in a state that allows the transition to
+    // |desired_chunk_state|. The only allowed transitions are:
+    // 1. kChunkFree -> kChunkBeingWritten (Producer).
+    // 2. kChunkComplete -> kChunkBeingRead (Service).
+    ChunkState expected_chunk_state =
+        desired_chunk_state == kChunkBeingWritten ? kChunkFree : kChunkComplete;
+    auto cur_chunk_state = (layout >> (chunk_idx * kChunkShift)) & kChunkMask;
+    if (cur_chunk_state != expected_chunk_state)
+      return Chunk();
 
-  // Verify that the chunk is still in a state that allows the transition to
-  // |desired_chunk_state|. The only allowed transitions are:
-  // 1. kChunkFree -> kChunkBeingWritten (Producer).
-  // 2. kChunkComplete -> kChunkBeingRead (Service).
-  ChunkState expected_chunk_state =
-      desired_chunk_state == kChunkBeingWritten ? kChunkFree : kChunkComplete;
-  auto cur_chunk_state = (layout >> (chunk_idx * kChunkShift)) & kChunkMask;
-  if (cur_chunk_state != expected_chunk_state)
-    return Chunk();
-
-  uint32_t next_layout = layout;
-  next_layout &= ~(kChunkMask << (chunk_idx * kChunkShift));
-  next_layout |= (desired_chunk_state << (chunk_idx * kChunkShift));
-  if (!phdr->layout.compare_exchange_strong(layout, next_layout,
-                                            std::memory_order_acq_rel)) {
-    // TODO: returning here is too pessimistic. We should look at the returned
-    // |layout| to figure out if some other writer thread took the same chunk
-    // (in which case we should immediately return false) or if they took
-    // another chunk in the same page (in which case we should just retry).
-    return Chunk();
-  }
-
-  // Compute the chunk virtual address and write it into |chunk|.
-  Chunk chunk = GetChunkUnchecked(page_idx, layout, chunk_idx);
-  if (desired_chunk_state == kChunkBeingWritten) {
-    PERFETTO_DCHECK(header);
-    ChunkHeader* new_header = chunk.header();
-    new_header->packets_state.store(header->packets_state,
+    uint32_t next_layout = layout;
+    next_layout &= ~(kChunkMask << (chunk_idx * kChunkShift));
+    next_layout |= (desired_chunk_state << (chunk_idx * kChunkShift));
+    if (phdr->layout.compare_exchange_strong(layout, next_layout,
+                                             std::memory_order_acq_rel)) {
+      // Compute the chunk virtual address and write it into |chunk|.
+      Chunk chunk = GetChunkUnchecked(page_idx, layout, chunk_idx);
+      if (desired_chunk_state == kChunkBeingWritten) {
+        PERFETTO_DCHECK(header);
+        ChunkHeader* new_header = chunk.header();
+        new_header->packets.store(header->packets, std::memory_order_relaxed);
+        new_header->writer_id.store(header->writer_id,
                                     std::memory_order_relaxed);
-    new_header->identifier.store(header->identifier, std::memory_order_release);
+        new_header->chunk_id.store(header->chunk_id, std::memory_order_release);
+      }
+      return chunk;
+    }
+    WaitBeforeNextAttempt(attempt);
   }
-  return chunk;
+  return Chunk();  // All our attempts failed.
 }
 
-bool SharedMemoryABI::TryPartitionPage(size_t page_idx,
-                                       PageLayout layout,
-                                       size_t target_buffer) {
-  PERFETTO_DCHECK(target_buffer <= kMaxTraceBufferID);
+bool SharedMemoryABI::TryPartitionPage(size_t page_idx, PageLayout layout) {
   PERFETTO_DCHECK(layout >= kPageDiv1 && layout <= kPageDiv14);
   uint32_t expected_layout = 0;  // Free page.
-  uint32_t next_layout = (kPageBeingPartitioned << kLayoutShift) & kLayoutMask;
+  uint32_t next_layout = (layout << kLayoutShift) & kLayoutMask;
   PageHeader* phdr = page_header(page_idx);
   if (!phdr->layout.compare_exchange_strong(expected_layout, next_layout,
                                             std::memory_order_acq_rel)) {
     return false;
   }
-
-  // Store any page flag before storing the final |layout|. |layout| is read
-  // with acquire semantics.
-  phdr->target_buffer.store(static_cast<uint16_t>(target_buffer),
-                            std::memory_order_relaxed);
-  phdr->layout.store((layout << kLayoutShift) & kLayoutMask,
-                     std::memory_order_release);
   return true;
 }
 
-size_t SharedMemoryABI::GetFreeChunks(size_t page_idx) {
+uint32_t SharedMemoryABI::GetFreeChunks(size_t page_idx) {
   uint32_t layout =
       page_header(page_idx)->layout.load(std::memory_order_relaxed);
-  const size_t num_chunks = GetNumChunksForLayout(layout);
-  size_t res = 0;
-  for (size_t i = 0; i < num_chunks; i++) {
+  const uint32_t num_chunks = GetNumChunksForLayout(layout);
+  uint32_t res = 0;
+  for (uint32_t i = 0; i < num_chunks; i++) {
     res |= ((layout & kChunkMask) == kChunkFree) ? (1 << i) : 0;
     layout >>= kChunkShift;
   }
@@ -224,10 +229,14 @@ size_t SharedMemoryABI::ReleaseChunk(Chunk chunk,
   size_t chunk_idx;
   std::tie(page_idx, chunk_idx) = GetPageAndChunkIndex(chunk);
 
-  for (int attempt = 0; attempt < 64; attempt++) {
+  for (int attempt = 0; attempt < kRetryAttempts; attempt++) {
     PageHeader* phdr = page_header(page_idx);
     uint32_t layout = phdr->layout.load(std::memory_order_relaxed);
     const size_t page_chunk_size = GetChunkSizeForLayout(layout);
+
+    // TODO(primiano): this should not be a CHECK, because a malicious producer
+    // could crash us by putting the chunk in an invalid state. This should
+    // gracefully fail. Keep a CHECK until then.
     PERFETTO_CHECK(chunk.size() == page_chunk_size);
     const uint32_t chunk_state =
         ((layout >> (chunk_idx * kChunkShift)) & kChunkMask);
@@ -237,16 +246,13 @@ size_t SharedMemoryABI::ReleaseChunk(Chunk chunk,
     // 1. kChunkBeingWritten -> kChunkComplete (Producer).
     // 2. kChunkBeingRead -> kChunkFree (Service).
     ChunkState expected_chunk_state;
-    uint32_t all_chunks_state;
     if (desired_chunk_state == kChunkComplete) {
       expected_chunk_state = kChunkBeingWritten;
-      all_chunks_state = kAllChunksComplete;
     } else {
       expected_chunk_state = kChunkBeingRead;
-      all_chunks_state = kAllChunksFree;
     }
-    const size_t num_chunks = GetNumChunksForLayout(layout);
-    all_chunks_state &= (1 << (num_chunks * kChunkShift)) - 1;
+
+    // TODO(primiano): should not be a CHECK (same rationale of comment above).
     PERFETTO_CHECK(chunk_state == expected_chunk_state);
     uint32_t next_layout = layout;
     next_layout &= ~(kChunkMask << (chunk_idx * kChunkShift));
@@ -254,17 +260,14 @@ size_t SharedMemoryABI::ReleaseChunk(Chunk chunk,
 
     // If we are freeing a chunk and all the other chunks in the page are free
     // we should de-partition the page and mark it as clear.
-    // TODO: maybe even madvise() it?
     if ((next_layout & kAllChunksMask) == kAllChunksFree)
       next_layout = 0;
 
     if (phdr->layout.compare_exchange_strong(layout, next_layout,
                                              std::memory_order_acq_rel)) {
-      return (next_layout & kAllChunksMask) == all_chunks_state
-                 ? page_idx
-                 : kInvalidPageIdx;
+      return page_idx;
     }
-    std::this_thread::yield();
+    WaitBeforeNextAttempt(attempt);
   }
   // Too much contention on this page. Give up. This page will be left pending
   // forever but there isn't much more we can do at this point.
@@ -275,7 +278,7 @@ size_t SharedMemoryABI::ReleaseChunk(Chunk chunk,
 bool SharedMemoryABI::TryAcquireAllChunksForReading(size_t page_idx) {
   PageHeader* phdr = page_header(page_idx);
   uint32_t layout = phdr->layout.load(std::memory_order_relaxed);
-  const size_t num_chunks = GetNumChunksForLayout(layout);
+  const uint32_t num_chunks = GetNumChunksForLayout(layout);
   if (num_chunks == 0)
     return false;
   uint32_t next_layout = layout & kLayoutMask;
@@ -301,21 +304,37 @@ bool SharedMemoryABI::TryAcquireAllChunksForReading(size_t page_idx) {
 void SharedMemoryABI::ReleaseAllChunksAsFree(size_t page_idx) {
   PageHeader* phdr = page_header(page_idx);
   phdr->layout.store(0, std::memory_order_release);
+#if !PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
   uint8_t* page_start = start_ + page_idx * page_size_;
-  // TODO: On Linux/Android this should be MADV_REMOVE if we use
+  // TODO(fmayer): On Linux/Android this should be MADV_REMOVE if we use
   // memfd_create() and tmpfs supports hole punching (need to consult kernel
   // sources).
   int ret = madvise(reinterpret_cast<uint8_t*>(page_start), page_size_,
                     MADV_DONTNEED);
   PERFETTO_DCHECK(ret == 0);
+#endif
 }
 
 SharedMemoryABI::Chunk::Chunk() = default;
 
-SharedMemoryABI::Chunk::Chunk(uint8_t* begin, size_t size)
-    : begin_(begin), end_(begin + size) {
+SharedMemoryABI::Chunk::Chunk(uint8_t* begin, uint16_t size, uint8_t chunk_idx)
+    : begin_(begin), size_(size), chunk_idx_(chunk_idx) {
   PERFETTO_CHECK(reinterpret_cast<uintptr_t>(begin) % kChunkAlignment == 0);
-  PERFETTO_CHECK(end_ >= begin_);
+  PERFETTO_CHECK(size > 0);
+}
+
+SharedMemoryABI::Chunk::Chunk(Chunk&& o) noexcept {
+  *this = std::move(o);
+}
+
+SharedMemoryABI::Chunk& SharedMemoryABI::Chunk::operator=(Chunk&& o) {
+  begin_ = o.begin_;
+  size_ = o.size_;
+  chunk_idx_ = o.chunk_idx_;
+  o.begin_ = nullptr;
+  o.size_ = 0;
+  o.chunk_idx_ = 0;
+  return *this;
 }
 
 std::pair<size_t, size_t> SharedMemoryABI::GetPageAndChunkIndex(
@@ -326,7 +345,7 @@ std::pair<size_t, size_t> SharedMemoryABI::GetPageAndChunkIndex(
 
   // TODO(primiano): The divisions below could be avoided if we cached
   // |page_shift_|.
-  const uintptr_t rel_addr = chunk.begin() - start_;
+  const uintptr_t rel_addr = static_cast<uintptr_t>(chunk.begin() - start_);
   const size_t page_idx = rel_addr / page_size_;
   const size_t offset = rel_addr % page_size_;
   PERFETTO_DCHECK(offset >= sizeof(PageHeader));

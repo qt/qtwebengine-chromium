@@ -45,7 +45,7 @@
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/html/imports/html_imports_controller.h"
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable_marking_visitor.h"
 #include "third_party/blink/renderer/platform/bindings/wrapper_type_info.h"
 #include "third_party/blink/renderer/platform/histogram.h"
@@ -158,9 +158,6 @@ void V8GCController::GcPrologue(v8::Isolate* isolate,
   v8::HandleScope scope(isolate);
   switch (type) {
     case v8::kGCTypeScavenge:
-      if (ThreadState::Current())
-        ThreadState::Current()->WillStartV8GC(BlinkGC::kV8MinorGC);
-
       TRACE_EVENT_BEGIN1("devtools.timeline,v8", "MinorGC",
                          "usedHeapSizeBefore", UsedHeapSize(isolate));
       VisitWeakHandlesForMinorGC(isolate);
@@ -211,10 +208,6 @@ void V8GCController::GcEpilogue(v8::Isolate* isolate,
     case v8::kGCTypeScavenge:
       TRACE_EVENT_END1("devtools.timeline,v8", "MinorGC", "usedHeapSizeAfter",
                        UsedHeapSize(isolate));
-      // TODO(haraken): Remove this. See the comment in gcPrologue.
-      if (ThreadState::Current())
-        ThreadState::Current()->ScheduleV8FollowupGCIfNeeded(
-            BlinkGC::kV8MinorGC);
       break;
     case v8::kGCTypeMarkSweepCompact:
       TRACE_EVENT_END1("devtools.timeline,v8", "MajorGC", "usedHeapSizeAfter",
@@ -318,92 +311,68 @@ void V8GCController::CollectAllGarbageForTesting(v8::Isolate* isolate) {
         v8::Isolate::kFullGarbageCollection);
 }
 
-class DOMWrapperTracer : public v8::PersistentHandleVisitor {
+namespace {
+
+// Traces all DOM persistent handles using the provided visitor.
+class DOMWrapperTracer final : public v8::PersistentHandleVisitor {
  public:
   explicit DOMWrapperTracer(Visitor* visitor) : visitor_(visitor) {
     DCHECK(visitor_);
   }
 
   void VisitPersistentHandle(v8::Persistent<v8::Value>* value,
-                             uint16_t class_id) override {
+                             uint16_t class_id) final {
     if (class_id != WrapperTypeInfo::kNodeClassId &&
         class_id != WrapperTypeInfo::kObjectClassId)
       return;
 
-    const v8::Persistent<v8::Object>& wrapper =
-        v8::Persistent<v8::Object>::Cast(*value);
-
-    ScriptWrappable* script_wrappable = ToScriptWrappable(wrapper);
-    visitor_->Trace(script_wrappable);
+    visitor_->Trace(
+        ToScriptWrappable(v8::Persistent<v8::Object>::Cast(*value)));
   }
 
  private:
-  Visitor* visitor_;
+  Visitor* const visitor_;
 };
+
+// Purges all DOM persistent handles.
+class DOMWrapperPurger final : public v8::PersistentHandleVisitor {
+ public:
+  explicit DOMWrapperPurger(v8::Isolate* isolate)
+      : isolate_(isolate), scope_(isolate) {}
+
+  void VisitPersistentHandle(v8::Persistent<v8::Value>* value,
+                             uint16_t class_id) final {
+    if (class_id != WrapperTypeInfo::kNodeClassId &&
+        class_id != WrapperTypeInfo::kObjectClassId)
+      return;
+
+    // Clear out wrapper type information, essentially disconnecting the Blink
+    // wrappable from the V8 wrapper. This way, V8 cannot find the C++ object
+    // anymore.
+    int indices[] = {kV8DOMWrapperObjectIndex, kV8DOMWrapperTypeIndex};
+    void* values[] = {nullptr, nullptr};
+    v8::Local<v8::Object> wrapper = v8::Local<v8::Object>::New(
+        isolate_, v8::Persistent<v8::Object>::Cast(*value));
+    wrapper->SetAlignedPointerInInternalFields(arraysize(indices), indices,
+                                               values);
+    value->Reset();
+  }
+
+ private:
+  v8::Isolate* isolate_;
+  v8::HandleScope scope_;
+};
+
+}  // namespace
 
 void V8GCController::TraceDOMWrappers(v8::Isolate* isolate, Visitor* visitor) {
   DOMWrapperTracer tracer(visitor);
   isolate->VisitHandlesWithClassIds(&tracer);
 }
 
-class PendingActivityVisitor : public v8::PersistentHandleVisitor {
- public:
-  PendingActivityVisitor(v8::Isolate* isolate,
-                         ExecutionContext* execution_context)
-      : isolate_(isolate),
-        execution_context_(execution_context),
-        pending_activity_found_(false) {}
-
-  void VisitPersistentHandle(v8::Persistent<v8::Value>* value,
-                             uint16_t class_id) override {
-    // If we have already found any wrapper that has a pending activity,
-    // we don't need to check other wrappers.
-    if (pending_activity_found_)
-      return;
-
-    if (class_id != WrapperTypeInfo::kNodeClassId &&
-        class_id != WrapperTypeInfo::kObjectClassId)
-      return;
-
-    v8::Local<v8::Object> wrapper = v8::Local<v8::Object>::New(
-        isolate_, v8::Persistent<v8::Object>::Cast(*value));
-    DCHECK(V8DOMWrapper::HasInternalFieldsSet(wrapper));
-    // The ExecutionContext check is heavy, so it should be done at the last.
-    if (ToWrapperTypeInfo(wrapper)->IsActiveScriptWrappable() &&
-        ToScriptWrappable(wrapper)->HasPendingActivity()) {
-      // See the comment in MajorGCWrapperVisitor::VisitPersistentHandle.
-      ExecutionContext* context =
-          ToExecutionContext(wrapper->CreationContext());
-      if (context == execution_context_ && context &&
-          !context->IsContextDestroyed())
-        pending_activity_found_ = true;
-    }
-  }
-
-  bool PendingActivityFound() const { return pending_activity_found_; }
-
- private:
-  v8::Isolate* isolate_;
-  Persistent<ExecutionContext> execution_context_;
-  bool pending_activity_found_;
-};
-
-bool V8GCController::HasPendingActivity(v8::Isolate* isolate,
-                                        ExecutionContext* execution_context) {
-  // V8GCController::hasPendingActivity is used only when a worker checks if
-  // the worker contains any wrapper that has pending activities.
-  DCHECK(!IsMainThread());
-
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(
-      CustomCountHistogram, scan_pending_activity_histogram,
-      ("Blink.ScanPendingActivityDuration", 1, 1000, 50));
-  double start_time = WTF::CurrentTimeMS();
-  v8::HandleScope scope(isolate);
-  PendingActivityVisitor visitor(isolate, execution_context);
-  ToIsolate(execution_context)->VisitHandlesWithClassIds(&visitor);
-  scan_pending_activity_histogram.Count(
-      static_cast<int>(WTF::CurrentTimeMS() - start_time));
-  return visitor.PendingActivityFound();
+void V8GCController::ClearDOMWrappers(v8::Isolate* isolate) {
+  DOMWrapperPurger purger(isolate);
+  isolate->VisitHandlesWithClassIds(&purger);
 }
 
 }  // namespace blink

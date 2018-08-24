@@ -14,6 +14,8 @@
 #include <numeric>
 #include <vector>
 
+#include "modules/audio_processing/aec3/reverb_model.h"
+#include "modules/audio_processing/aec3/reverb_model_fallback.h"
 #include "rtc_base/checks.h"
 #include "system_wrappers/include/field_trial.h"
 
@@ -32,9 +34,14 @@ bool OverrideEstimatedEchoPathGain() {
 
 ResidualEchoEstimator::ResidualEchoEstimator(const EchoCanceller3Config& config)
     : config_(config),
-      S2_old_(config_.filter.main.length_blocks),
       soft_transparent_mode_(EnableSoftTransparentMode()),
       override_estimated_echo_path_gain_(OverrideEstimatedEchoPathGain()) {
+  if (config_.ep_strength.reverb_based_on_render) {
+    echo_reverb_.reset(new ReverbModel());
+  } else {
+    echo_reverb_fallback.reset(
+        new ReverbModelFallback(config_.filter.main.length_blocks));
+  }
   Reset();
 }
 
@@ -54,9 +61,22 @@ void ResidualEchoEstimator::Estimate(
   // Estimate the residual echo power.
   if (aec_state.UsableLinearEstimate()) {
     RTC_DCHECK(!aec_state.SaturatedEcho());
-    LinearEstimate(S2_linear, aec_state.Erle(), R2);
-    AddEchoReverb(S2_linear, aec_state.FilterDelayBlocks(),
-                  aec_state.ReverbDecay(), R2);
+    LinearEstimate(S2_linear, aec_state.Erle(), aec_state.ErleUncertainty(),
+                   R2);
+    // Adds the estimated unmodelled echo power to the residual echo power
+    // estimate.
+    if (echo_reverb_) {
+      echo_reverb_->AddReverb(
+          render_buffer.Spectrum(aec_state.FilterLengthBlocks() + 1),
+          aec_state.GetFreqRespTail(), aec_state.ReverbDecay(), *R2);
+
+    } else {
+      RTC_DCHECK(echo_reverb_fallback);
+      echo_reverb_fallback->AddEchoReverb(S2_linear,
+                                          aec_state.FilterDelayBlocks(),
+                                          aec_state.ReverbDecay(), R2);
+    }
+
   } else {
     // Estimate the echo generating signal power.
     std::array<float, kFftLengthBy2Plus1> X2;
@@ -68,7 +88,8 @@ void ResidualEchoEstimator::Estimate(
     size_t window_end =
         aec_state.FilterDelayBlocks() +
         static_cast<int>(config_.echo_model.render_post_window_size);
-    EchoGeneratingPower(render_buffer, window_start, window_end, &X2);
+    EchoGeneratingPower(render_buffer, window_start, window_end,
+                        !aec_state.UseStationaryProperties(), &X2);
 
     // Subtract the stationary noise power to avoid stationary noise causing
     // excessive echo suppression.
@@ -95,10 +116,31 @@ void ResidualEchoEstimator::Estimate(
       R2->fill((*std::max_element(R2->begin(), R2->end())) * 100.f);
     }
 
-    AddEchoReverb(*R2, config_.filter.main.length_blocks,
-                  aec_state.ReverbDecay(), R2);
+    if (!(aec_state.TransparentMode() && soft_transparent_mode_)) {
+      if (echo_reverb_) {
+        echo_reverb_->AddReverbNoFreqShaping(
+            render_buffer.Spectrum(aec_state.FilterDelayBlocks() + 1),
+            echo_path_gain * echo_path_gain, aec_state.ReverbDecay(), *R2);
+      } else {
+        RTC_DCHECK(echo_reverb_fallback);
+        echo_reverb_fallback->AddEchoReverb(*R2,
+                                            config_.filter.main.length_blocks,
+                                            aec_state.ReverbDecay(), R2);
+      }
+    }
   }
 
+  if (aec_state.UseStationaryProperties()) {
+    // Scale the echo according to echo audibility.
+    std::array<float, kFftLengthBy2Plus1> residual_scaling;
+    aec_state.GetResidualEchoScaling(residual_scaling);
+    for (size_t k = 0; k < R2->size(); ++k) {
+      (*R2)[k] *= residual_scaling[k];
+      if (residual_scaling[k] == 0.f) {
+        R2_hold_counter_[k] = 0;
+      }
+    }
+  }
   if (!soft_transparent_mode_) {
     // If the echo is deemed inaudible, set the residual echo to zero.
     if (aec_state.TransparentMode()) {
@@ -112,26 +154,35 @@ void ResidualEchoEstimator::Estimate(
 }
 
 void ResidualEchoEstimator::Reset() {
+  if (echo_reverb_) {
+    echo_reverb_->Reset();
+  } else {
+    RTC_DCHECK(echo_reverb_fallback);
+    echo_reverb_fallback->Reset();
+  }
   X2_noise_floor_counter_.fill(config_.echo_model.noise_floor_hold);
   X2_noise_floor_.fill(config_.echo_model.min_noise_floor_power);
-  R2_reverb_.fill(0.f);
   R2_old_.fill(0.f);
   R2_hold_counter_.fill(0.f);
-  for (auto& S2_k : S2_old_) {
-    S2_k.fill(0.f);
-  }
 }
 
 void ResidualEchoEstimator::LinearEstimate(
     const std::array<float, kFftLengthBy2Plus1>& S2_linear,
     const std::array<float, kFftLengthBy2Plus1>& erle,
+    rtc::Optional<float> erle_uncertainty,
     std::array<float, kFftLengthBy2Plus1>* R2) {
   std::fill(R2_hold_counter_.begin(), R2_hold_counter_.end(), 10.f);
-  std::transform(erle.begin(), erle.end(), S2_linear.begin(), R2->begin(),
-                 [](float a, float b) {
-                   RTC_DCHECK_LT(0.f, a);
-                   return b / a;
-                 });
+  if (erle_uncertainty) {
+    for (size_t k = 0; k < R2->size(); ++k) {
+      (*R2)[k] = S2_linear[k] * *erle_uncertainty;
+    }
+  } else {
+    std::transform(erle.begin(), erle.end(), S2_linear.begin(), R2->begin(),
+                   [](float a, float b) {
+                     RTC_DCHECK_LT(0.f, a);
+                     return b / a;
+                   });
+  }
 }
 
 void ResidualEchoEstimator::NonLinearEstimate(
@@ -160,45 +211,11 @@ void ResidualEchoEstimator::NonLinearEstimate(
   }
 }
 
-void ResidualEchoEstimator::AddEchoReverb(
-    const std::array<float, kFftLengthBy2Plus1>& S2,
-    size_t delay,
-    float reverb_decay_factor,
-    std::array<float, kFftLengthBy2Plus1>* R2) {
-  // Compute the decay factor for how much the echo has decayed before leaving
-  // the region covered by the linear model.
-  auto integer_power = [](float base, int exp) {
-    float result = 1.f;
-    for (int k = 0; k < exp; ++k) {
-      result *= base;
-    }
-    return result;
-  };
-  RTC_DCHECK_LE(delay, S2_old_.size());
-  const float reverb_decay_for_delay =
-      integer_power(reverb_decay_factor, S2_old_.size() - delay);
-
-  // Update the estimate of the reverberant residual echo power.
-  S2_old_index_ = S2_old_index_ > 0 ? S2_old_index_ - 1 : S2_old_.size() - 1;
-  const auto& S2_end = S2_old_[S2_old_index_];
-  std::transform(
-      S2_end.begin(), S2_end.end(), R2_reverb_.begin(), R2_reverb_.begin(),
-      [reverb_decay_for_delay, reverb_decay_factor](float a, float b) {
-        return (b + a * reverb_decay_for_delay) * reverb_decay_factor;
-      });
-
-  // Update the buffer of old echo powers.
-  std::copy(S2.begin(), S2.end(), S2_old_[S2_old_index_].begin());
-
-  // Add the power of the echo reverb to the residual echo power.
-  std::transform(R2->begin(), R2->end(), R2_reverb_.begin(), R2->begin(),
-                 std::plus<float>());
-}
-
 void ResidualEchoEstimator::EchoGeneratingPower(
     const RenderBuffer& render_buffer,
     size_t min_delay,
     size_t max_delay,
+    bool apply_noise_gating,
     std::array<float, kFftLengthBy2Plus1>* X2) const {
   X2->fill(0.f);
   for (size_t k = min_delay; k <= max_delay; ++k) {
@@ -207,13 +224,15 @@ void ResidualEchoEstimator::EchoGeneratingPower(
                    [](float a, float b) { return std::max(a, b); });
   }
 
-  // Apply soft noise gate.
-  std::for_each(X2->begin(), X2->end(), [&](float& a) {
-    if (config_.echo_model.noise_gate_power > a) {
-      a = std::max(0.f, a - config_.echo_model.noise_gate_slope *
-                                (config_.echo_model.noise_gate_power - a));
-    }
-  });
+  if (apply_noise_gating) {
+    // Apply soft noise gate.
+    std::for_each(X2->begin(), X2->end(), [&](float& a) {
+      if (config_.echo_model.noise_gate_power > a) {
+        a = std::max(0.f, a - config_.echo_model.noise_gate_slope *
+                                  (config_.echo_model.noise_gate_power - a));
+      }
+    });
+  }
 }
 
 void ResidualEchoEstimator::RenderNoisePower(

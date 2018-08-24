@@ -17,6 +17,7 @@
 #include "libANGLE/Caps.h"
 #include "libANGLE/renderer/vulkan/CommandGraph.h"
 #include "libANGLE/renderer/vulkan/vk_format_utils.h"
+#include "libANGLE/renderer/vulkan/vk_internal_shaders.h"
 
 namespace egl
 {
@@ -112,10 +113,19 @@ class RendererVk : angle::NonCopyable
                                    const vk::AttachmentOpsArray &ops,
                                    vk::RenderPass **renderPassOut);
 
-    vk::Error getPipeline(const ProgramVk *programVk,
-                          const vk::PipelineDesc &desc,
-                          const gl::AttributesMask &activeAttribLocationsMask,
-                          vk::PipelineAndSerial **pipelineOut);
+    // For getting a vk::Pipeline for the an application's draw call. RenderPassDesc is automatic.
+    vk::Error getAppPipeline(const ProgramVk *programVk,
+                             const vk::PipelineDesc &desc,
+                             const gl::AttributesMask &activeAttribLocationsMask,
+                             vk::PipelineAndSerial **pipelineOut);
+
+    // For getting a vk::Pipeline for an internal draw call. Use an explicit RenderPass.
+    vk::Error getInternalPipeline(const vk::ShaderAndSerial &vertexShader,
+                                  const vk::ShaderAndSerial &fragmentShader,
+                                  const vk::PipelineLayout &pipelineLayout,
+                                  const vk::PipelineDesc &pipelineDesc,
+                                  const gl::AttributesMask &activeAttribLocationsMask,
+                                  vk::PipelineAndSerial **pipelineOut);
 
     // This should only be called from ResourceVk.
     // TODO(jmadill): Keep in ContextVk to enable threaded rendering.
@@ -124,8 +134,13 @@ class RendererVk : angle::NonCopyable
     const vk::PipelineLayout &getGraphicsPipelineLayout() const;
     const std::vector<vk::DescriptorSetLayout> &getGraphicsDescriptorSetLayouts() const;
 
+    // Used in internal shaders.
+    vk::Error getInternalPushConstantPipelineLayout(const vk::PipelineLayout **pipelineLayoutOut);
+
     // Issues a new serial for linked shader modules. Used in the pipeline cache.
-    Serial issueProgramSerial();
+    Serial issueShaderSerial();
+
+    vk::ShaderLibrary *getShaderLibrary();
 
   private:
     vk::Error initializeDevice(uint32_t queueFamilyIndex);
@@ -154,7 +169,7 @@ class RendererVk : angle::NonCopyable
     vk::CommandPool mCommandPool;
     GlslangWrapper *mGlslangWrapper;
     SerialFactory mQueueSerialFactory;
-    SerialFactory mProgramSerialFactory;
+    SerialFactory mShaderSerialFactory;
     Serial mLastCompletedQueueSerial;
     Serial mCurrentQueueSerial;
 
@@ -185,6 +200,12 @@ class RendererVk : angle::NonCopyable
     // See the design doc for an overview of the pipeline layout structure.
     vk::PipelineLayout mGraphicsPipelineLayout;
     std::vector<vk::DescriptorSetLayout> mGraphicsDescriptorSetLayouts;
+
+    // Used for internal shaders.
+    vk::PipelineLayout mInternalPushConstantPipelineLayout;
+
+    // Internal shader library.
+    vk::ShaderLibrary mShaderLibrary;
 };
 
 }  // namespace rx

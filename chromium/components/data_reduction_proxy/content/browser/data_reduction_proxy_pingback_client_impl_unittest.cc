@@ -14,6 +14,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/optional.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/sys_info.h"
 #include "base/test/histogram_tester.h"
 #include "base/test/scoped_task_environment.h"
@@ -27,6 +28,7 @@
 #include "components/data_reduction_proxy/proto/pageload_metrics.pb.h"
 #include "content/public/common/child_process_host.h"
 #include "net/base/net_errors.h"
+#include "net/base/network_change_notifier.h"
 #include "net/nqe/effective_connection_type.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -46,6 +48,8 @@ static const char kSessionKey[] = "fake-session";
 static const char kFakeURL[] = "http://www.google.com/";
 static const int64_t kBytes = 10000;
 static const int64_t kBytesOriginal = 1000000;
+static const int64_t kTotalPageSizeBytes = 20000;
+static const float kCachedFraction = 0.5;
 static const int kCrashProcessId = 1;
 static const int64_t kRendererMemory = 1024;
 
@@ -132,12 +136,16 @@ class DataReductionProxyPingbackClientImplTest : public testing::Test {
             1900)) /* first_contentful_paint */,
         base::Optional<base::TimeDelta>(base::TimeDelta::FromMilliseconds(
             2000)) /* experimental_first_meaningful_paint */,
+        base::Optional<base::TimeDelta>(
+            base::TimeDelta::FromMilliseconds(3000)) /* first_input_delay */,
         base::Optional<base::TimeDelta>(base::TimeDelta::FromMilliseconds(
             100)) /* parse_blocked_on_script_load_duration */,
         base::Optional<base::TimeDelta>(
             base::TimeDelta::FromMilliseconds(2000)) /* parse_stop */,
         kBytes /* network_bytes */, kBytesOriginal /* original_network_bytes */,
-        app_background_occurred, opt_out_occurred, kRendererMemory,
+        kTotalPageSizeBytes /* total_page_size_bytes */,
+        kCachedFraction /* cached_fraction */, app_background_occurred,
+        opt_out_occurred, kRendererMemory,
         crash ? kCrashProcessId : content::ChildProcessHost::kInvalidUniqueID);
 
     DataReductionProxyData request_data;
@@ -145,6 +153,8 @@ class DataReductionProxyPingbackClientImplTest : public testing::Test {
     request_data.set_request_url(GURL(kFakeURL));
     request_data.set_effective_connection_type(
         net::EFFECTIVE_CONNECTION_TYPE_OFFLINE);
+    request_data.set_connection_type(
+        net::NetworkChangeNotifier::CONNECTION_UNKNOWN);
     request_data.set_lofi_received(lofi_received);
     request_data.set_client_lofi_requested(client_lofi_requested);
     request_data.set_lite_page_received(lite_page_received);
@@ -155,13 +165,11 @@ class DataReductionProxyPingbackClientImplTest : public testing::Test {
     page_id_++;
   }
 
-  // Send a fake crash report frome breakpad.
+  // Send a fake crash report from breakpad.
   void ReportCrash(bool oom) {
 #if defined(OS_ANDROID)
     breakpad::CrashDumpManager::CrashDumpDetails details = {
-        kCrashProcessId, content::PROCESS_TYPE_RENDERER,
-        oom ? base::TERMINATION_STATUS_OOM_PROTECTED
-            : base::TERMINATION_STATUS_ABNORMAL_TERMINATION,
+        kCrashProcessId, content::PROCESS_TYPE_RENDERER, oom,
         base::android::APPLICATION_STATE_HAS_RUNNING_ACTIVITIES};
     details.file_size = oom ? 0 : 1;
     static_cast<breakpad::CrashDumpManager::Observer*>(pingback_client_.get())
@@ -231,6 +239,9 @@ TEST_F(DataReductionProxyPingbackClientImplTest, VerifyPingbackContent) {
       timing().experimental_first_meaningful_paint.value(),
       protobuf_parser::DurationToTimeDelta(
           pageload_metrics.experimental_time_to_first_meaningful_paint()));
+  EXPECT_EQ(timing().first_input_delay.value(),
+            protobuf_parser::DurationToTimeDelta(
+                pageload_metrics.first_input_delay()));
   EXPECT_EQ(timing().parse_blocked_on_script_load_duration.value(),
             protobuf_parser::DurationToTimeDelta(
                 pageload_metrics.parse_blocked_on_script_load_duration()));
@@ -241,6 +252,8 @@ TEST_F(DataReductionProxyPingbackClientImplTest, VerifyPingbackContent) {
   EXPECT_EQ(kFakeURL, pageload_metrics.first_request_url());
   EXPECT_EQ(kBytes, pageload_metrics.compressed_page_size_bytes());
   EXPECT_EQ(kBytesOriginal, pageload_metrics.original_page_size_bytes());
+  EXPECT_EQ(kTotalPageSizeBytes, pageload_metrics.total_page_size_bytes());
+  EXPECT_EQ(kCachedFraction, pageload_metrics.cached_fraction());
   EXPECT_EQ(data_page_id, pageload_metrics.page_id());
 
   EXPECT_EQ(PageloadMetrics_PreviewsType_NONE,
@@ -251,6 +264,8 @@ TEST_F(DataReductionProxyPingbackClientImplTest, VerifyPingbackContent) {
   EXPECT_EQ(
       PageloadMetrics_EffectiveConnectionType_EFFECTIVE_CONNECTION_TYPE_OFFLINE,
       pageload_metrics.effective_connection_type());
+  EXPECT_EQ(PageloadMetrics_ConnectionType_CONNECTION_UNKNOWN,
+            pageload_metrics.connection_type());
   EXPECT_EQ(kRendererMemory, pageload_metrics.renderer_memory_usage_kb());
   EXPECT_EQ(std::string(), pageload_metrics.holdback_group());
   EXPECT_EQ(PageloadMetrics_RendererCrashType_NO_CRASH,
@@ -360,6 +375,9 @@ TEST_F(DataReductionProxyPingbackClientImplTest,
         timing().experimental_first_meaningful_paint.value(),
         protobuf_parser::DurationToTimeDelta(
             pageload_metrics.experimental_time_to_first_meaningful_paint()));
+    EXPECT_EQ(timing().first_input_delay.value(),
+              protobuf_parser::DurationToTimeDelta(
+                  pageload_metrics.first_input_delay()));
     EXPECT_EQ(timing().parse_blocked_on_script_load_duration.value(),
               protobuf_parser::DurationToTimeDelta(
                   pageload_metrics.parse_blocked_on_script_load_duration()));
@@ -370,11 +388,15 @@ TEST_F(DataReductionProxyPingbackClientImplTest,
     EXPECT_EQ(kFakeURL, pageload_metrics.first_request_url());
     EXPECT_EQ(kBytes, pageload_metrics.compressed_page_size_bytes());
     EXPECT_EQ(kBytesOriginal, pageload_metrics.original_page_size_bytes());
+    EXPECT_EQ(kTotalPageSizeBytes, pageload_metrics.total_page_size_bytes());
+    EXPECT_EQ(kCachedFraction, pageload_metrics.cached_fraction());
     EXPECT_EQ(page_ids.front(), pageload_metrics.page_id());
     page_ids.pop_front();
     EXPECT_EQ(
         PageloadMetrics_EffectiveConnectionType_EFFECTIVE_CONNECTION_TYPE_OFFLINE,
         pageload_metrics.effective_connection_type());
+    EXPECT_EQ(PageloadMetrics_ConnectionType_CONNECTION_UNKNOWN,
+              pageload_metrics.connection_type());
     EXPECT_EQ(kRendererMemory, pageload_metrics.renderer_memory_usage_kb());
   }
 

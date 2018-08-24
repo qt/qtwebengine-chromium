@@ -646,14 +646,18 @@ void AudioBufferSourceHandler::HandleStoppableSourceNode() {
 // ----------------------------------------------------------------
 AudioBufferSourceNode::AudioBufferSourceNode(BaseAudioContext& context)
     : AudioScheduledSourceNode(context),
-      playback_rate_(AudioParam::Create(context,
-                                        kParamTypeAudioBufferSourcePlaybackRate,
-                                        "AudioBufferSource.playbackRate",
-                                        1.0)),
-      detune_(AudioParam::Create(context,
-                                 kParamTypeAudioBufferSourceDetune,
-                                 "AudioBufferSource.detune",
-                                 0.0)) {
+      playback_rate_(
+          AudioParam::Create(context,
+                             kParamTypeAudioBufferSourcePlaybackRate,
+                             1.0,
+                             AudioParamHandler::AutomationRate::kControl,
+                             AudioParamHandler::AutomationRateMode::kFixed)),
+      detune_(
+          AudioParam::Create(context,
+                             kParamTypeAudioBufferSourceDetune,
+                             0.0,
+                             AudioParamHandler::AutomationRate::kControl,
+                             AudioParamHandler::AutomationRateMode::kFixed)) {
   SetHandler(AudioBufferSourceHandler::Create(*this, context.sampleRate(),
                                               playback_rate_->Handler(),
                                               detune_->Handler()));

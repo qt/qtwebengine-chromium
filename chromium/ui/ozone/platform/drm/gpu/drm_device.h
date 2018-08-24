@@ -20,7 +20,6 @@
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/overlay_transform.h"
 #include "ui/ozone/platform/drm/common/scoped_drm_types.h"
-#include "ui/ozone/platform/drm/gpu/hardware_display_plane_manager.h"
 
 typedef struct _drmEventContext drmEventContext;
 typedef struct _drmModeModeInfo drmModeModeInfo;
@@ -41,8 +40,17 @@ class HardwareDisplayPlaneManager;
 class DrmDevice : public base::RefCountedThreadSafe<DrmDevice> {
  public:
   using PageFlipCallback =
-      base::Callback<void(unsigned int /* frame */,
-                          base::TimeTicks /* timestamp */)>;
+      base::OnceCallback<void(unsigned int /* frame */,
+                              base::TimeTicks /* timestamp */)>;
+
+  struct Property {
+    // Unique identifier for the property. 0 denotes an invalid ID.
+    uint32_t id;
+
+    // Depending on the property, this may be an actual value describing the
+    // property or an ID of another property.
+    uint32_t value;
+  };
 
   DrmDevice(const base::FilePath& device_path,
             base::File file,
@@ -53,7 +61,16 @@ class DrmDevice : public base::RefCountedThreadSafe<DrmDevice> {
   bool allow_addfb2_modifiers() const { return allow_addfb2_modifiers_; }
 
   // Open device.
-  virtual bool Initialize(bool use_atomic);
+  virtual bool Initialize();
+
+  // Returns all the DRM resources for this device. This includes CRTC,
+  // connectors, and encoders state.
+  virtual ScopedDrmResourcesPtr GetResources();
+
+  // Returns the properties associated with object with id |object_id| and type
+  // |object_type|. |object_type| is one of DRM_MODE_OBJECT_*.
+  virtual ScopedDrmObjectPropertyPtr GetObjectProperties(uint32_t object_id,
+                                                         uint32_t object_type);
 
   // Get the CRTC state. This is generally used to save state before using the
   // CRTC. When the user finishes using the CRTC, the user should restore the
@@ -103,7 +120,7 @@ class DrmDevice : public base::RefCountedThreadSafe<DrmDevice> {
   // queued on |fd_|.
   virtual bool PageFlip(uint32_t crtc_id,
                         uint32_t framebuffer,
-                        const PageFlipCallback& callback);
+                        PageFlipCallback callback);
 
   // Schedule an overlay to be show during the page flip for CRTC |crtc_id|.
   // |source| location from |framebuffer| will be shown on overlay
@@ -119,6 +136,8 @@ class DrmDevice : public base::RefCountedThreadSafe<DrmDevice> {
   // released using FreeProperty().
   virtual ScopedDrmPropertyPtr GetProperty(drmModeConnector* connector,
                                            const char* name);
+
+  virtual ScopedDrmPropertyPtr GetProperty(uint32_t id);
 
   // Sets the value of property with ID |property_id| to |value|. The property
   // is applied to the connector with ID |connector_id|.
@@ -161,15 +180,12 @@ class DrmDevice : public base::RefCountedThreadSafe<DrmDevice> {
   virtual bool CommitProperties(drmModeAtomicReq* properties,
                                 uint32_t flags,
                                 uint32_t crtc_count,
-                                const PageFlipCallback& callback);
-
-  virtual bool SetColorCorrection(
-      uint32_t crtc_id,
-      const std::vector<display::GammaRampRGBEntry>& degamma_lut,
-      const std::vector<display::GammaRampRGBEntry>& gamma_lut,
-      const std::vector<float>& correction_matrix);
+                                PageFlipCallback callback);
 
   virtual bool SetCapability(uint64_t capability, uint64_t value);
+
+  virtual bool SetGammaRamp(uint32_t crtc_id,
+                            const std::vector<display::GammaRampRGBEntry>& lut);
 
   // Drm master related
   virtual bool SetMaster();
@@ -191,9 +207,6 @@ class DrmDevice : public base::RefCountedThreadSafe<DrmDevice> {
  private:
   class IOWatcher;
   class PageFlipManager;
-
-  bool SetGammaRamp(uint32_t crtc_id,
-                    const std::vector<display::GammaRampRGBEntry>& lut);
 
   // Path to the DRM device (in sysfs).
   const base::FilePath device_path_;

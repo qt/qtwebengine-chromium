@@ -12,7 +12,6 @@
 #include "base/containers/adapters.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -52,6 +51,7 @@
 #include "ui/views/drag_controller.h"
 #include "ui/views/layout/layout_manager.h"
 #include "ui/views/view_observer.h"
+#include "ui/views/view_tracker.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/views_switches.h"
 #include "ui/views/widget/native_widget_private.h"
@@ -515,7 +515,10 @@ gfx::Transform View::GetTransform() const {
 
   gfx::Transform transform = layer()->transform();
   gfx::ScrollOffset scroll_offset = layer()->CurrentScrollOffset();
-  transform.Translate(-scroll_offset.x(), -scroll_offset.y());
+  // Offsets for layer-based scrolling are never negative, but the horizontal
+  // scroll direction is reversed in RTL via canvas flipping.
+  transform.Translate((base::i18n::IsRTL() ? 1 : -1) * scroll_offset.x(),
+                      -scroll_offset.y());
   return transform;
 }
 
@@ -1465,13 +1468,8 @@ void View::OnAccessibilityEvent(ax::mojom::Event event_type) {}
 // Scrolling -------------------------------------------------------------------
 
 void View::ScrollRectToVisible(const gfx::Rect& rect) {
-  // We must take RTL UI mirroring into account when adjusting the position of
-  // the region.
-  if (parent_) {
-    gfx::Rect scroll_rect(rect);
-    scroll_rect.Offset(GetMirroredX(), y());
-    parent_->ScrollRectToVisible(scroll_rect);
-  }
+  if (parent_)
+    parent_->ScrollRectToVisible(rect + bounds().OffsetFromOrigin());
 }
 
 void View::ScrollViewToVisible() {
@@ -1800,10 +1798,19 @@ void View::OnBlur() {
 void View::Focus() {
   OnFocus();
   ScrollViewToVisible();
+
+  for (ViewObserver& observer : observers_)
+    observer.OnViewFocused(this);
 }
 
 void View::Blur() {
+  ViewTracker tracker(this);
   OnBlur();
+
+  if (tracker.view()) {
+    for (ViewObserver& observer : observers_)
+      observer.OnViewBlurred(this);
+  }
 }
 
 // Tooltips --------------------------------------------------------------------
@@ -1848,112 +1855,6 @@ int View::GetVerticalDragThreshold() {
 PaintInfo::ScaleType View::GetPaintScaleType() const {
   return PaintInfo::ScaleType::kScaleWithEdgeSnapping;
 }
-
-// Debugging -------------------------------------------------------------------
-
-#if !defined(NDEBUG)
-
-std::string View::PrintViewGraph(bool first) {
-  return DoPrintViewGraph(first, this);
-}
-
-std::string View::DoPrintViewGraph(bool first, View* view_with_children) {
-  // 64-bit pointer = 16 bytes of hex + "0x" + '\0' = 19.
-  const size_t kMaxPointerStringLength = 19;
-
-  std::string result;
-
-  if (first)
-    result.append("digraph {\n");
-
-  // Node characteristics.
-  char p[kMaxPointerStringLength];
-
-  const std::string class_name(GetClassName());
-  size_t base_name_index = class_name.find_last_of('/');
-  if (base_name_index == std::string::npos)
-    base_name_index = 0;
-  else
-    base_name_index++;
-
-  char bounds_buffer[512];
-
-  // Information about current node.
-  base::snprintf(p, arraysize(bounds_buffer), "%p", view_with_children);
-  result.append("  N");
-  result.append(p + 2);
-  result.append(" [label=\"");
-
-  result.append(class_name.substr(base_name_index).c_str());
-
-  base::snprintf(bounds_buffer,
-                 arraysize(bounds_buffer),
-                 "\\n bounds: (%d, %d), (%dx%d)",
-                 bounds().x(),
-                 bounds().y(),
-                 bounds().width(),
-                 bounds().height());
-  result.append(bounds_buffer);
-
-  gfx::DecomposedTransform decomp;
-  if (!GetTransform().IsIdentity() &&
-      gfx::DecomposeTransform(&decomp, GetTransform())) {
-    base::snprintf(bounds_buffer,
-                   arraysize(bounds_buffer),
-                   "\\n translation: (%f, %f)",
-                   decomp.translate[0],
-                   decomp.translate[1]);
-    result.append(bounds_buffer);
-
-    base::snprintf(bounds_buffer, arraysize(bounds_buffer),
-                   "\\n rotation: %3.2f",
-                   gfx::RadToDeg(std::acos(decomp.quaternion.w()) * 2));
-    result.append(bounds_buffer);
-
-    base::snprintf(bounds_buffer,
-                   arraysize(bounds_buffer),
-                   "\\n scale: (%2.4f, %2.4f)",
-                   decomp.scale[0],
-                   decomp.scale[1]);
-    result.append(bounds_buffer);
-  }
-
-  result.append("\"");
-  if (!parent_)
-    result.append(", shape=box");
-  if (layer()) {
-    if (layer()->has_external_content())
-      result.append(", color=green");
-    else
-      result.append(", color=red");
-
-    if (layer()->fills_bounds_opaquely())
-      result.append(", style=filled");
-  }
-  result.append("]\n");
-
-  // Link to parent.
-  if (parent_) {
-    char pp[kMaxPointerStringLength];
-
-    base::snprintf(pp, kMaxPointerStringLength, "%p", parent_);
-    result.append("  N");
-    result.append(pp + 2);
-    result.append(" -> N");
-    result.append(p + 2);
-    result.append("\n");
-  }
-
-  // Children.
-  for (auto* child : view_with_children->children_)
-    result.append(child->PrintViewGraph(false));
-
-  if (first)
-    result.append("}\n");
-
-  return result;
-}
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // View, private:

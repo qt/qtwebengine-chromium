@@ -29,21 +29,16 @@ rtc_static_library("rtc_pc_base") {
   visibility = [ "*" ]
   defines = []
   sources = [
-    "audiomonitor.h",
-    "bundlefilter.cc",
-    "bundlefilter.h",
     "channel.cc",
     "channel.h",
     "channelmanager.cc",
     "channelmanager.h",
-    "currentspeakermonitor.cc",
-    "currentspeakermonitor.h",
     "dtlssrtptransport.cc",
     "dtlssrtptransport.h",
     "externalhmac.cc",
     "externalhmac.h",
-    "jseptransport2.cc",
-    "jseptransport2.h",
+    "jseptransport.cc",
+    "jseptransport.h",
     "jseptransportcontroller.cc",
     "jseptransportcontroller.h",
     "mediasession.cc",
@@ -75,11 +70,14 @@ rtc_static_library("rtc_pc_base") {
     "../api:libjingle_peerconnection_api",
     "../api:optional",
     "../api:ortc_api",
-    "../api:video_frame_api",
+    "../api/video:video_frame",
+    "../call:rtp_interfaces",
+    "../call:rtp_receiver",
     "../common_video:common_video",
     "../media:rtc_data",
     "../media:rtc_h264_profile_id",
     "../media:rtc_media_base",
+    "../modules/rtp_rtcp:rtp_rtcp_format",
     "../p2p:rtc_p2p",
     "../rtc_base:checks",
     "../rtc_base:rtc_base",
@@ -101,6 +99,10 @@ rtc_static_library("rtc_pc_base") {
 
 rtc_source_set("rtc_pc") {
   visibility = [ "*" ]
+  allow_poison = [
+    "audio_codecs",  # TODO(bugs.webrtc.org/8396): Remove.
+    "software_video_codecs",  # TODO(bugs.webrtc.org/7925): Remove.
+  ]
   deps = [
     ":rtc_pc_base",
     "../media:rtc_audio_video",
@@ -190,7 +192,7 @@ rtc_static_library("peerconnection") {
     "../api:libjingle_peerconnection_api",
     "../api:optional",
     "../api:rtc_stats_api",
-    "../api:video_frame_api",
+    "../api/video:video_frame",
     "../api/video_codecs:video_codecs_api",
     "../call:call_interfaces",
     "../common_video:common_video",
@@ -199,11 +201,13 @@ rtc_static_library("peerconnection") {
     "../logging:rtc_event_log_impl_output",
     "../media:rtc_data",
     "../media:rtc_media_base",
+    "../modules/congestion_controller/bbr",
     "../p2p:rtc_p2p",
     "../rtc_base:checks",
     "../rtc_base:rtc_base",
     "../rtc_base:rtc_base_approved",
     "../rtc_base:stringutils",
+    "../rtc_base/experiments:congestion_controller_experiment",
     "../stats",
     "../system_wrappers",
     "../system_wrappers:field_trial_api",
@@ -249,6 +253,10 @@ rtc_static_library("create_pc_factory") {
 
 rtc_source_set("libjingle_peerconnection") {
   visibility = [ "*" ]
+  allow_poison = [
+    "audio_codecs",  # TODO(bugs.webrtc.org/8396): Remove.
+    "software_video_codecs",  # TODO(bugs.webrtc.org/7925): Remove.
+  ]
   deps = [
     ":create_pc_factory",
     ":peerconnection",
@@ -270,12 +278,10 @@ if (rtc_include_tests) {
     testonly = true
 
     sources = [
-      "bundlefilter_unittest.cc",
       "channel_unittest.cc",
       "channelmanager_unittest.cc",
-      "currentspeakermonitor_unittest.cc",
       "dtlssrtptransport_unittest.cc",
-      "jseptransport2_unittest.cc",
+      "jseptransport_unittest.cc",
       "jseptransportcontroller_unittest.cc",
       "mediasession_unittest.cc",
       "rtcpmuxfilter_unittest.cc",
@@ -308,9 +314,11 @@ if (rtc_include_tests) {
       "../api:array_view",
       "../api:fakemetricsobserver",
       "../api:libjingle_peerconnection_api",
+      "../call:rtp_interfaces",
       "../logging:rtc_event_log_api",
       "../media:rtc_media_base",
       "../media:rtc_media_tests_utils",
+      "../modules/rtp_rtcp:rtp_rtcp_format",
       "../p2p:p2p_test_utils",
       "../p2p:rtc_p2p",
       "../rtc_base:checks",
@@ -342,6 +350,7 @@ if (rtc_include_tests) {
       "test/fakepeerconnectionforstats.h",
       "test/fakeperiodicvideocapturer.h",
       "test/fakeperiodicvideosource.h",
+      "test/fakeperiodicvideotracksource.h",
       "test/fakertccertificategenerator.h",
       "test/fakesctptransport.h",
       "test/fakevideotrackrenderer.h",
@@ -365,6 +374,9 @@ if (rtc_include_tests) {
       "../api:libjingle_peerconnection_api",
       "../api:libjingle_peerconnection_test_api",
       "../api:rtc_stats_api",
+      "../api/video:video_frame",
+      "../api/video_codecs:builtin_video_decoder_factory",
+      "../api/video_codecs:builtin_video_encoder_factory",
       "../call:call_interfaces",
       "../logging:rtc_event_log_api",
       "../media:rtc_data",
@@ -372,6 +384,7 @@ if (rtc_include_tests) {
       "../media:rtc_media_base",
       "../media:rtc_media_tests_utils",
       "../modules/audio_device:audio_device",
+      "../modules/audio_processing:audio_processing",
       "../p2p:p2p_test_utils",
       "../rtc_base:checks",
       "../rtc_base:rtc_base",
@@ -472,6 +485,7 @@ if (rtc_include_tests) {
       ":rtc_pc_base",
       "../api:libjingle_peerconnection_api",
       "../api:mock_rtp",
+      "../api/units:time_delta",
       "../rtc_base:checks",
       "../rtc_base:stringutils",
       "../test:fileutils",
@@ -494,6 +508,9 @@ if (rtc_include_tests) {
       "../api/audio_codecs:builtin_audio_encoder_factory",
       "../api/audio_codecs/L16:audio_decoder_L16",
       "../api/audio_codecs/L16:audio_encoder_L16",
+      "../api/video_codecs:builtin_video_decoder_factory",
+      "../api/video_codecs:builtin_video_encoder_factory",
+      "../api/video_codecs:video_codecs_api",
       "../call:call_interfaces",
       "../logging:rtc_event_log_api",
       "../logging:rtc_event_log_impl_base",

@@ -30,6 +30,9 @@ constexpr char kNoValidKeyCodesErrorMsg[] =
 constexpr char kChildFrameErrorMsg[] =
     "lock() must be called from a top-level browsing context.";
 
+constexpr char kRequestFailedErrorMsg[] =
+    "lock() request could not be registered.";
+
 }  // namespace
 
 KeyboardLock::KeyboardLock(ExecutionContext* context)
@@ -40,6 +43,11 @@ KeyboardLock::~KeyboardLock() = default;
 ScriptPromise KeyboardLock::lock(ScriptState* state,
                                  const Vector<String>& keycodes) {
   DCHECK(state);
+
+  if (!CalledFromSupportedContext(ExecutionContext::From(state))) {
+    return ScriptPromise::RejectWithDOMException(
+        state, DOMException::Create(kInvalidStateError, kChildFrameErrorMsg));
+  }
 
   if (!EnsureServiceConnected()) {
     return ScriptPromise::RejectWithDOMException(
@@ -55,11 +63,14 @@ ScriptPromise KeyboardLock::lock(ScriptState* state,
   return request_keylock_resolver_->Promise();
 }
 
-void KeyboardLock::unlock() {
-  if (!EnsureServiceConnected()) {
-    // Current frame is detached.
+void KeyboardLock::unlock(ScriptState* state) {
+  DCHECK(state);
+
+  if (!CalledFromSupportedContext(ExecutionContext::From(state)))
     return;
-  }
+
+  if (!EnsureServiceConnected())
+    return;
 
   service_->CancelKeyboardLock();
 }
@@ -75,6 +86,12 @@ bool KeyboardLock::EnsureServiceConnected() {
 
   DCHECK(service_);
   return true;
+}
+
+bool KeyboardLock::CalledFromSupportedContext(ExecutionContext* context) {
+  // KeyboardLock API is only accessible from a top level browsing context.
+  LocalFrame* frame = GetFrame();
+  return frame && frame->IsMainFrame();
 }
 
 void KeyboardLock::LockRequestFinished(
@@ -104,6 +121,10 @@ void KeyboardLock::LockRequestFinished(
     case mojom::KeyboardLockRequestResult::kChildFrameError:
       request_keylock_resolver_->Reject(
           DOMException::Create(kInvalidStateError, kChildFrameErrorMsg));
+      break;
+    case mojom::KeyboardLockRequestResult::kRequestFailedError:
+      request_keylock_resolver_->Reject(
+          DOMException::Create(kInvalidStateError, kRequestFailedErrorMsg));
       break;
   }
   request_keylock_resolver_ = nullptr;

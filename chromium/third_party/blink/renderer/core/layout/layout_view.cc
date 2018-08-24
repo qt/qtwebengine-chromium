@@ -45,12 +45,12 @@
 #include "third_party/blink/renderer/core/paint/view_painter.h"
 #include "third_party/blink/renderer/core/svg/svg_document_extensions.h"
 #include "third_party/blink/renderer/platform/geometry/float_quad.h"
-#include "third_party/blink/renderer/platform/geometry/transform_state.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_controller.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/traced_value.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/transforms/transform_state.h"
 
 namespace blink {
 
@@ -244,8 +244,7 @@ void LayoutView::SetShouldDoFullPaintInvalidationOnResizeIfNeeded(
   // should fully invalidate on viewport resize if the background image is not
   // composited and needs full paint invalidation on background positioning area
   // resize.
-  if (Style()->HasFixedBackgroundImage() &&
-      (!compositor_ || !compositor_->NeedsFixedRootBackgroundLayer())) {
+  if (Style()->HasFixedBackgroundImage()) {
     if ((width_changed && MustInvalidateFillLayersPaintOnWidthChange(
                               Style()->BackgroundLayers())) ||
         (height_changed && MustInvalidateFillLayersPaintOnHeightChange(
@@ -294,14 +293,10 @@ void LayoutView::UpdateLayout() {
   if (!GetDocument().Paginated())
     SetPageLogicalHeight(LayoutUnit());
 
-  // TODO(wangxianzhu): Move this into ViewPaintInvalidator when
-  // rootLayerScrolling is permanently enabled.
-  IncludeScrollbarsInRect include_scrollbars =
-      RuntimeEnabledFeatures::RootLayerScrollingEnabled() ? kIncludeScrollbars
-                                                          : kExcludeScrollbars;
+  // TODO(wangxianzhu): Move this into ViewPaintInvalidator.
   SetShouldDoFullPaintInvalidationOnResizeIfNeeded(
-      OffsetWidth() != GetLayoutSize(include_scrollbars).Width(),
-      OffsetHeight() != GetLayoutSize(include_scrollbars).Height());
+      OffsetWidth() != GetLayoutSize(kIncludeScrollbars).Width(),
+      OffsetHeight() != GetLayoutSize(kIncludeScrollbars).Height());
 
   if (PageLogicalHeight() && ShouldUsePrintingLayout()) {
     min_preferred_logical_width_ = max_preferred_logical_width_ =
@@ -327,22 +322,7 @@ void LayoutView::UpdateLayout() {
   ClearNeedsLayout();
 }
 
-LayoutRect LayoutView::VisualOverflowRect() const {
-  // In root layer scrolling mode, the LayoutView performs overflow clipping
-  // like a regular scrollable div.
-  if (RuntimeEnabledFeatures::RootLayerScrollingEnabled())
-    return LayoutBlockFlow::VisualOverflowRect();
-
-  // In normal compositing mode, LayoutView doesn't actually apply clipping
-  // on its descendants. Instead their visual overflow is propagated to
-  // compositor()->m_rootContentLayer for accelerated scrolling.
-  return LayoutOverflowRect();
-}
-
 LayoutRect LayoutView::LocalVisualRectIgnoringVisibility() const {
-  // TODO(wangxianzhu): This is only required without rootLayerScrolls (though
-  // it is also correct but unnecessary with rootLayerScrolls) because of the
-  // special LayoutView overflow model.
   LayoutRect rect = VisualOverflowRect();
   rect.Unite(LayoutRect(rect.Location(), ViewRect().Size()));
   return rect;
@@ -492,17 +472,18 @@ bool LayoutView::MapToVisualRectInAncestorSpace(
     LayoutRect& rect,
     MapCoordinatesFlags mode,
     VisualRectFlags visual_rect_flags) const {
-  if (MapToVisualRectInAncestorSpaceInternalFastPath(ancestor, rect,
-                                                     visual_rect_flags))
-    return !rect.IsEmpty();
+  bool intersects = true;
+  if (MapToVisualRectInAncestorSpaceInternalFastPath(
+          ancestor, rect, visual_rect_flags, intersects))
+    return intersects;
 
   TransformState transform_state(TransformState::kApplyTransformDirection,
                                  FloatQuad(FloatRect(rect)));
-  bool retval = MapToVisualRectInAncestorSpaceInternal(
-      ancestor, transform_state, mode, visual_rect_flags);
+  intersects = MapToVisualRectInAncestorSpaceInternal(ancestor, transform_state,
+                                                      mode, visual_rect_flags);
   transform_state.Flatten();
   rect = LayoutRect(transform_state.LastPlanarQuad().BoundingBox());
-  return retval;
+  return intersects;
 }
 
 bool LayoutView::MapToVisualRectInAncestorSpaceInternal(
@@ -749,10 +730,6 @@ IntRect LayoutView::DocumentRect() const {
   return PixelSnappedIntRect(overflow_rect);
 }
 
-bool LayoutView::RootBackgroundIsEntirelyFixed() const {
-  return Style()->HasEntirelyFixedBackground();
-}
-
 IntSize LayoutView::GetLayoutSize(
     IncludeScrollbarsInRect scrollbar_inclusion) const {
   if (ShouldUsePrintingLayout())
@@ -778,18 +755,6 @@ int LayoutView::ViewLogicalHeight(
     IncludeScrollbarsInRect scrollbar_inclusion) const {
   return Style()->IsHorizontalWritingMode() ? ViewHeight(scrollbar_inclusion)
                                             : ViewWidth(scrollbar_inclusion);
-}
-
-int LayoutView::ViewLogicalWidthForBoxSizing() const {
-  return ViewLogicalWidth(RuntimeEnabledFeatures::RootLayerScrollingEnabled()
-                              ? kIncludeScrollbars
-                              : kExcludeScrollbars);
-}
-
-int LayoutView::ViewLogicalHeightForBoxSizing() const {
-  return ViewLogicalHeight(RuntimeEnabledFeatures::RootLayerScrollingEnabled()
-                               ? kIncludeScrollbars
-                               : kExcludeScrollbars);
 }
 
 LayoutUnit LayoutView::ViewLogicalHeightForPercentages() const {
@@ -892,24 +857,6 @@ void LayoutView::UpdateFromStyle() {
     SetHasBoxDecorationBackground(true);
 }
 
-bool LayoutView::AllowsOverflowClip() const {
-  return RuntimeEnabledFeatures::RootLayerScrollingEnabled();
-}
-
-ScrollResult LayoutView::Scroll(ScrollGranularity granularity,
-                                const FloatSize& delta) {
-  // TODO(bokan): We shouldn't need this specialization but we currently do
-  // because of the Windows pan scrolling path. That should go through a more
-  // normalized ScrollManager-like scrolling path and we should get rid of
-  // of this override. All frame scrolling should be handled by
-  // ViewportScrollCallback.
-
-  if (!GetFrameView())
-    return ScrollResult(false, false, delta.Width(), delta.Height());
-
-  return GetFrameView()->GetScrollableArea()->UserScroll(granularity, delta);
-}
-
 LayoutRect LayoutView::DebugRect() const {
   LayoutRect rect;
   LayoutBlock* block = ContainingBlock();
@@ -933,16 +880,6 @@ bool LayoutView::UpdateLogicalWidthAndColumnWidth() {
   // When we're printing, the size of LayoutView is changed outside of layout,
   // so we'll fail to detect any changes here. Just return true.
   return relayout_children || ShouldUsePrintingLayout();
-}
-
-bool LayoutView::PaintedOutputOfObjectHasNoEffectRegardlessOfSize() const {
-  // Frame scroll corner is painted using LayoutView as the display item client.
-  if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled() &&
-      (GetFrameView()->HorizontalScrollbar() ||
-       GetFrameView()->VerticalScrollbar()))
-    return false;
-
-  return LayoutBlockFlow::PaintedOutputOfObjectHasNoEffectRegardlessOfSize();
 }
 
 void LayoutView::UpdateCounters() {

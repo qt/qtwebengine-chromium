@@ -67,6 +67,8 @@ cc_component("paint") {
     "paint_typeface.h",
     "paint_typeface_transfer_cache_entry.cc",
     "paint_typeface_transfer_cache_entry.h",
+    "path_transfer_cache_entry.cc",
+    "path_transfer_cache_entry.h",
     "raw_memory_transfer_cache_entry.cc",
     "raw_memory_transfer_cache_entry.h",
     "record_paint_canvas.cc",
@@ -75,6 +77,8 @@ cc_component("paint") {
     "render_surface_filters.h",
     "scoped_raster_flags.cc",
     "scoped_raster_flags.h",
+    "shader_transfer_cache_entry.cc",
+    "shader_transfer_cache_entry.h",
     "skia_paint_canvas.cc",
     "skia_paint_canvas.h",
     "skia_paint_image_generator.cc",
@@ -120,6 +124,7 @@ fuzzer_test("paint_op_buffer_fuzzer") {
     "//cc:test_support",
     "//cc/paint",
     "//components/viz/test:test_support",
+    "//gpu/command_buffer/service:gles2",
   ]
 }
 

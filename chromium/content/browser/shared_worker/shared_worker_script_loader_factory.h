@@ -8,11 +8,14 @@
 #include "base/macros.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 
+namespace network {
+class SharedURLLoaderFactory;
+}  // namespace network
+
 namespace content {
 
 class ServiceWorkerContextWrapper;
 class ServiceWorkerProviderHost;
-class URLLoaderFactoryGetter;
 class ResourceContext;
 
 // S13nServiceWorker:
@@ -28,11 +31,15 @@ class ResourceContext;
 class SharedWorkerScriptLoaderFactory
     : public network::mojom::URLLoaderFactory {
  public:
+  // |loader_factory| is used to load the script if the load is not intercepted
+  // by a feature like service worker. Typically it will load the script from
+  // the NetworkService. However, it may internally contain non-NetworkService
+  // factories used for non-http(s) URLs, e.g., a chrome-extension:// URL.
   SharedWorkerScriptLoaderFactory(
       ServiceWorkerContextWrapper* context,
       base::WeakPtr<ServiceWorkerProviderHost> provider_host,
       ResourceContext* resource_context,
-      scoped_refptr<URLLoaderFactoryGetter> loader_factory_getter);
+      scoped_refptr<network::SharedURLLoaderFactory> loader_factory);
   ~SharedWorkerScriptLoaderFactory() override;
 
   // network::mojom::URLLoaderFactory:
@@ -49,7 +56,7 @@ class SharedWorkerScriptLoaderFactory
  private:
   base::WeakPtr<ServiceWorkerProviderHost> service_worker_provider_host_;
   ResourceContext* resource_context_ = nullptr;
-  scoped_refptr<URLLoaderFactoryGetter> loader_factory_getter_;
+  scoped_refptr<network::SharedURLLoaderFactory> loader_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SharedWorkerScriptLoaderFactory);
 };

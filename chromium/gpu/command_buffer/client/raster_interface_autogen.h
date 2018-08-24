@@ -44,9 +44,6 @@ virtual void UnpremultiplyAndDitherCopyCHROMIUM(GLuint source_id,
                                                 GLsizei width,
                                                 GLsizei height) = 0;
 virtual GLenum GetGraphicsResetStatusKHR() = 0;
-virtual void InitializeDiscardableTextureCHROMIUM(GLuint texture_id) = 0;
-virtual void UnlockDiscardableTextureCHROMIUM(GLuint texture_id) = 0;
-virtual bool LockDiscardableTextureCHROMIUM(GLuint texture_id) = 0;
 virtual void EndRasterCHROMIUM() = 0;
 virtual GLuint CreateTexture(bool use_buffer,
                              gfx::BufferUsage buffer_usage,
@@ -74,4 +71,7 @@ virtual void CopySubTexture(GLuint source_id,
                             GLint y,
                             GLsizei width,
                             GLsizei height) = 0;
+virtual void TraceBeginCHROMIUM(const char* category_name,
+                                const char* trace_name) = 0;
+virtual void TraceEndCHROMIUM() = 0;
 #endif  // GPU_COMMAND_BUFFER_CLIENT_RASTER_INTERFACE_AUTOGEN_H_

@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "api/call/transport.h"
+#include "api/video/video_bitrate_allocation.h"
 #include "modules/rtp_rtcp/include/receive_statistics.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtcp_packet.h"
@@ -294,8 +295,8 @@ void RtcpTransceiverImpl::HandleTargetBitrate(
       remote_sender_it->second.observers.empty())
     return;
 
-  // Convert rtcp::TargetBitrate to BitrateAllocation from common types.
-  BitrateAllocation bitrate_allocation;
+  // Convert rtcp::TargetBitrate to VideoBitrateAllocation.
+  VideoBitrateAllocation bitrate_allocation;
   for (const rtcp::TargetBitrate::BitrateItem& item :
        target_bitrate.GetTargetBitrates()) {
     if (item.spatial_layer >= kMaxSpatialLayers ||

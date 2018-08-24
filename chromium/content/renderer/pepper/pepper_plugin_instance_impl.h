@@ -20,6 +20,7 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/optional.h"
 #include "base/strings/string16.h"
 #include "build/build_config.h"
 #include "cc/layers/content_layer_client.h"
@@ -73,7 +74,6 @@ class SkBitmap;
 namespace blink {
 class WebCoalescedInputEvent;
 class WebInputEvent;
-class WebLayer;
 class WebMouseEvent;
 class WebPluginContainer;
 class WebURLResponse;
@@ -416,7 +416,13 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   void SetSelectionBounds(const gfx::PointF& base,
                           const gfx::PointF& extent) override;
   bool CanEditText() override;
+  bool HasEditableText() override;
   void ReplaceSelection(const std::string& text) override;
+  void SelectAll() override;
+  bool CanUndo() override;
+  bool CanRedo() override;
+  void Undo() override;
+  void Redo() override;
 
   // PPB_Instance_API implementation.
   PP_Bool BindGraphics(PP_Instance instance, PP_Resource device) override;
@@ -540,7 +546,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
     // blink::WebAssociatedURLLoaderClient implementation.
     void DidReceiveData(const char* data, int data_length) override;
-    void DidFinishLoading(double finish_time) override;
+    void DidFinishLoading() override;
     void DidFail(const blink::WebURLError& error) override;
 
    private:
@@ -706,7 +712,6 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   blink::WebPluginContainer* container_;
   scoped_refptr<cc::Layer> compositor_layer_;
   scoped_refptr<cc::TextureLayer> texture_layer_;
-  std::unique_ptr<blink::WebLayer> web_layer_;
   bool layer_bound_to_fullscreen_;
   bool layer_is_hardware_;
 
@@ -857,10 +862,12 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   uint32_t filtered_input_event_mask_;
 
   // Text composition status.
+  struct TextInputCaretInfo {
+    gfx::Rect caret;
+    gfx::Rect caret_bounds;
+  };
+  base::Optional<TextInputCaretInfo> text_input_caret_info_;
   ui::TextInputType text_input_type_;
-  gfx::Rect text_input_caret_;
-  gfx::Rect text_input_caret_bounds_;
-  bool text_input_caret_set_;
 
   // Text selection status.
   std::string surrounding_text_;

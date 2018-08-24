@@ -84,7 +84,7 @@ class FetchDataLoaderAsWasmModule final : public FetchDataLoader,
     return AbortCompilation();
   }
 
-  void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(consumer_);
     visitor->Trace(client_);
     FetchDataLoader::Trace(visitor);
@@ -157,6 +157,11 @@ void CompileFromResponseCallback(
     exception_state.ThrowTypeError(
         "An argument must be provided, which must be a "
         "Response or Promise<Response> object");
+    return;
+  }
+
+  if (!response->ok()) {
+    exception_state.ThrowTypeError("HTTP status code is not ok");
     return;
   }
 

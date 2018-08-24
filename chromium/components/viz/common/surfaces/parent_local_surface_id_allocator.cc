@@ -13,19 +13,20 @@ base::LazyInstance<LocalSurfaceId>::Leaky g_invalid_local_surface_id =
     LAZY_INSTANCE_INITIALIZER;
 
 ParentLocalSurfaceIdAllocator::ParentLocalSurfaceIdAllocator()
-    : current_local_surface_id_(kInvalidParentSequenceNumber,
+    : current_local_surface_id_(kInitialParentSequenceNumber,
                                 kInitialChildSequenceNumber,
                                 base::UnguessableToken::Create()) {}
 
-const LocalSurfaceId& ParentLocalSurfaceIdAllocator::UpdateFromChild(
+bool ParentLocalSurfaceIdAllocator::UpdateFromChild(
     const LocalSurfaceId& child_allocated_local_surface_id) {
-  DCHECK_GE(child_allocated_local_surface_id.child_sequence_number(),
-            current_local_surface_id_.child_sequence_number());
-
-  current_local_surface_id_.child_sequence_number_ =
-      child_allocated_local_surface_id.child_sequence_number_;
-  is_invalid_ = false;
-  return current_local_surface_id_;
+  if (child_allocated_local_surface_id.child_sequence_number() >
+      current_local_surface_id_.child_sequence_number()) {
+    current_local_surface_id_.child_sequence_number_ =
+        child_allocated_local_surface_id.child_sequence_number_;
+    is_invalid_ = false;
+    return true;
+  }
+  return false;
 }
 
 void ParentLocalSurfaceIdAllocator::Reset(

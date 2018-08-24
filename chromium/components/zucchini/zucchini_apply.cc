@@ -26,17 +26,18 @@ bool ApplyEquivalenceAndExtraData(ConstBufferView old_image,
 
   for (auto equivalence = equiv_source.GetNext(); equivalence.has_value();
        equivalence = equiv_source.GetNext()) {
-    // TODO(etiennep): Guard against out of range errors and return false
-    // instead.
     MutableBufferView::iterator next_dst_it =
         new_image.begin() + equivalence->dst_offset;
     CHECK(next_dst_it >= dst_it);
+
     offset_t gap = static_cast<offset_t>(next_dst_it - dst_it);
     base::Optional<ConstBufferView> extra_data = extra_data_source.GetNext(gap);
     if (!extra_data) {
       LOG(ERROR) << "Error reading extra_data";
       return false;
     }
+    // |extra_data| length is based on what was parsed from the patch so this
+    // copy should be valid.
     dst_it = std::copy(extra_data->begin(), extra_data->end(), dst_it);
     CHECK_EQ(dst_it, next_dst_it);
     dst_it = std::copy_n(old_image.begin() + equivalence->src_offset,
@@ -148,6 +149,11 @@ bool ApplyReferencesCorrection(ExecutableType exe_type,
           auto delta = ref_delta_source.GetNext();
           if (!delta.has_value()) {
             LOG(ERROR) << "Error reading reference_delta";
+            return false;
+          }
+          const key_t key = expected_key + delta.value();
+          if (!targets.KeyIsValid(key)) {
+            LOG(ERROR) << "Invalid reference_delta";
             return false;
           }
           ref->target = targets.OffsetForKey(expected_key + delta.value());

@@ -5,10 +5,10 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_PAINT_COMPOSITING_DISPLAY_ITEM_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_PAINT_COMPOSITING_DISPLAY_ITEM_H_
 
-#include "third_party/blink/public/platform/web_blend_mode.h"
 #include "third_party/blink/renderer/platform/geometry/float_rect.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_types.h"
 #include "third_party/blink/renderer/platform/graphics/paint/display_item.h"
+#include "third_party/skia/include/core/SkBlendMode.h"
 
 namespace blink {
 
@@ -30,8 +30,8 @@ class PLATFORM_EXPORT BeginCompositingDisplayItem final
   }
 
   void Replay(GraphicsContext&) const override;
-  void AppendToWebDisplayItemList(const FloatSize&,
-                                  WebDisplayItemList*) const override;
+  void AppendToDisplayItemList(const FloatSize&,
+                               cc::DisplayItemList&) const override;
 
  private:
 #if DCHECK_IS_ON()
@@ -66,8 +66,8 @@ class PLATFORM_EXPORT EndCompositingDisplayItem final
       : PairedEndDisplayItem(client, kEndCompositing, sizeof(*this)) {}
 
   void Replay(GraphicsContext&) const override;
-  void AppendToWebDisplayItemList(const FloatSize&,
-                                  WebDisplayItemList*) const override;
+  void AppendToDisplayItemList(const FloatSize&,
+                               cc::DisplayItemList&) const override;
 
  private:
 #if DCHECK_IS_ON()

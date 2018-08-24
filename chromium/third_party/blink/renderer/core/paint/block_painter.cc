@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/paint/block_painter.h"
 
+#include "base/optional.h"
 #include "third_party/blink/renderer/core/editing/drag_caret.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
 #include "third_party/blink/renderer/core/layout/api/line_layout_api_shim.h"
@@ -24,7 +25,6 @@
 #include "third_party/blink/renderer/platform/graphics/paint/clip_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/scroll_hit_test_display_item.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 
 namespace blink {
 
@@ -59,7 +59,7 @@ void BlockPainter::Paint(const PaintInfo& paint_info,
 
   if (original_phase != PaintPhase::kSelfBlockBackgroundOnly &&
       original_phase != PaintPhase::kSelfOutlineOnly) {
-    Optional<BoxClipper> clipper;
+    base::Optional<BoxClipper> clipper;
     // We have already applied clip in SVGForeignObjectClipper.
     if (!layout_block_.IsSVGForeignObject() ||
         RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
@@ -86,9 +86,8 @@ void BlockPainter::PaintOverflowControlsIfNeeded(
     const LayoutPoint& paint_offset) {
   if (layout_block_.HasOverflowClip() &&
       layout_block_.Style()->Visibility() == EVisibility::kVisible &&
-      ShouldPaintSelfBlockBackground(paint_info.phase) &&
-      !paint_info.PaintRootBackgroundOnly()) {
-    Optional<ClipRecorder> clip_recorder;
+      ShouldPaintSelfBlockBackground(paint_info.phase)) {
+    base::Optional<ClipRecorder> clip_recorder;
     if (!layout_block_.Layer()->IsSelfPaintingLayer()) {
       LayoutRect clip_rect = layout_block_.BorderBoxRect();
       clip_rect.MoveBy(paint_offset);
@@ -113,7 +112,7 @@ void BlockPainter::PaintChild(const LayoutBox& child,
                               const PaintInfo& paint_info,
                               const LayoutPoint& paint_offset) {
   LayoutPoint child_point =
-      layout_block_.FlipForWritingModeForChild(&child, paint_offset);
+      layout_block_.FlipForWritingModeForChildForPaint(&child, paint_offset);
   if (!child.HasSelfPaintingLayer() && !child.IsFloating() &&
       !child.IsColumnSpanAll())
     child.Paint(paint_info, child_point);
@@ -134,7 +133,7 @@ void BlockPainter::PaintAllChildPhasesAtomically(
     const PaintInfo& paint_info,
     const LayoutPoint& paint_offset) {
   LayoutPoint child_point =
-      layout_block_.FlipForWritingModeForChild(&child, paint_offset);
+      layout_block_.FlipForWritingModeForChildForPaint(&child, paint_offset);
   if (!child.HasSelfPaintingLayer() && !child.IsFloating())
     ObjectPainter(child).PaintAllPhasesAtomically(paint_info, child_point);
 }
@@ -159,7 +158,7 @@ void BlockPainter::PaintInlineBox(const InlineBox& inline_box,
     child_point =
         LineLayoutAPIShim::LayoutObjectFrom(inline_box.GetLineLayoutItem())
             ->ContainingBlock()
-            ->FlipForWritingModeForChild(
+            ->FlipForWritingModeForChildForPaint(
                 ToLayoutBox(LineLayoutAPIShim::LayoutObjectFrom(
                     inline_box.GetLineLayoutItem())),
                 child_point);
@@ -185,29 +184,6 @@ void BlockPainter::PaintScrollHitTestDisplayItem(const PaintInfo& paint_info) {
 
   const auto* fragment = paint_info.FragmentToPaint(layout_block_);
   const auto* properties = fragment ? fragment->PaintProperties() : nullptr;
-
-  // Without RootLayerScrolling, the LayoutView will not create scroll paint
-  // properties and will rely on the LocalFrameView providing a scroll
-  // translation property.
-  if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled() &&
-      layout_block_.IsLayoutView()) {
-    auto* view = layout_block_.GetFrame()->View();
-    if (view->ScrollTranslation() && view->ScrollTranslation()->ScrollNode()) {
-      // The scroll hit test is in the unscrolled unclipped space.
-      ScopedPaintChunkProperties scroll_hit_test_properties(
-          paint_info.context.GetPaintController(),
-          view->PreContentClipProperties(), layout_block_,
-          DisplayItem::kScrollHitTest);
-      ScrollHitTestDisplayItem::Record(paint_info.context, layout_block_,
-                                       DisplayItem::kScrollHitTest,
-                                       view->ScrollTranslation());
-    }
-    // The LayoutView should not create a scroll translation or scroll node,
-    // instead relying on the LocalFrameView's scroll translation and scroll.
-    DCHECK(!properties ||
-           (!properties->ScrollTranslation() && !properties->Scroll()));
-    return;
-  }
 
   // If there is an associated scroll node, emit a scroll hit test display item.
   if (properties && properties->Scroll()) {
@@ -246,9 +222,6 @@ void BlockPainter::PaintObject(const PaintInfo& paint_info,
       return;
   }
 
-  if (paint_info.PaintRootBackgroundOnly())
-    return;
-
   if (paint_phase == PaintPhase::kMask &&
       layout_block_.Style()->Visibility() == EVisibility::kVisible) {
     layout_block_.PaintMask(paint_info, paint_offset);
@@ -268,9 +241,9 @@ void BlockPainter::PaintObject(const PaintInfo& paint_info,
         .AddPDFURLRectIfNeeded(paint_info, paint_offset);
 
   if (paint_phase != PaintPhase::kSelfOutlineOnly) {
-    Optional<ScopedPaintChunkProperties> scoped_scroll_property;
-    Optional<ScrollRecorder> scroll_recorder;
-    Optional<PaintInfo> scrolled_paint_info;
+    base::Optional<ScopedPaintChunkProperties> scoped_scroll_property;
+    base::Optional<ScrollRecorder> scroll_recorder;
+    base::Optional<PaintInfo> scrolled_paint_info;
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
       if (const auto* fragment = paint_info.FragmentToPaint(layout_block_)) {
         const auto* object_properties = fragment->PaintProperties();

@@ -10,17 +10,32 @@ assert(enable_extensions,
        "Cannot depend on extensions because enable_extensions=false.")
 
 schema_sources = [
+  # TODO(crbug/837773) De-dupe Automation later.
+  "accessibility_private.json",
+  "automation.idl",
+  "automation_internal.idl",
   "bookmarks.json",
+  "braille_display_private.idl",
   "history.json",
   "identity.idl",
+  "i18n.json",
+  "notifications.idl",
 ]
+
 root_namespace = "extensions::cast::api::%(namespace)s"
+
+extensions_api_uncompiled_sources = [ "extension.json" ]
 
 json_schema_api("api") {
   sources = schema_sources
+  uncompiled_sources = extensions_api_uncompiled_sources
   schemas = true
   bundle = true
   bundle_name = "Cast"
+  uncompiled_bundle_schema_sources = [
+    "tts.json",
+    "tts_engine.json",
+  ]
 }
 
 json_schema_api("api_registration") {

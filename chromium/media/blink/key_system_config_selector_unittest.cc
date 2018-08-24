@@ -7,7 +7,6 @@
 
 #include "base/bind.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "media/base/eme_constants.h"
 #include "media/base/key_systems.h"
@@ -16,7 +15,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/web_encrypted_media_types.h"
 #include "third_party/blink/public/platform/web_media_key_system_configuration.h"
-#include "third_party/blink/public/platform/web_security_origin.h"
 #include "third_party/blink/public/platform/web_string.h"
 #include "url/gurl.h"
 
@@ -42,8 +40,6 @@ const char kSupportedVideoCodec[] = "vp8";
 const char kUnsupportedCodec[] = "foo";
 const char kUnsupportedCodecs[] = "vp8,foo";
 const char kSupportedVideoCodecs[] = "vp8,vp8";
-
-const char kDefaultSecurityOrigin[] = "https://example.com/";
 
 const char kClearKey[] = "org.w3.clearkey";
 
@@ -103,6 +99,14 @@ class FakeKeySystems : public KeySystems {
       case EmeInitDataType::KEYIDS:
         return init_data_type_keyids_supported_;
     }
+    NOTREACHED();
+    return false;
+  }
+
+  bool IsEncryptionSchemeSupported(
+      const std::string& key_system,
+      EncryptionMode encryption_scheme) const override {
+    // TODO(crbug.com/658026): Implement this once value passed from blink.
     NOTREACHED();
     return false;
   }
@@ -228,7 +232,7 @@ class KeySystemConfigSelectorTest : public testing::Test {
     succeeded_count_ = 0;
     not_supported_count_ = 0;
     KeySystemConfigSelector(key_systems_.get(), media_permission_.get())
-        .SelectConfig(key_system_, configs_, security_origin_,
+        .SelectConfig(key_system_, configs_,
                       base::Bind(&KeySystemConfigSelectorTest::OnSucceeded,
                                  base::Unretained(this)),
                       base::Bind(&KeySystemConfigSelectorTest::OnNotSupported,
@@ -281,8 +285,6 @@ class KeySystemConfigSelectorTest : public testing::Test {
   // Held values for the call to SelectConfig().
   blink::WebString key_system_ = blink::WebString::FromUTF8(kSupported);
   std::vector<blink::WebMediaKeySystemConfiguration> configs_;
-  blink::WebSecurityOrigin security_origin_ =
-      blink::WebSecurityOrigin::CreateFromString(kDefaultSecurityOrigin);
 
   // Holds the last successful accumulated configuration.
   blink::WebMediaKeySystemConfiguration config_;

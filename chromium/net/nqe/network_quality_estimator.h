@@ -223,40 +223,20 @@ class NET_EXPORT NetworkQualityEstimator
   }
 
  protected:
-  // Different experimental statistic algorithms that can be used for computing
-  // the predictions.
-  // TODO(tbansal): crbug.com/649887. Consider evaluating other statistical
-  // algorithms.
-  enum Statistic {
-    // Last statistic. Not to be used.
-    STATISTIC_LAST = 0
-  };
-
   // NetworkChangeNotifier::ConnectionTypeObserver implementation:
   void OnConnectionTypeChanged(
       NetworkChangeNotifier::ConnectionType type) override;
 
-  // Returns true if median RTT at the HTTP layer is available and sets |rtt|
-  // to the median of RTT observations since |start_time|.
-  // Virtualized for testing. |rtt| should not be null. The RTT at the HTTP
-  // layer measures the time from when the request was sent (this happens after
-  // the connection is established) to the time when the response headers were
-  // received.
-  // TODO(tbansal): Change it to return HTTP RTT as base::TimeDelta.
-  virtual bool GetRecentHttpRTT(const base::TimeTicks& start_time,
-                                base::TimeDelta* rtt) const WARN_UNUSED_RESULT;
-
-  // Returns true if the median RTT at the transport layer is available and sets
-  // |rtt| to the median of transport layer RTT observations since
-  // |start_time|. |rtt| should not be null. Virtualized for testing.
-  // If |observations_count| is not null, then it is set to the number of
-  // transport RTT observations that are available when computing the RTT
-  // estimate.
-  // TODO(tbansal): Change it to return transport RTT as base::TimeDelta.
-  virtual bool GetRecentTransportRTT(const base::TimeTicks& start_time,
-                                     base::TimeDelta* rtt,
-                                     size_t* observations_count) const
-      WARN_UNUSED_RESULT;
+  // Returns true if median RTT across all samples that belong to
+  // |observation_category| is available and sets |rtt| to the median of RTT
+  // observations since |start_time|. Virtualized for testing. |rtt| should not
+  // be null. If |observations_count| is not null, then it is set to the number
+  // of RTT observations that were used for computing the RTT estimate.
+  virtual bool GetRecentRTT(
+      nqe::internal::ObservationCategory observation_category,
+      const base::TimeTicks& start_time,
+      base::TimeDelta* rtt,
+      size_t* observations_count) const WARN_UNUSED_RESULT;
 
   // Returns true if median downstream throughput is available and sets |kbps|
   // to the median of downstream throughput (in kilobits per second)
@@ -289,6 +269,7 @@ class NET_EXPORT NetworkQualityEstimator
       const base::TimeTicks& start_time,
       base::TimeDelta* http_rtt,
       base::TimeDelta* transport_rtt,
+      base::TimeDelta* end_to_end_rtt,
       int32_t* downstream_throughput_kbps,
       size_t* transport_rtt_observation_count) const;
 
@@ -305,16 +286,14 @@ class NET_EXPORT NetworkQualityEstimator
   // percentiles indicating less performant networks. For example, if
   // |percentile| is 90, then the network is expected to be faster than the
   // returned estimate with 0.9 probability. Similarly, network is expected to
-  // be slower than the returned estimate with 0.1 probability. |statistic|
-  // is the statistic that should be used for computing the estimate. If unset,
-  // the default statistic is used. Virtualized for testing.
+  // be slower than the returned estimate with 0.1 probability.
+  // Virtualized for testing.
   // |observation_category| is the category of observations which should be used
   // for computing the RTT estimate.
   // If |observations_count| is not null, then it is set to the number of RTT
   // observations that were available when computing the RTT estimate.
   virtual base::TimeDelta GetRTTEstimateInternal(
       base::TimeTicks start_time,
-      const base::Optional<Statistic>& statistic,
       nqe::internal::ObservationCategory observation_category,
       int percentile,
       size_t* observations_count) const;
@@ -483,15 +462,12 @@ class NET_EXPORT NetworkQualityEstimator
       MetricUsage downstream_throughput_kbps_metric,
       base::TimeDelta* http_rtt,
       base::TimeDelta* transport_rtt,
+      base::TimeDelta* end_to_end_rtt,
       int32_t* downstream_throughput_kbps,
       size_t* transport_rtt_observation_count) const;
 
   // Returns true if the cached network quality estimate was successfully read.
   bool ReadCachedNetworkQualityEstimate();
-
-  // Returns true if transport RTT should be used for computing the effective
-  // connection type.
-  bool UseTransportRTT() const;
 
   // Computes the bandwidth delay product in kilobits. The computed value is
   // stored in |bandwidth_delay_product_kbits_| and can be accessed using
@@ -508,8 +484,6 @@ class NET_EXPORT NetworkQualityEstimator
 
   // Periodically updates |increase_in_transport_rtt_| by posting delayed tasks.
   void IncreaseInTransportRTTUpdater();
-
-  const char* GetNameForStatistic(int i) const;
 
   // Gathers metrics for the next connection type. Called when there is a change
   // in the connection type.
@@ -562,13 +536,13 @@ class NET_EXPORT NetworkQualityEstimator
   // per second) sorted by timestamp.
   ObservationBuffer http_downstream_throughput_kbps_observations_;
 
-  // Buffer that holds RTT observations from the HTTP layer (in milliseconds)
-  // sorted by timestamp.
-  ObservationBuffer http_rtt_ms_observations_;
-
-  // Buffer that holds RTT observations from the transport layer (in
-  // milliseconds) sorted by timestamp.
-  ObservationBuffer transport_rtt_ms_observations_;
+  // Buffer that holds RTT observations with different observation categories.
+  // The entries in |rtt_ms_observations_| are in the same order as the
+  // entries in the nqe::internal:ObservationCategory enum.  Size of
+  // |rtt_ms_observations_| is nqe::internal::OBSERVATION_CATEGORY_COUNT.
+  // Each observation buffer in |rtt_ms_observations_| stores RTT observations
+  // in milliseconds. Within a buffer, the observations are sorted by timestamp.
+  std::vector<ObservationBuffer> rtt_ms_observations_;
 
   // Time when the transaction for the last main frame request was started.
   base::TimeTicks last_main_frame_request_;

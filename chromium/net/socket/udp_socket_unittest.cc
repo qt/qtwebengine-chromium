@@ -29,7 +29,7 @@
 #include "net/socket/udp_client_socket.h"
 #include "net/socket/udp_server_socket.h"
 #include "net/test/gtest_util.h"
-#include "net/test/net_test_suite.h"
+#include "net/test/test_with_scoped_task_environment.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -53,7 +53,7 @@ namespace net {
 
 namespace {
 
-class UDPSocketTest : public PlatformTest {
+class UDPSocketTest : public PlatformTest, public WithScopedTaskEnvironment {
  public:
   UDPSocketTest() : buffer_(new IOBufferWithSize(kMaxRead)) {}
 
@@ -348,14 +348,7 @@ TEST_F(UDPSocketTest, MAYBE_LocalBroadcast) {
 // random, but they are enough to protect from most common non-random port
 // allocation strategies (e.g. counter, pool of available ports, etc.) False
 // positive result is theoretically possible, but its probability is negligible.
-//
-// Sometimes times outs on Fuchsia on bots. https://crbug.com/826952
-#if defined(OS_FUCHSIA)
-#define MAYBE_ConnectRandomBind DISABLED_ConnectRandomBind
-#else
-#define MAYBE_ConnectRandomBind ConnectRandomBind
-#endif
-TEST_F(UDPSocketTest, MAYBE_ConnectRandomBind) {
+TEST_F(UDPSocketTest, ConnectRandomBind) {
   const int kIterations = 1000;
 
   std::vector<int> used_ports;

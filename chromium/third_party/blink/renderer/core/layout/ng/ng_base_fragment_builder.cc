@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/core/layout/ng/ng_base_fragment_builder.h"
 
+#include "third_party/blink/renderer/core/style/computed_style.h"
+
 namespace blink {
 
 NGBaseFragmentBuilder::NGBaseFragmentBuilder(
@@ -12,7 +14,8 @@ NGBaseFragmentBuilder::NGBaseFragmentBuilder(
     TextDirection direction)
     : style_(std::move(style)),
       writing_mode_(writing_mode),
-      direction_(direction) {
+      direction_(direction),
+      style_variant_(NGStyleVariant::kStandard) {
   DCHECK(style_);
 }
 
@@ -21,6 +24,12 @@ NGBaseFragmentBuilder::NGBaseFragmentBuilder(WritingMode writing_mode,
     : writing_mode_(writing_mode), direction_(direction) {}
 
 NGBaseFragmentBuilder::~NGBaseFragmentBuilder() = default;
+
+NGBaseFragmentBuilder& NGBaseFragmentBuilder::SetStyleVariant(
+    NGStyleVariant style_variant) {
+  style_variant_ = style_variant;
+  return *this;
+}
 
 NGBaseFragmentBuilder& NGBaseFragmentBuilder::SetStyle(
     scoped_refptr<const ComputedStyle> style,

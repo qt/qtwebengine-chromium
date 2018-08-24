@@ -20,8 +20,10 @@ void AXStateFromBlink(const blink::WebAXObject& o, ui::AXNodeData* dst) {
   if (o.CanSetFocusAttribute())
     dst->AddState(ax::mojom::State::kFocusable);
 
-  if (o.Role() == blink::kWebAXRolePopUpButton || o.AriaHasPopup())
-    dst->AddState(ax::mojom::State::kHaspopup);
+  if (o.HasPopup())
+    dst->SetHasPopup(AXHasPopupFromBlink(o.HasPopup()));
+  else if (o.Role() == blink::kWebAXRolePopUpButton)
+    dst->SetHasPopup(ax::mojom::HasPopup::kMenu);
 
   if (o.IsHovered())
     dst->AddState(ax::mojom::State::kHovered);
@@ -133,6 +135,84 @@ ax::mojom::Role AXRoleFromBlink(blink::WebAXRole role) {
       return ax::mojom::Role::kDirectory;
     case blink::kWebAXRoleDisclosureTriangle:
       return ax::mojom::Role::kDisclosureTriangle;
+    case blink::kWebAXRoleDocAbstract:
+      return ax::mojom::Role::kDocAbstract;
+    case blink::kWebAXRoleDocAcknowledgments:
+      return ax::mojom::Role::kDocAcknowledgments;
+    case blink::kWebAXRoleDocAfterword:
+      return ax::mojom::Role::kDocAfterword;
+    case blink::kWebAXRoleDocAppendix:
+      return ax::mojom::Role::kDocAppendix;
+    case blink::kWebAXRoleDocBackLink:
+      return ax::mojom::Role::kDocBackLink;
+    case blink::kWebAXRoleDocBiblioEntry:
+      return ax::mojom::Role::kDocBiblioEntry;
+    case blink::kWebAXRoleDocBibliography:
+      return ax::mojom::Role::kDocBibliography;
+    case blink::kWebAXRoleDocBiblioRef:
+      return ax::mojom::Role::kDocBiblioRef;
+    case blink::kWebAXRoleDocChapter:
+      return ax::mojom::Role::kDocChapter;
+    case blink::kWebAXRoleDocColophon:
+      return ax::mojom::Role::kDocColophon;
+    case blink::kWebAXRoleDocConclusion:
+      return ax::mojom::Role::kDocConclusion;
+    case blink::kWebAXRoleDocCover:
+      return ax::mojom::Role::kDocCover;
+    case blink::kWebAXRoleDocCredit:
+      return ax::mojom::Role::kDocCredit;
+    case blink::kWebAXRoleDocCredits:
+      return ax::mojom::Role::kDocCredits;
+    case blink::kWebAXRoleDocDedication:
+      return ax::mojom::Role::kDocDedication;
+    case blink::kWebAXRoleDocEndnote:
+      return ax::mojom::Role::kDocEndnote;
+    case blink::kWebAXRoleDocEndnotes:
+      return ax::mojom::Role::kDocEndnotes;
+    case blink::kWebAXRoleDocEpigraph:
+      return ax::mojom::Role::kDocEpigraph;
+    case blink::kWebAXRoleDocEpilogue:
+      return ax::mojom::Role::kDocEpilogue;
+    case blink::kWebAXRoleDocErrata:
+      return ax::mojom::Role::kDocErrata;
+    case blink::kWebAXRoleDocExample:
+      return ax::mojom::Role::kDocExample;
+    case blink::kWebAXRoleDocFootnote:
+      return ax::mojom::Role::kDocFootnote;
+    case blink::kWebAXRoleDocForeword:
+      return ax::mojom::Role::kDocForeword;
+    case blink::kWebAXRoleDocGlossary:
+      return ax::mojom::Role::kDocGlossary;
+    case blink::kWebAXRoleDocGlossRef:
+      return ax::mojom::Role::kDocGlossRef;
+    case blink::kWebAXRoleDocIndex:
+      return ax::mojom::Role::kDocIndex;
+    case blink::kWebAXRoleDocIntroduction:
+      return ax::mojom::Role::kDocIntroduction;
+    case blink::kWebAXRoleDocNoteRef:
+      return ax::mojom::Role::kDocNoteRef;
+    case blink::kWebAXRoleDocNotice:
+      return ax::mojom::Role::kDocNotice;
+    case blink::kWebAXRoleDocPageBreak:
+      return ax::mojom::Role::kDocPageBreak;
+    case blink::kWebAXRoleDocPageList:
+      return ax::mojom::Role::kDocPageList;
+    case blink::kWebAXRoleDocPart:
+      return ax::mojom::Role::kDocPart;
+    case blink::kWebAXRoleDocPreface:
+      return ax::mojom::Role::kDocPreface;
+    case blink::kWebAXRoleDocPrologue:
+      return ax::mojom::Role::kDocPrologue;
+    case blink::kWebAXRoleDocPullquote:
+      return ax::mojom::Role::kDocPullquote;
+    case blink::kWebAXRoleDocQna:
+      return ax::mojom::Role::kDocQna;
+    case blink::kWebAXRoleDocSubtitle:
+      return ax::mojom::Role::kDocSubtitle;
+    case blink::kWebAXRoleDocTip:
+      return ax::mojom::Role::kDocTip;
+    case blink::kWebAXRoleDocToc:
+      return ax::mojom::Role::kDocToc;
     case blink::kWebAXRoleDocument:
       return ax::mojom::Role::kDocument;
     case blink::kWebAXRoleEmbeddedObject:
@@ -149,6 +229,12 @@ ax::mojom::Role AXRoleFromBlink(blink::WebAXRole role) {
       return ax::mojom::Role::kForm;
     case blink::kWebAXRoleGenericContainer:
       return ax::mojom::Role::kGenericContainer;
+    case blink::kWebAXRoleGraphicsDocument:
+      return ax::mojom::Role::kGraphicsDocument;
+    case blink::kWebAXRoleGraphicsObject:
+      return ax::mojom::Role::kGraphicsObject;
+    case blink::kWebAXRoleGraphicsSymbol:
+      return ax::mojom::Role::kGraphicsSymbol;
     case blink::kWebAXRoleGrid:
       return ax::mojom::Role::kGrid;
     case blink::kWebAXRoleGroup:
@@ -263,8 +349,6 @@ ax::mojom::Role AXRoleFromBlink(blink::WebAXRole role) {
       return ax::mojom::Role::kSliderThumb;
     case blink::kWebAXRoleSpinButton:
       return ax::mojom::Role::kSpinButton;
-    case blink::kWebAXRoleSpinButtonPart:
-      return ax::mojom::Role::kSpinButtonPart;
     case blink::kWebAXRoleSplitter:
       return ax::mojom::Role::kSplitter;
     case blink::kWebAXRoleStaticText:
@@ -445,6 +529,20 @@ ax::mojom::TextDirection AXTextDirectionFromBlink(
   return ax::mojom::TextDirection::kNone;
 }
 
+ax::mojom::TextPosition AXTextPositionFromBlink(
+    blink::WebAXTextPosition text_position) {
+  switch (text_position) {
+    case blink::kWebAXTextPositionNone:
+      return ax::mojom::TextPosition::kNone;
+    case blink::kWebAXTextPositionSubscript:
+      return ax::mojom::TextPosition::kSubscript;
+    case blink::kWebAXTextPositionSuperscript:
+      return ax::mojom::TextPosition::kSuperscript;
+  }
+  NOTREACHED();
+  return ax::mojom::TextPosition::kNone;
+}
+
 ax::mojom::TextStyle AXTextStyleFromBlink(blink::WebAXTextStyle text_style) {
   uint32_t browser_text_style =
       static_cast<uint32_t>(ax::mojom::TextStyle::kNone);
@@ -486,6 +584,28 @@ ax::mojom::AriaCurrentState AXAriaCurrentStateFromBlink(
 
   NOTREACHED();
   return ax::mojom::AriaCurrentState::kNone;
+}
+
+ax::mojom::HasPopup AXHasPopupFromBlink(blink::WebAXHasPopup has_popup) {
+  switch (has_popup) {
+    case blink::kWebAXHasPopupFalse:
+      return ax::mojom::HasPopup::kFalse;
+    case blink::kWebAXHasPopupTrue:
+      return ax::mojom::HasPopup::kTrue;
+    case blink::kWebAXHasPopupMenu:
+      return ax::mojom::HasPopup::kMenu;
+    case blink::kWebAXHasPopupListbox:
+      return ax::mojom::HasPopup::kListbox;
+    case blink::kWebAXHasPopupTree:
+      return ax::mojom::HasPopup::kTree;
+    case blink::kWebAXHasPopupGrid:
+      return ax::mojom::HasPopup::kGrid;
+    case blink::kWebAXHasPopupDialog:
+      return ax::mojom::HasPopup::kDialog;
+  }
+
+  NOTREACHED();
+  return ax::mojom::HasPopup::kFalse;
 }
 
 ax::mojom::InvalidState AXInvalidStateFromBlink(

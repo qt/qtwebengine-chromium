@@ -19,7 +19,6 @@
 #include "gpu/command_buffer/common/mailbox_holder.h"
 #include "media/base/data_buffer.h"
 #include "media/base/video_frame.h"
-#include "skia/ext/texture_handle.h"
 #include "third_party/libyuv/include/libyuv.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkImageGenerator.h"
@@ -898,18 +897,19 @@ bool PaintCanvasVideoRenderer::CopyVideoFrameTexturesToGLTexture(
     if (!UpdateLastImage(video_frame, context_3d))
       return false;
 
-    const GrGLTextureInfo* texture_info =
-        skia::GrBackendObjectToGrGLTextureInfo(
-            last_image_.GetSkImage()->getTextureHandle(true));
-
-    if (!texture_info)
+    GrBackendTexture backend_texture =
+        last_image_.GetSkImage()->getBackendTexture(true);
+    if (!backend_texture.isValid())
+      return false;
+    GrGLTextureInfo texture_info;
+    if (!backend_texture.getGLTextureInfo(&texture_info))
       return false;
 
     gpu::gles2::GLES2Interface* canvas_gl = context_3d.gl;
     gpu::MailboxHolder mailbox_holder;
-    mailbox_holder.texture_target = texture_info->fTarget;
+    mailbox_holder.texture_target = texture_info.fTarget;
     canvas_gl->GenMailboxCHROMIUM(mailbox_holder.mailbox.name);
-    canvas_gl->ProduceTextureDirectCHROMIUM(texture_info->fID,
+    canvas_gl->ProduceTextureDirectCHROMIUM(texture_info.fID,
                                             mailbox_holder.mailbox.name);
 
     // Wait for mailbox creation on canvas context before consuming it and
@@ -1021,14 +1021,14 @@ void PaintCanvasVideoRenderer::ResetCache() {
   DCHECK(thread_checker_.CalledOnValidThread());
   // Clear cached values.
   last_image_ = cc::PaintImage();
-  last_timestamp_ = kNoTimestamp;
+  last_id_.reset();
 }
 
 bool PaintCanvasVideoRenderer::UpdateLastImage(
     const scoped_refptr<VideoFrame>& video_frame,
     const Context3D& context_3d) {
-  if (!last_image_ || video_frame->timestamp() != last_timestamp_ ||
-      !last_image_.GetSkImage()->getTextureHandle(true)) {
+  if (!last_image_ || video_frame->unique_id() != last_id_ ||
+      !last_image_.GetSkImage()->getBackendTexture(true).isValid()) {
     ResetCache();
 
     auto paint_image_builder =
@@ -1062,7 +1062,7 @@ bool PaintCanvasVideoRenderer::UpdateLastImage(
     CorrectLastImageDimensions(gfx::RectToSkIRect(video_frame->visible_rect()));
     if (!last_image_)  // Couldn't create the SkImage.
       return false;
-    last_timestamp_ = video_frame->timestamp();
+    last_id_ = video_frame->unique_id();
   }
   last_image_deleting_timer_.Reset();
   DCHECK(!!last_image_);

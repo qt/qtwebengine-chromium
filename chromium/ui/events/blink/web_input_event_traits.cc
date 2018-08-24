@@ -107,7 +107,8 @@ struct WebInputEventToString {
   bool Execute(const WebInputEvent& event, std::string* result) const {
     SStringPrintf(result, "%s (Time: %lf, Modifiers: %d)\n",
                   WebInputEvent::GetName(event.GetType()),
-                  event.TimeStampSeconds(), event.GetModifiers());
+                  event.TimeStamp().since_origin().InSecondsF(),
+                  event.GetModifiers());
     const EventType& typed_event = static_cast<const EventType&>(event);
     ApppendEventDetails(typed_event, result);
     return true;
@@ -254,7 +255,26 @@ LatencyInfo WebInputEventTraits::CreateLatencyInfoForWebGestureEvent(
     source_event_type = SourceEventType::WHEEL;
   } else if (event.SourceDevice() ==
              blink::WebGestureDevice::kWebGestureDeviceTouchscreen) {
-    source_event_type = SourceEventType::TOUCH;
+    blink::WebGestureEvent::InertialPhaseState inertial_phase_state =
+        blink::WebGestureEvent::kUnknownMomentumPhase;
+
+    switch (event.GetType()) {
+      case blink::WebInputEvent::kGestureScrollBegin:
+        inertial_phase_state = event.data.scroll_begin.inertial_phase;
+        break;
+      case blink::WebInputEvent::kGestureScrollUpdate:
+        inertial_phase_state = event.data.scroll_update.inertial_phase;
+        break;
+      case blink::WebInputEvent::kGestureScrollEnd:
+        inertial_phase_state = event.data.scroll_end.inertial_phase;
+        break;
+      default:
+        break;
+    }
+    bool is_in_inertial_phase =
+        inertial_phase_state == blink::WebGestureEvent::kMomentumPhase;
+    source_event_type = is_in_inertial_phase ? SourceEventType::INERTIAL
+                                             : SourceEventType::TOUCH;
   }
   LatencyInfo latency_info(source_event_type);
   return latency_info;

@@ -30,11 +30,11 @@ interface Element : Node {
     readonly attribute DOMString? namespaceURI;
     readonly attribute DOMString? prefix;
     readonly attribute DOMString localName;
-    readonly attribute DOMString tagName;
+    [Affects=Nothing] readonly attribute DOMString tagName;
 
-    [CEReactions, Reflect] attribute DOMString id;
-    [CEReactions, Reflect=class] attribute DOMString className;
-    [SameObject, PerWorldBindings, PutForwards=value] readonly attribute DOMTokenList classList;
+    [Affects=Nothing, CEReactions, Reflect] attribute DOMString id;
+    [Affects=Nothing, CEReactions, Reflect=class] attribute DOMString className;
+    [Affects=Nothing, SameObject, PerWorldBindings, PutForwards=value] readonly attribute DOMTokenList classList;
     [Unscopable, CEReactions, Reflect] attribute DOMString slot;
 
     // Pointer Events
@@ -43,17 +43,17 @@ interface Element : Node {
     [RaisesException] void releasePointerCapture (long pointerId);
     boolean hasPointerCapture (long pointerId);
 
-    boolean hasAttributes();
-    [SameObject, PerWorldBindings, ImplementedAs=attributesForBindings] readonly attribute NamedNodeMap attributes;
-    sequence<DOMString> getAttributeNames();
-    DOMString? getAttribute(DOMString name);
-    DOMString? getAttributeNS(DOMString? namespaceURI, DOMString localName);
+    [Affects=Nothing] boolean hasAttributes();
+    [Affects=Nothing, SameObject, PerWorldBindings, ImplementedAs=attributesForBindings] readonly attribute NamedNodeMap attributes;
+    [Affects=Nothing] sequence<DOMString> getAttributeNames();
+    [Affects=Nothing] DOMString? getAttribute(DOMString name);
+    [Affects=Nothing] DOMString? getAttributeNS(DOMString? namespaceURI, DOMString localName);
     [RaisesException, CEReactions, CustomElementCallbacks] void setAttribute(DOMString name, DOMString value);
     [RaisesException, CEReactions, CustomElementCallbacks] void setAttributeNS(DOMString? namespaceURI, DOMString name, DOMString value);
     [CEReactions, CustomElementCallbacks] void removeAttribute(DOMString name);
     [CEReactions, CustomElementCallbacks] void removeAttributeNS(DOMString? namespaceURI, DOMString localName);
-    boolean hasAttribute(DOMString name);
-    boolean hasAttributeNS(DOMString? namespaceURI, DOMString localName);
+    [Affects=Nothing] boolean hasAttribute(DOMString name);
+    [Affects=Nothing] boolean hasAttributeNS(DOMString? namespaceURI, DOMString localName);
 
     Attr? getAttributeNode(DOMString name);
     Attr? getAttributeNodeNS(DOMString? namespaceURI, DOMString localName);
@@ -66,11 +66,11 @@ interface Element : Node {
     [RaisesException, ImplementedAs=matches, MeasureAs=ElementPrefixedMatchesSelector] boolean webkitMatchesSelector(DOMString selectors); // historical alias of .matches
 
     [RaisesException, CallWith=ScriptState, MeasureAs=ElementAttachShadow] ShadowRoot attachShadow(ShadowRootInit shadowRootInitDict);
-    [PerWorldBindings, ImplementedAs=OpenShadowRoot] readonly attribute ShadowRoot? shadowRoot;
+    [Affects=Nothing, PerWorldBindings, ImplementedAs=OpenShadowRoot] readonly attribute ShadowRoot? shadowRoot;
 
-    HTMLCollection getElementsByTagName(DOMString localName);
-    HTMLCollection getElementsByTagNameNS(DOMString? namespaceURI, DOMString localName);
-    HTMLCollection getElementsByClassName(DOMString classNames);
+    [Affects=Nothing] HTMLCollection getElementsByTagName(DOMString localName);
+    [Affects=Nothing] HTMLCollection getElementsByTagNameNS(DOMString? namespaceURI, DOMString localName);
+    [Affects=Nothing] HTMLCollection getElementsByClassName(DOMString classNames);
 
     [RaisesException, CEReactions, CustomElementCallbacks] Element? insertAdjacentElement(DOMString where, Element element);
     [RaisesException] void insertAdjacentText(DOMString where, DOMString data);
@@ -83,8 +83,8 @@ interface Element : Node {
     // https://w3c.github.io/DOM-Parsing/#extensions-to-the-element-interface
     //
     // TODO(mkwst): Write a spec for the `TrustedHTML` variants.
-    [CEReactions, CustomElementCallbacks, Custom=Setter, RuntimeCallStatsCounter=ElementInnerHTML] attribute HTMLString innerHTML;
-    [CEReactions, CustomElementCallbacks, Custom=Setter] attribute HTMLString outerHTML;
+    [Affects=Nothing, CEReactions, CustomElementCallbacks, Custom=Setter, RuntimeCallStatsCounter=ElementInnerHTML] attribute HTMLString innerHTML;
+    [Affects=Nothing, CEReactions, CustomElementCallbacks, Custom=Setter] attribute HTMLString outerHTML;
     [CEReactions, CustomElementCallbacks, RaisesException] void insertAdjacentHTML(DOMString position, HTMLString text);
 
     // Pointer Lock
@@ -94,7 +94,7 @@ interface Element : Node {
     // CSSOM View Module
     // https://drafts.csswg.org/cssom-view/#extension-to-the-element-interface
     [Measure] DOMRectList getClientRects();
-    [Measure, RuntimeCallStatsCounter=ElementGetBoundingClientRect] DOMRect getBoundingClientRect();
+    [Affects=Nothing, Measure, RuntimeCallStatsCounter=ElementGetBoundingClientRect] DOMRect getBoundingClientRect();
 
     // TODO(sunyunjia): Add default value for scrollIntoView() once
     // crbug.com/734599 is fixed.
@@ -105,14 +105,14 @@ interface Element : Node {
     [RuntimeEnabled=CSSOMSmoothScroll] void scrollTo(unrestricted double x, unrestricted double y);
     [RuntimeEnabled=CSSOMSmoothScroll] void scrollBy(optional ScrollToOptions options);
     [RuntimeEnabled=CSSOMSmoothScroll] void scrollBy(unrestricted double x, unrestricted double y);
-    attribute unrestricted double scrollTop;
-    attribute unrestricted double scrollLeft;
-    readonly attribute long scrollWidth;
-    readonly attribute long scrollHeight;
-    readonly attribute long clientTop;
-    readonly attribute long clientLeft;
-    readonly attribute long clientWidth;
-    readonly attribute long clientHeight;
+    [Affects=Nothing] attribute unrestricted double scrollTop;
+    [Affects=Nothing] attribute unrestricted double scrollLeft;
+    [Affects=Nothing] readonly attribute long scrollWidth;
+    [Affects=Nothing] readonly attribute long scrollHeight;
+    [Affects=Nothing] readonly attribute long clientTop;
+    [Affects=Nothing] readonly attribute long clientLeft;
+    [Affects=Nothing] readonly attribute long clientWidth;
+    [Affects=Nothing] readonly attribute long clientHeight;
 
     // Scroll Customization API. See crbug.com/410974 for details.
     [RuntimeEnabled=ScrollCustomization] void setApplyScroll(ScrollStateCallback scrollStateCallback, NativeScrollBehavior nativeScrollBehavior);

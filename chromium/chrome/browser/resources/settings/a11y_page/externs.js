@@ -9,16 +9,21 @@
  */
 
 /**
- * @constructor
+ * Represents a voice as sent from the TTS Handler class. |languageCode| is
+ * the language, not the locale, i.e. 'en' rather than 'en-us'. |name| is the
+ * user-facing voice name, and |id| is the unique ID for that voice name (which
+ * is generated in tts_subpage.js and not passed from tts_handler.cc).
+ * |displayLanguage| is the user-facing display string, i.e. 'English'.
+ * |fullLanguageCode| is the code with locale, i.e. 'en-us' or 'en-gb'.
+ * |languageScore| is a relative measure of how closely the voice's language
+ * matches the app language, and can be used to set a default voice.
+ * @typedef {{languageCode: string, name: string, displayLanguage: string,
+ *   extensionId: string, id: string, fullLanguageCode: string,
+ *   languageScore: number}}
  */
-Window.prototype.speechSynthesis = function() {};
+let TtsHandlerVoice;
 
 /**
- * @type {function(Object)}
+ * @typedef {{name: string, extensionId: string, optionsPage: string}}
  */
-Window.prototype.speechSynthesis.speak = function(utterance) {};
-
-/**
- * @constructor
- */
-Window.prototype.SpeechSynthesisUtterance = function() {};
+let TtsHandlerExtension;

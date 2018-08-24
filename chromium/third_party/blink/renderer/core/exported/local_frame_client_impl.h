@@ -56,7 +56,7 @@ class LocalFrameClientImpl final : public LocalFrameClient {
 
   ~LocalFrameClientImpl() override;
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
   WebLocalFrameImpl* GetWebFrame() const override;
 
@@ -94,9 +94,9 @@ class LocalFrameClientImpl final : public LocalFrameClient {
                                               const ResourceResponse&) override;
   void DispatchDidHandleOnloadEvents() override;
   void DispatchDidReceiveServerRedirectForProvisionalLoad() override;
-  void DispatchDidNavigateWithinPage(HistoryItem*,
-                                     HistoryCommitType,
-                                     bool content_initiated) override;
+  void DidFinishSameDocumentNavigation(HistoryItem*,
+                                       HistoryCommitType,
+                                       bool content_initiated) override;
   void DispatchWillCommitProvisionalLoad() override;
   void DispatchDidStartProvisionalLoad(DocumentLoader*,
                                        ResourceRequest&) override;
@@ -166,14 +166,12 @@ class LocalFrameClientImpl final : public LocalFrameClient {
   void TransitionToCommittedForNewPage() override;
   LocalFrame* CreateFrame(const WTF::AtomicString& name,
                           HTMLFrameOwnerElement*) override;
-  virtual bool CanCreatePluginWithoutRenderer(const String& mime_type) const;
   WebPluginContainerImpl* CreatePlugin(HTMLPlugInElement&,
                                        const KURL&,
                                        const Vector<WTF::String>&,
                                        const Vector<WTF::String>&,
                                        const WTF::String&,
-                                       bool load_manually,
-                                       DetachedPluginPolicy) override;
+                                       bool load_manually) override;
   std::unique_ptr<WebMediaPlayer> CreateWebMediaPlayer(
       HTMLMediaElement&,
       const WebMediaPlayerSource&,
@@ -261,6 +259,9 @@ class LocalFrameClientImpl final : public LocalFrameClient {
       const WebRect&,
       const WebScrollIntoViewParams&) override;
 
+  void BubbleLogicalScrollInParentFrame(ScrollDirection direction,
+                                        ScrollGranularity granularity) override;
+
   void SetVirtualTimePauser(WebScopedVirtualTimePauser) override;
 
   String evaluateInInspectorOverlayForTesting(const String& script) override;
@@ -274,6 +275,8 @@ class LocalFrameClientImpl final : public LocalFrameClient {
   Frame* FindFrame(const AtomicString& name) const override;
 
   void FrameRectsChanged(const IntRect&) override;
+
+  void SetMouseCapture(bool capture) override;
 
  private:
   explicit LocalFrameClientImpl(WebLocalFrameImpl*);

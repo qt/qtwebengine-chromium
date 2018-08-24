@@ -20,9 +20,9 @@
 #include "api/call/transport.h"
 #include "api/optional.h"
 #include "api/video/video_frame.h"
+#include "api/video/video_sink_interface.h"
+#include "api/video/video_source_interface.h"
 #include "api/video_codecs/sdp_video_format.h"
-#include "api/videosinkinterface.h"
-#include "api/videosourceinterface.h"
 #include "call/call.h"
 #include "call/flexfec_receive_stream.h"
 #include "call/video_receive_stream.h"
@@ -51,19 +51,7 @@ class Thread;
 namespace cricket {
 
 class DecoderFactoryAdapter;
-class VideoCapturer;
-class VideoProcessor;
-class VideoRenderer;
-class VoiceMediaChannel;
-class WebRtcDecoderObserver;
-class WebRtcEncoderObserver;
-class WebRtcLocalStreamInfo;
-class WebRtcRenderAdapter;
 class WebRtcVideoChannel;
-class WebRtcVideoChannelRecvInfo;
-class WebRtcVideoChannelSendInfo;
-class WebRtcVoiceEngine;
-class WebRtcVoiceMediaChannel;
 
 class UnsignalledSsrcHandler {
  public:
@@ -150,7 +138,6 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
   bool SetSend(bool send) override;
   bool SetVideoSend(
       uint32_t ssrc,
-      bool enable,
       const VideoOptions* options,
       rtc::VideoSourceInterface<webrtc::VideoFrame>* source) override;
   bool AddSendStream(const StreamParams& sp) override;
@@ -280,8 +267,7 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
                          const rtc::VideoSinkWants& wants) override;
     void RemoveSink(rtc::VideoSinkInterface<webrtc::VideoFrame>* sink) override;
 
-    bool SetVideoSend(bool mute,
-                      const VideoOptions* options,
+    bool SetVideoSend(const VideoOptions* options,
                       rtc::VideoSourceInterface<webrtc::VideoFrame>* source);
 
     void SetSend(bool send);
@@ -326,8 +312,8 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
     // and whether or not the encoding in |rtp_parameters_| is active.
     void UpdateSendState();
 
-    webrtc::VideoSendStream::DegradationPreference GetDegradationPreference()
-        const RTC_EXCLUSIVE_LOCKS_REQUIRED(&thread_checker_);
+    webrtc::DegradationPreference GetDegradationPreference() const
+        RTC_EXCLUSIVE_LOCKS_REQUIRED(&thread_checker_);
 
     rtc::ThreadChecker thread_checker_;
     rtc::AsyncInvoker invoker_;
@@ -352,8 +338,6 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
     // TODO(skvlad): Combine parameters_ and rtp_parameters_ once we have only
     // one stream per MediaChannel.
     webrtc::RtpParameters rtp_parameters_ RTC_GUARDED_BY(&thread_checker_);
-    std::unique_ptr<webrtc::VideoEncoder> allocated_encoder_
-        RTC_GUARDED_BY(&thread_checker_);
 
     bool sending_ RTC_GUARDED_BY(&thread_checker_);
   };

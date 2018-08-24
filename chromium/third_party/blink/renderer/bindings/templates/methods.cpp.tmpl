@@ -151,7 +151,7 @@ if (UNLIKELY(numArgsPassed <= {{argument.index}})) {
 }
 {% endif %}
 {% if argument.is_callback_interface %}
-{# FIXME: remove EventListener/NodeFilter special case. crbug.com/630986 #}
+{# FIXME: remove EventListener special case. crbug.com/630986 #}
 {% if argument.idl_type == 'EventListener' %}
 if (!IsUndefinedOrNull(info[{{argument.index}}]) && !info[{{argument.index}}]->IsObject()) {
   {{throw_argument_error(method, argument, "The callback provided as parameter %(index)d is not an object.")}}
@@ -162,31 +162,29 @@ if (!IsUndefinedOrNull(info[{{argument.index}}]) && !info[{{argument.index}}]->I
 {% else %}{# method.name == 'AddEventListener' #}
 {{argument.name}} = V8EventListenerHelper::GetEventListener(ScriptState::Current(info.GetIsolate()), info[{{argument.index}}], false, kListenerFindOrCreate);
 {% endif %}{# method.name #}
-{% elif argument.idl_type == 'NodeFilter' %}
-{{argument.name}} = V8NodeFilterCondition::CreateOrNull(info[{{argument.index}}], ScriptState::Current(info.GetIsolate()));
-{% else %}{# argument.idl_type == 'EventListener'/'NodeFilter' #}
-if (info[{{argument.index}}]->IsFunction()) {
+{% else %}{# argument.idl_type == 'EventListener' #}
+if (info[{{argument.index}}]->IsObject()) {
   {{argument.name}} = V8{{argument.idl_type}}::Create(info[{{argument.index}}].As<v8::Object>());
-{% if argument.is_optional %}
+{% if argument.is_nullable %}
 } else if (info[{{argument.index}}]->IsNullOrUndefined()) {
   {{argument.name}} = nullptr;
-{% elif argument.is_nullable %}
-} else if ({{argument.index}} < info.Length() && info[{{argument.index}}]->IsNullOrUndefined()) {
+{% elif argument.is_optional %}
+} else if (info[{{argument.index}}]->IsUndefined()) {
   {{argument.name}} = nullptr;
 {% endif %}
 } else {
-  {{throw_argument_error(method, argument, "The callback provided as parameter %(index)d is not a function.")}}
+  {{throw_argument_error(method, argument, "The callback provided as parameter %(index)d is not an object.")}}
   return;
 }
-{% endif %}{# argument.idl_type == 'EventListener'/'NodeFilter' #}
+{% endif %}{# argument.idl_type == 'EventListener' #}
 {% elif argument.is_callback_function %}
 if (info[{{argument.index}}]->IsFunction()) {
   {{v8_value_to_local_cpp_value(argument)}}
-{% if argument.is_optional %}
+{% if argument.is_nullable %}
 } else if (info[{{argument.index}}]->IsNullOrUndefined()) {
   {{argument.name}} = nullptr;
-{% elif argument.is_nullable %}
-} else if ({{argument.index}} < info.Length() && info[{{argument.index}}]->IsNullOrUndefined()) {
+{% elif argument.is_optional %}
+} else if (info[{{argument.index}}]->IsUndefined()) {
   {{argument.name}} = nullptr;
 {% endif %}
 } else {
@@ -233,7 +231,7 @@ if (!{{argument.name}}{% if argument.is_nullable %} && !IsUndefinedOrNull(info[{
 {# Invalid enum values: http://www.w3.org/TR/WebIDL/#idl-enums #}
 {% set enum_variable = 'valid' + argument.name[0].upper() + argument.name[1:] + 'Values' %}
 {{declare_enum_validation_variable(argument.enum_values, enum_variable)}}
-if (!IsValidEnum({{argument.name}}, {{enum_variable}}, WTF_ARRAY_LENGTH({{enum_variable}}), "{{argument.enum_type}}", exceptionState)) {
+if (!IsValidEnum({{argument.name}}, {{enum_variable}}, arraysize({{enum_variable}}), "{{argument.enum_type}}", exceptionState)) {
   return;
 }
 {% elif argument.idl_type == 'Promise' %}
@@ -382,26 +380,32 @@ static void {{overloads.name}}Method{{world_suffix}}(const v8::FunctionCallbackI
   {% if not fall_through_to_partial_overloads %}
   bool isArityError = false;
   {% endif %}
-  {# 2. Initialize argcount to be min(maxarg, n). #}
+
+  {# This follows the overload resolution algorithm. #}
+  {# https://heycam.github.io/webidl/#dfn-overload-resolution-algorithm #}
+  {# 3. Initialize argcount to be min(maxarg, n). #}
   switch (std::min({{overloads.maxarg}}, info.Length())) {
-    {# 3. Remove from S all entries whose type list is not of length argcount. #}
+    {# 4. Remove from S all entries whose type list is not of length argcount. #}
     {% for length, tests_methods in overloads.length_tests_methods %}
-    {# 10. If i = d, then: #}
+    {# 12. If i = d, then: #}
     case {{length}}:
       {# Then resolve by testing argument #}
       {% for test, method in tests_methods %}
       {% if method.visible %}
       {% filter runtime_enabled(not overloads.runtime_enabled_all and method.runtime_enabled_feature_name) %}
-      if ({{test}}) {
-        {% if method.measure_as and not overloads.measure_all_as %}
-        UseCounter::Count(CurrentExecutionContext(info.GetIsolate()), WebFeature::k{{method.measure_as('Method')}});
-        {% endif %}
-        {% if method.deprecate_as and not overloads.deprecate_all_as %}
-        Deprecation::CountDeprecation(CurrentExecutionContext(info.GetIsolate()), WebFeature::k{{method.deprecate_as}});
-        {% endif %}
-        {{method.name}}{{method.overload_index}}Method{{world_suffix}}(info);
-        return;
+      {% if "exceptionState" in test %}
+      {
+        ExceptionState exceptionState(info.GetIsolate(), ExceptionState::kExecutionContext,
+                                      "{{interface_name}}", "{{overloads.name}}");
+        {{ test_and_call_overloaded_method(test, method, overloads, world_suffix) | trim | indent(8) }}
+        if (exceptionState.HadException()) {
+          exceptionState.RethrowV8Exception(exceptionState.GetException());
+          return;
+        }
       }
+      {% else %}{# exceptionState #}
+      {{ test_and_call_overloaded_method(test, method, overloads, world_suffix) | trim | indent(6) }}
+      {% endif %}{# exceptionState #}
       {% endfilter %}
       {% endif %}
       {% endfor %}
@@ -409,23 +413,19 @@ static void {{overloads.name}}Method{{world_suffix}}(const v8::FunctionCallbackI
     {% endfor %}{# length, tests_methods #}
     {% if not fall_through_to_partial_overloads %}
     default:
-      {# 4. If S is empty, then throw a TypeError. #}
+      {# 12.19. Otherwise: throw a TypeError. #}
       isArityError = true;
     {% endif %}
   }
 
   {% if fall_through_to_partial_overloads %}
-
   DCHECK({{overloads.name}}MethodForPartialInterface);
   ({{overloads.name}}MethodForPartialInterface)(info);
-
   {% else %}{# fall_through_to_partial_overloads #}
-
   ExceptionState exceptionState(info.GetIsolate(), ExceptionState::kExecutionContext, "{{interface_name}}", "{{overloads.name}}");
   {% if overloads.returns_promise_all %}
   ExceptionToRejectPromiseScope rejectPromiseScope(info, exceptionState);
   {% endif %}
-
   if (isArityError) {
     {% if overloads.length != 0 %}
     if (info.Length() < {{overloads.length}}) {
@@ -441,8 +441,20 @@ static void {{overloads.name}}Method{{world_suffix}}(const v8::FunctionCallbackI
     {% endif %}
   }
   exceptionState.ThrowTypeError("No function was found that matched the signature provided.");
-
   {% endif %}{# fall_through_to_partial_overloads #}
+}
+{% endmacro %}
+
+{% macro test_and_call_overloaded_method(test, method, overloads, world_suffix) %}
+if ({{test}}) {
+  {% if method.measure_as and not overloads.measure_all_as %}
+  UseCounter::Count(CurrentExecutionContext(info.GetIsolate()), WebFeature::k{{method.measure_as('Method')}});
+  {% endif %}
+  {% if method.deprecate_as and not overloads.deprecate_all_as %}
+  Deprecation::CountDeprecation(CurrentExecutionContext(info.GetIsolate()), WebFeature::k{{method.deprecate_as}});
+  {% endif %}
+  {{method.name}}{{method.overload_index}}Method{{world_suffix}}(info);
+  return;
 }
 {% endmacro %}
 

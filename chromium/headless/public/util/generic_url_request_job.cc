@@ -64,16 +64,11 @@ void GenericURLRequestJob::SetExtraRequestHeaders(
 
   const net::HttpUserAgentSettings* user_agent_settings =
       request()->context()->http_user_agent_settings();
+  // If set the |user_agent_settings| accept language is a fallback.
   if (user_agent_settings) {
-    // If set the |user_agent_settings| accept language is a fallback.
     extra_request_headers_.SetHeaderIfMissing(
         net::HttpRequestHeaders::kAcceptLanguage,
         user_agent_settings->GetAcceptLanguage());
-    // If set the |user_agent_settings| user agent is an override.
-    if (!user_agent_settings->GetUserAgent().empty()) {
-      extra_request_headers_.SetHeader(net::HttpRequestHeaders::kUserAgent,
-                                       user_agent_settings->GetUserAgent());
-    }
   }
 }
 
@@ -229,6 +224,18 @@ int64_t GenericURLRequestJob::GetTotalReceivedBytes() const {
 uint64_t GenericURLRequestJob::GenericURLRequestJob::GetRequestId() const {
   return request_->identifier() +
          (static_cast<uint64_t>(request_->url_chain().size()) << 32);
+}
+
+const std::string& GenericURLRequestJob::GetMethod() const {
+  return request_->method();
+}
+
+const GURL& GenericURLRequestJob::GetURL() const {
+  return request_->url();
+}
+
+int GenericURLRequestJob::GetPriority() const {
+  return request_->priority();
 }
 
 const net::URLRequest* GenericURLRequestJob::GetURLRequest() const {

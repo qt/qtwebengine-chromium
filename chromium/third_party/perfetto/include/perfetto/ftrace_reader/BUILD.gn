@@ -15,10 +15,11 @@
 source_set("ftrace_reader") {
   public_deps = [
     "../base",
+    "../traced",
   ]
   sources = [
     "format_parser.h",
+    "ftrace_config.h",
     "ftrace_controller.h",
-    "ftrace_to_proto.h",
   ]
 }

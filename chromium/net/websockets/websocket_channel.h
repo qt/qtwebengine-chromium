@@ -31,8 +31,9 @@ class Origin;
 
 namespace net {
 
-class NetLogWithSource;
+class HttpRequestHeaders;
 class IOBuffer;
+class NetLogWithSource;
 class URLRequest;
 class URLRequestContext;
 struct WebSocketHandshakeRequestInfo;
@@ -53,7 +54,7 @@ class NET_EXPORT WebSocketChannel {
       std::unique_ptr<WebSocketHandshakeStreamCreateHelper>,
       const url::Origin&,
       const GURL&,
-      const std::string&,
+      const HttpRequestHeaders&,
       URLRequestContext*,
       const NetLogWithSource&,
       std::unique_ptr<WebSocketStream::ConnectDelegate>)>
@@ -77,7 +78,7 @@ class NET_EXPORT WebSocketChannel {
       const std::vector<std::string>& requested_protocols,
       const url::Origin& origin,
       const GURL& site_for_cookies,
-      const std::string& additional_headers);
+      const HttpRequestHeaders& additional_headers);
 
   // Sends a data frame to the remote side. It is the responsibility of the
   // caller to ensure that they have sufficient send quota to send this data,
@@ -129,7 +130,7 @@ class NET_EXPORT WebSocketChannel {
       const std::vector<std::string>& requested_protocols,
       const url::Origin& origin,
       const GURL& site_for_cookies,
-      const std::string& additional_headers,
+      const HttpRequestHeaders& additional_headers,
       const WebSocketStreamRequestCreationCallback& callback);
 
   // The default timout for the closing handshake is a sensible value (see
@@ -153,7 +154,6 @@ class NET_EXPORT WebSocketChannel {
       std::unique_ptr<WebSocketHandshakeResponseInfo> response);
 
  private:
-  class HandshakeNotificationSender;
   class PendingReceivedFrame;
 
   // The object passes through a linear progression of states from
@@ -188,7 +188,7 @@ class NET_EXPORT WebSocketChannel {
       const std::vector<std::string>& requested_protocols,
       const url::Origin& origin,
       const GURL& site_for_cookies,
-      const std::string& additional_headers,
+      const HttpRequestHeaders& additional_headers,
       const WebSocketStreamRequestCreationCallback& callback);
 
   // Called when a URLRequest is created for handshaking.
@@ -210,10 +210,6 @@ class NET_EXPORT WebSocketChannel {
           ssl_error_callbacks,
       const SSLInfo& ssl_info,
       bool fatal);
-
-  // Posts a task that sends pending notifications relating WebSocket Opening
-  // Handshake to the renderer.
-  void ScheduleOpeningHandshakeNotification();
 
   // Sets |state_| to |new_state| and updates UMA if necessary.
   void SetState(State new_state);
@@ -389,9 +385,6 @@ class NET_EXPORT WebSocketChannel {
   // The current state of the channel. Mainly used for sanity checking, but also
   // used to track the close state.
   State state_;
-
-  // |notification_sender_| is owned by this object.
-  std::unique_ptr<HandshakeNotificationSender> notification_sender_;
 
   // UTF-8 validator for outgoing Text messages.
   base::StreamingUtf8Validator outgoing_utf8_validator_;

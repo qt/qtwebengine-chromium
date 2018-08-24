@@ -27,6 +27,7 @@
 #include "net/socket/socket_test_util.h"
 #include "net/ssl/default_channel_id_store.h"
 #include "net/test/gtest_util.h"
+#include "net/test/test_with_scoped_task_environment.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -54,7 +55,7 @@ class TokenBindingSSLConfigService : public SSLConfigService {
 
 }  // namespace
 
-class HttpNetworkTransactionSSLTest : public testing::Test {
+class HttpNetworkTransactionSSLTest : public TestWithScopedTaskEnvironment {
  protected:
   HttpNetworkTransactionSSLTest() = default;
 
@@ -98,10 +99,27 @@ class HttpNetworkTransactionSSLTest : public testing::Test {
   MockCertVerifier cert_verifier_;
   TransportSecurityState transport_security_state_;
   MultiLogCTVerifier ct_verifier_;
-  CTPolicyEnforcer ct_policy_enforcer_;
+  DefaultCTPolicyEnforcer ct_policy_enforcer_;
   HttpNetworkSession::Context session_context_;
   std::vector<std::unique_ptr<HttpRequestInfo>> request_info_vector_;
 };
+
+TEST_F(HttpNetworkTransactionSSLTest, ChannelID) {
+  ChannelIDService channel_id_service(new DefaultChannelIDStore(NULL));
+  session_context_.channel_id_service = &channel_id_service;
+
+  HttpNetworkSession::Params params;
+  params.enable_channel_id = true;
+  HttpNetworkSession session(params, session_context_);
+
+  HttpNetworkTransaction trans(DEFAULT_PRIORITY, &session);
+  TestCompletionCallback callback;
+  EXPECT_EQ(ERR_IO_PENDING,
+            trans.Start(GetRequestInfo("https://example.com"),
+                        callback.callback(), NetLogWithSource()));
+
+  EXPECT_TRUE(trans.server_ssl_config_.channel_id_enabled);
+}
 
 #if !defined(OS_IOS)
 TEST_F(HttpNetworkTransactionSSLTest, TokenBinding) {
@@ -114,7 +132,7 @@ TEST_F(HttpNetworkTransactionSSLTest, TokenBinding) {
   mock_socket_factory_.AddSSLSocketDataProvider(&ssl_data);
   MockRead mock_reads[] = {MockRead("HTTP/1.1 200 OK\r\n\r\n"),
                            MockRead(SYNCHRONOUS, OK)};
-  StaticSocketDataProvider data(mock_reads, arraysize(mock_reads), NULL, 0);
+  StaticSocketDataProvider data(mock_reads, base::span<MockWrite>());
   mock_socket_factory_.AddSocketDataProvider(&data);
 
   HttpNetworkSession session(HttpNetworkSession::Params(), session_context_);
@@ -135,7 +153,7 @@ TEST_F(HttpNetworkTransactionSSLTest, TokenBinding) {
   // Send a second request and verify that the token binding header is the same
   // as in the first request.
   mock_socket_factory_.AddSSLSocketDataProvider(&ssl_data);
-  StaticSocketDataProvider data2(mock_reads, arraysize(mock_reads), NULL, 0);
+  StaticSocketDataProvider data2(mock_reads, base::span<MockWrite>());
   mock_socket_factory_.AddSocketDataProvider(&data2);
   HttpNetworkTransaction trans2(DEFAULT_PRIORITY, &session);
 
@@ -163,7 +181,7 @@ TEST_F(HttpNetworkTransactionSSLTest, NoTokenBindingOverHttp) {
   mock_socket_factory_.AddSSLSocketDataProvider(&ssl_data);
   MockRead mock_reads[] = {MockRead("HTTP/1.1 200 OK\r\n\r\n"),
                            MockRead(SYNCHRONOUS, OK)};
-  StaticSocketDataProvider data(mock_reads, arraysize(mock_reads), NULL, 0);
+  StaticSocketDataProvider data(mock_reads, base::span<MockWrite>());
   mock_socket_factory_.AddSocketDataProvider(&data);
 
   HttpNetworkSession session(HttpNetworkSession::Params(), session_context_);
@@ -201,7 +219,7 @@ TEST_F(HttpNetworkTransactionSSLTest, TokenBindingAsync) {
   mock_socket_factory_.AddSSLSocketDataProvider(&ssl_data);
 
   MockRead reads[] = {MockRead(ASYNC, OK, 0)};
-  StaticSocketDataProvider data(reads, arraysize(reads), nullptr, 0);
+  StaticSocketDataProvider data(reads, base::span<MockWrite>());
   mock_socket_factory_.AddSocketDataProvider(&data);
 
   HttpRequestInfo request_info;

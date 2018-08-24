@@ -25,11 +25,14 @@
 
 #include "third_party/blink/renderer/platform/geometry/float_point.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
+#include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/skia/include/core/SkPoint3.h"
 
-namespace blink {
+namespace gfx {
+class Point3F;
+}
 
-class TextStream;
+namespace blink {
 
 class PLATFORM_EXPORT FloatPoint3D {
   DISALLOW_NEW();
@@ -105,6 +108,7 @@ class PLATFORM_EXPORT FloatPoint3D {
   float DistanceTo(const FloatPoint3D& a) const;
 
   operator SkPoint3() const { return SkPoint3::Make(x_, y_, z_); }
+  operator gfx::Point3F() const;
 
   String ToString() const;
 
@@ -158,7 +162,7 @@ inline float FloatPoint3D::DistanceTo(const FloatPoint3D& a) const {
 }
 
 PLATFORM_EXPORT std::ostream& operator<<(std::ostream&, const FloatPoint3D&);
-TextStream& operator<<(TextStream&, const FloatPoint3D&);
+WTF::TextStream& operator<<(WTF::TextStream&, const FloatPoint3D&);
 
 }  // namespace blink
 

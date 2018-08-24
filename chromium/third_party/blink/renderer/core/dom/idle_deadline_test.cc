@@ -7,23 +7,25 @@
 #include "base/single_thread_task_runner.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/testing/testing_platform_support_with_mock_scheduler.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
 namespace {
 
-class MockIdleDeadlineScheduler final : public WebScheduler {
+class MockIdleDeadlineScheduler final : public ThreadScheduler {
  public:
   MockIdleDeadlineScheduler() = default;
   ~MockIdleDeadlineScheduler() override = default;
 
-  // WebScheduler implementation:
-  base::SingleThreadTaskRunner* V8TaskRunner() override { return nullptr; }
+  // ThreadScheduler implementation:
+  scoped_refptr<base::SingleThreadTaskRunner> V8TaskRunner() override {
+    return nullptr;
+  }
   void Shutdown() override {}
   bool ShouldYieldForHighPriorityWork() override { return true; }
-  bool CanExceedIdleDeadlineIfRequired() override { return false; }
+  bool CanExceedIdleDeadlineIfRequired() const override { return false; }
   void PostIdleTask(const base::Location&, WebThread::IdleTask) override {}
   void PostNonNestableIdleTask(const base::Location&,
                                WebThread::IdleTask) override {}
@@ -31,19 +33,25 @@ class MockIdleDeadlineScheduler final : public WebScheduler {
       PageScheduler::Delegate*) override {
     return nullptr;
   }
-  base::SingleThreadTaskRunner* CompositorTaskRunner() override {
+  scoped_refptr<base::SingleThreadTaskRunner> CompositorTaskRunner() override {
     return nullptr;
   }
   std::unique_ptr<RendererPauseHandle> PauseScheduler() override {
     return nullptr;
   }
-  void AddPendingNavigation(
-      scheduler::WebMainThreadScheduler::NavigatingFrameType) override {}
-  void RemovePendingNavigation(
-      scheduler::WebMainThreadScheduler::NavigatingFrameType) override {}
 
-  base::TimeTicks MonotonicallyIncreasingVirtualTime() const override {
+  base::TimeTicks MonotonicallyIncreasingVirtualTime() override {
     return base::TimeTicks();
+  }
+
+  void AddTaskObserver(
+      base::MessageLoop::TaskObserver* task_observer) override {}
+
+  void RemoveTaskObserver(
+      base::MessageLoop::TaskObserver* task_observer) override {}
+
+  scheduler::NonMainThreadScheduler* AsNonMainThreadScheduler() override {
+    return nullptr;
   }
 
  private:
@@ -55,7 +63,7 @@ class MockIdleDeadlineThread final : public WebThread {
   MockIdleDeadlineThread() = default;
   ~MockIdleDeadlineThread() override = default;
   bool IsCurrentThread() const override { return true; }
-  WebScheduler* Scheduler() const override { return &scheduler_; }
+  ThreadScheduler* Scheduler() const override { return &scheduler_; }
 
  private:
   mutable MockIdleDeadlineScheduler scheduler_;

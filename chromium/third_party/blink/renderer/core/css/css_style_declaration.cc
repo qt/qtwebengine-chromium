@@ -173,9 +173,10 @@ void CSSStyleDeclaration::AnonymousNamedGetter(const AtomicString& name,
 bool CSSStyleDeclaration::AnonymousNamedSetter(ScriptState* script_state,
                                                const AtomicString& name,
                                                const String& value) {
-  if (!script_state->ContextIsValid())
+  const ExecutionContext* execution_context =
+      ExecutionContext::From(script_state);
+  if (!execution_context)
     return false;
-
   CSSPropertyID unresolved_property = CssPropertyInfo(name);
   if (!unresolved_property)
     return false;
@@ -188,10 +189,9 @@ bool CSSStyleDeclaration::AnonymousNamedSetter(ScriptState* script_state,
       "CSSStyleDeclaration",
       CSSProperty::Get(resolveCSSPropertyID(unresolved_property))
           .GetPropertyName());
-  SetPropertyInternal(
-      unresolved_property, String(), value, false,
-      ExecutionContext::From(script_state)->GetSecureContextMode(),
-      exception_state);
+  SetPropertyInternal(unresolved_property, String(), value, false,
+                      execution_context->GetSecureContextMode(),
+                      exception_state);
   if (exception_state.HadException())
     return false;
   return true;
@@ -209,6 +209,12 @@ void CSSStyleDeclaration::NamedPropertyEnumerator(Vector<String>& names,
           CSSProperty::Get(resolveCSSPropertyID(property_id));
       if (property_class.IsEnabled())
         property_names.push_back(property_class.GetJSPropertyName());
+    }
+    for (CSSPropertyID property_id : kCSSPropertyAliasList) {
+      const CSSUnresolvedProperty* property_class =
+          CSSUnresolvedProperty::GetAliasProperty(property_id);
+      if (property_class->IsEnabled())
+        property_names.push_back(property_class->GetJSPropertyName());
     }
     std::sort(property_names.begin(), property_names.end(),
               WTF::CodePointCompareLessThan);

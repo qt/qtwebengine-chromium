@@ -64,6 +64,7 @@ def secure_context_if(code, secure_context_test):
         return code
     return generate_indented_conditional(code, secure_context_test)
 
+
 # [OriginTrialEnabled]
 def origin_trial_enabled_if(code, origin_trial_feature_name, execution_context=None):
     if not origin_trial_feature_name:
@@ -81,6 +82,7 @@ def runtime_enabled_if(code, name):
 
     function = v8_utilities.runtime_enabled_function(name)
     return generate_indented_conditional(code, function)
+
 
 def initialize_jinja_env(cache_dir):
     jinja_env = jinja2.Environment(
@@ -105,13 +107,17 @@ def initialize_jinja_env(cache_dir):
     return jinja_env
 
 
+_BLINK_RELATIVE_PATH_PREFIXES = ('bindings/', 'core/', 'modules/', 'platform/')
+
 def normalize_and_sort_includes(include_paths):
-    normalized_include_paths = []
+    normalized_include_paths = set()
     for include_path in include_paths:
-        match = re.search(r'/gen/blink/(.*)$', posixpath.abspath(include_path))
+        match = re.search(r'/gen/(third_party/blink/.*)$', posixpath.abspath(include_path))
         if match:
             include_path = match.group(1)
-        normalized_include_paths.append(include_path)
+        elif include_path.startswith(_BLINK_RELATIVE_PATH_PREFIXES):
+            include_path = 'third_party/blink/renderer/' + include_path
+        normalized_include_paths.add(include_path)
     return sorted(normalized_include_paths)
 
 
@@ -146,24 +152,23 @@ class CodeGeneratorBase(object):
         IdlType.set_garbage_collected_types(interfaces_info['garbage_collected_interfaces'])
         set_component_dirs(interfaces_info['component_dirs'])
 
-    def render_template(self, include_paths, header_template, cpp_template,
-                        template_context, component=None):
-        template_context['code_generator'] = self.generator_name
+    def render_templates(self, include_paths, header_template, cpp_template,
+                         context, component=None):
+        context['code_generator'] = self.generator_name
 
         # Add includes for any dependencies
-        template_context['header_includes'] = normalize_and_sort_includes(
-            template_context['header_includes'])
-
         for include_path in include_paths:
             if component:
                 dependency = idl_filename_to_component(include_path)
                 assert is_valid_component_dependency(component, dependency)
             includes.add(include_path)
 
-        template_context['cpp_includes'] = normalize_and_sort_includes(includes)
+        cpp_includes = set(context.get('cpp_includes', []))
+        context['cpp_includes'] = normalize_and_sort_includes(cpp_includes | includes)
+        context['header_includes'] = normalize_and_sort_includes(context['header_includes'])
 
-        header_text = render_template(header_template, template_context)
-        cpp_text = render_template(cpp_template, template_context)
+        header_text = render_template(header_template, context)
+        cpp_text = render_template(cpp_template, context)
         return header_text, cpp_text
 
     def generate_code(self, definitions, definition_name):
@@ -172,6 +177,11 @@ class CodeGeneratorBase(object):
         """
         # This should be implemented in subclasses.
         raise NotImplementedError()
+
+    def normalize_this_header_path(self, header_path):
+        match = re.search('(third_party/blink/.*)$', header_path)
+        assert match, 'Unkown style of path to output: ' + header_path
+        return match.group(1)
 
 
 def main(argv):

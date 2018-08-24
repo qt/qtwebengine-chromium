@@ -14,12 +14,12 @@
 
 #if defined(OS_WIN)
 #include "base/win/windows_types.h"
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
 #include <pthread.h>
 #endif
 
 namespace heap_profiling {
-class MemlogAllocatorShimInternal;
+class ScopedAllowLogging;
 }  // namespace heap_profiling
 
 namespace base {
@@ -46,7 +46,7 @@ class BASE_EXPORT PlatformThreadLocalStorage {
 #if defined(OS_WIN)
   typedef unsigned long TLSKey;
   enum : unsigned { TLS_KEY_OUT_OF_INDEXES = TLS_OUT_OF_INDEXES };
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   typedef pthread_key_t TLSKey;
   // The following is a "reserved key" which is used in our generic Chromium
   // ThreadLocalStorage implementation.  We expect that an OS will not return
@@ -71,7 +71,7 @@ class BASE_EXPORT PlatformThreadLocalStorage {
   static void* GetTLSValue(TLSKey key) {
 #if defined(OS_WIN)
     return TlsGetValue(key);
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
     return pthread_getspecific(key);
 #endif
   }
@@ -88,7 +88,7 @@ class BASE_EXPORT PlatformThreadLocalStorage {
   // Since Windows which doesn't support TLS destructor, the implementation
   // should use GetTLSValue() to retrieve the value of TLS slot.
   static void OnThreadExit();
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   // |Value| is the data stored in TLS slot, The implementation can't use
   // GetTLSValue() to retrieve the value of slot as it has already been reset
   // in Posix.
@@ -156,7 +156,7 @@ class BASE_EXPORT ThreadLocalStorage {
   friend class base::SamplingHeapProfiler;
   friend class base::internal::ThreadLocalStorageTestInternal;
   friend class base::trace_event::MallocDumpProvider;
-  friend class heap_profiling::MemlogAllocatorShimInternal;
+  friend class heap_profiling::ScopedAllowLogging;
   static bool HasBeenDestroyed();
 
   DISALLOW_COPY_AND_ASSIGN(ThreadLocalStorage);

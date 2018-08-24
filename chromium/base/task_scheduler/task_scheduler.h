@@ -23,7 +23,7 @@
 #include "build/build_config.h"
 
 namespace gin {
-class V8BackgroundTaskRunner;
+class V8Platform;
 }
 
 namespace content {
@@ -36,6 +36,7 @@ namespace base {
 
 class HistogramBase;
 class Location;
+class SchedulerWorkerObserver;
 
 // Interface for a task scheduler and static methods to manage the instance used
 // by the post_task.h API.
@@ -84,8 +85,16 @@ class BASE_EXPORT TaskScheduler {
   virtual ~TaskScheduler() = default;
 
   // Allows the task scheduler to create threads and run tasks following the
-  // |init_params| specification. CHECKs on failure.
-  virtual void Start(const InitParams& init_params) = 0;
+  // |init_params| specification.
+  //
+  // If specified, |scheduler_worker_observer| will be notified when a worker
+  // enters and exits its main function. It must not be destroyed before
+  // JoinForTesting() has returned (must never be destroyed in production).
+  //
+  // CHECKs on failure.
+  virtual void Start(
+      const InitParams& init_params,
+      SchedulerWorkerObserver* scheduler_worker_observer = nullptr) = 0;
 
   // Posts |task| with a |delay| and specific |traits|. |delay| can be zero.
   // For one off tasks that don't require a TaskRunner.
@@ -217,7 +226,7 @@ class BASE_EXPORT TaskScheduler {
   static TaskScheduler* GetInstance();
 
  private:
-  friend class gin::V8BackgroundTaskRunner;
+  friend class gin::V8Platform;
   friend class content::BrowserMainLoopTest_CreateThreadsInSingleProcess_Test;
 
   // Returns the maximum number of non-single-threaded non-blocked tasks posted

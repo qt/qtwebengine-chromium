@@ -50,7 +50,7 @@ from idl_types import IdlUnionType
 from utilities import to_snake_case
 import v8_attributes  # for IdlType.constructor_type_name
 from v8_globals import includes
-from v8_utilities import binding_header_basename, extended_attribute_value_contains
+from v8_utilities import binding_header_filename, extended_attribute_value_contains
 
 
 ################################################################################
@@ -126,7 +126,6 @@ CPP_SPECIAL_CONVERSION_RULES = {
     'Dictionary': 'Dictionary',
     'EventHandler': 'EventListener*',
     'EventListener': 'EventListener*',
-    'NodeFilter': 'V8NodeFilterCondition*',
     'Promise': 'ScriptPromise',
     'ScriptValue': 'ScriptValue',
     # FIXME: Eliminate custom bindings for XPathNSResolver  http://crbug.com/345529
@@ -202,12 +201,12 @@ def cpp_type(idl_type, extended_attributes=None, raw_type=False, used_as_rvalue_
         if inner_type.is_dictionary or inner_type.is_sequence or inner_type.is_record_type:
             # TODO(jbroman, bashi): Implement this if needed.
             # This is non-trivial to support because HeapVector refuses to hold
-            # Optional<>, and IDLDictionaryBase (and subclasses) have no
+            # base::Optional<>, and IDLDictionaryBase (and subclasses) have no
             # integrated null state that can be distinguished from a present but
             # empty dictionary. It's unclear whether this will ever come up in
             # real spec WebIDL.
             raise NotImplementedError('Sequences of nullable dictionary, sequence or record types are not yet supported.')
-        return 'Optional<%s>' % inner_type.cpp_type_args(
+        return 'base::Optional<%s>' % inner_type.cpp_type_args(
             extended_attributes, raw_type, used_as_rvalue_type, used_as_variadic_argument, used_in_cpp_sequence)
 
     # Array or sequence types
@@ -268,8 +267,8 @@ def cpp_type(idl_type, extended_attributes=None, raw_type=False, used_as_rvalue_
         return cpp_template_type('Member', implemented_as_class)
     if idl_type.is_dictionary:
         if used_as_rvalue_type:
-            return 'const %s&' % base_idl_type
-        return base_idl_type
+            return 'const %s&' % idl_type.implemented_as
+        return idl_type.implemented_as
     if idl_type.is_union_type:
         # Avoid "AOrNullOrB" for cpp type of (A? or B) because we generate
         # V8AOrBOrNull to handle nulle for (A? or B), (A or B?) and (A or B)?
@@ -422,7 +421,6 @@ INCLUDES_FOR_TYPE = {
                            'core/html/html_table_rows_collection.h',
                            'core/html/forms/html_data_list_options_collection.h',
                            'core/html/forms/html_form_controls_collection.h']),
-    'NodeFilter': set(['bindings/core/v8/v8_node_filter_condition.h']),
     'NodeList': set(['bindings/core/v8/v8_node_list.h',
                      'core/dom/name_node_list.h',
                      'core/dom/node_list.h',
@@ -445,7 +443,7 @@ def includes_for_type(idl_type, extended_attributes=None):
         return INCLUDES_FOR_TYPE[base_idl_type]
     if base_idl_type in TYPED_ARRAY_TYPES:
         return INCLUDES_FOR_TYPE['ArrayBufferView'].union(
-            set(['bindings/%s/v8/%s' % (component_dir[base_idl_type], binding_header_basename(base_idl_type))])
+            set(['bindings/%s/v8/%s' % (component_dir[base_idl_type], binding_header_filename(base_idl_type))])
         )
     if idl_type.is_basic_type:
         return set(['bindings/core/v8/idl_types.h',
@@ -464,11 +462,11 @@ def includes_for_type(idl_type, extended_attributes=None):
         return set()
     if idl_type.is_callback_function:
         component = IdlType.callback_functions[base_idl_type]['component_dir']
-        return set(['bindings/%s/v8/%s' % (component, binding_header_basename(base_idl_type))])
+        return set(['bindings/%s/v8/%s' % (component, binding_header_filename(base_idl_type))])
     if base_idl_type not in component_dir:
         return set()
     return set(['bindings/%s/v8/%s' % (component_dir[base_idl_type],
-                                       binding_header_basename(base_idl_type))])
+                                       binding_header_filename(base_idl_type))])
 
 IdlType.includes_for_type = includes_for_type
 
@@ -1146,7 +1144,7 @@ def is_implicit_nullable(idl_type):
 
 def is_explicit_nullable(idl_type):
     # Nullable type that isn't implicit nullable (see above.) For such types,
-    # we use WTF::Optional<T> or similar explicit ways to represent a null value.
+    # we use base::Optional<T> or similar explicit ways to represent a null value.
     return idl_type.is_nullable and not idl_type.is_implicit_nullable
 
 IdlTypeBase.is_implicit_nullable = property(is_implicit_nullable)

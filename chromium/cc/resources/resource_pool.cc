@@ -14,13 +14,16 @@
 #include "base/format_macros.h"
 #include "base/memory/memory_coordinator_client_registry.h"
 #include "base/memory/shared_memory_handle.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "build/build_config.h"
 #include "cc/base/container_util.h"
 #include "cc/resources/layer_tree_resource_provider.h"
+#include "components/viz/common/gpu/context_provider.h"
 #include "components/viz/common/resources/resource_sizes.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 
 using base::trace_event::MemoryAllocatorDump;
 using base::trace_event::MemoryDumpLevelOfDetail;
@@ -65,12 +68,12 @@ constexpr base::TimeDelta ResourcePool::kDefaultExpirationDelay;
 
 ResourcePool::ResourcePool(
     LayerTreeResourceProvider* resource_provider,
+    viz::ContextProvider* context_provider,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
     const base::TimeDelta& expiration_delay,
-    Mode resource_mode,
     bool disallow_non_exact_reuse)
     : resource_provider_(resource_provider),
-      using_gpu_resources_(resource_mode == Mode::kGpu),
+      context_provider_(context_provider),
       task_runner_(std::move(task_runner)),
       resource_expiration_delay_(expiration_delay),
       disallow_non_exact_reuse_(disallow_non_exact_reuse),
@@ -160,7 +163,7 @@ ResourcePool::InUsePoolResource ResourcePool::AcquireResource(
   PoolResource* resource = ReuseResource(size, format, color_space);
   if (!resource)
     resource = CreateResource(size, format, color_space);
-  return InUsePoolResource(resource, using_gpu_resources_);
+  return InUsePoolResource(resource, !!context_provider_);
 }
 
 // Iterate over all three resource lists (unused, in-use, and busy), updating
@@ -241,7 +244,7 @@ ResourcePool::TryAcquireResourceForPartialRaster(
     // These will be updated when raster completes successfully.
     resource->set_invalidated_rect(gfx::Rect());
     resource->set_content_id(0);
-    return InUsePoolResource(resource, using_gpu_resources_);
+    return InUsePoolResource(resource, !!context_provider_);
   }
 
   return InUsePoolResource();
@@ -275,7 +278,7 @@ void ResourcePool::OnResourceReleased(size_t unique_id,
   }
 
   resource->set_resource_id(0);
-  if (using_gpu_resources_)
+  if (context_provider_)
     resource->gpu_backing()->returned_sync_token = sync_token;
   DidFinishUsingResource(std::move(*busy_it));
   busy_resources_.erase(busy_it);
@@ -300,10 +303,7 @@ void ResourcePool::PrepareForExport(const InUsePoolResource& resource) {
   } else {
     transferable = viz::TransferableResource::MakeSoftware(
         resource.resource_->software_backing()->shared_bitmap_id,
-        // Not needed since this software resource's SharedBitmapId was
-        // notified to the display compositor through the CompositorFrameSink.
-        /*sequence_number=*/0, resource.resource_->size(),
-        resource.resource_->format());
+        resource.resource_->size(), resource.resource_->format());
   }
   transferable.format = resource.resource_->format();
   transferable.buffer_format = viz::BufferFormat(transferable.format);
@@ -486,7 +486,8 @@ void ResourcePool::EvictExpiredResources() {
     // If nothing is evictable, we have deleted one (and possibly more)
     // resources without any new activity. Flush to ensure these deletions are
     // processed.
-    resource_provider_->FlushPendingDeletions();
+    if (context_provider_)
+      context_provider_->ContextGL()->ShallowFlushCHROMIUM();
     return;
   }
 
@@ -522,8 +523,8 @@ base::TimeTicks ResourcePool::GetUsageTimeForLRUResource() const {
 bool ResourcePool::OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
                                 base::trace_event::ProcessMemoryDump* pmd) {
   if (args.level_of_detail == MemoryDumpLevelOfDetail::BACKGROUND) {
-    std::string dump_name = base::StringPrintf(
-        "cc/tile_memory/provider_%d", resource_provider_->tracing_id());
+    std::string dump_name =
+        base::StringPrintf("cc/tile_memory/provider_%d", tracing_id_);
     MemoryAllocatorDump* dump = pmd->CreateAllocatorDump(dump_name);
     dump->AddScalar(MemoryAllocatorDump::kNameSize,
                     MemoryAllocatorDump::kUnitsBytes,

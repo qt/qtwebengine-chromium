@@ -67,12 +67,12 @@ void PasswordFormToJSON(const PasswordForm& form,
   target->SetString("affiliated_web_realm", form.affiliated_web_realm);
   target->SetString("app_display_name", form.app_display_name);
   target->SetString("app_icon_url", form.app_icon_url.possibly_invalid_spec());
-  target->SetBoolean("does_look_like_signup_form",
-                     form.does_look_like_signup_form);
   std::ostringstream submission_event_string_stream;
   submission_event_string_stream << form.submission_event;
   target->SetString("submission_event", submission_event_string_stream.str());
   target->SetBoolean("only_for_fallback_saving", form.only_for_fallback_saving);
+  target->SetBoolean("is_gaia_with_skip_save_password_form",
+                     form.is_gaia_with_skip_save_password_form);
 }
 
 }  // namespace
@@ -94,9 +94,9 @@ PasswordForm::PasswordForm()
       was_parsed_using_autofill_predictions(false),
       is_public_suffix_match(false),
       is_affiliation_based_match(false),
-      does_look_like_signup_form(false),
       submission_event(SubmissionIndicatorEvent::NONE),
-      only_for_fallback_saving(false) {}
+      only_for_fallback_saving(false),
+      is_gaia_with_skip_save_password_form(false) {}
 
 PasswordForm::PasswordForm(const PasswordForm& other) = default;
 
@@ -150,9 +150,10 @@ bool PasswordForm::operator==(const PasswordForm& form) const {
          affiliated_web_realm == form.affiliated_web_realm &&
          app_display_name == form.app_display_name &&
          app_icon_url == form.app_icon_url &&
-         does_look_like_signup_form == form.does_look_like_signup_form &&
          submission_event == form.submission_event &&
-         only_for_fallback_saving == form.only_for_fallback_saving;
+         only_for_fallback_saving == form.only_for_fallback_saving &&
+         is_gaia_with_skip_save_password_form ==
+             form.is_gaia_with_skip_save_password_form;
 }
 
 bool PasswordForm::operator!=(const PasswordForm& form) const {
@@ -265,14 +266,6 @@ std::ostream& operator<<(
     case PasswordForm::SubmissionIndicatorEvent::
         PROVISIONALLY_SAVED_FORM_ON_START_PROVISIONAL_LOAD:
       os << "PROVISIONALLY_SAVED_FORM_ON_START_PROVISIONAL_LOAD";
-      break;
-    case PasswordForm::SubmissionIndicatorEvent::
-        FILLED_FORM_ON_START_PROVISIONAL_LOAD:
-      os << "FILLED_FORM_ON_START_PROVISIONAL_LOAD";
-      break;
-    case PasswordForm::SubmissionIndicatorEvent::
-        FILLED_INPUT_ELEMENTS_ON_START_PROVISIONAL_LOAD:
-      os << "FILLED_INPUT_ELEMENTS_ON_START_PROVISIONAL_LOAD";
       break;
     default:
       os << "NO_SUBMISSION";

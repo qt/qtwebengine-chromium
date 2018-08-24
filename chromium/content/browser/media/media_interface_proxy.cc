@@ -27,7 +27,7 @@
 #include "content/public/browser/provision_fetcher_impl.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/storage_partition.h"
-#include "net/url_request/url_request_context_getter.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #endif
 
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS)
@@ -46,6 +46,7 @@
 
 #if defined(OS_ANDROID)
 #include "content/browser/media/android/media_player_renderer.h"
+#include "content/browser/media/flinging_renderer.h"
 #include "media/mojo/services/mojo_renderer_service.h"  // nogncheck
 #endif
 
@@ -161,6 +162,17 @@ void MediaInterfaceProxy::CreateRenderer(
     CreateMediaPlayerRenderer(std::move(request));
     return;
   }
+
+  if (type == media::mojom::HostedRendererType::kFlinging) {
+    std::unique_ptr<FlingingRenderer> renderer =
+        FlingingRenderer::Create(render_frame_host_, type_specific_id);
+
+    media::MojoRendererService::Create(
+        nullptr, std::move(renderer),
+        media::MojoRendererService::InitiateSurfaceRequestCB(),
+        std::move(request));
+    return;
+  }
 #endif
 
   InterfaceFactory* factory = GetMediaInterfaceFactory();
@@ -183,6 +195,14 @@ void MediaInterfaceProxy::CreateCdm(
 #endif
 }
 
+void MediaInterfaceProxy::CreateDecryptor(
+    int cdm_id,
+    media::mojom::DecryptorRequest request) {
+  InterfaceFactory* factory = GetMediaInterfaceFactory();
+  if (factory)
+    factory->CreateDecryptor(cdm_id, std::move(request));
+}
+
 void MediaInterfaceProxy::CreateCdmProxy(
     const std::string& cdm_guid,
     media::mojom::CdmProxyRequest request) {
@@ -202,12 +222,12 @@ MediaInterfaceProxy::GetFrameServices(const std::string& cdm_guid,
 
 #if BUILDFLAG(ENABLE_MOJO_CDM)
   // TODO(slan): Wrap these into a RenderFrame specific ProvisionFetcher impl.
-  net::URLRequestContextGetter* context_getter =
-      BrowserContext::GetDefaultStoragePartition(
-          render_frame_host_->GetProcess()->GetBrowserContext())
-          ->GetURLRequestContext();
   provider->registry()->AddInterface(base::BindRepeating(
-      &ProvisionFetcherImpl::Create, base::RetainedRef(context_getter)));
+      &ProvisionFetcherImpl::Create,
+      base::RetainedRef(
+          BrowserContext::GetDefaultStoragePartition(
+              render_frame_host_->GetProcess()->GetBrowserContext())
+              ->GetURLLoaderFactoryForBrowserProcess())));
 
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS)
   // Only provide CdmStorageImpl when we have a valid |cdm_file_system_id|,
@@ -386,8 +406,8 @@ void MediaInterfaceProxy::CreateMediaPlayerRenderer(
       base::BindRepeating(&MediaPlayerRenderer::InitiateScopedSurfaceRequest,
                           base::Unretained(renderer.get()));
 
-  media::MojoRendererService::Create(std::move(renderer), surface_request_cb,
-                                     std::move(request));
+  media::MojoRendererService::Create(nullptr, std::move(renderer),
+                                     surface_request_cb, std::move(request));
 }
 #endif  // defined(OS_ANDROID)
 

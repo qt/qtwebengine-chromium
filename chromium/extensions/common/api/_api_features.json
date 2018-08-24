@@ -108,6 +108,10 @@
     "dependencies": ["manifest:bluetooth"],
     "contexts": ["blessed_extension"]
   },
+  "cecPrivate": {
+    "dependencies": ["permission:cecPrivate"],
+    "contexts": ["blessed_extension"]
+  },
   "clipboard": {
     "dependencies": ["permission:clipboard"],
     "contexts": ["blessed_extension"]
@@ -198,6 +202,7 @@
         "chrome://cast/*",
         "chrome://extensions-frame/*",
         "chrome://extensions/*",
+        "chrome://home/*",
         "chrome://chrome-signin/*",
         "chrome://media-router/*",
         "chrome://mobilesetup/*",
@@ -557,6 +562,7 @@
     "contexts": ["webui"],
     "matches": [
       "chrome://chrome-signin/*",
+      "chrome://home/*",
       "chrome://media-router/*",
       "chrome://mobilesetup/*",
       "chrome://oobe/*",
@@ -573,6 +579,7 @@
     "contexts": ["webui"],
     "matches": [
       "chrome://chrome-signin/*",
+      "chrome://home/*",
       "chrome://media-router/*",
       "chrome://mobilesetup/*",
       "chrome://oobe/*",
@@ -587,6 +594,7 @@
     "contexts": ["webui"],
     "matches": [
       "chrome://chrome-signin/*",
+      "chrome://home/*",
       "chrome://media-router/*",
       "chrome://mobilesetup/*",
       "chrome://oobe/*",

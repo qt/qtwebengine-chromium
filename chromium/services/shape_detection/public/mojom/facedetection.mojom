@@ -10,11 +10,11 @@ import "skia/public/interfaces/bitmap.mojom";
 import "ui/gfx/geometry/mojo/geometry.mojom";
 
 // https://wicg.github.io/shape-detection-api/#enumdef-landmarktype
-enum LandmarkType { MOUTH, EYE };
+enum LandmarkType { MOUTH, EYE, NOSE };
 
 // https://wicg.github.io/shape-detection-api/#dictdef-landmark
 struct Landmark {
-  gfx.mojom.PointF location;
+  array<gfx.mojom.PointF> locations;
   LandmarkType type;
 };
 

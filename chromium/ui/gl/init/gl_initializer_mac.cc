@@ -80,7 +80,7 @@ bool InitializeStaticOSMesaInternal() {
   // osmesa.so is located in the build directory. This code path is only
   // valid in a developer build environment.
   base::FilePath exe_path;
-  if (!PathService::Get(base::FILE_EXE, &exe_path)) {
+  if (!base::PathService::Get(base::FILE_EXE, &exe_path)) {
     LOG(ERROR) << "PathService::Get failed.";
     return false;
   }
@@ -146,9 +146,10 @@ bool InitializeStaticEGLInternal(GLImplementation implementation) {
   // as app bundles. In that case, the .dylib is next to the executable.
   base::FilePath base_dir;
   if (base::mac::AmIBundled()) {
-    base_dir = base::mac::FrameworkBundlePath().Append("Libraries/");
+    base_dir =
+        base::mac::FrameworkBundlePath().Append("Versions/Current/Libraries/");
   } else {
-    if (!PathService::Get(base::FILE_EXE, &base_dir)) {
+    if (!base::PathService::Get(base::FILE_EXE, &base_dir)) {
       LOG(ERROR) << "PathService::Get failed.";
       return false;
     }

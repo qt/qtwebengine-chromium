@@ -25,6 +25,8 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_LOADER_FETCH_RESOURCE_H_
 
 #include <memory>
+#include "base/auto_reset.h"
+#include "base/optional.h"
 #include "base/single_thread_task_runner.h"
 #include "third_party/blink/public/platform/web_data_consumer_handle.h"
 #include "third_party/blink/public/platform/web_scoped_virtual_time_pauser.h"
@@ -47,13 +49,12 @@
 #include "third_party/blink/renderer/platform/timer.h"
 #include "third_party/blink/renderer/platform/web_task_runner.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 #include "third_party/blink/renderer/platform/wtf/hash_counted_set.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_encoding.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
 
@@ -127,10 +128,6 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
   void SetLinkPreload(bool is_link_preload) { link_preload_ = is_link_preload; }
   bool IsLinkPreload() const { return link_preload_; }
 
-  void SetPreloadDiscoveryTime(double preload_discovery_time) {
-    preload_discovery_time_ = preload_discovery_time;
-  }
-
   const ResourceError& GetResourceError() const {
     DCHECK(error_);
     return *error_;
@@ -166,9 +163,6 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
   // base::SingleThreadTaskRunner is unused.
   void AddClient(ResourceClient*, base::SingleThreadTaskRunner*);
   void RemoveClient(ResourceClient*);
-  // Once called, this resource will not be canceled until load finishes
-  // even if associated with no client.
-  void SetDetachable() { detachable_ = true; }
 
   // If this Resource is already finished when AddFinishObserver is called, the
   // ResourceFinishObserver will be notified asynchronously by a task scheduled
@@ -218,8 +212,8 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   // Computes the status of an object after loading. Updates the expire date on
   // the cache entry file
-  virtual void Finish(double finish_time, base::SingleThreadTaskRunner*);
-  void FinishForTest() { Finish(0.0, nullptr); }
+  virtual void Finish(TimeTicks finish_time, base::SingleThreadTaskRunner*);
+  void FinishForTest() { Finish(TimeTicks(), nullptr); }
 
   bool PassesAccessControlCheck(const SecurityOrigin&) const;
 
@@ -308,7 +302,7 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
   virtual void DidDownloadData(int) {}
   virtual void DidDownloadToBlob(scoped_refptr<BlobDataHandle>) {}
 
-  double LoadFinishTime() const { return load_finish_time_; }
+  TimeTicks LoadFinishTime() const { return load_finish_time_; }
 
   void SetEncodedDataLength(int64_t value) {
     response_.SetEncodedDataLength(value);
@@ -358,13 +352,13 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
       Type,
       const AtomicString& fetch_initiator_name);
 
-  class ProhibitAddRemoveClientInScope : public AutoReset<bool> {
+  class ProhibitAddRemoveClientInScope : public base::AutoReset<bool> {
    public:
     ProhibitAddRemoveClientInScope(Resource* resource)
         : AutoReset(&resource->is_add_remove_client_prohibited_, true) {}
   };
 
-  class RevalidationStartForbiddenScope : public AutoReset<bool> {
+  class RevalidationStartForbiddenScope : public base::AutoReset<bool> {
    public:
     RevalidationStartForbiddenScope(Resource* resource)
         : AutoReset(&resource->is_revalidation_start_forbidden_, true) {}
@@ -495,13 +489,11 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   Member<CachedMetadataHandler> cache_handler_;
 
-  Optional<ResourceError> error_;
+  base::Optional<ResourceError> error_;
 
-  double load_finish_time_;
+  TimeTicks load_finish_time_;
 
   unsigned long identifier_;
-
-  double preload_discovery_time_;
 
   size_t encoded_size_;
   size_t encoded_size_memory_usage_;
@@ -521,7 +513,6 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
   bool is_add_remove_client_prohibited_;
   bool is_revalidation_start_forbidden_ = false;
   bool is_unused_preload_ = false;
-  bool detachable_ = false;
 
   ResourceIntegrityDisposition integrity_disposition_;
   SubresourceIntegrity::ReportInfo integrity_report_info_;

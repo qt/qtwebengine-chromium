@@ -6,6 +6,7 @@
 #define EXTENSIONS_COMMON_CONSTANTS_H_
 
 #include "base/files/file_path.h"
+#include "base/logging.h"
 #include "ui/base/layout.h"
 
 namespace extensions {
@@ -210,6 +211,9 @@ enum ExtensionIcons {
   EXTENSION_ICON_INVALID = 0,
 };
 
+// The extension id of the ChromeVox extension.
+extern const char kChromeVoxExtensionId[];
+
 // The extension id of the feedback component extension.
 extern const char kFeedbackExtensionId[];
 
@@ -239,6 +243,9 @@ extern const char kPolicyBlockedScripting[];
 
 // The default block size for hashing used in content verification.
 extern const int kContentVerificationDefaultBlockSize;
+
+// The minimum severity of a log or error in order to report it to the browser.
+extern const logging::LogSeverity kMinimumSeverityToReportError;
 
 }  // namespace extension_misc
 

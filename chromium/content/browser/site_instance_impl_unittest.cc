@@ -107,7 +107,8 @@ class SiteInstanceTest : public testing::Test {
     url::AddStandardScheme(kPrivilegedScheme, url::SCHEME_WITH_HOST);
     url::AddStandardScheme(kChromeUIScheme, url::SCHEME_WITH_HOST);
 
-    RenderProcessHostImpl::set_render_process_host_factory(&rph_factory_);
+    RenderProcessHostImpl::set_render_process_host_factory_for_testing(
+        &rph_factory_);
   }
 
   void TearDown() override {
@@ -115,7 +116,7 @@ class SiteInstanceTest : public testing::Test {
     EXPECT_TRUE(RenderProcessHost::AllHostsIterator().IsAtEnd());
 
     SetBrowserClientForTesting(old_browser_client_);
-    RenderProcessHostImpl::set_render_process_host_factory(nullptr);
+    RenderProcessHostImpl::set_render_process_host_factory_for_testing(nullptr);
 
     // http://crbug.com/143565 found SiteInstanceTest leaking an
     // AppCacheDatabase. This happens because some part of the test indirectly
@@ -165,7 +166,7 @@ TEST_F(SiteInstanceTest, SiteInstanceDestructor) {
 
   NavigationEntryImpl* e1 = new NavigationEntryImpl(
       instance, url, Referrer(), base::string16(), ui::PAGE_TRANSITION_LINK,
-      false);
+      false, nullptr /* blob_url_loader_factory */);
 
   // Redundantly setting e1's SiteInstance shouldn't affect the ref count.
   e1->set_site_instance(instance);
@@ -175,7 +176,7 @@ TEST_F(SiteInstanceTest, SiteInstanceDestructor) {
   // Add a second reference
   NavigationEntryImpl* e2 = new NavigationEntryImpl(
       instance, url, Referrer(), base::string16(), ui::PAGE_TRANSITION_LINK,
-      false);
+      false, nullptr /* blob_url_loader_factory */);
 
   instance = nullptr;
   EXPECT_EQ(0, browser_client()->GetAndClearSiteInstanceDeleteCount());
@@ -194,10 +195,10 @@ TEST_F(SiteInstanceTest, SiteInstanceDestructor) {
   // Ensure that instances are deleted when their RenderViewHosts are gone.
   std::unique_ptr<TestBrowserContext> browser_context(new TestBrowserContext());
   {
-    std::unique_ptr<WebContentsImpl> web_contents(static_cast<WebContentsImpl*>(
+    std::unique_ptr<WebContents> web_contents(
         WebContents::Create(WebContents::CreateParams(
             browser_context.get(),
-            SiteInstance::Create(browser_context.get())))));
+            SiteInstance::Create(browser_context.get()))));
     EXPECT_EQ(0, browser_client()->GetAndClearSiteInstanceDeleteCount());
     EXPECT_EQ(0, browser_client()->GetAndClearBrowsingInstanceDeleteCount());
   }
@@ -219,8 +220,9 @@ TEST_F(SiteInstanceTest, CloneNavigationEntry) {
 
   std::unique_ptr<NavigationEntryImpl> e1 =
       base::WrapUnique(new NavigationEntryImpl(
-          SiteInstanceImpl::Create(nullptr), url, Referrer(),
-          base::string16(), ui::PAGE_TRANSITION_LINK, false));
+          SiteInstanceImpl::Create(nullptr), url, Referrer(), base::string16(),
+          ui::PAGE_TRANSITION_LINK, false,
+          nullptr /* blob_url_loader_factory */));
 
   // Clone the entry.
   std::unique_ptr<NavigationEntryImpl> e2 = e1->Clone();

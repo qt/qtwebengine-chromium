@@ -715,8 +715,7 @@ void PrintVP9Info(const uint8_t* data, int size, FILE* o, int64_t time_ns,
               static_cast<uint32_t>(frame_length));
       return;
     }
-    parser->SetFrame(data, frame_length);
-    if (!parser->ParseUncompressedHeader())
+    if (!parser->ParseUncompressedHeader(data, frame_length))
       return;
     level_stats->AddFrame(*parser, time_ns);
 
@@ -1190,8 +1189,7 @@ int main(int argc, char* argv[]) {
     return EXIT_FAILURE;
   }
 
-  // TODO(fgalligan): Replace auto_ptr with scoped_ptr.
-  std::auto_ptr<mkvparser::MkvReader> reader(
+  std::unique_ptr<mkvparser::MkvReader> reader(
       new (std::nothrow) mkvparser::MkvReader());  // NOLINT
   if (reader->Open(input.c_str())) {
     fprintf(stderr, "Error opening file:%s\n", input.c_str());
@@ -1199,7 +1197,7 @@ int main(int argc, char* argv[]) {
   }
 
   long long int pos = 0;
-  std::auto_ptr<mkvparser::EBMLHeader> ebml_header(
+  std::unique_ptr<mkvparser::EBMLHeader> ebml_header(
       new (std::nothrow) mkvparser::EBMLHeader());  // NOLINT
   if (ebml_header->Parse(reader.get(), pos) < 0) {
     fprintf(stderr, "Error parsing EBML header.\n");
@@ -1217,7 +1215,7 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "Segment::CreateInstance() failed.\n");
     return EXIT_FAILURE;
   }
-  std::auto_ptr<mkvparser::Segment> segment(temp_segment);
+  std::unique_ptr<mkvparser::Segment> segment(temp_segment);
 
   if (segment->Load() < 0) {
     fprintf(stderr, "Segment::Load() failed.\n");
@@ -1313,15 +1311,15 @@ int main(int argc, char* argv[]) {
     level_stats.set_duration(segment->GetInfo()->GetDuration());
     const vp9_parser::Vp9Level level = level_stats.GetLevel();
     fprintf(out, "VP9 Level:%d\n", level);
-    fprintf(out, "mlsr:%" PRId64 " mlps:%" PRId64
-                 " abr:%g mcs:%g cr:%g mct:%d"
-                 " mad:%d mrf:%d\n",
-            level_stats.GetMaxLumaSampleRate(),
-            level_stats.GetMaxLumaPictureSize(),
-            level_stats.GetAverageBitRate(), level_stats.GetMaxCpbSize(),
-            level_stats.GetCompressionRatio(), level_stats.GetMaxColumnTiles(),
-            level_stats.GetMinimumAltrefDistance(),
-            level_stats.GetMaxReferenceFrames());
+    fprintf(
+        out, "mlsr:%" PRId64 " mlps:%" PRId64 " mlpb:%" PRId64
+             " abr:%g mcs:%g cr:%g mct:%d"
+             " mad:%d mrf:%d\n",
+        level_stats.GetMaxLumaSampleRate(), level_stats.GetMaxLumaPictureSize(),
+        level_stats.GetMaxLumaPictureBreadth(), level_stats.GetAverageBitRate(),
+        level_stats.GetMaxCpbSize(), level_stats.GetCompressionRatio(),
+        level_stats.GetMaxColumnTiles(), level_stats.GetMinimumAltrefDistance(),
+        level_stats.GetMaxReferenceFrames());
   }
   return EXIT_SUCCESS;
 }

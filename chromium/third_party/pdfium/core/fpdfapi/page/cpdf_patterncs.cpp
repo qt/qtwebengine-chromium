@@ -16,7 +16,8 @@ CPDF_PatternCS::CPDF_PatternCS(CPDF_Document* pDoc)
       m_pCountedBaseCS(nullptr) {}
 
 CPDF_PatternCS::~CPDF_PatternCS() {
-  CPDF_ColorSpace* pCS = m_pCountedBaseCS ? m_pCountedBaseCS->get() : nullptr;
+  const CPDF_ColorSpace* pCS =
+      m_pCountedBaseCS ? m_pCountedBaseCS->get() : nullptr;
   if (pCS && m_pDocument) {
     auto* pPageData = m_pDocument->GetPageData();
     if (pPageData)
@@ -29,9 +30,9 @@ void CPDF_PatternCS::InitializeStockPattern() {
 }
 
 uint32_t CPDF_PatternCS::v_Load(CPDF_Document* pDoc,
-                                CPDF_Array* pArray,
-                                std::set<CPDF_Object*>* pVisited) {
-  CPDF_Object* pBaseCS = pArray->GetDirectObjectAt(1);
+                                const CPDF_Array* pArray,
+                                std::set<const CPDF_Object*>* pVisited) {
+  const CPDF_Object* pBaseCS = pArray->GetDirectObjectAt(1);
   if (pBaseCS == m_pArray)
     return 0;
 
@@ -54,12 +55,25 @@ bool CPDF_PatternCS::GetRGB(const float* pBuf,
                             float* R,
                             float* G,
                             float* B) const {
-  if (m_pBaseCS) {
-    ASSERT(m_pBaseCS->GetFamily() != PDFCS_PATTERN);
-    const auto* pvalue = reinterpret_cast<const PatternValue*>(pBuf);
-    if (m_pBaseCS->GetRGB(pvalue->m_Comps, R, G, B))
-      return true;
-  }
+  NOTREACHED();
+  return false;
+}
+
+CPDF_PatternCS* CPDF_PatternCS::AsPatternCS() {
+  return this;
+}
+
+const CPDF_PatternCS* CPDF_PatternCS::AsPatternCS() const {
+  return this;
+}
+
+bool CPDF_PatternCS::GetPatternRGB(const PatternValue& value,
+                                   float* R,
+                                   float* G,
+                                   float* B) const {
+  if (m_pBaseCS && m_pBaseCS->GetRGB(value.m_Comps, R, G, B))
+    return true;
+
   *R = 0.75f;
   *G = 0.75f;
   *B = 0.75f;

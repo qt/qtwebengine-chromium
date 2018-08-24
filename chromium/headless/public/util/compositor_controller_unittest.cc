@@ -53,7 +53,6 @@ class CompositorControllerTest : public ::testing::Test {
     client_.SetTaskRunnerForTests(task_runner_);
     mock_host_ = base::MakeRefCounted<MockDevToolsAgentHost>();
 
-    EXPECT_CALL(*mock_host_, IsAttached()).WillOnce(Return(false));
     EXPECT_CALL(*mock_host_, AttachClient(&client_));
     client_.AttachToHost(mock_host_.get());
     virtual_time_controller_ =
@@ -149,6 +148,7 @@ class CompositorControllerTest : public ::testing::Test {
         mock_host_.get(),
         base::StringPrintf("{\"id\":%d,\"result\":%s}", last_command_id_,
                            result_json.c_str()));
+    task_runner_->RunPendingTasks();
   }
 
   void SendNeedsBeginFramesEvent(bool needs_begin_frames) {

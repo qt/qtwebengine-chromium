@@ -38,6 +38,7 @@ service_test("services_unittests") {
       "//services/viz",
       "//services/viz/privileged/interfaces:unit_tests",
       "//services/viz/public/cpp/compositing:tests",
+      "//services/viz/public/cpp/hit_test:tests",
     ]
   }
 
@@ -48,6 +49,7 @@ service_test("services_unittests") {
       "//services/ui/input_devices:tests",
       "//services/ui/public/cpp/tests",
       "//services/ui/public/interfaces:tests",
+      "//services/ui/ws2:tests",
     ]
 
     if (is_linux && !is_chromeos) {
@@ -118,6 +120,7 @@ catalog("services_unittests_catalog") {
     catalog_deps += [
       "//services/ui/clipboard:tests_catalog",
       "//services/ui/ime:tests_catalog",
+      "//services/ui/ws2:tests_catalog",
     ]
 
     if (is_linux && !is_chromeos) {
@@ -127,6 +130,19 @@ catalog("services_unittests_catalog") {
     if (use_ozone || (!is_chromeos && !is_ios)) {
       catalog_deps += [ "//services/ui/ws:tests_catalog" ]
     }
+  }
+}
+
+if (!is_ios) {
+  service_test("services_perftests") {
+    deps = [
+      "//services/viz/public/cpp/compositing:perftests",
+    ]
+    catalog = ":services_perftests_catalog"
+  }
+
+  catalog("services_perftests_catalog") {
+    testonly = true
   }
 }
 
@@ -173,6 +189,7 @@ if (is_android) {
       "$google_play_services_package:google_play_services_vision_java",
       "//base:base_java",
       "//base:base_java_test_support",
+      "//mojo/public/java:base_java",
       "//mojo/public/java:bindings_java",
       "//services/shape_detection:shape_detection_java",
       "//services/shape_detection/public/mojom:mojom_java",

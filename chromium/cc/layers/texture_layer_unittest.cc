@@ -15,6 +15,7 @@
 #include "base/location.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
+#include "base/sequenced_task_runner.h"
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
@@ -105,7 +106,7 @@ class MockReleaseCallback {
                     const gpu::SyncToken& sync_token,
                     bool lost_resource));
   MOCK_METHOD3(Release2,
-               void(viz::SharedBitmap* shared_bitmap,
+               void(const viz::SharedBitmapId& shared_bitmap_id,
                     const gpu::SyncToken& sync_token,
                     bool lost_resource));
 };
@@ -133,14 +134,12 @@ struct CommonResourceObjects {
     resource2_ = viz::TransferableResource::MakeGL(
         mailbox_name2_, GL_LINEAR, arbitrary_target2, sync_token2_);
     gfx::Size size(128, 128);
-    shared_bitmap_ = manager->AllocateSharedBitmap(size, viz::RGBA_8888);
-    DCHECK(shared_bitmap_);
+    shared_bitmap_id_ = viz::SharedBitmap::GenerateId();
     release_callback3_ =
         base::Bind(&MockReleaseCallback::Release2,
-                   base::Unretained(&mock_callback_), shared_bitmap_.get());
-    resource3_ = viz::TransferableResource::MakeSoftware(
-        shared_bitmap_->id(), shared_bitmap_->sequence_number(), size,
-        viz::RGBA_8888);
+                   base::Unretained(&mock_callback_), shared_bitmap_id_);
+    resource3_ = viz::TransferableResource::MakeSoftware(shared_bitmap_id_,
+                                                         size, viz::RGBA_8888);
   }
 
   using RepeatingReleaseCallback =
@@ -155,7 +154,7 @@ struct CommonResourceObjects {
   RepeatingReleaseCallback release_callback3_;
   gpu::SyncToken sync_token1_;
   gpu::SyncToken sync_token2_;
-  std::unique_ptr<viz::SharedBitmap> shared_bitmap_;
+  viz::SharedBitmapId shared_bitmap_id_;
   viz::TransferableResource resource1_;
   viz::TransferableResource resource2_;
   viz::TransferableResource resource3_;
@@ -281,7 +280,7 @@ TEST_F(TextureLayerWithResourceTest, ReplaceMailboxOnMainThreadBeforeCommit) {
 
   EXPECT_CALL(*layer_tree_host_, SetNeedsCommit()).Times(AtLeast(1));
   EXPECT_CALL(test_data_.mock_callback_,
-              Release2(test_data_.shared_bitmap_.get(), _, false))
+              Release2(test_data_.shared_bitmap_id_, _, false))
       .Times(1);
   test_layer->ClearTexture();
   Mock::VerifyAndClearExpectations(layer_tree_host_.get());
@@ -505,9 +504,8 @@ class TextureLayerImplWithMailboxThreadedCallback : public LayerTreeTest {
         !layer_tree_host()->GetSettings().single_thread_proxy_scheduler;
     return std::make_unique<viz::TestLayerTreeFrameSink>(
         compositor_context_provider, std::move(worker_context_provider),
-        shared_bitmap_manager(), gpu_memory_buffer_manager(), renderer_settings,
-        ImplThreadTaskRunner(), synchronous_composite, disable_display_vsync,
-        refresh_rate);
+        gpu_memory_buffer_manager(), renderer_settings, ImplThreadTaskRunner(),
+        synchronous_composite, disable_display_vsync, refresh_rate);
   }
 
   void AdvanceTestCase() {
@@ -782,9 +780,8 @@ TEST_F(TextureLayerImplWithResourceTest, TestWillDraw) {
       test_data_.mock_callback_,
       Release(test_data_.mailbox_name1_, test_data_.sync_token1_, false))
       .Times(AnyNumber());
-  EXPECT_CALL(
-      test_data_.mock_callback_,
-      Release2(test_data_.shared_bitmap_.get(), gpu::SyncToken(), false))
+  EXPECT_CALL(test_data_.mock_callback_,
+              Release2(test_data_.shared_bitmap_id_, gpu::SyncToken(), false))
       .Times(AnyNumber());
   // Hardware mode.
   {
@@ -1401,9 +1398,9 @@ class SoftwareTextureLayerTest : public LayerTreeTest {
         !HasImplThread() &&
         !layer_tree_host()->GetSettings().single_thread_proxy_scheduler;
     auto sink = std::make_unique<viz::TestLayerTreeFrameSink>(
-        nullptr, nullptr, shared_bitmap_manager(), gpu_memory_buffer_manager(),
-        renderer_settings, ImplThreadTaskRunner(), synchronous_composite,
-        disable_display_vsync, refresh_rate);
+        nullptr, nullptr, gpu_memory_buffer_manager(), renderer_settings,
+        ImplThreadTaskRunner(), synchronous_composite, disable_display_vsync,
+        refresh_rate);
     frame_sink_ = sink.get();
     num_frame_sinks_created_++;
     return sink;
@@ -1450,7 +1447,7 @@ class SoftwareTextureLayerSwitchTreesTest : public SoftwareTextureLayerTest {
         // Give the TextureLayer a resource so it contributes to the frame. It
         // doesn't need to register the SharedBitmapId otherwise.
         texture_layer_->SetTransferableResource(
-            viz::TransferableResource::MakeSoftware(id_, 0, gfx::Size(1, 1),
+            viz::TransferableResource::MakeSoftware(id_, gfx::Size(1, 1),
                                                     viz::RGBA_8888),
             viz::SingleReleaseCallback::Create(
                 base::BindOnce([](const gpu::SyncToken&, bool) {})));
@@ -1558,7 +1555,7 @@ class SoftwareTextureLayerMultipleRegisterTest
         // Give the TextureLayer a resource so it contributes to the frame. It
         // doesn't need to register the SharedBitmapId otherwise.
         texture_layer_->SetTransferableResource(
-            viz::TransferableResource::MakeSoftware(id1_, 0, gfx::Size(1, 1),
+            viz::TransferableResource::MakeSoftware(id1_, gfx::Size(1, 1),
                                                     viz::RGBA_8888),
             viz::SingleReleaseCallback::Create(
                 base::BindOnce([](const gpu::SyncToken&, bool) {})));
@@ -1660,7 +1657,7 @@ class SoftwareTextureLayerRegisterUnregisterTest
         // Give the TextureLayer a resource so it contributes to the frame. It
         // doesn't need to register the SharedBitmapId otherwise.
         texture_layer_->SetTransferableResource(
-            viz::TransferableResource::MakeSoftware(id1_, 0, gfx::Size(1, 1),
+            viz::TransferableResource::MakeSoftware(id1_, gfx::Size(1, 1),
                                                     viz::RGBA_8888),
             viz::SingleReleaseCallback::Create(
                 base::BindOnce([](const gpu::SyncToken&, bool) {})));
@@ -1725,6 +1722,18 @@ class SoftwareTextureLayerLoseFrameSinkTest : public SoftwareTextureLayerTest {
   }
 
   void DidCommitAndDrawFrame() override {
+    // We run the next step in a clean stack, so that we don't cause side
+    // effects that will interfere with this current stack unwinding.
+    // Specifically, removing the LayerTreeFrameSink destroys the Display
+    // and the BeginFrameSource, but they can be on the stack (see
+    // https://crbug.com/829484).
+    MainThreadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::BindOnce(&SoftwareTextureLayerLoseFrameSinkTest::NextStep,
+                       base::Unretained(this)));
+  }
+
+  void NextStep() {
     step_ = layer_tree_host()->SourceFrameNumber();
     switch (step_) {
       case 1:
@@ -1736,7 +1745,7 @@ class SoftwareTextureLayerLoseFrameSinkTest : public SoftwareTextureLayerTest {
         // Give the TextureLayer a resource so it contributes to the frame. It
         // doesn't need to register the SharedBitmapId otherwise.
         texture_layer_->SetTransferableResource(
-            viz::TransferableResource::MakeSoftware(id_, 0, gfx::Size(1, 1),
+            viz::TransferableResource::MakeSoftware(id_, gfx::Size(1, 1),
                                                     viz::RGBA_8888),
             viz::SingleReleaseCallback::Create(
                 base::BindOnce([](const gpu::SyncToken&, bool) {})));
@@ -1756,7 +1765,7 @@ class SoftwareTextureLayerLoseFrameSinkTest : public SoftwareTextureLayerTest {
         // VizDisplayCompositor.
         texture_layer_->ClearClient();
         texture_layer_->SetTransferableResource(
-            viz::TransferableResource::MakeSoftware(id_, 0, gfx::Size(1, 1),
+            viz::TransferableResource::MakeSoftware(id_, gfx::Size(1, 1),
                                                     viz::RGBA_8888),
             viz::SingleReleaseCallback::Create(
                 base::BindOnce([](const gpu::SyncToken&, bool) {})));
@@ -1807,8 +1816,7 @@ class SoftwareTextureLayerLoseFrameSinkTest : public SoftwareTextureLayerTest {
   void* first_frame_sink_;
 };
 
-// TODO(crbug.com/829923): Flaky with a heap-use-after-free.
-// SINGLE_AND_MULTI_THREAD_TEST_F(SoftwareTextureLayerLoseFrameSinkTest);
+SINGLE_AND_MULTI_THREAD_TEST_F(SoftwareTextureLayerLoseFrameSinkTest);
 
 class SoftwareTextureLayerUnregisterRegisterTest
     : public SoftwareTextureLayerTest {
@@ -1847,7 +1855,7 @@ class SoftwareTextureLayerUnregisterRegisterTest
         // Give the TextureLayer a resource so it contributes to the frame. It
         // doesn't need to register the SharedBitmapId otherwise.
         texture_layer_->SetTransferableResource(
-            viz::TransferableResource::MakeSoftware(id_, 0, gfx::Size(1, 1),
+            viz::TransferableResource::MakeSoftware(id_, gfx::Size(1, 1),
                                                     viz::RGBA_8888),
             viz::SingleReleaseCallback::Create(
                 base::BindOnce([](const gpu::SyncToken&, bool) {})));

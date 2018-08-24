@@ -19,7 +19,7 @@
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/testing/paint_test_configurations.h"
 
-using blink::test::CreateOpacityOnlyEffect;
+using testing::ElementsAre;
 using testing::UnorderedElementsAre;
 
 namespace blink {
@@ -35,9 +35,11 @@ INSTANTIATE_TEST_CASE_P(
     PaintControllerTest,
     testing::Values(0,
                     kSlimmingPaintV175,
+                    kBlinkGenPropertyTrees,
                     kSlimmingPaintV2,
                     kUnderInvalidationChecking,
                     kSlimmingPaintV175 | kUnderInvalidationChecking,
+                    kBlinkGenPropertyTrees | kUnderInvalidationChecking,
                     kSlimmingPaintV2 | kUnderInvalidationChecking));
 
 TEST_P(PaintControllerTest, NestedRecorders) {
@@ -59,9 +61,7 @@ TEST_P(PaintControllerTest, NestedRecorders) {
     EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
     // Raster invalidation for the whole chunk will be issued during
     // PaintArtifactCompositor::Update().
-    EXPECT_TRUE(GetPaintController()
-                    .PaintChunks()[0]
-                    .raster_invalidation_rects.IsEmpty());
+    EXPECT_FALSE(GetRasterInvalidationRects(0));
   } else {
     EXPECT_DISPLAY_LIST(
         GetPaintController().GetDisplayItemList(), 3,
@@ -94,9 +94,7 @@ TEST_P(PaintControllerTest, UpdateBasic) {
     EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
     // Raster invalidation for the whole chunk will be issued during
     // PaintArtifactCompositor::Update().
-    EXPECT_TRUE(GetPaintController()
-                    .PaintChunks()[0]
-                    .raster_invalidation_rects.IsEmpty());
+    EXPECT_FALSE(GetRasterInvalidationRects(0));
 
     InitRootChunk();
   }
@@ -119,7 +117,7 @@ TEST_P(PaintControllerTest, UpdateBasic) {
 
   if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
-    EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+    EXPECT_THAT(*GetRasterInvalidationRects(0),
                 // |second| disappeared from the chunk.
                 UnorderedElementsAre(FloatRect(100, 100, 200, 200)));
   }
@@ -175,7 +173,7 @@ TEST_P(PaintControllerTest, UpdateSwapOrder) {
 
   if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
-    EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+    EXPECT_THAT(*GetRasterInvalidationRects(0),
                 // Bounds of |second| (old and new are the same).
                 UnorderedElementsAre(FloatRect(100, 100, 50, 200)));
   }
@@ -232,7 +230,7 @@ TEST_P(PaintControllerTest, UpdateSwapOrderWithInvalidation) {
 
   if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
-    EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+    EXPECT_THAT(*GetRasterInvalidationRects(0),
                 // Bounds of |first| (old and new are the same).
                 UnorderedElementsAre(FloatRect(100, 100, 100, 100)));
     // No need to invalidate raster of |second|, because the client (|first|)
@@ -277,7 +275,7 @@ TEST_P(PaintControllerTest, UpdateNewItemInMiddle) {
 
   if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
-    EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+    EXPECT_THAT(*GetRasterInvalidationRects(0),
                 // |third| newly appeared in the chunk.
                 UnorderedElementsAre(FloatRect(125, 100, 200, 50)));
   }
@@ -335,7 +333,7 @@ TEST_P(PaintControllerTest, UpdateInvalidationWithPhases) {
 
   if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
-    EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+    EXPECT_THAT(*GetRasterInvalidationRects(0),
                 // Bounds of |second| (old and new are the same).
                 UnorderedElementsAre(FloatRect(100, 100, 50, 200)));
   }
@@ -372,7 +370,7 @@ TEST_P(PaintControllerTest, IncrementalRasterInvalidation) {
   GetPaintController().CommitNewDisplayItems();
 
   EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
-  EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+  EXPECT_THAT(*GetRasterInvalidationRects(0),
               UnorderedElementsAre(FloatRect(200, 100, 50, 100),    // 0: right
                                    FloatRect(100, 200, 100, 50),    // 1: bottom
                                    FloatRect(200, 100, 50, 80),     // 2: right
@@ -422,7 +420,7 @@ TEST_P(PaintControllerTest, UpdateAddFirstOverlap) {
   if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
     EXPECT_THAT(
-        GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+        *GetRasterInvalidationRects(0),
         UnorderedElementsAre(
             // |first| newly appeared in the chunk.
             FloatRect(100, 100, 150, 150),
@@ -450,7 +448,7 @@ TEST_P(PaintControllerTest, UpdateAddFirstOverlap) {
 
   if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
-    EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+    EXPECT_THAT(*GetRasterInvalidationRects(0),
                 // |first| disappeared from the chunk.
                 UnorderedElementsAre(FloatRect(100, 100, 150, 150)));
   }
@@ -490,7 +488,7 @@ TEST_P(PaintControllerTest, UpdateAddLastOverlap) {
 
   if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
-    EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+    EXPECT_THAT(*GetRasterInvalidationRects(0),
                 UnorderedElementsAre(
                     // The bigger of old and new bounds of |first|.
                     FloatRect(100, 100, 150, 150),
@@ -514,7 +512,7 @@ TEST_P(PaintControllerTest, UpdateAddLastOverlap) {
 
   if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
-    EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+    EXPECT_THAT(*GetRasterInvalidationRects(0),
                 UnorderedElementsAre(
                     // The bigger of old and new bounds of |first|.
                     FloatRect(100, 100, 150, 150),
@@ -528,14 +526,14 @@ TEST_P(PaintControllerTest, UpdateClip) {
   FakeDisplayItemClient second("second", LayoutRect(100, 100, 200, 200));
   GraphicsContext context(GetPaintController());
 
-  scoped_refptr<ClipPaintPropertyNode> clip = ClipPaintPropertyNode::Create(
-      nullptr, nullptr, FloatRoundedRect(1, 1, 2, 2));
+  scoped_refptr<ClipPaintPropertyNode> clip =
+      CreateClip(nullptr, nullptr, FloatRoundedRect(1, 1, 2, 2));
 
   {
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
       PaintChunk::Id id(first, kClipType);
-      PaintChunkProperties properties = test::DefaultPaintChunkProperties();
-      properties.property_tree_state.SetClip(clip.get());
+      auto properties = DefaultPaintChunkProperties();
+      properties.SetClip(clip.get());
       GetPaintController().UpdateCurrentPaintChunkProperties(id, properties);
     }
     ClipRecorder clip_recorder(context, first, kClipType, IntRect(1, 1, 2, 2));
@@ -580,9 +578,7 @@ TEST_P(PaintControllerTest, UpdateClip) {
     EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
     // This is a new chunk. Raster invalidation for the whole chunk will be
     // issued during PaintArtifactCompositor::Update().
-    EXPECT_TRUE(GetPaintController()
-                    .PaintChunks()[0]
-                    .raster_invalidation_rects.IsEmpty());
+    EXPECT_FALSE(GetRasterInvalidationRects(0));
 
     InitRootChunk();
   }
@@ -590,15 +586,14 @@ TEST_P(PaintControllerTest, UpdateClip) {
   second.SetDisplayItemsUncached();
   DrawRect(context, first, kBackgroundType, FloatRect(100, 100, 150, 150));
 
-  scoped_refptr<ClipPaintPropertyNode> clip2 = ClipPaintPropertyNode::Create(
-      nullptr, nullptr, FloatRoundedRect(1, 1, 2, 2));
+  scoped_refptr<ClipPaintPropertyNode> clip2 =
+      CreateClip(nullptr, nullptr, FloatRoundedRect(1, 1, 2, 2));
 
   {
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
       PaintChunk::Id id(second, kClipType);
-      PaintChunkProperties properties = test::DefaultPaintChunkProperties();
-      properties.property_tree_state.SetClip(clip2.get());
-
+      auto properties = DefaultPaintChunkProperties();
+      properties.SetClip(clip2.get());
       GetPaintController().UpdateCurrentPaintChunkProperties(id, properties);
     }
     ClipRecorder clip_recorder(context, second, kClipType, IntRect(1, 1, 2, 2));
@@ -612,14 +607,12 @@ TEST_P(PaintControllerTest, UpdateClip) {
                         TestDisplayItem(second, kBackgroundType));
 
     EXPECT_EQ(2u, GetPaintController().PaintChunks().size());
-    EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+    EXPECT_THAT(*GetRasterInvalidationRects(0),
                 // |second| disappeared from the first chunk.
                 UnorderedElementsAre(FloatRect(100, 100, 200, 200)));
     // This is a new chunk. Raster invalidation for the whole chunk will be
     // issued during PaintArtifactCompositor::Update().
-    EXPECT_TRUE(GetPaintController()
-                    .PaintChunks()[1]
-                    .raster_invalidation_rects.IsEmpty());
+    EXPECT_FALSE(GetRasterInvalidationRects(1));
   } else {
     EXPECT_DISPLAY_LIST(
         GetPaintController().GetDisplayItemList(), 4,
@@ -747,7 +740,7 @@ TEST_P(PaintControllerTest, UpdateSwapOrderWithChildren) {
   if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
     EXPECT_THAT(
-        GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+        *GetRasterInvalidationRects(0),
         UnorderedElementsAre(
             // Bounds of |container2| which was moved behind |container1|.
             FloatRect(100, 200, 100, 100),
@@ -814,7 +807,7 @@ TEST_P(PaintControllerTest, UpdateSwapOrderWithChildrenAndInvalidation) {
   if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
     EXPECT_THAT(
-        GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+        *GetRasterInvalidationRects(0),
         UnorderedElementsAre(
             // Bounds of |container1| (old and new are the same).
             FloatRect(100, 100, 100, 100),
@@ -833,18 +826,15 @@ TEST_P(PaintControllerTest, CachedSubsequenceForcePaintChunk) {
   GraphicsContext context(GetPaintController());
 
   FakeDisplayItemClient root("root");
-  auto root_properties = test::DefaultPaintChunkProperties();
+  auto root_properties = DefaultPaintChunkProperties();
   PaintChunk::Id root_id(root, DisplayItem::kCaret);
-  // Record a first chunk with backface_hidden == false
   GetPaintController().UpdateCurrentPaintChunkProperties(root_id,
                                                          root_properties);
   DrawRect(context, root, kBackgroundType, FloatRect(100, 100, 100, 100));
 
   FakeDisplayItemClient container("container");
   {
-    // Record a second chunk with backface_hidden == true
-    auto container_properties = test::DefaultPaintChunkProperties();
-    container_properties.backface_hidden = true;
+    auto container_properties = DefaultPaintChunkProperties();
     PaintChunk::Id container_id(container, DisplayItem::kCaret);
 
     SubsequenceRecorder r(context, container);
@@ -860,8 +850,16 @@ TEST_P(PaintControllerTest, CachedSubsequenceForcePaintChunk) {
 
   GetPaintController().CommitNewDisplayItems();
 
-  root_properties.backface_hidden = true;
-  // This time, record the fist chunk with backface_hidden == true
+  // Even though the paint properties match, |container| should receive its
+  // own PaintChunk because it created a subsequence.
+  EXPECT_EQ(3u, GetPaintController().GetPaintArtifact().PaintChunks().size());
+  EXPECT_EQ(root,
+            GetPaintController().GetPaintArtifact().PaintChunks()[0].id.client);
+  EXPECT_EQ(container,
+            GetPaintController().GetPaintArtifact().PaintChunks()[1].id.client);
+  EXPECT_EQ(root,
+            GetPaintController().GetPaintArtifact().PaintChunks()[2].id.client);
+
   GetPaintController().UpdateCurrentPaintChunkProperties(root_id,
                                                          root_properties);
   DrawRect(context, root, kBackgroundType, FloatRect(100, 100, 100, 100));
@@ -869,8 +867,8 @@ TEST_P(PaintControllerTest, CachedSubsequenceForcePaintChunk) {
   DrawRect(context, root, kForegroundType, FloatRect(100, 100, 100, 100));
   GetPaintController().CommitNewDisplayItems();
 
-  // Even though the paint properties match, |container| should receive its
-  // own PaintChunk because it is a cached subsequence.
+  // |container| should still receive its own PaintChunk because it is a cached
+  // subsequence.
   EXPECT_EQ(3u, GetPaintController().GetPaintArtifact().PaintChunks().size());
   EXPECT_EQ(root,
             GetPaintController().GetPaintArtifact().PaintChunks()[0].id.client);
@@ -889,18 +887,20 @@ TEST_P(PaintControllerTest, CachedSubsequenceSwapOrder) {
   FakeDisplayItemClient content2("content2", LayoutRect(100, 200, 50, 200));
   GraphicsContext context(GetPaintController());
 
-  PaintChunkProperties container1_properties =
-      test::DefaultPaintChunkProperties();
-  PaintChunkProperties container2_properties =
-      test::DefaultPaintChunkProperties();
+  auto container1_effect =
+      CreateOpacityEffect(EffectPaintPropertyNode::Root(), 0.5);
+  auto container1_properties = DefaultPaintChunkProperties();
+  container1_properties.SetEffect(container1_effect.get());
+
+  auto container2_effect =
+      CreateOpacityEffect(EffectPaintPropertyNode::Root(), 0.5);
+  auto container2_properties = DefaultPaintChunkProperties();
+  container2_properties.SetEffect(container2_effect.get());
 
   {
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      PaintChunk::Id id(container1, kBackgroundType);
-      container1_properties.property_tree_state.SetEffect(
-          CreateOpacityOnlyEffect(EffectPaintPropertyNode::Root(), 0.5).get());
       GetPaintController().UpdateCurrentPaintChunkProperties(
-          id, container1_properties);
+          PaintChunk::Id(container1, kBackgroundType), container1_properties);
     }
     SubsequenceRecorder r(context, container1);
     DrawRect(context, container1, kBackgroundType,
@@ -912,11 +912,8 @@ TEST_P(PaintControllerTest, CachedSubsequenceSwapOrder) {
   }
   {
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      PaintChunk::Id id(container2, kBackgroundType);
-      container2_properties.property_tree_state.SetEffect(
-          CreateOpacityOnlyEffect(EffectPaintPropertyNode::Root(), 0.5).get());
       GetPaintController().UpdateCurrentPaintChunkProperties(
-          id, container2_properties);
+          PaintChunk::Id(container2, kBackgroundType), container2_properties);
     }
     SubsequenceRecorder r(context, container2);
     DrawRect(context, container2, kBackgroundType,
@@ -957,12 +954,8 @@ TEST_P(PaintControllerTest, CachedSubsequenceSwapOrder) {
               GetPaintController().PaintChunks()[1].id);
     // Raster invalidation for the whole chunks will be issued during
     // PaintArtifactCompositor::Update().
-    EXPECT_TRUE(GetPaintController()
-                    .PaintChunks()[0]
-                    .raster_invalidation_rects.IsEmpty());
-    EXPECT_TRUE(GetPaintController()
-                    .PaintChunks()[1]
-                    .raster_invalidation_rects.IsEmpty());
+    EXPECT_FALSE(GetRasterInvalidationRects(0));
+    EXPECT_FALSE(GetRasterInvalidationRects(1));
   }
 
   // Simulate the situation when |container1| gets a z-index that is greater
@@ -1050,10 +1043,8 @@ TEST_P(PaintControllerTest, CachedSubsequenceSwapOrder) {
     EXPECT_EQ(PaintChunk::Id(container1, kBackgroundType),
               GetPaintController().PaintChunks()[1].id);
     // Swapping order of chunks should not invalidate anything.
-    EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
-                UnorderedElementsAre());
-    EXPECT_THAT(GetPaintController().PaintChunks()[1].raster_invalidation_rects,
-                UnorderedElementsAre());
+    EXPECT_FALSE(GetRasterInvalidationRects(0));
+    EXPECT_FALSE(GetRasterInvalidationRects(1));
   }
 }
 
@@ -1147,7 +1138,7 @@ TEST_P(PaintControllerTest, CachedSubsequenceAndDisplayItemsSwapOrder) {
   EXPECT_EQ(4u, markers->end);
 }
 
-TEST_P(PaintControllerTest, CachedSubsequenceWithFragments) {
+TEST_P(PaintControllerTest, CachedSubsequenceContainingFragments) {
   if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
     return;
 
@@ -1162,7 +1153,7 @@ TEST_P(PaintControllerTest, CachedSubsequenceWithFragments) {
     for (size_t i = 0; i < kFragmentCount; ++i) {
       ScopedDisplayItemFragment scoped_fragment(context, i);
       ScopedPaintChunkProperties content_chunk_properties(
-          GetPaintController(), test::DefaultPaintChunkProperties(), container,
+          GetPaintController(), DefaultPaintChunkProperties(), container,
           kBackgroundType);
       DrawRect(context, container, kBackgroundType,
                FloatRect(100, 100, 100, 100));
@@ -1170,7 +1161,7 @@ TEST_P(PaintControllerTest, CachedSubsequenceWithFragments) {
   };
   {
     ScopedPaintChunkProperties root_chunk_properties(
-        GetPaintController(), test::DefaultPaintChunkProperties(), root,
+        GetPaintController(), DefaultPaintChunkProperties(), root,
         kBackgroundType);
     DrawRect(context, root, kBackgroundType, FloatRect(100, 100, 100, 100));
     paint_container();
@@ -1178,29 +1169,26 @@ TEST_P(PaintControllerTest, CachedSubsequenceWithFragments) {
   }
   GetPaintController().CommitNewDisplayItems();
 
-  // Check results of the first paint.
-  auto check_paint_results = [this, &root, &container, kFragmentCount]() {
+  auto check_paint_results = [this, &root, &container]() {
     const auto& chunks = GetPaintController().PaintChunks();
-    ASSERT_EQ(2u + kFragmentCount, chunks.size());
-    EXPECT_EQ(root, chunks[0].id.client);
-    EXPECT_EQ(kBackgroundType, chunks[0].id.type);
-    EXPECT_EQ(0u, chunks[0].id.fragment);
-    for (size_t i = 0; i < kFragmentCount; ++i) {
-      const auto& id = chunks[i + 1].id;
-      EXPECT_EQ(container, id.client);
-      EXPECT_EQ(kBackgroundType, id.type);
-      EXPECT_EQ(i, id.fragment);
-    }
-    EXPECT_EQ(root, chunks.back().id.client);
-    EXPECT_EQ(kForegroundType, chunks.back().id.type);
-    EXPECT_EQ(0u, chunks.back().id.fragment);
+    EXPECT_EQ(chunks.size(), 3u);
+    EXPECT_EQ(chunks[0], PaintChunk(0, 1, PaintChunk::Id(root, kBackgroundType),
+                                    DefaultPaintChunkProperties()));
+    // One chunk for all of the fragments because they have the
+    // same properties.
+    EXPECT_EQ(chunks[1],
+              PaintChunk(1, 4, PaintChunk::Id(container, kBackgroundType),
+                         DefaultPaintChunkProperties()));
+    EXPECT_EQ(chunks[2], PaintChunk(4, 5, PaintChunk::Id(root, kForegroundType),
+                                    DefaultPaintChunkProperties()));
   };
+  // Check results of the first paint.
   check_paint_results();
 
   // The second paint.
   {
     ScopedPaintChunkProperties root_chunk_properties(
-        GetPaintController(), test::DefaultPaintChunkProperties(), root,
+        GetPaintController(), DefaultPaintChunkProperties(), root,
         kBackgroundType);
     DrawRect(context, root, kBackgroundType, FloatRect(100, 100, 100, 100));
 
@@ -1229,18 +1217,20 @@ TEST_P(PaintControllerTest, UpdateSwapOrderCrossingChunks) {
   FakeDisplayItemClient content2("content2", LayoutRect(100, 200, 50, 200));
   GraphicsContext context(GetPaintController());
 
-  PaintChunkProperties container1_properties =
-      test::DefaultPaintChunkProperties();
-  PaintChunkProperties container2_properties =
-      test::DefaultPaintChunkProperties();
+  auto container1_effect =
+      CreateOpacityEffect(EffectPaintPropertyNode::Root(), 0.5);
+  auto container1_properties = DefaultPaintChunkProperties();
+  container1_properties.SetEffect(container1_effect.get());
+
+  auto container2_effect =
+      CreateOpacityEffect(EffectPaintPropertyNode::Root(), 0.5);
+  auto container2_properties = DefaultPaintChunkProperties();
+  container2_properties.SetEffect(container2_effect.get());
 
   {
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      PaintChunk::Id id(container1, kBackgroundType);
-      container1_properties.property_tree_state.SetEffect(
-          CreateOpacityOnlyEffect(EffectPaintPropertyNode::Root(), 0.5).get());
       GetPaintController().UpdateCurrentPaintChunkProperties(
-          id, container1_properties);
+          PaintChunk::Id(container1, kBackgroundType), container1_properties);
     }
     DrawRect(context, container1, kBackgroundType,
              FloatRect(100, 100, 100, 100));
@@ -1248,11 +1238,8 @@ TEST_P(PaintControllerTest, UpdateSwapOrderCrossingChunks) {
   }
   {
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      PaintChunk::Id id(container2, kBackgroundType);
-      container2_properties.property_tree_state.SetEffect(
-          CreateOpacityOnlyEffect(EffectPaintPropertyNode::Root(), 0.5).get());
       GetPaintController().UpdateCurrentPaintChunkProperties(
-          id, container2_properties);
+          PaintChunk::Id(container2, kBackgroundType), container2_properties);
     }
     DrawRect(context, container2, kBackgroundType,
              FloatRect(100, 200, 100, 100));
@@ -1274,27 +1261,21 @@ TEST_P(PaintControllerTest, UpdateSwapOrderCrossingChunks) {
               GetPaintController().PaintChunks()[1].id);
     // Raster invalidation for the whole chunks will be issued during
     // PaintArtifactCompositor::Update().
-    EXPECT_TRUE(GetPaintController()
-                    .PaintChunks()[0]
-                    .raster_invalidation_rects.IsEmpty());
-    EXPECT_TRUE(GetPaintController()
-                    .PaintChunks()[1]
-                    .raster_invalidation_rects.IsEmpty());
+    EXPECT_FALSE(GetRasterInvalidationRects(0));
+    EXPECT_FALSE(GetRasterInvalidationRects(1));
   }
 
   // Move content2 into container1, without invalidation.
   if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    PaintChunk::Id id(container1, kBackgroundType);
     GetPaintController().UpdateCurrentPaintChunkProperties(
-        id, container1_properties);
+        PaintChunk::Id(container1, kBackgroundType), container1_properties);
   }
   DrawRect(context, container1, kBackgroundType, FloatRect(100, 100, 100, 100));
   DrawRect(context, content1, kBackgroundType, FloatRect(100, 100, 50, 200));
   DrawRect(context, content2, kBackgroundType, FloatRect(100, 200, 50, 200));
   if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    PaintChunk::Id id(container2, kBackgroundType);
     GetPaintController().UpdateCurrentPaintChunkProperties(
-        id, container2_properties);
+        PaintChunk::Id(container2, kBackgroundType), container2_properties);
   }
   DrawRect(context, container2, kBackgroundType, FloatRect(100, 200, 100, 100));
 
@@ -1320,9 +1301,9 @@ TEST_P(PaintControllerTest, UpdateSwapOrderCrossingChunks) {
     EXPECT_EQ(PaintChunk::Id(container2, kBackgroundType),
               GetPaintController().PaintChunks()[1].id);
     // |content2| is invalidated raster on both the old chunk and the new chunk.
-    EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+    EXPECT_THAT(*GetRasterInvalidationRects(0),
                 UnorderedElementsAre(FloatRect(100, 200, 50, 200)));
-    EXPECT_THAT(GetPaintController().PaintChunks()[1].raster_invalidation_rects,
+    EXPECT_THAT(*GetRasterInvalidationRects(1),
                 UnorderedElementsAre(FloatRect(100, 200, 50, 200)));
   }
 }
@@ -1365,36 +1346,42 @@ TEST_P(PaintControllerTest, CachedNestedSubsequenceUpdate) {
   FakeDisplayItemClient content2("content2", LayoutRect(100, 200, 50, 200));
   GraphicsContext context(GetPaintController());
 
-  PaintChunkProperties container1_background_properties =
-      test::DefaultPaintChunkProperties();
-  PaintChunkProperties content1_properties =
-      test::DefaultPaintChunkProperties();
-  PaintChunkProperties container1_foreground_properties =
-      test::DefaultPaintChunkProperties();
-  PaintChunkProperties container2_background_properties =
-      test::DefaultPaintChunkProperties();
-  PaintChunkProperties content2_properties =
-      test::DefaultPaintChunkProperties();
+  auto container1_effect =
+      CreateOpacityEffect(EffectPaintPropertyNode::Root(), 0.5);
+  auto container1_background_properties = DefaultPaintChunkProperties();
+  container1_background_properties.SetEffect(container1_effect.get());
+  auto container1_foreground_properties = DefaultPaintChunkProperties();
+  container1_foreground_properties.SetEffect(container1_effect.get());
+
+  auto content1_effect =
+      CreateOpacityEffect(EffectPaintPropertyNode::Root(), 0.6);
+  auto content1_properties = DefaultPaintChunkProperties();
+  content1_properties.SetEffect(content1_effect.get());
+
+  auto container2_effect =
+      CreateOpacityEffect(EffectPaintPropertyNode::Root(), 0.7);
+  auto container2_background_properties = DefaultPaintChunkProperties();
+  container2_background_properties.SetEffect(container2_effect.get());
+
+  auto content2_effect =
+      CreateOpacityEffect(EffectPaintPropertyNode::Root(), 0.8);
+  auto content2_properties = DefaultPaintChunkProperties();
+  content2_properties.SetEffect(content2_effect.get());
 
   {
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      PaintChunk::Id id(container1, kBackgroundType);
-      container1_background_properties.property_tree_state.SetEffect(
-          CreateOpacityOnlyEffect(EffectPaintPropertyNode::Root(), 0.5).get());
       GetPaintController().UpdateCurrentPaintChunkProperties(
-          id, container1_background_properties);
+          PaintChunk::Id(container1, kBackgroundType),
+          container1_background_properties);
     }
     SubsequenceRecorder r(context, container1);
     DrawRect(context, container1, kBackgroundType,
              FloatRect(100, 100, 100, 100));
+
     {
       if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-        PaintChunk::Id id(content1, kBackgroundType);
-        content1_properties.property_tree_state.SetEffect(
-            CreateOpacityOnlyEffect(EffectPaintPropertyNode::Root(), 0.6)
-                .get());
         GetPaintController().UpdateCurrentPaintChunkProperties(
-            id, content1_properties);
+            PaintChunk::Id(content1, kBackgroundType), content1_properties);
       }
       SubsequenceRecorder r(context, content1);
       DrawRect(context, content1, kBackgroundType,
@@ -1403,34 +1390,26 @@ TEST_P(PaintControllerTest, CachedNestedSubsequenceUpdate) {
                FloatRect(100, 100, 50, 200));
     }
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      PaintChunk::Id id(container1, kForegroundType);
-      container1_foreground_properties.property_tree_state.SetEffect(
-          CreateOpacityOnlyEffect(EffectPaintPropertyNode::Root(), 0.5).get());
       GetPaintController().UpdateCurrentPaintChunkProperties(
-          id, container1_foreground_properties);
+          PaintChunk::Id(container1, kForegroundType),
+          container1_foreground_properties);
     }
     DrawRect(context, container1, kForegroundType,
              FloatRect(100, 100, 100, 100));
   }
   {
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      PaintChunk::Id id(container2, kBackgroundType);
-      container2_background_properties.property_tree_state.SetEffect(
-          CreateOpacityOnlyEffect(EffectPaintPropertyNode::Root(), 0.7).get());
       GetPaintController().UpdateCurrentPaintChunkProperties(
-          id, container2_background_properties);
+          PaintChunk::Id(container2, kBackgroundType),
+          container2_background_properties);
     }
     SubsequenceRecorder r(context, container2);
     DrawRect(context, container2, kBackgroundType,
              FloatRect(100, 200, 100, 100));
     {
       if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-        PaintChunk::Id id(content2, kBackgroundType);
-        content2_properties.property_tree_state.SetEffect(
-            CreateOpacityOnlyEffect(EffectPaintPropertyNode::Root(), 0.8)
-                .get());
         GetPaintController().UpdateCurrentPaintChunkProperties(
-            id, content2_properties);
+            PaintChunk::Id(content2, kBackgroundType), content2_properties);
       }
       SubsequenceRecorder r(context, content2);
       DrawRect(context, content2, kBackgroundType,
@@ -1481,21 +1460,11 @@ TEST_P(PaintControllerTest, CachedNestedSubsequenceUpdate) {
               GetPaintController().PaintChunks()[4].id);
     // Raster invalidation for the whole chunks will be issued during
     // PaintArtifactCompositor::Update().
-    EXPECT_TRUE(GetPaintController()
-                    .PaintChunks()[0]
-                    .raster_invalidation_rects.IsEmpty());
-    EXPECT_TRUE(GetPaintController()
-                    .PaintChunks()[1]
-                    .raster_invalidation_rects.IsEmpty());
-    EXPECT_TRUE(GetPaintController()
-                    .PaintChunks()[2]
-                    .raster_invalidation_rects.IsEmpty());
-    EXPECT_TRUE(GetPaintController()
-                    .PaintChunks()[3]
-                    .raster_invalidation_rects.IsEmpty());
-    EXPECT_TRUE(GetPaintController()
-                    .PaintChunks()[4]
-                    .raster_invalidation_rects.IsEmpty());
+    EXPECT_FALSE(GetRasterInvalidationRects(0));
+    EXPECT_FALSE(GetRasterInvalidationRects(1));
+    EXPECT_FALSE(GetRasterInvalidationRects(2));
+    EXPECT_FALSE(GetRasterInvalidationRects(3));
+    EXPECT_FALSE(GetRasterInvalidationRects(4));
   }
 
   // Invalidate container1 but not content1.
@@ -1513,9 +1482,8 @@ TEST_P(PaintControllerTest, CachedNestedSubsequenceUpdate) {
   // Content2 now outputs foreground only.
   {
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      PaintChunk::Id id(content2, kForegroundType);
       GetPaintController().UpdateCurrentPaintChunkProperties(
-          id, content2_properties);
+          PaintChunk::Id(content2, kForegroundType), content2_properties);
     }
     SubsequenceRecorder r(context, content2);
     DrawRect(context, content2, kForegroundType, FloatRect(100, 200, 50, 200));
@@ -1533,9 +1501,8 @@ TEST_P(PaintControllerTest, CachedNestedSubsequenceUpdate) {
       EXPECT_FALSE(SubsequenceRecorder::UseCachedSubsequenceIfPossible(
           context, content1));
       if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-        PaintChunk::Id id(content1, kBackgroundType);
         GetPaintController().UpdateCurrentPaintChunkProperties(
-            id, content1_properties);
+            PaintChunk::Id(content1, kBackgroundType), content1_properties);
       }
       SubsequenceRecorder r(context, content1);
       DrawRect(context, content1, kBackgroundType,
@@ -1547,9 +1514,9 @@ TEST_P(PaintControllerTest, CachedNestedSubsequenceUpdate) {
           context, content1));
     }
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      PaintChunk::Id id(container1, kForegroundType);
       GetPaintController().UpdateCurrentPaintChunkProperties(
-          id, container1_foreground_properties);
+          PaintChunk::Id(container1, kForegroundType),
+          container1_foreground_properties);
     }
     DrawRect(context, container1, kForegroundType,
              FloatRect(100, 100, 100, 100));
@@ -1595,15 +1562,11 @@ TEST_P(PaintControllerTest, CachedNestedSubsequenceUpdate) {
               GetPaintController().PaintChunks()[2].id);
     // This is a new chunk. Raster invalidation of the whole chunk will be
     // issued during PaintArtifactCompositor::Update().
-    EXPECT_TRUE(GetPaintController()
-                    .PaintChunks()[0]
-                    .raster_invalidation_rects.IsEmpty());
+    EXPECT_TRUE(GetRasterInvalidationRects(0)->IsEmpty());
     // This chunk didn't change.
-    EXPECT_TRUE(GetPaintController()
-                    .PaintChunks()[1]
-                    .raster_invalidation_rects.IsEmpty());
+    EXPECT_TRUE(GetRasterInvalidationRects(1)->IsEmpty());
     // |container1| is invalidated.
-    EXPECT_THAT(GetPaintController().PaintChunks()[2].raster_invalidation_rects,
+    EXPECT_THAT(*GetRasterInvalidationRects(2),
                 UnorderedElementsAre(FloatRect(100, 100, 100, 100)));
   }
 }
@@ -1645,9 +1608,7 @@ TEST_P(PaintControllerTest, SkipCache) {
     EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
     // Raster invalidation for the whole chunk will be issued during
     // PaintArtifactCompositor::Update().
-    EXPECT_TRUE(GetPaintController()
-                    .PaintChunks()[0]
-                    .raster_invalidation_rects.IsEmpty());
+    EXPECT_FALSE(GetRasterInvalidationRects(0));
 
     InitRootChunk();
   }
@@ -1683,7 +1644,7 @@ TEST_P(PaintControllerTest, SkipCache) {
 
   if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
-    EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+    EXPECT_THAT(*GetRasterInvalidationRects(0),
                 // Bounds of |content| (old and new are the same);
                 UnorderedElementsAre(FloatRect(100, 100, 100, 100)));
 
@@ -1717,7 +1678,7 @@ TEST_P(PaintControllerTest, SkipCache) {
 
   if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     EXPECT_EQ(1u, GetPaintController().PaintChunks().size());
-    EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+    EXPECT_THAT(*GetRasterInvalidationRects(0),
                 UnorderedElementsAre(
                     // Bounds of |multicol| (old and new are the same);
                     FloatRect(100, 100, 200, 200),
@@ -1857,10 +1818,7 @@ TEST_P(PaintControllerTest, SmallPaintControllerHasOnePaintChunk) {
   ScopedSlimmingPaintV2ForTest enable_s_pv2(true);
   FakeDisplayItemClient client("test client");
 
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    GetPaintController().UpdateCurrentPaintChunkProperties(
-        WTF::nullopt, test::DefaultPaintChunkProperties());
-  }
+  InitRootChunk();
   GraphicsContext context(GetPaintController());
   DrawRect(context, client, kBackgroundType, FloatRect(0, 0, 100, 100));
 
@@ -1950,9 +1908,7 @@ TEST_P(PaintControllerTest, PartialInvalidation) {
   ASSERT_EQ(1u, GetPaintController().PaintChunks().size());
   // Raster invalidation for the whole new chunk will be issued during
   // PaintArtifactCompositor::Update().
-  EXPECT_TRUE(GetPaintController()
-                  .PaintChunks()[0]
-                  .raster_invalidation_rects.IsEmpty());
+  EXPECT_FALSE(GetRasterInvalidationRects(0));
   EXPECT_EQ(LayoutRect(), client.PartialInvalidationRect());
 
   // Test partial rect invalidation without other invalidations.
@@ -1961,7 +1917,7 @@ TEST_P(PaintControllerTest, PartialInvalidation) {
   DrawRect(context, client, kBackgroundType, FloatRect(100, 100, 300, 300));
   GetPaintController().CommitNewDisplayItems();
   ASSERT_EQ(1u, GetPaintController().PaintChunks().size());
-  EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+  EXPECT_THAT(*GetRasterInvalidationRects(0),
               // Partial invalidation.
               UnorderedElementsAre(
                   RuntimeEnabledFeatures::PartialRasterInvalidationEnabled()
@@ -1976,7 +1932,7 @@ TEST_P(PaintControllerTest, PartialInvalidation) {
   DrawRect(context, client, kBackgroundType, FloatRect(100, 100, 300, 300));
   GetPaintController().CommitNewDisplayItems();
   ASSERT_EQ(1u, GetPaintController().PaintChunks().size());
-  EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+  EXPECT_THAT(*GetRasterInvalidationRects(0),
               // Partial invalidation is shadowed by full invalidation.
               UnorderedElementsAre(FloatRect(100, 100, 300, 300)));
   EXPECT_EQ(LayoutRect(), client.PartialInvalidationRect());
@@ -1989,12 +1945,12 @@ TEST_P(PaintControllerTest, PartialInvalidation) {
   GetPaintController().CommitNewDisplayItems();
   ASSERT_EQ(1u, GetPaintController().PaintChunks().size());
   if (RuntimeEnabledFeatures::PartialRasterInvalidationEnabled()) {
-    EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+    EXPECT_THAT(*GetRasterInvalidationRects(0),
                 // Both partial invalidation and incremental invalidation.
                 UnorderedElementsAre(FloatRect(100, 400, 300, 100),
                                      FloatRect(150, 160, 170, 180)));
   } else {
-    EXPECT_THAT(GetPaintController().PaintChunks()[0].raster_invalidation_rects,
+    EXPECT_THAT(*GetRasterInvalidationRects(0),
                 UnorderedElementsAre(FloatRect(100, 100, 300, 400)));
   }
   EXPECT_EQ(LayoutRect(), client.PartialInvalidationRect());
@@ -2031,6 +1987,49 @@ TEST_P(PaintControllerTest, InvalidateAll) {
 
 // Death tests don't work properly on Android.
 #if defined(GTEST_HAS_DEATH_TEST) && !defined(OS_ANDROID)
+
+TEST_P(PaintControllerTest, DuplicatedSubsequences) {
+  FakeDisplayItemClient client("test", LayoutRect(100, 100, 100, 100));
+  GraphicsContext context(GetPaintController());
+
+  auto paint_duplicated_subsequences = [&]() {
+    InitRootChunk();
+    {
+      SubsequenceRecorder r(context, client);
+      DrawRect(context, client, kBackgroundType, FloatRect(100, 100, 100, 100));
+    }
+    {
+      SubsequenceRecorder r(context, client);
+      DrawRect(context, client, kForegroundType, FloatRect(100, 100, 100, 100));
+    }
+    GetPaintController().CommitNewDisplayItems();
+  };
+
+#if DCHECK_IS_ON()
+  EXPECT_DEATH(paint_duplicated_subsequences(),
+               "Multiple subsequences for client: \"test\"");
+  return;
+#endif
+
+  // The following is for non-DCHECK path. No security CHECK should trigger.
+  paint_duplicated_subsequences();
+  // Paint again.
+  InitRootChunk();
+  if (RuntimeEnabledFeatures::PaintUnderInvalidationCheckingEnabled()) {
+    EXPECT_FALSE(GetPaintController().UseCachedSubsequenceIfPossible(client));
+    SubsequenceRecorder r(context, client);
+    DrawRect(context, client, kBackgroundType, FloatRect(100, 100, 100, 100));
+  } else {
+    EXPECT_TRUE(GetPaintController().UseCachedSubsequenceIfPossible(client));
+  }
+  {
+    // Should not use the cached duplicated subsequence.
+    EXPECT_FALSE(GetPaintController().UseCachedSubsequenceIfPossible(client));
+    SubsequenceRecorder r(context, client);
+    DrawRect(context, client, kForegroundType, FloatRect(100, 100, 100, 100));
+  }
+  GetPaintController().CommitNewDisplayItems();
+}
 
 class PaintControllerUnderInvalidationTest
     : public PaintControllerTestBase,

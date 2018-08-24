@@ -1367,26 +1367,6 @@ error::Error GLES2DecoderPassthroughImpl::DoGetAttribLocation(GLuint program,
   return error::kNoError;
 }
 
-error::Error GLES2DecoderPassthroughImpl::DoGetBufferSubDataAsyncCHROMIUM(
-    GLenum target,
-    GLintptr offset,
-    GLsizeiptr size,
-    uint8_t* mem) {
-  CheckErrorCallbackState();
-
-  void* mapped_ptr =
-      api()->glMapBufferRangeFn(target, offset, size, GL_MAP_READ_BIT);
-  if (CheckErrorCallbackState() || mapped_ptr == nullptr) {
-    // Had an error while mapping, don't copy any data
-    return error::kNoError;
-  }
-
-  memcpy(mem, mapped_ptr, size);
-  api()->glUnmapBufferFn(target);
-
-  return error::kNoError;
-}
-
 error::Error GLES2DecoderPassthroughImpl::DoGetBooleanv(GLenum pname,
                                                         GLsizei bufsize,
                                                         GLsizei* length,
@@ -3032,7 +3012,7 @@ error::Error GLES2DecoderPassthroughImpl::DoQueryCounterEXT(
   pending_query.shm = std::move(buffer);
   pending_query.sync = sync;
   pending_query.submit_count = submit_count;
-  pending_queries_.push_back(pending_query);
+  pending_queries_.push_back(std::move(pending_query));
 
   return ProcessQueries(false);
 }
@@ -3091,7 +3071,7 @@ error::Error GLES2DecoderPassthroughImpl::DoBeginQueryEXT(
   query.service_id = service_id;
   query.shm = std::move(buffer);
   query.sync = sync;
-  active_queries_[target] = query;
+  active_queries_[target] = std::move(query);
 
   return error::kNoError;
 }
@@ -3138,7 +3118,7 @@ error::Error GLES2DecoderPassthroughImpl::DoEndQueryEXT(GLenum target,
   pending_query.shm = std::move(active_query.shm);
   pending_query.sync = active_query.sync;
   pending_query.submit_count = submit_count;
-  pending_queries_.push_back(pending_query);
+  pending_queries_.push_back(std::move(pending_query));
 
   return ProcessQueries(false);
 }
@@ -3204,7 +3184,8 @@ error::Error GLES2DecoderPassthroughImpl::DoBindVertexArrayOES(GLuint array) {
   return error::kNoError;
 }
 
-error::Error GLES2DecoderPassthroughImpl::DoSwapBuffers() {
+error::Error GLES2DecoderPassthroughImpl::DoSwapBuffers(uint64_t swap_id,
+                                                        GLbitfield flags) {
   dc_layer_shared_state_.reset();
 
   if (offscreen_) {
@@ -3256,6 +3237,7 @@ error::Error GLES2DecoderPassthroughImpl::DoSwapBuffers() {
     return error::kNoError;
   }
 
+  client_->OnSwapBuffers(swap_id, flags);
   return CheckSwapBuffersResult(surface_->SwapBuffers(base::DoNothing()),
                                 "SwapBuffers");
 }
@@ -3823,8 +3805,10 @@ error::Error GLES2DecoderPassthroughImpl::DoGetTranslatedShaderSourceANGLE(
 }
 
 error::Error GLES2DecoderPassthroughImpl::DoSwapBuffersWithBoundsCHROMIUM(
+    uint64_t swap_id,
     GLsizei count,
-    const volatile GLint* rects) {
+    const volatile GLint* rects,
+    GLbitfield flags) {
   if (count < 0) {
     InsertError(GL_INVALID_VALUE, "count cannot be negative.");
     return error::kNoError;
@@ -3838,16 +3822,19 @@ error::Error GLES2DecoderPassthroughImpl::DoSwapBuffersWithBoundsCHROMIUM(
                           rects[i * 4 + 3]);
   }
 
+  client_->OnSwapBuffers(swap_id, flags);
   return CheckSwapBuffersResult(
       surface_->SwapBuffersWithBounds(bounds, base::DoNothing()),
       "SwapBuffersWithBounds");
 }
 
 error::Error GLES2DecoderPassthroughImpl::DoPostSubBufferCHROMIUM(
+    uint64_t swap_id,
     GLint x,
     GLint y,
     GLint width,
-    GLint height) {
+    GLint height,
+    GLbitfield flags) {
   if (!surface_->SupportsPostSubBuffer()) {
     InsertError(GL_INVALID_OPERATION,
                 "glPostSubBufferCHROMIUM is not supported for this surface.");
@@ -3856,6 +3843,7 @@ error::Error GLES2DecoderPassthroughImpl::DoPostSubBufferCHROMIUM(
 
   dc_layer_shared_state_.reset();
 
+  client_->OnSwapBuffers(swap_id, flags);
   return CheckSwapBuffersResult(
       surface_->PostSubBuffer(x, y, width, height, base::DoNothing()),
       "PostSubBuffer");
@@ -4138,7 +4126,8 @@ error::Error GLES2DecoderPassthroughImpl::DoScheduleOverlayPlaneCHROMIUM(
     GLfloat uv_x,
     GLfloat uv_y,
     GLfloat uv_width,
-    GLfloat uv_height) {
+    GLfloat uv_height,
+    GLuint gpu_fence_id) {
   NOTIMPLEMENTED();
   return error::kNoError;
 }
@@ -4199,7 +4188,8 @@ error::Error GLES2DecoderPassthroughImpl::DoScheduleDCLayerCHROMIUM(
     GLuint background_color,
     GLuint edge_aa_mask,
     GLenum filter,
-    const GLfloat* bounds_rect) {
+    const GLfloat* bounds_rect,
+    bool is_protected_video) {
   switch (filter) {
     case GL_NEAREST:
     case GL_LINEAR:
@@ -4252,7 +4242,8 @@ error::Error GLES2DecoderPassthroughImpl::DoScheduleDCLayerCHROMIUM(
       dc_layer_shared_state_->is_clipped, dc_layer_shared_state_->clip_rect,
       dc_layer_shared_state_->z_order, dc_layer_shared_state_->transform,
       images, contents_rect_object, gfx::ToEnclosingRect(bounds_rect_object),
-      background_color, edge_aa_mask, dc_layer_shared_state_->opacity, filter);
+      background_color, edge_aa_mask, dc_layer_shared_state_->opacity, filter,
+      is_protected_video);
 
   if (!surface_->ScheduleDCLayer(params)) {
     InsertError(GL_INVALID_OPERATION, "failed to schedule DCLayer");
@@ -4262,7 +4253,9 @@ error::Error GLES2DecoderPassthroughImpl::DoScheduleDCLayerCHROMIUM(
   return error::kNoError;
 }
 
-error::Error GLES2DecoderPassthroughImpl::DoCommitOverlayPlanesCHROMIUM() {
+error::Error GLES2DecoderPassthroughImpl::DoCommitOverlayPlanesCHROMIUM(
+    uint64_t swap_id,
+    GLbitfield flags) {
   if (!surface_->SupportsCommitOverlayPlanes()) {
     InsertError(GL_INVALID_OPERATION,
                 "glCommitOverlayPlanes not supported by surface.");
@@ -4271,6 +4264,7 @@ error::Error GLES2DecoderPassthroughImpl::DoCommitOverlayPlanesCHROMIUM() {
 
   dc_layer_shared_state_.reset();
 
+  client_->OnSwapBuffers(swap_id, flags);
   return CheckSwapBuffersResult(
       surface_->CommitOverlayPlanes(base::DoNothing()), "CommitOverlayPlanes");
 }
@@ -4656,8 +4650,13 @@ error::Error GLES2DecoderPassthroughImpl::DoBeginRasterCHROMIUM(
   return error::kNoError;
 }
 
-error::Error GLES2DecoderPassthroughImpl::DoRasterCHROMIUM(GLsizeiptr size,
-                                                           const void* list) {
+error::Error GLES2DecoderPassthroughImpl::DoRasterCHROMIUM(
+    GLuint raster_shm_id,
+    GLuint raster_shm_offset,
+    GLsizeiptr raster_shm_size,
+    GLuint font_shm_id,
+    GLuint font_shm_offset,
+    GLsizeiptr font_shm_size) {
   // TODO(enne): Add CHROMIUM_raster_transport extension support to the
   // passthrough command buffer.
   NOTIMPLEMENTED();

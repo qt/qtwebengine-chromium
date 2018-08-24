@@ -7,14 +7,15 @@
 
 #include <stdint.h>
 
+#include <set>
 #include <string>
 
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
 #include "base/time/time.h"
 #include "content/common/content_export.h"
-#include "net/cookies/cookie_store.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "services/network/public/mojom/cookie_manager.mojom.h"
 
 class GURL;
 
@@ -75,7 +76,12 @@ class CONTENT_EXPORT StoragePartition {
   virtual base::FilePath GetPath() = 0;
   virtual net::URLRequestContextGetter* GetURLRequestContext() = 0;
   virtual net::URLRequestContextGetter* GetMediaURLRequestContext() = 0;
+
+  // Returns a raw mojom::NetworkContext pointer. When network service crashes
+  // or restarts, the raw pointer will not be valid or safe to use. Therefore,
+  // caller should not hold onto this pointer beyond the same message loop task.
   virtual network::mojom::NetworkContext* GetNetworkContext() = 0;
+
   // Returns a pointer/info to a URLLoaderFactory/CookieManager owned by
   // the storage partition. Prefer to use this instead of creating a new
   // URLLoaderFactory when issuing requests from the Browser process, to
@@ -119,6 +125,7 @@ class CONTENT_EXPORT StoragePartition {
     REMOVE_DATA_MASK_SERVICE_WORKERS = 1 << 7,
     REMOVE_DATA_MASK_CACHE_STORAGE = 1 << 8,
     REMOVE_DATA_MASK_PLUGIN_PRIVATE_DATA = 1 << 9,
+    REMOVE_DATA_MASK_BACKGROUND_FETCH = 1 << 10,
     REMOVE_DATA_MASK_ALL = 0xFFFFFFFF,
 
     // Corresponds to storage::kStorageTypeTemporary.
@@ -152,9 +159,6 @@ class CONTENT_EXPORT StoragePartition {
   typedef base::Callback<bool(const GURL&, storage::SpecialStoragePolicy*)>
       OriginMatcherFunction;
 
-  // A callback type to check if a given cookie should be cleared.
-  using CookieMatcherFunction = net::CookieStore::CookiePredicate;
-
   // Similar to ClearDataForOrigin().
   // Deletes all data out for the StoragePartition if |storage_origin| is empty.
   // |origin_matcher| is present if special storage policy is to be handled,
@@ -176,20 +180,24 @@ class CONTENT_EXPORT StoragePartition {
   // * |origin_matcher| is present if special storage policy is to be handled,
   //   otherwise the callback should be null (base::Callback::is_null()==true).
   //   The origin matcher does not apply to cookies, instead use:
-  // * |cookies_matcher| is present if special cookie clearing is to be handled.
-  //   If the callback is null all cookies withing the time range will be
-  //   cleared.
+  // * |cookie_deletion_filter| identifies the cookies to delete and will be
+  //   used if |remove_mask| has the REMOVE_DATA_MASK_COOKIES bit set. Note:
+  //   CookieDeletionFilterPtr also contains a time interval
+  //   (created_after_time/created_before_time), so when deleting cookies
+  //   |begin| and |end| will be used ignoring the interval in
+  //   |cookie_deletion_filter|.
   // * |callback| is called when data deletion is done or at least the deletion
   //   is scheduled.
   // Note: Make sure you know what you are doing before clearing cookies
   // selectively. You don't want to break the web.
-  virtual void ClearData(uint32_t remove_mask,
-                         uint32_t quota_storage_remove_mask,
-                         const OriginMatcherFunction& origin_matcher,
-                         const CookieMatcherFunction& cookie_matcher,
-                         const base::Time begin,
-                         const base::Time end,
-                         base::OnceClosure callback) = 0;
+  virtual void ClearData(
+      uint32_t remove_mask,
+      uint32_t quota_storage_remove_mask,
+      const OriginMatcherFunction& origin_matcher,
+      network::mojom::CookieDeletionFilterPtr cookie_deletion_filter,
+      const base::Time begin,
+      const base::Time end,
+      base::OnceClosure callback) = 0;
 
   // Clears the HTTP and media caches associated with this StoragePartition's
   // request contexts. If |begin| and |end| are not null, only entries with

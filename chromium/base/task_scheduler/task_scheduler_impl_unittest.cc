@@ -13,15 +13,18 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
+#include "base/debug/stack_trace.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task_scheduler/scheduler_worker_observer.h"
 #include "base/task_scheduler/scheduler_worker_pool_params.h"
 #include "base/task_scheduler/task_traits.h"
 #include "base/task_scheduler/test_task_factory.h"
+#include "base/task_scheduler/test_utils.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/sequence_local_storage_slot.h"
@@ -206,6 +209,11 @@ class TaskSchedulerImplTest
                                            kFieldTrialTestGroup);
   }
 
+  void set_scheduler_worker_observer(
+      SchedulerWorkerObserver* scheduler_worker_observer) {
+    scheduler_worker_observer_ = scheduler_worker_observer;
+  }
+
   void StartTaskScheduler() {
     constexpr TimeDelta kSuggestedReclaimTime = TimeDelta::FromSeconds(30);
     constexpr int kMaxNumBackgroundThreads = 1;
@@ -217,18 +225,25 @@ class TaskSchedulerImplTest
         {{kMaxNumBackgroundThreads, kSuggestedReclaimTime},
          {kMaxNumBackgroundBlockingThreads, kSuggestedReclaimTime},
          {kMaxNumForegroundThreads, kSuggestedReclaimTime},
-         {kMaxNumForegroundBlockingThreads, kSuggestedReclaimTime}});
+         {kMaxNumForegroundBlockingThreads, kSuggestedReclaimTime}},
+        scheduler_worker_observer_);
   }
 
   void TearDown() override {
+    if (did_tear_down_)
+      return;
+
     scheduler_.FlushForTesting();
     scheduler_.JoinForTesting();
+    did_tear_down_ = true;
   }
 
   TaskSchedulerImpl scheduler_;
 
  private:
   base::FieldTrialList field_trial_list_;
+  SchedulerWorkerObserver* scheduler_worker_observer_ = nullptr;
+  bool did_tear_down_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(TaskSchedulerImplTest);
 };
@@ -639,6 +654,169 @@ TEST_F(TaskSchedulerImplTest, FlushAsyncNoTasks) {
       BindOnce([](bool* called_back) { *called_back = true; },
                Unretained(&called_back)));
   EXPECT_TRUE(called_back);
+}
+
+namespace {
+
+// Verifies that |query| is found on the current stack. Ignores failures if this
+// configuration doesn't have symbols.
+void VerifyHasStringOnStack(const std::string& query) {
+  const std::string stack = debug::StackTrace().ToString();
+  SCOPED_TRACE(stack);
+  const bool found_on_stack = stack.find(query) != std::string::npos;
+  const bool stack_has_symbols =
+      stack.find("SchedulerWorker") != std::string::npos;
+  EXPECT_TRUE(found_on_stack || !stack_has_symbols) << query;
+}
+
+}  // namespace
+
+#if defined(OS_POSIX)
+// Many POSIX bots flakily crash on |debug::StackTrace().ToString()|,
+// https://crbug.com/840429.
+#define MAYBE_IdentifiableStacks DISABLED_IdentifiableStacks
+#else
+#define MAYBE_IdentifiableStacks IdentifiableStacks
+#endif
+
+// Integration test that verifies that workers have a frame on their stacks
+// which easily identifies the type of worker (useful to diagnose issues from
+// logs without memory dumps).
+TEST_F(TaskSchedulerImplTest, MAYBE_IdentifiableStacks) {
+  StartTaskScheduler();
+
+  scheduler_.CreateSequencedTaskRunnerWithTraits({})->PostTask(
+      FROM_HERE, BindOnce(&VerifyHasStringOnStack, "RunPooledWorker"));
+  scheduler_.CreateSequencedTaskRunnerWithTraits({TaskPriority::BACKGROUND})
+      ->PostTask(FROM_HERE, BindOnce(&VerifyHasStringOnStack,
+                                     "RunBackgroundPooledWorker"));
+
+  scheduler_
+      .CreateSingleThreadTaskRunnerWithTraits(
+          {}, SingleThreadTaskRunnerThreadMode::SHARED)
+      ->PostTask(FROM_HERE,
+                 BindOnce(&VerifyHasStringOnStack, "RunSharedWorker"));
+  scheduler_
+      .CreateSingleThreadTaskRunnerWithTraits(
+          {TaskPriority::BACKGROUND}, SingleThreadTaskRunnerThreadMode::SHARED)
+      ->PostTask(FROM_HERE, BindOnce(&VerifyHasStringOnStack,
+                                     "RunBackgroundSharedWorker"));
+
+  scheduler_
+      .CreateSingleThreadTaskRunnerWithTraits(
+          {}, SingleThreadTaskRunnerThreadMode::DEDICATED)
+      ->PostTask(FROM_HERE,
+                 BindOnce(&VerifyHasStringOnStack, "RunDedicatedWorker"));
+  scheduler_
+      .CreateSingleThreadTaskRunnerWithTraits(
+          {TaskPriority::BACKGROUND},
+          SingleThreadTaskRunnerThreadMode::DEDICATED)
+      ->PostTask(FROM_HERE, BindOnce(&VerifyHasStringOnStack,
+                                     "RunBackgroundDedicatedWorker"));
+
+#if defined(OS_WIN)
+  scheduler_
+      .CreateCOMSTATaskRunnerWithTraits(
+          {}, SingleThreadTaskRunnerThreadMode::SHARED)
+      ->PostTask(FROM_HERE,
+                 BindOnce(&VerifyHasStringOnStack, "RunSharedCOMWorker"));
+  scheduler_
+      .CreateCOMSTATaskRunnerWithTraits(
+          {TaskPriority::BACKGROUND}, SingleThreadTaskRunnerThreadMode::SHARED)
+      ->PostTask(FROM_HERE, BindOnce(&VerifyHasStringOnStack,
+                                     "RunBackgroundSharedCOMWorker"));
+
+  scheduler_
+      .CreateCOMSTATaskRunnerWithTraits(
+          {}, SingleThreadTaskRunnerThreadMode::DEDICATED)
+      ->PostTask(FROM_HERE,
+                 BindOnce(&VerifyHasStringOnStack, "RunDedicatedCOMWorker"));
+  scheduler_
+      .CreateCOMSTATaskRunnerWithTraits(
+          {TaskPriority::BACKGROUND},
+          SingleThreadTaskRunnerThreadMode::DEDICATED)
+      ->PostTask(FROM_HERE, BindOnce(&VerifyHasStringOnStack,
+                                     "RunBackgroundDedicatedCOMWorker"));
+#endif  // defined(OS_WIN)
+
+  scheduler_.FlushForTesting();
+}
+
+TEST_F(TaskSchedulerImplTest, SchedulerWorkerObserver) {
+  testing::StrictMock<test::MockSchedulerWorkerObserver> observer;
+  set_scheduler_worker_observer(&observer);
+
+// 4 workers should be created for the 4 pools. After that, 8 threads should
+// be created for single-threaded work (16 on Windows).
+#if defined(OS_WIN)
+  constexpr int kExpectedNumWorkers = 20;
+#else
+  constexpr int kExpectedNumWorkers = 12;
+#endif
+  EXPECT_CALL(observer, OnSchedulerWorkerMainEntry())
+      .Times(kExpectedNumWorkers);
+
+  StartTaskScheduler();
+
+  std::vector<scoped_refptr<SingleThreadTaskRunner>> task_runners;
+
+  task_runners.push_back(scheduler_.CreateSingleThreadTaskRunnerWithTraits(
+      {TaskPriority::BACKGROUND}, SingleThreadTaskRunnerThreadMode::SHARED));
+  task_runners.push_back(scheduler_.CreateSingleThreadTaskRunnerWithTraits(
+      {TaskPriority::BACKGROUND, MayBlock()},
+      SingleThreadTaskRunnerThreadMode::SHARED));
+  task_runners.push_back(scheduler_.CreateSingleThreadTaskRunnerWithTraits(
+      {TaskPriority::USER_BLOCKING}, SingleThreadTaskRunnerThreadMode::SHARED));
+  task_runners.push_back(scheduler_.CreateSingleThreadTaskRunnerWithTraits(
+      {TaskPriority::USER_BLOCKING, MayBlock()},
+      SingleThreadTaskRunnerThreadMode::SHARED));
+
+  task_runners.push_back(scheduler_.CreateSingleThreadTaskRunnerWithTraits(
+      {TaskPriority::BACKGROUND}, SingleThreadTaskRunnerThreadMode::DEDICATED));
+  task_runners.push_back(scheduler_.CreateSingleThreadTaskRunnerWithTraits(
+      {TaskPriority::BACKGROUND, MayBlock()},
+      SingleThreadTaskRunnerThreadMode::DEDICATED));
+  task_runners.push_back(scheduler_.CreateSingleThreadTaskRunnerWithTraits(
+      {TaskPriority::USER_BLOCKING},
+      SingleThreadTaskRunnerThreadMode::DEDICATED));
+  task_runners.push_back(scheduler_.CreateSingleThreadTaskRunnerWithTraits(
+      {TaskPriority::USER_BLOCKING, MayBlock()},
+      SingleThreadTaskRunnerThreadMode::DEDICATED));
+
+#if defined(OS_WIN)
+  task_runners.push_back(scheduler_.CreateCOMSTATaskRunnerWithTraits(
+      {TaskPriority::BACKGROUND}, SingleThreadTaskRunnerThreadMode::SHARED));
+  task_runners.push_back(scheduler_.CreateCOMSTATaskRunnerWithTraits(
+      {TaskPriority::BACKGROUND, MayBlock()},
+      SingleThreadTaskRunnerThreadMode::SHARED));
+  task_runners.push_back(scheduler_.CreateCOMSTATaskRunnerWithTraits(
+      {TaskPriority::USER_BLOCKING}, SingleThreadTaskRunnerThreadMode::SHARED));
+  task_runners.push_back(scheduler_.CreateCOMSTATaskRunnerWithTraits(
+      {TaskPriority::USER_BLOCKING, MayBlock()},
+      SingleThreadTaskRunnerThreadMode::SHARED));
+
+  task_runners.push_back(scheduler_.CreateCOMSTATaskRunnerWithTraits(
+      {TaskPriority::BACKGROUND}, SingleThreadTaskRunnerThreadMode::DEDICATED));
+  task_runners.push_back(scheduler_.CreateCOMSTATaskRunnerWithTraits(
+      {TaskPriority::BACKGROUND, MayBlock()},
+      SingleThreadTaskRunnerThreadMode::DEDICATED));
+  task_runners.push_back(scheduler_.CreateCOMSTATaskRunnerWithTraits(
+      {TaskPriority::USER_BLOCKING},
+      SingleThreadTaskRunnerThreadMode::DEDICATED));
+  task_runners.push_back(scheduler_.CreateCOMSTATaskRunnerWithTraits(
+      {TaskPriority::USER_BLOCKING, MayBlock()},
+      SingleThreadTaskRunnerThreadMode::DEDICATED));
+#endif
+
+  for (auto& task_runner : task_runners)
+    task_runner->PostTask(FROM_HERE, DoNothing());
+
+  EXPECT_CALL(observer, OnSchedulerWorkerMainExit()).Times(kExpectedNumWorkers);
+
+  // Allow single-threaded workers to be released.
+  task_runners.clear();
+
+  TearDown();
 }
 
 }  // namespace internal

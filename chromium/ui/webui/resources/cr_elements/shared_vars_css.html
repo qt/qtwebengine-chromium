@@ -31,6 +31,14 @@
 
     --cr-icon-ripple-margin: calc(var(--cr-icon-ripple-padding) * -1);
 
+    /* Common properties for WebUI pages. */
+    --cr-page-host: {
+      color: var(--primary-text-color);
+      line-height: 154%; /* Apply 20px default line-height to all text. */
+      overflow: hidden;  /* Prevent double scroll bar bugs. */
+      user-select: text;
+    };
+
     --cr-paper-icon-button-margin: {
       /* Shift button so ripple overlaps the end of the row. */
       -webkit-margin-end: var(--cr-icon-ripple-margin);
@@ -117,5 +125,13 @@
     }
 
     --cr-container-shadow-max-opacity: 1;
+
+    /** MD Refresh Styles */
+    --cr-card-border-radius: 4px;
+    --cr-disabled-opacity: 0.38;
+    --google-blue-600: #1A73E8;
+    --google-grey-200: #E8EAED;
+    --google-grey-400: #BDC1C6;
+    --google-grey-900: #202124;
   }
 </style>

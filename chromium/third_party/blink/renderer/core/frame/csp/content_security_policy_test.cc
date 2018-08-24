@@ -30,7 +30,7 @@ class ContentSecurityPolicyTest : public testing::Test {
         secure_origin(SecurityOrigin::Create(secure_url)) {}
 
  protected:
-  virtual void SetUp() { execution_context = CreateExecutionContext(); }
+  void SetUp() override { execution_context = CreateExecutionContext(); }
 
   NullExecutionContext* CreateExecutionContext() {
     NullExecutionContext* context = new NullExecutionContext();
@@ -1003,6 +1003,7 @@ TEST_F(ContentSecurityPolicyTest, DirectiveType) {
       {ContentSecurityPolicy::DirectiveType::kImgSrc, "img-src"},
       {ContentSecurityPolicy::DirectiveType::kManifestSrc, "manifest-src"},
       {ContentSecurityPolicy::DirectiveType::kMediaSrc, "media-src"},
+      {ContentSecurityPolicy::DirectiveType::kNavigateTo, "navigate-to"},
       {ContentSecurityPolicy::DirectiveType::kObjectSrc, "object-src"},
       {ContentSecurityPolicy::DirectiveType::kPluginTypes, "plugin-types"},
       {ContentSecurityPolicy::DirectiveType::kReportURI, "report-uri"},

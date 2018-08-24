@@ -28,6 +28,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/auto_reset.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_loading_behavior_flag.h"
@@ -37,7 +38,6 @@
 #include "third_party/blink/renderer/core/dom/document_fragment.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
-#include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/html_document.h"
 #include "third_party/blink/renderer/core/html/parser/atomic_html_token.h"
 #include "third_party/blink/renderer/core/html/parser/background_html_parser.h"
@@ -45,7 +45,7 @@
 #include "third_party/blink/renderer/core/html/parser/html_resource_preloader.h"
 #include "third_party/blink/renderer/core/html/parser/html_tree_builder.h"
 #include "third_party/blink/renderer/core/html_names.h"
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/loader/link_loader.h"
 #include "third_party/blink/renderer/core/loader/navigation_scheduler.h"
@@ -58,9 +58,8 @@
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/shared_buffer.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 
 namespace blink {
 
@@ -139,9 +138,7 @@ HTMLDocumentParser::HTMLDocumentParser(Document& document,
               ? HTMLParserScheduler::Create(this, loading_task_runner_.get())
               : nullptr),
       xss_auditor_delegate_(&document),
-      weak_factory_(this),
       preloader_(HTMLResourcePreloader::Create(document)),
-      tokenized_chunk_queue_(TokenizedChunkQueue::Create()),
       pending_csp_meta_token_(nullptr),
       should_use_threading_(sync_policy == kAllowAsynchronousParsing),
       end_was_delayed_(false),
@@ -152,7 +149,8 @@ HTMLDocumentParser::HTMLDocumentParser(Document& document,
       is_parsing_at_line_number_(false),
       tried_loading_link_headers_(false),
       added_pending_stylesheet_in_body_(false),
-      is_waiting_for_stylesheets_(false) {
+      is_waiting_for_stylesheets_(false),
+      weak_factory_(this) {
   DCHECK(ShouldUseThreading() || (token_ && tokenizer_));
   // Threading is not allowed in prefetch mode.
   DCHECK(!document.IsPrefetchOnly() || !ShouldUseThreading());
@@ -177,8 +175,7 @@ void HTMLDocumentParser::Trace(blink::Visitor* visitor) {
   HTMLParserScriptRunnerHost::Trace(visitor);
 }
 
-void HTMLDocumentParser::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+void HTMLDocumentParser::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(script_runner_);
   ScriptableDocumentParser::TraceWrappers(visitor);
 }
@@ -313,13 +310,11 @@ bool HTMLDocumentParser::CanTakeNextToken() {
   return true;
 }
 
-void HTMLDocumentParser::NotifyPendingTokenizedChunks() {
-  TRACE_EVENT0("blink", "HTMLDocumentParser::notifyPendingTokenizedChunks");
-  DCHECK(tokenized_chunk_queue_);
+void HTMLDocumentParser::EnqueueTokenizedChunk(
+    std::unique_ptr<TokenizedChunk> chunk) {
+  TRACE_EVENT0("blink", "HTMLDocumentParser::EnqueueTokenizedChunk");
 
-  Vector<std::unique_ptr<TokenizedChunk>> pending_chunks;
-  tokenized_chunk_queue_->TakeAll(pending_chunks);
-
+  DCHECK(chunk);
   if (!IsParsing())
     return;
 
@@ -327,35 +322,29 @@ void HTMLDocumentParser::NotifyPendingTokenizedChunks() {
   // suspend preload until HTMLHTMLElement is inserted and ApplicationCache is
   // initialized. Note: link rel preloads don't follow this policy per the spec.
   // These directives should initiate a fetch as fast as possible.
-  if (!tried_loading_link_headers_ && GetDocument()->Loader() &&
-      !pending_chunks.IsEmpty()) {
+  if (!tried_loading_link_headers_ && GetDocument()->Loader()) {
     // Note that on commit, the loader dispatched preloads for all the non-media
     // links.
     GetDocument()->Loader()->DispatchLinkHeaderPreloads(
-        &pending_chunks.front()->viewport, LinkLoader::kOnlyLoadMedia);
+        &chunk->viewport, LinkLoader::kOnlyLoadMedia);
     tried_loading_link_headers_ = true;
   }
 
   // Defer preloads if any of the chunks contains a <meta> csp tag.
-  for (auto& chunk : pending_chunks) {
-    if (chunk->pending_csp_meta_token_index !=
-        TokenizedChunk::kNoPendingToken) {
-      pending_csp_meta_token_ =
-          &chunk->tokens->at(chunk->pending_csp_meta_token_index);
-    }
+  if (chunk->pending_csp_meta_token_index != TokenizedChunk::kNoPendingToken) {
+    pending_csp_meta_token_ =
+        &chunk->tokens.at(chunk->pending_csp_meta_token_index);
   }
 
   if (pending_csp_meta_token_ || !GetDocument()->documentElement()) {
     PreloadRequestStream link_rel_preloads;
-    for (auto& chunk : pending_chunks) {
-      for (auto& request : chunk->preloads) {
-        // Link rel preloads don't need to wait for AppCache but they
-        // should probably wait for CSP.
-        if (!pending_csp_meta_token_ && request->IsLinkRelPreload())
-          link_rel_preloads.push_back(std::move(request));
-        else
-          queued_preloads_.push_back(std::move(request));
-      }
+    for (auto& request : chunk->preloads) {
+      // Link rel preloads don't need to wait for AppCache but they
+      // should probably wait for CSP.
+      if (!pending_csp_meta_token_ && request->IsLinkRelPreload())
+        link_rel_preloads.push_back(std::move(request));
+      else
+        queued_preloads_.push_back(std::move(request));
     }
     preloader_->TakeAndPreload(link_rel_preloads);
   } else {
@@ -363,12 +352,10 @@ void HTMLDocumentParser::NotifyPendingTokenizedChunks() {
     // document element is available, as we empty the queue immediately after
     // the document element is created in documentElementAvailable().
     DCHECK(queued_preloads_.IsEmpty());
-    for (auto& chunk : pending_chunks)
-      preloader_->TakeAndPreload(chunk->preloads);
+    preloader_->TakeAndPreload(chunk->preloads);
   }
 
-  for (auto& chunk : pending_chunks)
-    speculations_.push_back(std::move(chunk));
+  speculations_.push_back(std::move(chunk));
 
   if (!IsPaused() && !IsScheduledForUnpause()) {
     if (tasks_were_paused_)
@@ -437,7 +424,7 @@ void HTMLDocumentParser::DiscardSpeculationsAndResumeFrom(
 
   size_t discarded_token_count = 0;
   for (const auto& speculation : speculations_) {
-    discarded_token_count += speculation->tokens->size();
+    discarded_token_count += speculation->tokens.size();
   }
   DEFINE_STATIC_LOCAL(CustomCountHistogram, discarded_token_count_histogram,
                       ("Parser.DiscardedTokenCount", 1, 100000, 50));
@@ -474,7 +461,7 @@ size_t HTMLDocumentParser::ProcessTokenizedChunkFromBackgroundParser(
       "blink,loading",
       "HTMLDocumentParser::processTokenizedChunkFromBackgroundParser",
       pop_chunk.get(), TRACE_EVENT_FLAG_FLOW_IN);
-  AutoReset<bool> has_line_number(&is_parsing_at_line_number_, true);
+  base::AutoReset<bool> has_line_number(&is_parsing_at_line_number_, true);
 
   SECURITY_DCHECK(pump_speculations_session_nesting_level_ == 1);
   SECURITY_DCHECK(!InPumpSession());
@@ -487,7 +474,7 @@ size_t HTMLDocumentParser::ProcessTokenizedChunkFromBackgroundParser(
   DCHECK(!last_chunk_before_pause_);
 
   std::unique_ptr<TokenizedChunk> chunk(std::move(pop_chunk));
-  std::unique_ptr<CompactHTMLTokenStream> tokens = std::move(chunk->tokens);
+  const CompactHTMLTokenStream& tokens = chunk->tokens;
   size_t element_token_count = 0;
 
   loading_task_runner_->PostTask(
@@ -505,8 +492,9 @@ size_t HTMLDocumentParser::ProcessTokenizedChunkFromBackgroundParser(
   if (IsDetached())
     return element_token_count;
 
-  for (Vector<CompactHTMLToken>::const_iterator it = tokens->begin();
-       it != tokens->end(); ++it) {
+  // TODO(kouhei): Below should rewritten as range for loop.
+  for (Vector<CompactHTMLToken>::const_iterator it = tokens.begin();
+       it != tokens.end(); ++it) {
     DCHECK(!IsWaitingForScripts());
 
     if (!chunk->starting_script && (it->GetType() == HTMLToken::kStartTag ||
@@ -520,7 +508,7 @@ size_t HTMLDocumentParser::ProcessTokenizedChunkFromBackgroundParser(
       // To match main-thread parser behavior (which never checks
       // locationChangePending on the EOF path) we peek to see if this chunk has
       // an EOF and process it anyway.
-      if (tokens->back().GetType() == HTMLToken::kEndOfFile) {
+      if (tokens.back().GetType() == HTMLToken::kEndOfFile) {
         DCHECK(
             speculations_
                 .IsEmpty());  // There should never be any chunks after the EOF.
@@ -545,7 +533,7 @@ size_t HTMLDocumentParser::ProcessTokenizedChunkFromBackgroundParser(
 
     if (IsPaused()) {
       // The script or stylesheet should be the last token of this bunch.
-      DCHECK_EQ(it + 1, tokens->end());
+      DCHECK_EQ(it + 1, tokens.end());
       if (IsWaitingForScripts())
         RunScriptsForPausedTreeBuilder();
       ValidateSpeculations(std::move(chunk));
@@ -554,7 +542,7 @@ size_t HTMLDocumentParser::ProcessTokenizedChunkFromBackgroundParser(
 
     if (it->GetType() == HTMLToken::kEndOfFile) {
       // The EOF is assumed to be the last token of this bunch.
-      DCHECK_EQ(it + 1, tokens->end());
+      DCHECK_EQ(it + 1, tokens.end());
       // There should never be any chunks after the EOF.
       DCHECK(speculations_.IsEmpty());
       PrepareToStopParsing();
@@ -813,25 +801,6 @@ void HTMLDocumentParser::StartBackgroundParser() {
   config->xss_auditor->Init(GetDocument(), &xss_auditor_delegate_);
 
   config->decoder = TakeDecoder();
-  config->tokenized_chunk_queue = tokenized_chunk_queue_.get();
-  if (GetDocument()->GetSettings()) {
-    if (GetDocument()
-            ->GetSettings()
-            ->GetBackgroundHtmlParserOutstandingTokenLimit()) {
-      config->outstanding_token_limit =
-          GetDocument()
-              ->GetSettings()
-              ->GetBackgroundHtmlParserOutstandingTokenLimit();
-    }
-    if (GetDocument()
-            ->GetSettings()
-            ->GetBackgroundHtmlParserPendingTokenLimit()) {
-      config->pending_token_limit =
-          GetDocument()
-              ->GetSettings()
-              ->GetBackgroundHtmlParserPendingTokenLimit();
-    }
-  }
 
   DCHECK(config->xss_auditor->IsSafeToSendToAnotherThread());
 

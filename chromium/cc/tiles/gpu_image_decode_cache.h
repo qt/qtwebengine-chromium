@@ -126,7 +126,6 @@ class CC_EXPORT GpuImageDecodeCache
       bool aggressively_free_resources) override;
   void ClearCache() override;
   size_t GetMaximumMemoryLimitBytes() const override;
-  void NotifyImageUnused(const PaintImage::FrameKey& frame_key) override;
 
   // MemoryDumpProvider overrides.
   bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
@@ -160,6 +159,7 @@ class CC_EXPORT GpuImageDecodeCache
   void SetImageDecodingFailedForTesting(const DrawImage& image);
   bool DiscardableIsLockedForTesting(const DrawImage& image);
   bool IsInInUseCacheForTesting(const DrawImage& image) const;
+  bool IsInPersistentCacheForTesting(const DrawImage& image) const;
   sk_sp<SkImage> GetSWImageDecodeForTesting(const DrawImage& image);
 
  private:
@@ -385,6 +385,7 @@ class CC_EXPORT GpuImageDecodeCache
 
   scoped_refptr<GpuImageDecodeCache::ImageData> CreateImageData(
       const DrawImage& image);
+  void WillAddCacheEntry(const DrawImage& draw_image);
   SkImageInfo CreateImageInfoForDrawImage(const DrawImage& draw_image,
                                           int upload_scale_mip_level) const;
 
@@ -425,6 +426,17 @@ class CC_EXPORT GpuImageDecodeCache
 
   void CheckContextLockAcquiredIfNecessary();
 
+  sk_sp<SkColorSpace> ColorSpaceForImageDecode(const DrawImage& image,
+                                               DecodedDataMode mode) const;
+
+  // |persistent_cache_| represents the long-lived cache, keeping a certain
+  // budget of ImageDatas alive even when their ref count reaches zero.
+  using PersistentCache = base::HashingMRUCache<PaintImage::FrameKey,
+                                                scoped_refptr<ImageData>,
+                                                PaintImage::FrameKeyHash>;
+  PersistentCache::iterator RemoveFromPersistentCache(
+      PersistentCache::iterator it);
+
   const SkColorType color_type_;
   const bool use_transfer_cache_ = false;
   viz::RasterContextProvider* context_;
@@ -435,12 +447,15 @@ class CC_EXPORT GpuImageDecodeCache
   // be accessed without a lock since they are thread safe.
   base::Lock lock_;
 
-  // |persistent_cache_| represents the long-lived cache, keeping a certain
-  // budget of ImageDatas alive even when their ref count reaches zero.
-  using PersistentCache = base::HashingMRUCache<PaintImage::FrameKey,
-                                                scoped_refptr<ImageData>,
-                                                PaintImage::FrameKeyHash>;
   PersistentCache persistent_cache_;
+
+  struct CacheEntries {
+    PaintImage::ContentId content_ids[2] = {PaintImage::kInvalidContentId,
+                                            PaintImage::kInvalidContentId};
+  };
+  // A map of PaintImage::Id to entries for this image in the
+  // |persistent_cache_|.
+  base::flat_map<PaintImage::Id, CacheEntries> paint_image_entries_;
 
   // |in_use_cache_| represents the in-use (short-lived) cache. Entries are
   // cleaned up as soon as their ref count reaches zero.

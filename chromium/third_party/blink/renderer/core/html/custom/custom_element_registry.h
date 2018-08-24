@@ -36,7 +36,7 @@ class CORE_EXPORT CustomElementRegistry final : public ScriptWrappable {
  public:
   static CustomElementRegistry* Create(const LocalDOMWindow*);
 
-  virtual ~CustomElementRegistry() = default;
+  ~CustomElementRegistry() override = default;
 
   CustomElementDefinition* define(ScriptState*,
                                   const AtomicString& name,
@@ -64,11 +64,12 @@ class CORE_EXPORT CustomElementRegistry final : public ScriptWrappable {
   ScriptPromise whenDefined(ScriptState*,
                             const AtomicString& name,
                             ExceptionState&);
+  void upgrade(Node* root);
 
   void Entangle(V0CustomElementRegistrationContext*);
 
-  void Trace(blink::Visitor*);
-  virtual void TraceWrappers(const ScriptWrappableVisitor*) const;
+  void Trace(blink::Visitor*) override;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
  private:
   friend class CustomElementRegistryTest;

@@ -34,6 +34,16 @@ class GestureListenerManager : public RenderWidgetHostConnector {
   ~GestureListenerManager() override;
 
   void Reset(JNIEnv* env, const base::android::JavaParamRef<jobject>& obj);
+  void ResetGestureDetection(JNIEnv* env,
+                             const base::android::JavaParamRef<jobject>& obj);
+  void SetDoubleTapSupportEnabled(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& obj,
+      jboolean enabled);
+  void SetMultiTouchZoomSupportEnabled(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& obj,
+      jboolean enabled);
   void GestureEventAck(const blink::WebGestureEvent& event,
                        InputEventAckState ack_result);
   void DidStopFlinging();
@@ -67,6 +77,7 @@ class GestureListenerManager : public RenderWidgetHostConnector {
 
   std::unique_ptr<ResetScrollObserver> reset_scroll_observer_;
   WebContentsImpl* web_contents_;
+  RenderWidgetHostViewAndroid* rwhva_ = nullptr;
 
   // A weak reference to the Java GestureListenerManager object.
   JavaObjectWeakGlobalRef java_ref_;

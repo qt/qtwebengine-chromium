@@ -11,9 +11,14 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/sys_byteorder.h"
+#include "base/test/scoped_task_environment.h"
 #include "content/browser/renderer_host/p2p/socket_host_test_utils.h"
+#include "jingle/glue/fake_ssl_client_socket.h"
+#include "net/socket/socket_test_util.h"
 #include "net/socket/stream_socket.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+#include "net/url_request/url_request_test_util.h"
+#include "services/network/proxy_resolving_client_socket_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -464,6 +469,115 @@ TEST_F(P2PSocketHostStunTcpTest, AsyncWrites) {
   expected_data.append(packet2.begin(), packet2.end());
 
   EXPECT_EQ(expected_data, sent_data_);
+}
+
+// When pseudo-tls is used (e.g. for P2P_SOCKET_SSLTCP_CLIENT),
+// network::ProxyResolvingClientSocket::Connect() won't be called twice.
+// Regression test for crbug.com/840797.
+TEST(P2PSocketHostTcpWithPseudoTlsTest, Basic) {
+  base::test::ScopedTaskEnvironment scoped_task_environment(
+      base::test::ScopedTaskEnvironment::MainThreadType::IO);
+  MockIPCSender sender;
+  EXPECT_CALL(
+      sender,
+      Send(MatchMessage(static_cast<uint32_t>(P2PMsg_OnSocketCreated::ID))))
+      .WillOnce(DoAll(DeleteArg<0>(), Return(true)));
+
+  net::TestURLRequestContext context(true);
+  net::MockClientSocketFactory mock_socket_factory;
+  context.set_client_socket_factory(&mock_socket_factory);
+  context.Init();
+  network::ProxyResolvingClientSocketFactory factory(&mock_socket_factory,
+                                                     &context);
+
+  base::StringPiece ssl_client_hello =
+      jingle_glue::FakeSSLClientSocket::GetSslClientHello();
+  base::StringPiece ssl_server_hello =
+      jingle_glue::FakeSSLClientSocket::GetSslServerHello();
+  net::MockRead reads[] = {
+      net::MockRead(net::ASYNC, ssl_server_hello.data(),
+                    ssl_server_hello.size()),
+      net::MockRead(net::SYNCHRONOUS, net::ERR_IO_PENDING)};
+  net::MockWrite writes[] = {net::MockWrite(
+      net::SYNCHRONOUS, ssl_client_hello.data(), ssl_client_hello.size())};
+  net::StaticSocketDataProvider data_provider(reads, writes);
+  net::IPEndPoint server_addr(net::IPAddress::IPv4Localhost(), 1234);
+  data_provider.set_connect_data(
+      net::MockConnect(net::SYNCHRONOUS, net::OK, server_addr));
+  mock_socket_factory.AddSocketDataProvider(&data_provider);
+
+  P2PSocketHostTcp host(&sender, 0 /*socket_id*/, P2P_SOCKET_SSLTCP_CLIENT,
+                        nullptr, &factory);
+  P2PHostAndIPEndPoint dest;
+  dest.ip_address = server_addr;
+  bool success = host.Init(net::IPEndPoint(net::IPAddress::IPv4Localhost(), 0),
+                           0, 0, dest);
+  EXPECT_TRUE(success);
+
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(data_provider.AllReadDataConsumed());
+  EXPECT_TRUE(data_provider.AllWriteDataConsumed());
+}
+
+class P2PSocketHostTcpWithTlsTest
+    : public testing::TestWithParam<std::tuple<net::IoMode, P2PSocketType>> {};
+
+INSTANTIATE_TEST_CASE_P(
+    /* no prefix */,
+    P2PSocketHostTcpWithTlsTest,
+    ::testing::Combine(::testing::Values(net::SYNCHRONOUS, net::ASYNC),
+                       ::testing::Values(P2P_SOCKET_TLS_CLIENT,
+                                         P2P_SOCKET_STUN_TLS_CLIENT)));
+
+// Tests that if a socket type satisfies IsTlsClientSocket(), TLS connection is
+// established.
+TEST_P(P2PSocketHostTcpWithTlsTest, Basic) {
+  base::test::ScopedTaskEnvironment scoped_task_environment(
+      base::test::ScopedTaskEnvironment::MainThreadType::IO);
+  MockIPCSender sender;
+  EXPECT_CALL(
+      sender,
+      Send(MatchMessage(static_cast<uint32_t>(P2PMsg_OnSocketCreated::ID))))
+      .WillOnce(DoAll(DeleteArg<0>(), Return(true)));
+
+  net::TestURLRequestContext context(true);
+  net::MockClientSocketFactory mock_socket_factory;
+  context.set_client_socket_factory(&mock_socket_factory);
+  context.Init();
+  network::ProxyResolvingClientSocketFactory factory(&mock_socket_factory,
+                                                     &context);
+  const net::IoMode io_mode = std::get<0>(GetParam());
+  const P2PSocketType socket_type = std::get<1>(GetParam());
+  // OnOpen() calls DoRead(), so populate the mock socket with a pending read.
+  net::MockRead reads[] = {
+      net::MockRead(net::SYNCHRONOUS, net::ERR_IO_PENDING)};
+  net::StaticSocketDataProvider data_provider(
+      reads, base::span<const net::MockWrite>());
+  net::IPEndPoint server_addr(net::IPAddress::IPv4Localhost(), 1234);
+  data_provider.set_connect_data(
+      net::MockConnect(io_mode, net::OK, server_addr));
+  net::SSLSocketDataProvider ssl_socket_provider(io_mode, net::OK);
+  mock_socket_factory.AddSocketDataProvider(&data_provider);
+  mock_socket_factory.AddSSLSocketDataProvider(&ssl_socket_provider);
+
+  std::unique_ptr<P2PSocketHostTcpBase> host;
+  if (socket_type == P2P_SOCKET_STUN_TLS_CLIENT) {
+    host = std::make_unique<P2PSocketHostStunTcp>(
+        &sender, 0 /*socket_id*/, socket_type, nullptr, &factory);
+  } else {
+    host = std::make_unique<P2PSocketHostTcp>(&sender, 0 /*socket_id*/,
+                                              socket_type, nullptr, &factory);
+  }
+  P2PHostAndIPEndPoint dest;
+  dest.ip_address = server_addr;
+  bool success = host->Init(net::IPEndPoint(net::IPAddress::IPv4Localhost(), 0),
+                            0, 0, dest);
+  EXPECT_TRUE(success);
+
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(data_provider.AllReadDataConsumed());
+  EXPECT_TRUE(data_provider.AllWriteDataConsumed());
+  EXPECT_TRUE(ssl_socket_provider.ConnectDataConsumed());
 }
 
 }  // namespace content

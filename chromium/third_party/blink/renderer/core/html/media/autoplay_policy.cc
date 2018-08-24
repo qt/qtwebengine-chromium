@@ -251,7 +251,7 @@ bool AutoplayPolicy::RequestAutoplayByAttribute() {
   return false;
 }
 
-Optional<ExceptionCode> AutoplayPolicy::RequestPlay() {
+base::Optional<ExceptionCode> AutoplayPolicy::RequestPlay() {
   if (!Frame::HasTransientUserActivation(element_->GetDocument().GetFrame())) {
     autoplay_uma_helper_->OnAutoplayInitiated(AutoplaySource::kMethod);
     if (IsGestureNeededForPlayback()) {
@@ -275,7 +275,7 @@ Optional<ExceptionCode> AutoplayPolicy::RequestPlay() {
 
   MaybeSetAutoplayInitiated();
 
-  return WTF::nullopt;
+  return base::nullopt;
 }
 
 bool AutoplayPolicy::IsAutoplayingMuted() const {
@@ -349,7 +349,10 @@ bool AutoplayPolicy::IsGestureNeededForPlaybackIfPendingUserGestureIsLocked()
   if (element_->IsHTMLVideoElement() && element_->muted() &&
       RuntimeEnabledFeatures::AutoplayMutedVideosEnabled() &&
       !(element_->GetDocument().GetSettings() &&
-        GetNetworkStateNotifier().SaveDataEnabled()) &&
+        GetNetworkStateNotifier().SaveDataEnabled() &&
+        !element_->GetDocument()
+             .GetSettings()
+             ->GetDataSaverHoldbackMediaApi()) &&
       !(element_->GetDocument().GetSettings() &&
         element_->GetDocument()
             .GetSettings()

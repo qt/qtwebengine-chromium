@@ -7,8 +7,8 @@
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/layout/ng/geometry/ng_physical_offset_rect.h"
-#include "third_party/blink/renderer/core/layout/ng/inline/ng_baseline.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_physical_fragment.h"
+#include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
 
@@ -28,17 +28,13 @@ class CORE_EXPORT NGPhysicalContainerFragment : public NGPhysicalFragment {
   NGPhysicalContainerFragment(
       LayoutObject*,
       const ComputedStyle&,
+      NGStyleVariant,
       NGPhysicalSize,
       NGFragmentType,
       unsigned sub_type,
       Vector<scoped_refptr<NGPhysicalFragment>>& children,
       const NGPhysicalOffsetRect& contents_visual_rect,
       scoped_refptr<NGBreakToken> = nullptr);
-
-  PositionWithAffinity PositionForPointInInlineLevelBox(
-      const NGPhysicalOffset&) const;
-  PositionWithAffinity PositionForPointInInlineFormattingContext(
-      const NGPhysicalOffset&) const;
 
   Vector<scoped_refptr<NGPhysicalFragment>> children_;
   NGPhysicalOffsetRect contents_visual_rect_;

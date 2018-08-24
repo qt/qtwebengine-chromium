@@ -41,24 +41,19 @@ TextControlElement* LayoutTextControl::GetTextControlElement() const {
   return ToTextControl(GetNode());
 }
 
-HTMLElement* LayoutTextControl::InnerEditorElement() const {
+TextControlInnerEditorElement* LayoutTextControl::InnerEditorElement() const {
   return GetTextControlElement()->InnerEditorElement();
 }
 
 void LayoutTextControl::StyleDidChange(StyleDifference diff,
                                        const ComputedStyle* old_style) {
   LayoutBlockFlow::StyleDidChange(diff, old_style);
-  Element* inner_editor = InnerEditorElement();
+  TextControlInnerEditorElement* inner_editor = InnerEditorElement();
   if (!inner_editor)
     return;
   LayoutBlock* inner_editor_layout_object =
       ToLayoutBlock(inner_editor->GetLayoutObject());
   if (inner_editor_layout_object) {
-    // We may have set the width and the height in the old style in layout().
-    // Reset them now to avoid getting a spurious layout hint.
-    inner_editor_layout_object->MutableStyleRef().SetHeight(Length());
-    inner_editor_layout_object->MutableStyleRef().SetWidth(Length());
-    inner_editor_layout_object->SetStyle(CreateInnerEditorStyle(StyleRef()));
     inner_editor->SetNeedsStyleRecalc(
         kSubtreeStyleChange,
         StyleChangeReasonForTracing::Create(StyleChangeReason::kControl));
@@ -75,25 +70,6 @@ void LayoutTextControl::StyleDidChange(StyleDifference diff,
   GetTextControlElement()->UpdatePlaceholderVisibility();
 }
 
-static inline void UpdateUserModifyProperty(TextControlElement& node,
-                                            ComputedStyle& style) {
-  style.SetUserModify(node.IsDisabledOrReadOnly()
-                          ? EUserModify::kReadOnly
-                          : EUserModify::kReadWritePlaintextOnly);
-}
-
-void LayoutTextControl::AdjustInnerEditorStyle(
-    ComputedStyle& text_block_style) const {
-  // The inner block, if present, always has its direction set to LTR,
-  // so we need to inherit the direction and unicode-bidi style from the
-  // element.
-  text_block_style.SetDirection(Style()->Direction());
-  text_block_style.SetUnicodeBidi(Style()->GetUnicodeBidi());
-  text_block_style.SetUserSelect(EUserSelect::kText);
-
-  UpdateUserModifyProperty(*GetTextControlElement(), text_block_style);
-}
-
 int LayoutTextControl::TextBlockLogicalHeight() const {
   return (LogicalHeight() - BorderAndPaddingLogicalHeight()).ToInt();
 }
@@ -108,14 +84,6 @@ int LayoutTextControl::TextBlockLogicalWidth() const {
                   inner_editor->GetLayoutBox()->PaddingEnd();
 
   return unit_width.ToInt();
-}
-
-void LayoutTextControl::UpdateFromElement() {
-  Element* inner_editor = InnerEditorElement();
-  if (inner_editor && inner_editor->GetLayoutObject())
-    UpdateUserModifyProperty(
-        *GetTextControlElement(),
-        inner_editor->GetLayoutObject()->MutableStyleRef());
 }
 
 int LayoutTextControl::ScrollbarThickness() const {
@@ -237,8 +205,7 @@ bool LayoutTextControl::HasValidAvgCharWidth(const SimpleFontData* font_data,
   if (!font_families_with_invalid_char_width_map) {
     font_families_with_invalid_char_width_map = new HashSet<AtomicString>;
 
-    for (size_t i = 0; i < WTF_ARRAY_LENGTH(kFontFamiliesWithInvalidCharWidth);
-         ++i)
+    for (size_t i = 0; i < arraysize(kFontFamiliesWithInvalidCharWidth); ++i)
       font_families_with_invalid_char_width_map->insert(
           AtomicString(kFontFamiliesWithInvalidCharWidth[i]));
   }

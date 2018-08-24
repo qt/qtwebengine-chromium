@@ -199,6 +199,12 @@ void BaseAudioContext::ContextDestroyed(ExecutionContext*) {
 }
 
 bool BaseAudioContext::HasPendingActivity() const {
+  // As long as AudioWorklet has a pending task from worklet script loading,
+  // the BaseAudioContext needs to stay.
+  if (audioWorklet() && audioWorklet()->HasPendingTasks()) {
+    return true;
+  }
+
   // There's no pending activity if the audio context has been cleared.
   return !is_cleared_;
 }
@@ -629,6 +635,12 @@ String BaseAudioContext::state() const {
 void BaseAudioContext::SetContextState(AudioContextState new_state) {
   DCHECK(IsMainThread());
 
+  // If there's no change in the current state, there's nothing that needs to be
+  // done.
+  if (new_state == context_state_) {
+    return;
+  }
+
   // Validate the transitions.  The valid transitions are Suspended->Running,
   // Running->Suspended, and anything->Closed.
   switch (new_state) {
@@ -641,11 +653,6 @@ void BaseAudioContext::SetContextState(AudioContextState new_state) {
     case kClosed:
       DCHECK_NE(context_state_, kClosed);
       break;
-  }
-
-  if (new_state == context_state_) {
-    // DCHECKs above failed; just return.
-    return;
   }
 
   context_state_ = new_state;
@@ -677,13 +684,19 @@ Document* BaseAudioContext::GetDocument() const {
 }
 
 AutoplayPolicy::Type BaseAudioContext::GetAutoplayPolicy() const {
-// The policy is different on Android compared to Desktop.
+  if (RuntimeEnabledFeatures::AutoplayIgnoresWebAudioEnabled()) {
+// When ignored, the policy is different on Android compared to Desktop.
 #if defined(OS_ANDROID)
-  return AutoplayPolicy::Type::kUserGestureRequired;
+    return AutoplayPolicy::Type::kUserGestureRequired;
 #else
-  // Force no user gesture required on desktop.
-  return AutoplayPolicy::Type::kNoUserGestureRequired;
+    // Force no user gesture required on desktop.
+    return AutoplayPolicy::Type::kNoUserGestureRequired;
 #endif
+  }
+
+  Document* document = GetDocument();
+  DCHECK(document);
+  return AutoplayPolicy::GetAutoplayPolicyForDocument(*document);
 }
 
 bool BaseAudioContext::AreAutoplayRequirementsFulfilled() const {
@@ -1011,10 +1024,16 @@ void BaseAudioContext::NotifyWorkletIsReady() {
   DCHECK(IsMainThread());
   DCHECK(audioWorklet()->IsReady());
 
-  // At this point, the WorkletGlobalScope must be ready so it is safe to keep
-  // the reference to the AudioWorkletThread for the future worklet operation.
-  audio_worklet_thread_ =
-      audioWorklet()->GetMessagingProxy()->GetBackingWorkerThread();
+  {
+    // |audio_worklet_thread_| is constantly peeked by the rendering thread,
+    // So we protect it with the graph lock.
+    GraphAutoLocker locker(this);
+
+    // At this point, the WorkletGlobalScope must be ready so it is safe to keep
+    // the reference to the AudioWorkletThread for the future worklet operation.
+    audio_worklet_thread_ =
+        audioWorklet()->GetMessagingProxy()->GetBackingWorkerThread();
+  }
 
   // If the context is running or suspended, restart the destination to switch
   // the render thread with the worklet thread. Note that restarting can happen
@@ -1027,12 +1046,33 @@ void BaseAudioContext::NotifyWorkletIsReady() {
 void BaseAudioContext::UpdateWorkletGlobalScopeOnRenderingThread() {
   DCHECK(!IsMainThread());
 
-  if (audio_worklet_thread_) {
-    AudioWorkletGlobalScope* global_scope =
-        ToAudioWorkletGlobalScope(audio_worklet_thread_->GlobalScope());
-    DCHECK(global_scope);
-    global_scope->SetCurrentFrame(CurrentSampleFrame());
+  if (TryLock()) {
+    if (audio_worklet_thread_) {
+      AudioWorkletGlobalScope* global_scope =
+          ToAudioWorkletGlobalScope(audio_worklet_thread_->GlobalScope());
+      DCHECK(global_scope);
+      global_scope->SetCurrentFrame(CurrentSampleFrame());
+    }
+
+    unlock();
   }
+}
+
+bool BaseAudioContext::WouldTaintOrigin(const KURL& url) const {
+  // Data URLs don't taint the origin.
+  if (url.ProtocolIsData()) {
+    return false;
+  }
+
+  Document* document = GetDocument();
+  if (document && document->GetSecurityOrigin()) {
+    // The origin is tainted if and only if we cannot read content from the URL.
+    return !document->GetSecurityOrigin()->CanRequest(url);
+  }
+
+  // Be conservative and assume it's tainted if it's not a data url and if we
+  // can't get the security origin of the document.
+  return true;
 }
 
 }  // namespace blink

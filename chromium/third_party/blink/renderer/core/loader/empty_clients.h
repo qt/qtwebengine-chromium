@@ -107,7 +107,7 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
                      const FloatSize&,
                      const FloatPoint&,
                      const FloatSize&,
-                     const WebOverscrollBehavior&) override {}
+                     const cc::OverscrollBehavior&) override {}
 
   void BeginLifecycleUpdates() override {}
 
@@ -161,10 +161,10 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
   bool TabsToLinks() override { return false; }
 
   void InvalidateRect(const IntRect&) override {}
-  void ScheduleAnimation(const PlatformFrameView*) override {}
+  void ScheduleAnimation(const LocalFrameView*) override {}
 
   IntRect ViewportToScreen(const IntRect& r,
-                           const PlatformFrameView*) const override {
+                           const LocalFrameView*) const override {
     return r;
   }
   float WindowToViewportScalar(const float s) const override { return s; }
@@ -194,7 +194,8 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
   Cursor LastSetCursorForTesting() const override { return PointerCursor(); }
 
   void AttachRootGraphicsLayer(GraphicsLayer*, LocalFrame* local_root) override;
-  void AttachRootLayer(WebLayer*, LocalFrame* local_root) override {}
+  void AttachRootLayer(scoped_refptr<cc::Layer>,
+                       LocalFrame* local_root) override {}
 
   void SetEventListenerProperties(LocalFrame*,
                                   WebEventListenerClass,
@@ -319,11 +320,7 @@ class CORE_EXPORT EmptyLocalFrameClient : public LocalFrameClient {
                                        const Vector<String>&,
                                        const Vector<String>&,
                                        const String&,
-                                       bool,
-                                       DetachedPluginPolicy) override;
-  bool CanCreatePluginWithoutRenderer(const String& mime_type) const override {
-    return false;
-  }
+                                       bool) override;
   std::unique_ptr<WebMediaPlayer> CreateWebMediaPlayer(
       HTMLMediaElement&,
       const WebMediaPlayerSource&,
@@ -367,6 +364,10 @@ class CORE_EXPORT EmptyLocalFrameClient : public LocalFrameClient {
     return Platform::Current()->CreateDefaultURLLoaderFactory();
   }
 
+  void BubbleLogicalScrollInParentFrame(
+      ScrollDirection direction,
+      ScrollGranularity granularity) override {}
+
   void AnnotatedRegionsChanged() override {}
   base::UnguessableToken GetDevToolsFrameToken() const override {
     return base::UnguessableToken::Create();
@@ -408,7 +409,8 @@ class CORE_EXPORT EmptyRemoteFrameClient : public RemoteFrameClient {
 
   // RemoteFrameClient implementation.
   void Navigate(const ResourceRequest&,
-                bool should_replace_current_entry) override {}
+                bool should_replace_current_entry,
+                mojom::blink::BlobURLTokenPtr) override {}
   void Reload(FrameLoadType, ClientRedirectPolicy) override {}
   unsigned BackForwardLength() override { return 0; }
   void CheckCompleted() override {}
@@ -423,6 +425,7 @@ class CORE_EXPORT EmptyRemoteFrameClient : public RemoteFrameClient {
   void AdvanceFocus(WebFocusType, LocalFrame* source) override {}
   void VisibilityChanged(bool visible) override {}
   void SetIsInert(bool) override {}
+  void SetInheritedEffectiveTouchAction(TouchAction) override {}
   void UpdateRenderThrottlingStatus(bool is_throttled,
                                     bool subtree_throttled) override {}
   uint32_t Print(const IntRect& rect, WebCanvas* canvas) const override {

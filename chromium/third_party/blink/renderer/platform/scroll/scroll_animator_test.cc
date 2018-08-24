@@ -27,6 +27,7 @@
 
 #include "third_party/blink/renderer/platform/scroll/scroll_animator.h"
 
+#include "base/single_thread_task_runner.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -34,7 +35,7 @@
 #include "third_party/blink/public/platform/web_thread.h"
 #include "third_party/blink/renderer/platform/geometry/float_point.h"
 #include "third_party/blink/renderer/platform/geometry/int_rect.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_animator_base.h"
 #include "third_party/blink/renderer/platform/scroll/scrollable_area.h"
 #include "third_party/blink/renderer/platform/scroll/scrollbar_theme.h"
@@ -111,9 +112,10 @@ class MockScrollableAreaForAnimatorTest
     return ScrollableArea::GetScrollOffset();
   }
 
-  void SetScrollOffset(const ScrollOffset& offset,
-                       ScrollType type,
-                       ScrollBehavior behavior = kScrollBehaviorInstant) {
+  void SetScrollOffset(
+      const ScrollOffset& offset,
+      ScrollType type,
+      ScrollBehavior behavior = kScrollBehaviorInstant) override {
     if (animator)
       animator->SetCurrentOffset(offset);
     ScrollableArea::SetScrollOffset(offset, type, behavior);
@@ -131,7 +133,7 @@ class MockScrollableAreaForAnimatorTest
     return ScrollbarTheme::DeprecatedStaticGetTheme();
   }
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(animator);
     ScrollableArea::Trace(visitor);
   }

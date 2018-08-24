@@ -108,6 +108,7 @@ Main.Main = class {
     Runtime.experiments.register('applyCustomStylesheet', 'Allow custom UI themes');
     Runtime.experiments.register('blackboxJSFramesOnTimeline', 'Blackbox JavaScript frames on Timeline', true);
     Runtime.experiments.register('colorContrastRatio', 'Color contrast ratio line in color picker', true);
+    Runtime.experiments.register('consoleBelowPrompt', 'Eager evaluation');
     Runtime.experiments.register('emptySourceMapAutoStepping', 'Empty sourcemap auto-stepping');
     Runtime.experiments.register('inputEventsOnTimelineOverview', 'Input events on Timeline overview', true);
     Runtime.experiments.register('nativeHeapProfiler', 'Native memory sampling heap profiler', true);
@@ -115,8 +116,10 @@ Main.Main = class {
     Runtime.experiments.register('oopifInlineDOM', 'OOPIF: inline DOM ', true);
     Runtime.experiments.register('protocolMonitor', 'Protocol Monitor');
     Runtime.experiments.register('sourceDiff', 'Source diff');
+    Runtime.experiments.register('sourcesPrettyPrint', 'Automatically pretty print in the Sources Panel');
     Runtime.experiments.register(
         'stepIntoAsync', 'Introduce separate step action, stepInto becomes powerful enough to go inside async call');
+    Runtime.experiments.register('splitInDrawer', 'Split in drawer', true);
     Runtime.experiments.register('terminalInDrawer', 'Terminal in drawer', true);
 
     // Timeline
@@ -125,7 +128,6 @@ Main.Main = class {
     Runtime.experiments.register('timelineInvalidationTracking', 'Timeline: invalidation tracking', true);
     Runtime.experiments.register('timelinePaintTimingMarkers', 'Timeline: paint timing markers', true);
     Runtime.experiments.register('timelineShowAllEvents', 'Timeline: show all events', true);
-    Runtime.experiments.register('timelineShowAllProcesses', 'Timeline: show all processes', true);
     Runtime.experiments.register('timelineTracingJSProfile', 'Timeline: tracing based JS profiler', true);
     Runtime.experiments.register('timelineV8RuntimeCallStats', 'Timeline: V8 Runtime Call Stats on Timeline', true);
 
@@ -138,9 +140,12 @@ Main.Main = class {
         Runtime.experiments.enableForTest('oopifInlineDOM');
       if (testPath.indexOf('network/') !== -1)
         Runtime.experiments.enableForTest('networkSearch');
+      if (testPath.indexOf('console/viewport-testing/') !== -1)
+        Runtime.experiments.enableForTest('consoleBelowPrompt');
     }
 
-    Runtime.experiments.setDefaultExperiments(['colorContrastRatio', 'stepIntoAsync', 'oopifInlineDOM']);
+    Runtime.experiments.setDefaultExperiments(
+        ['colorContrastRatio', 'stepIntoAsync', 'oopifInlineDOM', 'consoleBelowPrompt']);
   }
 
   /**

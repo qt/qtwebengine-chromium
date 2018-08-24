@@ -9,6 +9,7 @@
 
 #include "base/macros.h"
 #include "base/time/time.h"
+#include "media/base/video_rotation.h"
 #include "media/gpu/android/android_video_surface_chooser.h"
 #include "media/gpu/android/promotion_hint_aggregator.h"
 #include "media/gpu/media_gpu_export.h"
@@ -39,11 +40,11 @@ class MEDIA_GPU_EXPORT SurfaceChooserHelper {
 
   enum class SecureSurfaceMode {
     // The surface should not be secure.  This allows both overlays and
-    // SurfaceTexture surfaces.
+    // TextureOwner surfaces.
     kInsecure,
 
     // It is preferable to have a secure surface, but insecure
-    // (SurfaceTexture) is better than failing.
+    // (TextureOwner) is better than failing.
     kRequested,
 
     // The surface must be a secure surface, and should fail otherwise.
@@ -53,8 +54,8 @@ class MEDIA_GPU_EXPORT SurfaceChooserHelper {
   // Must match AVDAFrameInformation UMA enum.  Please do not remove or re-order
   // values, only append new ones.
   enum class FrameInformation {
-    SURFACETEXTURE_INSECURE = 0,
-    SURFACETEXTURE_L3 = 1,
+    NON_OVERLAY_INSECURE = 0,
+    NON_OVERLAY_L3 = 1,
     OVERLAY_L3 = 2,
     OVERLAY_L1 = 3,
     OVERLAY_INSECURE_PLAYER_ELEMENT_FULLSCREEN = 4,
@@ -73,6 +74,9 @@ class MEDIA_GPU_EXPORT SurfaceChooserHelper {
 
   // Notify us about the fullscreen state.  Does not update the chooser state.
   void SetIsFullscreen(bool is_fullscreen);
+
+  // Notify us about the default rotation for the video.
+  void SetVideoRotation(VideoRotation video_rotation);
 
   // Update the chooser state using the given factory.
   void UpdateChooserState(base::Optional<AndroidOverlayFactoryCB> new_factory);

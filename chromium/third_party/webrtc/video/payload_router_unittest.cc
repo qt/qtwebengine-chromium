@@ -11,7 +11,6 @@
 #include <memory>
 #include <string>
 
-#include "call/video_config.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "modules/rtp_rtcp/mocks/mock_rtp_rtcp.h"
 #include "modules/video_coding/include/video_codec_interface.h"
@@ -232,17 +231,17 @@ TEST(PayloadRouterTest, SimulcastTargetBitrate) {
   PayloadRouter payload_router(modules, {kSsrc1, kSsrc2}, kPayloadType, {});
   payload_router.SetActive(true);
 
-  BitrateAllocation bitrate;
+  VideoBitrateAllocation bitrate;
   bitrate.SetBitrate(0, 0, 10000);
   bitrate.SetBitrate(0, 1, 20000);
   bitrate.SetBitrate(1, 0, 40000);
   bitrate.SetBitrate(1, 1, 80000);
 
-  BitrateAllocation layer0_bitrate;
+  VideoBitrateAllocation layer0_bitrate;
   layer0_bitrate.SetBitrate(0, 0, 10000);
   layer0_bitrate.SetBitrate(0, 1, 20000);
 
-  BitrateAllocation layer1_bitrate;
+  VideoBitrateAllocation layer1_bitrate;
   layer1_bitrate.SetBitrate(0, 0, 40000);
   layer1_bitrate.SetBitrate(0, 1, 80000);
 
@@ -265,17 +264,17 @@ TEST(PayloadRouterTest, SimulcastTargetBitrateWithInactiveStream) {
   payload_router.SetActive(true);
 
   // Create bitrate allocation with bitrate only for the first and third stream.
-  BitrateAllocation bitrate;
+  VideoBitrateAllocation bitrate;
   bitrate.SetBitrate(0, 0, 10000);
   bitrate.SetBitrate(0, 1, 20000);
   bitrate.SetBitrate(2, 0, 40000);
   bitrate.SetBitrate(2, 1, 80000);
 
-  BitrateAllocation layer0_bitrate;
+  VideoBitrateAllocation layer0_bitrate;
   layer0_bitrate.SetBitrate(0, 0, 10000);
   layer0_bitrate.SetBitrate(0, 1, 20000);
 
-  BitrateAllocation layer2_bitrate;
+  VideoBitrateAllocation layer2_bitrate;
   layer2_bitrate.SetBitrate(0, 0, 40000);
   layer2_bitrate.SetBitrate(0, 1, 80000);
 
@@ -294,7 +293,7 @@ TEST(PayloadRouterTest, SvcTargetBitrate) {
   PayloadRouter payload_router(modules, {kSsrc1}, kPayloadType, {});
   payload_router.SetActive(true);
 
-  BitrateAllocation bitrate;
+  VideoBitrateAllocation bitrate;
   bitrate.SetBitrate(0, 0, 10000);
   bitrate.SetBitrate(0, 1, 20000);
   bitrate.SetBitrate(1, 0, 40000);
@@ -374,7 +373,7 @@ TEST(PayloadRouterTest, InfoMappedToRtpVideoHeader_Vp9) {
   codec_info.codecSpecific.VP9.first_frame_in_picture = true;
   codec_info.codecSpecific.VP9.spatial_idx = 0;
   codec_info.codecSpecific.VP9.temporal_idx = 2;
-  codec_info.codecSpecific.VP9.end_of_superframe = false;
+  codec_info.codecSpecific.VP9.end_of_picture = false;
 
   EXPECT_CALL(rtp, SendOutgoingData(_, _, _, _, _, _, nullptr, _, _))
       .WillOnce(
@@ -391,8 +390,8 @@ TEST(PayloadRouterTest, InfoMappedToRtpVideoHeader_Vp9) {
                       codec_info.codecSpecific.VP9.spatial_idx);
             EXPECT_EQ(header->codecHeader.VP9.num_spatial_layers,
                       codec_info.codecSpecific.VP9.num_spatial_layers);
-            EXPECT_EQ(header->codecHeader.VP9.end_of_superframe,
-                      codec_info.codecSpecific.VP9.end_of_superframe);
+            EXPECT_EQ(header->codecHeader.VP9.end_of_picture,
+                      codec_info.codecSpecific.VP9.end_of_picture);
             return true;
           }));
   EXPECT_CALL(rtp, Sending()).WillOnce(Return(true));
@@ -403,7 +402,7 @@ TEST(PayloadRouterTest, InfoMappedToRtpVideoHeader_Vp9) {
   // Next spatial layer.
   codec_info.codecSpecific.VP9.first_frame_in_picture = false;
   codec_info.codecSpecific.VP9.spatial_idx += 1;
-  codec_info.codecSpecific.VP9.end_of_superframe = true;
+  codec_info.codecSpecific.VP9.end_of_picture = true;
 
   EXPECT_CALL(rtp, SendOutgoingData(_, _, _, _, _, _, nullptr, _, _))
       .WillOnce(
@@ -420,8 +419,8 @@ TEST(PayloadRouterTest, InfoMappedToRtpVideoHeader_Vp9) {
                       codec_info.codecSpecific.VP9.spatial_idx);
             EXPECT_EQ(header->codecHeader.VP9.num_spatial_layers,
                       codec_info.codecSpecific.VP9.num_spatial_layers);
-            EXPECT_EQ(header->codecHeader.VP9.end_of_superframe,
-                      codec_info.codecSpecific.VP9.end_of_superframe);
+            EXPECT_EQ(header->codecHeader.VP9.end_of_picture,
+                      codec_info.codecSpecific.VP9.end_of_picture);
             return true;
           }));
   EXPECT_CALL(rtp, Sending()).WillOnce(Return(true));

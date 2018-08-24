@@ -10,6 +10,8 @@
 
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
+#include "api/video_codecs/builtin_video_decoder_factory.h"
+#include "api/video_codecs/builtin_video_encoder_factory.h"
 #include "media/engine/webrtcmediaengine.h"
 #include "modules/audio_processing/include/audio_processing.h"
 #include "pc/mediasession.h"
@@ -44,20 +46,20 @@ using ::testing::UnorderedElementsAre;
 class PeerConnectionFactoryForJsepTest : public PeerConnectionFactory {
  public:
   PeerConnectionFactoryForJsepTest()
-      : PeerConnectionFactory(
-            rtc::Thread::Current(),
-            rtc::Thread::Current(),
-            rtc::Thread::Current(),
-            rtc::WrapUnique(cricket::WebRtcMediaEngineFactory::Create(
-                FakeAudioCaptureModule::Create(),
-                CreateBuiltinAudioEncoderFactory(),
-                CreateBuiltinAudioDecoderFactory(),
-                nullptr,
-                nullptr,
-                nullptr,
-                AudioProcessingBuilder().Create())),
-            CreateCallFactory(),
-            nullptr) {}
+      : PeerConnectionFactory(rtc::Thread::Current(),
+                              rtc::Thread::Current(),
+                              rtc::Thread::Current(),
+                              cricket::WebRtcMediaEngineFactory::Create(
+                                  rtc::scoped_refptr<AudioDeviceModule>(
+                                      FakeAudioCaptureModule::Create()),
+                                  CreateBuiltinAudioEncoderFactory(),
+                                  CreateBuiltinAudioDecoderFactory(),
+                                  CreateBuiltinVideoEncoderFactory(),
+                                  CreateBuiltinVideoDecoderFactory(),
+                                  nullptr,
+                                  AudioProcessingBuilder().Create()),
+                              CreateCallFactory(),
+                              nullptr) {}
 
   std::unique_ptr<cricket::SctpTransportInternalFactory>
   CreateSctpTransportInternalFactory() {
@@ -1263,18 +1265,51 @@ TEST_F(PeerConnectionJsepTest, CurrentDirectionResetWhenRtpTransceiverStopped) {
   EXPECT_FALSE(transceiver->current_direction());
 }
 
-// Tests that you can't set an answer on a PeerConnection before setting
-// the offer.
+// Test that you can't set an answer on a PeerConnection before setting the
+// offer.
 TEST_F(PeerConnectionJsepTest, AnswerBeforeOfferFails) {
   auto caller = CreatePeerConnection();
   auto callee = CreatePeerConnection();
-  RTCError error_out;
   caller->AddAudioTrack("audio");
-  auto offer = caller->CreateOffer();
-  callee->SetRemoteDescription(std::move(offer), &error_out);
-  auto answer = callee->CreateAnswer();
-  EXPECT_FALSE(caller->SetRemoteDescription(std::move(answer), &error_out));
-  EXPECT_EQ(RTCErrorType::INVALID_STATE, error_out.type());
+
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
+
+  RTCError error;
+  ASSERT_FALSE(caller->SetRemoteDescription(callee->CreateAnswer(), &error));
+  EXPECT_EQ(RTCErrorType::INVALID_STATE, error.type());
+}
+
+// Test that a Unified Plan PeerConnection fails to set a Plan B offer if it has
+// two video tracks.
+TEST_F(PeerConnectionJsepTest, TwoVideoPlanBToUnifiedPlanFails) {
+  RTCConfiguration config_planb;
+  config_planb.sdp_semantics = SdpSemantics::kPlanB;
+  auto caller = CreatePeerConnection(config_planb);
+  auto callee = CreatePeerConnection();
+  caller->AddVideoTrack("video1");
+  caller->AddVideoTrack("video2");
+
+  RTCError error;
+  ASSERT_FALSE(callee->SetRemoteDescription(caller->CreateOffer(), &error));
+  EXPECT_EQ(RTCErrorType::INVALID_PARAMETER, error.type());
+}
+
+// Test that a Unified Plan PeerConnection fails to set a Plan B answer if it
+// has two video tracks.
+TEST_F(PeerConnectionJsepTest, OneVideoUnifiedPlanToTwoVideoPlanBFails) {
+  auto caller = CreatePeerConnection();
+  RTCConfiguration config_planb;
+  config_planb.sdp_semantics = SdpSemantics::kPlanB;
+  auto callee = CreatePeerConnection(config_planb);
+  caller->AddVideoTrack("video");
+  callee->AddVideoTrack("video1");
+  callee->AddVideoTrack("video2");
+
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
+
+  RTCError error;
+  ASSERT_FALSE(caller->SetRemoteDescription(caller->CreateAnswer(), &error));
+  EXPECT_EQ(RTCErrorType::INVALID_PARAMETER, error.type());
 }
 
 }  // namespace webrtc

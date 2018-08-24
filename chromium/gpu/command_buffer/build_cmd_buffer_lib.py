@@ -94,10 +94,12 @@ _PEPPER_INTERFACES = [
 
 
 # Capabilities selected with glEnable
+# on_change:    string of C++ code that is executed when the state is changed.
 _CAPABILITY_FLAGS = [
   {'name': 'blend'},
   {'name': 'cull_face'},
-  {'name': 'depth_test', 'state_flag': 'framebuffer_state_.clear_state_dirty'},
+  {'name': 'depth_test',
+    'on_change': 'framebuffer_state_.clear_state_dirty = true;'},
   {'name': 'dither', 'default': True},
   {'name': 'framebuffer_srgb_ext', 'default': True, 'no_init': True,
    'extension_flag': 'ext_srgb_write_control'},
@@ -106,7 +108,8 @@ _CAPABILITY_FLAGS = [
   {'name': 'sample_coverage'},
   {'name': 'scissor_test'},
   {'name': 'stencil_test',
-   'state_flag': 'framebuffer_state_.clear_state_dirty'},
+    'on_change': '''state_.stencil_state_changed_since_validation = true;
+                    framebuffer_state_.clear_state_dirty = true;'''},
   {'name': 'rasterizer_discard', 'es3': True},
   {'name': 'primitive_restart_fixed_index', 'es3': True},
   {'name': 'multisample_ext', 'default': True,
@@ -114,7 +117,6 @@ _CAPABILITY_FLAGS = [
   {'name': 'sample_alpha_to_one_ext',
    'extension_flag': 'ext_multisample_compatibility'},
 ]
-
 
 _STATE_INFO = {
   'ClearColor': {
@@ -166,7 +168,7 @@ _STATE_INFO = {
         'cached': True
       },
     ],
-    'state_flag': 'framebuffer_state_.clear_state_dirty',
+    'on_change': 'framebuffer_state_.clear_state_dirty = true;',
   },
   'ClearStencil': {
     'type': 'Normal',
@@ -319,7 +321,6 @@ _STATE_INFO = {
   'StencilMask': {
     'type': 'FrontBack',
     'func': 'StencilMaskSeparate',
-    'state_flag': 'framebuffer_state_.clear_state_dirty',
     'states': [
       {
         'name': 'stencil_front_writemask',
@@ -336,6 +337,8 @@ _STATE_INFO = {
         'cached': True,
       },
     ],
+    'on_change': '''framebuffer_state_.clear_state_dirty = true;
+                    state_.stencil_state_changed_since_validation = true;''',
   },
   'StencilOp': {
     'type': 'FrontBack',
@@ -420,6 +423,7 @@ _STATE_INFO = {
         'default': '0xFFFFFFFFU',
       },
     ],
+    'on_change': 'state_.stencil_state_changed_since_validation = true;',
   },
   'Hint': {
     'type': 'NamedParameter',
@@ -551,7 +555,7 @@ _STATE_INFO = {
         'cached': True
       },
     ],
-    'state_flag': 'framebuffer_state_.clear_state_dirty',
+    'on_change': 'framebuffer_state_.clear_state_dirty = true;',
   },
   'Scissor': {
     'type': 'Normal',
@@ -1351,7 +1355,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
     """Writes the GLES2 Implemention declaration."""
     f.write("%s %s(%s) override;\n" %
                (func.return_type, func.original_name,
-                func.MakeTypedOriginalArgString("")))
+                func.MakeTypedOriginalArgString("", add_default = True)))
     f.write("\n")
 
   def WriteGLES2CLibImplementation(self, func, f):
@@ -1432,7 +1436,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
     """Writes the GLES2 Interface."""
     f.write("virtual %s %s(%s) = 0;\n" %
                (func.return_type, func.original_name,
-                func.MakeTypedOriginalArgString("")))
+                func.MakeTypedOriginalArgString("", add_default = True)))
 
   def WriteGLES2InterfaceStub(self, func, f):
     """Writes the GLES2 Interface stub declaration."""
@@ -1617,8 +1621,8 @@ class StateSetHandler(TypeHandler):
     f.write("  if (%s) {\n" % " ||\n      ".join(code))
     for ndx,item in enumerate(states):
       f.write("    state_.%s = %s;\n" % (item['name'], args[ndx].name))
-    if 'state_flag' in state:
-      f.write("    %s = true;\n" % state['state_flag'])
+    if 'on_change' in state:
+      f.write("    %s\n" % state['on_change'])
     if not func.GetInfo("no_gl"):
       for ndx,item in enumerate(states):
         if item.get('cached', False):
@@ -1714,8 +1718,8 @@ class StateSetRGBAlphaHandler(TypeHandler):
     for ndx, item in enumerate(states):
       f.write("    state_.%s = %s;\n" %
                  (item['name'], args[ndx % num_args].name))
-    if 'state_flag' in state:
-      f.write("    %s = true;\n" % state['state_flag'])
+    if 'on_change' in state:
+      f.write("    %s\n" % state['on_change'])
     if not func.GetInfo("no_gl"):
       f.write("    %s(%s);\n" %
                  (func.GetGLFunctionName(), func.MakeOriginalArgString("")))
@@ -1758,8 +1762,8 @@ class StateSetFrontBackSeparateHandler(TypeHandler):
         f.write("      state_.%s = %s;\n" %
                    (item['name'], args[ndx + 1].name))
       f.write("    }\n")
-    if 'state_flag' in state:
-      f.write("    %s = true;\n" % state['state_flag'])
+    if 'on_change' in state:
+      f.write("    %s\n" % state['on_change'])
     if not func.GetInfo("no_gl"):
       f.write("    %s(%s);\n" %
                  (func.GetGLFunctionName(), func.MakeOriginalArgString("")))
@@ -1792,8 +1796,8 @@ class StateSetFrontBackHandler(TypeHandler):
     for group in Grouper(num_args, states):
       for ndx, item in enumerate(group):
         f.write("    state_.%s = %s;\n" % (item['name'], args[ndx].name))
-    if 'state_flag' in state:
-      f.write("    %s = true;\n" % state['state_flag'])
+    if 'on_change' in state:
+      f.write("    %s\n" % state['on_change'])
     if not func.GetInfo("no_gl"):
       f.write("    %s(%s);\n" %
                  (func.GetGLFunctionName(), func.MakeOriginalArgString("")))
@@ -4759,12 +4763,13 @@ class Argument(object):
   }
   need_validation_ = ['GLsizei*', 'GLboolean*', 'GLenum*', 'GLint*']
 
-  def __init__(self, name, arg_type):
+  def __init__(self, name, arg_type, arg_default = None):
     self.name = name
     self.optional = arg_type.endswith("Optional*")
     if self.optional:
       arg_type = arg_type[:-len("Optional*")] + "*"
     self.type = arg_type
+    self.default = arg_default
 
     if arg_type in self.cmd_type_map_:
       self.cmd_type = self.cmd_type_map_[arg_type]
@@ -4933,8 +4938,8 @@ class Argument(object):
 class BoolArgument(Argument):
   """class for C++ bool"""
 
-  def __init__(self, name, _type):
-    Argument.__init__(self, name, _type)
+  def __init__(self, name, _type, arg_default):
+    Argument.__init__(self, name, _type, arg_default)
 
   def GetValidArg(self, func):
     """Gets a valid value for this argument."""
@@ -4960,8 +4965,8 @@ class BoolArgument(Argument):
 class GLBooleanArgument(Argument):
   """class for GLboolean"""
 
-  def __init__(self, name, _type):
-    Argument.__init__(self, name, 'GLboolean')
+  def __init__(self, name, _type, arg_default):
+    Argument.__init__(self, name, 'GLboolean', arg_default)
 
   def GetValidArg(self, func):
     """Gets a valid value for this argument."""
@@ -4983,8 +4988,8 @@ class GLBooleanArgument(Argument):
 class UniformLocationArgument(Argument):
   """class for uniform locations."""
 
-  def __init__(self, name):
-    Argument.__init__(self, name, "GLint")
+  def __init__(self, name, arg_default):
+    Argument.__init__(self, name, "GLint", arg_default)
 
   def WriteGetCode(self, f):
     """Writes the code to get an argument from a command structure."""
@@ -5056,8 +5061,8 @@ class EnumBaseArgument(Argument):
   """Base class for EnumArgument, IntArgument, and BitfieldArgument."""
 
   def __init__(self, name, gl_type, type_name, arg_type, gl_error,
-               named_type_info):
-    Argument.__init__(self, name, gl_type)
+               named_type_info, arg_default):
+    Argument.__init__(self, name, gl_type, arg_default)
 
     self.gl_error = gl_error
     self.type_name = type_name
@@ -5154,9 +5159,10 @@ class EnumBaseArgument(Argument):
 class EnumArgument(EnumBaseArgument):
   """A class that represents a GLenum argument"""
 
-  def __init__(self, name, arg_type, named_type_info):
+  def __init__(self, name, arg_type, named_type_info, arg_default):
     EnumBaseArgument.__init__(self, name, "GLenum", arg_type[len("GLenum"):],
-                              arg_type, "GL_INVALID_ENUM", named_type_info)
+                              arg_type, "GL_INVALID_ENUM", named_type_info,
+                              arg_default)
 
   def GetLogArg(self):
     """Overridden from Argument."""
@@ -5167,10 +5173,10 @@ class EnumArgument(EnumBaseArgument):
 class EnumClassArgument(EnumBaseArgument):
   """A class that represents a C++ enum argument encoded as uint32_t"""
 
-  def __init__(self, name, arg_type, named_type_info):
+  def __init__(self, name, arg_type, named_type_info, arg_default):
     type_name = arg_type[len("EnumClass"):]
     EnumBaseArgument.__init__(self, name, type_name, type_name, arg_type,
-                              "GL_INVALID_ENUM", named_type_info)
+                              "GL_INVALID_ENUM", named_type_info, arg_default)
 
   def GetArgAccessor(self, struct_name):
     """Returns the name of the accessor for the argument within the struct."""
@@ -5191,9 +5197,10 @@ class IntArgument(EnumBaseArgument):
   argument instead of a GLenum.
   """
 
-  def __init__(self, name, arg_type, named_type_info):
+  def __init__(self, name, arg_type, named_type_info, arg_default):
     EnumBaseArgument.__init__(self, name, "GLint", arg_type[len("GLint"):],
-                              arg_type, "GL_INVALID_VALUE", named_type_info)
+                              arg_type, "GL_INVALID_VALUE", named_type_info,
+                              arg_default)
 
 
 class BitFieldArgument(EnumBaseArgument):
@@ -5203,10 +5210,10 @@ class BitFieldArgument(EnumBaseArgument):
   must be 0.
   """
 
-  def __init__(self, name, arg_type, named_type_info):
+  def __init__(self, name, arg_type, named_type_info, arg_default):
     EnumBaseArgument.__init__(self, name, "GLbitfield",
                               arg_type[len("GLbitfield"):], arg_type,
-                              "GL_INVALID_VALUE", named_type_info)
+                              "GL_INVALID_VALUE", named_type_info, arg_default)
 
 
 class ImmediatePointerArgument(Argument):
@@ -5435,14 +5442,14 @@ class InputStringArrayBucketArgument(Argument):
 class ResourceIdArgument(Argument):
   """A class that represents a resource id argument to a function."""
 
-  def __init__(self, name, arg_type):
+  def __init__(self, name, arg_type, arg_default):
     match = re.match("(GLid\w+)", arg_type)
     self.resource_type = match.group(1)[4:]
     if self.resource_type == "Sync":
       arg_type = arg_type.replace(match.group(1), "GLsync")
     else:
       arg_type = arg_type.replace(match.group(1), "GLuint")
-    Argument.__init__(self, name, arg_type)
+    Argument.__init__(self, name, arg_type, arg_default)
 
   def WriteGetCode(self, f):
     """Overridden from Argument."""
@@ -5464,11 +5471,11 @@ class ResourceIdArgument(Argument):
 class ResourceIdBindArgument(Argument):
   """Represents a resource id argument to a bind function."""
 
-  def __init__(self, name, arg_type):
+  def __init__(self, name, arg_type, arg_default):
     match = re.match("(GLidBind\w+)", arg_type)
     self.resource_type = match.group(1)[8:]
     arg_type = arg_type.replace(match.group(1), "GLuint")
-    Argument.__init__(self, name, arg_type)
+    Argument.__init__(self, name, arg_type, arg_default)
 
   def WriteGetCode(self, f):
     """Overridden from Argument."""
@@ -5486,11 +5493,11 @@ class ResourceIdBindArgument(Argument):
 class ResourceIdZeroArgument(Argument):
   """Represents a resource id argument to a function that can be zero."""
 
-  def __init__(self, name, arg_type):
+  def __init__(self, name, arg_type, arg_default):
     match = re.match("(GLidZero\w+)", arg_type)
     self.resource_type = match.group(1)[8:]
     arg_type = arg_type.replace(match.group(1), "GLuint")
-    Argument.__init__(self, name, arg_type)
+    Argument.__init__(self, name, arg_type, arg_default)
 
   def WriteGetCode(self, f):
     """Overridden from Argument."""
@@ -5515,8 +5522,8 @@ class ResourceIdZeroArgument(Argument):
 class Int64Argument(Argument):
   """Represents a GLuint64 argument which splits up into 2 uint32_t items."""
 
-  def __init__(self, name, arg_type):
-    Argument.__init__(self, name, arg_type)
+  def __init__(self, name, arg_type, arg_default):
+    Argument.__init__(self, name, arg_type, arg_default)
 
   def GetArgAccessor(self, cmd_struct_name):
     return "%s.%s()" % (cmd_struct_name, self.name)
@@ -5750,11 +5757,17 @@ class Function(object):
       comma = ", "
     return "%s%s" % (comma, arg_string)
 
-  def MakeTypedOriginalArgString(self, prefix, add_comma = False):
+  def MakeTypedOriginalArgString(self, prefix, add_comma = False,
+                                 add_default = False):
     """Gets a list of arguments as they are in GL."""
     args = self.GetOriginalArgs()
-    arg_string = ", ".join(
-        ["%s %s%s" % (arg.type, prefix, arg.name) for arg in args])
+    def ArgToString(arg):
+      tmp = [arg.type, prefix + arg.name]
+      if add_default and arg.default:
+        tmp.append("=")
+        tmp.append(arg.default)
+      return " ".join(tmp)
+    arg_string = ", ".join([ArgToString(arg) for arg in args])
     return self._MaybePrependComma(arg_string, add_comma)
 
   def MakeOriginalArgString(self, prefix, add_comma = False, separator = ", "):
@@ -6185,7 +6198,12 @@ def CreateArg(arg_string, named_type_info):
   if arg_string == 'void':
     return None
 
-  arg_parts = arg_string.strip().split()
+  arg_string = arg_string.strip()
+  arg_default = None
+  if '=' in arg_string:
+    arg_string, arg_default = arg_string.split('=')
+    arg_default = arg_default.strip()
+  arg_parts = arg_string.split()
   assert len(arg_parts) > 1
   arg_name = arg_parts[-1]
   arg_type = " ".join(arg_parts[0:-1])
@@ -6193,37 +6211,38 @@ def CreateArg(arg_string, named_type_info):
 
   # Is this a pointer argument?
   if arg_string.find('*') >= 0:
-    return PointerArgument(arg_name, arg_type)
+    return PointerArgument(arg_name, arg_type, arg_default)
   elif t.startswith('EnumClass'):
-    return EnumClassArgument(arg_name, arg_type, named_type_info)
+    return EnumClassArgument(arg_name, arg_type, named_type_info, arg_default)
   # Is this a resource argument? Must come after pointer check.
   elif t.startswith('GLidBind'):
-    return ResourceIdBindArgument(arg_name, arg_type)
+    return ResourceIdBindArgument(arg_name, arg_type, arg_default)
   elif t.startswith('GLidZero'):
-    return ResourceIdZeroArgument(arg_name, arg_type)
+    return ResourceIdZeroArgument(arg_name, arg_type, arg_default)
   elif t.startswith('GLid'):
-    return ResourceIdArgument(arg_name, arg_type)
+    return ResourceIdArgument(arg_name, arg_type, arg_default)
   elif t.startswith('GLenum') and t !='GLenum':
-    return EnumArgument(arg_name, arg_type, named_type_info)
+    return EnumArgument(arg_name, arg_type, named_type_info, arg_default)
   elif t.startswith('GLbitfield') and t != 'GLbitfield':
-    return BitFieldArgument(arg_name, arg_type, named_type_info)
+    return BitFieldArgument(arg_name, arg_type, named_type_info, arg_default)
   elif t.startswith('GLboolean'):
-    return GLBooleanArgument(arg_name, arg_type)
+    return GLBooleanArgument(arg_name, arg_type, arg_default)
   elif t.startswith('GLintUniformLocation'):
-    return UniformLocationArgument(arg_name)
+    return UniformLocationArgument(arg_name, arg_default)
   elif (t.startswith('GLint') and t != 'GLint' and
         not t.startswith('GLintptr')):
-    return IntArgument(arg_name, arg_type, named_type_info)
+    return IntArgument(arg_name, arg_type, named_type_info, arg_default)
   elif t == 'bool':
-    return BoolArgument(arg_name, arg_type)
+    return BoolArgument(arg_name, arg_type, arg_default)
   elif t == 'GLsizeiNotNegative' or t == 'GLintptrNotNegative':
-    return SizeNotNegativeArgument(arg_name, t.replace('NotNegative', ''))
+    return SizeNotNegativeArgument(arg_name, t.replace('NotNegative', ''),
+                                   arg_default)
   elif t.startswith('GLsize'):
-    return SizeArgument(arg_name, arg_type)
+    return SizeArgument(arg_name, arg_type, arg_default)
   elif t == 'GLuint64' or t == 'GLint64':
-    return Int64Argument(arg_name, arg_type)
+    return Int64Argument(arg_name, arg_type, arg_default)
   else:
-    return Argument(arg_name, arg_type)
+    return Argument(arg_name, arg_type, arg_default)
 
 
 class GLGenerator(object):
@@ -6802,13 +6821,13 @@ bool GLES2DecoderImpl::SetCapabilityState(GLenum cap, bool enabled) {
 """)
         for capability in self.capability_flags:
           f.write("    case GL_%s:\n" % capability['name'].upper())
-          if 'state_flag' in capability:
+          if 'on_change' in capability:
 
             f.write("""\
               state_.enable_flags.%(name)s = enabled;
               if (state_.enable_flags.cached_%(name)s != enabled
                   || state_.ignore_cached_state) {
-                %(state_flag)s = true;
+                %(on_change)s
               }
               return false;
               """ % capability)

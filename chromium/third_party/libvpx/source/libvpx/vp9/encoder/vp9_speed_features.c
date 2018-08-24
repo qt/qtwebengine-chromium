@@ -32,7 +32,7 @@ static MESH_PATTERN
 // Intra only frames, golden frames (except alt ref overlays) and
 // alt ref frames tend to be coded at a higher than ambient quality
 static int frame_is_boosted(const VP9_COMP *cpi) {
-  return frame_is_kf_gf_arf(cpi) || vp9_is_upper_layer_key_frame(cpi);
+  return frame_is_kf_gf_arf(cpi);
 }
 
 // Sets a partition size down to which the auto partition code will always
@@ -374,6 +374,9 @@ static void set_rt_speed_feature_framesize_independent(
   sf->use_compound_nonrd_pickmode = 0;
   sf->nonrd_keyframe = 0;
   sf->svc_use_lowres_part = 0;
+  sf->re_encode_overshoot_rt = 0;
+  sf->disable_16x16part_nonkey = 0;
+  sf->disable_golden_ref = 0;
 
   if (speed >= 1) {
     sf->allow_txfm_domain_distortion = 1;
@@ -534,6 +537,16 @@ static void set_rt_speed_feature_framesize_independent(
     // Keep nonrd_keyframe = 1 for non-base spatial layers to prevent
     // increase in encoding time.
     if (cpi->use_svc && cpi->svc.spatial_layer_id > 0) sf->nonrd_keyframe = 1;
+    if (cpi->oxcf.pass == 0 && cpi->oxcf.rc_mode == VPX_CBR &&
+        cm->frame_type != KEY_FRAME && cpi->resize_state == ORIG &&
+        (cpi->use_svc || cpi->oxcf.content == VP9E_CONTENT_SCREEN)) {
+      sf->re_encode_overshoot_rt = 1;
+    }
+    if (cpi->oxcf.rc_mode == VPX_VBR && cpi->oxcf.lag_in_frames > 0 &&
+        cm->width <= 1280 && cm->height <= 720) {
+      sf->use_altref_onepass = 1;
+      sf->use_compound_nonrd_pickmode = 1;
+    }
   }
 
   if (speed >= 6) {
@@ -656,6 +669,21 @@ static void set_rt_speed_feature_framesize_independent(
     sf->limit_newmv_early_exit = 0;
     sf->use_simple_block_yrd = 1;
   }
+
+  if (speed >= 9) {
+    sf->mv.enable_adaptive_subpel_force_stop = 1;
+    sf->mv.adapt_subpel_force_stop.mv_thresh = 2;
+    if (cpi->rc.avg_frame_low_motion < 40)
+      sf->mv.adapt_subpel_force_stop.mv_thresh = 1;
+    sf->mv.adapt_subpel_force_stop.force_stop_below = 1;
+    sf->mv.adapt_subpel_force_stop.force_stop_above = 2;
+    // Disable partition blocks below 16x16, except for low-resolutions.
+    if (cm->frame_type != KEY_FRAME && cm->width >= 320 && cm->height >= 240)
+      sf->disable_16x16part_nonkey = 1;
+    // Allow for disabling GOLDEN reference, for CBR mode.
+    if (cpi->oxcf.rc_mode == VPX_CBR) sf->disable_golden_ref = 1;
+  }
+
   if (sf->use_altref_onepass) {
     if (cpi->rc.is_src_frame_alt_ref && cm->frame_type != KEY_FRAME) {
       sf->partition_search_type = FIXED_PARTITION;
@@ -812,6 +840,7 @@ void vp9_set_speed_features_framesize_independent(VP9_COMP *cpi) {
   // Some speed-up features even for best quality as minimal impact on quality.
   sf->adaptive_rd_thresh = 1;
   sf->tx_size_search_breakout = 1;
+  sf->tx_size_search_depth = 2;
 
   sf->exhaustive_searches_thresh =
       (cpi->twopass.fr_content_type == FC_GRAPHICS_ANIMATION) ? (1 << 20)

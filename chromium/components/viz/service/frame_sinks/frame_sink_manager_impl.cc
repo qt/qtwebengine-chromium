@@ -144,11 +144,13 @@ void FrameSinkManagerImpl::CreateRootCompositorFrameSink(
                 std::move(params->external_begin_frame_controller_client)));
   }
 
+  mojom::DisplayClientPtr display_client(std::move(params->display_client));
+
   std::unique_ptr<SyntheticBeginFrameSource> begin_frame_source;
   auto display = display_provider_->CreateDisplay(
       params->frame_sink_id, params->widget, params->gpu_compositing,
-      external_begin_frame_controller.get(), params->renderer_settings,
-      &begin_frame_source);
+      display_client.get(), external_begin_frame_controller.get(),
+      params->renderer_settings, &begin_frame_source);
 
   // Creating display failed. Drop the CompositorFrameSink message pipes here
   // and let host send a new request, potential with a different compositing
@@ -164,8 +166,7 @@ void FrameSinkManagerImpl::CreateRootCompositorFrameSink(
           std::move(params->compositor_frame_sink),
           mojom::CompositorFrameSinkClientPtr(
               std::move(params->compositor_frame_sink_client)),
-          std::move(params->display_private),
-          mojom::DisplayClientPtr(std::move(params->display_client)));
+          std::move(params->display_private), std::move(display_client));
 }
 
 void FrameSinkManagerImpl::CreateCompositorFrameSink(
@@ -352,25 +353,10 @@ void FrameSinkManagerImpl::OnSurfaceDamageExpected(const SurfaceId& surface_id,
 
 void FrameSinkManagerImpl::OnAggregatedHitTestRegionListUpdated(
     const FrameSinkId& frame_sink_id,
-    mojo::ScopedSharedBufferHandle active_handle,
-    uint32_t active_handle_size,
-    mojo::ScopedSharedBufferHandle idle_handle,
-    uint32_t idle_handle_size) {
+    const std::vector<AggregatedHitTestRegion>& hit_test_data) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   if (client_) {
-    client_->OnAggregatedHitTestRegionListUpdated(
-        frame_sink_id, std::move(active_handle), active_handle_size,
-        std::move(idle_handle), idle_handle_size);
-  }
-}
-
-void FrameSinkManagerImpl::SwitchActiveAggregatedHitTestRegionList(
-    const FrameSinkId& frame_sink_id,
-    uint8_t active_handle_index) {
-  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  if (client_) {
-    client_->SwitchActiveAggregatedHitTestRegionList(frame_sink_id,
-                                                     active_handle_index);
+    client_->OnAggregatedHitTestRegionListUpdated(frame_sink_id, hit_test_data);
   }
 }
 
@@ -526,7 +512,7 @@ bool FrameSinkManagerImpl::ChildContains(
 void FrameSinkManagerImpl::SubmitHitTestRegionList(
     const SurfaceId& surface_id,
     uint64_t frame_index,
-    mojom::HitTestRegionListPtr hit_test_region_list) {
+    base::Optional<HitTestRegionList> hit_test_region_list) {
   hit_test_manager_.SubmitHitTestRegionList(surface_id, frame_index,
                                             std::move(hit_test_region_list));
 }

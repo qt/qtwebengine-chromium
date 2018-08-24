@@ -118,7 +118,7 @@ void OffscreenTab::Start(const GURL& start_url,
   if (!optional_presentation_id.empty())
     params.starting_sandbox_flags = blink::kPresentationReceiverSandboxFlags;
 
-  offscreen_tab_web_contents_.reset(WebContents::Create(params));
+  offscreen_tab_web_contents_ = WebContents::Create(params);
   offscreen_tab_web_contents_->SetDelegate(this);
   WebContentsObserver::Observe(offscreen_tab_web_contents_.get());
 
@@ -262,8 +262,10 @@ bool OffscreenTab::EmbedsFullscreenWidget() const {
   return true;
 }
 
-void OffscreenTab::EnterFullscreenModeForTab(WebContents* contents,
-                                             const GURL& origin) {
+void OffscreenTab::EnterFullscreenModeForTab(
+    WebContents* contents,
+    const GURL& origin,
+    const blink::WebFullscreenOptions& options) {
   DCHECK_EQ(offscreen_tab_web_contents_.get(), contents);
 
   if (in_fullscreen_mode())

@@ -54,6 +54,8 @@ const char kChromeExtension[] =
 // Constants used in handling postMessage() messages.
 const char kType[] = "type";
 const char kJSId[] = "id";
+// Beep messge arguments. (Plugin -> Page).
+const char kJSBeepType[] = "beep";
 // Viewport message arguments. (Page -> Plugin).
 const char kJSViewportType[] = "viewport";
 const char kJSUserInitiated[] = "userInitiated";
@@ -267,6 +269,15 @@ PP_Bool CanEditText(PP_Instance instance) {
   return PP_FromBool(obj_instance->CanEditText());
 }
 
+PP_Bool HasEditableText(PP_Instance instance) {
+  void* object = pp::Instance::GetPerInstanceObject(instance, kPPPPdfInterface);
+  if (!object)
+    return PP_FALSE;
+
+  auto* obj_instance = static_cast<OutOfProcessInstance*>(object);
+  return PP_FromBool(obj_instance->HasEditableText());
+}
+
 void ReplaceSelection(PP_Instance instance, const char* text) {
   void* object = pp::Instance::GetPerInstanceObject(instance, kPPPPdfInterface);
   if (object) {
@@ -275,10 +286,67 @@ void ReplaceSelection(PP_Instance instance, const char* text) {
   }
 }
 
+PP_Bool CanUndo(PP_Instance instance) {
+  void* object = pp::Instance::GetPerInstanceObject(instance, kPPPPdfInterface);
+  if (!object)
+    return PP_FALSE;
+
+  auto* obj_instance = static_cast<OutOfProcessInstance*>(object);
+  return PP_FromBool(obj_instance->CanUndo());
+}
+
+PP_Bool CanRedo(PP_Instance instance) {
+  void* object = pp::Instance::GetPerInstanceObject(instance, kPPPPdfInterface);
+  if (!object)
+    return PP_FALSE;
+
+  auto* obj_instance = static_cast<OutOfProcessInstance*>(object);
+  return PP_FromBool(obj_instance->CanRedo());
+}
+
+void Undo(PP_Instance instance) {
+  void* object = pp::Instance::GetPerInstanceObject(instance, kPPPPdfInterface);
+  if (object) {
+    auto* obj_instance = static_cast<OutOfProcessInstance*>(object);
+    obj_instance->Undo();
+  }
+}
+
+void Redo(PP_Instance instance) {
+  void* object = pp::Instance::GetPerInstanceObject(instance, kPPPPdfInterface);
+  if (object) {
+    auto* obj_instance = static_cast<OutOfProcessInstance*>(object);
+    obj_instance->Redo();
+  }
+}
+
+int32_t PdfPrintBegin(PP_Instance instance,
+                      const PP_PrintSettings_Dev* print_settings,
+                      const PP_PdfPrintSettings_Dev* pdf_print_settings) {
+  void* object = pp::Instance::GetPerInstanceObject(instance, kPPPPdfInterface);
+  if (!object)
+    return 0;
+
+  auto* obj_instance = static_cast<OutOfProcessInstance*>(object);
+  return obj_instance->PdfPrintBegin(print_settings, pdf_print_settings);
+}
+
 const PPP_Pdf ppp_private = {
-    &GetLinkAtPosition,   &Transform,        &GetPrintPresetOptionsFromDocument,
-    &EnableAccessibility, &SetCaretPosition, &MoveRangeSelectionExtent,
-    &SetSelectionBounds,  &CanEditText,      &ReplaceSelection,
+    &GetLinkAtPosition,
+    &Transform,
+    &GetPrintPresetOptionsFromDocument,
+    &EnableAccessibility,
+    &SetCaretPosition,
+    &MoveRangeSelectionExtent,
+    &SetSelectionBounds,
+    &CanEditText,
+    &HasEditableText,
+    &ReplaceSelection,
+    &CanUndo,
+    &CanRedo,
+    &Undo,
+    &Redo,
+    &PdfPrintBegin,
 };
 
 int ExtractPrintPreviewPageIndex(base::StringPiece src_url) {
@@ -356,7 +424,6 @@ OutOfProcessInstance::OutOfProcessInstance(PP_Instance instance)
       accessibility_state_(ACCESSIBILITY_STATE_OFF),
       is_print_preview_(false) {
   callback_factory_.Initialize(this);
-  engine_ = PDFEngine::Create(this);
   pp::Module::Get()->AddPluginInterface(kPPPPdfInterface, &ppp_private);
   AddPerInstanceObject(kPPPPdfInterface, this);
 
@@ -384,6 +451,7 @@ bool OutOfProcessInstance::Init(uint32_t argc,
   pp::Var document_url_var = pp::URLUtil_Dev::Get()->GetDocumentURL(this);
   if (!document_url_var.is_string())
     return false;
+
   std::string document_url = document_url_var.AsString();
   base::StringPiece document_url_piece(document_url);
   is_print_preview_ = IsPrintPreviewUrl(document_url_piece);
@@ -423,7 +491,6 @@ bool OutOfProcessInstance::Init(uint32_t argc,
       success =
           base::StringToInt(argv[i], &top_toolbar_height_in_viewport_coords_);
     }
-
     if (!success)
       return false;
   }
@@ -433,6 +500,8 @@ bool OutOfProcessInstance::Init(uint32_t argc,
 
   if (!stream_url)
     stream_url = original_url;
+
+  engine_ = PDFEngine::Create(this, true);
 
   // If we're in print preview mode we don't need to load the document yet.
   // A |kJSResetPrintPreviewModeType| message will be sent to the plugin letting
@@ -628,7 +697,7 @@ void OutOfProcessInstance::HandleMessage(const pp::Var& message) {
     document_load_state_ = LOAD_STATE_LOADING;
     LoadUrl(url_, /*is_print_preview=*/false);
     preview_engine_.reset();
-    engine_ = PDFEngine::Create(this);
+    engine_ = PDFEngine::Create(this, false);
     engine_->SetGrayscale(dict.Get(pp::Var(kJSPrintPreviewGrayscale)).AsBool());
     engine_->New(url_.c_str(), nullptr /* empty header */);
 
@@ -980,8 +1049,48 @@ bool OutOfProcessInstance::CanEditText() {
   return engine_->CanEditText();
 }
 
+bool OutOfProcessInstance::HasEditableText() {
+  return engine_->HasEditableText();
+}
+
 void OutOfProcessInstance::ReplaceSelection(const std::string& text) {
   engine_->ReplaceSelection(text);
+}
+
+bool OutOfProcessInstance::CanUndo() {
+  return engine_->CanUndo();
+}
+
+bool OutOfProcessInstance::CanRedo() {
+  return engine_->CanRedo();
+}
+
+void OutOfProcessInstance::Undo() {
+  engine_->Undo();
+}
+
+void OutOfProcessInstance::Redo() {
+  engine_->Redo();
+}
+
+int32_t OutOfProcessInstance::PdfPrintBegin(
+    const PP_PrintSettings_Dev* print_settings,
+    const PP_PdfPrintSettings_Dev* pdf_print_settings) {
+  // For us num_pages is always equal to the number of pages in the PDF
+  // document irrespective of the printable area.
+  int32_t ret = engine_->GetNumberOfPages();
+  if (!ret)
+    return 0;
+
+  uint32_t supported_formats = engine_->QuerySupportedPrintOutputFormats();
+  if ((print_settings->format & supported_formats) == 0)
+    return 0;
+
+  print_settings_.is_printing = true;
+  print_settings_.pepper_print_settings = *print_settings;
+  print_settings_.pdf_print_settings = *pdf_print_settings;
+  engine_->PrintBegin();
+  return ret;
 }
 
 uint32_t OutOfProcessInstance::QuerySupportedPrintOutputFormats() {
@@ -990,20 +1099,9 @@ uint32_t OutOfProcessInstance::QuerySupportedPrintOutputFormats() {
 
 int32_t OutOfProcessInstance::PrintBegin(
     const PP_PrintSettings_Dev& print_settings) {
-  // For us num_pages is always equal to the number of pages in the PDF
-  // document irrespective of the printable area.
-  int32_t ret = engine_->GetNumberOfPages();
-  if (!ret)
-    return 0;
-
-  uint32_t supported_formats = engine_->QuerySupportedPrintOutputFormats();
-  if ((print_settings.format & supported_formats) == 0)
-    return 0;
-
-  print_settings_.is_printing = true;
-  print_settings_.pepper_print_settings = print_settings;
-  engine_->PrintBegin();
-  return ret;
+  // Replaced with PdfPrintBegin();
+  NOTREACHED();
+  return 0;
 }
 
 pp::Resource OutOfProcessInstance::PrintPages(
@@ -1012,13 +1110,14 @@ pp::Resource OutOfProcessInstance::PrintPages(
   if (!print_settings_.is_printing)
     return pp::Resource();
 
-  print_settings_.print_pages_called_ = true;
+  print_settings_.print_pages_called = true;
   return engine_->PrintPages(page_ranges, page_range_count,
-                             print_settings_.pepper_print_settings);
+                             print_settings_.pepper_print_settings,
+                             print_settings_.pdf_print_settings);
 }
 
 void OutOfProcessInstance::PrintEnd() {
-  if (print_settings_.print_pages_called_)
+  if (print_settings_.print_pages_called)
     UserMetricsRecordAction("PDF.PrintPage");
   print_settings_.Clear();
   engine_->PrintEnd();
@@ -1126,7 +1225,7 @@ void OutOfProcessInstance::DidOpen(int32_t result) {
 void OutOfProcessInstance::DidOpenPreview(int32_t result) {
   if (result == PP_OK) {
     preview_client_ = std::make_unique<PreviewModeClient>(this);
-    preview_engine_ = PDFEngine::Create(preview_client_.get());
+    preview_engine_ = PDFEngine::Create(preview_client_.get(), false);
     preview_engine_->HandleDocumentLoad(embed_preview_loader_);
   } else {
     NOTREACHED();
@@ -1361,6 +1460,12 @@ void OutOfProcessInstance::GetDocumentPassword(
       std::make_unique<pp::CompletionCallbackWithOutput<pp::Var>>(callback);
   pp::VarDictionary message;
   message.Set(pp::Var(kType), pp::Var(kJSGetPasswordType));
+  PostMessage(message);
+}
+
+void OutOfProcessInstance::Beep() {
+  pp::VarDictionary message;
+  message.Set(pp::Var(kType), pp::Var(kJSBeepType));
   PostMessage(message);
 }
 
@@ -1916,6 +2021,13 @@ void OutOfProcessInstance::PrintPreviewHistogramEnumeration(int32_t sample) {
   uma_.HistogramEnumeration("PrintPreview.PdfAction", sample,
                             PDFACTION_BUCKET_BOUNDARY);
   preview_action_recorded_[sample] = true;
+}
+
+void OutOfProcessInstance::PrintSettings::Clear() {
+  is_printing = false;
+  print_pages_called = false;
+  memset(&pepper_print_settings, 0, sizeof(pepper_print_settings));
+  memset(&pdf_print_settings, 0, sizeof(pdf_print_settings));
 }
 
 }  // namespace chrome_pdf

@@ -6,7 +6,6 @@
 
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/time/time.h"
 #include "net/base/ip_address.h"
@@ -16,6 +15,7 @@
 #include "net/socket/socket_test_util.h"
 #include "net/socket/stream_socket.h"
 #include "net/test/gtest_util.h"
+#include "net/test/test_with_scoped_task_environment.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -34,9 +34,7 @@ class FakeStreamSocket : public StreamSocket {
   FakeStreamSocket() = default;
 
   // StreamSocket implementation
-  int Connect(const CompletionCallback& callback) override {
-    return ERR_FAILED;
-  }
+  int Connect(CompletionOnceCallback callback) override { return ERR_FAILED; }
 
   void Disconnect() override { return; }
 
@@ -49,9 +47,6 @@ class FakeStreamSocket : public StreamSocket {
   int GetLocalAddress(IPEndPoint* address) const override { return ERR_FAILED; }
 
   const NetLogWithSource& NetLog() const override { return net_log_; }
-
-  void SetSubresourceSpeculation() override { return; }
-  void SetOmniboxSpeculation() override { return; }
 
   bool WasEverUsed() const override { return false; }
 
@@ -79,13 +74,13 @@ class FakeStreamSocket : public StreamSocket {
   // Socket implementation
   int Read(IOBuffer* buf,
            int buf_len,
-           const CompletionCallback& callback) override {
+           CompletionOnceCallback callback) override {
     return ERR_FAILED;
   }
 
   int Write(IOBuffer* buf,
             int buf_len,
-            const CompletionCallback& callback,
+            CompletionOnceCallback callback,
             const NetworkTrafficAnnotationTag& traffic_annotation) override {
     return ERR_FAILED;
   }
@@ -132,7 +127,7 @@ class BlockingWaiter : public FakeWaiter {
   base::RunLoop run_loop_;
 };
 
-class WebSocketEndpointLockManagerTest : public ::testing::Test {
+class WebSocketEndpointLockManagerTest : public TestWithScopedTaskEnvironment {
  protected:
   WebSocketEndpointLockManagerTest() {
     websocket_endpoint_lock_manager_.SetUnlockDelayForTesting(

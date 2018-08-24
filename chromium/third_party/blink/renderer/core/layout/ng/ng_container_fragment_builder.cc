@@ -5,9 +5,9 @@
 #include "third_party/blink/renderer/core/layout/ng/ng_container_fragment_builder.h"
 
 #include "third_party/blink/renderer/core/layout/ng/exclusions/ng_exclusion_space.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_block_break_token.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_layout_result.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_physical_fragment.h"
-#include "third_party/blink/renderer/core/layout/ng/ng_unpositioned_float.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 
 namespace blink {
@@ -42,12 +42,6 @@ NGContainerFragmentBuilder& NGContainerFragmentBuilder::SetEndMarginStrut(
 NGContainerFragmentBuilder& NGContainerFragmentBuilder::SetExclusionSpace(
     std::unique_ptr<const NGExclusionSpace> exclusion_space) {
   exclusion_space_ = std::move(exclusion_space);
-  return *this;
-}
-
-NGContainerFragmentBuilder& NGContainerFragmentBuilder::SwapUnpositionedFloats(
-    Vector<scoped_refptr<NGUnpositionedFloat>>* unpositioned_floats) {
-  unpositioned_floats_.swap(*unpositioned_floats);
   return *this;
 }
 

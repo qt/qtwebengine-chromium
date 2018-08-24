@@ -47,9 +47,17 @@ namespace blink {
 class SecurityOrigin;
 class ContentSecurityPolicy;
 
+// Defines the security properties (such as the security origin, content
+// security policy, and other restrictions) of an environment in which
+// script execution or other activity may occur.
+//
+// Mostly 1:1 with ExecutionContext, except that while remote (i.e.,
+// out-of-process) environments do not have an ExecutionContext in the local
+// process (as execution cannot occur locally), they do have a SecurityContext
+// to allow those properties to be queried.
 class CORE_EXPORT SecurityContext : public GarbageCollectedMixin {
  public:
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
   using InsecureNavigationsSet = HashSet<unsigned, WTF::AlreadyHashed>;
   static std::vector<unsigned> SerializeInsecureNavigationSet(
@@ -104,10 +112,10 @@ class CORE_EXPORT SecurityContext : public GarbageCollectedMixin {
   void InitializeFeaturePolicy(const ParsedFeaturePolicy& parsed_header,
                                const ParsedFeaturePolicy& container_policy,
                                const FeaturePolicy* parent_feature_policy);
-  void UpdateFeaturePolicyOrigin();
 
-  // Apply the sandbox flag, and also maybe update the security origin
-  // to the newly created unique one with |is_potentially_trustworthy|.
+  // Apply the sandbox flag. In addition, if the origin is not already opaque,
+  // the origin is updated to a newly created unique opaque origin, setting the
+  // potentially trustworthy bit from |is_potentially_trustworthy|.
   void ApplySandboxFlags(SandboxFlags mask,
                          bool is_potentially_trustworthy = false);
 

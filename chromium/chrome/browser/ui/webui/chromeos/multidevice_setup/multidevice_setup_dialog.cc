@@ -31,7 +31,24 @@ void AddMultiDeviceSetupStrings(content::WebUIDataSource* html_source) {
     const char* name;
     int id;
   } kLocalizedStrings[] = {
-      {"title", IDS_MULTIDEVICE_SETUP_DIALOG_TITLE}, {"cancel", IDS_CANCEL},
+      {"accept", IDS_MULTIDEVICE_SETUP_ACCEPT_LABEL},
+      {"cancel", IDS_CANCEL},
+      {"done", IDS_DONE},
+      {"startSetupPageMultipleDeviceHeader",
+       IDS_MULTIDEVICE_SETUP_START_SETUP_PAGE_MULTIPLE_DEVICE_HEADER},
+      {"startSetupPageSingleDeviceHeader",
+       IDS_MULTIDEVICE_SETUP_START_SETUP_PAGE_SINGLE_DEVICE_HEADER},
+      {"setupFailedPageHeader", IDS_MULTIDEVICE_SETUP_SETUP_FAILED_PAGE_HEADER},
+      {"setupFailedPageMessage",
+       IDS_MULTIDEVICE_SETUP_SETUP_FAILED_PAGE_MESSAGE},
+      {"setupSucceededPageHeader",
+       IDS_MULTIDEVICE_SETUP_SETUP_SUCCEEDED_PAGE_HEADER},
+      {"setupSucceededPageMessage",
+       IDS_MULTIDEVICE_SETUP_SETUP_SUCCEEDED_PAGE_MESSAGE},
+      {"startSetupPageHeader", IDS_MULTIDEVICE_SETUP_START_SETUP_PAGE_HEADER},
+      {"startSetupPageMessage", IDS_MULTIDEVICE_SETUP_START_SETUP_PAGE_MESSAGE},
+      {"title", IDS_MULTIDEVICE_SETUP_DIALOG_TITLE},
+      {"tryAgain", IDS_MULTIDEVICE_SETUP_TRY_AGAIN_LABEL},
   };
 
   for (const auto& entry : kLocalizedStrings)

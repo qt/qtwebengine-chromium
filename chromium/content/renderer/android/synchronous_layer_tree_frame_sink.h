@@ -14,6 +14,7 @@
 #include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/single_thread_task_runner.h"
 #include "base/threading/thread_checker.h"
 #include "cc/trees/layer_tree_frame_sink.h"
 #include "cc/trees/managed_memory_policy.h"
@@ -171,6 +172,8 @@ class SynchronousLayerTreeFrameSink
     void DisplayDidDrawAndSwap() override {}
     void DisplayDidReceiveCALayerParams(
         const gfx::CALayerParams& ca_layer_params) override {}
+    void DidSwapAfterSnapshotRequestReceived(
+        const std::vector<ui::LatencyInfo>& latency_info) override {}
   };
 
   // TODO(danakj): These don't to be stored in unique_ptrs when OutputSurface

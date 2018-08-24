@@ -16,7 +16,6 @@
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "content/common/cache_storage/cache_storage_types.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "net/base/io_buffer.h"
 #include "net/disk_cache/disk_cache.h"
@@ -44,6 +43,7 @@ class CacheStorageCacheHandle;
 class CacheStorageCacheObserver;
 class CacheStorageScheduler;
 class TestCacheStorageCache;
+enum class CacheStorageOwner;
 
 namespace proto {
 class CacheMetadata;
@@ -81,6 +81,7 @@ class CONTENT_EXPORT CacheStorageCache {
 
   static std::unique_ptr<CacheStorageCache> CreateMemoryCache(
       const url::Origin& origin,
+      CacheStorageOwner owner,
       const std::string& cache_name,
       CacheStorage* cache_storage,
       scoped_refptr<net::URLRequestContextGetter> request_context_getter,
@@ -89,6 +90,7 @@ class CONTENT_EXPORT CacheStorageCache {
       std::unique_ptr<crypto::SymmetricKey> cache_padding_key);
   static std::unique_ptr<CacheStorageCache> CreatePersistentCache(
       const url::Origin& origin,
+      CacheStorageOwner owner,
       const std::string& cache_name,
       CacheStorage* cache_storage,
       const base::FilePath& path,
@@ -106,14 +108,14 @@ class CONTENT_EXPORT CacheStorageCache {
 
   // Returns ERROR_TYPE_NOT_FOUND if not found.
   void Match(std::unique_ptr<ServiceWorkerFetchRequest> request,
-             const CacheStorageCacheQueryParams& match_params,
+             blink::mojom::QueryParamsPtr match_params,
              ResponseCallback callback);
 
   // Returns blink::mojom::CacheStorageError::kSuccess and matched
   // responses in this cache. If there are no responses, returns
   // blink::mojom::CacheStorageError::kSuccess and an empty vector.
   void MatchAll(std::unique_ptr<ServiceWorkerFetchRequest> request,
-                const CacheStorageCacheQueryParams& match_params,
+                blink::mojom::QueryParamsPtr match_params,
                 ResponsesCallback callback);
 
   // Writes the side data (ex: V8 code cache) for the specified cache entry.
@@ -141,11 +143,11 @@ class CONTENT_EXPORT CacheStorageCache {
   //
   // TODO(nhiroki): This function should run all operations atomically.
   // http://crbug.com/486637
-  void BatchOperation(const std::vector<CacheStorageBatchOperation>& operations,
+  void BatchOperation(std::vector<blink::mojom::BatchOperationPtr> operations,
                       ErrorCallback callback,
                       BadMessageCallback bad_message_callback);
   void BatchDidGetUsageAndQuota(
-      const std::vector<CacheStorageBatchOperation>& operations,
+      std::vector<blink::mojom::BatchOperationPtr> operations,
       ErrorCallback callback,
       BadMessageCallback bad_message_callback,
       uint64_t space_required,
@@ -166,7 +168,7 @@ class CONTENT_EXPORT CacheStorageCache {
   // Returns blink::mojom::CacheStorageError::kSuccess and a vector of
   // requests if there are no errors.
   void Keys(std::unique_ptr<ServiceWorkerFetchRequest> request,
-            const CacheStorageCacheQueryParams& options,
+            blink::mojom::QueryParamsPtr options,
             RequestsCallback callback);
 
   // Closes the backend. Future operations that require the backend
@@ -179,6 +181,14 @@ class CONTENT_EXPORT CacheStorageCache {
   // Gets the cache's size, closes the backend, and then runs |callback| with
   // the cache's size.
   void GetSizeThenClose(SizeCallback callback);
+
+  // Puts the request/response pair in the cache. This is a public member to
+  // directly bypass the batch operations and write into the cache. This is used
+  // by non-CacheAPI owners. The Cache Storage API uses batch operations defined
+  // in the dispatcher.
+  void Put(std::unique_ptr<ServiceWorkerFetchRequest> request,
+           std::unique_ptr<ServiceWorkerResponse> response,
+           ErrorCallback callback);
 
   // Async operations in progress will cancel and not run their callbacks.
   virtual ~CacheStorageCache();
@@ -243,6 +253,7 @@ class CONTENT_EXPORT CacheStorageCache {
 
   CacheStorageCache(
       const url::Origin& origin,
+      CacheStorageOwner owner,
       const std::string& cache_name,
       const base::FilePath& path,
       CacheStorage* cache_storage,
@@ -260,7 +271,7 @@ class CONTENT_EXPORT CacheStorageCache {
   // REQUESTS_AND_RESPONSES then only out_requests, out_responses, and
   // out_blob_data_handles are valid.
   void QueryCache(std::unique_ptr<ServiceWorkerFetchRequest> request,
-                  const CacheStorageCacheQueryParams& options,
+                  blink::mojom::QueryParamsPtr options,
                   QueryTypes query_types,
                   QueryCacheCallback callback);
   void QueryCacheDidOpenFastPath(
@@ -280,7 +291,7 @@ class CONTENT_EXPORT CacheStorageCache {
 
   // Match callbacks
   void MatchImpl(std::unique_ptr<ServiceWorkerFetchRequest> request,
-                 const CacheStorageCacheQueryParams& match_params,
+                 blink::mojom::QueryParamsPtr match_params,
                  ResponseCallback callback);
   void MatchDidMatchAll(ResponseCallback callback,
                         blink::mojom::CacheStorageError match_all_error,
@@ -288,7 +299,7 @@ class CONTENT_EXPORT CacheStorageCache {
 
   // MatchAll callbacks
   void MatchAllImpl(std::unique_ptr<ServiceWorkerFetchRequest> request,
-                    const CacheStorageCacheQueryParams& options,
+                    blink::mojom::QueryParamsPtr options,
                     ResponsesCallback callback);
   void MatchAllDidQueryCache(
       ResponsesCallback callback,
@@ -343,7 +354,7 @@ class CONTENT_EXPORT CacheStorageCache {
   // Puts the request and response object in the cache. The response body (if
   // present) is stored in the cache, but not the request body. Returns OK on
   // success.
-  void Put(const CacheStorageBatchOperation& operation, ErrorCallback callback);
+  void Put(blink::mojom::BatchOperationPtr operation, ErrorCallback callback);
   void PutImpl(std::unique_ptr<PutContext> put_context);
   void PutDidDeleteEntry(std::unique_ptr<PutContext> put_context,
                          blink::mojom::CacheStorageError error);
@@ -373,10 +384,10 @@ class CONTENT_EXPORT CacheStorageCache {
                               int current_cache_size);
 
   // Returns ERROR_NOT_FOUND if not found. Otherwise deletes and returns OK.
-  void Delete(const CacheStorageBatchOperation& operation,
+  void Delete(blink::mojom::BatchOperationPtr operation,
               ErrorCallback callback);
   void DeleteImpl(std::unique_ptr<ServiceWorkerFetchRequest> request,
-                  const CacheStorageCacheQueryParams& match_params,
+                  blink::mojom::QueryParamsPtr match_params,
                   ErrorCallback callback);
   void DeleteDidQueryCache(
       ErrorCallback callback,
@@ -385,7 +396,7 @@ class CONTENT_EXPORT CacheStorageCache {
 
   // Keys callbacks.
   void KeysImpl(std::unique_ptr<ServiceWorkerFetchRequest> request,
-                const CacheStorageCacheQueryParams& options,
+                blink::mojom::QueryParamsPtr options,
                 RequestsCallback callback);
   void KeysDidQueryCache(
       RequestsCallback callback,
@@ -441,6 +452,7 @@ class CONTENT_EXPORT CacheStorageCache {
   std::unique_ptr<disk_cache::Backend> backend_;
 
   url::Origin origin_;
+  CacheStorageOwner owner_;
   const std::string cache_name_;
   base::FilePath path_;
 

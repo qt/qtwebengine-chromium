@@ -219,6 +219,7 @@ extern "C" {
 #define TLSEXT_TYPE_cookie 44
 #define TLSEXT_TYPE_psk_key_exchange_modes 45
 #define TLSEXT_TYPE_certificate_authorities 47
+#define TLSEXT_TYPE_signature_algorithms_cert 50
 #define TLSEXT_TYPE_key_share 51
 
 // ExtensionType value from RFC5746
@@ -237,6 +238,7 @@ extern "C" {
 #define TLSEXT_TYPE_dummy_pq_padding 54537
 
 // status request value from RFC 3546
+#define TLSEXT_STATUSTYPE_nothing (-1)
 #define TLSEXT_STATUSTYPE_ocsp 1
 
 // ECPointFormat values from RFC 4492

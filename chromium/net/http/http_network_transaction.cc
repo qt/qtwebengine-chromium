@@ -60,9 +60,9 @@
 #include "net/socket/next_proto.h"
 #include "net/socket/socks_client_socket_pool.h"
 #include "net/socket/transport_client_socket_pool.h"
-#include "net/spdy/chromium/spdy_http_stream.h"
-#include "net/spdy/chromium/spdy_session.h"
-#include "net/spdy/chromium/spdy_session_pool.h"
+#include "net/spdy/spdy_http_stream.h"
+#include "net/spdy/spdy_session.h"
+#include "net/spdy/spdy_session_pool.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "net/ssl/ssl_info.h"
@@ -94,8 +94,8 @@ namespace net {
 HttpNetworkTransaction::HttpNetworkTransaction(RequestPriority priority,
                                                HttpNetworkSession* session)
     : pending_auth_target_(HttpAuth::AUTH_NONE),
-      io_callback_(base::Bind(&HttpNetworkTransaction::OnIOComplete,
-                              base::Unretained(this))),
+      io_callback_(base::BindRepeating(&HttpNetworkTransaction::OnIOComplete,
+                                       base::Unretained(this))),
       session_(session),
       request_(NULL),
       priority_(priority),
@@ -1592,6 +1592,7 @@ int HttpNetworkTransaction::HandleIOError(int error) {
     case ERR_SPDY_SERVER_REFUSED_STREAM:
     case ERR_SPDY_PUSHED_STREAM_NOT_AVAILABLE:
     case ERR_SPDY_CLAIMED_PUSHED_STREAM_RESET_BY_SERVER:
+    case ERR_SPDY_PUSHED_RESPONSE_DOES_NOT_MATCH:
     case ERR_QUIC_HANDSHAKE_FAILED:
       if (HasExceededMaxRetries())
         break;

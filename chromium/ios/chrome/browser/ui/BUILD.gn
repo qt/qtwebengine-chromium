@@ -99,7 +99,6 @@ source_set("unit_tests") {
   configs += [ "//build/config/compiler:enable_arc" ]
   testonly = true
   sources = [
-    "browser_container_view_unittest.mm",
     "browser_view_controller_helper_unittest.mm",
     "browser_view_controller_unittest.mm",
     "chrome_web_view_factory_unittest.mm",
@@ -150,6 +149,7 @@ source_set("unit_tests") {
     "//ios/chrome/browser/web_state_list",
     "//ios/chrome/browser/web_state_list:test_support",
     "//ios/chrome/test:test_support",
+    "//ios/net",
     "//ios/testing:ocmock_support",
     "//ios/web",
     "//ios/web/public/test",
@@ -263,8 +263,6 @@ source_set("external_files") {
 source_set("ui_internal") {
   configs += [ "//build/config/compiler:enable_arc" ]
   sources = [
-    "browser_container_view.h",
-    "browser_container_view.mm",
     "browser_view_controller.h",
     "browser_view_controller.mm",
     "browser_view_controller_dependency_factory.h",
@@ -277,8 +275,6 @@ source_set("ui_internal") {
     "fade_truncated_label.mm",
     "key_commands_provider.h",
     "key_commands_provider.mm",
-    "new_foreground_tab_fullscreen_disabler.h",
-    "new_foreground_tab_fullscreen_disabler.mm",
     "open_in_controller.h",
     "open_in_controller.mm",
     "open_in_controller_testing.h",
@@ -346,12 +342,15 @@ source_set("ui_internal") {
     "//ios/chrome/browser/store_kit",
     "//ios/chrome/browser/tabs",
     "//ios/chrome/browser/translate",
+    "//ios/chrome/browser/ui:feature_flags",
     "//ios/chrome/browser/ui/activity_services:coordinator",
     "//ios/chrome/browser/ui/activity_services/requirements",
     "//ios/chrome/browser/ui/alert_coordinator",
     "//ios/chrome/browser/ui/app_launcher",
     "//ios/chrome/browser/ui/authentication",
     "//ios/chrome/browser/ui/bookmarks",
+    "//ios/chrome/browser/ui/browser_container",
+    "//ios/chrome/browser/ui/browser_container:ui",
     "//ios/chrome/browser/ui/bubble",
     "//ios/chrome/browser/ui/colors",
     "//ios/chrome/browser/ui/commands",
@@ -488,26 +487,6 @@ bundle_data("resources_unit_tests") {
   ]
 }
 
-# These tests use external URLs and hit network.  They will fail if the network
-# is unavailable. Reference to crbug.com/694662.
-source_set("external_url_eg_tests") {
-  configs += [ "//build/config/compiler:enable_arc" ]
-  testonly = true
-  sources = [
-    "external_url_error_page_egtest.mm",
-  ]
-  deps = [
-    "//components/strings",
-    "//ios/chrome/test/app:test_support",
-    "//ios/chrome/test/earl_grey:test_support",
-    "//ios/web:earl_grey_test_support",
-    "//ios/web/public/test",
-    "//ios/web/public/test/http_server",
-    "//ui/base",
-  ]
-  libs = [ "XCTest.framework" ]
-}
-
 source_set("eg_tests") {
   configs += [ "//build/config/compiler:enable_arc" ]
   testonly = true
@@ -523,7 +502,9 @@ source_set("eg_tests") {
     "//ios/chrome/app/strings",
     "//ios/chrome/browser/ui/commands",
     "//ios/chrome/browser/ui/ntp:ntp_controller",
+    "//ios/chrome/browser/ui/popup_menu:constants",
     "//ios/chrome/browser/ui/table_view",
+    "//ios/chrome/browser/ui/tools_menu/public",
     "//ios/chrome/test/app:test_support",
     "//ios/chrome/test/earl_grey:test_support",
     "//ios/testing:ios_test_support",

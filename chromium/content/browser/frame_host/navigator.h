@@ -101,16 +101,29 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
       ReloadType reload_type,
       bool is_same_document_history_load,
       std::unique_ptr<NavigationUIData> navigation_ui_data);
+  // DEPRECATED. Callers should use NavigateToPendingEntry instead.
+  // TODO(clamy): This is only briefly exposed to facilitate a larger
+  // refactoring of NavigationController and will go away soon.
+  virtual bool NavigateToEntry(
+      FrameTreeNode* frame_tree_node,
+      const FrameNavigationEntry& frame_entry,
+      const NavigationEntryImpl& entry,
+      ReloadType reload_type,
+      bool is_same_document_history_load,
+      bool is_history_navigation_in_new_child,
+      bool is_pending_entry,
+      const scoped_refptr<network::ResourceRequestBody>& post_body,
+      std::unique_ptr<NavigationUIData> navigation_ui_data);
 
   // Called on a newly created subframe during a history navigation. The browser
   // process looks up the corresponding FrameNavigationEntry for the new frame
   // navigates it in the correct process. Returns false if the
-  // FrameNavigationEntry can't be found or the navigation fails. This is only
-  // used in OOPIF-enabled modes.
+  // FrameNavigationEntry can't be found or the navigation fails.
   // TODO(creis): Remove |default_url| once we have collected UMA stats on the
   // cases that we use a different URL from history than the frame's src.
-  virtual bool NavigateNewChildFrame(RenderFrameHostImpl* render_frame_host,
-                                     const GURL& default_url);
+  virtual bool StartHistoryNavigationInNewSubframe(
+      RenderFrameHostImpl* render_frame_host,
+      const GURL& default_url);
 
   // Navigation requests -------------------------------------------------------
 
@@ -129,25 +142,22 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
       bool should_replace_current_entry,
       bool user_gesture,
       blink::WebTriggeringEventInfo triggering_event_info,
-      const base::Optional<std::string>& suggested_filename) {}
+      scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory) {}
 
-  // The RenderFrameHostImpl wants to transfer the request to a new renderer.
-  // |redirect_chain| contains any redirect URLs (excluding |url|) that happened
-  // before the transfer.  If |method| is "POST", then |post_body| needs to
-  // specify the request body, otherwise |post_body| should be null.
-  virtual void RequestTransferURL(
+  // Called when a document requests a navigation in another document through a
+  // RenderFrameProxy. If |method| is "POST", then |post_body| needs to specify
+  // the request body, otherwise |post_body| should be null.
+  virtual void NavigateFromFrameProxy(
       RenderFrameHostImpl* render_frame_host,
       const GURL& url,
       SiteInstance* source_site_instance,
-      const std::vector<GURL>& redirect_chain,
       const Referrer& referrer,
       ui::PageTransition page_transition,
-      const GlobalRequestID& transferred_global_request_id,
       bool should_replace_current_entry,
       const std::string& method,
       scoped_refptr<network::ResourceRequestBody> post_body,
       const std::string& extra_headers,
-      const base::Optional<std::string>& suggested_filename) {}
+      scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory) {}
 
   // Called after receiving a BeforeUnloadACK IPC from the renderer. If
   // |frame_tree_node| has a NavigationRequest waiting for the renderer
@@ -201,8 +211,7 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
   // With sufficiently bad interleaving of IPCs, this may no longer be the
   // pending NavigationEntry, in which case the pending NavigationEntry will not
   // be discarded.
-  virtual void DiscardPendingEntryIfNeeded(int expected_pending_entry_id,
-                                           bool is_download) {}
+  virtual void DiscardPendingEntryIfNeeded(int expected_pending_entry_id) {}
 
  protected:
   friend class base::RefCounted<Navigator>;

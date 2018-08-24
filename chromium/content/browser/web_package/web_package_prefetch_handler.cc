@@ -4,37 +4,29 @@
 
 #include "content/browser/web_package/web_package_prefetch_handler.h"
 
+#include "base/callback.h"
+#include "base/feature_list.h"
+#include "content/browser/web_package/signed_exchange_devtools_proxy.h"
 #include "content/browser/web_package/signed_exchange_url_loader_factory_for_non_network_service.h"
 #include "content/browser/web_package/web_package_loader.h"
-#include "content/browser/web_package/web_package_request_handler.h"
 #include "content/public/common/content_features.h"
-#include "content/public/common/weak_wrapper_shared_url_loader_factory.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "services/network/public/cpp/features.h"
+#include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 
 namespace content {
 
-bool WebPackagePrefetchHandler::IsResponseForWebPackage(
-    const network::ResourceResponseHead& response) {
-  std::string mime_type;
-  if (base::FeatureList::IsEnabled(features::kSignedHTTPExchange) &&
-      !response.was_fetched_via_service_worker && response.headers &&
-      response.headers->GetMimeType(&mime_type) &&
-      WebPackageRequestHandler::IsSupportedMimeType(mime_type)) {
-    return true;
-  }
-  return false;
-}
-
 WebPackagePrefetchHandler::WebPackagePrefetchHandler(
-    int frame_tree_node_id,
+    base::RepeatingCallback<int(void)> frame_tree_node_id_getter,
+    bool report_raw_headers,
     const network::ResourceResponseHead& response,
     network::mojom::URLLoaderPtr network_loader,
     network::mojom::URLLoaderClientRequest network_client_request,
     scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory,
     url::Origin request_initiator,
+    const GURL& outer_request_url,
     URLLoaderThrottlesGetter loader_throttles_getter,
     ResourceContext* resource_context,
     scoped_refptr<net::URLRequestContextGetter> request_context_getter,
@@ -57,8 +49,11 @@ WebPackagePrefetchHandler::WebPackagePrefetchHandler(
   web_package_loader_ = std::make_unique<WebPackageLoader>(
       response, std::move(client), std::move(endpoints),
       std::move(request_initiator), network::mojom::kURLLoadOptionNone,
-      frame_tree_node_id, std::move(url_loader_factory),
-      loader_throttles_getter, request_context_getter);
+      std::make_unique<SignedExchangeDevToolsProxy>(
+          outer_request_url, response, std::move(frame_tree_node_id_getter),
+          base::nullopt /* devtools_navigation_token */, report_raw_headers),
+      std::move(url_loader_factory), loader_throttles_getter,
+      request_context_getter);
 }
 
 WebPackagePrefetchHandler::~WebPackagePrefetchHandler() = default;

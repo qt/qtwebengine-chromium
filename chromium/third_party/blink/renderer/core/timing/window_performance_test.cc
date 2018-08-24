@@ -2,28 +2,29 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
-#include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/timing/window_performance.h"
+#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
+#include "third_party/blink/renderer/bindings/core/v8/string_or_double.h"
+#include "third_party/blink/renderer/bindings/core/v8/string_or_double_or_performance_measure_options.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/renderer/core/frame/PerformanceMonitor.h"
+#include "third_party/blink/renderer/core/frame/performance_monitor.h"
 #include "third_party/blink/renderer/core/loader/document_load_timing.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
 #include "third_party/blink/renderer/core/timing/dom_window_performance.h"
-#include "third_party/blink/renderer/platform/testing/histogram_tester.h"
+#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 
 namespace blink {
 
 static const int kTimeOrigin = 500;
 
-namespace {
+TimeTicks GetTimeOrigin() {
+  return TimeTicks() + TimeDelta::FromSeconds(kTimeOrigin);
+}
 
-const char kStartMarkForMeasureHistogram[] =
-    "Performance.PerformanceMeasurePassedInParameter.StartMark";
-const char kEndMarkForMeasureHistogram[] =
-    "Performance.PerformanceMeasurePassedInParameter.EndMark";
+namespace {
 
 class FakeTimer {
  public:
@@ -51,11 +52,7 @@ double FakeTimer::g_mock_time = 1000.;
 class WindowPerformanceTest : public testing::Test {
  protected:
   void SetUp() override {
-    page_holder_ = DummyPageHolder::Create(IntSize(800, 600));
-    page_holder_->GetDocument().SetURL(KURL("https://example.com"));
-    performance_ =
-        WindowPerformance::Create(page_holder_->GetDocument().domWindow());
-    performance_->time_origin_ = TimeTicksFromSeconds(kTimeOrigin);
+    ResetPerformance();
 
     // Create another dummy page holder and pretend this is the iframe.
     another_page_holder_ = DummyPageHolder::Create(IntSize(400, 300));
@@ -84,6 +81,11 @@ class WindowPerformanceTest : public testing::Test {
     monitor->DidProcessTask(0, 1);
   }
 
+  void SimulateSwapPromise(TimeTicks timestamp) {
+    performance_->ReportEventTimings(WebLayerTreeView::SwapResult::kDidSwap,
+                                     timestamp);
+  }
+
   LocalFrame* GetFrame() const { return &page_holder_->GetFrame(); }
 
   Document* GetDocument() const { return &page_holder_->GetDocument(); }
@@ -100,6 +102,14 @@ class WindowPerformanceTest : public testing::Test {
     return WindowPerformance::SanitizedAttribution(
                context, has_multiple_contexts, observer_frame)
         .first;
+  }
+
+  void ResetPerformance() {
+    page_holder_ = DummyPageHolder::Create(IntSize(800, 600));
+    page_holder_->GetDocument().SetURL(KURL("https://example.com"));
+    performance_ =
+        WindowPerformance::Create(page_holder_->GetDocument().domWindow());
+    performance_->time_origin_ = GetTimeOrigin();
   }
 
   Persistent<WindowPerformance> performance_;
@@ -225,42 +235,143 @@ TEST_F(WindowPerformanceTest, EnsureEntryListOrder) {
   }
 }
 
-TEST_F(WindowPerformanceTest, ParameterHistogramForMeasure) {
-  HistogramTester histogram_tester;
-  DummyExceptionStateForTesting exception_state;
+TEST_F(WindowPerformanceTest, EventTimingBeforeOnLoad) {
+  ScopedEventTimingForTest event_timing(true);
+  EXPECT_TRUE(page_holder_->GetFrame().Loader().GetDocumentLoader());
 
-  histogram_tester.ExpectTotalCount(kStartMarkForMeasureHistogram, 0);
-  histogram_tester.ExpectTotalCount(kEndMarkForMeasureHistogram, 0);
+  TimeTicks start_time = TimeTicksFromSeconds(kTimeOrigin + 1.1);
+  TimeTicks processing_start = TimeTicksFromSeconds(kTimeOrigin + 3.3);
+  TimeTicks processing_end = TimeTicksFromSeconds(kTimeOrigin + 3.8);
+  performance_->RegisterEventTiming("click", start_time, processing_start,
+                                    processing_end, false);
+  TimeTicks swap_time = TimeTicksFromSeconds(kTimeOrigin + 6.0);
+  SimulateSwapPromise(swap_time);
+  EXPECT_EQ(1u, performance_->getEntriesByName("click", "event").size());
+  performance_->clearEventTimings();
 
-  performance_->measure("testMark", "unloadEventStart", "unloadEventEnd",
-                        exception_state);
+  page_holder_->GetFrame()
+      .Loader()
+      .GetDocumentLoader()
+      ->GetTiming()
+      .MarkLoadEventStart();
+  performance_->RegisterEventTiming("click", start_time, processing_start,
+                                    processing_end, true);
+  SimulateSwapPromise(swap_time);
+  EXPECT_EQ(0u, performance_->getEntriesByName("click", "event").size());
+  performance_->clearEventTimings();
 
-  histogram_tester.ExpectBucketCount(
-      kStartMarkForMeasureHistogram,
-      static_cast<int>(Performance::kUnloadEventStart), 1);
-  histogram_tester.ExpectBucketCount(
-      kEndMarkForMeasureHistogram,
-      static_cast<int>(Performance::kUnloadEventEnd), 1);
+  EXPECT_TRUE(page_holder_->GetFrame().Loader().GetDocumentLoader());
+  GetFrame()->PrepareForCommit();
+  EXPECT_FALSE(page_holder_->GetFrame().Loader().GetDocumentLoader());
+  performance_->RegisterEventTiming("click", start_time, processing_start,
+                                    processing_end, false);
+  SimulateSwapPromise(swap_time);
+  EXPECT_EQ(1u, performance_->getEntriesByName("click", "event").size());
+  performance_->clearEventTimings();
+}
 
-  performance_->measure("testMark", "domInteractive", "[object Object]",
-                        exception_state);
+TEST_F(WindowPerformanceTest, EventTimingDuration) {
+  ScopedEventTimingForTest event_timing(true);
 
-  histogram_tester.ExpectBucketCount(
-      kStartMarkForMeasureHistogram,
-      static_cast<int>(Performance::kDomInteractive), 1);
-  histogram_tester.ExpectBucketCount(
-      kEndMarkForMeasureHistogram, static_cast<int>(Performance::kObjectObject),
-      1);
+  TimeTicks start_time = TimeTicksFromSeconds(kTimeOrigin + 1.0);
+  TimeTicks processing_start = TimeTicksFromSeconds(kTimeOrigin + 1.001);
+  TimeTicks processing_end = TimeTicksFromSeconds(kTimeOrigin + 1.002);
+  performance_->RegisterEventTiming("click", start_time, processing_start,
+                                    processing_end, false);
+  TimeTicks short_swap_time = TimeTicksFromSeconds(kTimeOrigin + 1.003);
+  SimulateSwapPromise(short_swap_time);
+  EXPECT_EQ(0u, performance_->getEntriesByName("click", "event").size());
 
-  performance_->measure("testMark", "[object Object]", "[object Object]",
-                        exception_state);
+  performance_->RegisterEventTiming("click", start_time, processing_start,
+                                    processing_end, true);
+  TimeTicks long_swap_time = TimeTicksFromSeconds(kTimeOrigin + 1.1);
+  SimulateSwapPromise(long_swap_time);
+  EXPECT_EQ(1u, performance_->getEntriesByName("click", "event").size());
 
-  histogram_tester.ExpectBucketCount(
-      kStartMarkForMeasureHistogram,
-      static_cast<int>(Performance::kObjectObject), 1);
-  histogram_tester.ExpectBucketCount(
-      kEndMarkForMeasureHistogram, static_cast<int>(Performance::kObjectObject),
-      2);
+  performance_->RegisterEventTiming("click", start_time, processing_start,
+                                    processing_end, true);
+  SimulateSwapPromise(short_swap_time);
+  performance_->RegisterEventTiming("click", start_time, processing_start,
+                                    processing_end, false);
+  SimulateSwapPromise(long_swap_time);
+  EXPECT_EQ(2u, performance_->getEntriesByName("click", "event").size());
+}
+
+TEST_F(WindowPerformanceTest, MultipleEventsSameSwap) {
+  ScopedEventTimingForTest event_timing(true);
+
+  size_t num_events = 10;
+  for (size_t i = 0; i < num_events; ++i) {
+    TimeTicks start_time = TimeTicksFromSeconds(kTimeOrigin + i);
+    TimeTicks processing_start = TimeTicksFromSeconds(kTimeOrigin + i + 0.1);
+    TimeTicks processing_end = TimeTicksFromSeconds(kTimeOrigin + i + 0.2);
+    performance_->RegisterEventTiming("click", start_time, processing_start,
+                                      processing_end, false);
+    EXPECT_EQ(0u, performance_->getEntriesByName("click", "event").size());
+  }
+  TimeTicks swap_time = TimeTicksFromSeconds(kTimeOrigin + num_events);
+  SimulateSwapPromise(swap_time);
+  EXPECT_EQ(num_events,
+            performance_->getEntriesByName("click", "event").size());
+}
+
+// Test for existence of 'firstInput' given different types of first events.
+TEST_F(WindowPerformanceTest, FirstInput) {
+  struct {
+    String event_type;
+    bool should_report;
+  } inputs[] = {{"click", true},     {"keydown", true},
+                {"keypress", false}, {"pointerdown", false},
+                {"mousedown", true}, {"mousemove", false},
+                {"mouseover", false}};
+  for (const auto& input : inputs) {
+    // firstInput does not have a |duration| threshold so use close values.
+    performance_->RegisterEventTiming(
+        input.event_type, GetTimeOrigin(),
+        GetTimeOrigin() + TimeDelta::FromMilliseconds(1),
+        GetTimeOrigin() + TimeDelta::FromMilliseconds(2), false);
+    SimulateSwapPromise(GetTimeOrigin() + TimeDelta::FromMilliseconds(3));
+    PerformanceEntryVector firstInputs =
+        performance_->getEntriesByType("firstInput");
+    EXPECT_GE(1u, firstInputs.size());
+    EXPECT_EQ(input.should_report, firstInputs.size() == 1u);
+    ResetPerformance();
+  }
+}
+
+// Test that the 'firstInput' is populated after some irrelevant events are
+// ignored.
+TEST_F(WindowPerformanceTest, FirstInputAfterIgnored) {
+  String several_events[] = {"mousemove", "mouseover", "mousedown"};
+  for (const auto& event : several_events) {
+    performance_->RegisterEventTiming(
+        event, GetTimeOrigin(),
+        GetTimeOrigin() + TimeDelta::FromMilliseconds(1),
+        GetTimeOrigin() + TimeDelta::FromMilliseconds(2), false);
+  }
+  SimulateSwapPromise(GetTimeOrigin() + TimeDelta::FromMilliseconds(3));
+  ASSERT_EQ(1u, performance_->getEntriesByType("firstInput").size());
+  EXPECT_EQ("mousedown",
+            performance_->getEntriesByType("firstInput")[0]->name());
+}
+
+// Test that pointerdown followed by pointerup works as a 'firstInput'.
+TEST_F(WindowPerformanceTest, FirstPointerUp) {
+  TimeTicks start_time = GetTimeOrigin();
+  TimeTicks processing_start = GetTimeOrigin() + TimeDelta::FromMilliseconds(1);
+  TimeTicks processing_end = GetTimeOrigin() + TimeDelta::FromMilliseconds(2);
+  TimeTicks swap_time = GetTimeOrigin() + TimeDelta::FromMilliseconds(3);
+  performance_->RegisterEventTiming("pointerdown", start_time, processing_start,
+                                    processing_end, false);
+  SimulateSwapPromise(swap_time);
+  EXPECT_EQ(0u, performance_->getEntriesByType("firstInput").size());
+  performance_->RegisterEventTiming("pointerup", start_time, processing_start,
+                                    processing_end, false);
+  SimulateSwapPromise(swap_time);
+  EXPECT_EQ(1u, performance_->getEntriesByType("firstInput").size());
+  // The name of the entry should be "pointerdown".
+  EXPECT_EQ(1u,
+            performance_->getEntriesByName("pointerdown", "firstInput").size());
 }
 
 }  // namespace blink

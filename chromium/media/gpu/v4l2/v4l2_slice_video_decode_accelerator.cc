@@ -64,15 +64,6 @@
   } while (0)
 
 namespace media {
-namespace {
-void DropGLImage(scoped_refptr<gl::GLImage> gl_image,
-                 BindGLImageCallback bind_image_cb,
-                 GLuint client_texture_id,
-                 GLuint texture_target) {
-  bind_image_cb.Run(client_texture_id, texture_target, nullptr, false);
-}
-
-}  // namespace
 
 // static
 const uint32_t V4L2SliceVideoDecodeAccelerator::supported_input_fourccs_[] = {
@@ -326,11 +317,8 @@ class V4L2SliceVideoDecodeAccelerator::V4L2VP8Accelerator
   // VP8Decoder::VP8Accelerator implementation.
   scoped_refptr<VP8Picture> CreateVP8Picture() override;
 
-  bool SubmitDecode(const scoped_refptr<VP8Picture>& pic,
-                    const Vp8FrameHeader* frame_hdr,
-                    const scoped_refptr<VP8Picture>& last_frame,
-                    const scoped_refptr<VP8Picture>& golden_frame,
-                    const scoped_refptr<VP8Picture>& alt_frame) override;
+  bool SubmitDecode(scoped_refptr<VP8Picture> pic,
+                    const Vp8ReferenceFrameVector& reference_frames) override;
 
   bool OutputPicture(const scoped_refptr<VP8Picture>& pic) override;
 
@@ -1442,6 +1430,13 @@ void V4L2SliceVideoDecodeAccelerator::DecodeBufferTask() {
         VLOGF(1) << "Error decoding stream";
         NOTIFY_ERROR(PLATFORM_FAILURE);
         return;
+
+      case AcceleratedVideoDecoder::kNoKey:
+        NOTREACHED() << "Should not reach here unless this class accepts "
+                        "encrypted streams.";
+        DVLOGF(4) << "No key for decoding stream.";
+        NOTIFY_ERROR(PLATFORM_FAILURE);
+        return;
     }
   }
 }
@@ -1519,13 +1514,6 @@ bool V4L2SliceVideoDecodeAccelerator::DestroyOutputs(bool dismiss) {
     if (output_record.egl_sync != EGL_NO_SYNC_KHR) {
       if (eglDestroySyncKHR(egl_display_, output_record.egl_sync) != EGL_TRUE)
         VLOGF(1) << "eglDestroySyncKHR failed.";
-    }
-
-    if (output_record.gl_image) {
-      child_task_runner_->PostTask(
-          FROM_HERE, base::Bind(&DropGLImage, std::move(output_record.gl_image),
-                                bind_image_cb_, output_record.client_texture_id,
-                                device_->GetTextureTarget()));
     }
 
     picture_buffers_to_dismiss.push_back(output_record.picture_id);
@@ -1639,7 +1627,6 @@ void V4L2SliceVideoDecodeAccelerator::AssignPictureBuffersTask(
     OutputRecord& output_record = output_buffer_map_[i];
     DCHECK(!output_record.at_device);
     DCHECK(!output_record.at_client);
-    DCHECK(!output_record.gl_image);
     DCHECK_EQ(output_record.egl_sync, EGL_NO_SYNC_KHR);
     DCHECK_EQ(output_record.picture_id, -1);
     DCHECK(output_record.dmabuf_fds.empty());
@@ -1723,15 +1710,14 @@ void V4L2SliceVideoDecodeAccelerator::CreateGLImageFor(
                      true);
   decoder_thread_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&V4L2SliceVideoDecodeAccelerator::AssignGLImage,
-                 base::Unretained(this), buffer_index, picture_buffer_id,
-                 gl_image, base::Passed(&passed_dmabuf_fds)));
+      base::BindOnce(&V4L2SliceVideoDecodeAccelerator::AssignDmaBufs,
+                     base::Unretained(this), buffer_index, picture_buffer_id,
+                     base::Passed(&passed_dmabuf_fds)));
 }
 
-void V4L2SliceVideoDecodeAccelerator::AssignGLImage(
+void V4L2SliceVideoDecodeAccelerator::AssignDmaBufs(
     size_t buffer_index,
     int32_t picture_buffer_id,
-    scoped_refptr<gl::GLImage> gl_image,
     std::unique_ptr<std::vector<base::ScopedFD>> passed_dmabuf_fds) {
   DVLOGF(3) << "index=" << buffer_index;
   DCHECK(decoder_thread_task_runner_->BelongsToCurrentThread());
@@ -1750,12 +1736,10 @@ void V4L2SliceVideoDecodeAccelerator::AssignGLImage(
   }
 
   OutputRecord& output_record = output_buffer_map_[buffer_index];
-  DCHECK(!output_record.gl_image);
   DCHECK_EQ(output_record.egl_sync, EGL_NO_SYNC_KHR);
   DCHECK(!output_record.at_client);
   DCHECK(!output_record.at_device);
 
-  output_record.gl_image = gl_image;
   if (output_mode_ == Config::OutputMode::IMPORT) {
     DCHECK(output_record.dmabuf_fds.empty());
     output_record.dmabuf_fds = std::move(*passed_dmabuf_fds);
@@ -1839,7 +1823,6 @@ void V4L2SliceVideoDecodeAccelerator::ImportBufferForPictureTask(
   DCHECK(!iter->at_device);
   iter->at_client = false;
   if (iter->texture_id != 0) {
-    iter->gl_image = nullptr;
     child_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&V4L2SliceVideoDecodeAccelerator::CreateGLImageFor,
@@ -2648,16 +2631,14 @@ static void FillV4L2Vp8EntropyHeader(
 }
 
 bool V4L2SliceVideoDecodeAccelerator::V4L2VP8Accelerator::SubmitDecode(
-    const scoped_refptr<VP8Picture>& pic,
-    const Vp8FrameHeader* frame_hdr,
-    const scoped_refptr<VP8Picture>& last_frame,
-    const scoped_refptr<VP8Picture>& golden_frame,
-    const scoped_refptr<VP8Picture>& alt_frame) {
+    scoped_refptr<VP8Picture> pic,
+    const Vp8ReferenceFrameVector& reference_frames) {
   struct v4l2_ctrl_vp8_frame_hdr v4l2_frame_hdr;
   memset(&v4l2_frame_hdr, 0, sizeof(v4l2_frame_hdr));
 
+  const auto& frame_hdr = pic->frame_hdr;
+  v4l2_frame_hdr.key_frame = frame_hdr->frame_type;
 #define FHDR_TO_V4L2_FHDR(a) v4l2_frame_hdr.a = frame_hdr->a
-  FHDR_TO_V4L2_FHDR(key_frame);
   FHDR_TO_V4L2_FHDR(version);
   FHDR_TO_V4L2_FHDR(width);
   FHDR_TO_V4L2_FHDR(horizontal_scale);
@@ -2713,6 +2694,7 @@ bool V4L2SliceVideoDecodeAccelerator::V4L2VP8Accelerator::SubmitDecode(
       VP8PictureToV4L2DecodeSurface(pic);
   std::vector<scoped_refptr<V4L2DecodeSurface>> ref_surfaces;
 
+  const auto last_frame = reference_frames.GetFrame(Vp8RefType::VP8_FRAME_LAST);
   if (last_frame) {
     scoped_refptr<V4L2DecodeSurface> last_frame_surface =
         VP8PictureToV4L2DecodeSurface(last_frame);
@@ -2722,6 +2704,8 @@ bool V4L2SliceVideoDecodeAccelerator::V4L2VP8Accelerator::SubmitDecode(
     v4l2_frame_hdr.last_frame = VIDEO_MAX_FRAME;
   }
 
+  const auto golden_frame =
+      reference_frames.GetFrame(Vp8RefType::VP8_FRAME_GOLDEN);
   if (golden_frame) {
     scoped_refptr<V4L2DecodeSurface> golden_frame_surface =
         VP8PictureToV4L2DecodeSurface(golden_frame);
@@ -2731,6 +2715,8 @@ bool V4L2SliceVideoDecodeAccelerator::V4L2VP8Accelerator::SubmitDecode(
     v4l2_frame_hdr.golden_frame = VIDEO_MAX_FRAME;
   }
 
+  const auto alt_frame =
+      reference_frames.GetFrame(Vp8RefType::VP8_FRAME_ALTREF);
   if (alt_frame) {
     scoped_refptr<V4L2DecodeSurface> alt_frame_surface =
         VP8PictureToV4L2DecodeSurface(alt_frame);

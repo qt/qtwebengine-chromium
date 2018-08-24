@@ -7,15 +7,17 @@
 
 #include "third_party/blink/renderer/platform/platform_export.h"
 
-namespace blink {
+namespace cc {
+class Layer;
+}
 
-class WebLayer;
+namespace blink {
 
 class PLATFORM_EXPORT LinkHighlight {
  public:
   virtual void Invalidate() = 0;
   virtual void ClearCurrentGraphicsLayer() = 0;
-  virtual WebLayer* Layer() = 0;
+  virtual cc::Layer* Layer() = 0;
 
  protected:
   virtual ~LinkHighlight() = default;

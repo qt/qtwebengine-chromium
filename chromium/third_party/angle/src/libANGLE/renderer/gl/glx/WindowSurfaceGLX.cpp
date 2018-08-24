@@ -24,11 +24,10 @@ static int IgnoreX11Errors(Display *, XErrorEvent *)
 WindowSurfaceGLX::WindowSurfaceGLX(const egl::SurfaceState &state,
                                    const FunctionsGLX &glx,
                                    DisplayGLX *glxDisplay,
-                                   RendererGL *renderer,
                                    Window window,
                                    Display *display,
                                    glx::FBConfig fbConfig)
-    : SurfaceGLX(state, renderer),
+    : SurfaceGLX(state),
       mParent(window),
       mWindow(0),
       mDisplay(display),
@@ -166,13 +165,15 @@ egl::Error WindowSurfaceGLX::querySurfacePointerANGLE(EGLint attribute, void **v
     return egl::NoError();
 }
 
-egl::Error WindowSurfaceGLX::bindTexImage(gl::Texture *texture, EGLint buffer)
+egl::Error WindowSurfaceGLX::bindTexImage(const gl::Context *context,
+                                          gl::Texture *texture,
+                                          EGLint buffer)
 {
     UNIMPLEMENTED();
     return egl::NoError();
 }
 
-egl::Error WindowSurfaceGLX::releaseTexImage(EGLint buffer)
+egl::Error WindowSurfaceGLX::releaseTexImage(const gl::Context *context, EGLint buffer)
 {
     UNIMPLEMENTED();
     return egl::NoError();

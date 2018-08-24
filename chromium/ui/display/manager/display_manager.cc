@@ -40,8 +40,9 @@
 
 #if defined(OS_CHROMEOS)
 #include "base/sys_info.h"
+#include "base/time/time.h"
 #include "chromeos/system/devicemode.h"
-#include "ui/display/manager/chromeos/display_util.h"
+#include "ui/display/manager/display_util.h"
 #endif
 
 #if defined(OS_WIN)
@@ -63,6 +64,17 @@ const char kMirrorModeTypesHistogram[] = "DisplayManager.MirrorModeTypes";
 // displays in mirror mode can reside.
 const char kMirroringDisplayCountRangesHistogram[] =
     "DisplayManager.MirroringDisplayCountRanges";
+
+#if defined(OS_CHROMEOS)
+// The UMA historgram that logs the zoom percentage level of the intenral
+// display.
+constexpr char kInternalDisplayZoomPercentageHistogram[] =
+    "DisplayManager.InternalDisplayZoomPercentage";
+
+// Timeout in seconds after which we consider the change to the display zoom
+// is not temporary.
+constexpr int kDisplayZoomModifyTimeoutSec = 15;
+#endif  // defined(OS_CHROMEOS)
 
 struct DisplaySortFunctor {
   bool operator()(const Display& a, const Display& b) {
@@ -305,6 +317,19 @@ enum class MirrorModeTypes {
   kCount,
 };
 
+#if defined(OS_CHROMEOS)
+void OnInternalDisplayZoomChanged(float zoom_factor) {
+  constexpr static int kMaxValue = 300;
+  constexpr static int kBucketSize = 5;
+  constexpr static int kNumBuckets = kMaxValue / kBucketSize + 1;
+
+  base::LinearHistogram::FactoryGet(
+      kInternalDisplayZoomPercentageHistogram, kBucketSize, kMaxValue,
+      kNumBuckets, base::HistogramBase::kUmaTargetedHistogramFlag)
+      ->Add(std::round(zoom_factor * 100));
+}
+#endif  // defined(OS_CHROMEOS)
+
 }  // namespace
 
 DisplayManager::BeginEndNotifier::BeginEndNotifier(
@@ -343,6 +368,7 @@ DisplayManager::~DisplayManager() {
 #if defined(OS_CHROMEOS)
   // Reset the font params.
   gfx::SetFontRenderParamsDeviceScaleFactor(1.0f);
+  on_display_zoom_modify_timeout_.Cancel();
 #endif
 }
 
@@ -656,10 +682,28 @@ void DisplayManager::RegisterDisplayProperty(
   display_info_[display_id].SetRotation(rotation,
                                         Display::RotationSource::ACTIVE);
 
-  if (features::IsDisplayZoomSettingEnabled())
-    display_info_[display_id].set_zoom_factor(display_zoom_factor);
-  else if (0.5f <= ui_scale && ui_scale <= 2.0f)
+  // We want to match the effective display resolution from what it was when
+  // ui scale was being used. This ensures that the users do not face any
+  // disruption after an update and/or when the display zoom feature is
+  // enabled. This also ensures that kiosk apps that have a ui scale set does
+  // not break when display zoom is enabled.
+  // NOTE - If the user tries to change the zoom level, they may not be able
+  // to come back to this zoom level again.
+  if (features::IsDisplayZoomSettingEnabled()) {
+    // We store a negative ui_scale value when the display zoom mode is enabled.
+    // If |ui_scale| is negative, it means this is not the first boot with
+    // display zoom enabled, and hence we do not need to port the value for
+    // zoom scale from |ui_scale|.
+    if (ui_scale < 0) {
+      display_info_[display_id].set_zoom_factor(display_zoom_factor);
+    } else {
+      display_info_[display_id].set_zoom_factor(1.f / ui_scale);
+      display_info_[display_id].set_is_zoom_factor_from_ui_scale(true);
+    }
+    display_info_[display_id].set_configured_ui_scale(1.f);
+  } else if (0.5f <= ui_scale && ui_scale <= 2.0f) {
     display_info_[display_id].set_configured_ui_scale(ui_scale);
+  }
 
   if (overscan_insets)
     display_info_[display_id].SetOverscanInsets(*overscan_insets);
@@ -1283,7 +1327,7 @@ int64_t DisplayManager::GetDisplayIdForUIScaling() const {
 
 bool DisplayManager::ShouldSetMirrorModeOn(const DisplayIdList& new_id_list) {
   DCHECK(new_id_list.size() > 1);
-  if (layout_store_->forced_mirror_mode())
+  if (layout_store_->forced_mirror_mode_for_tablet())
     return true;
 
   if (disable_restoring_mirror_mode_for_test_)
@@ -1406,7 +1450,10 @@ bool DisplayManager::SoftwareMirroringEnabled() const {
 bool DisplayManager::IsSoftwareMirroringEnforced() const {
   // There is no source display for hardware mirroring, so enforce software
   // mirroring if the mixed mirror mode parameters are specified.
-  return !!mixed_mirror_mode_params_;
+  // Enforce software mirroring if tablet mode is enabled as well because
+  // the tablet's rotation should be offset in external display.
+  return !!mixed_mirror_mode_params_ ||
+         layout_store_->forced_mirror_mode_for_tablet();
 }
 
 void DisplayManager::SetTouchCalibrationData(
@@ -1494,6 +1541,15 @@ void DisplayManager::UpdateZoomFactor(int64_t display_id, float zoom_factor) {
   auto iter = display_info_.find(display_id);
   if (iter == display_info_.end())
     return;
+
+  if (Display::IsInternalDisplayId(display_id)) {
+    on_display_zoom_modify_timeout_.Cancel();
+    on_display_zoom_modify_timeout_.Reset(
+        base::BindRepeating(&OnInternalDisplayZoomChanged, zoom_factor));
+    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+        FROM_HERE, on_display_zoom_modify_timeout_.callback(),
+        base::TimeDelta::FromSeconds(kDisplayZoomModifyTimeoutSec));
+  }
 
   iter->second.set_zoom_factor(zoom_factor);
 
@@ -1611,20 +1667,21 @@ bool DisplayManager::ZoomDisplay(int64_t display_id, bool up) {
   ManagedDisplayMode display_mode;
   if (!GetActiveModeForDisplayId(display_id, &display_mode))
     return false;
-  const std::vector<double> zooms = GetDisplayZoomFactors(display_mode);
   auto iter = display_info_.find(display_id);
   if (iter == display_info_.end())
     return false;
 
-  const double current_display_zoom = iter->second.zoom_factor();
+  const float current_display_zoom = iter->second.zoom_factor();
 
   // Find the index of |current_display_zoom| in |zooms|. The nearest value is
   // used if the exact match is not found.
+  const std::vector<float> zooms = GetDisplayZoomFactors(display_mode);
   std::size_t zoom_idx = 0;
-  double min_diff = std::abs(zooms[zoom_idx] - current_display_zoom);
+  float min_diff = std::abs(zooms[zoom_idx] - current_display_zoom);
   for (std::size_t i = 1; i < zooms.size(); i++) {
-    if (std::abs(current_display_zoom - zooms[i]) < min_diff) {
-      min_diff = std::abs(current_display_zoom - zooms[i]);
+    const float diff = std::abs(current_display_zoom - zooms[i]);
+    if (diff < min_diff) {
+      min_diff = diff;
       zoom_idx = i;
     }
   }
@@ -1636,8 +1693,9 @@ bool DisplayManager::ZoomDisplay(int64_t display_id, bool up) {
   if (next_zoom_idx < 0 || next_zoom_idx >= zooms.size())
     return false;
 
-  iter->second.set_zoom_factor(zooms[next_zoom_idx]);
-  UpdateDisplays();
+  // Update zoom factor via the display manager API to ensure UMA metrics are
+  // recorded.
+  UpdateZoomFactor(display_id, zooms[next_zoom_idx]);
   return true;
 #else
   return false;
@@ -1649,7 +1707,7 @@ void DisplayManager::ResetDisplayZoom(int64_t display_id) {
   auto iter = display_info_.find(display_id);
   if (iter == display_info_.end())
     return;
-  if (std::abs(iter->second.zoom_factor() - 1.f) > 0.001) {
+  if (std::abs(iter->second.zoom_factor() - 1.f) > 0.001f) {
     iter->second.set_zoom_factor(1.f);
     UpdateDisplays();
   }
@@ -1993,10 +2051,34 @@ void DisplayManager::AddMirrorDisplayInfoIfAny(
 
 void DisplayManager::InsertAndUpdateDisplayInfo(
     const ManagedDisplayInfo& new_info) {
-  std::map<int64_t, ManagedDisplayInfo>::iterator info =
-      display_info_.find(new_info.id());
-  if (info != display_info_.end()) {
-    info->second.Copy(new_info);
+  auto it = display_info_.find(new_info.id());
+  if (it != display_info_.end()) {
+    ManagedDisplayInfo* info = &(it->second);
+    info->Copy(new_info);
+
+    // FHD devices with 1.25 DSF behave differently from other configuration.
+    // It uses 1.25 DSF for its display mode, only when the UI-Scale is set to
+    // 0.8. Which means that the rest of the display modes do not have a 1.25
+    // DSF. Instead they have a DSF of 1.
+    // The logic to convert a ui scale to the corresponding display zoom factor
+    // relies on the assumption that the DSF for all modes in an internal
+    // display is constant.
+    // In the case of a FHD 1.25 DSF device, when we are converting a ui scale
+    // to the corresponding display zoom scale, we assume a DSF of 1.25 for all
+    // non native display modes. This we now know is incorrect. The actual
+    // active DSF for all non native modes is 1. This means we have to offset
+    // the new net scale of |1.25 DSF * zoom_scale| such that it is equal to the
+    // old net scale of |1 DSF * 1/ui_scale| to get the correct one-to-one
+    // mapping. We know |zoom_scale = 1/ui_scale|, which means we have to offset
+    // the net scale by a factor of 1/1.25 to get the correct result.
+    // See https://crbug/845987 for more detailed info and explanation.
+    if (info->is_zoom_factor_from_ui_scale() &&
+        Display::IsInternalDisplayId(new_info.id()) &&
+        new_info.bounds_in_native().height() == 1080 &&
+        new_info.device_scale_factor() == 1.25f) {
+      info->set_zoom_factor(info->zoom_factor() * 0.8f);
+      info->set_is_zoom_factor_from_ui_scale(false);
+    }
   } else {
     display_info_[new_info.id()] = new_info;
     display_info_[new_info.id()].set_native(false);
@@ -2006,7 +2088,8 @@ void DisplayManager::InsertAndUpdateDisplayInfo(
     // internally.
     if (Display::IsInternalDisplayId(new_info.id()) &&
         new_info.bounds_in_native().height() == 1080 &&
-        new_info.device_scale_factor() == 1.25f) {
+        new_info.device_scale_factor() == 1.25f &&
+        !features::IsDisplayZoomSettingEnabled()) {
       display_info_[new_info.id()].set_configured_ui_scale(0.8f);
     }
   }

@@ -7,19 +7,21 @@
 #include <memory>
 #include <queue>
 #include "base/message_loop/message_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_thread.h"
 #include "third_party/blink/renderer/platform/scheduler/base/task_queue_impl.h"
-#include "third_party/blink/renderer/platform/scheduler/child/task_runner_impl.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/child/task_queue_with_task_type.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.h"
-#include "third_party/blink/renderer/platform/scheduler/renderer/main_thread_task_queue.h"
+#include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_task_queue.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/testing/testing_platform_support_with_mock_scheduler.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 
+using base::sequence_manager::TaskQueue;
 using testing::ElementsAre;
 
 namespace blink {
@@ -54,14 +56,11 @@ class TimerTest : public testing::Test {
   bool TimeTillNextDelayedTask(double* time) const {
     base::TimeTicks next_run_time;
     if (!platform_->GetMainThreadScheduler()
-             ->DefaultTaskQueue()
-             ->GetTimeDomain()
+             ->GetActiveTimeDomain()
              ->NextScheduledRunTime(&next_run_time))
       return false;
-    *time = (next_run_time - platform_->GetMainThreadScheduler()
-                                 ->DefaultTaskQueue()
-                                 ->GetTimeDomain()
-                                 ->Now())
+    *time = (next_run_time -
+             platform_->GetMainThreadScheduler()->GetActiveTimeDomain()->Now())
                 .InSecondsF();
     return true;
   }
@@ -130,7 +129,7 @@ class GCForbiddenScope final {
 
 TEST_F(TimerTest, StartOneShot_Zero) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta(), FROM_HERE);
 
@@ -143,7 +142,7 @@ TEST_F(TimerTest, StartOneShot_Zero) {
 
 TEST_F(TimerTest, StartOneShot_ZeroAndCancel) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta(), FROM_HERE);
 
@@ -158,7 +157,7 @@ TEST_F(TimerTest, StartOneShot_ZeroAndCancel) {
 
 TEST_F(TimerTest, StartOneShot_ZeroAndCancelThenRepost) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta(), FROM_HERE);
 
@@ -180,7 +179,7 @@ TEST_F(TimerTest, StartOneShot_ZeroAndCancelThenRepost) {
 
 TEST_F(TimerTest, StartOneShot_Zero_RepostingAfterRunning) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta(), FROM_HERE);
 
@@ -200,7 +199,7 @@ TEST_F(TimerTest, StartOneShot_Zero_RepostingAfterRunning) {
 
 TEST_F(TimerTest, StartOneShot_NonZero) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta::FromSeconds(10), FROM_HERE);
 
@@ -214,7 +213,7 @@ TEST_F(TimerTest, StartOneShot_NonZero) {
 
 TEST_F(TimerTest, StartOneShot_NonZeroAndCancel) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta::FromSeconds(10), FROM_HERE);
 
@@ -231,7 +230,7 @@ TEST_F(TimerTest, StartOneShot_NonZeroAndCancel) {
 
 TEST_F(TimerTest, StartOneShot_NonZeroAndCancelThenRepost) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta::FromSeconds(10), FROM_HERE);
 
@@ -257,7 +256,7 @@ TEST_F(TimerTest, StartOneShot_NonZeroAndCancelThenRepost) {
 
 TEST_F(TimerTest, StartOneShot_NonZero_RepostingAfterRunning) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta::FromSeconds(10), FROM_HERE);
 
@@ -279,7 +278,7 @@ TEST_F(TimerTest, StartOneShot_NonZero_RepostingAfterRunning) {
 
 TEST_F(TimerTest, PostingTimerTwiceWithSameRunTimeDoesNothing) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta::FromSeconds(10), FROM_HERE);
   timer.StartOneShot(TimeDelta::FromSeconds(10), FROM_HERE);
@@ -294,7 +293,7 @@ TEST_F(TimerTest, PostingTimerTwiceWithSameRunTimeDoesNothing) {
 
 TEST_F(TimerTest, PostingTimerTwiceWithNewerRunTimeCancelsOriginalTask) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta::FromSeconds(10), FROM_HERE);
   timer.StartOneShot(TimeDelta(), FROM_HERE);
@@ -305,7 +304,7 @@ TEST_F(TimerTest, PostingTimerTwiceWithNewerRunTimeCancelsOriginalTask) {
 
 TEST_F(TimerTest, PostingTimerTwiceWithLaterRunTimeCancelsOriginalTask) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta(), FROM_HERE);
   timer.StartOneShot(TimeDelta::FromSeconds(10), FROM_HERE);
@@ -316,7 +315,7 @@ TEST_F(TimerTest, PostingTimerTwiceWithLaterRunTimeCancelsOriginalTask) {
 
 TEST_F(TimerTest, StartRepeatingTask) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartRepeating(TimeDelta::FromSeconds(1), FROM_HERE);
 
@@ -332,7 +331,7 @@ TEST_F(TimerTest, StartRepeatingTask) {
 
 TEST_F(TimerTest, StartRepeatingTask_ThenCancel) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartRepeating(TimeDelta::FromSeconds(1), FROM_HERE);
 
@@ -351,7 +350,7 @@ TEST_F(TimerTest, StartRepeatingTask_ThenCancel) {
 
 TEST_F(TimerTest, StartRepeatingTask_ThenPostOneShot) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartRepeating(TimeDelta::FromSeconds(1), FROM_HERE);
 
@@ -371,7 +370,7 @@ TEST_F(TimerTest, StartRepeatingTask_ThenPostOneShot) {
 
 TEST_F(TimerTest, IsActive_NeverPosted) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
 
   EXPECT_FALSE(timer.IsActive());
@@ -379,7 +378,7 @@ TEST_F(TimerTest, IsActive_NeverPosted) {
 
 TEST_F(TimerTest, IsActive_AfterPosting_OneShotZero) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta(), FROM_HERE);
 
@@ -388,7 +387,7 @@ TEST_F(TimerTest, IsActive_AfterPosting_OneShotZero) {
 
 TEST_F(TimerTest, IsActive_AfterPosting_OneShotNonZero) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta::FromSeconds(10), FROM_HERE);
 
@@ -397,7 +396,7 @@ TEST_F(TimerTest, IsActive_AfterPosting_OneShotNonZero) {
 
 TEST_F(TimerTest, IsActive_AfterPosting_Repeating) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartRepeating(TimeDelta::FromSeconds(1), FROM_HERE);
 
@@ -406,7 +405,7 @@ TEST_F(TimerTest, IsActive_AfterPosting_Repeating) {
 
 TEST_F(TimerTest, IsActive_AfterRunning_OneShotZero) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta(), FROM_HERE);
 
@@ -416,7 +415,7 @@ TEST_F(TimerTest, IsActive_AfterRunning_OneShotZero) {
 
 TEST_F(TimerTest, IsActive_AfterRunning_OneShotNonZero) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta::FromSeconds(10), FROM_HERE);
 
@@ -426,7 +425,7 @@ TEST_F(TimerTest, IsActive_AfterRunning_OneShotNonZero) {
 
 TEST_F(TimerTest, IsActive_AfterRunning_Repeating) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartRepeating(TimeDelta::FromSeconds(1), FROM_HERE);
 
@@ -436,7 +435,7 @@ TEST_F(TimerTest, IsActive_AfterRunning_Repeating) {
 
 TEST_F(TimerTest, NextFireInterval_OneShotZero) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta(), FROM_HERE);
 
@@ -445,7 +444,7 @@ TEST_F(TimerTest, NextFireInterval_OneShotZero) {
 
 TEST_F(TimerTest, NextFireInterval_OneShotNonZero) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta::FromSeconds(10), FROM_HERE);
 
@@ -456,7 +455,7 @@ TEST_F(TimerTest, NextFireInterval_OneShotNonZero_AfterAFewSeconds) {
   platform_->SetAutoAdvanceNowToPendingTasks(false);
 
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta::FromSeconds(10), FROM_HERE);
 
@@ -466,7 +465,7 @@ TEST_F(TimerTest, NextFireInterval_OneShotNonZero_AfterAFewSeconds) {
 
 TEST_F(TimerTest, NextFireInterval_Repeating) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartRepeating(TimeDelta::FromSeconds(20), FROM_HERE);
 
@@ -475,7 +474,7 @@ TEST_F(TimerTest, NextFireInterval_Repeating) {
 
 TEST_F(TimerTest, RepeatInterval_NeverStarted) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
 
   EXPECT_FLOAT_EQ(0.0, timer.RepeatInterval());
@@ -483,7 +482,7 @@ TEST_F(TimerTest, RepeatInterval_NeverStarted) {
 
 TEST_F(TimerTest, RepeatInterval_OneShotZero) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta(), FROM_HERE);
 
@@ -492,7 +491,7 @@ TEST_F(TimerTest, RepeatInterval_OneShotZero) {
 
 TEST_F(TimerTest, RepeatInterval_OneShotNonZero) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta::FromSeconds(10), FROM_HERE);
 
@@ -501,7 +500,7 @@ TEST_F(TimerTest, RepeatInterval_OneShotNonZero) {
 
 TEST_F(TimerTest, RepeatInterval_Repeating) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartRepeating(TimeDelta::FromSeconds(20), FROM_HERE);
 
@@ -510,7 +509,7 @@ TEST_F(TimerTest, RepeatInterval_Repeating) {
 
 TEST_F(TimerTest, AugmentRepeatInterval) {
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartRepeating(TimeDelta::FromSeconds(10), FROM_HERE);
   EXPECT_FLOAT_EQ(10.0, timer.RepeatInterval());
@@ -534,7 +533,7 @@ TEST_F(TimerTest, AugmentRepeatInterval_TimerFireDelayed) {
   platform_->SetAutoAdvanceNowToPendingTasks(false);
 
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::CountingTask);
   timer.StartRepeating(TimeDelta::FromSeconds(10), FROM_HERE);
   EXPECT_FLOAT_EQ(10.0, timer.RepeatInterval());
@@ -552,7 +551,7 @@ TEST_F(TimerTest, RepeatingTimerDoesNotDrift) {
   platform_->SetAutoAdvanceNowToPendingTasks(false);
 
   TaskRunnerTimer<TimerTest> timer(
-      platform_->GetMainThreadScheduler()->DefaultTaskQueue(), this,
+      platform_->GetMainThreadScheduler()->DefaultTaskRunner(), this,
       &TimerTest::RecordNextFireTimeTask);
   timer.StartRepeating(TimeDelta::FromSeconds(2), FROM_HERE);
 
@@ -604,12 +603,14 @@ class TimerForTest : public TaskRunnerTimer<TimerFiredClass> {
 };
 
 TEST_F(TimerTest, UserSuppliedTaskRunner) {
-  scoped_refptr<scheduler::TaskQueue> task_runner(
+  scoped_refptr<TaskQueue> task_runner(
       platform_->GetMainThreadScheduler()->NewTimerTaskQueue(
-          scheduler::MainThreadTaskQueue::QueueType::kFrameThrottleable));
-  scoped_refptr<scheduler::TaskRunnerImpl> task_runner_impl =
-      scheduler::TaskRunnerImpl::Create(task_runner, TaskType::kInternalTest);
-  TimerForTest<TimerTest> timer(task_runner_impl, this,
+          scheduler::MainThreadTaskQueue::QueueType::kFrameThrottleable,
+          nullptr));
+  scoped_refptr<scheduler::TaskQueueWithTaskType> task_queue_with_task_type =
+      scheduler::TaskQueueWithTaskType::Create(task_runner,
+                                               TaskType::kInternalTest);
+  TimerForTest<TimerTest> timer(task_queue_with_task_type, this,
                                 &TimerTest::CountingTask);
   timer.StartOneShot(TimeDelta(), FROM_HERE);
 
@@ -621,7 +622,7 @@ TEST_F(TimerTest, RunOnHeapTimer) {
   scoped_refptr<OnHeapTimerOwner::Record> record =
       OnHeapTimerOwner::Record::Create();
   Persistent<OnHeapTimerOwner> owner = new OnHeapTimerOwner(
-      record, platform_->GetMainThreadScheduler()->DefaultTaskQueue());
+      record, platform_->GetMainThreadScheduler()->DefaultTaskRunner());
 
   owner->StartOneShot(TimeDelta(), FROM_HERE);
 
@@ -634,7 +635,7 @@ TEST_F(TimerTest, DestructOnHeapTimer) {
   scoped_refptr<OnHeapTimerOwner::Record> record =
       OnHeapTimerOwner::Record::Create();
   Persistent<OnHeapTimerOwner> owner = new OnHeapTimerOwner(
-      record, platform_->GetMainThreadScheduler()->DefaultTaskQueue());
+      record, platform_->GetMainThreadScheduler()->DefaultTaskRunner());
 
   record->Dispose();
   owner->StartOneShot(TimeDelta(), FROM_HERE);
@@ -654,7 +655,7 @@ TEST_F(TimerTest, MarkOnHeapTimerAsUnreachable) {
   scoped_refptr<OnHeapTimerOwner::Record> record =
       OnHeapTimerOwner::Record::Create();
   Persistent<OnHeapTimerOwner> owner = new OnHeapTimerOwner(
-      record, platform_->GetMainThreadScheduler()->DefaultTaskQueue());
+      record, platform_->GetMainThreadScheduler()->DefaultTaskRunner());
 
   record->Dispose();
   owner->StartOneShot(TimeDelta(), FROM_HERE);
@@ -683,9 +684,9 @@ class TaskObserver : public base::MessageLoop::TaskObserver {
       std::vector<scoped_refptr<base::SingleThreadTaskRunner>>* run_order)
       : task_runner_(std::move(task_runner)), run_order_(run_order) {}
 
-  void WillProcessTask(const base::PendingTask&) {}
+  void WillProcessTask(const base::PendingTask&) override {}
 
-  void DidProcessTask(const base::PendingTask&) {
+  void DidProcessTask(const base::PendingTask&) override {
     run_order_->push_back(task_runner_);
   }
 
@@ -699,23 +700,27 @@ class TaskObserver : public base::MessageLoop::TaskObserver {
 TEST_F(TimerTest, MoveToNewTaskRunnerOneShot) {
   std::vector<scoped_refptr<base::SingleThreadTaskRunner>> run_order;
 
-  scoped_refptr<scheduler::TaskQueue> task_runner1(
+  scoped_refptr<TaskQueue> task_runner1(
       platform_->GetMainThreadScheduler()->NewTimerTaskQueue(
-          scheduler::MainThreadTaskQueue::QueueType::kFrameThrottleable));
-  scoped_refptr<scheduler::TaskRunnerImpl> task_runner_impl1 =
-      scheduler::TaskRunnerImpl::Create(task_runner1, TaskType::kInternalTest);
-  TaskObserver task_observer1(task_runner_impl1, &run_order);
+          scheduler::MainThreadTaskQueue::QueueType::kFrameThrottleable,
+          nullptr));
+  scoped_refptr<scheduler::TaskQueueWithTaskType> task_queue_with_task_type1 =
+      scheduler::TaskQueueWithTaskType::Create(task_runner1,
+                                               TaskType::kInternalTest);
+  TaskObserver task_observer1(task_queue_with_task_type1, &run_order);
   task_runner1->AddTaskObserver(&task_observer1);
 
-  scoped_refptr<scheduler::TaskQueue> task_runner2(
+  scoped_refptr<TaskQueue> task_runner2(
       platform_->GetMainThreadScheduler()->NewTimerTaskQueue(
-          scheduler::MainThreadTaskQueue::QueueType::kFrameThrottleable));
-  scoped_refptr<scheduler::TaskRunnerImpl> task_runner_impl2 =
-      scheduler::TaskRunnerImpl::Create(task_runner2, TaskType::kInternalTest);
-  TaskObserver task_observer2(task_runner_impl2, &run_order);
+          scheduler::MainThreadTaskQueue::QueueType::kFrameThrottleable,
+          nullptr));
+  scoped_refptr<scheduler::TaskQueueWithTaskType> task_queue_with_task_type2 =
+      scheduler::TaskQueueWithTaskType::Create(task_runner2,
+                                               TaskType::kInternalTest);
+  TaskObserver task_observer2(task_queue_with_task_type2, &run_order);
   task_runner2->AddTaskObserver(&task_observer2);
 
-  TimerForTest<TimerTest> timer(task_runner_impl1, this,
+  TimerForTest<TimerTest> timer(task_queue_with_task_type1, this,
                                 &TimerTest::CountingTask);
 
   double start_time = CurrentTimeTicksInSeconds();
@@ -724,13 +729,13 @@ TEST_F(TimerTest, MoveToNewTaskRunnerOneShot) {
 
   platform_->RunForPeriodSeconds(0.5);
 
-  timer.MoveToNewTaskRunner(task_runner_impl2);
+  timer.MoveToNewTaskRunner(task_queue_with_task_type2);
 
   platform_->RunUntilIdle();
 
   EXPECT_THAT(run_times_, ElementsAre(start_time + 1.0));
 
-  EXPECT_THAT(run_order, ElementsAre(task_runner_impl2));
+  EXPECT_THAT(run_order, ElementsAre(task_queue_with_task_type2));
 
   EXPECT_TRUE(task_runner1->IsEmpty());
   EXPECT_TRUE(task_runner2->IsEmpty());
@@ -739,23 +744,27 @@ TEST_F(TimerTest, MoveToNewTaskRunnerOneShot) {
 TEST_F(TimerTest, MoveToNewTaskRunnerRepeating) {
   std::vector<scoped_refptr<base::SingleThreadTaskRunner>> run_order;
 
-  scoped_refptr<scheduler::TaskQueue> task_runner1(
+  scoped_refptr<TaskQueue> task_runner1(
       platform_->GetMainThreadScheduler()->NewTimerTaskQueue(
-          scheduler::MainThreadTaskQueue::QueueType::kFrameThrottleable));
-  scoped_refptr<scheduler::TaskRunnerImpl> task_runner_impl1 =
-      scheduler::TaskRunnerImpl::Create(task_runner1, TaskType::kInternalTest);
-  TaskObserver task_observer1(task_runner_impl1, &run_order);
+          scheduler::MainThreadTaskQueue::QueueType::kFrameThrottleable,
+          nullptr));
+  scoped_refptr<scheduler::TaskQueueWithTaskType> task_queue_with_task_type1 =
+      scheduler::TaskQueueWithTaskType::Create(task_runner1,
+                                               TaskType::kInternalTest);
+  TaskObserver task_observer1(task_queue_with_task_type1, &run_order);
   task_runner1->AddTaskObserver(&task_observer1);
 
-  scoped_refptr<scheduler::TaskQueue> task_runner2(
+  scoped_refptr<TaskQueue> task_runner2(
       platform_->GetMainThreadScheduler()->NewTimerTaskQueue(
-          scheduler::MainThreadTaskQueue::QueueType::kFrameThrottleable));
-  scoped_refptr<scheduler::TaskRunnerImpl> task_runner_impl2 =
-      scheduler::TaskRunnerImpl::Create(task_runner2, TaskType::kInternalTest);
-  TaskObserver task_observer2(task_runner_impl2, &run_order);
+          scheduler::MainThreadTaskQueue::QueueType::kFrameThrottleable,
+          nullptr));
+  scoped_refptr<scheduler::TaskQueueWithTaskType> task_queue_with_task_type2 =
+      scheduler::TaskQueueWithTaskType::Create(task_runner2,
+                                               TaskType::kInternalTest);
+  TaskObserver task_observer2(task_queue_with_task_type2, &run_order);
   task_runner2->AddTaskObserver(&task_observer2);
 
-  TimerForTest<TimerTest> timer(task_runner_impl1, this,
+  TimerForTest<TimerTest> timer(task_queue_with_task_type1, this,
                                 &TimerTest::CountingTask);
 
   double start_time = CurrentTimeTicksInSeconds();
@@ -764,15 +773,17 @@ TEST_F(TimerTest, MoveToNewTaskRunnerRepeating) {
 
   platform_->RunForPeriodSeconds(2.5);
 
-  timer.MoveToNewTaskRunner(task_runner_impl2);
+  timer.MoveToNewTaskRunner(task_queue_with_task_type2);
 
   platform_->RunForPeriodSeconds(2);
 
   EXPECT_THAT(run_times_, ElementsAre(start_time + 1.0, start_time + 2.0,
                                       start_time + 3.0, start_time + 4.0));
 
-  EXPECT_THAT(run_order, ElementsAre(task_runner_impl1, task_runner_impl1,
-                                     task_runner_impl2, task_runner_impl2));
+  EXPECT_THAT(
+      run_order,
+      ElementsAre(task_queue_with_task_type1, task_queue_with_task_type1,
+                  task_queue_with_task_type2, task_queue_with_task_type2));
 
   EXPECT_TRUE(task_runner1->IsEmpty());
   EXPECT_FALSE(task_runner2->IsEmpty());
@@ -781,19 +792,23 @@ TEST_F(TimerTest, MoveToNewTaskRunnerRepeating) {
 // This test checks that when inactive timer is moved to a different task
 // runner it isn't activated.
 TEST_F(TimerTest, MoveToNewTaskRunnerWithoutTasks) {
-  scoped_refptr<scheduler::TaskQueue> task_runner1(
+  scoped_refptr<TaskQueue> task_runner1(
       platform_->GetMainThreadScheduler()->NewTimerTaskQueue(
-          scheduler::MainThreadTaskQueue::QueueType::kFrameThrottleable));
-  scoped_refptr<scheduler::TaskRunnerImpl> task_runner_impl1 =
-      scheduler::TaskRunnerImpl::Create(task_runner1, TaskType::kInternalTest);
+          scheduler::MainThreadTaskQueue::QueueType::kFrameThrottleable,
+          nullptr));
+  scoped_refptr<scheduler::TaskQueueWithTaskType> task_queue_with_task_type1 =
+      scheduler::TaskQueueWithTaskType::Create(task_runner1,
+                                               TaskType::kInternalTest);
 
-  scoped_refptr<scheduler::TaskQueue> task_runner2(
+  scoped_refptr<TaskQueue> task_runner2(
       platform_->GetMainThreadScheduler()->NewTimerTaskQueue(
-          scheduler::MainThreadTaskQueue::QueueType::kFrameThrottleable));
-  scoped_refptr<scheduler::TaskRunnerImpl> task_runner_impl2 =
-      scheduler::TaskRunnerImpl::Create(task_runner2, TaskType::kInternalTest);
+          scheduler::MainThreadTaskQueue::QueueType::kFrameThrottleable,
+          nullptr));
+  scoped_refptr<scheduler::TaskQueueWithTaskType> task_queue_with_task_type2 =
+      scheduler::TaskQueueWithTaskType::Create(task_runner2,
+                                               TaskType::kInternalTest);
 
-  TimerForTest<TimerTest> timer(task_runner_impl1, this,
+  TimerForTest<TimerTest> timer(task_queue_with_task_type1, this,
                                 &TimerTest::CountingTask);
 
   platform_->RunUntilIdle();

@@ -10,8 +10,8 @@
 #include "third_party/blink/renderer/platform/scheduler/base/task_queue_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/base/work_queue.h"
 
-namespace blink {
-namespace scheduler {
+namespace base {
+namespace sequence_manager {
 namespace internal {
 
 namespace {
@@ -313,22 +313,34 @@ void TaskQueueSelector::DidSelectQueueWithPriority(
       break;
     case TaskQueue::kHighestPriority:
       low_priority_starvation_score_ +=
-          kSmallScoreIncrementForLowPriorityStarvation;
+          HasTasksWithPriority(TaskQueue::kLowPriority)
+              ? kSmallScoreIncrementForLowPriorityStarvation
+              : 0;
       normal_priority_starvation_score_ +=
-          kSmallScoreIncrementForNormalPriorityStarvation;
+          HasTasksWithPriority(TaskQueue::kNormalPriority)
+              ? kSmallScoreIncrementForNormalPriorityStarvation
+              : 0;
       high_priority_starvation_score_ +=
-          kSmallScoreIncrementForHighPriorityStarvation;
+          HasTasksWithPriority(TaskQueue::kHighPriority)
+              ? kSmallScoreIncrementForHighPriorityStarvation
+              : 0;
       break;
     case TaskQueue::kHighPriority:
       low_priority_starvation_score_ +=
-          kLargeScoreIncrementForLowPriorityStarvation;
+          HasTasksWithPriority(TaskQueue::kLowPriority)
+              ? kLargeScoreIncrementForLowPriorityStarvation
+              : 0;
       normal_priority_starvation_score_ +=
-          kLargeScoreIncrementForNormalPriorityStarvation;
+          HasTasksWithPriority(TaskQueue::kNormalPriority)
+              ? kLargeScoreIncrementForNormalPriorityStarvation
+              : 0;
       high_priority_starvation_score_ = 0;
       break;
     case TaskQueue::kNormalPriority:
       low_priority_starvation_score_ +=
-          kLargeScoreIncrementForLowPriorityStarvation;
+          HasTasksWithPriority(TaskQueue::kLowPriority)
+              ? kLargeScoreIncrementForLowPriorityStarvation
+              : 0;
       normal_priority_starvation_score_ = 0;
       break;
     case TaskQueue::kLowPriority:
@@ -347,8 +359,7 @@ void TaskQueueSelector::DidSelectQueueWithPriority(
   }
 }
 
-void TaskQueueSelector::AsValueInto(
-    base::trace_event::TracedValue* state) const {
+void TaskQueueSelector::AsValueInto(trace_event::TracedValue* state) const {
   DCHECK(main_thread_checker_.CalledOnValidThread());
   state->SetInteger("high_priority_starvation_score",
                     high_priority_starvation_score_);
@@ -383,6 +394,14 @@ void TaskQueueSelector::SetImmediateStarvationCountForTest(
   immediate_starvation_count_ = immediate_starvation_count;
 }
 
+bool TaskQueueSelector::HasTasksWithPriority(
+    TaskQueue::QueuePriority priority) {
+  return !prioritizing_selector_.delayed_work_queue_sets()->IsSetEmpty(
+             priority) ||
+         !prioritizing_selector_.immediate_work_queue_sets()->IsSetEmpty(
+             priority);
+}
+
 }  // namespace internal
-}  // namespace scheduler
-}  // namespace blink
+}  // namespace sequence_manager
+}  // namespace base

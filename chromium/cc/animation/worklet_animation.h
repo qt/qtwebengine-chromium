@@ -19,12 +19,12 @@ class ScrollTimeline;
 // timing to be controlled by an animator instance that is running in a
 // AnimationWorkletGlobalScope.
 class CC_ANIMATION_EXPORT WorkletAnimation final
-    : public SingleKeyframeEffectAnimation,
-      KeyframeEffect::AnimationTimeProvider {
+    : public SingleKeyframeEffectAnimation {
  public:
   WorkletAnimation(int id,
                    const std::string& name,
-                   std::unique_ptr<ScrollTimeline> scroll_timeline);
+                   std::unique_ptr<ScrollTimeline> scroll_timeline,
+                   bool is_controlling_instance);
   static scoped_refptr<WorkletAnimation> Create(
       int id,
       const std::string& name,
@@ -51,12 +51,6 @@ class CC_ANIMATION_EXPORT WorkletAnimation final
   bool NeedsUpdate(base::TimeTicks monotonic_time,
                    const ScrollTree& scroll_tree);
 
-  // KeyframeEffect::AnimationTimeProvider:
-  base::TimeTicks GetTimeForKeyframeModel(
-      const KeyframeModel& keyframe_model) const override;
-
-  void PushPropertiesTo(Animation* animation_impl) override;
-
  private:
   ~WorkletAnimation() override;
 
@@ -73,6 +67,8 @@ class CC_ANIMATION_EXPORT WorkletAnimation final
   base::TimeDelta local_time_;
 
   base::Optional<double> last_current_time_;
+
+  bool is_impl_instance_;
 };
 
 }  // namespace cc

@@ -38,20 +38,22 @@ struct GenerateFilenameCase {
 std::wstring FilePathAsWString(const base::FilePath& path) {
 #if defined(OS_WIN)
   return path.value();
-#else
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   return base::UTF8ToWide(path.value());
 #endif
 }
 base::FilePath WStringAsFilePath(const std::wstring& str) {
 #if defined(OS_WIN)
   return base::FilePath(str);
-#else
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   return base::FilePath(base::WideToUTF8(str));
 #endif
 }
 
 std::string GetLocaleWarningString() {
-#if defined(OS_POSIX) && !defined(OS_ANDROID)
+#if defined(OS_WIN) || defined(OS_ANDROID)
+  return "";
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   // The generate filename tests can fail on certain OS_POSIX platforms when
   // LC_CTYPE is not "utf8" or "utf-8" because some of the string conversions
   // fail.
@@ -64,8 +66,6 @@ std::string GetLocaleWarningString() {
   return " this test may have failed because the current LC_CTYPE locale is "
          "not utf8 (currently set to " +
          locale + ")";
-#else
-  return "";
 #endif
 }
 
@@ -108,7 +108,7 @@ constexpr const base::FilePath::CharType* kUnsafePortableBasenames[] = {
     FILE_PATH_LITERAL(" Computer"),
     FILE_PATH_LITERAL("My Computer.{a}"),
     FILE_PATH_LITERAL("My Computer.{20D04FE0-3AEA-1069-A2D8-08002B30309D}"),
-#if !defined(OS_WIN)
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
     FILE_PATH_LITERAL("a\\a"),
 #endif
 };
@@ -128,49 +128,41 @@ constexpr const base::FilePath::CharType* kSafePortableRelativePaths[] = {
 }  // namespace
 
 TEST(FilenameUtilTest, IsSafePortablePathComponent) {
-  for (size_t i = 0; i < arraysize(kSafePortableBasenames); ++i) {
-    EXPECT_TRUE(
-        IsSafePortablePathComponent(base::FilePath(kSafePortableBasenames[i])))
-        << kSafePortableBasenames[i];
+  for (auto* basename : kSafePortableBasenames) {
+    EXPECT_TRUE(IsSafePortablePathComponent(base::FilePath(basename)))
+        << basename;
   }
-  for (size_t i = 0; i < arraysize(kUnsafePortableBasenames); ++i) {
-    EXPECT_FALSE(IsSafePortablePathComponent(
-        base::FilePath(kUnsafePortableBasenames[i])))
-        << kUnsafePortableBasenames[i];
+  for (auto* basename : kUnsafePortableBasenames) {
+    EXPECT_FALSE(IsSafePortablePathComponent(base::FilePath(basename)))
+        << basename;
   }
-  for (size_t i = 0; i < arraysize(kSafePortableRelativePaths); ++i) {
-    EXPECT_FALSE(IsSafePortablePathComponent(
-        base::FilePath(kSafePortableRelativePaths[i])))
-        << kSafePortableRelativePaths[i];
+  for (auto* path : kSafePortableRelativePaths) {
+    EXPECT_FALSE(IsSafePortablePathComponent(base::FilePath(path))) << path;
   }
 }
 
 TEST(FilenameUtilTest, IsSafePortableRelativePath) {
   base::FilePath safe_dirname(FILE_PATH_LITERAL("a"));
-  for (size_t i = 0; i < arraysize(kSafePortableBasenames); ++i) {
+  for (auto* basename : kSafePortableBasenames) {
+    EXPECT_TRUE(IsSafePortableRelativePath(base::FilePath(basename)))
+        << basename;
+    EXPECT_TRUE(IsSafePortableRelativePath(
+        safe_dirname.Append(base::FilePath(basename))))
+        << basename;
+  }
+  for (auto* path : kSafePortableRelativePaths) {
+    EXPECT_TRUE(IsSafePortableRelativePath(base::FilePath(path))) << path;
     EXPECT_TRUE(
-        IsSafePortableRelativePath(base::FilePath(kSafePortableBasenames[i])))
-        << kSafePortableBasenames[i];
-    EXPECT_TRUE(IsSafePortableRelativePath(
-        safe_dirname.Append(base::FilePath(kSafePortableBasenames[i]))))
-        << kSafePortableBasenames[i];
+        IsSafePortableRelativePath(safe_dirname.Append(base::FilePath(path))))
+        << path;
   }
-  for (size_t i = 0; i < arraysize(kSafePortableRelativePaths); ++i) {
-    EXPECT_TRUE(IsSafePortableRelativePath(
-        base::FilePath(kSafePortableRelativePaths[i])))
-        << kSafePortableRelativePaths[i];
-    EXPECT_TRUE(IsSafePortableRelativePath(
-        safe_dirname.Append(base::FilePath(kSafePortableRelativePaths[i]))))
-        << kSafePortableRelativePaths[i];
-  }
-  for (size_t i = 0; i < arraysize(kUnsafePortableBasenames); ++i) {
-    EXPECT_FALSE(
-        IsSafePortableRelativePath(base::FilePath(kUnsafePortableBasenames[i])))
-        << kUnsafePortableBasenames[i];
-    if (!base::FilePath::StringType(kUnsafePortableBasenames[i]).empty()) {
+  for (auto* basename : kUnsafePortableBasenames) {
+    EXPECT_FALSE(IsSafePortableRelativePath(base::FilePath(basename)))
+        << basename;
+    if (!base::FilePath::StringType(basename).empty()) {
       EXPECT_FALSE(IsSafePortableRelativePath(
-          safe_dirname.Append(base::FilePath(kUnsafePortableBasenames[i]))))
-          << kUnsafePortableBasenames[i];
+          safe_dirname.Append(base::FilePath(basename))))
+          << basename;
     }
   }
 }
@@ -195,7 +187,7 @@ TEST(FilenameUtilTest, FileURLConversion) {
      "%E9%A1%B5.doc"},
     {L"D:\\plane1\\\xD835\xDC00\xD835\xDC01.txt",  // Math alphabet "AB"
      "file:///D:/plane1/%F0%9D%90%80%F0%9D%90%81.txt"},
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
     {L"/foo/bar.txt", "file:///foo/bar.txt"},
     {L"/foo/BAR.txt", "file:///foo/BAR.txt"},
     {L"/C:/foo/bar.txt", "file:///C:/foo/bar.txt"},
@@ -215,15 +207,14 @@ TEST(FilenameUtilTest, FileURLConversion) {
 
   // First, we'll test that we can round-trip all of the above cases of URLs
   base::FilePath output;
-  for (size_t i = 0; i < arraysize(round_trip_cases); i++) {
+  for (const auto& test_case : round_trip_cases) {
     // convert to the file URL
-    GURL file_url(
-        FilePathToFileURL(WStringAsFilePath(round_trip_cases[i].file)));
-    EXPECT_EQ(round_trip_cases[i].url, file_url.spec());
+    GURL file_url(FilePathToFileURL(WStringAsFilePath(test_case.file)));
+    EXPECT_EQ(test_case.url, file_url.spec());
 
     // Back to the filename.
     EXPECT_TRUE(FileURLToFilePath(file_url, &output));
-    EXPECT_EQ(round_trip_cases[i].file, FilePathAsWString(output));
+    EXPECT_EQ(test_case.file, FilePathAsWString(output));
   }
 
   // Test that various file: URLs get decoded into the correct file type
@@ -240,7 +231,17 @@ TEST(FilenameUtilTest, FileURLConversion) {
     // %2f ('/') and %5c ('\\') are left alone by both GURL and
     // FileURLToFilePath.
     {L"C:\\foo%2f..%5cbar", "file:///C:\\foo%2f..%5cbar"},
-#elif defined(OS_POSIX)
+    // Other percent-encoded characters that are left alone when displaying a
+    // URL are also left alone in a file path.
+    // TODO(mgiuca): Keeping these escaped makes no sense in a file path. Fix
+    // this (https://crbug.com/585422).
+    {L"C:\\foo\\%F0%9F%94%92.txt",
+     "file:/c:/foo/%F0%9F%94%92.txt"},                          // Blacklisted.
+    {L"C:\\foo\\%E2%80%81.txt", "file:/c:/foo/%E2%80%81.txt"},  // Blacklisted.
+    {L"C:\\foo\\%0A.txt", "file:/c:/foo/%0A.txt"},              // Control char.
+    // Make sure that '+' isn't converted into ' '.
+    {L"C:\\foo\\romeo+juliet.txt", "file:/c:/foo/romeo+juliet.txt"},
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
     {L"/c:/foo/bar.txt", "file:/c:/foo/bar.txt"},
     {L"/c:/foo/bar.txt", "file:///c:/foo/bar.txt"},
     {L"/foo/bar.txt", "file:/foo/bar.txt"},
@@ -257,29 +258,60 @@ TEST(FilenameUtilTest, FileURLConversion) {
     // %2f ('/') and %5c ('\\') are left alone by both GURL and
     // FileURLToFilePath.
     {L"/foo%2f..%5cbar", "file:///foo%2f..%5cbar"},
-//  We get these wrong because GURL turns back slashes into forward
-//  slashes.
-//  {L"/foo%5Cbar.txt", "file://foo\\bar.txt"},
-//  {L"/c|/foo%5Cbar.txt", "file:c|/foo\\bar.txt"},
-//  {L"/foo%5Cbar.txt", "file://foo\\bar.txt"},
-//  {L"/foo%5Cbar.txt", "file:////foo\\bar.txt"},
-//  {L"/foo%5Cbar.txt", "file://foo\\bar.txt"},
+    // Other percent-encoded characters that are left alone when displaying a
+    // URL are also left alone in a file path.
+    // TODO(mgiuca): Keeping these escaped makes no sense in a file path. Fix
+    // this (https://crbug.com/585422).
+    {L"/foo/%F0%9F%94%92.txt", "file:///foo/%F0%9F%94%92.txt"},  // Blacklisted.
+    {L"/foo/%E2%80%81.txt", "file:///foo/%E2%80%81.txt"},        // Blacklisted.
+    {L"/foo/%0A.txt", "file:///foo/%0A.txt"},  // Control char.
+    // Make sure that '+' isn't converted into ' '.
+    {L"/foo/romeo+juliet.txt", "file:///foo/romeo+juliet.txt"},
+    // Backslashes in a file URL are normalized as forward slashes.
+    {L"/bar.txt", "file://foo\\bar.txt"},
+    {L"/c|/foo/bar.txt", "file:c|/foo\\bar.txt"},
+    {L"/foo/bar.txt", "file:////foo\\bar.txt"},
 #endif
   };
-  for (size_t i = 0; i < arraysize(url_cases); i++) {
-    FileURLToFilePath(GURL(url_cases[i].url), &output);
-    EXPECT_EQ(url_cases[i].file, FilePathAsWString(output));
+  for (const auto& test_case : url_cases) {
+    FileURLToFilePath(GURL(test_case.url), &output);
+    EXPECT_EQ(test_case.file, FilePathAsWString(output));
   }
 
-// Unfortunately, UTF8ToWide discards invalid UTF8 input.
-#ifdef BUG_878908_IS_FIXED
-  // Test that no conversion happens if the UTF-8 input is invalid, and that
-  // the input is preserved in UTF-8
-  const char invalid_utf8[] = "file:///d:/Blah/\xff.doc";
-  const wchar_t invalid_wide[] = L"D:\\Blah\\\xff.doc";
-  EXPECT_TRUE(FileURLToFilePath(GURL(std::string(invalid_utf8)), &output));
-  EXPECT_EQ(std::wstring(invalid_wide), output);
+  // Invalid UTF-8 tests can't be tested above because FilePathAsWString assumes
+  // the output is valid UTF-8.
+
+  // Invalid UTF-8 bytes in input.
+  {
+    const char invalid_utf8[] = "file:///d:/Blah/\x85\x99.doc";
+    EXPECT_TRUE(FileURLToFilePath(GURL(invalid_utf8), &output));
+#if defined(OS_WIN)
+    // On Windows, invalid UTF-8 bytes are interpreted using the default ANSI
+    // code page. This defaults to Windows-1252 (which we assume here).
+    const wchar_t expected_output[] = L"D:\\Blah\\\u2026\u2122.doc";
+    EXPECT_EQ(std::wstring(expected_output), output.value());
+#elif defined(OS_POSIX)
+    // No conversion should happen, and the invalid UTF-8 should be preserved.
+    const char expected_output[] = "/d:/Blah/\x85\x99.doc";
+    EXPECT_EQ(expected_output, output.value());
 #endif
+  }
+
+  // Invalid UTF-8 percent-encoded bytes in input.
+  {
+    const char invalid_utf8[] = "file:///d:/Blah/%85%99.doc";
+    EXPECT_TRUE(FileURLToFilePath(GURL(invalid_utf8), &output));
+#if defined(OS_WIN)
+    // On Windows, invalid UTF-8 bytes are interpreted using the default ANSI
+    // code page. This defaults to Windows-1252 (which we assume here).
+    const wchar_t expected_output[] = L"D:\\Blah\\\u2026\u2122.doc";
+    EXPECT_EQ(std::wstring(expected_output), output.value());
+#elif defined(OS_POSIX)
+    // No conversion should happen, and the invalid UTF-8 should be preserved.
+    const char expected_output[] = "/d:/Blah/\x85\x99.doc";
+    EXPECT_EQ(expected_output, output.value());
+#endif
+  }
 
   // Test that if a file URL is malformed, we get a failure
   EXPECT_FALSE(FileURLToFilePath(GURL("filefoobar"), &output));
@@ -317,7 +349,7 @@ TEST(FilenameUtilTest, GenerateSafeFileName) {
     // Dangerous extensions
     {__LINE__, "text/html", "harmless.local", "harmless.download"},
     {__LINE__, "text/html", "harmless.lnk", "harmless.download"},
-#else   // OS_WIN
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
     // On Posix, none of the above set is particularly dangerous.
     {__LINE__, "text/html", "con.htm", "con.htm"},
     {__LINE__, "text/html", "lpt1.htm", "lpt1.htm"},
@@ -327,12 +359,12 @@ TEST(FilenameUtilTest, GenerateSafeFileName) {
     {__LINE__, "text/html", "harmless.{mismatched-", "harmless.{mismatched-"},
     {__LINE__, "text/html", "harmless.local", "harmless.local"},
     {__LINE__, "text/html", "harmless.lnk", "harmless.lnk"},
-#endif  // !defined(OS_WIN)
+#endif  // defined(OS_WIN)
   };
 
 #if defined(OS_WIN)
   base::FilePath base_path(L"C:\\foo");
-#else
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   base::FilePath base_path("/foo");
 #endif
 
@@ -549,7 +581,7 @@ TEST(FilenameUtilTest, GenerateFileName) {
      L"evil_"},
     {__LINE__, "", "filename=. . . . .", "", "", "binary/octet-stream",
      L"download", L"download"},
-#else  // OS_WIN
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
     // Test truncation of trailing dots and spaces (non-Windows)
     {__LINE__, "", "filename=evil.exe ", "", "", "binary/octet-stream",
      L"download", L"evil.exe"},
@@ -698,30 +730,28 @@ TEST(FilenameUtilTest, GenerateFileName) {
 #endif
   };
 
-  for (size_t i = 0; i < arraysize(selection_tests); ++i)
-    RunGenerateFileNameTestCase(&selection_tests[i]);
+  for (const auto& selection_test : selection_tests)
+    RunGenerateFileNameTestCase(&selection_test);
 
-  for (size_t i = 0; i < arraysize(generation_tests); ++i)
-    RunGenerateFileNameTestCase(&generation_tests[i]);
+  for (const auto& generation_test : generation_tests)
+    RunGenerateFileNameTestCase(&generation_test);
 
-  for (size_t i = 0; i < arraysize(generation_tests); ++i) {
-    GenerateFilenameCase test_case = generation_tests[i];
+  for (const auto& generation_test : generation_tests) {
+    GenerateFilenameCase test_case = generation_test;
     test_case.referrer_charset = "GBK";
     RunGenerateFileNameTestCase(&test_case);
   }
 }
 
 TEST(FilenameUtilTest, IsReservedNameOnWindows) {
-  for (size_t i = 0; i < arraysize(kSafePortableBasenames); ++i) {
-    EXPECT_FALSE(IsReservedNameOnWindows(
-        base::FilePath(kSafePortableBasenames[i]).value()))
-        << kSafePortableBasenames[i];
+  for (auto* basename : kSafePortableBasenames) {
+    EXPECT_FALSE(IsReservedNameOnWindows(base::FilePath(basename).value()))
+        << basename;
   }
 
-  for (size_t i = 0; i < arraysize(kUnsafePortableBasenamesForWin); ++i) {
-    EXPECT_TRUE(IsReservedNameOnWindows(
-        base::FilePath(kUnsafePortableBasenamesForWin[i]).value()))
-        << kUnsafePortableBasenamesForWin[i];
+  for (auto* basename : kUnsafePortableBasenamesForWin) {
+    EXPECT_TRUE(IsReservedNameOnWindows(base::FilePath(basename).value()))
+        << basename;
   }
 }
 

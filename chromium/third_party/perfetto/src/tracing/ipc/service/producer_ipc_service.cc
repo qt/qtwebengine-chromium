@@ -21,6 +21,7 @@
 #include "perfetto/base/logging.h"
 #include "perfetto/base/task_runner.h"
 #include "perfetto/ipc/host.h"
+#include "perfetto/tracing/core/commit_data_request.h"
 #include "perfetto/tracing/core/data_source_config.h"
 #include "perfetto/tracing/core/data_source_descriptor.h"
 #include "perfetto/tracing/core/service.h"
@@ -49,9 +50,10 @@ ProducerIPCService::GetProducerForCurrentRequest() {
 
 // Called by the remote Producer through the IPC channel soon after connecting.
 void ProducerIPCService::InitializeConnection(
-    const InitializeConnectionRequest& req,
+    const protos::InitializeConnectionRequest& req,
     DeferredInitializeConnectionResponse response) {
-  const ipc::ClientID ipc_client_id = ipc::Service::client_info().client_id();
+  const auto& client_info = ipc::Service::client_info();
+  const ipc::ClientID ipc_client_id = client_info.client_id();
   PERFETTO_CHECK(ipc_client_id);
 
   if (producers_.count(ipc_client_id) > 0) {
@@ -65,21 +67,24 @@ void ProducerIPCService::InitializeConnection(
 
   // ConnectProducer will call OnConnect() on the next task.
   producer->service_endpoint = core_service_->ConnectProducer(
-      producer.get(), req.shared_buffer_size_hint_bytes());
-  const int shm_fd = static_cast<PosixSharedMemory*>(
-                         producer->service_endpoint->shared_memory())
-                         ->fd();
+      producer.get(), client_info.uid(), req.producer_name(),
+      req.shared_memory_size_hint_bytes());
+
+  // Could happen if the service has too many producers connected.
+  if (!producer->service_endpoint)
+    response.Reject();
+
   producers_.emplace(ipc_client_id, std::move(producer));
   // Because of the std::move() |producer| is invalid after this point.
 
-  auto async_res = ipc::AsyncResult<InitializeConnectionResponse>::Create();
-  async_res.set_fd(shm_fd);
+  auto async_res =
+      ipc::AsyncResult<protos::InitializeConnectionResponse>::Create();
   response.Resolve(std::move(async_res));
 }
 
 // Called by the remote Producer through the IPC channel.
 void ProducerIPCService::RegisterDataSource(
-    const RegisterDataSourceRequest& req,
+    const protos::RegisterDataSourceRequest& req,
     DeferredRegisterDataSourceResponse response) {
   RemoteProducer* producer = GetProducerForCurrentRequest();
   if (!producer) {
@@ -88,52 +93,13 @@ void ProducerIPCService::RegisterDataSource(
     return response.Reject();
   }
 
-  const std::string data_source_name = req.data_source_descriptor().name();
-  if (producer->pending_data_sources.count(data_source_name)) {
-    PERFETTO_DLOG(
-        "A RegisterDataSource() request for \"%s\" is already pending",
-        data_source_name.c_str());
-    return response.Reject();
-  }
-
-  // Deserialize IPC proto -> core DataSourceDescriptor. Keep this in sync with
-  // changes to data_source_descriptor.proto.
   DataSourceDescriptor dsd;
-  dsd.set_name(data_source_name);
-  producer->pending_data_sources[data_source_name] = std::move(response);
-  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  dsd.FromProto(req.data_source_descriptor());
+  GetProducerForCurrentRequest()->service_endpoint->RegisterDataSource(dsd);
 
-  // TODO: add test to cover the case of IPC going away before the
-  // RegisterDataSource callback is received.
-  const ipc::ClientID ipc_client_id = ipc::Service::client_info().client_id();
-  GetProducerForCurrentRequest()->service_endpoint->RegisterDataSource(
-      dsd, [weak_this, ipc_client_id, data_source_name](DataSourceID id) {
-        if (!weak_this)
-          return;
-        weak_this->OnDataSourceRegistered(ipc_client_id, data_source_name, id);
-      });
-}
-
-// Called by the Service business logic.
-void ProducerIPCService::OnDataSourceRegistered(ipc::ClientID ipc_client_id,
-                                                std::string data_source_name,
-                                                DataSourceID id) {
-  auto producer_it = producers_.find(ipc_client_id);
-  if (producer_it == producers_.end())
-    return;  // The producer died in the meantime.
-  RemoteProducer* producer = producer_it->second.get();
-
-  auto it = producer->pending_data_sources.find(data_source_name);
-  PERFETTO_CHECK(it != producer->pending_data_sources.end());
-
-  PERFETTO_DLOG("Data source %s registered, Client:%" PRIu64 " ID: %" PRIu64,
-                data_source_name.c_str(), ipc_client_id, id);
-
-  DeferredRegisterDataSourceResponse ipc_response = std::move(it->second);
-  producer->pending_data_sources.erase(it);
-  auto response = ipc::AsyncResult<RegisterDataSourceResponse>::Create();
-  response->set_data_source_id(id);
-  ipc_response.Resolve(std::move(response));
+  // RegisterDataSource doesn't expect any meaningful response.
+  response.Resolve(
+      ipc::AsyncResult<protos::RegisterDataSourceResponse>::Create());
 }
 
 // Called by the IPC layer.
@@ -143,13 +109,13 @@ void ProducerIPCService::OnClientDisconnected() {
   producers_.erase(client_id);
 }
 
-// TODO: test what happens if we receive the following tasks, in order:
+// TODO(fmayer): test what happens if we receive the following tasks, in order:
 // RegisterDataSource, UnregisterDataSource, OnDataSourceRegistered.
 // which essentially means that the client posted back to back a
 // ReqisterDataSource and UnregisterDataSource speculating on the next id.
 // Called by the remote Service through the IPC channel.
 void ProducerIPCService::UnregisterDataSource(
-    const UnregisterDataSourceRequest& req,
+    const protos::UnregisterDataSourceRequest& req,
     DeferredUnregisterDataSourceResponse response) {
   RemoteProducer* producer = GetProducerForCurrentRequest();
   if (!producer) {
@@ -158,35 +124,43 @@ void ProducerIPCService::UnregisterDataSource(
         "InitializeConnection()");
     return response.Reject();
   }
-  producer->service_endpoint->UnregisterDataSource(req.data_source_id());
+  producer->service_endpoint->UnregisterDataSource(req.data_source_name());
 
   // UnregisterDataSource doesn't expect any meaningful response.
-  response.Resolve(ipc::AsyncResult<UnregisterDataSourceResponse>::Create());
+  response.Resolve(
+      ipc::AsyncResult<protos::UnregisterDataSourceResponse>::Create());
 }
 
-void ProducerIPCService::NotifySharedMemoryUpdate(
-    const NotifySharedMemoryUpdateRequest& req,
-    DeferredNotifySharedMemoryUpdateResponse response) {
+void ProducerIPCService::CommitData(const protos::CommitDataRequest& proto_req,
+                                    DeferredCommitDataResponse resp) {
   RemoteProducer* producer = GetProducerForCurrentRequest();
   if (!producer) {
     PERFETTO_DLOG(
-        "Producer invoked NotifySharedMemoryUpdate() before "
-        "InitializeConnection()");
-    return response.Reject();
+        "Producer invoked CommitData() before InitializeConnection()");
+    return;
   }
-  // TODO: check that the page indexes are consistent with the size of the
-  // shared memory region (once the SHM logic is there). Also add a test for it.
-  std::vector<uint32_t> changed_pages;
-  changed_pages.reserve(req.changed_pages_size());
-  for (const uint32_t& changed_page : req.changed_pages())
-    changed_pages.push_back(changed_page);
-  producer->service_endpoint->NotifySharedMemoryUpdate(changed_pages);
-  response.Resolve(
-      ipc::AsyncResult<NotifySharedMemoryUpdateResponse>::Create());
+  CommitDataRequest req;
+  req.FromProto(proto_req);
+
+  // We don't want to send a response if the client didn't attach a callback to
+  // the original request. Doing so would generate unnecessary wakeups and
+  // context switches.
+  std::function<void()> callback;
+  if (resp.IsBound()) {
+    // Capturing |resp| by reference here speculates on the fact that
+    // CommitData() in service_impl.cc invokes the passed callback inline,
+    // without posting it. If that assumption changes this code needs to wrap
+    // the response in a shared_ptr (C+11 lambdas don't support move) and use
+    // a weak ptr in the caller.
+    callback = [&resp] {
+      resp.Resolve(ipc::AsyncResult<protos::CommitDataResponse>::Create());
+    };
+  }
+  producer->service_endpoint->CommitData(req, callback);
 }
 
 void ProducerIPCService::GetAsyncCommand(
-    const GetAsyncCommandRequest&,
+    const protos::GetAsyncCommandRequest&,
     DeferredGetAsyncCommandResponse response) {
   RemoteProducer* producer = GetProducerForCurrentRequest();
   if (!producer) {
@@ -228,7 +202,7 @@ void ProducerIPCService::RemoteProducer::CreateDataSourceInstance(
         "has not yet initialized the connection");
     return;
   }
-  auto cmd = ipc::AsyncResult<GetAsyncCommandResponse>::Create();
+  auto cmd = ipc::AsyncResult<protos::GetAsyncCommandResponse>::Create();
   cmd.set_has_more(true);
   cmd->mutable_start_data_source()->set_new_instance_id(dsid);
   cfg.ToProto(cmd->mutable_start_data_source()->mutable_config());
@@ -243,9 +217,45 @@ void ProducerIPCService::RemoteProducer::TearDownDataSourceInstance(
         "has not yet initialized the connection");
     return;
   }
-  auto cmd = ipc::AsyncResult<GetAsyncCommandResponse>::Create();
+  auto cmd = ipc::AsyncResult<protos::GetAsyncCommandResponse>::Create();
   cmd.set_has_more(true);
   cmd->mutable_stop_data_source()->set_instance_id(dsid);
+  async_producer_commands.Resolve(std::move(cmd));
+}
+
+void ProducerIPCService::RemoteProducer::OnTracingSetup() {
+  if (!async_producer_commands.IsBound()) {
+    PERFETTO_DLOG(
+        "The Service tried to allocate the shared memory but the remote "
+        "Producer has not yet initialized the connection");
+    return;
+  }
+  PERFETTO_CHECK(service_endpoint->shared_memory());
+  const int shm_fd =
+      static_cast<PosixSharedMemory*>(service_endpoint->shared_memory())->fd();
+  auto cmd = ipc::AsyncResult<protos::GetAsyncCommandResponse>::Create();
+  cmd.set_has_more(true);
+  cmd.set_fd(shm_fd);
+  cmd->mutable_setup_tracing()->set_shared_buffer_page_size_kb(
+      static_cast<uint32_t>(service_endpoint->shared_buffer_page_size_kb()));
+  async_producer_commands.Resolve(std::move(cmd));
+}
+
+void ProducerIPCService::RemoteProducer::Flush(
+    FlushRequestID flush_request_id,
+    const DataSourceInstanceID* data_source_ids,
+    size_t num_data_sources) {
+  if (!async_producer_commands.IsBound()) {
+    PERFETTO_DLOG(
+        "The Service tried to request a flush but the remote Producer has not "
+        "yet initialized the connection");
+    return;
+  }
+  auto cmd = ipc::AsyncResult<protos::GetAsyncCommandResponse>::Create();
+  cmd.set_has_more(true);
+  for (size_t i = 0; i < num_data_sources; i++)
+    cmd->mutable_flush()->add_data_source_ids(data_source_ids[i]);
+  cmd->mutable_flush()->set_request_id(flush_request_id);
   async_producer_commands.Resolve(std::move(cmd));
 }
 

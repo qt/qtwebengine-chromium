@@ -65,7 +65,7 @@ LayoutSVGRoot::LayoutSVGRoot(SVGElement* node)
 
 LayoutSVGRoot::~LayoutSVGRoot() = default;
 
-void LayoutSVGRoot::ComputeIntrinsicSizingInfo(
+void LayoutSVGRoot::UnscaledIntrinsicSizingInfo(
     IntrinsicSizingInfo& intrinsic_sizing_info) const {
   // https://www.w3.org/TR/SVG/coords.html#IntrinsicSizing
 
@@ -89,6 +89,13 @@ void LayoutSVGRoot::ComputeIntrinsicSizingInfo(
 
   if (!IsHorizontalWritingMode())
     intrinsic_sizing_info.Transpose();
+}
+
+void LayoutSVGRoot::ComputeIntrinsicSizingInfo(
+    IntrinsicSizingInfo& intrinsic_sizing_info) const {
+  UnscaledIntrinsicSizingInfo(intrinsic_sizing_info);
+
+  intrinsic_sizing_info.size.Scale(StyleRef().EffectiveZoom());
 }
 
 bool LayoutSVGRoot::IsEmbeddedThroughSVGImage() const {
@@ -251,6 +258,7 @@ void LayoutSVGRoot::PaintReplaced(const PaintInfo& paint_info,
 
 void LayoutSVGRoot::WillBeDestroyed() {
   SVGResourcesCache::ClientDestroyed(*this);
+  SVGResources::ClearClipPathFilterMask(ToSVGSVGElement(*GetNode()), Style());
   LayoutReplaced::WillBeDestroyed();
 }
 
@@ -300,6 +308,8 @@ void LayoutSVGRoot::StyleDidChange(StyleDifference diff,
     IntrinsicSizingInfoChanged();
 
   LayoutReplaced::StyleDidChange(diff, old_style);
+  SVGResources::UpdateClipPathFilterMask(ToSVGSVGElement(*GetNode()), old_style,
+                                         StyleRef());
   SVGResourcesCache::ClientStyleChanged(*this, diff, StyleRef());
 }
 
@@ -502,9 +512,11 @@ bool LayoutSVGRoot::NodeAtPoint(HitTestResult& result,
   // don't clip to the viewport, the visual overflow rect.
   // FIXME: This should be an intersection when rect-based hit tests are
   // supported by nodeAtFloatPoint.
-  if (ContentBoxRect().Contains(point_in_border_box) ||
-      (!ShouldApplyViewportClip() &&
-       VisualOverflowRect().Contains(point_in_border_box))) {
+  bool skip_children = (result.GetHitTestRequest().GetStopNode() == this);
+  if (!skip_children &&
+      (ContentBoxRect().Contains(point_in_border_box) ||
+       (!ShouldApplyViewportClip() &&
+        VisualOverflowRect().Contains(point_in_border_box)))) {
     const AffineTransform& local_to_parent_transform =
         LocalToSVGParentTransform();
     if (local_to_parent_transform.IsInvertible()) {

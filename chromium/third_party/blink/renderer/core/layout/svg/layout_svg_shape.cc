@@ -62,12 +62,21 @@ LayoutSVGShape::LayoutSVGShape(SVGGeometryElement* node)
 
 LayoutSVGShape::~LayoutSVGShape() = default;
 
+void LayoutSVGShape::StyleDidChange(StyleDifference diff,
+                                    const ComputedStyle* old_style) {
+  LayoutSVGModelObject::StyleDidChange(diff, old_style);
+  SVGResources::UpdatePaints(*GetElement(), old_style, StyleRef());
+}
+
+void LayoutSVGShape::WillBeDestroyed() {
+  SVGResources::ClearPaints(*GetElement(), Style());
+  LayoutSVGModelObject::WillBeDestroyed();
+}
+
 void LayoutSVGShape::CreatePath() {
   if (!path_)
     path_ = std::make_unique<Path>();
   *path_ = ToSVGGeometryElement(GetElement())->AsPath();
-  if (rare_data_.get())
-    rare_data_->cached_non_scaling_stroke_path_.Clear();
 }
 
 float LayoutSVGShape::DashScaleFactor() const {
@@ -78,8 +87,15 @@ float LayoutSVGShape::DashScaleFactor() const {
 
 void LayoutSVGShape::UpdateShapeFromElement() {
   CreatePath();
-
   fill_bounding_box_ = CalculateObjectBoundingBox();
+
+  if (HasNonScalingStroke()) {
+    // NonScalingStrokeTransform may depend on LocalTransform which in turn may
+    // depend on ObjectBoundingBox, thus we need to call them in this order.
+    UpdateLocalTransform();
+    UpdateNonScalingStrokeData();
+  }
+
   stroke_bounding_box_ = CalculateStrokeBoundingBox();
 }
 
@@ -139,17 +155,21 @@ FloatRect LayoutSVGShape::HitTestStrokeBoundingBox() const {
 }
 
 bool LayoutSVGShape::ShapeDependentStrokeContains(const FloatPoint& point) {
-  DCHECK(path_);
+  // In case the subclass didn't create path during UpdateShapeFromElement()
+  // for optimization but still calls this method.
+  if (!HasPath())
+    CreatePath();
+
   StrokeData stroke_data;
   SVGLayoutSupport::ApplyStrokeStyleToStrokeData(stroke_data, StyleRef(), *this,
                                                  DashScaleFactor());
 
   if (HasNonScalingStroke()) {
-    AffineTransform non_scaling_transform = NonScalingStrokeTransform();
-    Path* use_path = NonScalingStrokePath(path_.get(), non_scaling_transform);
-
-    return use_path->StrokeContains(non_scaling_transform.MapPoint(point),
-                                    stroke_data);
+    // The reason is similar to the above code about HasPath().
+    if (!rare_data_)
+      UpdateNonScalingStrokeData();
+    return NonScalingStrokePath().StrokeContains(
+        NonScalingStrokeTransform().MapPoint(point), stroke_data);
   }
 
   return path_->StrokeContains(point, stroke_data);
@@ -243,7 +263,10 @@ void LayoutSVGShape::UpdateLayout() {
   // UpdateShapeFromElement() also updates the object & stroke bounds - which
   // feeds into the visual rect - so we need to call it for both the
   // shape-update and the bounds-update flag.
-  if (needs_shape_update_ || needs_boundaries_update_) {
+  // We also need to update stroke bounds if HasNonScalingStroke() because the
+  // shape may be affected by ancestor transforms.
+  if (needs_shape_update_ || needs_boundaries_update_ ||
+      HasNonScalingStroke()) {
     FloatRect old_object_bounding_box = ObjectBoundingBox();
     UpdateShapeFromElement();
     if (old_object_bounding_box != ObjectBoundingBox()) {
@@ -292,21 +315,9 @@ void LayoutSVGShape::UpdateLayout() {
   ClearNeedsLayout();
 }
 
-Path* LayoutSVGShape::NonScalingStrokePath(
-    const Path* path,
-    const AffineTransform& stroke_transform) const {
-  LayoutSVGShapeRareData& rare_data = EnsureRareData();
-  if (!rare_data.cached_non_scaling_stroke_path_.IsEmpty() &&
-      stroke_transform == rare_data.cached_non_scaling_stroke_transform_)
-    return &rare_data.cached_non_scaling_stroke_path_;
+void LayoutSVGShape::UpdateNonScalingStrokeData() {
+  DCHECK(HasNonScalingStroke());
 
-  rare_data.cached_non_scaling_stroke_path_ = *path;
-  rare_data.cached_non_scaling_stroke_path_.Transform(stroke_transform);
-  rare_data.cached_non_scaling_stroke_transform_ = stroke_transform;
-  return &rare_data.cached_non_scaling_stroke_path_;
-}
-
-AffineTransform LayoutSVGShape::NonScalingStrokeTransform() const {
   // Compute the CTM to the SVG root. This should probably be the CTM all the
   // way to the "canvas" of the page ("host" coordinate system), but with our
   // current approach of applying/painting non-scaling-stroke, that can break in
@@ -320,7 +331,15 @@ AffineTransform LayoutSVGShape::NonScalingStrokeTransform() const {
   // here.
   t.SetE(0);
   t.SetF(0);
-  return t;
+
+  auto& rare_data = EnsureRareData();
+  if (rare_data.non_scaling_stroke_transform_ != t) {
+    SetShouldDoFullPaintInvalidation(PaintInvalidationReason::kStyle);
+    rare_data.non_scaling_stroke_transform_ = t;
+  }
+
+  rare_data.non_scaling_stroke_path_ = *path_;
+  rare_data.non_scaling_stroke_path_.Transform(t);
 }
 
 void LayoutSVGShape::Paint(const PaintInfo& paint_info,
@@ -400,12 +419,11 @@ FloatRect LayoutSVGShape::CalculateStrokeBoundingBox() const {
     SVGLayoutSupport::ApplyStrokeStyleToStrokeData(stroke_data, StyleRef(),
                                                    *this, DashScaleFactor());
     if (HasNonScalingStroke()) {
-      AffineTransform non_scaling_transform = NonScalingStrokeTransform();
+      const auto& non_scaling_transform = NonScalingStrokeTransform();
       if (non_scaling_transform.IsInvertible()) {
-        Path* use_path =
-            NonScalingStrokePath(path_.get(), non_scaling_transform);
+        const auto& non_scaling_stroke = NonScalingStrokePath();
         FloatRect stroke_bounding_rect =
-            use_path->StrokeBoundingRect(stroke_data);
+            non_scaling_stroke.StrokeBoundingRect(stroke_data);
         stroke_bounding_rect =
             non_scaling_transform.Inverse().MapRect(stroke_bounding_rect);
         stroke_bounding_box.Unite(stroke_bounding_rect);

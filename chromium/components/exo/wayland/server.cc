@@ -6,6 +6,7 @@
 
 #include <alpha-compositing-unstable-v1-server-protocol.h>
 #include <aura-shell-server-protocol.h>
+#include <cursor-shapes-unstable-v1-server-protocol.h>
 #include <gaming-input-unstable-v1-server-protocol.h>
 #include <gaming-input-unstable-v2-server-protocol.h>
 #include <grp.h>
@@ -36,6 +37,7 @@
 #include <utility>
 #include <vector>
 
+#include "ash/display/screen_orientation_controller.h"
 #include "ash/frame/caption_buttons/caption_button_types.h"
 #include "ash/ime/ime_controller.h"
 #include "ash/public/cpp/shell_window_ids.h"
@@ -52,7 +54,6 @@
 #include "base/memory/free_deleter.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -95,7 +96,7 @@
 #include "ui/base/ui_features.h"
 #include "ui/compositor/compositor_vsync_manager.h"
 #include "ui/display/display_switches.h"
-#include "ui/display/manager/chromeos/display_util.h"
+#include "ui/display/manager/display_util.h"
 #include "ui/display/manager/managed_display_info.h"
 #include "ui/display/screen.h"
 #include "ui/events/keycodes/dom/keycode_converter.h"
@@ -1854,6 +1855,7 @@ void xdg_surface_v6_get_toplevel(wl_client* client,
     return;
   }
 
+  shell_surface->SetCanMinimize(true);
   shell_surface->SetEnabled(true);
 
   wl_resource* xdg_toplevel_resource =
@@ -2262,6 +2264,40 @@ void remote_surface_set_extra_title(wl_client* client,
       base::string16(base::UTF8ToUTF16(extra_title)));
 }
 
+ash::OrientationLockType OrientationLock(uint32_t orientation_lock) {
+  switch (orientation_lock) {
+    case ZCR_REMOTE_SURFACE_V1_ORIENTATION_LOCK_NONE:
+      return ash::OrientationLockType::kAny;
+    case ZCR_REMOTE_SURFACE_V1_ORIENTATION_LOCK_CURRENT:
+      return ash::OrientationLockType::kCurrent;
+    case ZCR_REMOTE_SURFACE_V1_ORIENTATION_LOCK_PORTRAIT:
+      return ash::OrientationLockType::kPortrait;
+    case ZCR_REMOTE_SURFACE_V1_ORIENTATION_LOCK_LANDSCAPE:
+      return ash::OrientationLockType::kLandscape;
+    case ZCR_REMOTE_SURFACE_V1_ORIENTATION_LOCK_PORTRAIT_PRIMARY:
+      return ash::OrientationLockType::kPortraitPrimary;
+    case ZCR_REMOTE_SURFACE_V1_ORIENTATION_LOCK_PORTRAIT_SECONDARY:
+      return ash::OrientationLockType::kPortraitSecondary;
+    case ZCR_REMOTE_SURFACE_V1_ORIENTATION_LOCK_LANDSCAPE_PRIMARY:
+      return ash::OrientationLockType::kLandscapePrimary;
+    case ZCR_REMOTE_SURFACE_V1_ORIENTATION_LOCK_LANDSCAPE_SECONDARY:
+      return ash::OrientationLockType::kLandscapeSecondary;
+  }
+  VLOG(2) << "Unexpected value of orientation_lock: " << orientation_lock;
+  return ash::OrientationLockType::kAny;
+}
+
+void remote_surface_set_orientation_lock(wl_client* client,
+                                         wl_resource* resource,
+                                         uint32_t orientation_lock) {
+  GetUserDataAs<ClientControlledShellSurface>(resource)->SetOrientationLock(
+      OrientationLock(orientation_lock));
+}
+
+void remote_surface_pip(wl_client* client, wl_resource* resource) {
+  GetUserDataAs<ClientControlledShellSurface>(resource)->SetPip();
+}
+
 const struct zcr_remote_surface_v1_interface remote_surface_implementation = {
     remote_surface_destroy,
     remote_surface_set_app_id,
@@ -2301,7 +2337,9 @@ const struct zcr_remote_surface_v1_interface remote_surface_implementation = {
     remote_surface_start_resize,
     remote_surface_set_frame,
     remote_surface_set_frame_buttons,
-    remote_surface_set_extra_title};
+    remote_surface_set_extra_title,
+    remote_surface_set_orientation_lock,
+    remote_surface_pip};
 
 ////////////////////////////////////////////////////////////////////////////////
 // notification_surface_interface:
@@ -2310,8 +2348,15 @@ void notification_surface_destroy(wl_client* client, wl_resource* resource) {
   wl_resource_destroy(resource);
 }
 
+void notification_surface_set_app_id(wl_client* client,
+                                     wl_resource* resource,
+                                     const char* app_id) {
+  GetUserDataAs<NotificationSurface>(resource)->SetApplicationId(app_id);
+}
+
 const struct zcr_notification_surface_v1_interface
-    notification_surface_implementation = {notification_surface_destroy};
+    notification_surface_implementation = {notification_surface_destroy,
+                                           notification_surface_set_app_id};
 
 ////////////////////////////////////////////////////////////////////////////////
 // remote_shell_interface:
@@ -2562,6 +2607,9 @@ void HandleRemoteSurfaceStateChangedCallback(
     case ash::mojom::WindowStateType::RIGHT_SNAPPED:
       state_type = ZCR_REMOTE_SHELL_V1_STATE_TYPE_RIGHT_SNAPPED;
       break;
+    case ash::mojom::WindowStateType::PIP:
+      state_type = ZCR_REMOTE_SHELL_V1_STATE_TYPE_PIP;
+      break;
     default:
       break;
   }
@@ -2728,7 +2776,7 @@ const struct zcr_remote_shell_v1_interface remote_shell_implementation = {
     remote_shell_destroy, remote_shell_get_remote_surface,
     remote_shell_get_notification_surface};
 
-const uint32_t remote_shell_version = 13;
+const uint32_t remote_shell_version = 16;
 
 void bind_remote_shell(wl_client* client,
                        void* data,
@@ -2875,12 +2923,18 @@ class AuraOutput : public WaylandDisplayObserver::ScaleObserver {
         const int32_t current_output_scale =
             std::round(display_info.zoom_factor() * 1000.f);
         for (double zoom_factor : display::GetDisplayZoomFactors(active_mode)) {
-          const int32_t output_scale = std::round(zoom_factor * 1000.0);
+          int32_t output_scale = std::round(zoom_factor * 1000.0);
           uint32_t flags = 0;
           if (output_scale == 1000)
             flags |= ZAURA_OUTPUT_SCALE_PROPERTY_PREFERRED;
           if (current_output_scale == output_scale)
             flags |= ZAURA_OUTPUT_SCALE_PROPERTY_CURRENT;
+
+          // TODO(malaykeshav): This can be removed in the future when client
+          // has been updated.
+          if (wl_resource_get_version(resource_) < 6)
+            output_scale = std::round(1000.0 / zoom_factor);
+
           zaura_output_send_scale(resource_, flags, output_scale);
         }
       } else if (display_manager->GetDisplayIdForUIScaling() == display.id()) {
@@ -2895,7 +2949,13 @@ class AuraOutput : public WaylandDisplayObserver::ScaleObserver {
           if (active_mode.IsEquivalent(mode))
             flags |= ZAURA_OUTPUT_SCALE_PROPERTY_CURRENT;
 
-          zaura_output_send_scale(resource_, flags, mode.ui_scale() * 1000);
+          int32_t output_scale = std::round(mode.ui_scale() * 1000.f);
+          // TODO(malaykeshav): This can be removed in the future when client
+          // has been updated.
+          if (wl_resource_get_version(resource_) >= 6)
+            output_scale = std::round(1000.f / mode.ui_scale());
+
+          zaura_output_send_scale(resource_, flags, output_scale);
         }
       } else {
         zaura_output_send_scale(resource_,
@@ -2975,7 +3035,7 @@ void aura_shell_get_aura_output(wl_client* client,
 const struct zaura_shell_interface aura_shell_implementation = {
     aura_shell_get_aura_surface, aura_shell_get_aura_output};
 
-const uint32_t aura_shell_version = 5;
+const uint32_t aura_shell_version = 6;
 
 void bind_aura_shell(wl_client* client,
                      void* data,
@@ -4896,6 +4956,97 @@ void bind_keyboard_extension(wl_client* client,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// cursor_shapes interface:
+
+static ui::CursorType GetCursorType(int32_t cursor_shape) {
+  switch (cursor_shape) {
+#define ADD_CASE(wayland, chrome)                        \
+  case ZCR_CURSOR_SHAPES_V1_CURSOR_SHAPE_TYPE_##wayland: \
+    return ui::CursorType::chrome
+
+    ADD_CASE(POINTER, kPointer);
+    ADD_CASE(CROSS, kCross);
+    ADD_CASE(HAND, kHand);
+    ADD_CASE(IBEAM, kIBeam);
+    ADD_CASE(WAIT, kWait);
+    ADD_CASE(HELP, kHelp);
+    ADD_CASE(EAST_RESIZE, kEastResize);
+    ADD_CASE(NORTH_RESIZE, kNorthResize);
+    ADD_CASE(NORTH_EAST_RESIZE, kNorthEastResize);
+    ADD_CASE(NORTH_WEST_RESIZE, kNorthWestResize);
+    ADD_CASE(SOUTH_RESIZE, kSouthResize);
+    ADD_CASE(SOUTH_EAST_RESIZE, kSouthEastResize);
+    ADD_CASE(SOUTH_WEST_RESIZE, kSouthWestResize);
+    ADD_CASE(WEST_RESIZE, kWestResize);
+    ADD_CASE(NORTH_SOUTH_RESIZE, kNorthSouthResize);
+    ADD_CASE(EAST_WEST_RESIZE, kEastWestResize);
+    ADD_CASE(NORTH_EAST_SOUTH_WEST_RESIZE, kNorthEastSouthWestResize);
+    ADD_CASE(NORTH_WEST_SOUTH_EAST_RESIZE, kNorthWestSouthEastResize);
+    ADD_CASE(COLUMN_RESIZE, kColumnResize);
+    ADD_CASE(ROW_RESIZE, kRowResize);
+    ADD_CASE(MIDDLE_PANNING, kMiddlePanning);
+    ADD_CASE(EAST_PANNING, kEastPanning);
+    ADD_CASE(NORTH_PANNING, kNorthPanning);
+    ADD_CASE(NORTH_EAST_PANNING, kNorthEastPanning);
+    ADD_CASE(NORTH_WEST_PANNING, kNorthWestPanning);
+    ADD_CASE(SOUTH_PANNING, kSouthPanning);
+    ADD_CASE(SOUTH_EAST_PANNING, kSouthEastPanning);
+    ADD_CASE(SOUTH_WEST_PANNING, kSouthWestPanning);
+    ADD_CASE(WEST_PANNING, kWestPanning);
+    ADD_CASE(MOVE, kMove);
+    ADD_CASE(VERTICAL_TEXT, kVerticalText);
+    ADD_CASE(CELL, kCell);
+    ADD_CASE(CONTEXT_MENU, kContextMenu);
+    ADD_CASE(ALIAS, kAlias);
+    ADD_CASE(PROGRESS, kProgress);
+    ADD_CASE(NO_DROP, kNoDrop);
+    ADD_CASE(COPY, kCopy);
+    ADD_CASE(NONE, kNone);
+    ADD_CASE(NOT_ALLOWED, kNotAllowed);
+    ADD_CASE(ZOOM_IN, kZoomIn);
+    ADD_CASE(ZOOM_OUT, kZoomOut);
+    ADD_CASE(GRAB, kGrab);
+    ADD_CASE(GRABBING, kGrabbing);
+    ADD_CASE(DND_NONE, kDndNone);
+    ADD_CASE(DND_MOVE, kDndMove);
+    ADD_CASE(DND_COPY, kDndCopy);
+    ADD_CASE(DND_LINK, kDndLink);
+#undef ADD_CASE
+    default:
+      return ui::CursorType::kNull;
+  }
+}
+
+void cursor_shapes_set_cursor_shape(wl_client* client,
+                                    wl_resource* resource,
+                                    wl_resource* pointer_resource,
+                                    int32_t shape) {
+  ui::CursorType cursor_type = GetCursorType(shape);
+  if (cursor_type == ui::CursorType::kNull) {
+    wl_resource_post_error(resource, ZCR_CURSOR_SHAPES_V1_ERROR_INVALID_SHAPE,
+                           "Unrecognized shape %d", shape);
+    return;
+  }
+
+  Pointer* pointer = GetUserDataAs<Pointer>(pointer_resource);
+  pointer->SetCursorType(cursor_type);
+}
+
+const struct zcr_cursor_shapes_v1_interface cursor_shapes_implementation = {
+    cursor_shapes_set_cursor_shape};
+
+void bind_cursor_shapes(wl_client* client,
+                        void* data,
+                        uint32_t version,
+                        uint32_t id) {
+  wl_resource* resource =
+      wl_resource_create(client, &zcr_cursor_shapes_v1_interface, version, id);
+
+  wl_resource_set_implementation(resource, &cursor_shapes_implementation, data,
+                                 nullptr);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // input_timestamps_v1 interface:
 
 class WaylandInputTimestamps : public WaylandInputDelegate::Observer {
@@ -5048,6 +5199,8 @@ Server::Server(Display* display)
                    display_, bind_stylus_tools);
   wl_global_create(wl_display_.get(), &zcr_keyboard_extension_v1_interface, 1,
                    display_, bind_keyboard_extension);
+  wl_global_create(wl_display_.get(), &zcr_cursor_shapes_v1_interface, 1,
+                   display_, bind_cursor_shapes);
   wl_global_create(wl_display_.get(),
                    &zwp_input_timestamps_manager_v1_interface, 1, display_,
                    bind_input_timestamps_manager);

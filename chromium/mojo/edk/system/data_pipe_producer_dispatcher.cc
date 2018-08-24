@@ -12,8 +12,7 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
-#include "mojo/edk/embedder/platform_shared_buffer.h"
+#include "mojo/edk/embedder/platform_handle_utils.h"
 #include "mojo/edk/system/configuration.h"
 #include "mojo/edk/system/core.h"
 #include "mojo/edk/system/data_pipe_control_message.h"
@@ -73,12 +72,13 @@ class DataPipeProducerDispatcher::PortObserverThunk
 scoped_refptr<DataPipeProducerDispatcher> DataPipeProducerDispatcher::Create(
     NodeController* node_controller,
     const ports::PortRef& control_port,
-    scoped_refptr<PlatformSharedBuffer> shared_ring_buffer,
+    base::UnsafeSharedMemoryRegion shared_ring_buffer,
     const MojoCreateDataPipeOptions& options,
     uint64_t pipe_id) {
   scoped_refptr<DataPipeProducerDispatcher> producer =
       new DataPipeProducerDispatcher(node_controller, control_port,
-                                     shared_ring_buffer, options, pipe_id);
+                                     std::move(shared_ring_buffer), options,
+                                     pipe_id);
   base::AutoLock lock(producer->lock_);
   if (!producer->InitializeNoLock())
     return nullptr;
@@ -95,11 +95,12 @@ MojoResult DataPipeProducerDispatcher::Close() {
   return CloseNoLock();
 }
 
-MojoResult DataPipeProducerDispatcher::WriteData(const void* elements,
-                                                 uint32_t* num_bytes,
-                                                 MojoWriteDataFlags flags) {
+MojoResult DataPipeProducerDispatcher::WriteData(
+    const void* elements,
+    uint32_t* num_bytes,
+    const MojoWriteDataOptions& options) {
   base::AutoLock lock(lock_);
-  if (!shared_ring_buffer_ || in_transit_)
+  if (!shared_ring_buffer_.IsValid() || in_transit_)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
   if (in_two_phase_write_)
@@ -113,7 +114,7 @@ MojoResult DataPipeProducerDispatcher::WriteData(const void* elements,
   if (*num_bytes == 0)
     return MOJO_RESULT_OK;  // Nothing to do.
 
-  if ((flags & MOJO_WRITE_DATA_FLAG_ALL_OR_NONE) &&
+  if ((options.flags & MOJO_WRITE_DATA_FLAG_ALL_OR_NONE) &&
       (*num_bytes > available_capacity_)) {
     // Don't return "should wait" since you can't wait for a specified amount of
     // data.
@@ -127,8 +128,8 @@ MojoResult DataPipeProducerDispatcher::WriteData(const void* elements,
 
   *num_bytes = num_bytes_to_write;
 
-  CHECK(ring_buffer_mapping_);
-  uint8_t* data = static_cast<uint8_t*>(ring_buffer_mapping_->GetBase());
+  CHECK(ring_buffer_mapping_.IsValid());
+  uint8_t* data = static_cast<uint8_t*>(ring_buffer_mapping_.memory());
   CHECK(data);
 
   const uint8_t* source = static_cast<const uint8_t*>(elements);
@@ -159,14 +160,9 @@ MojoResult DataPipeProducerDispatcher::WriteData(const void* elements,
 
 MojoResult DataPipeProducerDispatcher::BeginWriteData(
     void** buffer,
-    uint32_t* buffer_num_bytes,
-    MojoWriteDataFlags flags) {
+    uint32_t* buffer_num_bytes) {
   base::AutoLock lock(lock_);
-  if (!shared_ring_buffer_ || in_transit_)
-    return MOJO_RESULT_INVALID_ARGUMENT;
-
-  // These flags may not be used in two-phase mode.
-  if (flags & MOJO_WRITE_DATA_FLAG_ALL_OR_NONE)
+  if (!shared_ring_buffer_.IsValid() || in_transit_)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
   if (in_two_phase_write_)
@@ -184,8 +180,8 @@ MojoResult DataPipeProducerDispatcher::BeginWriteData(
                                available_capacity_);
   DCHECK_GT(*buffer_num_bytes, 0u);
 
-  CHECK(ring_buffer_mapping_);
-  uint8_t* data = static_cast<uint8_t*>(ring_buffer_mapping_->GetBase());
+  CHECK(ring_buffer_mapping_.IsValid());
+  uint8_t* data = static_cast<uint8_t*>(ring_buffer_mapping_.memory());
   *buffer = data + write_offset_;
 
   return MOJO_RESULT_OK;
@@ -199,9 +195,6 @@ MojoResult DataPipeProducerDispatcher::EndWriteData(
 
   if (!in_two_phase_write_)
     return MOJO_RESULT_FAILED_PRECONDITION;
-
-  DCHECK(shared_ring_buffer_);
-  DCHECK(ring_buffer_mapping_);
 
   // Note: Allow successful completion of the two-phase write even if the other
   // side has been closed.
@@ -265,7 +258,7 @@ void DataPipeProducerDispatcher::StartSerialize(uint32_t* num_bytes,
 bool DataPipeProducerDispatcher::EndSerialize(
     void* destination,
     ports::PortName* ports,
-    ScopedPlatformHandle* platform_handles) {
+    ScopedInternalPlatformHandle* platform_handles) {
   SerializedState* state = static_cast<SerializedState*>(destination);
   memcpy(&state->options, &options_, sizeof(MojoCreateDataPipeOptions));
   memset(state->padding, 0, sizeof(state->padding));
@@ -277,14 +270,20 @@ bool DataPipeProducerDispatcher::EndSerialize(
   state->available_capacity = available_capacity_;
   state->flags = peer_closed_ ? kFlagPeerClosed : 0;
 
-  base::UnguessableToken guid = shared_ring_buffer_->GetGUID();
+  auto region_handle =
+      base::UnsafeSharedMemoryRegion::TakeHandleForSerialization(
+          std::move(shared_ring_buffer_));
+  const base::UnguessableToken& guid = region_handle.GetGUID();
   state->buffer_guid_high = guid.GetHighForSerialization();
   state->buffer_guid_low = guid.GetLowForSerialization();
 
   ports[0] = control_port_.name();
 
-  platform_handles[0] = shared_ring_buffer_->DuplicatePlatformHandle();
-  if (!platform_handles[0].is_valid())
+  ScopedInternalPlatformHandle ignored_handle;
+  ExtractInternalPlatformHandlesFromSharedMemoryRegionHandle(
+      region_handle.PassPlatformHandle(), &platform_handles[0],
+      &ignored_handle);
+  if (!platform_handles[0].is_valid() || ignored_handle.is_valid())
     return false;
 
   return true;
@@ -323,7 +322,7 @@ DataPipeProducerDispatcher::Deserialize(const void* data,
                                         size_t num_bytes,
                                         const ports::PortName* ports,
                                         size_t num_ports,
-                                        ScopedPlatformHandle* handles,
+                                        ScopedInternalPlatformHandle* handles,
                                         size_t num_handles) {
   if (num_ports != 1 || num_handles != 1 ||
       num_bytes != sizeof(SerializedState)) {
@@ -341,22 +340,28 @@ DataPipeProducerDispatcher::Deserialize(const void* data,
   if (node_controller->node()->GetPort(ports[0], &port) != ports::OK)
     return nullptr;
 
-  base::UnguessableToken guid = base::UnguessableToken::Deserialize(
-      state->buffer_guid_high, state->buffer_guid_low);
-  ScopedPlatformHandle buffer_handle;
+  ScopedInternalPlatformHandle buffer_handle;
   std::swap(buffer_handle, handles[0]);
-  scoped_refptr<PlatformSharedBuffer> ring_buffer =
-      PlatformSharedBuffer::CreateFromPlatformHandle(
-          state->options.capacity_num_bytes, false /* read_only */, guid,
-          std::move(buffer_handle));
-  if (!ring_buffer) {
+  auto region_handle =
+      CreateSharedMemoryRegionHandleFromInternalPlatformHandles(
+          std::move(buffer_handle), ScopedInternalPlatformHandle());
+  auto region = base::subtle::PlatformSharedMemoryRegion::Take(
+      std::move(region_handle),
+      base::subtle::PlatformSharedMemoryRegion::Mode::kUnsafe,
+      state->options.capacity_num_bytes,
+      base::UnguessableToken::Deserialize(state->buffer_guid_high,
+                                          state->buffer_guid_low));
+  auto ring_buffer =
+      base::UnsafeSharedMemoryRegion::Deserialize(std::move(region));
+  if (!ring_buffer.IsValid()) {
     DLOG(ERROR) << "Failed to deserialize shared buffer handle.";
     return nullptr;
   }
 
   scoped_refptr<DataPipeProducerDispatcher> dispatcher =
-      new DataPipeProducerDispatcher(node_controller, port, ring_buffer,
-                                     state->options, state->pipe_id);
+      new DataPipeProducerDispatcher(node_controller, port,
+                                     std::move(ring_buffer), state->options,
+                                     state->pipe_id);
 
   {
     base::AutoLock lock(dispatcher->lock_);
@@ -374,7 +379,7 @@ DataPipeProducerDispatcher::Deserialize(const void* data,
 DataPipeProducerDispatcher::DataPipeProducerDispatcher(
     NodeController* node_controller,
     const ports::PortRef& control_port,
-    scoped_refptr<PlatformSharedBuffer> shared_ring_buffer,
+    base::UnsafeSharedMemoryRegion shared_ring_buffer,
     const MojoCreateDataPipeOptions& options,
     uint64_t pipe_id)
     : options_(options),
@@ -382,25 +387,24 @@ DataPipeProducerDispatcher::DataPipeProducerDispatcher(
       control_port_(control_port),
       pipe_id_(pipe_id),
       watchers_(this),
-      shared_ring_buffer_(shared_ring_buffer),
+      shared_ring_buffer_(std::move(shared_ring_buffer)),
       available_capacity_(options_.capacity_num_bytes) {}
 
 DataPipeProducerDispatcher::~DataPipeProducerDispatcher() {
-  DCHECK(is_closed_ && !in_transit_ && !shared_ring_buffer_ &&
-         !ring_buffer_mapping_);
+  DCHECK(is_closed_ && !in_transit_ && !shared_ring_buffer_.IsValid() &&
+         !ring_buffer_mapping_.IsValid());
 }
 
 bool DataPipeProducerDispatcher::InitializeNoLock() {
   lock_.AssertAcquired();
-  if (!shared_ring_buffer_)
+  if (!shared_ring_buffer_.IsValid())
     return false;
 
-  DCHECK(!ring_buffer_mapping_);
-  ring_buffer_mapping_ =
-      shared_ring_buffer_->Map(0, options_.capacity_num_bytes);
-  if (!ring_buffer_mapping_) {
+  DCHECK(!ring_buffer_mapping_.IsValid());
+  ring_buffer_mapping_ = shared_ring_buffer_.Map();
+  if (!ring_buffer_mapping_.IsValid()) {
     DLOG(ERROR) << "Failed to map shared buffer.";
-    shared_ring_buffer_ = nullptr;
+    shared_ring_buffer_ = base::UnsafeSharedMemoryRegion();
     return false;
   }
 
@@ -416,8 +420,8 @@ MojoResult DataPipeProducerDispatcher::CloseNoLock() {
   if (is_closed_ || in_transit_)
     return MOJO_RESULT_INVALID_ARGUMENT;
   is_closed_ = true;
-  ring_buffer_mapping_.reset();
-  shared_ring_buffer_ = nullptr;
+  ring_buffer_mapping_ = base::WritableSharedMemoryMapping();
+  shared_ring_buffer_ = base::UnsafeSharedMemoryRegion();
 
   watchers_.NotifyClosed();
   if (!transferred_) {
@@ -433,7 +437,8 @@ HandleSignalsState DataPipeProducerDispatcher::GetHandleSignalsStateNoLock()
   lock_.AssertAcquired();
   HandleSignalsState rv;
   if (!peer_closed_) {
-    if (!in_two_phase_write_ && shared_ring_buffer_ && available_capacity_ > 0)
+    if (!in_two_phase_write_ && shared_ring_buffer_.IsValid() &&
+        available_capacity_ > 0)
       rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
     if (peer_remote_)
       rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_PEER_REMOTE;

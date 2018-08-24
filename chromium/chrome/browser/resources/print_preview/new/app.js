@@ -2,10 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+(function() {
+'use strict';
+
+/**
+ * Number of settings sections to show when "More settings" is collapsed.
+ * @type {number}
+ */
+const MAX_SECTIONS_TO_SHOW = 6;
+
 Polymer({
   is: 'print-preview-app',
 
   behaviors: [SettingsBehavior],
+
   properties: {
     /**
      * Object containing current settings of Print Preview, for use by Polymer
@@ -89,6 +99,42 @@ Polymer({
       notify: true,
       value: false,
     },
+
+    /** @private {!print_preview_new.PreviewAreaState} */
+    previewState_: {
+      type: String,
+      observer: 'onPreviewAreaStateChanged_',
+    },
+
+    /** @private {boolean} */
+    settingsExpandedByUser_: {
+      type: Boolean,
+      notify: true,
+      value: false,
+    },
+
+    /** @private {boolean} */
+    shouldShowMoreSettings_: {
+      type: Boolean,
+      notify: true,
+      computed: 'computeShouldShowMoreSettings_(settings.pages.available, ' +
+          'settings.copies.available, settings.layout.available, ' +
+          'settings.color.available, settings.mediaSize.available, ' +
+          'settings.dpi.available, settings.margins.available, ' +
+          'settings.pagesPerSheet.available, settings.scaling.available, ' +
+          'settings.otherOptions.available, settings.vendorItems.available)',
+    },
+
+    /**
+     * Whether to show pages per sheet feature or not.
+     * @private {boolean}
+     */
+    showPagesPerSheet_: {
+      type: Boolean,
+      value: function() {
+        return loadTimeData.getBoolean('pagesPerSheetEnabled');
+      },
+    },
   },
 
   /** @private {?WebUIListenerTracker} */
@@ -112,6 +158,9 @@ Polymer({
   /** @private {boolean} */
   openPdfInPreview_: false,
 
+  /** @private {boolean} */
+  isInKioskAutoPrintMode_: false,
+
   /** @override */
   attached: function() {
     this.nativeLayer_ = print_preview.NativeLayer.getInstance();
@@ -120,6 +169,9 @@ Polymer({
     this.listenerTracker_ = new WebUIListenerTracker();
     this.listenerTracker_.add(
         'use-cloud-print', this.onCloudPrintEnable_.bind(this));
+    this.listenerTracker_.add('print-failed', this.onPrintFailed_.bind(this));
+    this.listenerTracker_.add(
+        'print-preset-options', this.onPrintPresetOptions_.bind(this));
     this.destinationStore_ = new print_preview.DestinationStore(
         this.userInfo_, this.listenerTracker_);
     this.invitationStore_ = new print_preview.InvitationStore(this.userInfo_);
@@ -232,6 +284,7 @@ Polymer({
         settings.serializedDefaultDestinationSelectionRulesStr,
         this.recentDestinations_);
     this.isInAppKioskMode_ = settings.isInAppKioskMode;
+    this.isInKioskAutoPrintMode_ = settings.isInKioskAutoPrintMode;
   },
 
   /**
@@ -271,6 +324,10 @@ Polymer({
 
   /** @private */
   onDestinationSelect_: function() {
+    // If the plugin does not exist do not attempt to load the preview.
+    if (this.state == print_preview_new.State.FATAL_ERROR)
+      return;
+
     this.$.state.transitTo(print_preview_new.State.NOT_READY);
     this.destination_ = this.destinationStore_.selectedDestination;
   },
@@ -280,10 +337,16 @@ Polymer({
     this.set(
         'destination_.capabilities',
         this.destinationStore_.selectedDestination.capabilities);
-    if (this.state != print_preview_new.State.READY)
-      this.$.state.transitTo(print_preview_new.State.READY);
+
     if (!this.$.model.initialized())
       this.$.model.applyStickySettings();
+
+    if (this.state == print_preview_new.State.NOT_READY ||
+        this.state == print_preview_new.State.INVALID_PRINTER) {
+      this.$.state.transitTo(print_preview_new.State.READY);
+      if (this.isInKioskAutoPrintMode_)
+        this.onPrintRequested_();
+    }
   },
 
   /**
@@ -302,6 +365,14 @@ Polymer({
     } else if (this.state == print_preview_new.State.HIDDEN) {
       this.nativeLayer_.hidePreview();
     } else if (this.state == print_preview_new.State.PRINTING) {
+      if (this.shouldShowMoreSettings_) {
+        new print_preview.PrintSettingsUiMetricsContext().record(
+            this.settingsExpandedByUser_ ?
+                print_preview.Metrics.PrintSettingsUiBucket
+                    .PRINT_WITH_SETTINGS_EXPANDED :
+                print_preview.Metrics.PrintSettingsUiBucket
+                    .PRINT_WITH_SETTINGS_COLLAPSED);
+      }
       const destination = assert(this.destinationStore_.selectedDestination);
       const whenPrintDone =
           this.nativeLayer_.print(this.$.model.createPrintTicket(
@@ -321,12 +392,6 @@ Polymer({
             this.onPrintToCloud_.bind(this), this.onPrintFailed_.bind(this));
       }
     }
-  },
-
-  /** @private */
-  onPreviewLoaded_: function() {
-    if (this.state == print_preview_new.State.HIDDEN)
-      this.$.state.transitTo(print_preview_new.State.PRINTING);
   },
 
   /** @private */
@@ -409,13 +474,31 @@ Polymer({
   },
 
   /** @private */
-  onPreviewFailed_: function() {
-    this.$.state.transitTo(print_preview_new.State.FATAL_ERROR);
+  onInvalidPrinter_: function() {
+    this.previewState_ =
+        print_preview_new.PreviewAreaState.UNSUPPORTED_CLOUD_PRINTER;
   },
 
   /** @private */
-  onInvalidPrinter_: function() {
-    this.$.state.transitTo(print_preview_new.State.INVALID_PRINTER);
+  onPreviewAreaStateChanged_: function() {
+    switch (this.previewState_) {
+      case print_preview_new.PreviewAreaState.PREVIEW_FAILED:
+      case print_preview_new.PreviewAreaState.NO_PLUGIN:
+        this.$.state.transitTo(print_preview_new.State.FATAL_ERROR);
+        break;
+      case print_preview_new.PreviewAreaState.INVALID_SETTINGS:
+      case print_preview_new.PreviewAreaState.UNSUPPORTED_CLOUD_PRINTER:
+        if (this.state != print_preview_new.State.INVALID_PRINTER)
+          this.$.state.transitTo(print_preview_new.State.INVALID_PRINTER);
+        break;
+      case print_preview_new.PreviewAreaState.DISPLAY_PREVIEW:
+      case print_preview_new.PreviewAreaState.OPEN_IN_PREVIEW_LOADED:
+        if (this.state == print_preview_new.State.HIDDEN)
+          this.$.state.transitTo(print_preview_new.State.PRINTING);
+        break;
+      default:
+        break;
+    }
   },
 
   /**
@@ -443,8 +526,52 @@ Polymer({
     }
   },
 
+  /**
+   * Updates printing options according to source document presets.
+   * @param {boolean} disableScaling Whether the document disables scaling.
+   * @param {number} copies The default number of copies from the document.
+   * @param {number} duplex The default duplex setting from the document.
+   * @private
+   */
+  onPrintPresetOptions_: function(disableScaling, copies, duplex) {
+    if (disableScaling)
+      this.documentInfo_.updateIsScalingDisabled(true);
+
+    if (copies > 0 && this.getSetting('copies').available)
+      this.setSetting('copies', copies);
+
+    if (duplex >= 0 && this.getSetting('duplex').available)
+      this.setSetting('duplex', duplex);
+  },
+
+  /**
+   * @return {boolean} Whether to show the "More settings" link.
+   * @private
+   */
+  computeShouldShowMoreSettings_: function() {
+    // Destination settings is always available. See if the total number of
+    // available sections exceeds the maximum number to show.
+    return [
+      'pages', 'copies', 'layout', 'color', 'mediaSize', 'margins', 'color',
+      'pagesPerSheet', 'scaling', 'otherOptions', 'vendorItems'
+    ].reduce((count, setting) => {
+      return this.getSetting(setting).available ? count + 1 : count;
+    }, 1) > MAX_SECTIONS_TO_SHOW;
+  },
+
+  /**
+   * @return {boolean} Whether the "more settings" collapse should be expanded.
+   * @private
+   */
+  shouldExpandSettings_: function() {
+    // Expand the settings if the user has requested them expanded or if more
+    // settings is not displayed (i.e. less than 6 total settings available).
+    return this.settingsExpandedByUser_ || !this.shouldShowMoreSettings_;
+  },
+
   /** @private */
   close_: function() {
     this.$.state.transitTo(print_preview_new.State.CLOSING);
   },
 });
+})();

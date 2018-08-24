@@ -36,14 +36,25 @@ class OverlayWindow {
       PictureInPictureWindowController* controller);
 
   virtual bool IsActive() const = 0;
-  virtual void Show() = 0;
   virtual void Close() = 0;
+  virtual void Show() = 0;
+  virtual void Hide() = 0;
   virtual bool IsVisible() const = 0;
   virtual bool IsAlwaysOnTop() const = 0;
   virtual ui::Layer* GetLayer() = 0;
   // Retrieves the window's current bounds, including its window.
   virtual gfx::Rect GetBounds() const = 0;
   virtual void UpdateVideoSize(const gfx::Size& natural_size) = 0;
+
+  // Retrieve the ui::Layers corresponding to the video and controls.
+  virtual ui::Layer* GetVideoLayer() = 0;
+  virtual ui::Layer* GetControlsBackgroundLayer() = 0;
+  virtual ui::Layer* GetCloseControlsLayer() = 0;
+  virtual ui::Layer* GetPlayPauseControlsLayer() = 0;
+
+  // Retrieves the bounds of the media controls.
+  virtual gfx::Rect GetCloseControlsBounds() = 0;
+  virtual gfx::Rect GetPlayPauseControlsBounds() = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(OverlayWindow);

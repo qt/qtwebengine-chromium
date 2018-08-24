@@ -65,12 +65,25 @@ class ReportingServiceImpl : public ReportingService {
         context_->cache(), data_type_mask, origin_filter);
   }
 
+  void RemoveAllBrowsingData(int data_type_mask) override {
+    ReportingBrowsingDataRemover::RemoveAllBrowsingData(context_->cache(),
+                                                        data_type_mask);
+  }
+
   int GetUploadDepth(const URLRequest& request) override {
     return context_->uploader()->GetUploadDepth(request);
   }
 
   const ReportingPolicy& GetPolicy() const override {
     return context_->policy();
+  }
+
+  base::Value StatusAsValue() const override {
+    base::Value dict(base::Value::Type::DICTIONARY);
+    dict.SetKey("reportingEnabled", base::Value(true));
+    dict.SetKey("clients", context_->cache()->GetClientsAsValue());
+    dict.SetKey("reports", context_->cache()->GetReportsAsValue());
+    return dict;
   }
 
  private:
@@ -100,6 +113,11 @@ std::unique_ptr<ReportingService> ReportingService::Create(
 std::unique_ptr<ReportingService> ReportingService::CreateForTesting(
     std::unique_ptr<ReportingContext> reporting_context) {
   return std::make_unique<ReportingServiceImpl>(std::move(reporting_context));
+}
+
+base::Value ReportingService::StatusAsValue() const {
+  NOTIMPLEMENTED();
+  return base::Value();
 }
 
 }  // namespace net

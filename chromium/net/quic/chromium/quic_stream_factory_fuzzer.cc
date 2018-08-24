@@ -8,6 +8,7 @@
 
 #include "net/base/completion_once_callback.h"
 #include "net/base/test_completion_callback.h"
+#include "net/cert/ct_policy_enforcer.h"
 #include "net/cert/do_nothing_ct_verifier.h"
 #include "net/cert/mock_cert_verifier.h"
 #include "net/cert/x509_certificate.h"
@@ -17,8 +18,6 @@
 #include "net/quic/chromium/mock_crypto_client_stream_factory.h"
 #include "net/quic/chromium/quic_http_stream.h"
 #include "net/quic/chromium/test_task_runner.h"
-#include "net/quic/test_tools/mock_clock.h"
-#include "net/quic/test_tools/mock_random.h"
 #include "net/socket/fuzzed_datagram_client_socket.h"
 #include "net/socket/fuzzed_socket_factory.h"
 #include "net/socket/socket_tag.h"
@@ -26,6 +25,8 @@
 #include "net/ssl/default_channel_id_store.h"
 #include "net/ssl/ssl_config_service_defaults.h"
 #include "net/test/gtest_util.h"
+#include "net/third_party/quic/test_tools/mock_clock.h"
+#include "net/third_party/quic/test_tools/mock_random.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 
 namespace net {
@@ -79,7 +80,7 @@ struct Env {
   QuicTagVector connection_options;
   QuicTagVector client_connection_options;
   std::unique_ptr<CTVerifier> cert_transparency_verifier;
-  CTPolicyEnforcer ct_policy_enforcer;
+  DefaultCTPolicyEnforcer ct_policy_enforcer;
 };
 
 static struct Env* env = new Env();
@@ -97,12 +98,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   bool store_server_configs_in_properties = data_provider.ConsumeBool();
   bool close_sessions_on_ip_change = data_provider.ConsumeBool();
   bool mark_quic_broken_when_network_blackholes = data_provider.ConsumeBool();
-  bool connect_using_default_network = data_provider.ConsumeBool();
   bool allow_server_migration = data_provider.ConsumeBool();
   bool race_cert_verification = data_provider.ConsumeBool();
   bool estimate_initial_rtt = data_provider.ConsumeBool();
   bool headers_include_h2_stream_dependency = data_provider.ConsumeBool();
   bool enable_token_binding = data_provider.ConsumeBool();
+  bool enable_channel_id = data_provider.ConsumeBool();
   bool enable_socket_recv_optimization = data_provider.ConsumeBool();
 
   env->crypto_client_stream_factory.AddProofVerifyDetails(&env->verify_details);
@@ -135,15 +136,14 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
           mark_quic_broken_when_network_blackholes,
           kIdleConnectionTimeoutSeconds, kPingTimeoutSecs,
           kMaxTimeForCryptoHandshakeSecs, kInitialIdleTimeoutSecs,
-          connect_using_default_network, migrate_sessions_on_network_change,
-          migrate_sessions_early, migrate_sessions_on_network_change_v2,
-          migrate_sessions_early_v2,
+          migrate_sessions_on_network_change, migrate_sessions_early,
+          migrate_sessions_on_network_change_v2, migrate_sessions_early_v2,
           base::TimeDelta::FromSeconds(kMaxTimeOnNonDefaultNetworkSecs),
           kMaxMigrationsToNonDefaultNetworkOnPathDegrading,
           allow_server_migration, race_cert_verification, estimate_initial_rtt,
           headers_include_h2_stream_dependency, env->connection_options,
           env->client_connection_options, enable_token_binding,
-          enable_socket_recv_optimization);
+          enable_channel_id, enable_socket_recv_optimization);
 
   QuicStreamRequest request(factory.get());
   TestCompletionCallback callback;
@@ -176,12 +176,14 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     return 0;
 
   // TODO(nedwilliamson): attempt connection migration here
-  stream->ReadResponseHeaders(callback.callback());
+  int rv = stream->ReadResponseHeaders(callback.callback());
+  if (rv != OK && rv != ERR_IO_PENDING) {
+    return 0;
+  }
   callback.WaitForResult();
 
   scoped_refptr<net::IOBuffer> buffer = new net::IOBuffer(kBufferSize);
-  int rv =
-      stream->ReadResponseBody(buffer.get(), kBufferSize, callback.callback());
+  rv = stream->ReadResponseBody(buffer.get(), kBufferSize, callback.callback());
   if (rv == ERR_IO_PENDING)
     callback.WaitForResult();
 

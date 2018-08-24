@@ -13,7 +13,6 @@
 #include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
@@ -22,6 +21,7 @@
 #include "base/task_scheduler/task_traits.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/unguessable_token.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/download/download_resource_handler.h"
@@ -671,8 +671,8 @@ class ResourceDispatcherHostTest : public testing::Test {
     HandleScheme("test");
     scoped_refptr<SiteInstance> site_instance =
         SiteInstance::Create(browser_context_.get());
-    web_contents_.reset(
-        WebContents::Create(WebContents::CreateParams(browser_context_.get())));
+    web_contents_ =
+        WebContents::Create(WebContents::CreateParams(browser_context_.get()));
     web_contents_filter_ = new TestFilterSpecifyingChild(
         browser_context_->GetResourceContext(),
         web_contents_->GetMainFrame()->GetProcess()->GetID());
@@ -818,7 +818,7 @@ class ResourceDispatcherHostTest : public testing::Test {
     std::unique_ptr<NavigationRequestInfo> request_info(
         new NavigationRequestInfo(common_params, std::move(begin_params), url,
                                   true, false, false, -1, false, false, false,
-                                  nullptr));
+                                  nullptr, base::UnguessableToken::Create()));
     std::unique_ptr<NavigationURLLoader> test_loader =
         NavigationURLLoader::Create(
             browser_context_->GetResourceContext(),

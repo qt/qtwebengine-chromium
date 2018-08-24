@@ -44,6 +44,7 @@
 #include "third_party/blink/renderer/platform/weborigin/referrer.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
 
@@ -85,9 +86,13 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader,
   void Detach() override;
   void SetDefersLoading(bool);
 
+  // Exposed for thread-correctness DCHECKs in WorkerThreadableLoader.
+  ExecutionContext* GetExecutionContext() const;
+
   void Trace(blink::Visitor*) override;
 
  private:
+  class DetachedClient;
   enum BlockingBehavior { kLoadSynchronously, kLoadAsynchronously };
 
   static std::unique_ptr<ResourceRequest> CreateAccessControlPreflightRequest(
@@ -140,7 +145,7 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader,
                       const ResourceResponse&,
                       std::unique_ptr<WebDataConsumerHandle>);
   void HandleReceivedData(const char* data, size_t data_length);
-  void HandleSuccessfulFinish(unsigned long identifier, double finish_time);
+  void HandleSuccessfulFinish(unsigned long identifier);
 
   void DidTimeout(TimerBase*);
   // Calls the appropriate loading method according to policy and data about
@@ -186,8 +191,6 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader,
   // Returns null if the loader is not associated with Document.
   // TODO(kinuko): Remove dependency to document.
   Document* GetDocument() const;
-
-  ExecutionContext* GetExecutionContext() const;
 
   ThreadableLoaderClient* client_;
   Member<ThreadableLoadingContext> loading_context_;
@@ -247,6 +250,8 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader,
   // used to populate the HTTP Referer header when following the redirect.
   bool override_referrer_;
   Referrer referrer_after_redirect_;
+
+  bool detached_ = false;
 
   RawResourceClientStateChecker checker_;
 };

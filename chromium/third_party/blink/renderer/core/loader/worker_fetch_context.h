@@ -47,6 +47,8 @@ class WorkerFetchContext final : public BaseFetchContext {
   void CountUsage(WebFeature) const override;
   void CountDeprecation(WebFeature) const override;
   bool ShouldBlockWebSocketByMixedContentCheck(const KURL&) const override;
+  std::unique_ptr<WebSocketHandshakeThrottle> CreateWebSocketHandshakeThrottle()
+      override;
   bool ShouldBlockFetchByMixedContentCheck(
       WebURLRequest::RequestContext,
       network::mojom::RequestContextFrameType,
@@ -60,7 +62,7 @@ class WorkerFetchContext final : public BaseFetchContext {
   String GetOutgoingReferrer() const override;
   const KURL& Url() const override;
   const SecurityOrigin* GetParentSecurityOrigin() const override;
-  Optional<mojom::IPAddressSpace> GetAddressSpace() const override;
+  base::Optional<mojom::IPAddressSpace> GetAddressSpace() const override;
   const ContentSecurityPolicy* GetContentSecurityPolicy() const override;
   void AddConsoleMessage(ConsoleMessage*) const override;
 
@@ -92,7 +94,7 @@ class WorkerFetchContext final : public BaseFetchContext {
   void DispatchDidReceiveEncodedData(unsigned long identifier,
                                      int encoded_data_length) override;
   void DispatchDidFinishLoading(unsigned long identifier,
-                                double finish_time,
+                                TimeTicks finish_time,
                                 int64_t encoded_data_length,
                                 int64_t decoded_body_length,
                                 bool blocked_cross_site_document) override;
@@ -107,6 +109,10 @@ class WorkerFetchContext final : public BaseFetchContext {
                                const FetchParameters::ResourceWidth&,
                                ResourceRequest&) override;
   scoped_refptr<base::SingleThreadTaskRunner> GetLoadingTaskRunner() override;
+
+  WebWorkerFetchContext* GetWebWorkerFetchContext() {
+    return web_context_.get();
+  }
 
   void Trace(blink::Visitor*) override;
 

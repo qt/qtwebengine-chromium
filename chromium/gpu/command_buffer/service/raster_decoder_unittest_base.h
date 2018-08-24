@@ -12,6 +12,7 @@
 #include <initializer_list>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/message_loop/message_loop.h"
 #include "gpu/command_buffer/client/client_test_helper.h"
@@ -60,6 +61,7 @@ class RasterDecoderTestBase : public ::testing::TestWithParam<bool>,
   bool OnWaitSyncToken(const gpu::SyncToken&) override;
   void OnDescheduleUntilFinished() override;
   void OnRescheduleAfterFinished() override;
+  void OnSwapBuffers(uint64_t swap_id, uint32_t flags) override;
 
   // Template to call glGenXXX functions.
   template <typename T>
@@ -139,9 +141,16 @@ class RasterDecoderTestBase : public ::testing::TestWithParam<bool>,
   void AddExpectationsForBindVertexArrayOES();
   void AddExpectationsForRestoreAttribState(GLuint attrib);
 
-  void InitDecoderWithWorkarounds(
-      std::initializer_list<std::string> extensions);
+  struct InitState {
+    InitState();
+    ~InitState();
 
+    std::vector<std::string> extensions = {"GL_ARB_sync"};
+    bool lose_context_when_out_of_memory = false;
+    gpu::GpuDriverBugWorkarounds workarounds;
+  };
+
+  void InitDecoder(const InitState& init);
   void ResetDecoder();
 
   const gles2::ContextGroup& group() const { return *group_.get(); }
@@ -262,6 +271,14 @@ class RasterDecoderTestBase : public ::testing::TestWithParam<bool>,
   scoped_refptr<gles2::ContextGroup> group_;
   base::MessageLoop message_loop_;
   gles2::MockCopyTextureResourceManager* copy_texture_manager_;  // not owned
+};
+
+class RasterDecoderManualInitTest : public RasterDecoderTestBase {
+ public:
+  RasterDecoderManualInitTest() = default;
+
+  // Override default setup so nothing gets setup.
+  void SetUp() override {}
 };
 
 }  // namespace raster

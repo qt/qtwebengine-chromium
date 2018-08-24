@@ -5376,7 +5376,16 @@ unsigned int vpx_mse16x8_sse2(const uint8_t* src_ptr,
                               const uint8_t* ref_ptr,
                               int recon_stride,
                               unsigned int* sse);
-#define vpx_mse16x8 vpx_mse16x8_sse2
+unsigned int vpx_mse16x8_avx2(const uint8_t* src_ptr,
+                              int source_stride,
+                              const uint8_t* ref_ptr,
+                              int recon_stride,
+                              unsigned int* sse);
+RTCD_EXTERN unsigned int (*vpx_mse16x8)(const uint8_t* src_ptr,
+                                        int source_stride,
+                                        const uint8_t* ref_ptr,
+                                        int recon_stride,
+                                        unsigned int* sse);
 
 unsigned int vpx_mse8x16_c(const uint8_t* src_ptr,
                            int source_stride,
@@ -7350,7 +7359,16 @@ unsigned int vpx_variance16x32_sse2(const uint8_t* src_ptr,
                                     const uint8_t* ref_ptr,
                                     int ref_stride,
                                     unsigned int* sse);
-#define vpx_variance16x32 vpx_variance16x32_sse2
+unsigned int vpx_variance16x32_avx2(const uint8_t* src_ptr,
+                                    int source_stride,
+                                    const uint8_t* ref_ptr,
+                                    int ref_stride,
+                                    unsigned int* sse);
+RTCD_EXTERN unsigned int (*vpx_variance16x32)(const uint8_t* src_ptr,
+                                              int source_stride,
+                                              const uint8_t* ref_ptr,
+                                              int ref_stride,
+                                              unsigned int* sse);
 
 unsigned int vpx_variance16x8_c(const uint8_t* src_ptr,
                                 int source_stride,
@@ -7362,7 +7380,16 @@ unsigned int vpx_variance16x8_sse2(const uint8_t* src_ptr,
                                    const uint8_t* ref_ptr,
                                    int ref_stride,
                                    unsigned int* sse);
-#define vpx_variance16x8 vpx_variance16x8_sse2
+unsigned int vpx_variance16x8_avx2(const uint8_t* src_ptr,
+                                   int source_stride,
+                                   const uint8_t* ref_ptr,
+                                   int ref_stride,
+                                   unsigned int* sse);
+RTCD_EXTERN unsigned int (*vpx_variance16x8)(const uint8_t* src_ptr,
+                                             int source_stride,
+                                             const uint8_t* ref_ptr,
+                                             int ref_stride,
+                                             unsigned int* sse);
 
 unsigned int vpx_variance32x16_c(const uint8_t* src_ptr,
                                  int source_stride,
@@ -7416,7 +7443,16 @@ unsigned int vpx_variance32x64_sse2(const uint8_t* src_ptr,
                                     const uint8_t* ref_ptr,
                                     int ref_stride,
                                     unsigned int* sse);
-#define vpx_variance32x64 vpx_variance32x64_sse2
+unsigned int vpx_variance32x64_avx2(const uint8_t* src_ptr,
+                                    int source_stride,
+                                    const uint8_t* ref_ptr,
+                                    int ref_stride,
+                                    unsigned int* sse);
+RTCD_EXTERN unsigned int (*vpx_variance32x64)(const uint8_t* src_ptr,
+                                              int source_stride,
+                                              const uint8_t* ref_ptr,
+                                              int ref_stride,
+                                              unsigned int* sse);
 
 unsigned int vpx_variance4x4_c(const uint8_t* src_ptr,
                                int source_stride,
@@ -7743,6 +7779,9 @@ static void setup_rtcd_internal(void) {
   vpx_mse16x16 = vpx_mse16x16_sse2;
   if (flags & HAS_AVX2)
     vpx_mse16x16 = vpx_mse16x16_avx2;
+  vpx_mse16x8 = vpx_mse16x8_sse2;
+  if (flags & HAS_AVX2)
+    vpx_mse16x8 = vpx_mse16x8_avx2;
   vpx_quantize_b = vpx_quantize_b_sse2;
   if (flags & HAS_SSSE3)
     vpx_quantize_b = vpx_quantize_b_ssse3;
@@ -7918,12 +7957,21 @@ static void setup_rtcd_internal(void) {
   vpx_variance16x16 = vpx_variance16x16_sse2;
   if (flags & HAS_AVX2)
     vpx_variance16x16 = vpx_variance16x16_avx2;
+  vpx_variance16x32 = vpx_variance16x32_sse2;
+  if (flags & HAS_AVX2)
+    vpx_variance16x32 = vpx_variance16x32_avx2;
+  vpx_variance16x8 = vpx_variance16x8_sse2;
+  if (flags & HAS_AVX2)
+    vpx_variance16x8 = vpx_variance16x8_avx2;
   vpx_variance32x16 = vpx_variance32x16_sse2;
   if (flags & HAS_AVX2)
     vpx_variance32x16 = vpx_variance32x16_avx2;
   vpx_variance32x32 = vpx_variance32x32_sse2;
   if (flags & HAS_AVX2)
     vpx_variance32x32 = vpx_variance32x32_avx2;
+  vpx_variance32x64 = vpx_variance32x64_sse2;
+  if (flags & HAS_AVX2)
+    vpx_variance32x64 = vpx_variance32x64_avx2;
   vpx_variance64x32 = vpx_variance64x32_sse2;
   if (flags & HAS_AVX2)
     vpx_variance64x32 = vpx_variance64x32_avx2;

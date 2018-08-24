@@ -7,7 +7,6 @@
 #include <unistd.h>
 
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/test/gtest_util.h"
 #include "base/threading/thread.h"
@@ -17,15 +16,10 @@ namespace base {
 
 class MessagePumpIOSForIOTest : public testing::Test {
  protected:
-  MessagePumpIOSForIOTest()
-      : ui_loop_(MessageLoop::TYPE_UI),
-        io_thread_("MessagePumpIOSForIOTestIOThread") {}
-  ~MessagePumpIOSForIOTest() override {}
+  MessagePumpIOSForIOTest() = default;
+  ~MessagePumpIOSForIOTest() override = default;
 
   void SetUp() override {
-    Thread::Options options(MessageLoop::TYPE_IO, 0);
-    ASSERT_TRUE(io_thread_.StartWithOptions(options));
-    ASSERT_EQ(MessageLoop::TYPE_IO, io_thread_.message_loop()->type());
     int ret = pipe(pipefds_);
     ASSERT_EQ(0, ret);
     ret = pipe(alternate_pipefds_);
@@ -39,11 +33,6 @@ class MessagePumpIOSForIOTest : public testing::Test {
       PLOG(ERROR) << "close";
   }
 
-  MessageLoop* ui_loop() { return &ui_loop_; }
-  MessageLoopForIO* io_loop() const {
-    return static_cast<MessageLoopForIO*>(io_thread_.message_loop());
-  }
-
   void HandleFdIOEvent(MessagePumpForIO::FdWatchController* watcher) {
     MessagePumpIOSForIO::HandleFdIOEvent(watcher->fdref_.get(),
         kCFFileDescriptorReadCallBack | kCFFileDescriptorWriteCallBack,
@@ -54,9 +43,6 @@ class MessagePumpIOSForIOTest : public testing::Test {
   int alternate_pipefds_[2];
 
  private:
-  MessageLoop ui_loop_;
-  Thread io_thread_;
-
   DISALLOW_COPY_AND_ASSIGN(MessagePumpIOSForIOTest);
 };
 
@@ -72,16 +58,6 @@ class StupidWatcher : public MessagePumpIOSForIO::FdWatcher {
   void OnFileCanReadWithoutBlocking(int fd) override {}
   void OnFileCanWriteWithoutBlocking(int fd) override {}
 };
-
-// Test to make sure that we catch calling WatchFileDescriptor off of the wrong
-// thread.
-TEST_F(MessagePumpIOSForIOTest, TestWatchingFromBadThread) {
-  MessagePumpIOSForIO::FdWatchController watcher(FROM_HERE);
-  StupidWatcher delegate;
-
-  ASSERT_DCHECK_DEATH(io_loop()->WatchFileDescriptor(
-      STDOUT_FILENO, false, MessagePumpForIO::WATCH_READ, &watcher, &delegate));
-}
 
 class BaseWatcher : public MessagePumpIOSForIO::FdWatcher {
  public:

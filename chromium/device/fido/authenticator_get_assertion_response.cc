@@ -8,7 +8,7 @@
 
 #include "base/optional.h"
 #include "device/fido/authenticator_data.h"
-#include "device/fido/u2f_parsing_utils.h"
+#include "device/fido/fido_parsing_utils.h"
 
 namespace device {
 
@@ -31,27 +31,27 @@ AuthenticatorGetAssertionResponse::CreateFromU2fSignResponse(
   if (key_handle.empty())
     return base::nullopt;
 
-  auto flags = u2f_parsing_utils::Extract(u2f_data, kFlagIndex, kFlagLength);
+  auto flags = fido_parsing_utils::Extract(u2f_data, kFlagIndex, kFlagLength);
   if (flags.empty())
     return base::nullopt;
 
   auto counter =
-      u2f_parsing_utils::Extract(u2f_data, kCounterIndex, kCounterLength);
+      fido_parsing_utils::Extract(u2f_data, kCounterIndex, kCounterLength);
   if (counter.empty())
     return base::nullopt;
 
   AuthenticatorData authenticator_data(relying_party_id_hash, flags[0],
                                        std::move(counter), base::nullopt);
 
-  auto signature = u2f_parsing_utils::Extract(
+  auto signature = fido_parsing_utils::Extract(
       u2f_data, kSignatureIndex, u2f_data.size() - kSignatureIndex);
   if (signature.empty())
     return base::nullopt;
 
   AuthenticatorGetAssertionResponse response(std::move(authenticator_data),
                                              std::move(signature));
-  response.SetCredential(PublicKeyCredentialDescriptor(
-      to_string(CredentialType::kPublicKey), key_handle));
+  response.SetCredential(
+      PublicKeyCredentialDescriptor(CredentialType::kPublicKey, key_handle));
 
   return std::move(response);
 }

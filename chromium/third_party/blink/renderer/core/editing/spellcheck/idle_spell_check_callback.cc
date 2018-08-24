@@ -57,7 +57,7 @@ IdleSpellCheckCallback::IdleSpellCheckCallback(LocalFrame& frame)
       frame_(frame),
       last_processed_undo_step_sequence_(0),
       cold_mode_requester_(ColdModeSpellCheckRequester::Create(frame)),
-      cold_mode_timer_(frame.GetTaskRunner(TaskType::kUnspecedTimer),
+      cold_mode_timer_(frame.GetTaskRunner(TaskType::kInternalDefault),
                        this,
                        &IdleSpellCheckCallback::ColdModeTimerFired) {}
 
@@ -86,6 +86,8 @@ void IdleSpellCheckCallback::SetNeedsInvocation() {
 
   if (state_ == State::kHotModeRequested)
     return;
+
+  cold_mode_requester_->ClearProgress();
 
   if (state_ == State::kColdModeTimerStarted) {
     DCHECK(cold_mode_timer_.IsActive());
@@ -182,7 +184,7 @@ void IdleSpellCheckCallback::invoke(IdleDeadline* deadline) {
     DCHECK(RuntimeEnabledFeatures::IdleTimeColdModeSpellCheckingEnabled());
     state_ = State::kInColdModeInvocation;
     cold_mode_requester_->Invoke(deadline);
-    if (cold_mode_requester_->FullDocumentChecked())
+    if (cold_mode_requester_->FullyChecked())
       state_ = State::kInactive;
     else
       SetNeedsColdModeInvocation();
@@ -192,7 +194,6 @@ void IdleSpellCheckCallback::invoke(IdleDeadline* deadline) {
 }
 
 void IdleSpellCheckCallback::DocumentAttached(Document* document) {
-  SetNeedsColdModeInvocation();
   SetContext(document);
 }
 

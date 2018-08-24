@@ -21,14 +21,16 @@
 
 #include "perfetto/base/task_runner.h"
 #include "perfetto/ipc/client.h"
+#include "perfetto/tracing/core/commit_data_request.h"
 #include "perfetto/tracing/core/data_source_config.h"
 #include "perfetto/tracing/core/data_source_descriptor.h"
 #include "perfetto/tracing/core/producer.h"
 #include "perfetto/tracing/core/shared_memory_arbiter.h"
+#include "perfetto/tracing/core/trace_config.h"
 #include "perfetto/tracing/core/trace_writer.h"
 #include "src/tracing/ipc/posix_shared_memory.h"
 
-// TODO think to what happens when ProducerIPCClientImpl gets destroyed
+// TODO(fmayer): think to what happens when ProducerIPCClientImpl gets destroyed
 // w.r.t. the Producer pointer. Also think to lifetime of the Producer* during
 // the callbacks.
 
@@ -38,18 +40,21 @@ namespace perfetto {
 std::unique_ptr<Service::ProducerEndpoint> ProducerIPCClient::Connect(
     const char* service_sock_name,
     Producer* producer,
+    const std::string& producer_name,
     base::TaskRunner* task_runner) {
-  return std::unique_ptr<Service::ProducerEndpoint>(
-      new ProducerIPCClientImpl(service_sock_name, producer, task_runner));
+  return std::unique_ptr<Service::ProducerEndpoint>(new ProducerIPCClientImpl(
+      service_sock_name, producer, producer_name, task_runner));
 }
 
 ProducerIPCClientImpl::ProducerIPCClientImpl(const char* service_sock_name,
                                              Producer* producer,
+                                             const std::string& producer_name,
                                              base::TaskRunner* task_runner)
     : producer_(producer),
       task_runner_(task_runner),
       ipc_channel_(ipc::Client::CreateInstance(service_sock_name, task_runner)),
-      producer_port_(this /* event_listener */) {
+      producer_port_(this /* event_listener */),
+      name_(producer_name) {
   ipc_channel_->BindService(producer_port_.GetWeakPtr());
   PERFETTO_DCHECK_THREAD(thread_checker_);
 }
@@ -64,21 +69,24 @@ void ProducerIPCClientImpl::OnConnect() {
   // The IPC layer guarantees that any outstanding callback will be dropped on
   // the floor if producer_port_ is destroyed between the request and the reply.
   // Binding |this| is hence safe.
-  ipc::Deferred<InitializeConnectionResponse> on_init;
-  on_init.Bind([this](ipc::AsyncResult<InitializeConnectionResponse> resp) {
-    OnConnectionInitialized(resp.success());
-  });
-  producer_port_.InitializeConnection(InitializeConnectionRequest(),
-                                      std::move(on_init));
+  ipc::Deferred<protos::InitializeConnectionResponse> on_init;
+  on_init.Bind(
+      [this](ipc::AsyncResult<protos::InitializeConnectionResponse> resp) {
+        OnConnectionInitialized(resp.success());
+      });
+  protos::InitializeConnectionRequest req;
+  req.set_producer_name(name_);
+  producer_port_.InitializeConnection(req, std::move(on_init));
 
   // Create the back channel to receive commands from the Service.
-  ipc::Deferred<GetAsyncCommandResponse> on_cmd;
-  on_cmd.Bind([this](ipc::AsyncResult<GetAsyncCommandResponse> resp) {
+  ipc::Deferred<protos::GetAsyncCommandResponse> on_cmd;
+  on_cmd.Bind([this](ipc::AsyncResult<protos::GetAsyncCommandResponse> resp) {
     if (!resp)
       return;  // The IPC channel was closed and |resp| was auto-rejected.
     OnServiceRequest(*resp);
   });
-  producer_port_.GetAsyncCommand(GetAsyncCommandRequest(), std::move(on_cmd));
+  producer_port_.GetAsyncCommand(protos::GetAsyncCommandRequest(),
+                                 std::move(on_cmd));
 }
 
 void ProducerIPCClientImpl::OnDisconnect() {
@@ -94,44 +102,13 @@ void ProducerIPCClientImpl::OnConnectionInitialized(bool connection_succeeded) {
   // and there we'll notify the |producer_|. TODO: add a test for this.
   if (!connection_succeeded)
     return;
-
-  base::ScopedFile shmem_fd = ipc_channel_->TakeReceivedFD();
-  PERFETTO_CHECK(shmem_fd);
-
-  // TODO(primiano): handle mmap failure in case of OOM.
-  shared_memory_ = PosixSharedMemory::AttachToFd(std::move(shmem_fd));
-
-  auto on_pages_complete = [this](const std::vector<uint32_t>& changed_pages) {
-    OnPagesComplete(changed_pages);
-  };
-  shared_memory_arbiter_ = SharedMemoryArbiter::CreateInstance(
-      shared_memory_.get(), kBufferPageSize, on_pages_complete, task_runner_);
-
   producer_->OnConnect();
 }
 
-// Called by SharedMemoryArbiterImpl when some chunks are complete and we need
-// to notify the service about that.
-void ProducerIPCClientImpl::OnPagesComplete(
-    const std::vector<uint32_t>& changed_pages) {
-  PERFETTO_DCHECK_THREAD(thread_checker_);
-  if (!connected_) {
-    PERFETTO_DLOG("Cannot OnPagesComplete(), not connected to tracing service");
-    return;
-  }
-  NotifySharedMemoryUpdateRequest req;
-  for (uint32_t page_idx : changed_pages)
-    req.add_changed_pages(page_idx);
-
-  producer_port_.NotifySharedMemoryUpdate(
-      req, ipc::Deferred<NotifySharedMemoryUpdateResponse>());
-}
-
 void ProducerIPCClientImpl::OnServiceRequest(
-    const GetAsyncCommandResponse& cmd) {
+    const protos::GetAsyncCommandResponse& cmd) {
   PERFETTO_DCHECK_THREAD(thread_checker_);
-  if (cmd.cmd_case() == GetAsyncCommandResponse::kStartDataSource) {
-    // Keep this in sync with chages in data_source_config.proto.
+  if (cmd.cmd_case() == protos::GetAsyncCommandResponse::kStartDataSource) {
     const auto& req = cmd.start_data_source();
     const DataSourceInstanceID dsid = req.new_instance_id();
     DataSourceConfig cfg;
@@ -140,73 +117,99 @@ void ProducerIPCClientImpl::OnServiceRequest(
     return;
   }
 
-  if (cmd.cmd_case() == GetAsyncCommandResponse::kStopDataSource) {
+  if (cmd.cmd_case() == protos::GetAsyncCommandResponse::kStopDataSource) {
     const DataSourceInstanceID dsid = cmd.stop_data_source().instance_id();
     producer_->TearDownDataSourceInstance(dsid);
     return;
   }
 
+  if (cmd.cmd_case() == protos::GetAsyncCommandResponse::kSetupTracing) {
+    base::ScopedFile shmem_fd = ipc_channel_->TakeReceivedFD();
+    PERFETTO_CHECK(shmem_fd);
+
+    // TODO(primiano): handle mmap failure in case of OOM.
+    shared_memory_ = PosixSharedMemory::AttachToFd(std::move(shmem_fd));
+    shared_buffer_page_size_kb_ =
+        cmd.setup_tracing().shared_buffer_page_size_kb();
+    shared_memory_arbiter_ = SharedMemoryArbiter::CreateInstance(
+        shared_memory_.get(), shared_buffer_page_size_kb_ * 1024, this,
+        task_runner_);
+    producer_->OnTracingSetup();
+    return;
+  }
+
+  if (cmd.cmd_case() == protos::GetAsyncCommandResponse::kFlush) {
+    // This cast boilerplate is required only because protobuf uses its own
+    // uint64 and not stdint's uint64_t. On some 64 bit archs they differ on the
+    // type (long vs long long) even though they have the same size.
+    const auto* data_source_ids = cmd.flush().data_source_ids().data();
+    static_assert(sizeof(data_source_ids[0]) == sizeof(FlushRequestID),
+                  "data_source_ids should be 64-bit");
+    producer_->Flush(cmd.flush().request_id(),
+                     reinterpret_cast<const FlushRequestID*>(data_source_ids),
+                     static_cast<size_t>(cmd.flush().data_source_ids().size()));
+    return;
+  }
+
   PERFETTO_DLOG("Unknown async request %d received from tracing service",
                 cmd.cmd_case());
+  PERFETTO_DCHECK(false);
 }
 
 void ProducerIPCClientImpl::RegisterDataSource(
-    const DataSourceDescriptor& descriptor,
-    RegisterDataSourceCallback callback) {
+    const DataSourceDescriptor& descriptor) {
   PERFETTO_DCHECK_THREAD(thread_checker_);
   if (!connected_) {
     PERFETTO_DLOG(
         "Cannot RegisterDataSource(), not connected to tracing service");
-    return task_runner_->PostTask(std::bind(callback, 0));
   }
-  RegisterDataSourceRequest req;
+  protos::RegisterDataSourceRequest req;
   descriptor.ToProto(req.mutable_data_source_descriptor());
-  ipc::Deferred<RegisterDataSourceResponse> async_response;
-  // TODO: add a test that destroys the IPC channel soon after this call and
-  // checks that the callback(0) is invoked.
-  // TODO: add a test that destroyes ProducerIPCClientImpl soon after this call
-  // and checks that the callback is dropped.
+  ipc::Deferred<protos::RegisterDataSourceResponse> async_response;
   async_response.Bind(
-      [callback](ipc::AsyncResult<RegisterDataSourceResponse> response) {
-        if (!response) {
+      [](ipc::AsyncResult<protos::RegisterDataSourceResponse> response) {
+        if (!response)
           PERFETTO_DLOG("RegisterDataSource() failed: connection reset");
-          return callback(0);
-        }
-        if (response->data_source_id() == 0) {
-          PERFETTO_DLOG("RegisterDataSource() failed: %s",
-                        response->error().c_str());
-        }
-        callback(response->data_source_id());
       });
   producer_port_.RegisterDataSource(req, std::move(async_response));
 }
 
-void ProducerIPCClientImpl::UnregisterDataSource(DataSourceID id) {
+void ProducerIPCClientImpl::UnregisterDataSource(const std::string& name) {
   PERFETTO_DCHECK_THREAD(thread_checker_);
   if (!connected_) {
     PERFETTO_DLOG(
         "Cannot UnregisterDataSource(), not connected to tracing service");
     return;
   }
-  UnregisterDataSourceRequest req;
-  req.set_data_source_id(id);
+  protos::UnregisterDataSourceRequest req;
+  req.set_data_source_name(name);
   producer_port_.UnregisterDataSource(
-      req, ipc::Deferred<UnregisterDataSourceResponse>());
+      req, ipc::Deferred<protos::UnregisterDataSourceResponse>());
 }
 
-void ProducerIPCClientImpl::NotifySharedMemoryUpdate(
-    const std::vector<uint32_t>& changed_pages) {
+void ProducerIPCClientImpl::CommitData(const CommitDataRequest& req,
+                                       CommitDataCallback callback) {
   PERFETTO_DCHECK_THREAD(thread_checker_);
   if (!connected_) {
-    PERFETTO_DLOG(
-        "Cannot NotifySharedMemoryUpdate(), not connected to tracing service");
+    PERFETTO_DLOG("Cannot CommitData(), not connected to tracing service");
     return;
   }
-  NotifySharedMemoryUpdateRequest req;
-  for (uint32_t changed_page : changed_pages)
-    req.add_changed_pages(changed_page);
-  producer_port_.NotifySharedMemoryUpdate(
-      req, ipc::Deferred<NotifySharedMemoryUpdateResponse>());
+  protos::CommitDataRequest proto_req;
+  req.ToProto(&proto_req);
+  ipc::Deferred<protos::CommitDataResponse> async_response;
+  // TODO(primiano): add a test that destroys ProducerIPCClientImpl soon after
+  // this call and checks that the callback is dropped.
+  if (callback) {
+    async_response.Bind(
+        [callback](ipc::AsyncResult<protos::CommitDataResponse> response) {
+          if (!response) {
+            PERFETTO_DLOG("CommitData() failed: connection reset");
+            return;
+          }
+          callback();
+        });
+  }
+  producer_port_.CommitData(proto_req, std::move(async_response));
 }
 
 std::unique_ptr<TraceWriter> ProducerIPCClientImpl::CreateTraceWriter(
@@ -216,8 +219,16 @@ std::unique_ptr<TraceWriter> ProducerIPCClientImpl::CreateTraceWriter(
   return shared_memory_arbiter_->CreateTraceWriter(target_buffer);
 }
 
+void ProducerIPCClientImpl::NotifyFlushComplete(FlushRequestID req_id) {
+  return shared_memory_arbiter_->NotifyFlushComplete(req_id);
+}
+
 SharedMemory* ProducerIPCClientImpl::shared_memory() const {
   return shared_memory_.get();
+}
+
+size_t ProducerIPCClientImpl::shared_buffer_page_size_kb() const {
+  return shared_buffer_page_size_kb_;
 }
 
 }  // namespace perfetto

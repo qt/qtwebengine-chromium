@@ -243,9 +243,6 @@ const char kDisablePrintPreview[]           = "disable-print-preview";
 // disable that check. This switch is used during automated testing.
 const char kDisablePromptOnRepost[]         = "disable-prompt-on-repost";
 
-// Enable background mode for the Push API.
-const char kDisablePushApiBackgroundMode[] = "disable-push-api-background-mode";
-
 // Disables showing the search geolocation disclosure UI. Used for perf testing.
 const char kDisableSearchGeolocationDisclosure[] =
     "disable-search-geolocation-disclosure";
@@ -338,13 +335,6 @@ const char kEnablePowerOverlay[]            = "enable-power-overlay";
 const char kEnablePrintPreviewRegisterPromos[] =
     "enable-print-preview-register-promos";
 
-// Enable background mode for the Push API.
-const char kEnablePushApiBackgroundMode[] = "enable-push-api-background-mode";
-
-// Enables the site settings all sites list and site details pages in the Chrome
-// settings UI.
-const char kEnableSiteSettings[] = "enable-site-settings";
-
 // Enables user control over muting tab audio from the tab strip.
 const char kEnableTabAudioMuting[]  = "enable-tab-audio-muting";
 
@@ -386,9 +376,6 @@ const char kForceAppMode[]                  = "force-app-mode";
 // Forces Desktop to iOS promotion to appear in windows whenever an entrypoint
 // is triggered.
 const char kForceDesktopIOSPromotion[] = "force-desktop-ios-promotion";
-
-// Forces metrics reporting to be enabled.
-const char kForceEnableMetricsReporting[] = "force-enable-metrics-reporting";
 
 // Displays the First Run experience when the browser is started, regardless of
 // whether or not it's actually the First Run (this overrides kNoFirstRun).
@@ -628,6 +615,25 @@ const char kSimulateUpgrade[]               = "simulate-upgrade";
 // for the format.
 const char kSSLKeyLogFile[]               = "ssl-key-log-file";
 
+// Specifies the maximum SSL/TLS version ("tls1.2" or "tls1.3").
+const char kSSLVersionMax[] = "ssl-version-max";
+
+// Specifies the minimum SSL/TLS version ("tls1", "tls1.1", "tls1.2", or
+// "tls1.3").
+const char kSSLVersionMin[] = "ssl-version-min";
+
+// TLS 1.0 mode for the |kSSLVersionMin| switch.
+const char kSSLVersionTLSv1[] = "tls1";
+
+// TLS 1.1 mode for the |kSSLVersionMin| switch.
+const char kSSLVersionTLSv11[] = "tls1.1";
+
+// TLS 1.2 mode for |kSSLVersionMax| and |kSSLVersionMin| switches.
+const char kSSLVersionTLSv12[] = "tls1.2";
+
+// TLS 1.2 mode for |kSSLVersionMax| and |kSSLVersionMin| switches.
+const char kSSLVersionTLSv13[] = "tls1.3";
+
 // Starts the browser maximized, regardless of any previous settings.
 const char kStartMaximized[]                = "start-maximized";
 
@@ -638,10 +644,6 @@ const char kStartStackProfiler[]            = "start-stack-profiler";
 // given value. Pass an empty string to mark the profile as non-supervised.
 // Used for testing.
 const char kSupervisedUserId[]              = "managed-user-id";
-
-// Used to authenticate requests to the Sync service for supervised users.
-// Setting this switch also causes Sync to be set up for a supervised user.
-const char kSupervisedUserSyncToken[]       = "managed-user-sync-token";
 
 // Frequency in Milliseconds for system log uploads. Should only be used for
 // testing purposes.
@@ -654,6 +656,18 @@ const char kTaskManagerShowExtraRenderers[] =
 
 // Passes the name of the current running automated test to Chrome.
 const char kTestName[]                      = "test-name";
+
+// Specifies the enabled TLS 1.3 variant ("disabled", "draft23", "draft28").
+const char kTLS13Variant[] = "tls13-variant";
+
+// This mode disables the TLS 1.3 for the |kTLS13Variant| switch.
+const char kTLS13VariantDisabled[] = "disabled";
+
+// This mode enables TLS 1.3 draft-23 for the |kTLS13Variant| switch.
+const char kTLS13VariantDraft23[] = "draft23";
+
+// This mode enables TLS 1.3 draft-28 for the |kTLS13Variant| switch.
+const char kTLS13VariantDraft28[] = "draft28";
 
 // Identifies a list of download sources as trusted, but only if proper group
 // policy is set.

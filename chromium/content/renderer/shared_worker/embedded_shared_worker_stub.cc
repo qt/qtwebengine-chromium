@@ -8,15 +8,15 @@
 #include <utility>
 
 #include "base/feature_list.h"
+#include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "content/child/scoped_child_process_reference.h"
+#include "content/common/possibly_associated_wrapper_shared_url_loader_factory.h"
 #include "content/common/service_worker/service_worker_utils.h"
-#include "content/common/wrapper_shared_url_loader_factory.h"
 #include "content/public/common/appcache_info.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/origin_util.h"
-#include "content/public/common/weak_wrapper_shared_url_loader_factory.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/appcache/appcache_dispatcher.h"
 #include "content/renderer/appcache/web_application_cache_host_impl.h"
@@ -28,6 +28,7 @@
 #include "content/renderer/service_worker/service_worker_provider_context.h"
 #include "content/renderer/service_worker/worker_fetch_context_impl.h"
 #include "ipc/ipc_message_macros.h"
+#include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
 #include "third_party/blink/public/common/message_port/message_port_channel.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
 #include "third_party/blink/public/platform/interface_provider.h"
@@ -137,7 +138,7 @@ class WebServiceWorkerNetworkProviderForSharedWorker
       // mojom::URLLoaderFactory pointer into SharedURLLoaderFactory.
       return std::make_unique<WebURLLoaderImpl>(
           render_thread->resource_dispatcher(), std::move(task_runner),
-          base::MakeRefCounted<WeakWrapperSharedURLLoaderFactory>(
+          base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
               provider_->script_loader_factory()));
     }
 
@@ -162,7 +163,7 @@ class WebServiceWorkerNetworkProviderForSharedWorker
     return std::make_unique<WebURLLoaderImpl>(
         RenderThreadImpl::current()->resource_dispatcher(),
         std::move(task_runner),
-        base::MakeRefCounted<WeakWrapperSharedURLLoaderFactory>(
+        base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
             provider_->context()->GetSubresourceLoaderFactory()));
   }
 
@@ -274,20 +275,20 @@ EmbeddedSharedWorkerStub::CreateApplicationCacheHost(
 
 std::unique_ptr<blink::WebServiceWorkerNetworkProvider>
 EmbeddedSharedWorkerStub::CreateServiceWorkerNetworkProvider() {
-  scoped_refptr<network::SharedURLLoaderFactory> direct_network_loader_factory;
+  scoped_refptr<network::SharedURLLoaderFactory> fallback_factory;
   // current() may be null in tests.
   if (RenderThreadImpl* render_thread = RenderThreadImpl::current()) {
-    direct_network_loader_factory =
-        base::MakeRefCounted<PossiblyAssociatedWrapperSharedURLLoaderFactory>(
-            render_thread->blink_platform_impl()
-                ->CreateNetworkURLLoaderFactory());
+    scoped_refptr<ChildURLLoaderFactoryBundle> bundle =
+        render_thread->blink_platform_impl()
+            ->CreateDefaultURLLoaderFactoryBundle();
+    fallback_factory = network::SharedURLLoaderFactory::Create(
+        bundle->CloneWithoutDefaultFactory());
   }
 
   std::unique_ptr<ServiceWorkerNetworkProvider> provider =
       ServiceWorkerNetworkProvider::CreateForSharedWorker(
           std::move(service_worker_provider_info_),
-          std::move(script_loader_factory_info_),
-          std::move(direct_network_loader_factory));
+          std::move(script_loader_factory_info_), std::move(fallback_factory));
   return std::make_unique<WebServiceWorkerNetworkProviderForSharedWorker>(
       std::move(provider), IsOriginSecure(url_));
 }
@@ -328,22 +329,17 @@ EmbeddedSharedWorkerStub::CreateWorkerFetchContext(
       RenderThreadImpl::current()
           ->blink_platform_impl()
           ->CreateDefaultURLLoaderFactoryBundle();
-
-  auto direct_network_loader_factory =
-      base::MakeRefCounted<PossiblyAssociatedWrapperSharedURLLoaderFactory>(
-          RenderThreadImpl::current()
-              ->blink_platform_impl()
-              ->CreateNetworkURLLoaderFactory());
-
-  DCHECK(url_loader_factory_bundle);
-  DCHECK(direct_network_loader_factory);
-
   auto worker_fetch_context = std::make_unique<WorkerFetchContextImpl>(
       std::move(request), std::move(container_host_ptr_info),
       url_loader_factory_bundle->Clone(),
-      direct_network_loader_factory->Clone(),
+      url_loader_factory_bundle->CloneWithoutDefaultFactory(),
       GetContentClient()->renderer()->CreateURLLoaderThrottleProvider(
-          URLLoaderThrottleProviderType::kWorker));
+          URLLoaderThrottleProviderType::kWorker),
+      GetContentClient()
+          ->renderer()
+          ->CreateWebSocketHandshakeThrottleProvider(),
+      ChildThreadImpl::current()->thread_safe_sender(),
+      RenderThreadImpl::current()->GetIOTaskRunner());
 
   // TODO(horo): To get the correct first_party_to_cookies for the shared
   // worker, we need to check the all documents bounded by the shared worker.
@@ -363,6 +359,7 @@ EmbeddedSharedWorkerStub::CreateWorkerFetchContext(
     worker_fetch_context->set_is_controlled_by_service_worker(
         web_network_provider->HasControllerServiceWorker());
   }
+  worker_fetch_context->set_client_id(context->client_id());
   return std::move(worker_fetch_context);
 }
 

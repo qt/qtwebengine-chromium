@@ -29,8 +29,10 @@
 #include <memory>
 #include <utility>
 
+#include "base/auto_reset.h"
+#include "base/single_thread_task_runner.h"
+#include "third_party/blink/public/common/manifest/web_display_mode.h"
 #include "third_party/blink/public/platform/shape_properties.h"
-#include "third_party/blink/public/platform/web_display_mode.h"
 #include "third_party/blink/public/platform/web_rect.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/document_lifecycle.h"
@@ -38,8 +40,10 @@
 #include "third_party/blink/renderer/core/frame/frame_view_auto_size_info.h"
 #include "third_party/blink/renderer/core/frame/layout_subtree_root_list.h"
 #include "third_party/blink/renderer/core/frame/root_frame_viewport.h"
+#include "third_party/blink/renderer/core/layout/jank_tracker.h"
 #include "third_party/blink/renderer/core/layout/map_coordinates_flags.h"
 #include "third_party/blink/renderer/core/layout/scroll_anchor.h"
+#include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/paint/compositing/paint_layer_compositor.h"
 #include "third_party/blink/renderer/core/paint/first_meaningful_paint_detector.h"
 #include "third_party/blink/renderer/core/paint/object_paint_properties.h"
@@ -51,15 +55,12 @@
 #include "third_party/blink/renderer/platform/graphics/color.h"
 #include "third_party/blink/renderer/platform/graphics/compositor_element_id.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer_client.h"
-#include "third_party/blink/renderer/platform/graphics/paint/property_tree_state.h"
-#include "third_party/blink/renderer/platform/platform_frame_view.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_types.h"
 #include "third_party/blink/renderer/platform/scroll/scrollbar.h"
 #include "third_party/blink/renderer/platform/scroll/smooth_scroll_sequencer.h"
 #include "third_party/blink/renderer/platform/ukm_time_aggregator.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
@@ -84,7 +85,7 @@ class LayoutAnalyzer;
 class LayoutBox;
 class LayoutEmbeddedObject;
 class LayoutObject;
-class LayoutReplaced;
+class LayoutSVGRoot;
 class LayoutScrollbarPart;
 class LayoutView;
 class PaintArtifactCompositor;
@@ -104,7 +105,6 @@ typedef unsigned long long DOMTimeStamp;
 
 class CORE_EXPORT LocalFrameView final
     : public GarbageCollectedFinalized<LocalFrameView>,
-      public PlatformFrameView,
       public FrameView,
       public PaintInvalidationCapableScrollableArea {
   USING_GARBAGE_COLLECTED_MIXIN(LocalFrameView);
@@ -485,10 +485,6 @@ class CORE_EXPORT LocalFrameView final
   bool ScrollAnimatorEnabled() const override;
   bool ShouldScrollOnMainThread() const override;
   PaintLayer* Layer() const override;
-  GraphicsLayer* LayerForScrolling() const override;
-  GraphicsLayer* LayerForHorizontalScrollbar() const override;
-  GraphicsLayer* LayerForVerticalScrollbar() const override;
-  GraphicsLayer* LayerForScrollCorner() const override;
   int ScrollSize(ScrollbarOrientation) const override;
   bool IsScrollCornerVisible() const override;
   bool UpdateAfterCompositingChange() override;
@@ -509,7 +505,7 @@ class CORE_EXPORT LocalFrameView final
   // The window that hosts the LocalFrameView. The LocalFrameView will
   // communicate scrolls and repaints to the host window in the window's
   // coordinate space.
-  PlatformChromeClient* GetChromeClient() const override;
+  ChromeClient* GetChromeClient() const override;
 
   SmoothScrollSequencer* GetSmoothScrollSequencer() const override;
 
@@ -640,6 +636,7 @@ class CORE_EXPORT LocalFrameView final
   IntRect ContentsToViewport(const IntRect&) const;
   IntPoint ContentsToViewport(const IntPoint&) const;
   IntPoint ViewportToContents(const IntPoint&) const;
+  FloatPoint ViewportToContents(const FloatPoint&) const;
   LayoutPoint ViewportToContents(const LayoutPoint&) const;
 
   // FIXME: Some external callers expect to get back a rect that's positioned
@@ -741,7 +738,7 @@ class CORE_EXPORT LocalFrameView final
 
   bool IsLocalFrameView() const override { return true; }
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
   void NotifyPageThatContentAreaWillPaint() const;
 
   // Returns the scrollable area for the frame. For the root frame, this will
@@ -780,51 +777,8 @@ class CORE_EXPORT LocalFrameView final
 
   void BeginLifecycleUpdates();
 
-  void SetPreTranslation(
-      scoped_refptr<TransformPaintPropertyNode> pre_translation) {
-    pre_translation_ = std::move(pre_translation);
-  }
-  TransformPaintPropertyNode* PreTranslation() const {
-    return pre_translation_.get();
-  }
-  void SetScrollNode(scoped_refptr<ScrollPaintPropertyNode> scroll_node) {
-    scroll_node_ = std::move(scroll_node);
-  }
-  ScrollPaintPropertyNode* ScrollNode() const { return scroll_node_.get(); }
-  void SetScrollTranslation(
-      scoped_refptr<TransformPaintPropertyNode> scroll_translation) {
-    scroll_translation_ = std::move(scroll_translation);
-  }
-  TransformPaintPropertyNode* ScrollTranslation() const {
-    return scroll_translation_.get();
-  }
-  void SetContentClip(scoped_refptr<ClipPaintPropertyNode> content_clip) {
-    content_clip_ = std::move(content_clip);
-  }
-  ClipPaintPropertyNode* ContentClip() const { return content_clip_.get(); }
-
-  // The property tree state that should be used for painting contents. These
-  // properties are either created by this LocalFrameView or are inherited from
-  // an ancestor.
-  void SetTotalPropertyTreeStateForContents(
-      std::unique_ptr<PropertyTreeState> state) {
-    total_property_tree_state_for_contents_ = std::move(state);
-  }
-  const PropertyTreeState* TotalPropertyTreeStateForContents() const {
-    return total_property_tree_state_for_contents_.get();
-  }
-
-  // The property tree state that should be used for painting scrollbars etc.
-  // for which no content clip or scroll should be applied.
-  PropertyTreeState PreContentClipProperties() const {
-    DCHECK(!RuntimeEnabledFeatures::RootLayerScrollingEnabled());
-    DCHECK(total_property_tree_state_for_contents_);
-    return PropertyTreeState(
-        PreTranslation(),
-        total_property_tree_state_for_contents_->Clip()->Parent(),
-        total_property_tree_state_for_contents_->Effect());
-  }
-
+  // TODO(pdr): Remove the paint property update bits from LocalFrameView in
+  // favor of using LayoutView.
   // Paint properties (e.g., m_preTranslation, etc.) are built from the
   // LocalFrameView's state (e.g., x(), y(), etc.) as well as inherited context.
   // When these inputs change, setNeedsPaintPropertyUpdate will cause a paint
@@ -963,6 +917,7 @@ class CORE_EXPORT LocalFrameView final
   ScrollingCoordinatorContext* GetScrollingContext() const;
 
   void ScrollAndFocusFragmentAnchor();
+  JankTracker& GetJankTracker() { return jank_tracker_; }
 
  protected:
   // Scroll the content via the compositor.
@@ -996,7 +951,7 @@ class CORE_EXPORT LocalFrameView final
         : scope_(&view->in_update_scrollbars_, true) {}
 
    private:
-    AutoReset<bool> scope_;
+    base::AutoReset<bool> scope_;
   };
 
  private:
@@ -1025,7 +980,7 @@ class CORE_EXPORT LocalFrameView final
                      const CullRect&) const;
 
   LocalFrameView* ParentFrameView() const;
-  LayoutReplaced* EmbeddedReplacedContent() const;
+  LayoutSVGRoot* EmbeddedReplacedContent() const;
 
   void UpdateScrollOffset(const ScrollOffset&, ScrollType) override;
 
@@ -1278,23 +1233,6 @@ class CORE_EXPORT LocalFrameView final
   bool subtree_throttled_;
   bool lifecycle_updates_throttled_;
 
-  // The hierarchy of transform subtree created by a LocalFrameView.
-  // [ preTranslation ]               The offset from LocalFrameView::FrameRect.
-  //     |                            Establishes viewport.
-  //     +---[ scrollTranslation ]    Frame scrolling.
-  // TODO(trchen): These will not be needed once settings->rootLayerScrolls() is
-  // enabled.
-  scoped_refptr<TransformPaintPropertyNode> pre_translation_;
-  scoped_refptr<TransformPaintPropertyNode> scroll_translation_;
-  scoped_refptr<ScrollPaintPropertyNode> scroll_node_;
-  // The content clip clips the document (= LayoutView) but not the scrollbars.
-  // TODO(trchen): This will not be needed once settings->rootLayerScrolls() is
-  // enabled.
-  scoped_refptr<ClipPaintPropertyNode> content_clip_;
-  // The property tree state that should be used for painting contents. These
-  // properties are either created by this LocalFrameView or are inherited from
-  // an ancestor.
-  std::unique_ptr<PropertyTreeState> total_property_tree_state_for_contents_;
   // Whether the paint properties need to be updated. For more details, see
   // LocalFrameView::needsPaintPropertyUpdate().
   bool needs_paint_property_update_;
@@ -1349,6 +1287,7 @@ class CORE_EXPORT LocalFrameView final
   size_t paint_frame_count_;
 
   UniqueObjectId unique_id_;
+  JankTracker jank_tracker_;
 
   FRIEND_TEST_ALL_PREFIXES(WebViewTest, DeviceEmulationResetScrollbars);
 };
@@ -1378,11 +1317,6 @@ inline void LocalFrameView::IncrementVisuallyNonEmptyPixelCount(
     SetIsVisuallyNonEmpty();
 }
 
-DEFINE_TYPE_CASTS(LocalFrameView,
-                  PlatformFrameView,
-                  platform_frame_view,
-                  platform_frame_view->IsLocalFrameView(),
-                  platform_frame_view.IsLocalFrameView());
 DEFINE_TYPE_CASTS(LocalFrameView,
                   EmbeddedContentView,
                   embedded_content_view,

@@ -8,6 +8,7 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/layout/ng/geometry/ng_physical_offset.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_layout_input_node.h"
+#include "third_party/blink/renderer/platform/fonts/font_baseline.h"
 
 namespace blink {
 
@@ -46,7 +47,8 @@ class CORE_EXPORT NGBlockNode final : public NGLayoutInputNode {
   // min/max calculation (e.g. the node that will undergo shrink-to-fit). This
   // constraint space will not be passed on to children. If no constraint space
   // is specified, a zero-sized one will be used.
-  MinMaxSize ComputeMinMaxSize(const MinMaxSizeInput&,
+  MinMaxSize ComputeMinMaxSize(WritingMode container_writing_mode,
+                               const MinMaxSizeInput&,
                                const NGConstraintSpace* = nullptr);
 
   NGBoxStrut GetScrollbarSizes() const;
@@ -55,6 +57,7 @@ class CORE_EXPORT NGBlockNode final : public NGLayoutInputNode {
 
   // Layout an atomic inline; e.g., inline block.
   scoped_refptr<NGLayoutResult> LayoutAtomicInline(const NGConstraintSpace&,
+                                                   FontBaseline,
                                                    bool use_first_line_style);
 
   // Runs layout on the underlying LayoutObject and creates a fragment for the
@@ -89,9 +92,11 @@ class CORE_EXPORT NGBlockNode final : public NGLayoutInputNode {
       const NGPhysicalOffset& additional_offset = NGPhysicalOffset());
 
   void CopyBaselinesFromOldLayout(const NGConstraintSpace&, NGFragmentBuilder*);
-  void AddAtomicInlineBaselineFromOldLayout(const NGBaselineRequest&,
-                                            bool,
-                                            NGFragmentBuilder*);
+  LayoutUnit AtomicInlineBaselineFromOldLayout(const NGBaselineRequest&,
+                                               const NGConstraintSpace&);
+
+  void UpdateShapeOutsideInfoIfNeeded(
+      LayoutUnit percentage_resolution_inline_size);
 };
 
 DEFINE_TYPE_CASTS(NGBlockNode,

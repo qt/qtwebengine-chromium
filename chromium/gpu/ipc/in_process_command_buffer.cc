@@ -29,10 +29,13 @@
 #include "gpu/command_buffer/client/gpu_memory_buffer_manager.h"
 #include "gpu/command_buffer/common/gpu_memory_buffer_support.h"
 #include "gpu/command_buffer/common/swap_buffers_complete_params.h"
+#include "gpu/command_buffer/common/swap_buffers_flags.h"
 #include "gpu/command_buffer/common/sync_token.h"
 #include "gpu/command_buffer/service/command_buffer_service.h"
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/gl_context_virtual.h"
+#include "gpu/command_buffer/service/gl_state_restorer_impl.h"
+#include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/gpu_fence_manager.h"
 #include "gpu/command_buffer/service/gpu_preferences.h"
 #include "gpu/command_buffer/service/gpu_tracer.h"
@@ -41,12 +44,15 @@
 #include "gpu/command_buffer/service/memory_program_cache.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/query_manager.h"
+#include "gpu/command_buffer/service/raster_decoder.h"
 #include "gpu/command_buffer/service/service_utils.h"
 #include "gpu/command_buffer/service/sync_point_manager.h"
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
 #include "gpu/config/gpu_crash_keys.h"
 #include "gpu/config/gpu_feature_info.h"
+#include "gpu/config/gpu_switches.h"
 #include "gpu/ipc/gpu_in_process_thread_service.h"
+#include "gpu/ipc/host/gpu_memory_buffer_support.h"
 #include "gpu/ipc/service/gpu_channel_manager_delegate.h"
 #include "gpu/ipc/service/image_transport_surface.h"
 #include "ui/gfx/geometry/size.h"
@@ -56,7 +62,6 @@
 #include "ui/gl/gl_image.h"
 #include "ui/gl/gl_image_shared_memory.h"
 #include "ui/gl/gl_share_group.h"
-#include "ui/gl/gl_switches_util.h"
 #include "ui/gl/init/gl_factory.h"
 
 #if defined(OS_WIN)
@@ -99,10 +104,15 @@ class GpuInProcessThreadHolder : public base::Thread {
 
   const scoped_refptr<InProcessCommandBuffer::Service>& GetGpuThreadService() {
     if (!gpu_thread_service_) {
+      DCHECK(base::CommandLine::InitializedForCurrentProcess());
+      const base::CommandLine* command_line =
+          base::CommandLine::ForCurrentProcess();
+      GpuPreferences gpu_preferences = gles2::ParseGpuPreferences(command_line);
+      gpu_preferences.texture_target_exception_list =
+          CreateBufferUsageAndFormatExceptionList();
       gpu_thread_service_ = base::MakeRefCounted<GpuInProcessThreadService>(
-          true /* use_virtualized_gl_context */, task_runner(),
-          sync_point_manager_.get(), nullptr, nullptr, gpu_feature_info_,
-          GpuPreferences());
+          task_runner(), sync_point_manager_.get(), nullptr, nullptr,
+          gpu_feature_info_, gpu_preferences);
     }
     return gpu_thread_service_;
   }
@@ -227,6 +237,12 @@ void InProcessCommandBuffer::InitializeDefaultServiceForTesting(
   g_default_service.Get().SetGpuFeatureInfo(gpu_feature_info);
 }
 
+gpu::ServiceTransferCache* InProcessCommandBuffer::GetTransferCacheForTest()
+    const {
+  return static_cast<raster::RasterDecoder*>(decoder_.get())
+      ->GetTransferCacheForTest();
+}
+
 bool InProcessCommandBuffer::MakeCurrent() {
   CheckSequencedThread();
   command_buffer_lock_.AssertAcquired();
@@ -300,58 +316,104 @@ gpu::ContextResult InProcessCommandBuffer::InitializeOnGpuThread(
   CheckSequencedThread();
   gpu_thread_weak_ptr_ = gpu_thread_weak_ptr_factory_.GetWeakPtr();
 
+  // TODO(crbug.com/832243): This could use the TransferBufferManager owned by
+  // |context_group_| instead.
   transfer_buffer_manager_ = std::make_unique<TransferBufferManager>(nullptr);
 
-  gl_share_group_ = params.context_group ? params.context_group->gl_share_group_
-                                         : service_->share_group();
+  if (params.share_command_buffer) {
+    context_group_ = params.share_command_buffer->context_group_;
+  } else {
+    GpuDriverBugWorkarounds workarounds(
+        service_->gpu_feature_info().enabled_gpu_driver_bug_workarounds);
+    auto feature_info = base::MakeRefCounted<gles2::FeatureInfo>(workarounds);
 
-  bool bind_generates_resource = false;
-  gpu::GpuDriverBugWorkarounds workarounds(
-      service_->gpu_feature_info().enabled_gpu_driver_bug_workarounds);
-  auto feature_info = base::MakeRefCounted<gles2::FeatureInfo>(workarounds);
+    context_group_ = base::MakeRefCounted<gles2::ContextGroup>(
+        service_->gpu_preferences(),
+        gles2::PassthroughCommandDecoderSupported(),
+        service_->mailbox_manager(), nullptr /* memory_tracker */,
+        service_->shader_translator_cache(),
+        service_->framebuffer_completeness_cache(), feature_info,
+        params.attribs.bind_generates_resource, service_->image_manager(),
+        params.image_factory, nullptr /* progress_reporter */,
+        service_->gpu_feature_info(), service_->discardable_manager());
+  }
 
-  context_group_ =
-      params.context_group
-          ? params.context_group->decoder_->GetContextGroup()
-          : new gles2::ContextGroup(
-                service_->gpu_preferences(),
-                gles2::PassthroughCommandDecoderSupported(),
-                service_->mailbox_manager(), nullptr /* memory_tracker */,
-                service_->shader_translator_cache(),
-                service_->framebuffer_completeness_cache(), feature_info,
-                bind_generates_resource, service_->image_manager(),
-                nullptr /* image_factory */, nullptr /* progress_reporter */,
-                service_->gpu_feature_info(), service_->discardable_manager());
+#if defined(OS_MACOSX)
+  // Virtualize PreferIntegratedGpu contexts by default on OS X to prevent
+  // performance regressions when enabling FCM. https://crbug.com/180463
+  use_virtualized_gl_context_ |=
+      (params.attribs.gpu_preference == gl::PreferIntegratedGpu);
+#endif
+
+  use_virtualized_gl_context_ |= service_->ForceVirtualizedGLContexts();
+
+  // MailboxManagerSync synchronization correctness currently depends on having
+  // only a single context. See https://crbug.com/510243 for details.
+  use_virtualized_gl_context_ |= service_->mailbox_manager()->UsesSync();
+
+  use_virtualized_gl_context_ |=
+      context_group_->feature_info()->workarounds().use_virtualized_gl_contexts;
 
   command_buffer_ = std::make_unique<CommandBufferService>(
       this, transfer_buffer_manager_.get());
-  decoder_.reset(gles2::GLES2Decoder::Create(this, command_buffer_.get(),
-                                             service_->outputter(),
-                                             context_group_.get()));
+
+  // Check gpu_preferences() as well as attribs.enable_oop_rasterization to
+  // prevent compromised renderer from unilaterally enabling RasterDecoder until
+  // we have fuzzed it (https://crbug.com/829469).
+  if (service_->gpu_preferences().enable_oop_rasterization &&
+      params.attribs.enable_oop_rasterization &&
+      params.attribs.enable_raster_interface &&
+      !params.attribs.enable_gles2_interface) {
+    decoder_.reset(raster::RasterDecoder::Create(this, command_buffer_.get(),
+                                                 service_->outputter(),
+                                                 context_group_.get()));
+  } else {
+    decoder_.reset(gles2::GLES2Decoder::Create(this, command_buffer_.get(),
+                                               service_->outputter(),
+                                               context_group_.get()));
+  }
 
   if (!surface_) {
     if (params.is_offscreen) {
+      // TODO(crbug.com/832243): GLES2CommandBufferStub has additional logic for
+      // offscreen surfaces that might be needed here.
       surface_ = gl::init::CreateOffscreenGLSurface(gfx::Size());
-    } else {
-      surface_ = ImageTransportSurface::CreateNativeSurface(
-          gpu_thread_weak_ptr_factory_.GetWeakPtr(), params.window,
-          gl::GLSurfaceFormat());
-      if (!surface_ || !surface_->Initialize(gl::GLSurfaceFormat())) {
-        surface_ = nullptr;
-        LOG(ERROR) << "ContextResult::kFatalFailure: "
-                      "Failed to create surface.";
+      if (!surface_.get()) {
+        DestroyOnGpuThread();
+        LOG(ERROR) << "ContextResult::kFatalFailure: Failed to create surface.";
         return gpu::ContextResult::kFatalFailure;
       }
+    } else {
+      gl::GLSurfaceFormat surface_format;
+      switch (params.attribs.color_space) {
+        case COLOR_SPACE_UNSPECIFIED:
+          surface_format.SetColorSpace(
+              gl::GLSurfaceFormat::COLOR_SPACE_UNSPECIFIED);
+          break;
+        case COLOR_SPACE_SRGB:
+          surface_format.SetColorSpace(gl::GLSurfaceFormat::COLOR_SPACE_SRGB);
+          break;
+        case COLOR_SPACE_DISPLAY_P3:
+          surface_format.SetColorSpace(
+              gl::GLSurfaceFormat::COLOR_SPACE_DISPLAY_P3);
+          break;
+      }
+      surface_ = ImageTransportSurface::CreateNativeSurface(
+          gpu_thread_weak_ptr_factory_.GetWeakPtr(), params.window,
+          surface_format);
+      if (!surface_ || !surface_->Initialize(surface_format)) {
+        DestroyOnGpuThread();
+        LOG(ERROR) << "ContextResult::kFatalFailure: Failed to create surface.";
+        return gpu::ContextResult::kFatalFailure;
+      }
+      if (params.attribs.enable_swap_timestamps_if_supported &&
+          surface_->SupportsSwapTimestamps())
+        surface_->SetEnableSwapTimestamps();
     }
   }
 
-  if (!surface_.get()) {
-    DestroyOnGpuThread();
-    LOG(ERROR) << "ContextResult::kFatalFailure: "
-                  "Could not create GLSurface.";
-    return gpu::ContextResult::kFatalFailure;
-  }
-
+  // TODO(crbug.com/832243): InProcessCommandBuffer should support using the GPU
+  // scheduler for non-WebView cases.
   sync_point_order_data_ =
       service_->sync_point_manager()->CreateSyncPointOrderData();
   sync_point_client_state_ =
@@ -359,54 +421,72 @@ gpu::ContextResult InProcessCommandBuffer::InitializeOnGpuThread(
           GetNamespaceID(), GetCommandBufferID(),
           sync_point_order_data_->sequence_id());
 
-  // TODO(crbug.com/811979): Unify logic for using virtualized contexts in
-  // InProcessCommandBuffer and GLES2CommandBufferStub.
-  use_virtualized_gl_context_ =
-      service_->UseVirtualizedGLContexts() || decoder_->GetContextGroup()
-                                                  ->feature_info()
-                                                  ->workarounds()
-                                                  .use_virtualized_gl_contexts;
+  if (context_group_->use_passthrough_cmd_decoder()) {
+    // When using the passthrough command decoder, only share with other
+    // contexts in the explicitly requested share group.
+    if (params.share_command_buffer) {
+      gl_share_group_ = params.share_command_buffer->gl_share_group_;
+    } else {
+      gl_share_group_ = new gl::GLShareGroup();
+    }
+  } else {
+    // When using the validating command decoder, always use the global share
+    // group.
+    gl_share_group_ = service_->share_group();
+  }
 
   // TODO(sunnyps): Should this use ScopedCrashKey instead?
   crash_keys::gpu_gl_context_is_virtual.Set(use_virtualized_gl_context_ ? "1"
                                                                         : "0");
 
   if (use_virtualized_gl_context_) {
-    context_ = gl_share_group_->GetSharedContext(surface_.get());
-    if (!context_.get()) {
-      context_ = gl::init::CreateGLContext(
+    DCHECK(gl_share_group_);
+    scoped_refptr<gl::GLContext> real_context =
+        gl_share_group_->GetSharedContext(surface_.get());
+    if (!real_context.get()) {
+      real_context = gl::init::CreateGLContext(
           gl_share_group_.get(), surface_.get(),
-          GenerateGLContextAttribs(params.attribs,
-                                   decoder_->GetContextGroup()));
-      if (context_.get()) {
-        service_->gpu_feature_info().ApplyToGLContext(context_.get());
+          GenerateGLContextAttribs(params.attribs, context_group_.get()));
+      if (!real_context) {
+        // TODO(piman): This might not be fatal, we could recurse into
+        // CreateGLContext to get more info, tho it should be exceedingly
+        // rare and may not be recoverable anyway.
+        DestroyOnGpuThread();
+        LOG(ERROR) << "ContextResult::kFatalFailure: "
+                      "Failed to create shared context for virtualization.";
+        return gpu::ContextResult::kFatalFailure;
       }
-      gl_share_group_->SetSharedContext(surface_.get(), context_.get());
+      // Ensure that context creation did not lose track of the intended share
+      // group.
+      DCHECK(real_context->share_group() == gl_share_group_.get());
+      gl_share_group_->SetSharedContext(surface_.get(), real_context.get());
+
+      service_->gpu_feature_info().ApplyToGLContext(real_context.get());
     }
 
-    context_ = new GLContextVirtual(gl_share_group_.get(), context_.get(),
-                                    decoder_->AsWeakPtr());
-    if (context_->Initialize(
-            surface_.get(), GenerateGLContextAttribs(
-                                params.attribs, decoder_->GetContextGroup()))) {
-      VLOG(1) << "Created virtual GL context.";
-    } else {
-      context_ = NULL;
+    context_ = base::MakeRefCounted<GLContextVirtual>(
+        gl_share_group_.get(), real_context.get(), decoder_->AsWeakPtr());
+    if (!context_->Initialize(
+            surface_.get(),
+            GenerateGLContextAttribs(params.attribs, context_group_.get()))) {
+      // TODO(piman): This might not be fatal, we could recurse into
+      // CreateGLContext to get more info, tho it should be exceedingly
+      // rare and may not be recoverable anyway.
+      DestroyOnGpuThread();
+      LOG(ERROR) << "ContextResult::kFatalFailure: "
+                    "Failed to initialize virtual GL context.";
+      return gpu::ContextResult::kFatalFailure;
     }
   } else {
     context_ = gl::init::CreateGLContext(
         gl_share_group_.get(), surface_.get(),
-        GenerateGLContextAttribs(params.attribs, decoder_->GetContextGroup()));
-    if (context_.get()) {
-      service_->gpu_feature_info().ApplyToGLContext(context_.get());
+        GenerateGLContextAttribs(params.attribs, context_group_.get()));
+    if (!context_) {
+      DestroyOnGpuThread();
+      LOG(ERROR) << "ContextResult::kFatalFailure: Failed to create context.";
+      return gpu::ContextResult::kFatalFailure;
     }
-  }
-
-  if (!context_.get()) {
-    DestroyOnGpuThread();
-    LOG(ERROR) << "ContextResult::kFatalFailure: "
-                  "Could not create GLContext.";
-    return gpu::ContextResult::kFatalFailure;
+    service_->gpu_feature_info().ApplyToGLContext(context_.get());
   }
 
   if (!context_->MakeCurrent(surface_.get())) {
@@ -417,12 +497,14 @@ gpu::ContextResult InProcessCommandBuffer::InitializeOnGpuThread(
     return gpu::ContextResult::kTransientFailure;
   }
 
-  if (!decoder_->GetContextGroup()->has_program_cache() &&
-      !decoder_->GetContextGroup()
-           ->feature_info()
-           ->workarounds()
-           .disable_program_cache) {
-    decoder_->GetContextGroup()->set_program_cache(service_->program_cache());
+  if (!context_->GetGLStateRestorer()) {
+    context_->SetGLStateRestorer(
+        new GLStateRestorerImpl(decoder_->AsWeakPtr()));
+  }
+
+  if (!context_group_->has_program_cache() &&
+      !context_group_->feature_info()->workarounds().disable_program_cache) {
+    context_group_->set_program_cache(service_->program_cache());
   }
 
   gles2::DisallowedFeatures disallowed_features;
@@ -430,10 +512,29 @@ gpu::ContextResult InProcessCommandBuffer::InitializeOnGpuThread(
   auto result = decoder_->Initialize(surface_, context_, params.is_offscreen,
                                      disallowed_features, params.attribs);
   if (result != gpu::ContextResult::kSuccess) {
-    LOG(ERROR) << "Could not initialize decoder.";
     DestroyOnGpuThread();
+    DLOG(ERROR) << "Failed to initialize decoder.";
     return result;
   }
+
+  if (service_->gpu_preferences().enable_gpu_service_logging)
+    decoder_->SetLogCommands(true);
+
+  if (use_virtualized_gl_context_) {
+    // If virtualized GL contexts are in use, then real GL context state
+    // is in an indeterminate state, since the GLStateRestorer was not
+    // initialized at the time the GLContextVirtual was made current. In
+    // the case that this command decoder is the next one to be
+    // processed, force a "full virtual" MakeCurrent to be performed.
+    context_->ForceReleaseVirtuallyCurrent();
+    if (!context_->MakeCurrent(surface_.get())) {
+      DestroyOnGpuThread();
+      LOG(ERROR) << "ContextResult::kTransientFailure: "
+                    "Failed to make context current after initialization.";
+      return gpu::ContextResult::kTransientFailure;
+    }
+  }
+
   *params.capabilities = decoder_->GetCapabilities();
 
   image_factory_ = params.image_factory;
@@ -464,16 +565,17 @@ bool InProcessCommandBuffer::DestroyOnGpuThread() {
   gpu_thread_weak_ptr_factory_.InvalidateWeakPtrs();
   // Clean up GL resources if possible.
   bool have_context = context_.get() && context_->MakeCurrent(surface_.get());
+
+  // Prepare to destroy the surface while the context is still current, because
+  // some surface destructors make GL calls.
+  if (surface_)
+    surface_->PrepareToDestroy(have_context);
+
   if (decoder_) {
     decoder_->Destroy(have_context);
     decoder_.reset();
   }
   command_buffer_.reset();
-
-  // Destroy the surface with the context current, some surface destructors make
-  // GL calls.
-  if (context_)
-    context_->MakeCurrent(surface_.get());
   surface_ = nullptr;
 
   context_ = nullptr;
@@ -897,9 +999,7 @@ void InProcessCommandBuffer::CacheShader(const std::string& key,
 void InProcessCommandBuffer::OnFenceSyncRelease(uint64_t release) {
   SyncToken sync_token(GetNamespaceID(), GetCommandBufferID(), release);
 
-  MailboxManager* mailbox_manager =
-      decoder_->GetContextGroup()->mailbox_manager();
-  mailbox_manager->PushTextureUpdates(sync_token);
+  context_group_->mailbox_manager()->PushTextureUpdates(sync_token);
 
   sync_point_client_state_->ReleaseFenceSync(release);
 }
@@ -909,8 +1009,7 @@ bool InProcessCommandBuffer::OnWaitSyncToken(const SyncToken& sync_token) {
   SyncPointManager* sync_point_manager = service_->sync_point_manager();
   DCHECK(sync_point_manager);
 
-  MailboxManager* mailbox_manager =
-      decoder_->GetContextGroup()->mailbox_manager();
+  MailboxManager* mailbox_manager = context_group_->mailbox_manager();
   DCHECK(mailbox_manager);
 
   if (service_->BlockThreadOnWaitSyncToken()) {
@@ -942,9 +1041,7 @@ bool InProcessCommandBuffer::OnWaitSyncToken(const SyncToken& sync_token) {
 void InProcessCommandBuffer::OnWaitSyncTokenCompleted(
     const SyncToken& sync_token) {
   DCHECK(waiting_for_sync_point_);
-  MailboxManager* mailbox_manager =
-      decoder_->GetContextGroup()->mailbox_manager();
-  mailbox_manager->PullTextureUpdates(sync_token);
+  context_group_->mailbox_manager()->PullTextureUpdates(sync_token);
   waiting_for_sync_point_ = false;
   command_buffer_->SetScheduled(true);
   service_->ScheduleTask(base::Bind(
@@ -969,6 +1066,11 @@ void InProcessCommandBuffer::OnRescheduleAfterFinished() {
   }
 }
 
+void InProcessCommandBuffer::OnSwapBuffers(uint64_t swap_id, uint32_t flags) {
+  pending_swap_completed_params_.push_back({swap_id, flags});
+  pending_presented_params_.push_back({swap_id, flags});
+}
+
 void InProcessCommandBuffer::SignalSyncTokenOnGpuThread(
     const SyncToken& sync_token,
     base::OnceClosure callback) {
@@ -991,17 +1093,7 @@ void InProcessCommandBuffer::SignalQuery(unsigned query_id,
 void InProcessCommandBuffer::SignalQueryOnGpuThread(
     unsigned query_id,
     base::OnceClosure callback) {
-  QueryManager* query_manager = decoder_->GetQueryManager();
-  if (query_manager) {
-    QueryManager::Query* query = query_manager->GetQuery(query_id);
-    if (query) {
-      query->AddCallback(std::move(callback));
-      return;
-    }
-  }
-
-  // Something went wrong, run callback immediately.
-  std::move(callback).Run();
+  decoder_->SetQueryCallback(query_id, std::move(callback));
 }
 
 void InProcessCommandBuffer::CreateGpuFence(uint32_t gpu_fence_id,
@@ -1156,6 +1248,9 @@ void InProcessCommandBuffer::DidCreateAcceleratedSurfaceChildWindow(
 
 void InProcessCommandBuffer::DidSwapBuffersComplete(
     SwapBuffersCompleteParams params) {
+  params.swap_response.swap_id = pending_swap_completed_params_.front().swap_id;
+  pending_swap_completed_params_.pop_front();
+
   if (!origin_task_runner_) {
     DidSwapBuffersCompleteOnOriginThread(std::move(params));
     return;
@@ -1174,34 +1269,25 @@ const GpuPreferences& InProcessCommandBuffer::GetGpuPreferences() const {
   return context_group_->gpu_preferences();
 }
 
-void InProcessCommandBuffer::UpdateVSyncParameters(base::TimeTicks timebase,
-                                                   base::TimeDelta interval) {
-  if (!origin_task_runner_) {
-    UpdateVSyncParametersOnOriginThread(timebase, interval);
-    return;
-  }
-  origin_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&InProcessCommandBuffer::UpdateVSyncParametersOnOriginThread,
-                 client_thread_weak_ptr_, timebase, interval));
-}
-
 void InProcessCommandBuffer::SetSnapshotRequestedCallback(
     const base::Closure& callback) {
   snapshot_requested_callback_ = callback;
 }
 
 void InProcessCommandBuffer::BufferPresented(
-    uint64_t swap_id,
     const gfx::PresentationFeedback& feedback) {
+  SwapBufferParams params = pending_presented_params_.front();
+  pending_presented_params_.pop_front();
+
   if (!origin_task_runner_) {
-    BufferPresentedOnOriginThread(swap_id, feedback);
+    BufferPresentedOnOriginThread(params.swap_id, params.flags, feedback);
     return;
   }
   origin_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&InProcessCommandBuffer::BufferPresentedOnOriginThread,
-                 client_thread_weak_ptr_, swap_id, feedback));
+                 client_thread_weak_ptr_, params.swap_id, params.flags,
+                 feedback));
 }
 
 void InProcessCommandBuffer::AddFilter(IPC::MessageFilter* message_filter) {
@@ -1215,43 +1301,29 @@ int32_t InProcessCommandBuffer::GetRouteID() const {
 
 void InProcessCommandBuffer::DidSwapBuffersCompleteOnOriginThread(
     SwapBuffersCompleteParams params) {
-  if (!swap_buffers_completion_callback_.is_null())
-    swap_buffers_completion_callback_.Run(std::move(params));
-}
-
-void InProcessCommandBuffer::UpdateVSyncParametersOnOriginThread(
-    base::TimeTicks timebase,
-    base::TimeDelta interval) {
-  DCHECK(!gl::IsPresentationCallbackEnabled());
-  if (!update_vsync_parameters_completion_callback_.is_null())
-    update_vsync_parameters_completion_callback_.Run(timebase, interval);
+  if (gpu_control_client_)
+    gpu_control_client_->OnGpuControlSwapBuffersCompleted(params);
 }
 
 void InProcessCommandBuffer::BufferPresentedOnOriginThread(
     uint64_t swap_id,
+    uint32_t flags,
     const gfx::PresentationFeedback& feedback) {
-  DCHECK(gl::IsPresentationCallbackEnabled());
-  if (presentation_callback_)
-    presentation_callback_.Run(swap_id, feedback);
-  if (update_vsync_parameters_completion_callback_ &&
-      feedback.timestamp != base::TimeTicks())
-    update_vsync_parameters_completion_callback_.Run(feedback.timestamp,
-                                                     feedback.interval);
-}
-
-void InProcessCommandBuffer::SetSwapBuffersCompletionCallback(
-    const SwapBuffersCompletionCallback& callback) {
-  swap_buffers_completion_callback_ = callback;
+  if (gpu_control_client_)
+    gpu_control_client_->OnSwapBufferPresented(swap_id, feedback);
+  if (flags & gpu::SwapBuffersFlags::kPresentationFeedback ||
+      (flags & gpu::SwapBuffersFlags::kVSyncParams &&
+       feedback.flags & gfx::PresentationFeedback::kVSync)) {
+    if (update_vsync_parameters_completion_callback_ &&
+        feedback.timestamp != base::TimeTicks())
+      update_vsync_parameters_completion_callback_.Run(feedback.timestamp,
+                                                       feedback.interval);
+  }
 }
 
 void InProcessCommandBuffer::SetUpdateVSyncParametersCallback(
     const UpdateVSyncParametersCallback& callback) {
   update_vsync_parameters_completion_callback_ = callback;
-}
-
-void InProcessCommandBuffer::SetPresentationCallback(
-    const PresentationCallback& callback) {
-  presentation_callback_ = callback;
 }
 
 namespace {

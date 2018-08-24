@@ -23,7 +23,7 @@
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "content/test/test_content_browser_client.h"
-#include "services/tracing/public/cpp/chrome_trace_event_agent.h"
+#include "services/tracing/public/cpp/trace_event_agent.h"
 
 using base::trace_event::RECORD_CONTINUOUSLY;
 using base::trace_event::RECORD_UNTIL_FULL;
@@ -236,10 +236,9 @@ class TracingControllerTest : public ContentBrowserTest {
     base::trace_event::TraceLog::GetInstance()->SetArgumentFilterPredicate(
         base::Bind(&IsTraceEventArgsWhitelisted));
 
-    TracingController* controller = TracingController::GetInstance();
-    tracing::ChromeTraceEventAgent::GetInstance()->AddMetadataGeneratorFunction(
-        base::Bind(&TracingControllerTest::GenerateMetadataDict,
-                   base::Unretained(this)));
+    TracingControllerImpl* controller = TracingControllerImpl::GetInstance();
+    controller->GetTraceEventAgent()->AddMetadataGeneratorFunction(base::Bind(
+        &TracingControllerTest::GenerateMetadataDict, base::Unretained(this)));
 
     {
       base::RunLoop run_loop;
@@ -391,9 +390,6 @@ IN_PROC_BROWSER_TEST_F(TracingControllerTest, DisableRecordingStoresMetadata) {
   std::string os_name;
   last_metadata()->GetString("os-name", &os_name);
   EXPECT_TRUE(os_name.length() > 0);
-  std::string cpu_brand;
-  last_metadata()->GetString("cpu-brand", &cpu_brand);
-  EXPECT_TRUE(cpu_brand.length() > 0);
   std::string command_line;
   last_metadata()->GetString("command_line", &command_line);
   EXPECT_TRUE(command_line.length() > 0);
@@ -408,10 +404,6 @@ IN_PROC_BROWSER_TEST_F(TracingControllerTest,
   TestStartAndStopTracingStringWithFilter();
   // Check that a number of important keys exist in the metadata dictionary.
   EXPECT_TRUE(last_metadata() != nullptr);
-  std::string cpu_brand;
-  last_metadata()->GetString("cpu-brand", &cpu_brand);
-  EXPECT_TRUE(cpu_brand.length() > 0);
-  EXPECT_TRUE(cpu_brand != "__stripped__");
   std::string network_type;
   last_metadata()->GetString("network-type", &network_type);
   EXPECT_TRUE(network_type.length() > 0);

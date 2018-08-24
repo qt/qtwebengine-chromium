@@ -24,7 +24,7 @@
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_current.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
@@ -41,6 +41,7 @@
 #include "chrome/browser/download/download_core_service_factory.h"
 #include "chrome/browser/download/download_danger_prompt.h"
 #include "chrome/browser/download/download_file_icon_extractor.h"
+#include "chrome/browser/download/download_open_prompt.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/download/download_query.h"
 #include "chrome/browser/download/download_shelf.h"
@@ -149,6 +150,7 @@ const char kDangerKey[] = "danger";
 const char kDangerSafe[] = "safe";
 const char kDangerUncommon[] = "uncommon";
 const char kDangerUnwanted[] = "unwanted";
+const char kDangerWhitelistedByPolicy[] = "whitelistedByPolicy";
 const char kDangerUrl[] = "url";
 const char kEndTimeKey[] = "endTime";
 const char kEndedAfterKey[] = "endedAfter";
@@ -183,16 +185,11 @@ const char kFinalUrlRegexKey[] = "finalUrlRegex";
 // Note: Any change to the danger type strings, should be accompanied by a
 // corresponding change to downloads.json.
 const char* const kDangerStrings[] = {
-  kDangerSafe,
-  kDangerFile,
-  kDangerUrl,
-  kDangerContent,
-  kDangerSafe,
-  kDangerUncommon,
-  kDangerAccepted,
-  kDangerHost,
-  kDangerUnwanted
-};
+    kDangerSafe,     kDangerFile,
+    kDangerUrl,      kDangerContent,
+    kDangerSafe,     kDangerUncommon,
+    kDangerAccepted, kDangerHost,
+    kDangerUnwanted, kDangerWhitelistedByPolicy};
 static_assert(arraysize(kDangerStrings) == download::DOWNLOAD_DANGER_TYPE_MAX,
               "kDangerStrings should have DOWNLOAD_DANGER_TYPE_MAX elements");
 
@@ -636,7 +633,11 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
         json_(std::move(json_item)),
         creator_conflict_action_(downloads::FILENAME_CONFLICT_ACTION_UNIQUIFY),
         determined_conflict_action_(
-            downloads::FILENAME_CONFLICT_ACTION_UNIQUIFY) {
+            downloads::FILENAME_CONFLICT_ACTION_UNIQUIFY),
+        is_download_completed_(download_item->GetState() ==
+                               DownloadItem::COMPLETE),
+        is_completed_download_deleted_(
+            download_item->GetFileExternallyRemoved()) {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     download_item->SetUserData(kKey, base::WrapUnique(this));
   }
@@ -648,6 +649,16 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
     }
   }
 
+  void set_is_download_completed(bool is_download_completed) {
+    is_download_completed_ = is_download_completed;
+  }
+  void set_is_completed_download_deleted(bool is_completed_download_deleted) {
+    is_completed_download_deleted_ = is_completed_download_deleted;
+  }
+  bool is_download_completed() { return is_download_completed_; }
+  bool is_completed_download_deleted() {
+    return is_completed_download_deleted_;
+  }
   const base::DictionaryValue& json() const { return *json_; }
   void set_json(std::unique_ptr<base::DictionaryValue> json_item) {
     json_ = std::move(json_item);
@@ -869,6 +880,8 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
 
   int updated_;
   int changed_fired_;
+  // Dictionary representing the current state of the download. It is cleared
+  // when download completes.
   std::unique_ptr<base::DictionaryValue> json_;
 
   base::Closure filename_no_change_;
@@ -883,6 +896,11 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
   downloads::FilenameConflictAction
     determined_conflict_action_;
   DeterminerInfo determiner_;
+
+  // Whether a download is complete and whether the completed download is
+  // deleted.
+  bool is_download_completed_;
+  bool is_completed_download_deleted_;
 
   std::unique_ptr<base::WeakPtrFactory<ExtensionDownloadsEventRouterData>>
       weak_ptr_factory_;
@@ -1410,6 +1428,9 @@ ExtensionFunction::ResponseAction DownloadsShowDefaultFolderFunction::Run() {
   return RespondNow(NoArguments());
 }
 
+DownloadsOpenFunction::OnPromptCreatedCallback*
+    DownloadsOpenFunction::on_prompt_created_cb_ = nullptr;
+
 DownloadsOpenFunction::DownloadsOpenFunction() {}
 
 DownloadsOpenFunction::~DownloadsOpenFunction() {}
@@ -1430,9 +1451,48 @@ ExtensionFunction::ResponseAction DownloadsOpenFunction::Run() {
             errors::kOpenPermission, &error)) {
     return RespondNow(Error(error));
   }
-  download_item->OpenDownload();
+  Browser* browser = ChromeExtensionFunctionDetails(this).GetCurrentBrowser();
+  if (Fault(!browser, errors::kInvisibleContext, &error))
+    return RespondNow(Error(error));
+  content::WebContents* web_contents =
+      browser->tab_strip_model()->GetActiveWebContents();
+  if (Fault(!web_contents, errors::kInvisibleContext, &error))
+    return RespondNow(Error(error));
+  if (GetSenderWebContents() &&
+      GetSenderWebContents()->HasRecentInteractiveInputEvent()) {
+    download_item->OpenDownload();
+    return RespondNow(NoArguments());
+  }
+  // Prompt user for ack to open the download.
+  // TODO(qinmin): check if user prefers to open all download using the same
+  // extension, or check the recent user gesture on the originating webcontents
+  // to avoid showing the prompt.
+  DownloadOpenPrompt* download_open_prompt =
+      DownloadOpenPrompt::CreateDownloadOpenConfirmationDialog(
+          web_contents, extension()->name(), download_item->GetFullPath(),
+          base::BindOnce(&DownloadsOpenFunction::OpenPromptDone, this,
+                         params->download_id));
+  if (on_prompt_created_cb_)
+    std::move(*on_prompt_created_cb_).Run(download_open_prompt);
   RecordApiFunctions(DOWNLOADS_FUNCTION_OPEN);
-  return RespondNow(NoArguments());
+  return RespondLater();
+}
+
+void DownloadsOpenFunction::OpenPromptDone(int download_id, bool accept) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  std::string error;
+  if (Fault(!accept, errors::kOpenPermission, &error)) {
+    Respond(Error(error));
+    return;
+  }
+  DownloadItem* download_item =
+      GetDownload(browser_context(), include_incognito(), download_id);
+  if (Fault(!download_item, errors::kFileAlreadyDeleted, &error)) {
+    Respond(Error(error));
+    return;
+  }
+  download_item->OpenDownload();
+  Respond(NoArguments());
 }
 
 DownloadsDragFunction::DownloadsDragFunction() {}
@@ -1458,8 +1518,7 @@ ExtensionFunction::ResponseAction DownloadsDragFunction::Run() {
   gfx::NativeView view = web_contents->GetNativeView();
   {
     // Enable nested tasks during DnD, while |DragDownload()| blocks.
-    base::MessageLoop::ScopedNestableTaskAllower allow(
-        base::MessageLoop::current());
+    base::MessageLoopCurrent::ScopedNestableTaskAllower allow;
     DragDownloadItem(download_item, icon, view);
   }
   return RespondNow(NoArguments());
@@ -1827,6 +1886,9 @@ void ExtensionDownloadsEventRouter::OnDownloadCreated(
             downloads::OnDeterminingFilename::kEventName))) {
     return;
   }
+
+  // download_item->GetFileExternallyRemoved() should always return false for
+  // unfinished download.
   std::unique_ptr<base::DictionaryValue> json_item(
       DownloadItemToJSON(download_item, profile_));
   DispatchEvent(events::DOWNLOADS_ON_CREATED, downloads::OnCreated::kEventName,
@@ -1836,7 +1898,10 @@ void ExtensionDownloadsEventRouter::OnDownloadCreated(
       (router->HasEventListener(downloads::OnChanged::kEventName) ||
        router->HasEventListener(
            downloads::OnDeterminingFilename::kEventName))) {
-    new ExtensionDownloadsEventRouterData(download_item, std::move(json_item));
+    new ExtensionDownloadsEventRouterData(
+        download_item, download_item->GetState() == DownloadItem::COMPLETE
+                           ? nullptr
+                           : std::move(json_item));
   }
 }
 
@@ -1857,44 +1922,65 @@ void ExtensionDownloadsEventRouter::OnDownloadUpdated(
         download_item,
         std::unique_ptr<base::DictionaryValue>(new base::DictionaryValue()));
   }
-  std::unique_ptr<base::DictionaryValue> new_json(
-      DownloadItemToJSON(download_item, profile_));
+  std::unique_ptr<base::DictionaryValue> new_json;
   std::unique_ptr<base::DictionaryValue> delta(new base::DictionaryValue());
   delta->SetInteger(kIdKey, download_item->GetId());
-  std::set<std::string> new_fields;
   bool changed = false;
+  // For completed downloads, update can only happen when file is removed.
+  if (data->is_download_completed()) {
+    if (data->is_completed_download_deleted() !=
+        download_item->GetFileExternallyRemoved()) {
+      DCHECK(!data->is_completed_download_deleted());
+      DCHECK(download_item->GetFileExternallyRemoved());
+      std::string exists = kExistsKey;
+      delta->SetBoolean(exists + ".current", false);
+      delta->SetBoolean(exists + ".previous", true);
+      changed = true;
+    }
+  } else {
+    new_json = DownloadItemToJSON(download_item, profile_);
+    std::set<std::string> new_fields;
+    // For each field in the new json representation of the download_item except
+    // the bytesReceived field, if the field has changed from the previous old
+    // json, set the differences in the |delta| object and remember that
+    // something significant changed.
+    for (base::DictionaryValue::Iterator iter(*new_json); !iter.IsAtEnd();
+         iter.Advance()) {
+      new_fields.insert(iter.key());
+      if (IsDownloadDeltaField(iter.key())) {
+        const base::Value* old_value = NULL;
+        if (!data->json().HasKey(iter.key()) ||
+            (data->json().Get(iter.key(), &old_value) &&
+             !iter.value().Equals(old_value))) {
+          delta->Set(iter.key() + ".current", iter.value().CreateDeepCopy());
+          if (old_value)
+            delta->Set(iter.key() + ".previous", old_value->CreateDeepCopy());
+          changed = true;
+        }
+      }
+    }
 
-  // For each field in the new json representation of the download_item except
-  // the bytesReceived field, if the field has changed from the previous old
-  // json, set the differences in the |delta| object and remember that something
-  // significant changed.
-  for (base::DictionaryValue::Iterator iter(*new_json); !iter.IsAtEnd();
-       iter.Advance()) {
-    new_fields.insert(iter.key());
-    if (IsDownloadDeltaField(iter.key())) {
-      const base::Value* old_value = NULL;
-      if (!data->json().HasKey(iter.key()) ||
-          (data->json().Get(iter.key(), &old_value) &&
-           !iter.value().Equals(old_value))) {
-        delta->Set(iter.key() + ".current", iter.value().CreateDeepCopy());
-        if (old_value)
-          delta->Set(iter.key() + ".previous", old_value->CreateDeepCopy());
+    // If a field was in the previous json but is not in the new json, set the
+    // difference in |delta|.
+    for (base::DictionaryValue::Iterator iter(data->json()); !iter.IsAtEnd();
+         iter.Advance()) {
+      if ((new_fields.find(iter.key()) == new_fields.end()) &&
+          IsDownloadDeltaField(iter.key())) {
+        // estimatedEndTime disappears after completion, but bytesReceived
+        // stays.
+        delta->Set(iter.key() + ".previous", iter.value().CreateDeepCopy());
         changed = true;
       }
     }
   }
 
-  // If a field was in the previous json but is not in the new json, set the
-  // difference in |delta|.
-  for (base::DictionaryValue::Iterator iter(data->json());
-       !iter.IsAtEnd(); iter.Advance()) {
-    if ((new_fields.find(iter.key()) == new_fields.end()) &&
-        IsDownloadDeltaField(iter.key())) {
-      // estimatedEndTime disappears after completion, but bytesReceived stays.
-      delta->Set(iter.key() + ".previous", iter.value().CreateDeepCopy());
-      changed = true;
-    }
-  }
+  data->set_is_download_completed(download_item->GetState() ==
+                                  DownloadItem::COMPLETE);
+  // download_item->GetFileExternallyRemoved() should always return false for
+  // unfinished download.
+  data->set_is_completed_download_deleted(
+      download_item->GetFileExternallyRemoved());
+  data->set_json(std::move(new_json));
 
   // Update the OnChangedStat and dispatch the event if something significant
   // changed. Replace the stored json with the new json.
@@ -1905,7 +1991,6 @@ void ExtensionDownloadsEventRouter::OnDownloadUpdated(
                   Event::WillDispatchCallback(), std::move(delta));
     data->OnChangedFired();
   }
-  data->set_json(std::move(new_json));
 }
 
 void ExtensionDownloadsEventRouter::OnDownloadRemoved(

@@ -84,7 +84,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
                               BufferCreationStatus status)>;
 
   using RequestGPUInfoCallback = base::Callback<void(const gpu::GPUInfo&)>;
-  using RequestHDRStatusCallback = base::Callback<void(bool)>;
+  using RequestHDRStatusCallback = base::RepeatingCallback<void(bool)>;
 
   static int GetGpuCrashCount();
 
@@ -203,8 +203,12 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   void OnProcessCrashed(int exit_code) override;
 
   // viz::mojom::GpuHost:
-  void DidInitialize(const gpu::GPUInfo& gpu_info,
-                     const gpu::GpuFeatureInfo& gpu_feature_info) override;
+  void DidInitialize(
+      const gpu::GPUInfo& gpu_info,
+      const gpu::GpuFeatureInfo& gpu_feature_info,
+      const base::Optional<gpu::GPUInfo>& gpu_info_for_hardware_gpu,
+      const base::Optional<gpu::GpuFeatureInfo>&
+          gpu_feature_info_for_hardware_gpu) override;
   void DidFailInitialize() override;
   void DidCreateContextSuccessfully() override;
   void DidCreateOffscreenContext(const GURL& url) override;

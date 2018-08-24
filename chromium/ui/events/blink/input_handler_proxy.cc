@@ -49,7 +49,8 @@ const int32_t kEventDispositionUndefined = -1;
 // Maximum time between a fling event's timestamp and the first |Animate| call
 // for the fling curve to use the fling timestamp as the initial animation time.
 // Two frames allows a minor delay between event creation and the first animate.
-const double kMaxSecondsFromFlingTimestampToFirstAnimate = 2. / 60.;
+constexpr base::TimeDelta kMaxIntervalFromFlingTimestampToFirstAnimate =
+    base::TimeDelta::FromSecondsD(2. / 60.);
 
 // Threshold for determining whether a fling scroll delta should have caused the
 // client to scroll.
@@ -135,6 +136,32 @@ cc::InputHandler::ScrollInputType GestureScrollInputType(
              : cc::InputHandler::TOUCHSCREEN;
 }
 
+cc::SnapFlingController::GestureScrollType GestureScrollEventType(
+    WebInputEvent::Type web_event_type) {
+  switch (web_event_type) {
+    case WebInputEvent::kGestureScrollBegin:
+      return cc::SnapFlingController::GestureScrollType::kBegin;
+    case WebInputEvent::kGestureScrollUpdate:
+      return cc::SnapFlingController::GestureScrollType::kUpdate;
+    case WebInputEvent::kGestureScrollEnd:
+      return cc::SnapFlingController::GestureScrollType::kEnd;
+    default:
+      NOTREACHED();
+      return cc::SnapFlingController::GestureScrollType::kBegin;
+  }
+}
+
+cc::SnapFlingController::GestureScrollUpdateInfo GetGestureScrollUpdateInfo(
+    const WebGestureEvent& event) {
+  cc::SnapFlingController::GestureScrollUpdateInfo info;
+  info.delta = gfx::Vector2dF(-event.data.scroll_update.delta_x,
+                              -event.data.scroll_update.delta_y);
+  info.is_in_inertial_phase = event.data.scroll_update.inertial_phase ==
+                              blink::WebGestureEvent::kMomentumPhase;
+  info.event_time = event.TimeStamp();
+  return info;
+}
+
 enum ScrollingThreadStatus {
   SCROLLING_ON_COMPOSITOR,
   SCROLLING_ON_COMPOSITOR_BLOCKED_ON_MAIN,
@@ -176,7 +203,7 @@ InputHandlerProxy::InputHandlerProxy(
       has_ongoing_compositor_scroll_fling_pinch_(false),
       is_first_gesture_scroll_update_(false),
       tick_clock_(base::DefaultTickClock::GetInstance()),
-      snap_fling_controller_(std::make_unique<SnapFlingController>(this)) {
+      snap_fling_controller_(std::make_unique<cc::SnapFlingController>(this)) {
   DCHECK(client);
   input_handler_->BindToClient(this,
                                touchpad_and_wheel_scroll_latching_enabled_);
@@ -390,8 +417,11 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleInputEvent(
     }
   }
 
-  if (snap_fling_controller_->FilterEventForSnap(event))
+  if (IsGestureScroll(event.GetType()) &&
+      (snap_fling_controller_->FilterEventForSnap(
+          GestureScrollEventType(event.GetType())))) {
     return DROP_EVENT;
+  }
 
   switch (event.GetType()) {
     case WebInputEvent::kMouseWheel:
@@ -689,6 +719,7 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleMouseWheel(
 
 InputHandlerProxy::EventDisposition InputHandlerProxy::HandleGestureScrollBegin(
     const WebGestureEvent& gesture_event) {
+  TRACE_EVENT0("input", "InputHandlerProxy::HandleGestureScrollBegin");
   if (gesture_scroll_on_impl_thread_)
     CancelCurrentFling();
 
@@ -724,9 +755,7 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleGestureScrollBegin(
   in_inertial_scrolling_ = false;
   switch (scroll_status.thread) {
     case cc::InputHandler::SCROLL_ON_IMPL_THREAD:
-      TRACE_EVENT_INSTANT0("input",
-                           "InputHandlerProxy::handle_input gesture scroll",
-                           TRACE_EVENT_SCOPE_THREAD);
+      TRACE_EVENT_INSTANT0("input", "Handle On Impl", TRACE_EVENT_SCOPE_THREAD);
       gesture_scroll_on_impl_thread_ = true;
       if (input_handler_->IsCurrentlyScrollingViewport())
         client_->DidStartScrollingViewport();
@@ -738,9 +767,11 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleGestureScrollBegin(
       break;
     case cc::InputHandler::SCROLL_UNKNOWN:
     case cc::InputHandler::SCROLL_ON_MAIN_THREAD:
+      TRACE_EVENT_INSTANT0("input", "Handle On Main", TRACE_EVENT_SCOPE_THREAD);
       result = DID_NOT_HANDLE;
       break;
     case cc::InputHandler::SCROLL_IGNORED:
+      TRACE_EVENT_INSTANT0("input", "Ignore Scroll", TRACE_EVENT_SCOPE_THREAD);
       scroll_sequence_ignored_ = true;
       result = DROP_EVENT;
       break;
@@ -761,12 +792,14 @@ InputHandlerProxy::HandleGestureScrollUpdate(
 
   gfx::Vector2dF scroll_delta(-gesture_event.data.scroll_update.delta_x,
                               -gesture_event.data.scroll_update.delta_y);
-  TRACE_EVENT_INSTANT2("input", "InputHandlerProxy::HandleGestureScrollUpdate",
-                       TRACE_EVENT_SCOPE_THREAD, "dx", scroll_delta.x(), "dy",
-                       scroll_delta.y());
+  TRACE_EVENT2("input", "InputHandlerProxy::HandleGestureScrollUpdate", "dx",
+               scroll_delta.x(), "dy", scroll_delta.y());
 
-  if (scroll_sequence_ignored_)
+  if (scroll_sequence_ignored_) {
+    TRACE_EVENT_INSTANT0("input", "Scroll Sequence Ignored",
+                         TRACE_EVENT_SCOPE_THREAD);
     return DROP_EVENT;
+  }
 
   if (!gesture_scroll_on_impl_thread_ && !gesture_pinch_on_impl_thread_)
     return DID_NOT_HANDLE;
@@ -778,9 +811,7 @@ InputHandlerProxy::HandleGestureScrollUpdate(
   if (ShouldAnimate(gesture_event.data.scroll_update.delta_units !=
                     blink::WebGestureEvent::ScrollUnits::kPixels)) {
     DCHECK(!scroll_state.is_in_inertial_phase());
-    base::TimeTicks event_time =
-        base::TimeTicks() +
-        base::TimeDelta::FromSecondsD(gesture_event.TimeStampSeconds());
+    base::TimeTicks event_time = gesture_event.TimeStamp();
     base::TimeDelta delay = base::TimeTicks::Now() - event_time;
     switch (input_handler_
                 ->ScrollAnimated(gfx::ToFlooredPoint(scroll_point),
@@ -789,10 +820,14 @@ InputHandlerProxy::HandleGestureScrollUpdate(
       case cc::InputHandler::SCROLL_ON_IMPL_THREAD:
         return DID_HANDLE;
       case cc::InputHandler::SCROLL_IGNORED:
+        TRACE_EVENT_INSTANT0("input", "Scroll Ignored",
+                             TRACE_EVENT_SCOPE_THREAD);
         return DROP_EVENT;
       case cc::InputHandler::SCROLL_ON_MAIN_THREAD:
       case cc::InputHandler::SCROLL_UNKNOWN:
         if (input_handler_->ScrollingShouldSwitchtoMainThread()) {
+          TRACE_EVENT_INSTANT0("input", "Move Scroll To Main Thread",
+                               TRACE_EVENT_SCOPE_THREAD);
           gesture_scroll_on_impl_thread_ = false;
           client_->GenerateScrollBeginAndSendToMainThread(gesture_event);
         }
@@ -800,7 +835,8 @@ InputHandlerProxy::HandleGestureScrollUpdate(
     }
   }
 
-  if (snap_fling_controller_->HandleGestureScrollUpdate(gesture_event)) {
+  if (snap_fling_controller_->HandleGestureScrollUpdate(
+          GetGestureScrollUpdateInfo(gesture_event))) {
 #ifndef NDEBUG
     expect_scroll_update_end_ = false;
 #endif
@@ -833,6 +869,7 @@ InputHandlerProxy::HandleGestureScrollUpdate(
 
 InputHandlerProxy::EventDisposition InputHandlerProxy::HandleGestureScrollEnd(
   const WebGestureEvent& gesture_event) {
+  TRACE_EVENT0("input", "InputHandlerProxy::HandleGestureScrollEnd");
 #ifndef NDEBUG
   DCHECK(expect_scroll_update_end_);
   expect_scroll_update_end_ = false;
@@ -1087,18 +1124,18 @@ void InputHandlerProxy::Animate(base::TimeTicks time) {
     has_fling_animation_started_ = true;
     // Guard against invalid, future or sufficiently stale start times, as there
     // are no guarantees fling event and animation timestamps are compatible.
-    if (!fling_parameters_.start_time ||
-        monotonic_time_sec <= fling_parameters_.start_time ||
-        monotonic_time_sec >= fling_parameters_.start_time +
-                                  kMaxSecondsFromFlingTimestampToFirstAnimate) {
-      fling_parameters_.start_time = monotonic_time_sec;
+    if (fling_parameters_.start_time.is_null() ||
+        time <= fling_parameters_.start_time ||
+        time >= fling_parameters_.start_time +
+                    kMaxIntervalFromFlingTimestampToFirstAnimate) {
+      fling_parameters_.start_time = time;
       RequestAnimation();
       return;
     }
   }
 
   bool fling_is_active = fling_curve_->AdvanceAndApplyToTarget(
-      monotonic_time_sec - fling_parameters_.start_time, this);
+      (time - fling_parameters_.start_time).InSecondsF(), this);
 
   if (disallow_vertical_fling_scroll_ && disallow_horizontal_fling_scroll_)
     fling_is_active = false;
@@ -1186,12 +1223,9 @@ bool InputHandlerProxy::GetSnapFlingInfo(
 gfx::Vector2dF InputHandlerProxy::ScrollByForSnapFling(
     const gfx::Vector2dF& delta) {
   cc::ScrollState scroll_state = CreateScrollStateForInertialUpdate(delta);
-  // TODO(sunyunjia): We should consider moving the scroll to main, handling
-  // overscroll, and handling elastic scroll after ScrollBy().
-  // https://crbug.com/819855
   cc::InputHandlerScrollResult scroll_result =
       input_handler_->ScrollBy(&scroll_state);
-  return scroll_result.current_offset;
+  return scroll_result.current_visual_offset;
 }
 
 void InputHandlerProxy::ScrollEndForSnapFling() {
@@ -1420,7 +1454,7 @@ void InputHandlerProxy::UpdateCurrentFlingState(
       WebFloatPoint(velocity.x(), velocity.y()), blink::WebSize());
   disallow_horizontal_fling_scroll_ = !velocity.x();
   disallow_vertical_fling_scroll_ = !velocity.y();
-  fling_parameters_.start_time = fling_start_event.TimeStampSeconds();
+  fling_parameters_.start_time = fling_start_event.TimeStamp();
   fling_parameters_.delta = WebFloatPoint(velocity.x(), velocity.y());
   fling_parameters_.point = fling_start_event.PositionInWidget();
   fling_parameters_.global_point = fling_start_event.PositionInScreen();

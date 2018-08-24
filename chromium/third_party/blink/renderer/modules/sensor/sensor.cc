@@ -154,9 +154,9 @@ bool Sensor::HasPendingActivity() const {
 auto Sensor::CreateSensorConfig() -> SensorConfigurationPtr {
   auto result = SensorConfiguration::New();
 
-  double default_frequency = sensor_proxy_->DefaultConfig()->frequency;
-  double minimum_frequency = sensor_proxy_->FrequencyLimits().first;
-  double maximum_frequency = sensor_proxy_->FrequencyLimits().second;
+  double default_frequency = sensor_proxy_->GetDefaultFrequency();
+  double minimum_frequency = sensor_proxy_->GetFrequencyLimits().first;
+  double maximum_frequency = sensor_proxy_->GetFrequencyLimits().second;
 
   if (frequency_ == 0.0)  // i.e. was never set.
     frequency_ = default_frequency;
@@ -177,7 +177,7 @@ void Sensor::InitSensorProxyIfNeeded() {
   if (!document || !document->GetFrame())
     return;
 
-  auto provider = SensorProviderProxy::From(document->GetFrame());
+  auto* provider = SensorProviderProxy::From(document->GetFrame());
   sensor_proxy_ = provider->GetSensorProxy(type_);
 
   if (!sensor_proxy_)
@@ -187,6 +187,9 @@ void Sensor::InitSensorProxyIfNeeded() {
 void Sensor::ContextDestroyed(ExecutionContext*) {
   if (!IsIdleOrErrored())
     Deactivate();
+
+  if (sensor_proxy_)
+    sensor_proxy_->Detach();
 }
 
 void Sensor::OnSensorInitialized() {
@@ -204,7 +207,6 @@ void Sensor::OnSensorReadingChanged() {
   // reading is up-to-date.
   if (pending_reading_notification_.IsActive())
     return;
-
   double elapsedTime =
       sensor_proxy_->GetReading().timestamp() - last_reported_timestamp_;
   DCHECK_GT(elapsedTime, 0.0);
@@ -299,9 +301,9 @@ void Sensor::RequestAddConfiguration() {
     configuration_ = CreateSensorConfig();
     DCHECK(configuration_);
     DCHECK_GE(configuration_->frequency,
-              sensor_proxy_->FrequencyLimits().first);
+              sensor_proxy_->GetFrequencyLimits().first);
     DCHECK_LE(configuration_->frequency,
-              sensor_proxy_->FrequencyLimits().second);
+              sensor_proxy_->GetFrequencyLimits().second);
   }
 
   DCHECK(sensor_proxy_);
@@ -324,7 +326,7 @@ void Sensor::HandleError(ExceptionCode code,
 
   Deactivate();
 
-  auto error =
+  auto* error =
       DOMException::Create(code, sanitized_message, unsanitized_message);
   pending_error_notification_ = PostCancellableTask(
       *GetExecutionContext()->GetTaskRunner(TaskType::kSensor), FROM_HERE,

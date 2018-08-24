@@ -12,15 +12,10 @@
 namespace blink {
 
 WebViewFrameWidget::WebViewFrameWidget(WebWidgetClient& client,
-                                       WebViewImpl& web_view,
-                                       WebLocalFrameImpl& main_frame)
-    : client_(&client),
+                                       WebViewImpl& web_view)
+    : WebFrameWidgetBase(client),
       web_view_(&web_view),
-      main_frame_(&main_frame),
-      self_keep_alive_(this) {
-  main_frame_->SetFrameWidget(this);
-  web_view_->SetCompositorVisibility(true);
-}
+      self_keep_alive_(this) {}
 
 WebViewFrameWidget::~WebViewFrameWidget() = default;
 
@@ -30,10 +25,9 @@ void WebViewFrameWidget::Close() {
   // updated. If the main frame is being swapped, then
   // m_webView()->mainFrameImpl() will no longer point to the original frame.
   web_view_->SetCompositorVisibility(false);
-  main_frame_->SetFrameWidget(nullptr);
-  main_frame_ = nullptr;
   web_view_ = nullptr;
-  client_ = nullptr;
+
+  WebFrameWidgetBase::Close();
 
   // Note: this intentionally does not forward to WebView::close(), to make it
   // easier to untangle the cleanup logic later.
@@ -65,8 +59,8 @@ void WebViewFrameWidget::SetSuppressFrameRequestsWorkaroundFor704763Only(
   return web_view_->SetSuppressFrameRequestsWorkaroundFor704763Only(
       suppress_frame_requests);
 }
-void WebViewFrameWidget::BeginFrame(double last_frame_time_monotonic) {
-  return web_view_->BeginFrame(last_frame_time_monotonic);
+void WebViewFrameWidget::BeginFrame(base::TimeTicks last_frame_time) {
+  return web_view_->BeginFrame(last_frame_time);
 }
 
 void WebViewFrameWidget::UpdateLifecycle(LifecycleUpdate requested_update) {
@@ -81,14 +75,13 @@ void WebViewFrameWidget::Paint(WebCanvas* canvas, const WebRect& view_port) {
   return web_view_->Paint(canvas, view_port);
 }
 
-void WebViewFrameWidget::LayoutAndPaintAsync(
-    WebLayoutAndPaintAsyncCallback* callback) {
-  return web_view_->LayoutAndPaintAsync(callback);
+void WebViewFrameWidget::LayoutAndPaintAsync(base::OnceClosure callback) {
+  return web_view_->LayoutAndPaintAsync(std::move(callback));
 }
 
 void WebViewFrameWidget::CompositeAndReadbackAsync(
-    WebCompositeAndReadbackAsyncCallback* callback) {
-  return web_view_->CompositeAndReadbackAsync(callback);
+    base::OnceCallback<void(const SkBitmap&)> callback) {
+  return web_view_->CompositeAndReadbackAsync(std::move(callback));
 }
 
 void WebViewFrameWidget::ThemeChanged() {
@@ -147,7 +140,7 @@ void WebViewFrameWidget::WillCloseLayerTreeView() {
   return web_view_->WillCloseLayerTreeView();
 }
 
-WebColor WebViewFrameWidget::BackgroundColor() const {
+SkColor WebViewFrameWidget::BackgroundColor() const {
   return web_view_->BackgroundColor();
 }
 
@@ -167,7 +160,7 @@ void WebViewFrameWidget::SetVisibilityState(
   return web_view_->SetVisibilityState(visibility_state, false);
 }
 
-void WebViewFrameWidget::SetBackgroundColorOverride(WebColor color) {
+void WebViewFrameWidget::SetBackgroundColorOverride(SkColor color) {
   web_view_->SetBackgroundColorOverride(color);
 }
 
@@ -175,7 +168,7 @@ void WebViewFrameWidget::ClearBackgroundColorOverride() {
   return web_view_->ClearBackgroundColorOverride();
 }
 
-void WebViewFrameWidget::SetBaseBackgroundColorOverride(WebColor color) {
+void WebViewFrameWidget::SetBaseBackgroundColorOverride(SkColor color) {
   web_view_->SetBaseBackgroundColorOverride(color);
 }
 
@@ -183,12 +176,8 @@ void WebViewFrameWidget::ClearBaseBackgroundColorOverride() {
   return web_view_->ClearBaseBackgroundColorOverride();
 }
 
-void WebViewFrameWidget::SetBaseBackgroundColor(WebColor color) {
+void WebViewFrameWidget::SetBaseBackgroundColor(SkColor color) {
   web_view_->SetBaseBackgroundColor(color);
-}
-
-WebLocalFrameImpl* WebViewFrameWidget::LocalRoot() const {
-  return web_view_->MainFrameImpl();
 }
 
 WebInputMethodController*
@@ -198,6 +187,10 @@ WebViewFrameWidget::GetActiveWebInputMethodController() const {
 
 bool WebViewFrameWidget::ScrollFocusedEditableElementIntoView() {
   return web_view_->ScrollFocusedEditableElementIntoView();
+}
+
+void WebViewFrameWidget::Initialize() {
+  web_view_->SetCompositorVisibility(true);
 }
 
 void WebViewFrameWidget::ScheduleAnimation() {
@@ -218,7 +211,7 @@ GraphicsLayer* WebViewFrameWidget::RootGraphicsLayer() const {
   return web_view_->RootGraphicsLayer();
 }
 
-void WebViewFrameWidget::SetRootLayer(WebLayer* layer) {
+void WebViewFrameWidget::SetRootLayer(scoped_refptr<cc::Layer> layer) {
   web_view_->SetRootLayer(layer);
 }
 
@@ -239,7 +232,6 @@ HitTestResult WebViewFrameWidget::CoreHitTestResultAt(const WebPoint& point) {
 }
 
 void WebViewFrameWidget::Trace(blink::Visitor* visitor) {
-  visitor->Trace(main_frame_);
   WebFrameWidgetBase::Trace(visitor);
 }
 

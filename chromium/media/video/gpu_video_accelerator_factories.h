@@ -35,9 +35,9 @@ namespace gpu {
 struct SyncToken;
 };
 
-namespace viz {
-class ContextProvider;
-}
+namespace ui {
+class ContextProviderCommandBuffer;
+}  // namespace ui
 
 namespace media {
 
@@ -101,7 +101,9 @@ class MEDIA_EXPORT GpuVideoAcceleratorFactories {
       gfx::BufferFormat format,
       gfx::BufferUsage usage) = 0;
 
-  virtual bool ShouldUseGpuMemoryBuffersForVideoFrames() const = 0;
+  // |for_media_stream| specifies webrtc use case of media streams.
+  virtual bool ShouldUseGpuMemoryBuffersForVideoFrames(
+      bool for_media_stream) const = 0;
 
   // The GLContextLock must be taken when calling this.
   virtual unsigned ImageTextureTarget(gfx::BufferFormat format) = 0;
@@ -132,7 +134,8 @@ class MEDIA_EXPORT GpuVideoAcceleratorFactories {
   virtual VideoEncodeAccelerator::SupportedProfiles
   GetVideoEncodeAcceleratorSupportedProfiles() = 0;
 
-  virtual viz::ContextProvider* GetMediaContextProvider() = 0;
+  virtual scoped_refptr<ui::ContextProviderCommandBuffer>
+  GetMediaContextProvider() = 0;
 
   // Sets the current pipeline rendering color space.
   virtual void SetRenderingColorSpace(const gfx::ColorSpace& color_space) = 0;

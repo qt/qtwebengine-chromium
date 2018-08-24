@@ -28,7 +28,7 @@
 #include "perfetto/tracing/core/shared_memory.h"
 #include "perfetto/tracing/ipc/producer_ipc_client.h"
 
-#include "protos/tracing_service/producer_port.ipc.h"
+#include "perfetto/ipc/producer_port.ipc.h"
 
 namespace perfetto {
 
@@ -53,20 +53,21 @@ class ProducerIPCClientImpl : public Service::ProducerEndpoint,
  public:
   ProducerIPCClientImpl(const char* service_sock_name,
                         Producer*,
+                        const std::string& producer_name,
                         base::TaskRunner*);
   ~ProducerIPCClientImpl() override;
 
   // Service::ProducerEndpoint implementation.
   // These methods are invoked by the actual Producer(s) code by clients of the
   // tracing library, which know nothing about the IPC transport.
-  void RegisterDataSource(const DataSourceDescriptor&,
-                          RegisterDataSourceCallback) override;
-  void UnregisterDataSource(DataSourceID) override;
-  void NotifySharedMemoryUpdate(
-      const std::vector<uint32_t>& changed_pages) override;
+  void RegisterDataSource(const DataSourceDescriptor&) override;
+  void UnregisterDataSource(const std::string& name) override;
+  void CommitData(const CommitDataRequest&, CommitDataCallback) override;
   std::unique_ptr<TraceWriter> CreateTraceWriter(
       BufferID target_buffer) override;
+  void NotifyFlushComplete(FlushRequestID) override;
   SharedMemory* shared_memory() const override;
+  size_t shared_buffer_page_size_kb() const override;
 
   // ipc::ServiceProxy::EventListener implementation.
   // These methods are invoked by the IPC layer, which knows nothing about
@@ -80,10 +81,7 @@ class ProducerIPCClientImpl : public Service::ProducerEndpoint,
 
   // Invoked when the remote Service sends an IPC to tell us to do something
   // (e.g. start/stop a data source).
-  void OnServiceRequest(const GetAsyncCommandResponse&);
-
-  // Callback passed to SharedMemoryArbiterImpl.
-  void OnPagesComplete(const std::vector<uint32_t>&);
+  void OnServiceRequest(const protos::GetAsyncCommandResponse&);
 
   // TODO think to destruction order, do we rely on any specific dtor sequence?
   Producer* const producer_;
@@ -94,11 +92,13 @@ class ProducerIPCClientImpl : public Service::ProducerEndpoint,
 
   // The proxy interface for the producer port of the service. It is bound
   // to |ipc_channel_| and (de)serializes method invocations over the wire.
-  ProducerPortProxy producer_port_;
+  protos::ProducerPortProxy producer_port_;
 
   std::unique_ptr<PosixSharedMemory> shared_memory_;
   std::unique_ptr<SharedMemoryArbiter> shared_memory_arbiter_;
+  size_t shared_buffer_page_size_kb_ = 0;
   bool connected_ = false;
+  std::string const name_;
   PERFETTO_THREAD_CHECKER(thread_checker_)
 };
 

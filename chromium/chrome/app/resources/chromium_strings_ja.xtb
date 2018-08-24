@@ -45,7 +45,6 @@
 <translation id="2587578672395088481">アップデートを適用するには Chromium OS を再起動する必要があります。</translation>
 <translation id="2647554856022461007">Chromium は、より快適なブラウジングを提供する目的でウェブサービスを使用することがあります。これらのサービスは無効にすることもできます。<ph name="BEGIN_LINK" />詳細<ph name="END_LINK" /></translation>
 <translation id="2648074677641340862">インストール中にオペレーティング システム エラーが発生しました。Chromium をダウンロードし直してください。</translation>
-<translation id="2705403826523567092">ログインすると、個人向けにカスタマイズされたブラウジング環境をさまざまな端末間で同期して使用できます</translation>
 <translation id="2711502716910134313">Chromium タブ</translation>
 <translation id="2718390899429598676">セキュリティ強化のため、Chromium ではデータが暗号化されます。</translation>
 <translation id="2770231113462710648">既定のブラウザを変更:</translation>
@@ -143,6 +142,7 @@
 <translation id="5902536751647951209">認証証明書でエラーが発生しました。Chromium にログインし直すか、管理者に詳細をお問い合わせください。<ph name="ADDITIONAL_EXPLANATION" /></translation>
 <translation id="5906655207909574370">端末を再起動して更新を完了してください。</translation>
 <translation id="5987687638152509985">同期を開始するには、Chromium を更新します</translation>
+<translation id="6040143037577758943">閉じる</translation>
 <translation id="6055895534982063517">Chromium がさらに速くなりました！最新バージョンをぜひお試しください。</translation>
 <translation id="6063093106622310249">Chromium で開く(&amp;O)</translation>
 <translation id="6072279588547424923">「<ph name="EXTENSION_NAME" />」が Chromium に追加されました</translation>
@@ -182,6 +182,7 @@
 <translation id="705851970750939768">Chromium を更新</translation>
 <translation id="7066436765290594559">Chromium OS はデータを同期できませんでした。同期パスフレーズを更新してください。</translation>
 <translation id="7162152143154757523">Chromium ではブラウザに入力された内容を Google のサーバーに送信することで高度なスペルチェックを実現し、Google 検索で使用されるスペルチェック テクノロジーを活用できます。</translation>
+<translation id="7196312274710523067">Chromium を起動できませんでした。もう一度お試しください。</translation>
 <translation id="7205698830395646142">Chromium メニューで非表示</translation>
 <translation id="7223968959479464213">タスク マネージャ - Chromium</translation>
 <translation id="722928257909516027">Chromium メニューを表示</translation>
@@ -204,6 +205,7 @@
 <translation id="7451052299415159299">このサイトを利用するには、Chromium でカメラの使用を許可する必要があります</translation>
 <translation id="7483335560992089831">実行中の Chromium と同じバージョンをインストールすることはできません。Chromium を閉じてからもう一度お試しください。</translation>
 <translation id="7549178288319965365">Chromium OS について</translation>
+<translation id="75551686469636272">Chromium を起動しています</translation>
 <translation id="7577193603922410712">Chromium の特別なセキュリティ アップデートが適用されました。アップデートを反映するため、今すぐ Chromium を再起動してください（タブは復元されます）。</translation>
 <translation id="761356813943268536">Chromium がカメラとマイクを使用しています。</translation>
 <translation id="7617377681829253106">進化する Chromium</translation>

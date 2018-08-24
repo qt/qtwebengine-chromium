@@ -19,6 +19,7 @@
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/no_destructor.h"
+#include "base/sequenced_task_runner.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
@@ -27,6 +28,7 @@
 #include "base/trace_event/memory_allocator_dump.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/memory_dump_provider.h"
+#include "ipc/ipc_channel.h"
 #include "mojo/public/cpp/bindings/associated_group.h"
 #include "mojo/public/cpp/bindings/associated_group_controller.h"
 #include "mojo/public/cpp/bindings/connector.h"
@@ -637,17 +639,15 @@ class ChannelAssociatedGroupController
         if (!shut_down_) {
           base::AutoLock lock(outgoing_messages_lock_);
           outgoing_messages_.emplace_back(std::move(*message));
-
-          // TODO(https://crbug.com/813045): Remove this. Typically this queue
-          // won't exceed something like 50 messages even on slow devices. If
-          // the massive leaks we see can be attributed to this queue, it would
-          // have to be quite a bit larger.
-          CHECK_LE(outgoing_messages_.size(), 100000u);
         }
         return true;
       }
       return connector_->Accept(message);
     } else {
+      // Do a message size check here so we don't lose valuable stack
+      // information to the task scheduler.
+      CHECK_LE(message->data_num_bytes(), Channel::kMaximumMessageSize);
+
       // We always post tasks to the master endpoint thread when called from
       // other threads in order to simulate IPC::ChannelProxy::Send behavior.
       task_runner_->PostTask(

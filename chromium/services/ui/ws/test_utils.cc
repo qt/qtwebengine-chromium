@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/memory/ptr_util.h"
+#include "base/message_loop/message_loop_current.h"
 #include "base/strings/string_number_conversions.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
@@ -239,7 +240,7 @@ void TestWindowManager::WmSetModalType(Id window_id, ui::ModalType type) {
 void TestWindowManager::WmCreateTopLevelWindow(
     uint32_t change_id,
     const viz::FrameSinkId& frame_sink_id,
-    const std::unordered_map<std::string, std::vector<uint8_t>>& properties) {
+    const base::flat_map<std::string, std::vector<uint8_t>>& properties) {
   got_create_top_level_window_ = true;
   change_id_ = change_id;
 }
@@ -448,7 +449,7 @@ void TestWindowTreeClient::OnWindowSurfaceChanged(
     const viz::SurfaceInfo& surface_info) {}
 
 void TestWindowTreeClient::OnDragDropStart(
-    const std::unordered_map<std::string, std::vector<uint8_t>>& mime_data) {}
+    const base::flat_map<std::string, std::vector<uint8_t>>& mime_data) {}
 
 void TestWindowTreeClient::OnDragEnter(Id window,
                                        uint32_t key_state,
@@ -577,7 +578,7 @@ TestWindowServerDelegate::GetThreadedImageCursorsFactory() {
 WindowServerTestHelper::WindowServerTestHelper()
     : cursor_(ui::CursorType::kNull), platform_display_factory_(&cursor_) {
   // Some tests create their own message loop, for example to add a task runner.
-  if (!base::MessageLoop::current())
+  if (!base::MessageLoopCurrent::Get())
     message_loop_ = std::make_unique<base::MessageLoop>();
   PlatformDisplay::set_factory_for_testing(&platform_display_factory_);
   window_server_ = std::make_unique<WindowServer>(&window_server_delegate_,
@@ -666,28 +667,28 @@ void WindowEventTargetingHelper::CreateSecondaryTree(
 
 void WindowEventTargetingHelper::SetTaskRunner(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
-  base::MessageLoop::current()->SetTaskRunner(task_runner);
+  base::MessageLoopCurrent::Get()->SetTaskRunner(task_runner);
 }
 
 // ----------------------------------------------------------------------------
 
-TestDisplayManagerObserver::TestDisplayManagerObserver() : binding_(this) {}
+TestScreenProviderObserver::TestScreenProviderObserver() : binding_(this) {}
 
-TestDisplayManagerObserver::~TestDisplayManagerObserver() = default;
+TestScreenProviderObserver::~TestScreenProviderObserver() = default;
 
-mojom::DisplayManagerObserverPtr TestDisplayManagerObserver::GetPtr() {
-  mojom::DisplayManagerObserverPtr ptr;
+mojom::ScreenProviderObserverPtr TestScreenProviderObserver::GetPtr() {
+  mojom::ScreenProviderObserverPtr ptr;
   binding_.Bind(mojo::MakeRequest(&ptr));
   return ptr;
 }
 
-std::string TestDisplayManagerObserver::GetAndClearObserverCalls() {
+std::string TestScreenProviderObserver::GetAndClearObserverCalls() {
   std::string result;
   std::swap(observer_calls_, result);
   return result;
 }
 
-std::string TestDisplayManagerObserver::DisplayIdsToString(
+std::string TestScreenProviderObserver::DisplayIdsToString(
     const std::vector<mojom::WsDisplayPtr>& wm_displays) {
   std::string display_ids;
   for (const auto& wm_display : wm_displays) {
@@ -698,7 +699,7 @@ std::string TestDisplayManagerObserver::DisplayIdsToString(
   return display_ids;
 }
 
-void TestDisplayManagerObserver::OnDisplaysChanged(
+void TestScreenProviderObserver::OnDisplaysChanged(
     std::vector<mojom::WsDisplayPtr> displays,
     int64_t primary_display_id,
     int64_t internal_display_id) {

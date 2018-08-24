@@ -17,7 +17,6 @@
 #include "third_party/blink/renderer/modules/webgl/webgl_buffer.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_fence_sync.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_framebuffer.h"
-#include "third_party/blink/renderer/modules/webgl/webgl_get_buffer_sub_data_async.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_program.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_query.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_renderbuffer.h"
@@ -148,15 +147,10 @@ WebGL2RenderingContextBase::WebGL2RenderingContextBase(
   supported_internal_formats_storage_.insert(
       kSupportedInternalFormatsStorage,
       kSupportedInternalFormatsStorage +
-          WTF_ARRAY_LENGTH(kSupportedInternalFormatsStorage));
+          arraysize(kSupportedInternalFormatsStorage));
 }
 
 void WebGL2RenderingContextBase::DestroyContext() {
-  for (auto& callback : get_buffer_sub_data_async_callbacks_) {
-    callback->Destroy();
-  }
-  get_buffer_sub_data_async_callbacks_.clear();
-
   WebGLRenderingContextBase::DestroyContext();
 }
 
@@ -366,16 +360,6 @@ void WebGL2RenderingContextBase::getBufferSubData(
   memcpy(destination_data_ptr, mapped_data, destination_byte_length);
 
   ContextGL()->UnmapBuffer(target);
-}
-
-void WebGL2RenderingContextBase::RegisterGetBufferSubDataAsyncCallback(
-    WebGLGetBufferSubDataAsyncCallback* callback) {
-  get_buffer_sub_data_async_callbacks_.insert(callback);
-}
-
-void WebGL2RenderingContextBase::UnregisterGetBufferSubDataAsyncCallback(
-    WebGLGetBufferSubDataAsyncCallback* callback) {
-  get_buffer_sub_data_async_callbacks_.erase(callback);
 }
 
 void WebGL2RenderingContextBase::blitFramebuffer(GLint src_x0,
@@ -5693,12 +5677,11 @@ void WebGL2RenderingContextBase::Trace(blink::Visitor* visitor) {
   visitor->Trace(current_transform_feedback_primitives_written_query_);
   visitor->Trace(current_elapsed_query_);
   visitor->Trace(sampler_units_);
-  visitor->Trace(get_buffer_sub_data_async_callbacks_);
   WebGLRenderingContextBase::Trace(visitor);
 }
 
 void WebGL2RenderingContextBase::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+    ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(read_framebuffer_binding_);
   visitor->TraceWrappers(transform_feedback_binding_);
   visitor->TraceWrappers(bound_copy_read_buffer_);

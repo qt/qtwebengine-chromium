@@ -108,24 +108,6 @@ action("embed_resources") {
   ]
 }
 
-mojom("tab_socket") {
-  sources = [
-    "lib/tab_socket.mojom",
-  ]
-  public_deps = [
-    "//mojo/public/mojom/base",
-  ]
-}
-
-mojom("headless_render_frame_controller") {
-  sources = [
-    "lib/headless_render_frame_controller.mojom",
-  ]
-  public_deps = [
-    "//mojo/public/mojom/base",
-  ]
-}
-
 service_manifest("headless_browser_manifest_overlay") {
   source = "lib/browser/headless_browser_manifest_overlay.json"
 }
@@ -133,7 +115,7 @@ service_manifest("headless_browser_manifest_overlay") {
 service_manifest("headless_packaged_services_manifest_overlay") {
   source = "lib/browser/headless_packaged_services_manifest_overlay.json"
   packaged_services =
-      [ "//components/printing/service:pdf_compositor_manifest" ]
+      [ "//components/services/pdf_compositor:pdf_compositor_manifest" ]
 }
 
 grit("resources") {
@@ -150,8 +132,6 @@ grit("resources") {
   deps = [
     ":headless_browser_manifest_overlay",
     ":headless_packaged_services_manifest_overlay",
-    ":headless_render_frame_controller_js",
-    ":tab_socket_js",
   ]
 }
 
@@ -338,8 +318,6 @@ component("headless") {
     "lib/browser/headless_resource_dispatcher_host_delegate.h",
     "lib/browser/headless_shell_application_mac.h",
     "lib/browser/headless_shell_application_mac.mm",
-    "lib/browser/headless_tab_socket_impl.cc",
-    "lib/browser/headless_tab_socket_impl.h",
     "lib/browser/headless_url_request_context_getter.cc",
     "lib/browser/headless_url_request_context_getter.h",
     "lib/browser/headless_window_tree_host.h",
@@ -444,15 +422,16 @@ component("headless") {
     "//net",
   ]
 
+  data_deps = []
+  data = []
+
   if (enable_basic_printing) {
     public_deps += [ "//skia" ]
   }
 
   deps = [
     ":gen_devtools_client_api",
-    ":headless_render_frame_controller",
     ":protocol_sources",
-    ":tab_socket",
     ":version_header",
     "//components/cookie_config",
     "//components/security_state/core",
@@ -480,10 +459,6 @@ component("headless") {
       "lib/headless_content_main_delegate.h",
       "lib/renderer/headless_content_renderer_client.cc",
       "lib/renderer/headless_content_renderer_client.h",
-      "lib/renderer/headless_render_frame_controller_impl.cc",
-      "lib/renderer/headless_render_frame_controller_impl.h",
-      "lib/renderer/headless_tab_socket_bindings.cc",
-      "lib/renderer/headless_tab_socket_bindings.h",
       "lib/utility/headless_content_utility_client.cc",
       "lib/utility/headless_content_utility_client.h",
     ]
@@ -509,8 +484,8 @@ component("headless") {
       deps += [
         "//components/printing/browser",
         "//components/printing/renderer",
-        "//components/printing/service/public/cpp:factory",
-        "//components/printing/service/public/interfaces",
+        "//components/services/pdf_compositor/public/cpp:factory",
+        "//components/services/pdf_compositor/public/interfaces",
       ]
     }
 
@@ -520,10 +495,10 @@ component("headless") {
       sources += [ "$root_out_dir/natives_blob.bin" ]
       public_deps += [ "//v8" ]
       if (use_v8_context_snapshot) {
-        sources += [ "$root_out_dir/v8_context_snapshot.bin" ]
-        public_deps += [ "//tools/v8_context_snapshot" ]
+        data += [ "$root_out_dir/v8_context_snapshot.bin" ]
+        data_deps += [ "//tools/v8_context_snapshot" ]
       } else {
-        sources += [ "$root_out_dir/snapshot_blob.bin" ]
+        data += [ "$root_out_dir/snapshot_blob.bin" ]
       }
     }
   }
@@ -566,10 +541,6 @@ if (!is_component_build) {
       "lib/headless_content_main_delegate.h",
       "lib/renderer/headless_content_renderer_client.cc",
       "lib/renderer/headless_content_renderer_client.h",
-      "lib/renderer/headless_render_frame_controller_impl.cc",
-      "lib/renderer/headless_render_frame_controller_impl.h",
-      "lib/renderer/headless_tab_socket_bindings.cc",
-      "lib/renderer/headless_tab_socket_bindings.h",
     ]
 
     deps = [
@@ -689,7 +660,7 @@ test("headless_unittests") {
     sources += [ "lib/browser/headless_printing_unittest.cc" ]
     deps += [
       "//components/printing/browser",
-      "//components/printing/service/public/cpp:factory",
+      "//components/services/pdf_compositor/public/cpp:factory",
       "//third_party/blink/public:blink",
     ]
   }
@@ -780,7 +751,6 @@ test("headless_browsertests") {
     "lib/headless_browser_context_browsertest.cc",
     "lib/headless_devtools_client_browsertest.cc",
     "lib/headless_web_contents_browsertest.cc",
-    "lib/virtual_time_browsertest.cc",
     "public/util/compositor_controller_browsertest.cc",
     "public/util/testing/fake_managed_dispatch_url_request_job.cc",
     "public/util/testing/fake_managed_dispatch_url_request_job.h",
@@ -788,9 +758,8 @@ test("headless_browsertests") {
     "public/util/testing/test_in_memory_protocol_handler.h",
     "test/headless_browser_test.cc",
     "test/headless_browser_test.h",
+    "test/headless_protocol_browsertest.cc",
     "test/headless_test_launcher.cc",
-    "test/tab_socket_test.cc",
-    "test/tab_socket_test.h",
     "test/test_protocol_handler.cc",
     "test/test_protocol_handler.h",
     "test/test_url_request_job.cc",
@@ -802,6 +771,7 @@ test("headless_browsertests") {
     "lib/dom_tree_extraction_expected_styles.txt",
     "$root_out_dir/headless_lib.pak",
     "//net/tools/testserver/",
+    "//third_party/WebKit/LayoutTests/http/tests/inspector-protocol/",
     "//third_party/pyftpdlib/",
     "//third_party/pywebsocket/",
     "//third_party/tlslite/",
@@ -862,7 +832,7 @@ test("headless_browsertests") {
   if (enable_basic_printing) {
     deps += [
       "//components/printing/browser",
-      "//components/printing/service/public/cpp:factory",
+      "//components/services/pdf_compositor/public/cpp:factory",
       "//pdf",
     ]
   }
@@ -978,6 +948,10 @@ static_library("headless_shell_lib") {
     "//content/public/common",
   ]
 
+  public_deps = [
+    "//base",
+  ]
+
   if (!is_fuchsia) {
     deps += [ "//components/crash/content/browser" ]
   }
@@ -986,7 +960,7 @@ static_library("headless_shell_lib") {
     deps += [
       "//components/printing/browser",
       "//components/printing/renderer",
-      "//components/printing/service/public/cpp:factory",
+      "//components/services/pdf_compositor/public/cpp:factory",
     ]
   }
 

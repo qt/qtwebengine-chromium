@@ -203,9 +203,8 @@
       <part file="password_manager_strings.grdp" />
       <part file="payments_strings.grdp" />
       <part file="pdf_strings.grdp" />
-      <part file="physical_web_ui_strings.grdp" />
       <part file="policy_strings.grdp" />
-      <part file="printing_strings.grdp" />
+      <part file="printing_component_strings.grdp" />
       <part file="reset_password_strings.grdp" />
       <part file="safe_browsing_strings.grdp" />
       <part file="security_interstitials_strings.grdp" />
@@ -239,9 +238,16 @@
       <message name="IDS_SAVE" desc="Used on a button to save information you are editing.">
         Save
       </message>
-      <message name="IDS_NO_THANKS" desc="Used to dismiss various prompts.">
-        No thanks
-      </message>
+      <if expr="not use_titlecase">
+        <message name="IDS_NO_THANKS" desc="Used to dismiss various prompts.">
+          No thanks
+        </message>
+      </if>
+      <if expr="use_titlecase">
+        <message name="IDS_NO_THANKS" desc="In Title Case: Used to dismiss various prompts.">
+          No Thanks
+        </message>
+      </if>
       <if expr="not use_titlecase">
         <message name="IDS_NOT_NOW" desc="Used on a button that avoids taking a suggested action.  The action will likely be suggested again or automatically taken later.">
           Not now

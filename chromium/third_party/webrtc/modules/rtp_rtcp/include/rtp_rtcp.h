@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "api/optional.h"
+#include "api/video/video_bitrate_allocation.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "modules/include/module.h"
 #include "modules/rtp_rtcp/include/flexfec_sender.h"
@@ -399,7 +400,8 @@ class RtpRtcp : public Module, public RtcpFeedbackSenderInterface {
   // BWE feedback packets.
   bool SendFeedbackPacket(const rtcp::TransportFeedback& packet) override = 0;
 
-  virtual void SetVideoBitrateAllocation(const BitrateAllocation& bitrate) = 0;
+  virtual void SetVideoBitrateAllocation(
+      const VideoBitrateAllocation& bitrate) = 0;
 
   // **************************************************************************
   // Audio

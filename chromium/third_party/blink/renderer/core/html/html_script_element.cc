@@ -44,8 +44,7 @@ inline HTMLScriptElement::HTMLScriptElement(Document& document,
                                             const CreateElementFlags flags)
     : HTMLElement(scriptTag, document),
       loader_(InitializeScriptLoader(flags.IsCreatedByParser(),
-                                     flags.WasAlreadyStarted(),
-                                     flags.IsCreatedDuringDocumentWrite())) {}
+                                     flags.WasAlreadyStarted())) {}
 
 HTMLScriptElement* HTMLScriptElement::Create(Document& document,
                                              const CreateElementFlags flags) {
@@ -92,7 +91,8 @@ Node::InsertionNotificationRequest HTMLScriptElement::InsertedInto(
     ContainerNode* insertion_point) {
   ScriptType script_type = ScriptType::kClassic;
   if (insertion_point->isConnected() && HasSourceAttribute() &&
-      !Loader()->IsScriptTypeSupported(
+      !ScriptLoader::IsValidScriptTypeAndLanguage(
+          TypeAttributeValue(), LanguageAttributeValue(),
           ScriptLoader::kDisallowLegacyTypeInTypeAttribute, script_type)) {
     UseCounter::Count(GetDocument(),
                       WebFeature::kScriptElementWithInvalidTypeHasSrc);
@@ -204,7 +204,6 @@ Document& HTMLScriptElement::GetDocument() const {
 }
 
 void HTMLScriptElement::DispatchLoadEvent() {
-  DCHECK(!loader_->HaveFiredLoadEvent());
   DispatchEvent(Event::Create(EventTypeNames::load));
 }
 
@@ -232,8 +231,7 @@ void HTMLScriptElement::Trace(blink::Visitor* visitor) {
   ScriptElementBase::Trace(visitor);
 }
 
-void HTMLScriptElement::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+void HTMLScriptElement::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(loader_);
   HTMLElement::TraceWrappers(visitor);
 }

@@ -33,6 +33,7 @@
 
 #include <memory>
 #include "base/memory/weak_ptr.h"
+#include "base/single_thread_task_runner.h"
 #include "services/network/public/mojom/cors.mojom-blink.h"
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -45,9 +46,9 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
-#include "third_party/blink/renderer/core/inspector/InspectorNetworkAgent.h"
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/core/inspector/inspector_network_agent.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/loader/base_fetch_context.h"
 #include "third_party/blink/renderer/core/loader/document_threadable_loader_client.h"
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
@@ -145,6 +146,30 @@ class EmptyDataHandle final : public WebDataConsumerHandle {
 };
 
 }  // namespace
+
+// DetachedClient is a ThreadableLoaderClient for a "detached"
+// DocumentThreadableLoader. It's for fetch requests with keepalive set, so
+// it keeps itself alive during loading.
+class DocumentThreadableLoader::DetachedClient final
+    : public GarbageCollectedFinalized<DetachedClient>,
+      public ThreadableLoaderClient {
+ public:
+  explicit DetachedClient(DocumentThreadableLoader* loader)
+      : self_keep_alive_(this), loader_(loader) {}
+  ~DetachedClient() override {}
+
+  void DidFinishLoading(unsigned long identifier) override {
+    self_keep_alive_.Clear();
+  }
+  void DidFail(const ResourceError&) override { self_keep_alive_.Clear(); }
+  void DidFailRedirectCheck() override { self_keep_alive_.Clear(); }
+  void Trace(Visitor* visitor) { visitor->Trace(loader_); }
+
+ private:
+  SelfKeepAlive<DetachedClient> self_keep_alive_;
+  // Keep it alive.
+  const Member<DocumentThreadableLoader> loader_;
+};
 
 // Max number of CORS redirects handled in DocumentThreadableLoader. Same number
 // as net/url_request/url_request.cc, and same number as
@@ -357,7 +382,7 @@ void DocumentThreadableLoader::Start(const ResourceRequest& request) {
 
 void DocumentThreadableLoader::DispatchInitialRequest(
     ResourceRequest& request) {
-  if (!request.IsExternalRequest() && !cors_flag_) {
+  if (out_of_blink_cors_ || (!request.IsExternalRequest() && !cors_flag_)) {
     LoadRequest(request, resource_loader_options_);
     return;
   }
@@ -415,9 +440,9 @@ void DocumentThreadableLoader::MakeCrossOriginAccessRequest(
         ResourceError::CancelledDueToAccessCheckError(
             request.Url(), ResourceRequestBlockedReason::kOther,
             String::Format(
-                "Cross origin requests are only supported for "
-                "protocol schemes: %s.",
-                WebCORS::ListOfCORSEnabledURLSchemes().Ascii().c_str())));
+                "Cross origin requests are only supported for protocol "
+                "schemes: %s.",
+                SchemeRegistry::ListOfCORSEnabledURLSchemes().Ascii().data())));
     return;
   }
 
@@ -466,7 +491,7 @@ void DocumentThreadableLoader::MakeCrossOriginAccessRequest(
     // security, we must reject forbidden headers/methods at the point we
     // accept user's input. Not here.
     if (CORS::IsCORSSafelistedMethod(request.HttpMethod()) &&
-        WebCORS::ContainsOnlyCORSSafelistedOrForbiddenHeaders(
+        CORS::ContainsOnlyCORSSafelistedOrForbiddenHeaders(
             request.HttpHeaderFields())) {
       PrepareCrossOriginRequest(cross_origin_request);
       LoadRequest(cross_origin_request, cross_origin_options);
@@ -502,7 +527,12 @@ void DocumentThreadableLoader::MakeCrossOriginAccessRequest(
 }
 
 DocumentThreadableLoader::~DocumentThreadableLoader() {
-  CHECK(!client_);
+  // |client_| is a raw pointer and having a non-null |client_| here probably
+  // means UaF.
+  // In the detached case, |this| is held by DetachedClient defined above, but
+  // SelfKeepAlive in DetachedClient is forcibly cancelled on worker thread
+  // termination. We can safely ignore this case.
+  CHECK(!client_ || detached_);
   DCHECK(!GetResource());
 }
 
@@ -546,9 +576,10 @@ void DocumentThreadableLoader::Cancel() {
 
 void DocumentThreadableLoader::Detach() {
   Resource* resource = GetResource();
-  if (resource)
-    resource->SetDetachable();
-  Clear();
+  if (!resource)
+    return;
+  detached_ = true;
+  client_ = new DetachedClient(this);
 }
 
 void DocumentThreadableLoader::SetDefersLoading(bool value) {
@@ -588,8 +619,9 @@ bool DocumentThreadableLoader::RedirectReceived(
   if (!actual_request_.IsNull()) {
     ReportResponseReceived(resource->Identifier(), redirect_response);
 
-    HandlePreflightFailure(original_url,
-                           "Response for preflight is invalid (redirect)");
+    HandlePreflightFailure(
+        original_url, CORS::GetErrorString(
+                          CORS::ErrorParameter::CreateForDisallowedRedirect()));
 
     return false;
   }
@@ -651,7 +683,7 @@ bool DocumentThreadableLoader::RedirectReceived(
           : nullptr,
       redirect_response, resource);
 
-  WTF::Optional<network::mojom::CORSError> redirect_error =
+  base::Optional<network::mojom::CORSError> redirect_error =
       CORS::CheckRedirectLocation(new_url);
   if (redirect_error) {
     DispatchDidFailAccessControlCheck(
@@ -665,7 +697,7 @@ bool DocumentThreadableLoader::RedirectReceived(
   if (cors_flag_) {
     // The redirect response must pass the access control check if the CORS
     // flag is set.
-    WTF::Optional<network::mojom::CORSError> access_error = CORS::CheckAccess(
+    base::Optional<network::mojom::CORSError> access_error = CORS::CheckAccess(
         original_url, redirect_response.HttpStatusCode(),
         redirect_response.HttpHeaderFields(),
         new_request.GetFetchCredentialsMode(), *GetSecurityOrigin());
@@ -804,24 +836,22 @@ void DocumentThreadableLoader::ResponseReceived(
 
 void DocumentThreadableLoader::HandlePreflightResponse(
     const ResourceResponse& response) {
-  WTF::Optional<network::mojom::CORSError> cors_error = CORS::CheckAccess(
-      response.Url(), response.HttpStatusCode(), response.HttpHeaderFields(),
-      actual_request_.GetFetchCredentialsMode(), *GetSecurityOrigin());
+  base::Optional<network::mojom::CORSError> cors_error =
+      CORS::CheckPreflightAccess(response.Url(), response.HttpStatusCode(),
+                                 response.HttpHeaderFields(),
+                                 actual_request_.GetFetchCredentialsMode(),
+                                 *GetSecurityOrigin());
   if (cors_error) {
-    StringBuilder builder;
-    builder.Append(
-        "Response to preflight request doesn't pass access "
-        "control check: ");
-    builder.Append(
+    HandlePreflightFailure(
+        response.Url(),
         CORS::GetErrorString(CORS::ErrorParameter::CreateForAccessCheck(
-            *cors_error, response.Url(), response.HttpStatusCode(),
+            *cors_error, response.Url(), 0 /* do not provide the status_code */,
             response.HttpHeaderFields(), *GetSecurityOrigin(),
             request_context_)));
-    HandlePreflightFailure(response.Url(), builder.ToString());
     return;
   }
 
-  WTF::Optional<network::mojom::CORSError> preflight_error =
+  base::Optional<network::mojom::CORSError> preflight_error =
       CORS::CheckPreflight(response.HttpStatusCode());
   if (preflight_error) {
     HandlePreflightFailure(
@@ -832,7 +862,7 @@ void DocumentThreadableLoader::HandlePreflightResponse(
   }
 
   if (actual_request_.IsExternalRequest()) {
-    WTF::Optional<network::mojom::CORSError> external_preflight_status =
+    base::Optional<network::mojom::CORSError> external_preflight_status =
         CORS::CheckExternalPreflight(response.HttpHeaderFields());
     if (external_preflight_status) {
       HandlePreflightFailure(
@@ -876,6 +906,8 @@ void DocumentThreadableLoader::HandleResponse(
   DCHECK(client_);
 
   // TODO(toyoshim): Support OOR-CORS preflight and Service Worker case.
+  // Note that CORS-preflight is usually handled in the Network Service side,
+  // but still done in Blink side when it is needed on redirects.
   // https://crbug.com/736308.
   if (out_of_blink_cors_ && actual_request_.IsNull() &&
       !response.WasFetchedViaServiceWorker()) {
@@ -937,7 +969,7 @@ void DocumentThreadableLoader::HandleResponse(
   fallback_request_for_service_worker_ = ResourceRequest();
 
   if (CORS::IsCORSEnabledRequestMode(request_mode) && cors_flag_) {
-    WTF::Optional<network::mojom::CORSError> access_error = CORS::CheckAccess(
+    base::Optional<network::mojom::CORSError> access_error = CORS::CheckAccess(
         response.Url(), response.HttpStatusCode(), response.HttpHeaderFields(),
         credentials_mode, *GetSecurityOrigin());
     if (access_error) {
@@ -1005,12 +1037,12 @@ void DocumentThreadableLoader::NotifyFinished(Resource* resource) {
   if (resource->ErrorOccurred()) {
     DispatchDidFail(resource->GetResourceError());
   } else {
-    HandleSuccessfulFinish(resource->Identifier(), resource->LoadFinishTime());
+    HandleSuccessfulFinish(resource->Identifier());
   }
 }
 
-void DocumentThreadableLoader::HandleSuccessfulFinish(unsigned long identifier,
-                                                      double finish_time) {
+void DocumentThreadableLoader::HandleSuccessfulFinish(
+    unsigned long identifier) {
   DCHECK(fallback_request_for_service_worker_.IsNull());
 
   if (!actual_request_.IsNull()) {
@@ -1024,7 +1056,7 @@ void DocumentThreadableLoader::HandleSuccessfulFinish(unsigned long identifier,
   // downloaded file.
   Persistent<Resource> protect = GetResource();
   Clear();
-  client->DidFinishLoading(identifier, finish_time);
+  client->DidFinishLoading(identifier);
 }
 
 void DocumentThreadableLoader::DidTimeout(TimerBase* timer) {
@@ -1092,20 +1124,15 @@ void DocumentThreadableLoader::DispatchDidFail(const ResourceError& error) {
   if (error.CORSErrorStatus()) {
     DCHECK(out_of_blink_cors_);
     // TODO(toyoshim): Should consider to pass correct arguments instead of
-    // WebURL() and WebHTTPHeaderMap() to GetErrorString().
-    // We still need plumbing required information.
-    const int response_code =
-        error.CORSErrorStatus()->related_response_headers
-            ? error.CORSErrorStatus()->related_response_headers->response_code()
-            : 0;
+    // KURL(), 0, and HTTPHeaderMap() to GetErrorString().
+    // We still need plumbing some more information.
     GetExecutionContext()->AddConsoleMessage(ConsoleMessage::Create(
         kJSMessageSource, kErrorMessageLevel,
         "Failed to load " + error.FailingURL() + ": " +
-            CORS::GetErrorString(CORS::ErrorParameter::Create(
-                                     error.CORSErrorStatus()->cors_error,
-                                     KURL(error.FailingURL()), KURL(),
-                                     response_code, HTTPHeaderMap(),
-                                     *GetSecurityOrigin(), request_context_))
+            CORS::GetErrorString(
+                CORS::ErrorParameter::Create(
+                    *error.CORSErrorStatus(), KURL(error.FailingURL()), KURL(),
+                    0, HTTPHeaderMap(), *GetSecurityOrigin(), request_context_))
                 .Utf8()
                 .data()));
   }
@@ -1181,8 +1208,7 @@ void DocumentThreadableLoader::LoadRequestSync(
   // we have an HTTP response, then it wasn't a network error in fact.
   if (resource->LoadFailedOrCanceled() && !request_url.IsLocalFile() &&
       response.HttpStatusCode() <= 0) {
-    client_ = nullptr;
-    client->DidFail(resource->GetResourceError());
+    DispatchDidFail(resource->GetResourceError());
     return;
   }
 
@@ -1223,7 +1249,7 @@ void DocumentThreadableLoader::LoadRequestSync(
   if (!client_)
     return;
 
-  WTF::Optional<int64_t> downloaded_file_length =
+  base::Optional<int64_t> downloaded_file_length =
       resource->DownloadedFileLength();
   if (downloaded_file_length) {
     client_->DidDownloadData(*downloaded_file_length);
@@ -1234,7 +1260,7 @@ void DocumentThreadableLoader::LoadRequestSync(
     client_->DidDownloadToBlob(resource->DownloadedBlob());
   }
 
-  HandleSuccessfulFinish(identifier, 0.0);
+  HandleSuccessfulFinish(identifier);
 }
 
 void DocumentThreadableLoader::LoadRequest(

@@ -17,6 +17,8 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "base/unguessable_token.h"
+#include "components/viz/common/frame_sinks/begin_frame_args.h"
+#include "components/viz/common/quads/compositor_frame_metadata.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #include "components/viz/service/frame_sinks/video_capture/capturable_frame_sink.h"
 #include "components/viz/service/frame_sinks/video_capture/in_flight_frame_delivery.h"
@@ -27,6 +29,7 @@
 #include "mojo/public/cpp/bindings/binding.h"
 #include "services/viz/privileged/interfaces/compositing/frame_sink_video_capture.mojom.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/vector2d_f.h"
 
 namespace gfx {
 class Size;
@@ -156,14 +159,16 @@ class VIZ_SERVICE_EXPORT FrameSinkVideoCapturerImpl final
   // CapturableFrameSink::Client implementation:
   void OnFrameDamaged(const gfx::Size& frame_size,
                       const gfx::Rect& damage_rect,
-                      base::TimeTicks target_display_time) final;
+                      base::TimeTicks target_display_time,
+                      const CompositorFrameMetadata& frame_metadata) final;
 
   // Consults the VideoCaptureOracle to decide whether to capture a frame,
   // then ensures prerequisites are met before initiating the capture: that
   // there is a consumer present and that the pipeline is not already full.
   void MaybeCaptureFrame(media::VideoCaptureOracle::Event event,
                          const gfx::Rect& damage_rect,
-                         base::TimeTicks event_time);
+                         base::TimeTicks event_time,
+                         const CompositorFrameMetadata& frame_metadata);
 
   // Extracts the image data from the copy output |result|, populating the
   // |content_rect| region of a [possibly letterboxed] video |frame|.

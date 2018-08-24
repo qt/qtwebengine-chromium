@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 
+#include "ash/display/screen_orientation_controller.h"
 #include "ash/display/window_tree_host_manager.h"
 #include "ash/wm/client_controlled_state.h"
 #include "base/callback.h"
@@ -75,6 +76,9 @@ class ClientControlledShellSurface
 
   // Called when the client was snapped to right.
   void SetSnappedToRight();
+
+  // Called when the client was set to PIP.
+  void SetPip();
 
   // Set the callback to run when the surface state changed.
   using StateChangedCallback =
@@ -171,6 +175,12 @@ class ClientControlledShellSurface
   // Set the extra title for the surface.
   void SetExtraTitle(const base::string16& extra_title);
 
+  // Set specific orientation lock for this surface. When this surface is in
+  // foreground and the display can be rotated (e.g. tablet mode), apply the
+  // behavior defined by |orientation_lock|. See more details in
+  // //ash/display/screen_orientation_controller.h.
+  void SetOrientationLock(ash::OrientationLockType orientation_lock);
+
   // Overridden from SurfaceDelegate:
   void OnSurfaceCommit() override;
   bool IsInputEnabled(Surface* surface) const override;
@@ -189,6 +199,7 @@ class ClientControlledShellSurface
 
   // Overridden from views::View:
   gfx::Size GetMaximumSize() const override;
+  void OnDeviceScaleFactorChanged(float old_dsf, float new_dsf) override;
 
   // Overridden from aura::WindowObserver:
   void OnWindowBoundsChanged(aura::Window* window,
@@ -243,6 +254,8 @@ class ClientControlledShellSurface
 
   void UpdateBackdrop();
 
+  void UpdateFrameWidth();
+
   void AttemptToStartDrag(int component, const gfx::Point& location);
 
   // Lock the compositor if it's not already locked, or extends the
@@ -290,6 +303,11 @@ class ClientControlledShellSurface
   ash::WideFrameView* wide_frame_ = nullptr;
 
   std::unique_ptr<ui::CompositorLock> orientation_compositor_lock_;
+
+  // The orientation to be applied when widget is being created. Only set when
+  // widget is not created yet orientation lock is being set.
+  ash::OrientationLockType initial_orientation_lock_ =
+      ash::OrientationLockType::kAny;
 
   DISALLOW_COPY_AND_ASSIGN(ClientControlledShellSurface);
 };

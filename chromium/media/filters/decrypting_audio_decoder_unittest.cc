@@ -44,11 +44,11 @@ const int kDecodingDelay = 3;
 static scoped_refptr<DecoderBuffer> CreateFakeEncryptedBuffer() {
   const int buffer_size = 16;  // Need a non-empty buffer;
   scoped_refptr<DecoderBuffer> buffer(new DecoderBuffer(buffer_size));
-  buffer->set_decrypt_config(std::unique_ptr<DecryptConfig>(new DecryptConfig(
+  buffer->set_decrypt_config(DecryptConfig::CreateCencConfig(
       std::string(reinterpret_cast<const char*>(kFakeKeyId),
                   arraysize(kFakeKeyId)),
       std::string(reinterpret_cast<const char*>(kFakeIv), arraysize(kFakeIv)),
-      std::vector<SubsampleEntry>())));
+      std::vector<SubsampleEntry>()));
   return buffer;
 }
 
@@ -65,9 +65,7 @@ class DecryptingAudioDecoderTest : public testing::Test {
         decoded_frame_(NULL),
         decoded_frame_list_() {}
 
-  virtual ~DecryptingAudioDecoderTest() {
-    Destroy();
-  }
+  ~DecryptingAudioDecoderTest() override { Destroy(); }
 
   void InitializeAndExpectResult(const AudioDecoderConfig& config,
                                  bool success) {

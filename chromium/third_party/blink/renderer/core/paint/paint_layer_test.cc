@@ -28,9 +28,7 @@ class PaintLayerTest : public PaintTestConfigurations, public RenderingTest {
   }
 };
 
-INSTANTIATE_TEST_CASE_P(All,
-                        PaintLayerTest,
-                        testing::ValuesIn(kAllSlimmingPaintTestConfigurations));
+INSTANTIATE_PAINT_TEST_CASE_P(PaintLayerTest);
 
 TEST_P(PaintLayerTest, ChildWithoutPaintLayer) {
   SetBodyInnerHTML(
@@ -88,15 +86,11 @@ TEST_P(PaintLayerTest, CompositedBoundsTransformedChild) {
 TEST_P(PaintLayerTest, RootLayerCompositedBounds) {
   SetBodyInnerHTML(
       "<style> body { width: 1000px; height: 1000px; margin: 0 } </style>");
-  EXPECT_EQ(RuntimeEnabledFeatures::RootLayerScrollingEnabled()
-                ? LayoutRect(0, 0, 800, 600)
-                : LayoutRect(0, 0, 1000, 1000),
+  EXPECT_EQ(LayoutRect(0, 0, 800, 600),
             GetLayoutView().Layer()->BoundingBoxForCompositing());
 }
 
 TEST_P(PaintLayerTest, RootLayerScrollBounds) {
-  if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled())
-    return;
   ScopedOverlayScrollbarsForTest overlay_scrollbars(false);
 
   SetBodyInnerHTML(
@@ -159,11 +153,6 @@ TEST_P(PaintLayerTest, ScrollsWithViewportFixedPosition) {
 }
 
 TEST_P(PaintLayerTest, ScrollsWithViewportFixedPositionInsideTransform) {
-  // We don't intend to launch SPv2 without root layer scrolling, so skip this
-  // test in that configuration because it's broken.
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled() &&
-      !RuntimeEnabledFeatures::RootLayerScrollingEnabled())
-    return;
   SetBodyInnerHTML(R"HTML(
     <div style='transform: translateZ(0)'>
       <div id='target' style='position: fixed'></div>
@@ -1105,11 +1094,10 @@ TEST_P(PaintLayerTest, PaintLayerTransformUpdatedOnStyleTransformAnimation) {
       ToLayoutBoxModelObject(target_object)->Layer();
   EXPECT_EQ(nullptr, target_paint_layer->Transform());
 
-  scoped_refptr<ComputedStyle> old_style =
-      ComputedStyle::Clone(target_object->StyleRef());
-  ComputedStyle* new_style = target_object->MutableStyle();
+  const ComputedStyle* old_style = target_object->Style();
+  scoped_refptr<ComputedStyle> new_style = ComputedStyle::Clone(*old_style);
   new_style->SetHasCurrentTransformAnimation(true);
-  target_paint_layer->UpdateTransform(old_style.get(), *new_style);
+  target_paint_layer->UpdateTransform(old_style, *new_style);
 
   EXPECT_NE(nullptr, target_paint_layer->Transform());
 }
@@ -1179,11 +1167,9 @@ TEST_P(PaintLayerTest, NeedsRepaintOnRemovingStackedLayer) {
 }
 
 TEST_P(PaintLayerTest, FrameViewContentSize) {
-  bool rls = RuntimeEnabledFeatures::RootLayerScrollingEnabled();
   SetBodyInnerHTML(
       "<style> body { width: 1200px; height: 900px; margin: 0 } </style>");
-  EXPECT_EQ(rls ? IntSize(800, 600) : IntSize(1200, 900),
-            GetDocument().View()->ContentsSize());
+  EXPECT_EQ(IntSize(800, 600), GetDocument().View()->ContentsSize());
 }
 
 TEST_P(PaintLayerTest, ReferenceClipPathWithPageZoom) {
@@ -1298,6 +1284,108 @@ TEST_P(PaintLayerTest, HitTestWithIgnoreClipping) {
   HitTestResult result(request, IntPoint(10, 900));
   GetDocument().GetLayoutView()->HitTest(result);
   EXPECT_EQ(GetDocument().getElementById("hit"), result.InnerNode());
+}
+
+TEST_P(PaintLayerTest, HitTestWithStopNode) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='hit' style='width: 100px; height: 100px;'>
+      <div id='child' style='width:100px;height:100px'></div>
+    </div>
+    <div id='overlap' style='position:relative;top:-50px;width:100px;height:100px'></div>
+  )HTML");
+  Element* hit = GetDocument().getElementById("hit");
+  Element* child = GetDocument().getElementById("child");
+  Element* overlap = GetDocument().getElementById("overlap");
+
+  // Regular hit test over 'child'
+  HitTestRequest request(HitTestRequest::kReadOnly | HitTestRequest::kActive);
+  HitTestResult result(request, LayoutPoint(50, 25));
+  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  EXPECT_EQ(child, result.InnerNode());
+
+  // Same hit test, with stop node.
+  request = HitTestRequest(HitTestRequest::kReadOnly | HitTestRequest::kActive,
+                           hit->GetLayoutObject());
+  result = HitTestResult(request, LayoutPoint(50, 25));
+  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  EXPECT_EQ(hit, result.InnerNode());
+
+  // Regular hit test over 'overlap'
+  request = HitTestRequest(HitTestRequest::kReadOnly | HitTestRequest::kActive);
+  result = HitTestResult(request, LayoutPoint(50, 75));
+  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  EXPECT_EQ(overlap, result.InnerNode());
+
+  // Same hit test, with stop node, should still hit 'overlap' because it's not
+  // a descendant of 'hit'.
+  request = HitTestRequest(HitTestRequest::kReadOnly | HitTestRequest::kActive,
+                           hit->GetLayoutObject());
+  result = HitTestResult(request, LayoutPoint(50, 75));
+  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  EXPECT_EQ(overlap, result.InnerNode());
+
+  // List-based hit test with stop node
+  request = HitTestRequest(HitTestRequest::kReadOnly | HitTestRequest::kActive |
+                               HitTestRequest::kListBased,
+                           hit->GetLayoutObject());
+  result = HitTestResult(request, LayoutPoint(50, 25),
+                         LayoutRectOutsets(10, 10, 10, 10));
+  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  EXPECT_EQ(1u, result.ListBasedTestResult().size());
+  EXPECT_EQ(hit, *result.ListBasedTestResult().begin());
+}
+
+TEST_P(PaintLayerTest, HitTestTableWithStopNode) {
+  SetBodyInnerHTML(R"HTML(
+    <style>
+    .cell {
+      width: 100px;
+      height: 100px;
+    }
+    </style>
+    <table id='table'>
+      <tr>
+        <td><div id='cell11' class='cell'></td>
+        <td><div id='cell12' class='cell'></td>
+      </tr>
+      <tr>
+        <td><div id='cell21' class='cell'></td>
+        <td><div id='cell22' class='cell'></td>
+      </tr>
+    </table>
+    )HTML");
+  Element* table = GetDocument().getElementById("table");
+  Element* cell11 = GetDocument().getElementById("cell11");
+  HitTestRequest request(HitTestRequest::kReadOnly | HitTestRequest::kActive);
+  HitTestResult result(request, LayoutPoint(50, 50));
+  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  EXPECT_EQ(cell11, result.InnerNode());
+
+  request = HitTestRequest(HitTestRequest::kReadOnly | HitTestRequest::kActive,
+                           table->GetLayoutObject());
+  result = HitTestResult(request, LayoutPoint(50, 50));
+  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  EXPECT_EQ(table, result.InnerNode());
+}
+
+TEST_P(PaintLayerTest, HitTestSVGWithStopNode) {
+  SetBodyInnerHTML(R"HTML(
+    <svg id='svg' style='width:100px;height:100px' viewBox='0 0 100 100'>
+      <circle id='circle' cx='50' cy='50' r='50' />
+    </svg>
+    )HTML");
+  Element* svg = GetDocument().getElementById("svg");
+  Element* circle = GetDocument().getElementById("circle");
+  HitTestRequest request(HitTestRequest::kReadOnly | HitTestRequest::kActive);
+  HitTestResult result(request, LayoutPoint(50, 50));
+  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  EXPECT_EQ(circle, result.InnerNode());
+
+  request = HitTestRequest(HitTestRequest::kReadOnly | HitTestRequest::kActive,
+                           svg->GetLayoutObject());
+  result = HitTestResult(request, LayoutPoint(50, 50));
+  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  EXPECT_EQ(svg, result.InnerNode());
 }
 
 TEST_P(PaintLayerTest, SetNeedsRepaintSelfPaintingUnderNonSelfPainting) {

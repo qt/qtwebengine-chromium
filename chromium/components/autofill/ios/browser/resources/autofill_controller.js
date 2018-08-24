@@ -17,6 +17,15 @@
   */
 goog.provide('__crWeb.autofill');
 
+/**
+ * The autofill data for a form.
+ * @typedef {{
+ *   formName: string,
+ *   fields: !Object<string, string>,
+ * }}
+ */
+var FormData;
+
 /* Beginning of anonymous object. */
 (function() {
 
@@ -223,13 +232,22 @@ __gCrWeb.autofill['fillActiveFormField'] = function(data) {
   __gCrWeb.autofill.fillFormField(data, activeElement);
 };
 
+// Remove Autofill styling when control element is edited by the user.
+function controlElementInputListener_(evt) {
+  if (evt.isTrusted) {
+    evt.target.removeAttribute('chrome-autofilled');
+    evt.target.isAutofilled = false;
+    evt.target.removeEventListener('input', controlElementInputListener_);
+  }
+};
+
 /**
  * Fills a number of fields in the same named form for full-form Autofill.
  * Applies Autofill CSS (i.e. yellow background) to filled elements.
  * Only empty fields will be filled, except that field named
  * |forceFillFieldName| will always be filled even if non-empty.
  *
- * @param {Object} data Dictionary of data to fill in.
+ * @param {!FormData} data Autofill data to fill in.
  * @param {string} forceFillFieldIdentifier Identified field will always be
  *     filled even if non-empty. May be null.
  */
@@ -246,67 +264,53 @@ __gCrWeb.autofill['fillForm'] = function(data, forceFillFieldIdentifier) {
     __gCrWeb.autofill.styleInjected = true;
   }
 
-  // Remove Autofill styling when control element is edited by the user.
-  var controlElementInputListener = function(evt) {
-    if (evt.isTrusted) {
-      evt.target.removeAttribute('chrome-autofilled');
-      evt.target.isAutofilled = false;
-      evt.target.removeEventListener('input', controlElementInputListener);
-    }
-  };
-
   var form = __gCrWeb.form.getFormElementFromIdentifier(data.formName);
-  var controlElements = [];
-  if (form) {
-    controlElements = __gCrWeb.form.getFormControlElements(form);
-  } else {
-    var fieldsets = [];
-    controlElements =
-        getUnownedAutofillableFormFieldElements_(document.all, fieldsets);
-  }
-  var delay = 0;
-  for (var i = 0; i < controlElements.length; ++i) {
-    var element = controlElements[i];
-    if (!__gCrWeb.fill.isAutofillableElement(element)) {
-      continue;
-    }
-    var fieldIdentifier = __gCrWeb.form.getFieldIdentifier(element);
+  var controlElements = form ?
+      __gCrWeb.form.getFormControlElements(form) :
+      getUnownedAutofillableFormFieldElements_(document.all, /*fieldsets=*/[]);
 
-    // Skip non-empty fields unless this is the forceFillFieldName or it's a
-    // 'select-one' element. 'select-one' elements are always autofilled even
-    // if non-empty; see AutofillManager::FillOrPreviewDataModelForm().
+  for (var i = 0, delay = 0; i < controlElements.length;
+       ++i, delay += __gCrWeb.autofill.delayBetweenFieldFillingMs) {
+    var element = controlElements[i];
+    if (!__gCrWeb.fill.isAutofillableElement(element))
+      continue;
+
+    // TODO(crbug.com/836013): Investigate autofilling checkable elements.
+    if (__gCrWeb.fill.isCheckableElement(element))
+      continue;
+
+    // Skip fields if autofill data is missing.
+    var fieldIdentifier = __gCrWeb.form.getFieldIdentifier(element);
+    var value = data.fields[fieldIdentifier];
+    if (!value)
+      continue;
+
+    // Skip non-empty fields unless:
+    // a) The element's identifier matches |forceFillFieldIdentifier|; or
+    // b) The element is a 'select-one' element. 'select-one' elements are
+    //    always autofilled; see AutofillManager::FillOrPreviewDataModelForm().
+    // c) The "value" or "placeholder" attributes match the value, if any; or
     if (element.value &&
         !__gCrWeb.autofill.sanitizedFieldIsEmpty(element.value) &&
+        fieldIdentifier !== forceFillFieldIdentifier &&
         !__gCrWeb.fill.isSelectElement(element) &&
-        fieldIdentifier !== forceFillFieldIdentifier) {
+        !((element.hasAttribute('value') &&
+           element.getAttribute('value') == element.value) ||
+          (element.hasAttribute('placeholder') &&
+           element.getAttribute('placeholder').toLowerCase() ==
+               element.value.toLowerCase()))) {
       continue;
     }
 
-    // Don't fill field if source value is empty or missing.
-    var value = data.fields[fieldIdentifier];
-    if (!value) continue;
-
-    if (__gCrWeb.fill.isTextInput(element) ||
-        __gCrWeb.fill.isTextAreaElement(element) ||
-        __gCrWeb.fill.isSelectElement(element)) {
-      (function(_element, _value, _delay) {
-        window.setTimeout(function() {
-          __gCrWeb.fill.setInputElementValue(
-              _value, _element, function(changed) {
-                if (!changed)
-                  return;
-                _element.setAttribute('chrome-autofilled', '');
-                _element.isAutofilled = true;
-                _element.addEventListener('input', controlElementInputListener);
-              });
-        }, _delay);
-      })(element, value, delay);
-      delay = delay + __gCrWeb.autofill.delayBetweenFieldFillingMs;
-    } else if (__gCrWeb.fill.isCheckableElement(element)) {
-      // TODO(bondd): Handle __gCrWeb.fill.isCheckableElement(element) ==
-      // true. |is_checked| is not currently passed in by the caller.
-    }
-
+    (function(_element, _value, _delay) {
+      window.setTimeout(function() {
+        __gCrWeb.fill.setInputElementValue(_value, _element, function() {
+          _element.setAttribute('chrome-autofilled', '');
+          _element.isAutofilled = true;
+          _element.addEventListener('input', controlElementInputListener_);
+        });
+      }, _delay);
+    })(element, value, delay);
   }
 
   if (form) {
@@ -325,31 +329,29 @@ __gCrWeb.autofill['fillForm'] = function(data, forceFillFieldIdentifier) {
   }
 };
 
+// TODO(crbug.com/816941): Clear should only clear the current section and not
+// the whole form.
 /**
- * Clear autofilled fields of the specified form. Fields that are not currently
- * autofilled are not modified.
+ * Clear autofilled fields of the specified form section. Fields that are not
+ * currently autofilled are not modified.
  * Field contents are cleared, and Autofill flag and styling are removed.
  * 'change' events are sent for fields whose contents changed.
- * Based on FormCache::ClearFormWithElement().
+ * Based on FormCache::ClearSectionWithElement().
  *
  * @param {string} formName Identifier for form element (from
  *     getFormIdentifier).
  */
 __gCrWeb.autofill['clearAutofilledFields'] = function(formName) {
   var form = __gCrWeb.form.getFormElementFromIdentifier(formName);
-  var controlElements = [];
-  if (form) {
-    controlElements = __gCrWeb.form.getFormControlElements(form);
-  } else {
-    var fieldsets = [];
-    controlElements =
-        getUnownedAutofillableFormFieldElements_(document.all, fieldsets);
-  }
-  var delay = 0;
+  var controlElements = form ?
+      __gCrWeb.form.getFormControlElements(form) :
+      getUnownedAutofillableFormFieldElements_(document.all, /*fieldsets=*/[]);
 
-  for (var i = 0; i < controlElements.length; ++i) {
+  for (var i = 0, delay = 0; i < controlElements.length;
+       ++i, delay += __gCrWeb.autofill.delayBetweenFieldFillingMs) {
     var element = controlElements[i];
-    if (!element.isAutofilled || element.disabled) continue;
+    if (!element.isAutofilled || element.disabled)
+      continue;
 
     var value = null;
     if (__gCrWeb.fill.isTextInput(element) ||
@@ -360,8 +362,7 @@ __gCrWeb.autofill['clearAutofilledFields'] = function(formName) {
       // TODO(bondd): Store initial values and reset to the correct one here.
       value = element.options[0].value;
     } else if (__gCrWeb.fill.isCheckableElement(element)) {
-      // TODO(bondd): Handle checkable elements. They aren't properly supported
-      // by iOS Autofill yet.
+      // TODO(crbug.com/836013): Investigate autofilling checkable elements.
     }
     if (value !== null) {
       (function(_element, _value, _delay) {
@@ -371,11 +372,10 @@ __gCrWeb.autofill['clearAutofilledFields'] = function(formName) {
                 _element.removeAttribute('chrome-autofilled');
                 _element.isAutofilled = false;
                 _element.removeEventListener(
-                    'input', controlElementInputListener);
+                    'input', controlElementInputListener_);
               });
         }, _delay);
       })(element, value, delay);
-      delay = delay + __gCrWeb.autofill.delayBetweenFieldFillingMs;
     }
   }
 };
@@ -415,8 +415,8 @@ __gCrWeb.autofill.extractNewForms = function(
   /** @type {HTMLCollection} */
   var webForms = document.forms;
 
-  var extractMask = __gCrWeb.fill.EXTRACT_MASK_VALUE |
-      __gCrWeb.fill.EXTRACT_MASK_OPTIONS;
+  var extractMask =
+      __gCrWeb.fill.EXTRACT_MASK_VALUE | __gCrWeb.fill.EXTRACT_MASK_OPTIONS;
   var numFieldsSeen = 0;
   for (var formIndex = 0; formIndex < webForms.length; ++formIndex) {
     /** @type {HTMLFormElement} */
@@ -703,7 +703,7 @@ __gCrWeb.autofill['sanitizedFieldIsEmpty'] = function(value) {
   // Some sites enter values such as ____-____-____-____ or (___)-___-____ in
   // their fields. Check if the field value is empty after the removal of the
   // formatting characters.
-  return __gCrWeb.common.trim(value.replace(/[-_()/|]/g,'')) == '';
- };
+  return __gCrWeb.common.trim(value.replace(/[-_()/|]/g, '')) == '';
+};
 
 }());  // End of anonymous object

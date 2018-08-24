@@ -1176,7 +1176,7 @@ FT_BEGIN_HEADER
   /*      interpolating between them.  Supported formats are Adobe MM,     */
   /*      TrueType GX, and OpenType variation fonts.                       */
   /*                                                                       */
-  /*      See the multiple-masters specific API for details.               */
+  /*      See section @multiple_masters for API details.                   */
   /*                                                                       */
   /*    FT_FACE_FLAG_GLYPH_NAMES ::                                        */
   /*      The face contains glyph names, which can be retrieved using      */
@@ -2063,8 +2063,8 @@ FT_BEGIN_HEADER
   /*    data :: A pointer to the parameter data.                           */
   /*                                                                       */
   /* <Note>                                                                */
-  /*    The ID and function of parameters are driver-specific.  See the    */
-  /*    various FT_PARAM_TAG_XXX flags for more information.               */
+  /*    The ID and function of parameters are driver-specific.  See        */
+  /*    section @parameter_tags for more information.                      */
   /*                                                                       */
   typedef struct  FT_Parameter_
   {
@@ -4557,7 +4557,7 @@ FT_BEGIN_HEADER
    */
 #define FREETYPE_MAJOR  2
 #define FREETYPE_MINOR  9
-#define FREETYPE_PATCH  0
+#define FREETYPE_PATCH  1
 
 
   /*************************************************************************/

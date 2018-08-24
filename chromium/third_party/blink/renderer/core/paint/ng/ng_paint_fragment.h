@@ -14,6 +14,7 @@
 namespace blink {
 
 class LayoutInline;
+struct LayoutSelectionStatus;
 struct PaintInfo;
 
 // The NGPaintFragment contains a NGPhysicalFragment and geometry in the paint
@@ -50,6 +51,9 @@ class CORE_EXPORT NGPaintFragment : public DisplayItemClient,
     return children_;
   }
 
+  // Returns the first line box for a block-level container.
+  NGPaintFragment* FirstLineBox() const;
+
   // Returns the container line box for inline fragments.
   const NGPaintFragment* ContainerLineBox() const;
 
@@ -73,12 +77,19 @@ class CORE_EXPORT NGPaintFragment : public DisplayItemClient,
   LayoutRect VisualRect() const override { return visual_rect_; }
   void SetVisualRect(const LayoutRect& rect) { visual_rect_ = rect; }
   LayoutRect VisualOverflowRect() const;
-  LayoutRect OverflowClipRect(const LayoutPoint& location,
-                              OverlayScrollbarClipBehavior) const {
-    return {location, VisualRect().Size()};
-  }
 
   LayoutRect PartialInvalidationRect() const override;
+
+  NGPhysicalOffsetRect ComputeLocalSelectionRect(
+      const LayoutSelectionStatus&) const;
+
+  // Set ShouldDoFullPaintInvalidation flag in the corresponding LayoutObject
+  // recursively.
+  void SetShouldDoFullPaintInvalidationRecursively();
+
+  // Set ShouldDoFullPaintInvalidation flag to all objects in the first line of
+  // this block-level fragment.
+  void SetShouldDoFullPaintInvalidationForFirstLine();
 
   // Paint all descendant inline box fragments that belong to the specified
   // LayoutObject.
@@ -98,6 +109,10 @@ class CORE_EXPORT NGPaintFragment : public DisplayItemClient,
   const ComputedStyle& Style() const { return PhysicalFragment().Style(); }
   NGPhysicalOffset Offset() const { return PhysicalFragment().Offset(); }
   NGPhysicalSize Size() const { return PhysicalFragment().Size(); }
+
+  // Converts the given point, relative to the fragment itself, into a position
+  // in DOM tree.
+  PositionWithAffinity PositionForPoint(const NGPhysicalOffset&) const;
 
   // A range of fragments for |FragmentsFor()|.
   class FragmentRange {
@@ -169,6 +184,13 @@ class CORE_EXPORT NGPaintFragment : public DisplayItemClient,
       const NGPhysicalOffset inline_offset_to_container_box,
       HashMap<const LayoutObject*, NGPaintFragment*>* first_fragment_map,
       HashMap<const LayoutObject*, NGPaintFragment*>* last_fragment_map);
+
+  // Helps for PositionForPoint() when |this| falls in different categories.
+  PositionWithAffinity PositionForPointInText(const NGPhysicalOffset&) const;
+  PositionWithAffinity PositionForPointInInlineFormattingContext(
+      const NGPhysicalOffset&) const;
+  PositionWithAffinity PositionForPointInInlineLevelBox(
+      const NGPhysicalOffset&) const;
 
   //
   // Following fields are computed in the layout phase.

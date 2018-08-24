@@ -47,6 +47,7 @@ Console.ConsoleView = class extends UI.VBox {
     this._sidebar.addEventListener(Console.ConsoleSidebar.Events.FilterSelected, this._onFilterChanged.bind(this));
     this._isSidebarOpen = false;
     this._filter = new Console.ConsoleViewFilter(this._onFilterChanged.bind(this));
+    this._isBelowPromptEnabled = Runtime.experiments.isEnabled('consoleBelowPrompt');
 
     const toolbar = new UI.Toolbar('', this.element);
     this._splitWidget =
@@ -139,7 +140,13 @@ Console.ConsoleView = class extends UI.VBox {
     const settingsToolbarRight = new UI.Toolbar('', settingsPane.element);
     settingsToolbarRight.makeVertical();
     settingsToolbarRight.appendToolbarItem(new UI.ToolbarSettingCheckbox(monitoringXHREnabledSetting));
-    settingsToolbarRight.appendToolbarItem(new UI.ToolbarSettingCheckbox(this._timestampsSetting));
+    if (this._isBelowPromptEnabled) {
+      const eagerEvalCheckbox = new UI.ToolbarSettingCheckbox(
+          Common.settings.moduleSetting('consoleEagerEval'), ls`Eagerly evaluate text in the prompt`);
+      settingsToolbarRight.appendToolbarItem(eagerEvalCheckbox);
+    } else {
+      settingsToolbarRight.appendToolbarItem(new UI.ToolbarSettingCheckbox(this._timestampsSetting));
+    }
     settingsToolbarRight.appendToolbarItem(new UI.ToolbarSettingCheckbox(this._consoleHistoryAutocompleteSetting));
     if (!this._showSettingsPaneSetting.get())
       settingsPane.element.classList.add('hidden');
@@ -832,9 +839,11 @@ Console.ConsoleView = class extends UI.VBox {
    * @param {!Event} event
    */
   _messagesClicked(event) {
+    const target = /** @type {?Node} */ (event.target);
     // Do not focus prompt if messages have selection.
     if (!this._messagesElement.hasSelection()) {
-      const clickedOutsideMessageList = event.target === this._messagesElement;
+      const clickedOutsideMessageList =
+          target === this._messagesElement || this._prompt.belowEditorElement().isSelfOrAncestor(target);
       if (clickedOutsideMessageList)
         this._prompt.moveCaretToEndOfPrompt();
       this.focus();
@@ -1132,7 +1141,7 @@ Console.ConsoleView = class extends UI.VBox {
     function updateViewportState() {
       this._muteViewportUpdates = false;
       if (this.isShowing())
-        this._viewport.setStickToBottom(this._messagesElement.isScrolledToBottom());
+        this._viewport.setStickToBottom(this._isScrolledToBottom());
       if (this._maybeDirtyWhileMuted) {
         this._scheduleViewportRefresh();
         delete this._maybeDirtyWhileMuted;
@@ -1152,12 +1161,23 @@ Console.ConsoleView = class extends UI.VBox {
   }
 
   _promptTextChanged() {
-    this._viewport.setStickToBottom(this._messagesElement.isScrolledToBottom());
+    this._viewport.setStickToBottom(this._isScrolledToBottom());
     this._promptTextChangedForTest();
   }
 
   _promptTextChangedForTest() {
     // This method is sniffed in tests.
+  }
+
+  /**
+   * @return {boolean}
+   */
+  _isScrolledToBottom() {
+    if (!this._isBelowPromptEnabled)
+      return this._messagesElement.isScrolledToBottom();
+    const distanceToPromptEditorBottom = this._messagesElement.scrollHeight - this._messagesElement.scrollTop -
+        this._messagesElement.clientHeight - this._prompt.belowEditorElement().offsetHeight;
+    return distanceToPromptEditorBottom <= 2;
   }
 };
 
@@ -1279,6 +1299,7 @@ Console.ConsoleViewFilter = class {
       text = Common.UIString('Default levels');
     else
       text = text || Common.UIString('Hide all');
+    this._levelMenuButton.element.classList.toggle('warning', !isAll && !isDefault);
     this._levelMenuButton.setText(text);
   }
 

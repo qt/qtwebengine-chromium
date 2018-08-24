@@ -22,6 +22,7 @@ GL_EXPORT extern const char kGLImplementationSwiftShaderName[];
 GL_EXPORT extern const char kGLImplementationSwiftShaderForWebGLName[];
 extern const char kGLImplementationMockName[];
 extern const char kGLImplementationStubName[];
+GL_EXPORT extern const char kGLImplementationDisabledName[];
 
 GL_EXPORT extern const char kANGLEImplementationDefaultName[];
 GL_EXPORT extern const char kANGLEImplementationD3D9Name[];
@@ -55,7 +56,6 @@ GL_EXPORT extern const char kDisableGLExtensions[];
 GL_EXPORT extern const char kEnableSwapBuffersWithBounds[];
 GL_EXPORT extern const char kEnableDirectCompositionLayers[];
 GL_EXPORT extern const char kDisableDirectCompositionLayers[];
-GL_EXPORT extern const char kEnablePresentationCallback[];
 
 // These flags are used by the test harness code, not passed in by users.
 GL_EXPORT extern const char kDisableGLDrawingForTests[];
@@ -75,6 +75,7 @@ GL_EXPORT extern const base::Feature kD3DVsync;
 GL_EXPORT extern const base::Feature kDirectCompositionUnderlays;
 GL_EXPORT extern const base::Feature kDirectCompositionComplexOverlays;
 GL_EXPORT extern const base::Feature kDirectCompositionNonrootOverlays;
+GL_EXPORT extern const base::Feature kDefaultANGLEOpenGL;
 
 }  // namespace features
 

@@ -9,15 +9,19 @@
 #include "third_party/blink/public/common/frame/sandbox_flags.h"
 #include "third_party/blink/public/platform/web_content_security_policy.h"
 #include "third_party/blink/public/platform/web_insecure_request_policy.h"
+#include "third_party/blink/public/platform/web_scroll_types.h"
 #include "third_party/blink/public/web/web_frame.h"
 #include "v8/include/v8.h"
+
+namespace cc {
+class Layer;
+}
 
 namespace blink {
 
 enum class WebTreeScopeType;
 class InterfaceRegistry;
 class WebFrameClient;
-class WebLayer;
 class WebRemoteFrameClient;
 class WebString;
 class WebView;
@@ -61,12 +65,12 @@ class WebRemoteFrame : public WebFrame {
                                             WebFrame* opener) = 0;
 
   // Layer for the in-process compositor.
-  virtual void SetWebLayer(WebLayer*) = 0;
+  virtual void SetCcLayer(cc::Layer*, bool prevent_contents_opaque_changes) = 0;
 
   // Set security origin replicated from another process.
   virtual void SetReplicatedOrigin(
       const WebSecurityOrigin&,
-      bool is_potentially_trustworthy_unique_origin) = 0;
+      bool is_potentially_trustworthy_opaque_origin) = 0;
 
   // Set sandbox flags replicated from another process.
   virtual void SetReplicatedSandboxFlags(WebSandboxFlags) = 0;
@@ -123,6 +127,11 @@ class WebRemoteFrame : public WebFrame {
   // used to properly chain the recursive scrolling between the two processes.
   virtual void ScrollRectToVisible(const WebRect&,
                                    const WebScrollIntoViewParams&) = 0;
+
+  // Continues to bubble logical scroll that reached the local root in the child
+  // frame's process. Scroll bubbling continues from the frame owner element.
+  virtual void BubbleLogicalScroll(WebScrollDirection direction,
+                                   WebScrollGranularity granularity) = 0;
 
   virtual void IntrinsicSizingInfoChanged(const WebIntrinsicSizingInfo&) = 0;
 

@@ -179,6 +179,7 @@ bool PrintSettingsFromJobSettings(const base::DictionaryValue& job_settings,
   int copies = 1;
   int scale_factor = 100;
   bool rasterize_pdf = false;
+  int num_pages_per_sheet = 1;
 
   if (!job_settings.GetBoolean(kSettingCollate, &collate) ||
       !job_settings.GetInteger(kSettingCopies, &copies) ||
@@ -216,6 +217,10 @@ bool PrintSettingsFromJobSettings(const base::DictionaryValue& job_settings,
 #endif
   }
 
+  // TODO(crbug.com/842000): |kSettingPagesPerSheet| should be required.
+  job_settings.GetInteger(kSettingPagesPerSheet, &num_pages_per_sheet);
+  settings->set_num_pages_per_sheet(num_pages_per_sheet);
+
   return true;
 }
 
@@ -247,6 +252,8 @@ void PrintSettingsToJobSettingsDebug(const PrintSettings& settings,
   job_settings->SetInteger(kSettingDuplexMode, settings.duplex_mode());
   job_settings->SetBoolean(kSettingLandscape, settings.landscape());
   job_settings->SetString(kSettingDeviceName, settings.device_name());
+  job_settings->SetInteger(kSettingPagesPerSheet,
+                           settings.num_pages_per_sheet());
 
   // Following values are not read form JSON by InitSettings, so do not have
   // common public constants. So just serialize in "debug" section.

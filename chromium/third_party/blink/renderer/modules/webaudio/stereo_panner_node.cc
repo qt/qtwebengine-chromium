@@ -143,8 +143,9 @@ StereoPannerNode::StereoPannerNode(BaseAudioContext& context)
     : AudioNode(context),
       pan_(AudioParam::Create(context,
                               kParamTypeStereoPannerPan,
-                              "StereoPanner.pan",
                               0,
+                              AudioParamHandler::AutomationRate::kAudio,
+                              AudioParamHandler::AutomationRateMode::kVariable,
                               -1,
                               1)) {
   SetHandler(StereoPannerHandler::Create(*this, context.sampleRate(),

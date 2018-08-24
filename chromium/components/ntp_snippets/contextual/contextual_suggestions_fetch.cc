@@ -6,12 +6,16 @@
 
 #include "base/base64.h"
 #include "base/base64url.h"
+#include "base/command_line.h"
+#include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "components/ntp_snippets/contextual/contextual_suggestion.h"
+#include "components/ntp_snippets/contextual/contextual_suggestions_features.h"
 #include "components/ntp_snippets/contextual/proto/chrome_search_api_request_context.pb.h"
 #include "components/ntp_snippets/contextual/proto/get_pivots_request.pb.h"
 #include "components/ntp_snippets/contextual/proto/get_pivots_response.pb.h"
@@ -29,8 +33,11 @@ namespace contextual_suggestions {
 
 namespace {
 
-static constexpr char kFetchEndpoint[] =
-    "https://www.google.com/httpservice/web/ExploreService/GetPivots/";
+static constexpr char kFetchEndpointUrlKey[] =
+    "contextual-suggestions-fetch-endpoint";
+static constexpr char kDefaultFetchEndpointUrl[] = "https://www.google.com";
+static constexpr char kFetchEndpointServicePath[] =
+    "/httpservice/web/ExploreService/GetPivots/";
 
 static constexpr int kNumberOfSuggestionsToFetch = 10;
 static constexpr int kMinNumberOfClusters = 1;
@@ -70,6 +77,22 @@ Cluster PivotToCluster(const PivotCluster& pivot) {
   }
 
   return cluster_builder.Build();
+}
+
+PeekConditions PeekConditionsFromResponse(
+    const GetPivotsResponse& response_proto) {
+  AutoPeekConditions proto_conditions =
+      response_proto.pivots().auto_peek_conditions();
+  PeekConditions peek_conditions;
+
+  peek_conditions.confidence = proto_conditions.confidence();
+  peek_conditions.page_scroll_percentage =
+      proto_conditions.page_scroll_percentage();
+  peek_conditions.minimum_seconds_on_page =
+      proto_conditions.minimum_seconds_on_page();
+  peek_conditions.maximum_number_of_peeks =
+      proto_conditions.maximum_number_of_peeks();
+  return peek_conditions;
 }
 
 std::vector<Cluster> ClustersFromResponse(
@@ -130,6 +153,14 @@ const std::string SerializedPivotsRequest(const std::string& url,
   return pivot_request.SerializeAsString();
 }
 
+ContextualSuggestionsResult ResultFromResponse(
+    const GetPivotsResponse& response_proto) {
+  return ContextualSuggestionsResult(
+      PeekTextFromResponse(response_proto),
+      ClustersFromResponse(response_proto),
+      PeekConditionsFromResponse(response_proto));
+}
+
 }  // namespace
 
 ContextualSuggestionsFetch::ContextualSuggestionsFetch(
@@ -141,7 +172,24 @@ ContextualSuggestionsFetch::~ContextualSuggestionsFetch() = default;
 
 // static
 const std::string ContextualSuggestionsFetch::GetFetchEndpoint() {
-  return kFetchEndpoint;
+  std::string fetch_endpoint;
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(kFetchEndpointUrlKey)) {
+    fetch_endpoint =
+        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+            kFetchEndpointUrlKey);
+  } else {
+    fetch_endpoint = base::GetFieldTrialParamValueByFeature(
+        kContextualSuggestionsBottomSheet, kFetchEndpointUrlKey);
+  }
+
+  if (!base::StartsWith(fetch_endpoint, "https://",
+                        base::CompareCase::INSENSITIVE_ASCII)) {
+    fetch_endpoint = kDefaultFetchEndpointUrl;
+  }
+
+  fetch_endpoint.append(kFetchEndpointServicePath);
+
+  return fetch_endpoint;
 }
 
 void ContextualSuggestionsFetch::Start(
@@ -224,8 +272,7 @@ net::HttpRequestHeaders ContextualSuggestionsFetch::MakeHeaders() const {
 void ContextualSuggestionsFetch::OnURLLoaderComplete(
     ReportFetchMetricsCallback metrics_callback,
     std::unique_ptr<std::string> result) {
-  std::vector<Cluster> clusters;
-  std::string peek_text;
+  ContextualSuggestionsResult suggestions_result;
 
   int32_t response_code = 0;
   int32_t error_code = url_loader_->NetError();
@@ -243,8 +290,7 @@ void ContextualSuggestionsFetch::OnURLLoaderComplete(
       if (coded_stream.ReadVarint32(&response_size) && response_size != 0) {
         GetPivotsResponse response_proto;
         if (response_proto.MergePartialFromCodedStream(&coded_stream)) {
-          clusters = ClustersFromResponse(response_proto);
-          peek_text = PeekTextFromResponse(response_proto);
+          suggestions_result = ResultFromResponse(response_proto);
         }
       }
     }
@@ -253,10 +299,10 @@ void ContextualSuggestionsFetch::OnURLLoaderComplete(
                             static_cast<int>(result->length() / 1024));
   }
 
-  ReportFetchMetrics(error_code, response_code, clusters.size(),
+  ReportFetchMetrics(error_code, response_code,
+                     suggestions_result.clusters.size(),
                      std::move(metrics_callback));
-
-  std::move(request_completed_callback_).Run(peek_text, std::move(clusters));
+  std::move(request_completed_callback_).Run(std::move(suggestions_result));
 }
 
 void ContextualSuggestionsFetch::ReportFetchMetrics(

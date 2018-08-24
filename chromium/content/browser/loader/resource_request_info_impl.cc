@@ -69,7 +69,6 @@ void ResourceRequestInfo::AllocateForTesting(
       is_main_frame,                       // is_main_frame
       resource_type,                       // resource_type
       ui::PAGE_TRANSITION_LINK,            // transition_type
-      false,                               // should_replace_current_entry
       false,                               // is_download
       false,                               // is_stream
       allow_download,                      // allow_download
@@ -82,11 +81,11 @@ void ResourceRequestInfo::AllocateForTesting(
       false,                               // is_prerendering
       context,                             // context
       false,                               // report_raw_headers
+      false,                               // report_security_info
       is_async,                            // is_async
       previews_state,                      // previews_state
       nullptr,                             // body
-      false,                               // initiated_in_secure_context
-      base::nullopt);                      // suggested_filename
+      false);                              // initiated_in_secure_context
   info->AssociateWithRequest(request);
   info->set_navigation_ui_data(std::move(navigation_ui_data));
 }
@@ -138,7 +137,6 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
     bool is_main_frame,
     ResourceType resource_type,
     ui::PageTransition transition_type,
-    bool should_replace_current_entry,
     bool is_download,
     bool is_stream,
     bool allow_download,
@@ -151,11 +149,11 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
     bool is_prerendering,
     ResourceContext* context,
     bool report_raw_headers,
+    bool report_security_info,
     bool is_async,
     PreviewsState previews_state,
     const scoped_refptr<network::ResourceRequestBody> body,
-    bool initiated_in_secure_context,
-    const base::Optional<std::string>& suggested_filename)
+    bool initiated_in_secure_context)
     : detachable_handler_(nullptr),
       requester_info_(std::move(requester_info)),
       route_id_(route_id),
@@ -164,7 +162,6 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
       request_id_(request_id),
       render_frame_id_(render_frame_id),
       is_main_frame_(is_main_frame),
-      should_replace_current_entry_(should_replace_current_entry),
       is_download_(is_download),
       is_stream_(is_stream),
       allow_download_(allow_download),
@@ -181,12 +178,12 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
       is_prerendering_(is_prerendering),
       context_(context),
       report_raw_headers_(report_raw_headers),
+      report_security_info_(report_security_info),
       is_async_(is_async),
       devtools_status_(DevToolsStatus::kNotCanceled),
       previews_state_(previews_state),
       body_(body),
       initiated_in_secure_context_(initiated_in_secure_context),
-      suggested_filename_(suggested_filename),
       blocked_cross_site_document_(false),
       first_auth_attempt_(true) {}
 
@@ -315,6 +312,10 @@ bool ResourceRequestInfoImpl::ShouldReportRawHeaders() const {
   return report_raw_headers_;
 }
 
+bool ResourceRequestInfoImpl::ShouldReportSecurityInfo() const {
+  return report_security_info_;
+}
+
 NavigationUIData* ResourceRequestInfoImpl::GetNavigationUIData() const {
   return navigation_ui_data_.get();
 }
@@ -322,6 +323,11 @@ NavigationUIData* ResourceRequestInfoImpl::GetNavigationUIData() const {
 ResourceRequestInfo::DevToolsStatus ResourceRequestInfoImpl::GetDevToolsStatus()
     const {
   return devtools_status_;
+}
+
+base::Optional<blink::ResourceRequestBlockedReason>
+ResourceRequestInfoImpl::GetResourceRequestBlockedReason() const {
+  return resource_request_blocked_reason_;
 }
 
 base::StringPiece ResourceRequestInfoImpl::GetCustomCancelReason() const {
@@ -345,26 +351,6 @@ int ResourceRequestInfoImpl::GetRequestID() const {
 
 GlobalRoutingID ResourceRequestInfoImpl::GetGlobalRoutingID() const {
   return GlobalRoutingID(GetChildID(), route_id_);
-}
-
-void ResourceRequestInfoImpl::UpdateForTransfer(
-    int route_id,
-    int render_frame_id,
-    int request_id,
-    ResourceRequesterInfo* requester_info,
-    network::mojom::URLLoaderRequest url_loader_request,
-    network::mojom::URLLoaderClientPtr url_loader_client) {
-  route_id_ = route_id;
-  render_frame_id_ = render_frame_id;
-  plugin_child_id_ = ChildProcessHost::kInvalidUniqueID;
-  request_id_ = request_id;
-  requester_info_ = requester_info;
-
-  // on_transfer_ is non-null only when MojoAsyncResourceHandler is used.
-  if (on_transfer_) {
-    on_transfer_.Run(std::move(url_loader_request),
-                     std::move(url_loader_client));
-  }
 }
 
 void ResourceRequestInfoImpl::ResetBody() {

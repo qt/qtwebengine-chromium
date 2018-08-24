@@ -6,17 +6,27 @@
 
 #include "base/atomic_sequence_num.h"
 #include "base/callback.h"
+#include "base/feature_list.h"
 #include "base/optional.h"
 #include "content/common/service_worker/service_worker_loader_helpers.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/common/content_features.h"
+#include "content/renderer/loader/web_url_request_util.h"
+#include "content/renderer/render_thread_impl.h"
+#include "content/renderer/renderer_blink_platform_impl.h"
 #include "content/renderer/service_worker/controller_service_worker_connector.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/url_request/redirect_util.h"
 #include "net/url_request/url_request.h"
+#include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "third_party/blink/public/mojom/blob/blob.mojom.h"
+#include "third_party/blink/public/platform/interface_provider.h"
+#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_request.h"
+#include "third_party/blink/public/platform/web_http_body.h"
+#include "third_party/blink/public/platform/web_string.h"
 #include "ui/base/page_transition_types.h"
 
 namespace content {
@@ -142,7 +152,7 @@ ServiceWorkerSubresourceLoader::ServiceWorkerSubresourceLoader(
     network::mojom::URLLoaderClientPtr client,
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
     scoped_refptr<ControllerServiceWorkerConnector> controller_connector,
-    scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory)
+    scoped_refptr<network::SharedURLLoaderFactory> fallback_factory)
     : redirect_limit_(net::URLRequest::kMaxRedirects),
       url_loader_client_(std::move(client)),
       url_loader_binding_(this, std::move(request)),
@@ -154,7 +164,7 @@ ServiceWorkerSubresourceLoader::ServiceWorkerSubresourceLoader(
       options_(options),
       traffic_annotation_(traffic_annotation),
       resource_request_(resource_request),
-      network_loader_factory_(std::move(network_loader_factory)),
+      fallback_factory_(std::move(fallback_factory)),
       weak_factory_(this) {
   DCHECK(controller_connector_);
   response_head_.request_start = base::TimeTicks::Now();
@@ -214,7 +224,7 @@ void ServiceWorkerSubresourceLoader::DispatchFetchEvent() {
         ControllerServiceWorkerConnector::State::kNoController) {
       // The controller was lost after this loader or its loader factory was
       // created.
-      network_loader_factory_->CreateLoaderAndStart(
+      fallback_factory_->CreateLoaderAndStart(
           url_loader_binding_.Unbind(), routing_id_, request_id_, options_,
           resource_request_, std::move(url_loader_client_),
           traffic_annotation_);
@@ -227,31 +237,23 @@ void ServiceWorkerSubresourceLoader::DispatchFetchEvent() {
     return;
   }
 
-  // TODO(kinuko): Implement request timeout and ask the browser to kill
-  // the controller if it takes too long. (crbug.com/774374)
-
-  // Passing the request body over Mojo moves it out. But the request body
-  // may be needed later, in the case where the service worker doesn't provide a
-  // response in the fetch event. So instead send a cloned body. (Note that
-  // we can't do the reverse, i.e., send the original and restore the clone
-  // later.  By always sending the clone, we ensure the original ResourceRequest
-  // passed into the constructor always points to a valid ResourceRequestBody,
-  // even if this loader gets destructed.)
-  if (resource_request_.request_body) {
-    inflight_fetch_request_->request_body =
-        ServiceWorkerLoaderHelpers::CloneResourceRequestBody(
-            resource_request_.request_body.get());
-  }
-
   auto params = mojom::DispatchFetchEventParams::New();
   params->request = *inflight_fetch_request_;
   params->client_id = controller_connector_->client_id();
+
+  // S13nServiceWorker without NetworkService:
+  // BlobPtr for each blob data element in the request body needs to be created
+  // before dispatching the fetch event for keeping the blob alive.
+  if (resource_request_.request_body &&
+      !base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+    params->request_body_blob_ptrs =
+        GetBlobPtrsForRequestBody(*resource_request_.request_body);
+  }
+
   controller->DispatchFetchEvent(
       std::move(params), std::move(response_callback_ptr),
       base::BindOnce(&ServiceWorkerSubresourceLoader::OnFetchEventFinished,
                      weak_factory_.GetWeakPtr()));
-  // |inflight_fetch_request_->request_body| should not be used after this
-  // point.
 }
 
 void ServiceWorkerSubresourceLoader::OnFetchEventFinished(
@@ -342,8 +344,6 @@ void ServiceWorkerSubresourceLoader::OnResponseStream(
 void ServiceWorkerSubresourceLoader::OnFallback(
     base::Time dispatch_event_time) {
   SettleInflightFetchRequestIfNeeded();
-  DCHECK(network_loader_factory_);
-
   // When the request mode is CORS or CORS-with-forced-preflight and the origin
   // of the request URL is different from the security origin of the document,
   // we can't simply fallback to the network here. It is because the CORS
@@ -372,11 +372,17 @@ void ServiceWorkerSubresourceLoader::OnFallback(
                           response_head_.service_worker_ready_time));
   mojo::MakeStrongBinding(std::move(client_impl), mojo::MakeRequest(&client));
 
-  network_loader_factory_->CreateLoaderAndStart(
+  fallback_factory_->CreateLoaderAndStart(
       url_loader_binding_.Unbind(), routing_id_, request_id_, options_,
       resource_request_, std::move(client), traffic_annotation_);
   // Per spec, redirects after this point are not intercepted by the service
   // worker again (https://crbug.com/517364). So this loader is done.
+  //
+  // Assume ServiceWorkerSubresourceLoaderFactory is still alive and also
+  // has a ref to fallback_factory_, so it's OK to destruct here. If that
+  // factory dies, the web context that made the request is dead so the request
+  // is moot.
+  DCHECK(!fallback_factory_->HasOneRef());
   delete this;
 }
 
@@ -472,7 +478,11 @@ void ServiceWorkerSubresourceLoader::CommitCompleted(int error_code) {
 
 // ServiceWorkerSubresourceLoader: URLLoader implementation -----------------
 
-void ServiceWorkerSubresourceLoader::FollowRedirect() {
+void ServiceWorkerSubresourceLoader::FollowRedirect(
+    const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
+  DCHECK(!modified_request_headers.has_value()) << "Redirect with modified "
+                                                   "headers was not supported "
+                                                   "yet. crbug.com/845683";
   DCHECK(redirect_info_);
 
   bool should_clear_upload = false;
@@ -518,20 +528,20 @@ void ServiceWorkerSubresourceLoader::OnBlobReadingComplete(int net_error) {
 // static
 void ServiceWorkerSubresourceLoaderFactory::Create(
     scoped_refptr<ControllerServiceWorkerConnector> controller_connector,
-    scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory,
+    scoped_refptr<network::SharedURLLoaderFactory> fallback_factory,
     network::mojom::URLLoaderFactoryRequest request) {
   new ServiceWorkerSubresourceLoaderFactory(std::move(controller_connector),
-                                            std::move(network_loader_factory),
+                                            std::move(fallback_factory),
                                             std::move(request));
 }
 
 ServiceWorkerSubresourceLoaderFactory::ServiceWorkerSubresourceLoaderFactory(
     scoped_refptr<ControllerServiceWorkerConnector> controller_connector,
-    scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory,
+    scoped_refptr<network::SharedURLLoaderFactory> fallback_factory,
     network::mojom::URLLoaderFactoryRequest request)
     : controller_connector_(std::move(controller_connector)),
-      network_loader_factory_(std::move(network_loader_factory)) {
-  DCHECK(network_loader_factory_);
+      fallback_factory_(std::move(fallback_factory)) {
+  DCHECK(fallback_factory_);
   bindings_.AddBinding(this, std::move(request));
   bindings_.set_connection_error_handler(base::BindRepeating(
       &ServiceWorkerSubresourceLoaderFactory::OnConnectionError,
@@ -551,12 +561,12 @@ void ServiceWorkerSubresourceLoaderFactory::CreateLoaderAndStart(
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
   // This loader destructs itself, as we want to transparently switch to the
   // network loader when fallback happens. When that happens the loader unbinds
-  // the request, passes the request to the Network Loader Factory, and
+  // the request, passes the request to the fallback factory, and
   // destructs itself (while the loader client continues to work).
-  new ServiceWorkerSubresourceLoader(
-      std::move(request), routing_id, request_id, options, resource_request,
-      std::move(client), traffic_annotation, controller_connector_,
-      network_loader_factory_);
+  new ServiceWorkerSubresourceLoader(std::move(request), routing_id, request_id,
+                                     options, resource_request,
+                                     std::move(client), traffic_annotation,
+                                     controller_connector_, fallback_factory_);
 }
 
 void ServiceWorkerSubresourceLoaderFactory::Clone(

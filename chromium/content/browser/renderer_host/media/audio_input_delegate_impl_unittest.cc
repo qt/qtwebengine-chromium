@@ -12,7 +12,6 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/message_loop/message_loop.h"
 #include "base/optional.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
@@ -94,7 +93,7 @@ media::AudioInputStream* MakeInputStreamCallback(
 class MockEventHandler : public media::AudioInputDelegate::EventHandler {
  public:
   void OnStreamCreated(int stream_id,
-                       const base::SharedMemory*,
+                       base::ReadOnlySharedMemoryRegion,
                        std::unique_ptr<base::CancelableSyncSocket>,
                        bool initially_muted) override {
     MockOnStreamCreated(stream_id, initially_muted);
@@ -109,10 +108,10 @@ class MockUserInputMonitor : public media::UserInputMonitor {
  public:
   MockUserInputMonitor() {}
 
-  size_t GetKeyPressCount() const { return 0; }
+  uint32_t GetKeyPressCount() const override { return 0; }
 
-  MOCK_METHOD0(StartKeyboardMonitoring, void());
-  MOCK_METHOD0(StopKeyboardMonitoring, void());
+  MOCK_METHOD0(EnableKeyPressMonitoring, void());
+  MOCK_METHOD0(DisableKeyPressMonitoring, void());
 };
 
 class MockAudioInputStream : public media::AudioInputStream {
@@ -130,6 +129,7 @@ class MockAudioInputStream : public media::AudioInputStream {
   MOCK_METHOD1(SetAutomaticGainControl, bool(bool));
   MOCK_METHOD0(GetAutomaticGainControl, bool());
   MOCK_METHOD0(IsMuted, bool());
+  MOCK_METHOD1(SetOutputDeviceForAec, void(const std::string&));
 };
 
 class MockMediaStreamProviderListener : public MediaStreamProviderListener {
@@ -156,7 +156,7 @@ class AudioInputDelegateTest : public testing::Test {
         base::BindRepeating(&ExpectNoOutputStreamCreation));
   }
 
-  ~AudioInputDelegateTest() {
+  ~AudioInputDelegateTest() override {
     audio_manager_.Shutdown();
 
     // MediaStreamManager expects to outlive the IO thread.

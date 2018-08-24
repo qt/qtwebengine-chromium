@@ -13,7 +13,7 @@
 
 #include <memory>
 
-#include "modules/congestion_controller/network_control/include/network_types.h"
+#include "api/transport/network_types.h"
 #include "modules/pacing/paced_sender.h"
 #include "rtc_base/sequenced_task_checker.h"
 
@@ -30,10 +30,10 @@ class PacerController {
  public:
   explicit PacerController(PacedSender* pacer);
   ~PacerController();
-  void OnCongestionWindow(CongestionWindow msg);
+  void OnCongestionWindow(DataSize msg);
   void OnNetworkAvailability(NetworkAvailability msg);
   void OnNetworkRouteChange(NetworkRouteChange msg);
-  void OnOutstandingData(OutstandingData msg);
+  void OnOutstandingData(DataSize in_flight_data);
   void OnPacerConfig(PacerConfig msg);
   void OnProbeClusterConfig(ProbeClusterConfig msg);
 

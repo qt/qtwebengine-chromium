@@ -55,12 +55,12 @@ class RTCVoidRequestImpl final : public RTCVoidRequest,
 
   // RTCVoidRequest
   void RequestSucceeded() override;
-  void RequestFailed(const WebRTCError&) override;
+  void RequestFailed(const webrtc::RTCError&) override;
 
   // ContextLifecycleObserver
   void ContextDestroyed(ExecutionContext*) override;
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   RTCVoidRequestImpl(ExecutionContext*,

@@ -17,6 +17,7 @@
 #include "base/containers/stack_container.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted_memory.h"
+#include "base/optional.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "components/favicon_base/favicon_types.h"
@@ -72,7 +73,8 @@ class VisitRow {
            base::Time arg_visit_time,
            VisitID arg_referring_visit,
            ui::PageTransition arg_transition,
-           SegmentID arg_segment_id);
+           SegmentID arg_segment_id,
+           bool arg_incremented_omnibox_typed_score);
   ~VisitRow();
 
   // ID of this row (visit ID, used a a referrer for other visits).
@@ -99,6 +101,9 @@ class VisitRow {
   // This includes both active and inactive time as long as
   // the visit was present.
   base::TimeDelta visit_duration;
+
+  // Records whether the visit incremented the omnibox typed score.
+  bool incremented_omnibox_typed_score = false;
 
   // Compares two visits based on dates, for sorting.
   bool operator<(const VisitRow& other) const {
@@ -620,6 +625,97 @@ class DeletionTimeRange {
   base::Time begin_;
   // End of a history deletion.
   base::Time end_;
+};
+
+// Describes the urls that have been removed due to a history deletion.
+// If |IsAllHistory()| returns true, all urls haven been deleted.
+// In this case, |deleted_rows()| and |favicon_urls()| are undefined.
+// Otherwise |deleted_rows()| contains the urls where all visits have been
+// removed from history.
+// If |expired()| returns true, this deletion is due to a regularly performed
+// history expiration. Otherwise it is an explicit deletion due to a user
+// action.
+class DeletionInfo {
+ public:
+  // Returns a DeletionInfo that covers all history.
+  static DeletionInfo ForAllHistory();
+  // Returns a DeletionInfo with invalid time range for the given urls.
+  static DeletionInfo ForUrls(URLRows deleted_rows,
+                              std::set<GURL> favicon_urls);
+
+  DeletionInfo(const DeletionTimeRange& time_range,
+               bool is_from_expiration,
+               URLRows deleted_rows,
+               std::set<GURL> favicon_urls,
+               base::Optional<std::set<GURL>> restrict_urls);
+
+  ~DeletionInfo();
+  // Move-only because of potentially large containers.
+  DeletionInfo(DeletionInfo&& other) noexcept;
+  DeletionInfo& operator=(DeletionInfo&& rhs) noexcept;
+
+  // If IsAllHistory() returns true, all URLs are deleted and |deleted_rows()|
+  //  and |favicon_urls()| are undefined.
+  bool IsAllHistory() const { return time_range_.IsAllTime(); }
+
+  // If time_range.IsValid() is true, |restrict_urls| (or all URLs if empty)
+  // between time_range.begin() and time_range.end() have been removed.
+  const DeletionTimeRange& time_range() const { return time_range_; }
+
+  // Restricts deletions within |time_range()|.
+  const base::Optional<std::set<GURL>>& restrict_urls() const {
+    return restrict_urls_;
+  }
+
+  // Returns true, if the URL deletion is due to expiration.
+  bool is_from_expiration() const { return is_from_expiration_; }
+
+  // Returns the list of the deleted URLs.
+  // Undefined if |IsAllHistory()| returns true.
+  const URLRows& deleted_rows() const { return deleted_rows_; }
+
+  // Returns the list of favicon URLs that correspond to the deleted URLs.
+  // Undefined if |IsAllHistory()| returns true.
+  const std::set<GURL>& favicon_urls() const { return favicon_urls_; }
+
+  // Returns a map from origins with deleted urls to a count of remaining URLs
+  // and the last visited time.
+  const OriginCountAndLastVisitMap& deleted_urls_origin_map() const {
+    // The map should only be accessed after it has been populated.
+    DCHECK(deleted_rows_.empty() || !deleted_urls_origin_map_.empty());
+    return deleted_urls_origin_map_;
+  }
+
+  // Populates deleted_urls_origin_map.
+  void set_deleted_urls_origin_map(OriginCountAndLastVisitMap origin_map) {
+    DCHECK(deleted_urls_origin_map_.empty());
+    deleted_urls_origin_map_ = std::move(origin_map);
+  }
+
+ private:
+  DeletionTimeRange time_range_;
+  bool is_from_expiration_;
+  URLRows deleted_rows_;
+  std::set<GURL> favicon_urls_;
+  base::Optional<std::set<GURL>> restrict_urls_;
+  OriginCountAndLastVisitMap deleted_urls_origin_map_;
+
+  DISALLOW_COPY_AND_ASSIGN(DeletionInfo);
+};
+
+// Represents a visit to a domain.
+class DomainVisit {
+ public:
+  DomainVisit(const std::string& domain, base::Time visit_time)
+      : domain_(domain), visit_time_(visit_time) {}
+
+  const std::string& domain() const { return domain_; }
+
+  const base::Time visit_time() const { return visit_time_; }
+
+ private:
+  std::string domain_;
+  base::Time visit_time_;
 };
 
 }  // namespace history

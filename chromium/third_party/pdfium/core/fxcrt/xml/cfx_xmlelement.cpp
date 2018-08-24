@@ -11,66 +11,67 @@
 #include "core/fxcrt/cfx_widetextbuf.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/xml/cfx_xmlchardata.h"
+#include "core/fxcrt/xml/cfx_xmldocument.h"
 #include "core/fxcrt/xml/cfx_xmltext.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 
 CFX_XMLElement::CFX_XMLElement(const WideString& wsTag)
-    : CFX_XMLAttributeNode(wsTag) {}
+    : CFX_XMLNode(), name_(wsTag) {
+  ASSERT(!name_.IsEmpty());
+}
 
-CFX_XMLElement::~CFX_XMLElement() {}
+CFX_XMLElement::~CFX_XMLElement() = default;
 
 FX_XMLNODETYPE CFX_XMLElement::GetType() const {
   return FX_XMLNODE_Element;
 }
 
-std::unique_ptr<CFX_XMLNode> CFX_XMLElement::Clone() {
-  auto pClone = pdfium::MakeUnique<CFX_XMLElement>(GetName());
-  pClone->SetAttributes(GetAttributes());
+CFX_XMLNode* CFX_XMLElement::Clone(CFX_XMLDocument* doc) {
+  auto* node = doc->CreateNode<CFX_XMLElement>(name_);
+  node->attrs_ = attrs_;
 
-  WideString wsText;
+  // TODO(dsinclair): This clone is wrong. It doesn't clone all child nodes just
+  // text nodes?
   for (CFX_XMLNode* pChild = GetFirstChild(); pChild;
        pChild = pChild->GetNextSibling()) {
     if (pChild->GetType() == FX_XMLNODE_Text)
-      wsText += static_cast<CFX_XMLText*>(pChild)->GetText();
+      node->AppendChild(pChild->Clone(doc));
   }
-  pClone->SetTextData(wsText);
-  return std::move(pClone);
+  return node;
 }
 
 WideString CFX_XMLElement::GetLocalTagName() const {
-  auto pos = GetName().Find(L':');
-  return pos.has_value()
-             ? GetName().Right(GetName().GetLength() - pos.value() - 1)
-             : GetName();
+  auto pos = name_.Find(L':');
+  return pos.has_value() ? name_.Right(name_.GetLength() - pos.value() - 1)
+                         : name_;
 }
 
 WideString CFX_XMLElement::GetNamespacePrefix() const {
-  auto pos = GetName().Find(L':');
-  return pos.has_value() ? GetName().Left(pos.value()) : WideString();
+  auto pos = name_.Find(L':');
+  return pos.has_value() ? name_.Left(pos.value()) : WideString();
 }
 
 WideString CFX_XMLElement::GetNamespaceURI() const {
-  WideString wsAttri(L"xmlns");
+  WideString attr(L"xmlns");
   WideString wsPrefix = GetNamespacePrefix();
-  if (wsPrefix.GetLength() > 0) {
-    wsAttri += L":";
-    wsAttri += wsPrefix;
+  if (!wsPrefix.IsEmpty()) {
+    attr += L":";
+    attr += wsPrefix;
   }
-
-  auto* pNode = static_cast<const CFX_XMLNode*>(this);
+  const CFX_XMLNode* pNode = this;
   while (pNode) {
     if (pNode->GetType() != FX_XMLNODE_Element)
       break;
 
     auto* pElement = static_cast<const CFX_XMLElement*>(pNode);
-    if (!pElement->HasAttribute(wsAttri)) {
+    if (!pElement->HasAttribute(attr)) {
       pNode = pNode->GetParent();
       continue;
     }
-    return pElement->GetString(wsAttri);
+    return pElement->GetAttribute(attr);
   }
-  return WideString();
+  return L"";
 }
 
 WideString CFX_XMLElement::GetTextData() const {
@@ -86,36 +87,82 @@ WideString CFX_XMLElement::GetTextData() const {
   return buffer.MakeString();
 }
 
-void CFX_XMLElement::SetTextData(const WideString& wsText) {
-  if (wsText.GetLength() < 1)
+void CFX_XMLElement::Save(
+    const RetainPtr<IFX_SeekableWriteStream>& pXMLStream) {
+  ByteString bsNameEncoded = name_.UTF8Encode();
+
+  pXMLStream->WriteString("<");
+  pXMLStream->WriteString(bsNameEncoded.AsStringView());
+
+  for (auto it : attrs_) {
+    // Note, the space between attributes is added by AttributeToString which
+    // writes a blank as the first character.
+    pXMLStream->WriteString(
+        AttributeToString(it.first, it.second).UTF8Encode().AsStringView());
+  }
+
+  if (!GetFirstChild()) {
+    pXMLStream->WriteString(" />\n");
     return;
-  AppendChild(new CFX_XMLText(wsText));
+  }
+
+  pXMLStream->WriteString(">\n");
+
+  for (CFX_XMLNode* pChild = GetFirstChild(); pChild;
+       pChild = pChild->GetNextSibling()) {
+    pChild->Save(pXMLStream);
+  }
+  pXMLStream->WriteString("</");
+  pXMLStream->WriteString(bsNameEncoded.AsStringView());
+  pXMLStream->WriteString(">\n");
 }
 
-void CFX_XMLElement::Save(
-    const RetainPtr<CFX_SeekableStreamProxy>& pXMLStream) {
-  WideString ws(L"<");
-  ws += GetName();
-  pXMLStream->WriteString(ws.AsStringView());
+CFX_XMLElement* CFX_XMLElement::GetFirstChildNamed(
+    const WideStringView& name) const {
+  return GetNthChildNamed(name, 0);
+}
 
-  for (auto it : GetAttributes()) {
-    pXMLStream->WriteString(
-        AttributeToString(it.first, it.second).AsStringView());
+CFX_XMLElement* CFX_XMLElement::GetNthChildNamed(const WideStringView& name,
+                                                 size_t idx) const {
+  for (auto* child = GetFirstChild(); child; child = child->GetNextSibling()) {
+    if (child->GetType() != FX_XMLNODE_Element)
+      continue;
+
+    CFX_XMLElement* elem = static_cast<CFX_XMLElement*>(child);
+    if (elem->name_ != name)
+      continue;
+    if (idx == 0)
+      return elem;
+
+    --idx;
   }
+  return nullptr;
+}
 
-  if (GetFirstChild()) {
-    ws = L"\n>";
-    pXMLStream->WriteString(ws.AsStringView());
+bool CFX_XMLElement::HasAttribute(const WideString& name) const {
+  return attrs_.find(name) != attrs_.end();
+}
 
-    for (CFX_XMLNode* pChild = GetFirstChild(); pChild;
-         pChild = pChild->GetNextSibling()) {
-      pChild->Save(pXMLStream);
-    }
-    ws = L"</";
-    ws += GetName();
-    ws += L"\n>";
-  } else {
-    ws = L"\n/>";
-  }
-  pXMLStream->WriteString(ws.AsStringView());
+WideString CFX_XMLElement::GetAttribute(const WideString& name) const {
+  auto it = attrs_.find(name);
+  return it != attrs_.end() ? it->second : L"";
+}
+
+void CFX_XMLElement::SetAttribute(const WideString& name,
+                                  const WideString& value) {
+  attrs_[name] = value;
+}
+
+void CFX_XMLElement::RemoveAttribute(const WideString& name) {
+  attrs_.erase(name);
+}
+
+WideString CFX_XMLElement::AttributeToString(const WideString& name,
+                                             const WideString& value) {
+  WideString ret = L" ";
+  ret += name;
+  ret += L"=\"";
+  ret += EncodeEntities(value);
+  ret += L"\"";
+  return ret;
 }

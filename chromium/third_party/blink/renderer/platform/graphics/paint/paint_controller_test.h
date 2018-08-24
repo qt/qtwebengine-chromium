@@ -46,7 +46,7 @@ class PaintControllerTestBase : public testing::Test {
   void InitRootChunk() {
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
       GetPaintController().UpdateCurrentPaintChunkProperties(
-          root_paint_chunk_id_, test::DefaultPaintChunkProperties());
+          root_paint_chunk_id_, DefaultPaintChunkProperties());
     }
   }
 
@@ -83,6 +83,11 @@ class PaintControllerTestBase : public testing::Test {
     return ClientCacheIsValid(*paint_controller_, client);
   }
 
+  const ChunkRasterInvalidationRects* GetRasterInvalidationRects(size_t i) {
+    return GetPaintController().GetPaintArtifact().GetRasterInvalidationRects(
+        i);
+  }
+
  private:
   FakeDisplayItemClient root_paint_property_client_;
   PaintChunk::Id root_paint_chunk_id_;
@@ -95,8 +100,8 @@ class TestDisplayItem final : public DisplayItem {
       : DisplayItem(client, type, sizeof(*this)) {}
 
   void Replay(GraphicsContext&) const final { NOTREACHED(); }
-  void AppendToWebDisplayItemList(const FloatSize&,
-                                  WebDisplayItemList*) const final {
+  void AppendToDisplayItemList(const FloatSize&,
+                               cc::DisplayItemList&) const final {
     NOTREACHED();
   }
 };

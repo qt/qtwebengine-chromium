@@ -30,7 +30,6 @@ class VirtualTimeControllerTest : public ::testing::Test {
     client_.SetTaskRunnerForTests(task_runner_);
     mock_host_ = base::MakeRefCounted<MockDevToolsAgentHost>();
 
-    EXPECT_CALL(*mock_host_, IsAttached()).WillOnce(Return(false));
     EXPECT_CALL(*mock_host_, AttachClient(&client_));
     client_.AttachToHost(mock_host_.get());
     controller_ = std::make_unique<VirtualTimeController>(&client_, 0);
@@ -136,6 +135,7 @@ TEST_F(VirtualTimeControllerTest, MaxVirtualTimeTaskStarvationCount) {
   client_.DispatchProtocolMessage(mock_host_.get(),
                                   "{\"id\":0,\"result\":{\"virtualTimeBase\":1."
                                   "0,\"virtualTimeTicksBase\":1.0}}");
+  task_runner_->RunPendingTasks();
 
   EXPECT_TRUE(set_up_complete_);
   EXPECT_FALSE(budget_expired_);
@@ -232,6 +232,7 @@ TEST_F(VirtualTimeControllerTest, InterleavesTasksWithVirtualTime) {
   client_.DispatchProtocolMessage(mock_host_.get(),
                                   "{\"id\":0,\"result\":{\"virtualTimeBase\":1."
                                   "0,\"virtualTimeTicksBase\":1.0}}");
+  task_runner_->RunPendingTasks();
 
   EXPECT_TRUE(set_up_complete_);
   EXPECT_FALSE(budget_expired_);
@@ -306,6 +307,7 @@ TEST_F(VirtualTimeControllerTest, CanceledTask) {
   client_.DispatchProtocolMessage(mock_host_.get(),
                                   "{\"id\":0,\"result\":{\"virtualTimeBase\":1."
                                   "0,\"virtualTimeTicksBase\":1.0}}");
+  task_runner_->RunPendingTasks();
 
   EXPECT_TRUE(set_up_complete_);
   EXPECT_FALSE(budget_expired_);
@@ -400,6 +402,7 @@ TEST_F(VirtualTimeControllerTest, MultipleTasks) {
       base::StringPrintf("{\"id\":0,\"result\":{\"virtualTimeBase\":1.0,"
                          "\"virtualTimeTicksBase\":1.0}}"));
 
+  task_runner_->RunPendingTasks();
   EXPECT_TRUE(set_up_complete_);
   EXPECT_FALSE(budget_expired_);
 }

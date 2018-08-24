@@ -8,7 +8,6 @@ import("//components/nacl/features.gni")
 import("//components/offline_pages/buildflags/features.gni")
 import("//components/spellcheck/spellcheck_build_features.gni")
 import("//extensions/buildflags/buildflags.gni")
-import("//media/media_options.gni")
 import("//ppapi/buildflags/buildflags.gni")
 import("//tools/grit/grit_rule.gni")
 
@@ -30,7 +29,6 @@ grit("resources") {
   deps = [
     "//chrome/common/media_router/mojo:media_controller_js",
     "//chrome/common/media_router/mojo:media_router_js",
-    "//mojo/common:common_custom_types_js",
     "//net/interfaces:interfaces_js",
     "//url/mojom:url_mojom_gurl_js",
     "//url/mojom:url_mojom_origin_js",
@@ -61,6 +59,10 @@ static_library("renderer") {
     "media/chrome_key_systems.h",
     "media/chrome_key_systems_provider.cc",
     "media/chrome_key_systems_provider.h",
+    "media/chrome_webrtc_log_message_delegate.cc",
+    "media/chrome_webrtc_log_message_delegate.h",
+    "media/webrtc_logging_message_filter.cc",
+    "media/webrtc_logging_message_filter.h",
     "net/net_error_helper.cc",
     "net/net_error_helper.h",
     "net/net_error_helper_core.cc",
@@ -102,6 +104,8 @@ static_library("renderer") {
     "url_loader_throttle_provider_impl.h",
     "web_apps.cc",
     "web_apps.h",
+    "websocket_handshake_throttle_provider_impl.cc",
+    "websocket_handshake_throttle_provider_impl.h",
     "worker_content_settings_client.cc",
     "worker_content_settings_client.h",
   ]
@@ -133,7 +137,7 @@ static_library("renderer") {
     "//components/spellcheck:buildflags",
     "//components/startup_metric_utils/common:interfaces",
     "//components/subresource_filter/content/renderer",
-    "//components/task_scheduler_util/common",
+    "//components/task_scheduler_util",
     "//components/translate/content/renderer",
     "//components/translate/core/common",
     "//components/translate/core/language_detection",
@@ -162,9 +166,12 @@ static_library("renderer") {
     "//third_party/icu",
     "//third_party/re2",
     "//third_party/widevine/cdm:headers",
-    "//tools/v8_context_snapshot",
     "//ui/surface",
     "//v8:v8",
+  ]
+
+  data_deps = [
+    "//tools/v8_context_snapshot",
   ]
 
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
@@ -342,24 +349,8 @@ static_library("renderer") {
     public_deps = [
       "//ipc",
     ]
-    if (!enable_webrtc) {
-      sources -= [
-        "media/cast_receiver_session.cc",
-        "media/cast_receiver_session.h",
-        "media/cast_rtp_stream.cc",
-        "media/cast_rtp_stream.h",
-      ]
-    }
   }
-  if (enable_webrtc) {
-    sources += [
-      "media/chrome_webrtc_log_message_delegate.cc",
-      "media/chrome_webrtc_log_message_delegate.h",
-      "media/webrtc_logging_message_filter.cc",
-      "media/webrtc_logging_message_filter.h",
-    ]
-  }
-  if (enable_extensions && enable_webrtc) {
+  if (enable_extensions) {
     sources += [
       "extensions/cast_streaming_native_handler.cc",
       "extensions/cast_streaming_native_handler.h",
@@ -369,7 +360,7 @@ static_library("renderer") {
     deps += [ "//components/spellcheck/renderer:renderer" ]
   }
 
-  if (enable_basic_printing || enable_print_preview) {
+  if (enable_basic_printing) {
     deps += [
       "//components/printing/renderer",
       "//printing",
@@ -424,6 +415,8 @@ static_library("test_support") {
   sources = [
     "chrome_mock_render_thread.cc",
     "chrome_mock_render_thread.h",
+    "media/mock_webrtc_logging_message_filter.cc",
+    "media/mock_webrtc_logging_message_filter.h",
     "safe_browsing/mock_feature_extractor_clock.cc",
     "safe_browsing/mock_feature_extractor_clock.h",
     "safe_browsing/test_utils.cc",
@@ -438,13 +431,6 @@ static_library("test_support") {
     "//testing/gmock",
     "//testing/gtest",
   ]
-
-  if (enable_webrtc) {
-    sources += [
-      "media/mock_webrtc_logging_message_filter.cc",
-      "media/mock_webrtc_logging_message_filter.h",
-    ]
-  }
 
   if (is_android) {
     sources -= [

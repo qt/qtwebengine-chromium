@@ -14,7 +14,6 @@
 #include "components/viz/service/hit_test/hit_test_manager.h"
 #include "components/viz/test/compositor_frame_helpers.h"
 #include "components/viz/test/test_latest_local_surface_id_lookup_delegate.h"
-#include "mojo/edk/embedder/embedder.h"
 
 namespace {
 
@@ -44,7 +43,7 @@ void SubmitHitTestRegionList(
     const uint32_t depth);
 
 void AddHitTestRegion(base::FuzzedDataProvider* fuzz,
-                      std::vector<viz::mojom::HitTestRegionPtr>* regions,
+                      std::vector<viz::HitTestRegion>* regions,
                       uint32_t child_count,
                       viz::TestLatestLocalSurfaceIdLookupDelegate* delegate,
                       viz::FrameSinkManagerImpl* frame_sink_manager,
@@ -54,22 +53,22 @@ void AddHitTestRegion(base::FuzzedDataProvider* fuzz,
     return;
 
   // If there's not enough space left for a HitTestRegion, then skip.
-  if (fuzz->remaining_bytes() < sizeof(viz::mojom::HitTestRegion))
+  if (fuzz->remaining_bytes() < sizeof(viz::HitTestRegion))
     return;
 
-  auto hit_test_region = viz::mojom::HitTestRegion::New();
-  hit_test_region->flags = fuzz->ConsumeUint16();
+  viz::HitTestRegion hit_test_region;
+  hit_test_region.flags = fuzz->ConsumeUint16();
   if (fuzz->ConsumeBool())
-    hit_test_region->flags |= viz::mojom::kHitTestChildSurface;
-  hit_test_region->frame_sink_id =
+    hit_test_region.flags |= viz::HitTestRegionFlags::kHitTestChildSurface;
+  hit_test_region.frame_sink_id =
       viz::FrameSinkId(fuzz->ConsumeUint8(), fuzz->ConsumeUint8());
-  hit_test_region->rect =
+  hit_test_region.rect =
       gfx::Rect(fuzz->ConsumeUint8(), fuzz->ConsumeUint8(),
                 fuzz->ConsumeUint16(), fuzz->ConsumeUint16());
-  hit_test_region->transform = GetNextTransform(fuzz);
+  hit_test_region.transform = GetNextTransform(fuzz);
 
   if (fuzz->ConsumeBool() &&
-      (hit_test_region->flags & viz::mojom::kHitTestChildSurface)) {
+      (hit_test_region.flags & viz::HitTestRegionFlags::kHitTestChildSurface)) {
     // If there's not enough space left for a LocalSurfaceId, then skip.
     if (fuzz->remaining_bytes() < sizeof(viz::LocalSurfaceId))
       return;
@@ -100,49 +99,40 @@ void SubmitHitTestRegionList(
     bool support_is_root,
     const uint32_t depth) {
   // If there's not enough space left for a HitTestRegionList, then skip.
-  if ((fuzz->remaining_bytes() < sizeof(viz::mojom::HitTestRegionList)) ||
+  if (fuzz->remaining_bytes() < sizeof(viz::HitTestRegionList) + sizeof(bool) ||
       depth > kMaxDepthAllowed) {
     return;
   }
 
-  auto hit_test_region_list = viz::mojom::HitTestRegionList::New();
-  hit_test_region_list->flags = fuzz->ConsumeUint16();
-  if (fuzz->ConsumeBool())
-    hit_test_region_list->flags |= viz::mojom::kHitTestChildSurface;
-  hit_test_region_list->bounds =
-      gfx::Rect(fuzz->ConsumeUint8(), fuzz->ConsumeUint8(),
-                fuzz->ConsumeUint16(), fuzz->ConsumeUint16());
-  hit_test_region_list->transform = GetNextTransform(fuzz);
+  base::Optional<viz::HitTestRegionList> hit_test_region_list;
+  if (fuzz->ConsumeBool()) {
+    hit_test_region_list.emplace();
+    hit_test_region_list->flags = fuzz->ConsumeUint16();
+    if (fuzz->ConsumeBool())
+      hit_test_region_list->flags |=
+          viz::HitTestRegionFlags::kHitTestChildSurface;
+    hit_test_region_list->bounds =
+        gfx::Rect(fuzz->ConsumeUint8(), fuzz->ConsumeUint8(),
+                  fuzz->ConsumeUint16(), fuzz->ConsumeUint16());
+    hit_test_region_list->transform = GetNextTransform(fuzz);
 
-  uint32_t child_count = fuzz->ConsumeUint16();
-  AddHitTestRegion(fuzz, &hit_test_region_list->regions, child_count, delegate,
-                   frame_sink_manager, surface_id, depth + 1);
+    uint32_t child_count = fuzz->ConsumeUint16();
+    AddHitTestRegion(fuzz, &hit_test_region_list->regions, child_count,
+                     delegate, frame_sink_manager, surface_id, depth + 1);
+  }
 
   delegate->SetSurfaceIdMap(surface_id);
   viz::CompositorFrameSinkSupport support(
       nullptr /* client */, frame_sink_manager, surface_id.frame_sink_id(),
       support_is_root, false /* needs_sync_points */);
-  support.SubmitCompositorFrame(
-      surface_id.local_surface_id(), viz::MakeDefaultCompositorFrame(),
-      fuzz->ConsumeBool() ? std::move(hit_test_region_list) : nullptr);
+  support.SubmitCompositorFrame(surface_id.local_surface_id(),
+                                viz::MakeDefaultCompositorFrame(),
+                                std::move(hit_test_region_list));
 }
-
-class Environment {
- public:
-  Environment() {
-    // Initialize environment so that we can create the mojo shared memory
-    // handles.
-    base::CommandLine::Init(0, nullptr);
-    mojo::edk::Init();
-  }
-};
 
 }  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t num_bytes) {
-  // Initialize the environment only once.
-  static Environment environment;
-
   base::FuzzedDataProvider fuzz(data, num_bytes);
   viz::FrameSinkManagerImpl frame_sink_manager;
   viz::TestLatestLocalSurfaceIdLookupDelegate delegate;

@@ -46,7 +46,6 @@
 #include "chrome/browser/ui/extensions/app_launch_params.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/browser/ui/webui/extensions/extension_loader_handler.h"
 #include "chrome/common/extensions/api/developer_private.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/pref_names.h"
@@ -81,6 +80,7 @@
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/install_warning.h"
 #include "extensions/common/manifest.h"
+#include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handlers/options_page_info.h"
 #include "extensions/common/manifest_url_handlers.h"
 #include "extensions/common/permissions/permissions_data.h"
@@ -91,6 +91,7 @@
 #include "storage/browser/fileapi/file_system_operation.h"
 #include "storage/browser/fileapi/file_system_operation_runner.h"
 #include "storage/browser/fileapi/isolated_context.h"
+#include "third_party/re2/src/re2/re2.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace extensions {
@@ -122,6 +123,9 @@ const char kCannotRepairHealthyExtension[] =
     "Cannot repair a healthy extension.";
 const char kCannotRepairPolicyExtension[] =
     "Cannot repair a policy-installed extension.";
+const char kCannotChangeHostPermissions[] =
+    "Cannot change host permissions for the given extension.";
+const char kInvalidHost[] = "Invalid host.";
 
 const char kUnpackedAppsFolder[] = "apps_target";
 const char kManifestFile[] = "manifest.json";
@@ -134,8 +138,41 @@ ExtensionService* GetExtensionService(content::BrowserContext* context) {
 
 std::string ReadFileToString(const base::FilePath& path) {
   std::string data;
+  // This call can fail, but it doesn't matter for our purposes. If it fails,
+  // we simply return an empty string for the manifest, and ignore it.
   ignore_result(base::ReadFileToString(path, &data));
   return data;
+}
+
+using GetManifestErrorCallback =
+    base::OnceCallback<void(const base::FilePath& file_path,
+                            const std::string& error,
+                            size_t line_number,
+                            const std::string& manifest)>;
+// Takes in an |error| string and tries to parse it as a manifest error (with
+// line number), asynchronously calling |callback| with the results.
+void GetManifestError(const std::string& error,
+                      const base::FilePath& extension_path,
+                      GetManifestErrorCallback callback) {
+  size_t line = 0u;
+  size_t column = 0u;
+  std::string regex = base::StringPrintf("%s  Line: (\\d+), column: (\\d+), .*",
+                                         manifest_errors::kManifestParseError);
+  // If this was a JSON parse error, we can highlight the exact line with the
+  // error. Otherwise, we should still display the manifest (for consistency,
+  // reference, and so that if we ever make this really fancy and add an editor,
+  // it's ready).
+  //
+  // This regex call can fail, but if it does, we just don't highlight anything.
+  re2::RE2::FullMatch(error, regex, &line, &column);
+
+  // This will read the manifest and call AddFailure with the read manifest
+  // contents.
+  base::PostTaskWithTraitsAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
+      base::BindOnce(&ReadFileToString,
+                     extension_path.Append(kManifestFilename)),
+      base::BindOnce(std::move(callback), extension_path, error, line));
 }
 
 bool UserCanModifyExtensionConfiguration(
@@ -396,14 +433,13 @@ void DeveloperPrivateEventRouter::OnAppWindowRemoved(AppWindow* window) {
 void DeveloperPrivateEventRouter::OnExtensionCommandAdded(
     const std::string& extension_id,
     const Command& added_command) {
-  BroadcastItemStateChanged(developer::EVENT_TYPE_PREFS_CHANGED,
-                            extension_id);
+  BroadcastItemStateChanged(developer::EVENT_TYPE_COMMAND_ADDED, extension_id);
 }
 
 void DeveloperPrivateEventRouter::OnExtensionCommandRemoved(
     const std::string& extension_id,
     const Command& removed_command) {
-  BroadcastItemStateChanged(developer::EVENT_TYPE_PREFS_CHANGED,
+  BroadcastItemStateChanged(developer::EVENT_TYPE_COMMAND_REMOVED,
                             extension_id);
 }
 
@@ -610,11 +646,9 @@ ExtensionFunction::ResponseAction DeveloperPrivateAutoUpdateFunction::Run() {
     ExtensionUpdater::CheckParams params;
     params.fetch_priority = ManifestFetchData::FetchPriority::FOREGROUND;
     params.install_immediately = true;
-    // TODO(crbug.com/714018): Replace base::BindRepeating with base::BindOnce.
-    params.callback =
-        base::BindRepeating(&DeveloperPrivateAutoUpdateFunction::OnComplete,
-                            this /* ref counted */);
-    updater->CheckNow(params);
+    params.callback = base::BindOnce(
+        &DeveloperPrivateAutoUpdateFunction::OnComplete, this /* refcounted */);
+    updater->CheckNow(std::move(params));
   }
   return RespondLater();
 }
@@ -834,12 +868,8 @@ DeveloperPrivateUpdateExtensionConfigurationFunction::Run() {
   }
   if (update.run_on_all_urls) {
     ScriptingPermissionsModifier modifier(browser_context(), extension);
-    if (!modifier.CanAffectExtension(
-            extension->permissions_data()->active_permissions()) &&
-        !modifier.HasAffectedExtension()) {
-      return RespondNow(
-          Error("Cannot modify all urls of extension: " + extension->id()));
-    }
+    if (!modifier.CanAffectExtension())
+      return RespondNow(Error(kCannotChangeHostPermissions));
     modifier.SetAllowedOnAllUrls(*update.run_on_all_urls);
   }
 
@@ -911,11 +941,10 @@ void DeveloperPrivateReloadFunction::OnLoadFailure(
     const std::string& error) {
   if (file_path == reloading_extension_path_) {
     // Reload failed - create an error to pass back to the extension.
-    ExtensionLoaderHandler::GetManifestError(
+    GetManifestError(
         error, file_path,
-        // TODO(devlin): Update GetManifestError to take a OnceCallback.
-        base::BindRepeating(&DeveloperPrivateReloadFunction::OnGotManifestError,
-                            this));  // Creates a reference.
+        base::BindOnce(&DeveloperPrivateReloadFunction::OnGotManifestError,
+                       this));  // Creates a reference.
     ClearObservers();
   }
 }
@@ -1035,7 +1064,7 @@ ExtensionFunction::ResponseAction DeveloperPrivateLoadUnpackedFunction::Run() {
     return RespondLater();
   }
 
-  if (!ShowPicker(ui::SelectFileDialog::SELECT_FOLDER,
+  if (!ShowPicker(ui::SelectFileDialog::SELECT_EXISTING_FOLDER,
                   l10n_util::GetStringUTF16(IDS_EXTENSION_LOAD_FROM_DIRECTORY),
                   ui::SelectFileDialog::FileTypeInfo(),
                   0 /* file_type_index */)) {
@@ -1077,7 +1106,7 @@ void DeveloperPrivateLoadUnpackedFunction::OnLoadComplete(
     return;
   }
 
-  ExtensionLoaderHandler::GetManifestError(
+  GetManifestError(
       error, file_path,
       base::Bind(&DeveloperPrivateLoadUnpackedFunction::OnGotManifestError,
                  this));
@@ -1878,6 +1907,75 @@ DeveloperPrivateUpdateExtensionCommandFunction::Run() {
   return RespondNow(NoArguments());
 }
 
+DeveloperPrivateAddHostPermissionFunction::
+    DeveloperPrivateAddHostPermissionFunction() = default;
+DeveloperPrivateAddHostPermissionFunction::
+    ~DeveloperPrivateAddHostPermissionFunction() = default;
+
+ExtensionFunction::ResponseAction
+DeveloperPrivateAddHostPermissionFunction::Run() {
+  std::unique_ptr<developer::AddHostPermission::Params> params(
+      developer::AddHostPermission::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  GURL host(params->host);
+  if (!host.is_valid() || host.path_piece().length() > 1 || host.has_query() ||
+      host.has_ref()) {
+    return RespondNow(Error(kInvalidHost));
+  }
+
+  const Extension* extension = GetExtensionById(params->extension_id);
+  if (!extension)
+    return RespondNow(Error(kNoSuchExtensionError));
+
+  ScriptingPermissionsModifier scripting_modifier(browser_context(), extension);
+  if (!scripting_modifier.CanAffectExtension())
+    return RespondNow(Error(kCannotChangeHostPermissions));
+
+  // Only grant withheld permissions. This also ensures that we won't grant
+  // any permission for a host that shouldn't be accessible to the extension,
+  // like chrome:-scheme urls.
+  if (!extension->permissions_data()
+           ->withheld_permissions()
+           .HasEffectiveAccessToURL(host)) {
+    return RespondNow(Error("Cannot grant a permission that wasn't withheld."));
+  }
+
+  scripting_modifier.GrantHostPermission(host);
+  return RespondNow(NoArguments());
+}
+
+DeveloperPrivateRemoveHostPermissionFunction::
+    DeveloperPrivateRemoveHostPermissionFunction() = default;
+DeveloperPrivateRemoveHostPermissionFunction::
+    ~DeveloperPrivateRemoveHostPermissionFunction() = default;
+
+ExtensionFunction::ResponseAction
+DeveloperPrivateRemoveHostPermissionFunction::Run() {
+  std::unique_ptr<developer::RemoveHostPermission::Params> params(
+      developer::RemoveHostPermission::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  GURL host(params->host);
+  if (!host.is_valid() || host.path_piece().length() > 1 || host.has_query() ||
+      host.has_ref()) {
+    return RespondNow(Error(kInvalidHost));
+  }
+
+  const Extension* extension = GetExtensionById(params->extension_id);
+  if (!extension)
+    return RespondNow(Error(kNoSuchExtensionError));
+
+  ScriptingPermissionsModifier scripting_modifier(browser_context(), extension);
+  if (!scripting_modifier.CanAffectExtension())
+    return RespondNow(Error(kCannotChangeHostPermissions));
+
+  if (!scripting_modifier.HasGrantedHostPermission(host))
+    return RespondNow(Error("Cannot remove a host that hasn't been granted."));
+
+  scripting_modifier.RemoveGrantedHostPermission(host);
+  return RespondNow(NoArguments());
+}
 
 }  // namespace api
 

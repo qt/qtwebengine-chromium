@@ -133,15 +133,11 @@ declare_args() {
   # Whether we're a traditional desktop unix.
   is_desktop_linux = current_os == "linux"
 
-  # Set to true when compiling with the Clang compiler. Typically this is used
-  # to configure warnings.
-  is_clang =
-      current_os == "mac" || current_os == "ios" || current_os == "chromeos" ||
-      current_os == "fuchsia" || current_os == "android" ||
-      current_os == "win" ||
-      (current_os == "linux" && current_cpu != "s390x" &&
-       current_cpu != "s390" && current_cpu != "ppc64" &&
-       current_cpu != "ppc" && current_cpu != "mips" && current_cpu != "mips64")
+  # Set to true when compiling with the Clang compiler.
+  is_clang = current_os != "linux" ||
+             (current_cpu != "s390x" && current_cpu != "s390" &&
+              current_cpu != "ppc64" && current_cpu != "ppc" &&
+              current_cpu != "mips" && current_cpu != "mips64")
 
   # Allows the path to a custom target toolchain to be injected as a single
   # argument, and set as the default toolchain.
@@ -205,12 +201,18 @@ if (host_toolchain == "") {
   } else if (host_os == "mac") {
     host_toolchain = "//build/toolchain/mac:clang_$host_cpu"
   } else if (host_os == "win") {
-    # On Windows always use the target CPU for host builds. On the
+    # On Windows always use the target CPU for host builds for x86/x64. On the
     # configurations we support this will always work and it saves build steps.
-    if (is_clang) {
-      host_toolchain = "//build/toolchain/win:win_clang_$target_cpu"
+    if (target_cpu == "x86" || target_cpu == "x64") {
+      if (is_clang) {
+        host_toolchain = "//build/toolchain/win:win_clang_$target_cpu"
+      } else {
+        host_toolchain = "//build/toolchain/win:$target_cpu"
+      }
+    } else if (is_clang) {
+      host_toolchain = "//build/toolchain/win:win_clang_$host_cpu"
     } else {
-      host_toolchain = "//build/toolchain/win:$target_cpu"
+      host_toolchain = "//build/toolchain/win:$host_cpu"
     }
   } else if (host_os == "aix") {
     host_toolchain = "//build/toolchain/aix:$host_cpu"
@@ -401,17 +403,6 @@ if (current_os == "win" || current_os == "winuwp") {
 # below.
 sources_assignment_filter = []
 
-# TODO(crbug.com/812974): Clean up _posix files and remove Fuchsia here.
-if (!is_posix && !is_fuchsia) {
-  sources_assignment_filter += [
-    "*_posix.h",
-    "*_posix.cc",
-    "*_posix_unittest.h",
-    "*_posix_unittest.cc",
-    "*\bposix/*",
-  ]
-}
-
 if (!is_win) {
   sources_assignment_filter += [
     "*_win.cc",
@@ -530,9 +521,6 @@ default_compiler_configs = [
   "//build/config/compiler:default_optimization",
   "//build/config/compiler:default_stack_frames",
   "//build/config/compiler:default_symbols",
-
-  # TODO(crbug.com/795158): Remove once libwidevinecdmadapter.so is fixed.
-  "//build/config/compiler:default_fatal_linker_warnings",
   "//build/config/compiler:no_exceptions",
   "//build/config/compiler:no_rtti",
   "//build/config/compiler:runtime_library",
@@ -646,6 +634,28 @@ set_defaults("loadable_module") {
   }
 }
 
+# Sets default dependencies for executable and shared_library targets.
+#
+# Variables
+#   no_default_deps: If true, no standard dependencies will be added.
+foreach(target_type,
+        [
+          "executable",
+          "shared_library",
+        ]) {
+  template(target_type) {
+    target(target_type, target_name) {
+      forward_variables_from(invoker, "*", [ "no_default_deps" ])
+      if (!defined(deps)) {
+        deps = []
+      }
+      if (!defined(invoker.no_default_deps) || !invoker.no_default_deps) {
+        deps += [ "//build/config:exe_and_shlib_deps" ]
+      }
+    }
+  }
+}
+
 # ==============================================================================
 # COMPONENT SETUP
 # ==============================================================================
@@ -668,24 +678,9 @@ template("component") {
     assert(invoker.static_component_type == "static_library" ||
            invoker.static_component_type == "source_set")
     _component_mode = invoker.static_component_type
-  } else if (is_android || !defined(invoker.sources)) {
+  } else if (!defined(invoker.sources)) {
     # When there are no sources defined, use a source set to avoid creating
     # an empty static library (which generally don't work).
-    #
-    # When we changed components to default from source sets to static
-    # libraries, an Android benchmark regressed slightly
-    # (https://crbug.com/619593). We don't have a good theory on why this might
-    # be since theoretically it should be the same. It could be something as
-    # silly as random code locality luck.
-    #
-    # There seems to be no build-time performance hit to using source sets on
-    # Android (the normal reason for defaulting to static libraries), so we
-    # make the default on Android to be source set.
-    #
-    # If it's been a long time since this was added and you're skeptical,
-    # please feel free to remove the Android exception and see if any
-    # benchmarks obviously regress. If not, it would be great to standardize
-    # with the rest of the platforms.
     _component_mode = "source_set"
   } else {
     _component_mode = "static_library"
@@ -700,13 +695,6 @@ template("component") {
     # See http://crbug.com/594610
     forward_variables_from(invoker, [ "visibility" ])
     forward_variables_from(invoker, "*", [ "visibility" ])
-
-    # All shared libraries must have the sanitizer deps to properly link in
-    # asan mode (this target will be empty in other cases).
-    if (!defined(deps)) {
-      deps = []
-    }
-    deps += [ "//build/config:exe_and_shlib_deps" ]
   }
 }
 

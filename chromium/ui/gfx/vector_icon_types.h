@@ -11,10 +11,6 @@
 
 namespace gfx {
 
-// The size of a single side of the square canvas to which path coordinates
-// are relative, in device independent pixels.
-const int kReferenceSizeDip = 48;
-
 // A command to Skia.
 enum CommandType {
   // A new <path> element. For the first path, this is assumed.
@@ -47,7 +43,7 @@ enum CommandType {
   CIRCLE,
   ROUND_RECT,
   CLOSE,
-  // Sets the dimensions of the canvas in dip. (Default is kReferenceSizeDip.)
+  // Sets the dimensions of the canvas in dip.
   CANVAS_DIMENSIONS,
   // Sets a bounding rect for the path. This allows fine adjustment because it
   // can tweak edge anti-aliasing. Args are x, y, w, h.
@@ -95,10 +91,10 @@ struct VectorIconRep {
 struct VectorIcon {
   VectorIcon() = default;
 
-  bool is_empty() const { return !rep; }
+  bool is_empty() const { return !reps; }
 
-  const VectorIconRep* rep = nullptr;
-  const VectorIconRep* rep_1x = nullptr;
+  const VectorIconRep* const reps = nullptr;
+  size_t reps_size = 0u;
 
   // A human-readable name, useful for debugging, derived from the name of the
   // icon file. This can also be used as an identifier, but vector icon targets

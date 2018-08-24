@@ -17,7 +17,6 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "components/crash/core/common/crash_key.h"
-#include "components/viz/common/gpu/in_process_context_provider.h"
 #include "gpu/command_buffer/client/gpu_memory_buffer_manager.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/scheduler.h"
@@ -115,7 +114,10 @@ GpuServiceImpl::GpuServiceImpl(
     std::unique_ptr<gpu::GpuWatchdogThread> watchdog_thread,
     scoped_refptr<base::SingleThreadTaskRunner> io_runner,
     const gpu::GpuFeatureInfo& gpu_feature_info,
-    const gpu::GpuPreferences& gpu_preferences)
+    const gpu::GpuPreferences& gpu_preferences,
+    const base::Optional<gpu::GPUInfo>& gpu_info_for_hardware_gpu,
+    const base::Optional<gpu::GpuFeatureInfo>&
+        gpu_feature_info_for_hardware_gpu)
     : main_runner_(base::ThreadTaskRunnerHandle::Get()),
       io_runner_(std::move(io_runner)),
       watchdog_thread_(std::move(watchdog_thread)),
@@ -124,6 +126,8 @@ GpuServiceImpl::GpuServiceImpl(
       gpu_preferences_(gpu_preferences),
       gpu_info_(gpu_info),
       gpu_feature_info_(gpu_feature_info),
+      gpu_info_for_hardware_gpu_(gpu_info_for_hardware_gpu),
+      gpu_feature_info_for_hardware_gpu_(gpu_feature_info_for_hardware_gpu),
       bindings_(std::make_unique<mojo::BindingSet<mojom::GpuService>>()),
       weak_ptr_factory_(this) {
   DCHECK(!io_runner_->BelongsToCurrentThread());
@@ -191,7 +195,9 @@ void GpuServiceImpl::InitializeWithHost(
     gpu::SyncPointManager* sync_point_manager,
     base::WaitableEvent* shutdown_event) {
   DCHECK(main_runner_->BelongsToCurrentThread());
-  gpu_host->DidInitialize(gpu_info_, gpu_feature_info_);
+  gpu_host->DidInitialize(gpu_info_, gpu_feature_info_,
+                          gpu_info_for_hardware_gpu_,
+                          gpu_feature_info_for_hardware_gpu_);
   gpu_host_ =
       mojom::ThreadSafeGpuHostPtr::Create(gpu_host.PassInterface(), io_runner_);
   if (!in_host_process()) {
@@ -436,13 +442,15 @@ void GpuServiceImpl::GetVideoMemoryUsageStats(
 }
 
 // Currently, this function only supports the Windows platform.
-void GpuServiceImpl::GetGpuSupportedRuntimeVersion() {
+void GpuServiceImpl::GetGpuSupportedRuntimeVersion(
+    GetGpuSupportedRuntimeVersionCallback callback) {
 #if defined(OS_WIN)
   if (io_runner_->BelongsToCurrentThread()) {
+    auto wrap_callback = WrapCallback(io_runner_, std::move(callback));
     main_runner_->PostTask(
         FROM_HERE,
         base::BindOnce(&GpuServiceImpl::GetGpuSupportedRuntimeVersion,
-                       weak_ptr_));
+                       weak_ptr_, std::move(wrap_callback)));
     return;
   }
   DCHECK(main_runner_->BelongsToCurrentThread());
@@ -453,6 +461,7 @@ void GpuServiceImpl::GetGpuSupportedRuntimeVersion() {
   DCHECK(command_line->HasSwitch("disable-gpu-sandbox") || in_host_process());
 
   gpu::RecordGpuSupportedRuntimeVersionHistograms(&gpu_info_);
+  std::move(callback).Run(gpu_info_);
   if (!in_host_process()) {
     // The unsandboxed GPU process fulfilled its duty. Rest
     // in peace.
@@ -534,9 +543,6 @@ void GpuServiceImpl::UpdateGpuInfoPlatform(
   // or single process/in-process gpu mode on Windows.
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   DCHECK(command_line->HasSwitch("disable-gpu-sandbox") || in_host_process());
-
-  gpu::GetGpuSupportedD3DVersion(&gpu_info_);
-  gpu::GetGpuSupportedVulkanVersion(&gpu_info_);
 
   // We can continue on shutdown here because we're not writing any critical
   // state in this task.
@@ -714,12 +720,13 @@ void GpuServiceImpl::DestroyAllChannels() {
   gpu_channel_manager_->DestroyAllChannels();
 }
 
-void GpuServiceImpl::OnBackgrounded() {
+void GpuServiceImpl::OnBackgroundCleanup() {
 // Currently only called on Android.
 #if defined(OS_ANDROID)
   if (io_runner_->BelongsToCurrentThread()) {
     main_runner_->PostTask(
-        FROM_HERE, base::BindOnce(&GpuServiceImpl::OnBackgrounded, weak_ptr_));
+        FROM_HERE,
+        base::BindOnce(&GpuServiceImpl::OnBackgroundCleanup, weak_ptr_));
     return;
   }
   DVLOG(1) << "GPU: Performing background cleanup";
@@ -727,6 +734,16 @@ void GpuServiceImpl::OnBackgrounded() {
 #else
   NOTREACHED();
 #endif
+}
+
+void GpuServiceImpl::OnBackgrounded() {
+  if (watchdog_thread_)
+    watchdog_thread_->OnBackgrounded();
+}
+
+void GpuServiceImpl::OnForegrounded() {
+  if (watchdog_thread_)
+    watchdog_thread_->OnForegrounded();
 }
 
 void GpuServiceImpl::Crash() {

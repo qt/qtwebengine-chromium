@@ -92,6 +92,8 @@ source_set("audio") {
     "audio_input_device.h",
     "audio_input_ipc.cc",
     "audio_input_ipc.h",
+    "audio_input_stream_data_interceptor.cc",
+    "audio_input_stream_data_interceptor.h",
     "audio_input_sync_writer.cc",
     "audio_input_sync_writer.h",
     "audio_io.h",
@@ -122,6 +124,7 @@ source_set("audio") {
     "audio_source_diverter.h",
     "audio_sync_reader.cc",
     "audio_sync_reader.h",
+    "audio_system.cc",
     "audio_system.h",
     "audio_system_helper.cc",
     "audio_system_helper.h",
@@ -220,9 +223,13 @@ source_set("audio") {
     ]
 
     libs += [
+      "dmoguids.lib",
       "dxguid.lib",
+      "msdmo.lib",
       "setupapi.lib",
+      "strmiids.lib",
       "winmm.lib",
+      "wmcodecdspuuid.lib",
     ]
   }
 
@@ -311,13 +318,6 @@ source_set("audio") {
     libs += [ "media_client" ]
   }
 
-  if (enable_webrtc) {
-    sources += [
-      "audio_input_stream_data_interceptor.cc",
-      "audio_input_stream_data_interceptor.h",
-    ]
-  }
-
   configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 }
 
@@ -385,6 +385,7 @@ source_set("unit_tests") {
     "audio_debug_recording_session_impl_unittest.cc",
     "audio_input_controller_unittest.cc",
     "audio_input_device_unittest.cc",
+    "audio_input_stream_data_interceptor_unittest.cc",
     "audio_input_sync_writer_unittest.cc",
     "audio_input_unittest.cc",
     "audio_manager_unittest.cc",
@@ -405,6 +406,12 @@ source_set("unit_tests") {
     "//base",
     "//base/test:test_support",
     "//media:test_support",
+
+    # TODO(https://crbug.com/844508): Mojo is used in the
+    # audio_output_device_unittest.cc for conversion between shared memory
+    # types. Remove this dependency once the AudioOutputDevice shared memory
+    # refactor is done.
+    "//mojo/public/cpp/system:system",
     "//testing/gmock",
     "//testing/gtest",
     "//url",
@@ -415,10 +422,6 @@ source_set("unit_tests") {
     "//build/config/compiler:no_size_t_to_int_warning",
     "//media:media_config",
   ]
-
-  if (enable_webrtc) {
-    sources += [ "audio_input_stream_data_interceptor_unittest.cc" ]
-  }
 
   if (is_android) {
     sources += [ "android/audio_android_unittest.cc" ]

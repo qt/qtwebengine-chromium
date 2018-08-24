@@ -11,6 +11,10 @@
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/geometry/float_point.h"
 
+namespace cc {
+class Layer;
+}
+
 namespace blink {
 
 class ImageBitmap;
@@ -21,9 +25,9 @@ class MODULES_EXPORT ImageBitmapRenderingContextBase
  public:
   ImageBitmapRenderingContextBase(CanvasRenderingContextHost*,
                                   const CanvasContextCreationAttributesCore&);
-  virtual ~ImageBitmapRenderingContextBase();
+  ~ImageBitmapRenderingContextBase() override;
 
-  void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
   HTMLCanvasElement* canvas() {
     DCHECK(!Host() || !Host()->IsOffscreenCanvas());
@@ -34,11 +38,11 @@ class MODULES_EXPORT ImageBitmapRenderingContextBase
   bool isContextLost() const override { return false; }
   void SetImage(ImageBitmap*);
   scoped_refptr<StaticBitmapImage> GetImage(AccelerationHint) const final;
-  void SetUV(const FloatPoint left_top, const FloatPoint right_bottom);
+  void SetUV(const FloatPoint& left_top, const FloatPoint& right_bottom);
   bool IsComposited() const final { return true; }
   bool IsAccelerated() const final;
 
-  WebLayer* PlatformLayer() const final;
+  cc::Layer* CcLayer() const final;
   // TODO(junov): handle lost contexts when content is GPU-backed
   void LoseContext(LostContextMode) override {}
 

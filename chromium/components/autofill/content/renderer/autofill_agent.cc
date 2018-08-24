@@ -88,24 +88,7 @@ size_t kWaitTimeForSelectOptionsChangesMs = 50;
 // Whether the "single click" autofill feature is enabled, through command-line
 // or field trial.
 bool IsSingleClickEnabled() {
-// On Android, default to showing the dropdown on field focus.
-// On desktop, require an extra click after field focus by default, unless the
-// experiment is active.
-#if defined(OS_ANDROID)
-  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableSingleClickAutofill);
-#endif
-  const std::string group_name =
-      base::FieldTrialList::FindFullName("AutofillSingleClick");
-
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableSingleClickAutofill))
-    return true;
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableSingleClickAutofill))
-    return false;
-
-  return base::StartsWith(group_name, "Enabled", base::CompareCase::SENSITIVE);
+  return base::FeatureList::IsEnabled(features::kSingleClickAutofill);
 }
 
 // Gets all the data list values (with corresponding label) for the given
@@ -213,8 +196,10 @@ void AutofillAgent::DidChangeScrollOffset() {
     // Post a task here since scroll offset may change during layout.
     // (https://crbug.com/804886)
     weak_ptr_factory_.InvalidateWeakPtrs();
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::BindOnce(&AutofillAgent::DidChangeScrollOffsetImpl,
+    render_frame()
+        ->GetTaskRunner(blink::TaskType::kInternalUserInteraction)
+        ->PostTask(FROM_HERE,
+                   base::BindOnce(&AutofillAgent::DidChangeScrollOffsetImpl,
                                   weak_ptr_factory_.GetWeakPtr(), element_));
   } else if (!IsKeyboardAccessoryEnabled()) {
     HidePopup();
@@ -466,11 +451,11 @@ void AutofillAgent::FieldTypePredictionsAvailable(
   }
 }
 
-void AutofillAgent::ClearForm() {
+void AutofillAgent::ClearSection() {
   if (element_.IsNull())
     return;
 
-  form_cache_.ClearFormWithElement(element_);
+  form_cache_.ClearSectionWithElement(element_);
 }
 
 void AutofillAgent::ClearPreviewedForm() {
@@ -556,14 +541,6 @@ void AutofillAgent::ShowInitialPasswordAccountSuggestions(
   options.show_full_suggestion_list = true;
   for (auto element : elements)
     ShowSuggestions(element, options);
-}
-
-void AutofillAgent::ShowNotSecureWarning(
-    const blink::WebInputElement& element) {
-  if (is_generation_popup_possibly_visible_)
-    return;
-  password_autofill_agent_->ShowNotSecureWarning(element);
-  is_popup_possibly_visible_ = true;
 }
 
 bool AutofillAgent::CollectFormlessElements(FormData* output) {
@@ -842,13 +819,11 @@ void AutofillAgent::FormControlElementClicked(
 
   ShowSuggestionsOptions options;
   options.autofill_on_empty_values = true;
-  options.show_full_suggestion_list = element.IsAutofilled();
+  // Show full suggestions when clicking on an already-focused form field.
+  options.show_full_suggestion_list = element.IsAutofilled() || was_focused;
 
   if (!IsSingleClickEnabled()) {
-    // Show full suggestions when clicking on an already-focused form field. On
-    // the initial click (not focused yet), only show password suggestions.
-    options.show_full_suggestion_list =
-        options.show_full_suggestion_list || was_focused;
+    // On  the initial click (not focused yet), only show password suggestions.
     options.show_password_suggestions_only = !was_focused;
   }
   ShowSuggestions(element, options);
@@ -1052,13 +1027,18 @@ void AutofillAgent::ReplaceElementIfNowInvalid(const FormData& original_form) {
     }
   }
 
-  // Could not find the new version of the form, bail out.
-  if (form_element.IsNull())
-    return;
+  WebVector<WebFormControlElement> elements;
+  if (form_element.IsNull()) {
+    // Could not find the new version of the form, get all the unowned elements.
+    std::vector<WebElement> fieldsets;
+    elements = form_util::GetUnownedAutofillableFormFieldElements(
+        element_.GetDocument().All(), &fieldsets);
+  } else {
+    // Get all the elements of the new version of the form.
+    form_element.GetFormControlElements(elements);
+  }
 
   // Try to find the new version of the last interacted element.
-  WebVector<WebFormControlElement> elements;
-  form_element.GetFormControlElements(elements);
   for (const WebFormControlElement& element : elements) {
     if (element_.NameForAutofill() == element.NameForAutofill()) {
       element_ = element;

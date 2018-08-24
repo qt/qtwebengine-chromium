@@ -25,7 +25,6 @@
 
 #include "third_party/blink/renderer/core/layout/layout_video.h"
 
-#include "third_party/blink/public/platform/web_layer.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/html_names.h"
@@ -185,7 +184,7 @@ LayoutRect LayoutVideo::ReplacedContentRect() const {
 }
 
 bool LayoutVideo::SupportsAcceleratedRendering() const {
-  return !!MediaElement()->PlatformLayer();
+  return !!MediaElement()->CcLayer();
 }
 
 static const LayoutBlock* LayoutObjectPlaceholder(

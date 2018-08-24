@@ -93,7 +93,7 @@ class CC_EXPORT LayerTreeSettings {
   ManagedMemoryPolicy memory_policy;
   size_t decoded_image_working_set_budget_bytes = 128 * 1024 * 1024;
   int max_preraster_distance_in_screen_pixels = 1000;
-  viz::ResourceFormat preferred_tile_format;
+  bool use_rgba_4444 = false;
   bool unpremultiply_and_dither_low_bit_depth_tiles = false;
 
   bool enable_mask_tiling = true;
@@ -156,6 +156,10 @@ class CC_EXPORT LayerTreeSettings {
   // Whether SetViewportSizeAndScale should update the painted scale factor or
   // the device scale factor.
   bool use_painted_device_scale_factor = false;
+
+  // Whether a HitTestRegionList should be built from the active layer tree when
+  // submitting a CompositorFrame.
+  bool build_hit_test_data = false;
 };
 
 }  // namespace cc

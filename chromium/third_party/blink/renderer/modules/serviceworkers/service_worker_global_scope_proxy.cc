@@ -61,6 +61,7 @@
 #include "third_party/blink/renderer/modules/background_fetch/background_fetch_settled_event_init.h"
 #include "third_party/blink/renderer/modules/background_fetch/background_fetch_update_event.h"
 #include "third_party/blink/renderer/modules/background_sync/sync_event.h"
+#include "third_party/blink/renderer/modules/cookie_store/extendable_cookie_change_event.h"
 #include "third_party/blink/renderer/modules/exported/web_embedded_worker_impl.h"
 #include "third_party/blink/renderer/modules/notifications/notification.h"
 #include "third_party/blink/renderer/modules/notifications/notification_event.h"
@@ -127,6 +128,10 @@ void ServiceWorkerGlobalScopeProxy::Trace(blink::Visitor* visitor) {
   visitor->Trace(parent_execution_context_task_runners_);
 }
 
+void ServiceWorkerGlobalScopeProxy::ReadyToEvaluateScript() {
+  WorkerGlobalScope()->ReadyToEvaluateScript();
+}
+
 void ServiceWorkerGlobalScopeProxy::SetRegistration(
     std::unique_ptr<WebServiceWorkerRegistration::Handle> handle) {
   DCHECK(WorkerGlobalScope()->IsContextThread());
@@ -135,16 +140,22 @@ void ServiceWorkerGlobalScopeProxy::SetRegistration(
 
 void ServiceWorkerGlobalScopeProxy::DispatchBackgroundFetchAbortEvent(
     int event_id,
-    const WebString& developer_id) {
+    const WebString& developer_id,
+    const WebString& unique_id,
+    const WebVector<WebBackgroundFetchSettledFetch>& fetches) {
   DCHECK(WorkerGlobalScope()->IsContextThread());
   WaitUntilObserver* observer = WaitUntilObserver::Create(
       WorkerGlobalScope(), WaitUntilObserver::kBackgroundFetchAbort, event_id);
 
-  BackgroundFetchClickEventInit init;
-  init.setId(developer_id);
+  ScriptState* script_state =
+      WorkerGlobalScope()->ScriptController()->GetScriptState();
 
-  BackgroundFetchEvent* event = BackgroundFetchEvent::Create(
-      EventTypeNames::backgroundfetchabort, init, observer);
+  BackgroundFetchSettledEventInit init;
+  init.setId(developer_id);
+  init.setFetches(BackgroundFetchSettledFetches::Create(script_state, fetches));
+
+  BackgroundFetchSettledEvent* event = BackgroundFetchSettledEvent::Create(
+      EventTypeNames::backgroundfetchabort, init, unique_id, observer);
 
   WorkerGlobalScope()->DispatchExtendableEvent(event, observer);
 }
@@ -181,21 +192,22 @@ void ServiceWorkerGlobalScopeProxy::DispatchBackgroundFetchClickEvent(
 void ServiceWorkerGlobalScopeProxy::DispatchBackgroundFetchFailEvent(
     int event_id,
     const WebString& developer_id,
+    const WebString& unique_id,
     const WebVector<WebBackgroundFetchSettledFetch>& fetches) {
   DCHECK(WorkerGlobalScope()->IsContextThread());
   WaitUntilObserver* observer = WaitUntilObserver::Create(
       WorkerGlobalScope(), WaitUntilObserver::kBackgroundFetchFail, event_id);
 
-  BackgroundFetchFailEventInit init;
-  init.setId(developer_id);
-
   ScriptState* script_state =
       WorkerGlobalScope()->ScriptController()->GetScriptState();
-  ScriptState::Scope scope(script_state);
 
-  BackgroundFetchFailEvent* event =
-      BackgroundFetchFailEvent::Create(EventTypeNames::backgroundfetchfail,
-                                       init, fetches, script_state, observer);
+  BackgroundFetchSettledEventInit init;
+  init.setId(developer_id);
+  init.setFetches(BackgroundFetchSettledFetches::Create(script_state, fetches));
+
+  BackgroundFetchUpdateEvent* event = BackgroundFetchUpdateEvent::Create(
+      EventTypeNames::backgroundfetched, init, unique_id, script_state,
+      observer, worker_global_scope_->registration());
 
   WorkerGlobalScope()->DispatchExtendableEvent(event, observer);
 }
@@ -211,6 +223,9 @@ void ServiceWorkerGlobalScopeProxy::DispatchBackgroundFetchedEvent(
 
   ScriptState* script_state =
       WorkerGlobalScope()->ScriptController()->GetScriptState();
+
+  // Do not remove this, it modifies V8 state.
+  ScriptState::Scope scope(script_state);
 
   BackgroundFetchSettledEventInit init;
   init.setId(developer_id);
@@ -229,6 +244,30 @@ void ServiceWorkerGlobalScopeProxy::DispatchActivateEvent(int event_id) {
       WorkerGlobalScope(), WaitUntilObserver::kActivate, event_id);
   Event* event = ExtendableEvent::Create(EventTypeNames::activate,
                                          ExtendableEventInit(), observer);
+  WorkerGlobalScope()->DispatchExtendableEvent(event, observer);
+}
+
+void ServiceWorkerGlobalScopeProxy::DispatchCookieChangeEvent(
+    int event_id,
+    const WebString& cookie_name,
+    const WebString& cookie_value,
+    bool is_cookie_delete) {
+  DCHECK(WorkerGlobalScope()->IsContextThread());
+  WaitUntilObserver* observer = WaitUntilObserver::Create(
+      WorkerGlobalScope(), WaitUntilObserver::kCookieChange, event_id);
+
+  HeapVector<CookieListItem> changed;
+  HeapVector<CookieListItem> deleted;
+  ExtendableCookieChangeEvent::ToCookieChangeListItem(
+      cookie_name, cookie_value, is_cookie_delete, changed, deleted);
+  Event* event = ExtendableCookieChangeEvent::Create(
+      EventTypeNames::cookiechange, std::move(changed), std::move(deleted),
+      observer);
+
+  // TODO(pwnall): When switching to blink::CanonicalCookie, handle the case
+  //               when (changed.IsEmpty() && deleted.IsEmpty()).
+
+  // TODO(pwnall): Investigate dispatching this on cookieStore.
   WorkerGlobalScope()->DispatchExtendableEvent(event, observer);
 }
 
@@ -353,7 +392,7 @@ void ServiceWorkerGlobalScopeProxy::OnNavigationPreloadError(
 
 void ServiceWorkerGlobalScopeProxy::OnNavigationPreloadComplete(
     int fetch_event_id,
-    double completion_time,
+    TimeTicks completion_time,
     int64_t encoded_data_length,
     int64_t encoded_body_length,
     int64_t decoded_body_length) {
@@ -560,7 +599,7 @@ void ServiceWorkerGlobalScopeProxy::DidLoadInstalledScript(
   DCHECK(embedded_worker_);
   WaitableEvent waitable_event;
   PostCrossThreadTask(
-      *parent_execution_context_task_runners_->Get(TaskType::kUnthrottled),
+      *parent_execution_context_task_runners_->Get(TaskType::kInternalWorker),
       FROM_HERE,
       CrossThreadBind(&SetContentSecurityPolicyAndReferrerPolicyOnMainThread,
                       CrossThreadUnretained(embedded_worker_),

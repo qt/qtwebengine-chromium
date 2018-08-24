@@ -530,19 +530,6 @@
       type: "ImageAnimationPolicy",
     },
 
-    // Number of outstanding and pending tokens allowed in the background HTML
-    // parser. A value of 0 indicates the parser should use its default value.
-    {
-      name: "backgroundHtmlParserOutstandingTokenLimit",
-      initial: 0,
-      type: "unsigned",
-    },
-    {
-      name: "backgroundHtmlParserPendingTokenLimit",
-      initial: 0,
-      type: "unsigned",
-    },
-
     // Html preload scanning is a fast, early scan of HTML documents to find loadable
     // resources before the parser advances to them. If it is disabled, resources will
     // be loaded later.
@@ -828,6 +815,21 @@
       initial: false,
     },
 
+    // Whether data saver holdback for Web APIs is enabled. If enabled, data saver appears
+    // as disabled to the web consumers even if it has been actually enabled by the user.
+    {
+      name: "dataSaverHoldbackWebApi",
+      initial: false,
+    },
+
+    // Whether data saver holdback is enabled when queried by the media APIs within Blink. If
+    // enabled, data saver appears as disabled to the media APIs even if it has been actually
+    // enabled by the user.
+    {
+      name: "dataSaverHoldbackMediaApi",
+      initial: false,
+    },
+
     // Whether to invalidate device-dependent media queries and restore scroll positions
     // on frame resize assuming device rotation.
     {
@@ -853,11 +855,6 @@
     },
     {
       name: "cssExternalScannerPreload",
-      initial: false,
-    },
-
-    {
-      name: "browserSideNavigationEnabled",
       initial: false,
     },
 

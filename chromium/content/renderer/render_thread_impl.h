@@ -121,7 +121,6 @@ class Extension;
 
 namespace viz {
 class BeginFrameSource;
-class ClientSharedBitmapManager;
 class RasterContextProvider;
 class SyntheticBeginFrameSource;
 }
@@ -130,7 +129,6 @@ namespace content {
 
 class AppCacheDispatcher;
 class AecDumpMessageFilter;
-class AudioMessageFilter;
 class AudioRendererMixerManager;
 class BrowserPluginManager;
 class CategorizedWorkerPool;
@@ -139,9 +137,7 @@ class FileSystemDispatcher;
 class FrameSwapMessageQueue;
 class GpuVideoAcceleratorFactoriesImpl;
 class IndexedDBDispatcher;
-class InputHandlerManager;
 class MidiMessageFilter;
-class NotificationDispatcher;
 class P2PSocketDispatcher;
 class PeerConnectionDependencyFactory;
 class PeerConnectionTracker;
@@ -153,7 +149,6 @@ class VideoCaptureImplManager;
 
 #if defined(OS_ANDROID)
 class StreamTextureFactory;
-class SynchronousCompositorFilter;
 #endif
 
 #if defined(COMPILER_MSVC)
@@ -224,7 +219,6 @@ class CONTENT_EXPORT RenderThreadImpl
       ResourceDispatcherDelegate* delegate) override;
   std::unique_ptr<base::SharedMemory> HostAllocateSharedMemoryBuffer(
       size_t buffer_size) override;
-  viz::SharedBitmapManager* GetSharedBitmapManager() override;
   void RegisterExtension(v8::Extension* extension) override;
   void ScheduleIdleHandler(int64_t initial_delay_ms) override;
   void IdleHandler() override;
@@ -237,6 +231,7 @@ class CONTENT_EXPORT RenderThreadImpl
   int32_t GetClientId() override;
   void SetRendererProcessType(
       blink::scheduler::RendererProcessType type) override;
+  blink::WebString GetUserAgent() const override;
 
   // IPC::Listener implementation via ChildThreadImpl:
   bool OnMessageReceived(const IPC::Message& msg) override;
@@ -321,10 +316,6 @@ class CONTENT_EXPORT RenderThreadImpl
     return blink_platform_impl_.get();
   }
 
-  InputHandlerManager* input_handler_manager() const {
-    return input_handler_manager_.get();
-  }
-
   // Will be null if threaded compositing has not been enabled.
   scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner() const {
     return compositor_task_runner_;
@@ -355,10 +346,6 @@ class CONTENT_EXPORT RenderThreadImpl
   }
 
 #if defined(OS_ANDROID)
-  SynchronousCompositorFilter* sync_compositor_message_filter() {
-    return sync_compositor_message_filter_.get();
-  }
-
   scoped_refptr<StreamTextureFactory> GetStreamTexureFactory();
   bool EnableStreamTextureCopy();
 #endif
@@ -372,7 +359,6 @@ class CONTENT_EXPORT RenderThreadImpl
     return browser_plugin_manager_.get();
   }
 
-#if BUILDFLAG(ENABLE_WEBRTC)
   // Returns a factory used for creating RTC PeerConnection objects.
   PeerConnectionDependencyFactory* GetPeerConnectionDependencyFactory();
 
@@ -384,19 +370,9 @@ class CONTENT_EXPORT RenderThreadImpl
   P2PSocketDispatcher* p2p_socket_dispatcher() {
     return p2p_socket_dispatcher_.get();
   }
-#endif
 
   VideoCaptureImplManager* video_capture_impl_manager() const {
     return vc_manager_.get();
-  }
-
-  viz::ClientSharedBitmapManager* shared_bitmap_manager() const {
-    DCHECK(shared_bitmap_manager_);
-    return shared_bitmap_manager_.get();
-  }
-
-  NotificationDispatcher* notification_dispatcher() const {
-    return notification_dispatcher_.get();
   }
 
   mojom::RenderFrameMessageFilter* render_frame_message_filter();
@@ -578,9 +554,6 @@ class CONTENT_EXPORT RenderThreadImpl
       service_manager::mojom::ServiceRequest service_request) override;
   void CreateView(mojom::CreateViewParamsPtr params) override;
   void CreateFrame(mojom::CreateFrameParamsPtr params) override;
-  void SetUpEmbeddedWorkerChannelForServiceWorker(
-      mojom::EmbeddedWorkerInstanceClientAssociatedRequest client_request)
-      override;
   void CreateFrameProxy(
       int32_t routing_id,
       int32_t render_view_routing_id,
@@ -588,6 +561,8 @@ class CONTENT_EXPORT RenderThreadImpl
       int32_t parent_routing_id,
       const FrameReplicationState& replicated_state,
       const base::UnguessableToken& devtools_frame_token) override;
+  void SetUpEmbeddedWorkerChannelForServiceWorker(
+      mojom::EmbeddedWorkerInstanceClientRequest client_request) override;
   void OnNetworkConnectionChanged(
       net::NetworkChangeNotifier::ConnectionType type,
       double max_bandwidth_mbps) override;
@@ -596,6 +571,7 @@ class CONTENT_EXPORT RenderThreadImpl
                                base::TimeDelta transport_rtt,
                                double bandwidth_kbps) override;
   void SetWebKitSharedTimersSuspended(bool suspend) override;
+  void SetUserAgent(const std::string& user_agent) override;
   void UpdateScrollbarTheme(
       mojom::UpdateScrollbarThemeParamsPtr params) override;
   void OnSystemColorsChanged(int32_t aqua_color_variant,
@@ -649,7 +625,6 @@ class CONTENT_EXPORT RenderThreadImpl
 
   std::unique_ptr<BrowserPluginManager> browser_plugin_manager_;
 
-#if BUILDFLAG(ENABLE_WEBRTC)
   std::unique_ptr<PeerConnectionDependencyFactory> peer_connection_factory_;
 
   // This is used to communicate to the browser process the status
@@ -664,22 +639,16 @@ class CONTENT_EXPORT RenderThreadImpl
   // diagnostic audio data for WebRTC stored locally when enabled by the user in
   // chrome://webrtc-internals.
   scoped_refptr<AecDumpMessageFilter> aec_dump_message_filter_;
-#endif
 
   // Provides AudioInputIPC objects for audio input devices. Initialized in
   // Init.
   base::Optional<AudioInputIPCFactory> audio_input_ipc_factory_;
-  // Provides AudioOutputIPC objects for audio output devices. It either uses
-  // an AudioMessageFilter for this or provides MojoAudioOutputIPC objects.
-  // Initialized in Init.
+  // Provides AudioOutputIPC objects for audio output devices. Initialized in
+  // Init.
   base::Optional<AudioOutputIPCFactory> audio_output_ipc_factory_;
 
   // Used on the render thread.
   std::unique_ptr<VideoCaptureImplManager> vc_manager_;
-
-  std::unique_ptr<viz::ClientSharedBitmapManager> shared_bitmap_manager_;
-
-  scoped_refptr<NotificationDispatcher> notification_dispatcher_;
 
   // The time Blink was initialized. Used for UMA.
   base::TimeTicks blink_initialized_time_;
@@ -697,6 +666,8 @@ class CONTENT_EXPORT RenderThreadImpl
   int idle_notifications_to_skip_;
 
   bool webkit_shared_timer_suspended_;
+
+  blink::WebString user_agent_;
 
   // Used to control layout test specific behavior.
   std::unique_ptr<LayoutTestDependencies> layout_test_deps_;
@@ -737,12 +708,7 @@ class CONTENT_EXPORT RenderThreadImpl
   // Pool of workers used for raster operations (e.g., tile rasterization).
   scoped_refptr<CategorizedWorkerPool> categorized_worker_pool_;
 
-  base::CancelableCallback<void(const IPC::Message&)> main_input_callback_;
-  scoped_refptr<IPC::MessageFilter> input_event_filter_;
-  std::unique_ptr<InputHandlerManager> input_handler_manager_;
-
 #if defined(OS_ANDROID)
-  scoped_refptr<SynchronousCompositorFilter> sync_compositor_message_filter_;
   scoped_refptr<StreamTextureFactory> stream_texture_factory_;
 #endif
 

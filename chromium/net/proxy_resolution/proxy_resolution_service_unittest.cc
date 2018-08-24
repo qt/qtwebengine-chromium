@@ -15,6 +15,7 @@
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/histogram_tester.h"
 #include "net/base/net_errors.h"
 #include "net/base/proxy_delegate.h"
 #include "net/base/proxy_server.h"
@@ -31,6 +32,7 @@
 #include "net/proxy_resolution/proxy_config_service.h"
 #include "net/proxy_resolution/proxy_resolver.h"
 #include "net/test/gtest_util.h"
+#include "net/test/test_with_scoped_task_environment.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -114,7 +116,7 @@ class ImmediateAfterActivityPollPolicy
 //
 // The tests which verify the polling code re-enable the polling behavior but
 // are careful to avoid timing problems.
-class ProxyResolutionServiceTest : public testing::Test {
+class ProxyResolutionServiceTest : public TestWithScopedTaskEnvironment {
  protected:
   void SetUp() override {
     testing::Test::SetUp();
@@ -168,6 +170,12 @@ class MockProxyConfigService: public ProxyConfigService {
     config_ = config;
     for (auto& observer : observers_)
       observer.OnProxyConfigChanged(config_, availability_);
+  }
+
+  void SetPacUrlConfig(base::StringPiece pac_url) {
+    SetConfig(ProxyConfigWithAnnotation(
+        ProxyConfig::CreateFromCustomPacURL(GURL(pac_url)),
+        TRAFFIC_ANNOTATION_FOR_TESTS));
   }
 
  private:
@@ -331,6 +339,42 @@ JobMap GetCancelledJobsForURLs(const MockAsyncProxyResolver& resolver,
 
   return GetJobsForURLs(map, urls);
 }
+
+// Helper class to verify the bucket counts for PacUrlScheme histogram.
+class PacUrlSchemeHistogramTester {
+ public:
+  void VerifyHistogram() const {
+    const char kPacUrlSchemeHistogram[] =
+        "Net.ProxyResolutionService.PacUrlScheme";
+
+    int total = GetTotal();
+
+    histograms_.ExpectTotalCount(kPacUrlSchemeHistogram, total);
+
+    if (total > 0) {
+      histograms_.ExpectBucketCount(kPacUrlSchemeHistogram, 0, num_other);
+      histograms_.ExpectBucketCount(kPacUrlSchemeHistogram, 1, num_http);
+      histograms_.ExpectBucketCount(kPacUrlSchemeHistogram, 2, num_https);
+      histograms_.ExpectBucketCount(kPacUrlSchemeHistogram, 3, num_ftp);
+      histograms_.ExpectBucketCount(kPacUrlSchemeHistogram, 4, num_file);
+      histograms_.ExpectBucketCount(kPacUrlSchemeHistogram, 5, num_data);
+    }
+  }
+
+  int num_http = 0;
+  int num_https = 0;
+  int num_ftp = 0;
+  int num_data = 0;
+  int num_file = 0;
+  int num_other = 0;
+
+ private:
+  int GetTotal() const {
+    return num_http + num_https + num_ftp + num_data + num_file + num_other;
+  }
+
+  base::HistogramTester histograms_;
+};
 
 }  // namespace
 
@@ -3573,6 +3617,60 @@ TEST_F(ProxyResolutionServiceTest, OnShutdownFollowedByRequest) {
   EXPECT_THAT(rv, IsOk());
   EXPECT_FALSE(fetcher->has_pending_request());
   EXPECT_TRUE(info.is_direct());
+}
+
+// Tests that the URL scheme for PAC files gets output to the histogram.
+TEST_F(ProxyResolutionServiceTest, PacUrlSchemeHistogram) {
+  PacUrlSchemeHistogramTester pac_histogram;
+
+  MockProxyConfigService* config_service =
+      new MockProxyConfigService(ProxyConfig::CreateDirect());
+
+  ProxyResolutionService service(
+      base::WrapUnique(config_service),
+      std::make_unique<MockAsyncProxyResolverFactory>(false), nullptr);
+
+  pac_histogram.VerifyHistogram();
+
+  // Set an http:// PAC.
+  config_service->SetPacUrlConfig("http://example.test/");
+  pac_histogram.num_http++;
+  pac_histogram.VerifyHistogram();
+
+  // Set an https:// PAC.
+  config_service->SetPacUrlConfig("hTTps://example.test/wpad.dat");
+  pac_histogram.num_https++;
+  pac_histogram.VerifyHistogram();
+
+  // Set an ftp:// PAC.
+  config_service->SetPacUrlConfig("ftp://example.test/pac.js");
+  pac_histogram.num_ftp++;
+  pac_histogram.VerifyHistogram();
+
+  // Set an file:// PAC.
+  config_service->SetPacUrlConfig("file://example.test/boo");
+  pac_histogram.num_file++;
+  pac_histogram.VerifyHistogram();
+
+  // Set an mailto: PAC.
+  config_service->SetPacUrlConfig("mailto:foo@example.test");
+  pac_histogram.num_other++;
+  pac_histogram.VerifyHistogram();
+
+  // Set an data: PAC.
+  config_service->SetPacUrlConfig("data:,Hello%2C%20World!");
+  pac_histogram.num_data++;
+  pac_histogram.VerifyHistogram();
+
+  // Set an filesystem: PAC.
+  config_service->SetPacUrlConfig("filesystem:http://example.test/pac.js");
+  pac_histogram.num_other++;
+  pac_histogram.VerifyHistogram();
+
+  // Set another https:// as PAC.
+  config_service->SetPacUrlConfig("https://example2.test/wpad.dat");
+  pac_histogram.num_https++;
+  pac_histogram.VerifyHistogram();
 }
 
 }  // namespace net

@@ -19,7 +19,6 @@ namespace content {
 
 class ServiceWorkerCacheWriter;
 class ServiceWorkerVersion;
-class URLLoaderFactoryGetter;
 struct HttpResponseInfoIOBuffer;
 
 // S13nServiceWorker:
@@ -44,23 +43,32 @@ struct HttpResponseInfoIOBuffer;
 // this class also performs the "byte-for-byte" comparison for updating the
 // worker. If the script is identical, the load succeeds but no script is
 // written, and ServiceWorkerVersion is told to terminate startup.
+//
+// NOTE: To perform the network request, this class uses |loader_factory_| which
+// may internally use a non-NetworkService factory if URL has a non-http(s)
+// scheme, e.g., a chrome-extension:// URL. Regardless, that is still called a
+// "network" request in comments and naming. "network" is meant to distinguish
+// from the load this URLLoader does for its client:
+//     "network" <------> SWNewScriptLoader <------> client
 class CONTENT_EXPORT ServiceWorkerNewScriptLoader
     : public network::mojom::URLLoader,
       public network::mojom::URLLoaderClient {
  public:
+  // |loader_factory| is used to load the script, see class comments.
   ServiceWorkerNewScriptLoader(
       int32_t routing_id,
       int32_t request_id,
       uint32_t options,
-      const network::ResourceRequest& resource_request,
+      const network::ResourceRequest& original_request,
       network::mojom::URLLoaderClientPtr client,
       scoped_refptr<ServiceWorkerVersion> version,
-      scoped_refptr<URLLoaderFactoryGetter> loader_factory_getter,
+      scoped_refptr<network::SharedURLLoaderFactory> loader_factory,
       const net::MutableNetworkTrafficAnnotationTag& traffic_annotation);
   ~ServiceWorkerNewScriptLoader() override;
 
   // network::mojom::URLLoader:
-  void FollowRedirect() override;
+  void FollowRedirect(const base::Optional<net::HttpRequestHeaders>&
+                          modified_request_headers) override;
   void ProceedWithResponse() override;
   void SetPriority(net::RequestPriority priority,
                    int32_t intra_priority_value) override;
@@ -132,12 +140,14 @@ class CONTENT_EXPORT ServiceWorkerNewScriptLoader
 
   std::unique_ptr<ServiceWorkerCacheWriter> cache_writer_;
 
-  // Used for fetching the script from network.
+  // Used for fetching the script from network, which might not actually
+  // use the direct network factory, see class comments.
   network::mojom::URLLoaderPtr network_loader_;
   mojo::Binding<network::mojom::URLLoaderClient> network_client_binding_;
   mojo::ScopedDataPipeConsumerHandle network_consumer_;
   mojo::SimpleWatcher network_watcher_;
   bool network_load_completed_ = false;
+  scoped_refptr<network::SharedURLLoaderFactory> loader_factory_;
 
   // Used for responding with the fetched script to this loader's client.
   network::mojom::URLLoaderClientPtr client_;

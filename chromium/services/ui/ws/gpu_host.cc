@@ -6,7 +6,6 @@
 
 #include "base/command_line.h"
 #include "base/memory/shared_memory.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
@@ -156,9 +155,10 @@ void DefaultGpuHost::DestroyVizMain() {
   viz_main_impl_.reset();
 }
 
-void DefaultGpuHost::DidInitialize(
-    const gpu::GPUInfo& gpu_info,
-    const gpu::GpuFeatureInfo& gpu_feature_info) {
+void DefaultGpuHost::DidInitialize(const gpu::GPUInfo& gpu_info,
+                                   const gpu::GpuFeatureInfo& gpu_feature_info,
+                                   const base::Optional<gpu::GPUInfo>&,
+                                   const base::Optional<gpu::GpuFeatureInfo>&) {
   gpu_info_ = gpu_info;
   gpu_feature_info_ = gpu_feature_info;
   delegate_->OnGpuServiceInitialized();

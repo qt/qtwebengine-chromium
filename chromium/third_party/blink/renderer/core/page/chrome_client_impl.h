@@ -82,7 +82,7 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
                      const FloatSize& accumulated_overscroll,
                      const FloatPoint& position_in_viewport,
                      const FloatSize& velocity_in_viewport,
-                     const WebOverscrollBehavior&) override;
+                     const cc::OverscrollBehavior&) override;
   bool ShouldReportDetailedMessageForSource(LocalFrame&,
                                             const String&) override;
   void AddMessageToConsole(LocalFrame*,
@@ -104,12 +104,12 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
                                     String& result) override;
   bool TabsToLinks() override;
   void InvalidateRect(const IntRect&) override;
-  void ScheduleAnimation(const PlatformFrameView*) override;
+  void ScheduleAnimation(const LocalFrameView*) override;
   IntRect ViewportToScreen(const IntRect&,
-                           const PlatformFrameView*) const override;
+                           const LocalFrameView*) const override;
   float WindowToViewportScalar(const float) const override;
   WebScreenInfo GetScreenInfo() const override;
-  WTF::Optional<IntRect> VisibleContentRectForPainting() const override;
+  base::Optional<IntRect> VisibleContentRectForPainting() const override;
   void ContentsSizeChanged(LocalFrame*, const IntSize&) const override;
   void PageScaleFactorChanged() const override;
   float ClampPageScaleFactorToLimits(float scale) const override;
@@ -151,14 +151,15 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
 
   void AttachRootGraphicsLayer(GraphicsLayer*, LocalFrame* local_root) override;
 
-  void AttachRootLayer(WebLayer*, LocalFrame* local_root) override;
+  void AttachRootLayer(scoped_refptr<cc::Layer>,
+                       LocalFrame* local_root) override;
 
   void AttachCompositorAnimationTimeline(CompositorAnimationTimeline*,
                                          LocalFrame*) override;
   void DetachCompositorAnimationTimeline(CompositorAnimationTimeline*,
                                          LocalFrame*) override;
 
-  void EnterFullscreen(LocalFrame&) override;
+  void EnterFullscreen(LocalFrame&, const FullscreenOptions&) override;
   void ExitFullscreen(LocalFrame&) override;
   void FullscreenElementChanged(Element* old_element,
                                 Element* new_element) override;
@@ -216,7 +217,7 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
 
   void OnMouseDown(Node&) override;
   void DidUpdateBrowserControls() const override;
-  void SetOverscrollBehavior(const WebOverscrollBehavior&) override;
+  void SetOverscrollBehavior(const cc::OverscrollBehavior&) override;
 
   FloatSize ElasticOverscroll() const override;
 

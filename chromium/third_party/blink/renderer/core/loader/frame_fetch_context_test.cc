@@ -42,7 +42,7 @@
 #include "third_party/blink/public/platform/web_insecure_request_policy.h"
 #include "third_party/blink/public/platform/web_runtime_features.h"
 #include "third_party/blink/renderer/core/dom/document.h"
-#include "third_party/blink/renderer/core/frame/AdTracker.h"
+#include "third_party/blink/renderer/core/frame/ad_tracker.h"
 #include "third_party/blink/renderer/core/frame/frame_owner.h"
 #include "third_party/blink/renderer/core/frame/frame_types.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
@@ -209,17 +209,23 @@ class FrameFetchContextSubresourceFilterTest : public FrameFetchContextTest {
                        is_associated_with_ad_subframe)));
   }
 
-  ResourceRequestBlockedReason CanRequest() {
+  base::Optional<ResourceRequestBlockedReason> CanRequest() {
     return CanRequestInternal(SecurityViolationReportingPolicy::kReport);
   }
 
-  ResourceRequestBlockedReason CanRequestPreload() {
+  base::Optional<ResourceRequestBlockedReason> CanRequestKeepAlive() {
+    return CanRequestInternal(SecurityViolationReportingPolicy::kReport,
+                              true /* keepalive */);
+  }
+
+  base::Optional<ResourceRequestBlockedReason> CanRequestPreload() {
     return CanRequestInternal(
         SecurityViolationReportingPolicy::kSuppressReporting);
   }
 
-  ResourceRequestBlockedReason CanRequestAndVerifyIsAd(bool expect_is_ad) {
-    ResourceRequestBlockedReason reason =
+  base::Optional<ResourceRequestBlockedReason> CanRequestAndVerifyIsAd(
+      bool expect_is_ad) {
+    base::Optional<ResourceRequestBlockedReason> reason =
         CanRequestInternal(SecurityViolationReportingPolicy::kReport);
     const KURL url("http://example.com/");
     EXPECT_EQ(expect_is_ad, fetch_context->IsAdResource(
@@ -249,12 +255,14 @@ class FrameFetchContextSubresourceFilterTest : public FrameFetchContextTest {
   }
 
  private:
-  ResourceRequestBlockedReason CanRequestInternal(
-      SecurityViolationReportingPolicy reporting_policy) {
+  base::Optional<ResourceRequestBlockedReason> CanRequestInternal(
+      SecurityViolationReportingPolicy reporting_policy,
+      bool keepalive = false) {
     const KURL input_url("http://example.com/");
     ResourceRequest resource_request(input_url);
     resource_request.SetFetchCredentialsMode(
         network::mojom::FetchCredentialsMode::kOmit);
+    resource_request.SetKeepalive(keepalive);
     ResourceLoaderOptions options;
     return fetch_context->CanRequest(
         Resource::kImage, resource_request, input_url, options,
@@ -1299,21 +1307,30 @@ TEST_F(FrameFetchContextSubresourceFilterTest, Filter) {
 TEST_F(FrameFetchContextSubresourceFilterTest, Allow) {
   SetFilterPolicy(WebDocumentSubresourceFilter::kAllow);
 
-  EXPECT_EQ(ResourceRequestBlockedReason::kNone,
-            CanRequestAndVerifyIsAd(false));
+  EXPECT_EQ(base::nullopt, CanRequestAndVerifyIsAd(false));
   EXPECT_EQ(0, GetFilteredLoadCallCount());
 
-  EXPECT_EQ(ResourceRequestBlockedReason::kNone, CanRequestPreload());
+  EXPECT_EQ(base::nullopt, CanRequestPreload());
   EXPECT_EQ(0, GetFilteredLoadCallCount());
+}
+
+TEST_F(FrameFetchContextSubresourceFilterTest, DuringOnFreeze) {
+  document->SetFreezingInProgress(true);
+  // Only keepalive requests should succeed during onfreeze.
+  EXPECT_EQ(ResourceRequestBlockedReason::kOther, CanRequest());
+  EXPECT_EQ(base::nullopt, CanRequestKeepAlive());
+  document->SetFreezingInProgress(false);
+  EXPECT_EQ(base::nullopt, CanRequest());
+  EXPECT_EQ(base::nullopt, CanRequestKeepAlive());
 }
 
 TEST_F(FrameFetchContextSubresourceFilterTest, WouldDisallow) {
   SetFilterPolicy(WebDocumentSubresourceFilter::kWouldDisallow);
 
-  EXPECT_EQ(ResourceRequestBlockedReason::kNone, CanRequestAndVerifyIsAd(true));
+  EXPECT_EQ(base::nullopt, CanRequestAndVerifyIsAd(true));
   EXPECT_EQ(0, GetFilteredLoadCallCount());
 
-  EXPECT_EQ(ResourceRequestBlockedReason::kNone, CanRequestPreload());
+  EXPECT_EQ(base::nullopt, CanRequestPreload());
   EXPECT_EQ(0, GetFilteredLoadCallCount());
 }
 
@@ -1324,7 +1341,7 @@ TEST_F(FrameFetchContextSubresourceFilterTest, AdTaggingBasedOnFrame) {
   SetFilterPolicy(WebDocumentSubresourceFilter::kAllow,
                   true /* is_associated_with_ad_subframe */);
 
-  EXPECT_EQ(ResourceRequestBlockedReason::kNone, CanRequestAndVerifyIsAd(true));
+  EXPECT_EQ(base::nullopt, CanRequestAndVerifyIsAd(true));
   EXPECT_EQ(0, GetFilteredLoadCallCount());
 }
 
@@ -1340,8 +1357,7 @@ TEST_F(FrameFetchContextSubresourceFilterTest,
   AppendAdScriptToAdTracker(ad_script_url);
   AppendExecutingScriptToAdTracker(ad_script_url.GetString());
 
-  EXPECT_EQ(ResourceRequestBlockedReason::kNone,
-            CanRequestAndVerifyIsAd(false));
+  EXPECT_EQ(base::nullopt, CanRequestAndVerifyIsAd(false));
   EXPECT_EQ(0, GetFilteredLoadCallCount());
 
   // After WillSendRequest probe, it should be marked as an ad.
@@ -1470,7 +1486,8 @@ TEST_F(FrameFetchContextTest, DispatchDidDownloadDataWhenDetached) {
 TEST_F(FrameFetchContextTest, DispatchDidFinishLoadingWhenDetached) {
   dummy_page_holder = nullptr;
 
-  fetch_context->DispatchDidFinishLoading(4, 0.3, 8, 10, false);
+  fetch_context->DispatchDidFinishLoading(4, TimeTicksFromSeconds(0.3), 8, 10,
+                                          false);
   // Should not crash.
 }
 
@@ -1518,7 +1535,7 @@ TEST_F(FrameFetchContextTest, DidLoadResourceWhenDetached) {
 
 TEST_F(FrameFetchContextTest, AddResourceTimingWhenDetached) {
   scoped_refptr<ResourceTimingInfo> info =
-      ResourceTimingInfo::Create("type", 0.3, false);
+      ResourceTimingInfo::Create("type", TimeTicksFromSeconds(0.3), false);
 
   dummy_page_holder = nullptr;
 
@@ -1576,7 +1593,7 @@ TEST_F(FrameFetchContextTest, IsLoadCompleteWhenDetached_2) {
 
 TEST_F(FrameFetchContextTest, UpdateTimingInfoForIFrameNavigationWhenDetached) {
   scoped_refptr<ResourceTimingInfo> info =
-      ResourceTimingInfo::Create("type", 0.3, false);
+      ResourceTimingInfo::Create("type", TimeTicksFromSeconds(0.3), false);
 
   dummy_page_holder = nullptr;
 

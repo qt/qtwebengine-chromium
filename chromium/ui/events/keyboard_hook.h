@@ -11,9 +11,11 @@
 #include "base/containers/flat_set.h"
 #include "base/optional.h"
 #include "ui/events/events_export.h"
+#include "ui/gfx/native_widget_types.h"
 
 namespace ui {
 
+enum class DomCode;
 class KeyEvent;
 
 // Intercepts keyboard events typically handled by the OS or browser.
@@ -25,17 +27,18 @@ class EVENTS_EXPORT KeyboardHook {
   virtual ~KeyboardHook() = default;
 
   // Creates a platform specific implementation.
-  // |native_key_codes| is the set of key codes which will be intercepted, if
-  // it is empty, this class will attempt to intercept all keys.
+  // |dom_codes| is the set of key codes which will be intercepted, if it is
+  // empty, this class will try to intercept all keys allowed by the platform.
   // |callback| is called for each key which is intercepted.
   // Returns a valid instance if the hook was created and successfully
   // registered otherwise nullptr.
   static std::unique_ptr<KeyboardHook> Create(
-      base::Optional<base::flat_set<int>> native_key_codes,
+      base::Optional<base::flat_set<DomCode>> dom_codes,
+      gfx::AcceleratedWidget accelerated_widget,
       KeyEventCallback callback);
 
-  // True if |native_key_code| is reserved for an active KeyboardLock request.
-  virtual bool IsKeyLocked(int native_key_code) = 0;
+  // True if |dom_code| is reserved for an active KeyboardLock request.
+  virtual bool IsKeyLocked(DomCode dom_code) = 0;
 };
 
 }  // namespace ui

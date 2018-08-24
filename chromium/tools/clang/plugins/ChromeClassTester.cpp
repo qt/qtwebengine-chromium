@@ -9,6 +9,7 @@
 
 #include <algorithm>
 
+#include "Util.h"
 #include "clang/AST/AST.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/SourceManager.h"
@@ -16,7 +17,7 @@
 #ifdef LLVM_ON_UNIX
 #include <sys/param.h>
 #endif
-#if defined(LLVM_ON_WIN32)
+#if defined(_WIN32)
 #include <windows.h>
 #endif
 
@@ -63,8 +64,8 @@ void ChromeClassTester::CheckTag(TagDecl* tag) {
 
     // We ignore all classes that end with "Matcher" because they're probably
     // GMock artifacts.
-    if (ends_with(base_name, "Matcher"))
-        return;
+    if (!options_.check_gmock_objects && ends_with(base_name, "Matcher"))
+      return;
 
     CheckChromeClass(location_type, location, record);
   }
@@ -103,12 +104,9 @@ ChromeClassTester::LocationType ChromeClassTester::ClassifyLocation(
   if (filename.find("/gen/") != std::string::npos)
     return LocationType::kThirdParty;
 
-  // TODO(dcheng, tkent): The WebKit directory is being renamed to Blink. Clean
-  // this up once the rename is done.
-  if (filename.find("/third_party/WebKit/") != std::string::npos ||
-      (filename.find("/third_party/blink/") != std::string::npos &&
-       // Browser-side code should always use the full range of checks.
-       filename.find("/third_party/blink/browser/") == std::string::npos)) {
+  if (filename.find("/third_party/blink/") != std::string::npos &&
+      // Browser-side code should always use the full range of checks.
+      filename.find("/third_party/blink/browser/") == std::string::npos) {
     return LocationType::kBlink;
   }
 
@@ -123,10 +121,6 @@ ChromeClassTester::LocationType ChromeClassTester::ClassifyLocation(
   }
 
   return LocationType::kChrome;
-}
-
-std::string ChromeClassTester::GetNamespace(const Decl* record) {
-  return GetNamespaceImpl(record->getDeclContext(), std::string());
 }
 
 bool ChromeClassTester::HasIgnoredBases(const CXXRecordDecl* record) {
@@ -160,7 +154,7 @@ bool ChromeClassTester::InImplementationFile(SourceLocation record_location) {
       break;
     }
     record_location =
-        source_manager.getImmediateExpansionRange(record_location).first;
+        source_manager.getImmediateExpansionRange(record_location).getBegin();
   }
 
   return false;
@@ -210,29 +204,6 @@ void ChromeClassTester::BuildBannedLists() {
   // Ignore IPC::NoParams bases, since these structs are generated via
   // macros and it makes it difficult to add explicit ctors.
   ignored_base_classes_.emplace("IPC::NoParams");
-}
-
-std::string ChromeClassTester::GetNamespaceImpl(const DeclContext* context,
-                                                const std::string& candidate) {
-  switch (context->getDeclKind()) {
-    case Decl::TranslationUnit: {
-      return candidate;
-    }
-    case Decl::Namespace: {
-      const NamespaceDecl* decl = dyn_cast<NamespaceDecl>(context);
-      std::string name_str;
-      llvm::raw_string_ostream OS(name_str);
-      if (decl->isAnonymousNamespace())
-        OS << "<anonymous namespace>";
-      else
-        OS << *decl;
-      return GetNamespaceImpl(context->getParent(),
-                              OS.str());
-    }
-    default: {
-      return GetNamespaceImpl(context->getParent(), candidate);
-    }
-  }
 }
 
 bool ChromeClassTester::IsIgnoredType(const std::string& base_name) {

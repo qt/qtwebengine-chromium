@@ -3,9 +3,12 @@
 // found in the LICENSE file.
 
 #include <memory>
+#include <set>
 #include <string>
+#include <vector>
 
 #include "core/fxcrt/fx_string.h"
+#include "public/cpp/fpdf_scopers.h"
 #include "public/fpdf_doc.h"
 #include "public/fpdf_edit.h"
 #include "public/fpdfview.h"
@@ -14,6 +17,22 @@
 #include "testing/test_support.h"
 
 class FPDFDocEmbeddertest : public EmbedderTest {};
+
+TEST_F(FPDFDocEmbeddertest, MultipleSamePage) {
+  EXPECT_TRUE(OpenDocument("hello_world.pdf"));
+
+  std::set<FPDF_PAGE> unique_pages;
+  std::vector<ScopedFPDFPage> owned_pages(4);
+  for (auto& ref : owned_pages) {
+    ref.reset(FPDF_LoadPage(document(), 0));
+    unique_pages.insert(ref.get());
+  }
+#ifdef PDF_ENABLE_XFA
+  EXPECT_EQ(1u, unique_pages.size());
+#else   // PDF_ENABLE_XFA
+  EXPECT_EQ(4u, unique_pages.size());
+#endif  // PDF_ENABLE_XFA
+}
 
 TEST_F(FPDFDocEmbeddertest, DestGetPageIndex) {
   EXPECT_TRUE(OpenDocument("named_dests.pdf"));
@@ -422,3 +441,17 @@ TEST_F(FPDFDocEmbeddertest, GetPageLabels) {
   ASSERT_EQ(0u, FPDF_GetPageLabel(document(), 7, buf, sizeof(buf)));
   ASSERT_EQ(0u, FPDF_GetPageLabel(document(), 8, buf, sizeof(buf)));
 }
+
+#ifdef PDF_ENABLE_XFA
+TEST_F(FPDFDocEmbeddertest, GetXFALinks) {
+  EXPECT_TRUE(OpenDocument("simple_xfa.pdf"));
+
+  ScopedFPDFPage page(FPDF_LoadPage(document(), 0));
+  ASSERT_TRUE(page);
+
+  FPDFLink_GetLinkAtPoint(page.get(), 150, 360);
+  FPDFLink_GetLinkAtPoint(page.get(), 150, 420);
+
+  // Test passes if it doesn't crash. See https://crbug.com/840922
+}
+#endif  // PDF_ENABLE_XFA

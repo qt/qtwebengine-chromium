@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_resource_filter.h"
+#include "third_party/blink/renderer/core/layout/svg/svg_resources.h"
 #include "third_party/blink/renderer/core/paint/filter_effect_builder.h"
 #include "third_party/blink/renderer/core/svg/graphics/filters/svg_filter_builder.h"
 #include "third_party/blink/renderer/core/svg/svg_filter_element.h"
@@ -26,7 +27,7 @@ GraphicsContext* SVGFilterRecordingContext::BeginContent() {
     // Use initial_context_'s current paint chunk properties so that any new
     // chunk created during painting the content will be in the correct state.
     paint_controller_->UpdateCurrentPaintChunkProperties(
-        WTF::nullopt,
+        base::nullopt,
         initial_context_.GetPaintController().CurrentPaintChunkProperties());
   }
   return context_.get();
@@ -41,9 +42,8 @@ sk_sp<PaintRecord> SVGFilterRecordingContext::EndContent(
   paint_controller_->CommitNewDisplayItems();
 
   paint_controller_->GetPaintArtifact().Replay(
-      *context_, initial_context_.GetPaintController()
-                     .CurrentPaintChunkProperties()
-                     .property_tree_state.GetPropertyTreeState());
+      *context_,
+      initial_context_.GetPaintController().CurrentPaintChunkProperties());
 
   sk_sp<PaintRecord> content = context_->EndRecording();
   // Content is cached by the source graphic so temporaries can be freed.
@@ -85,7 +85,8 @@ GraphicsContext* SVGFilterPainter::PrepareEffect(
     SVGFilterRecordingContext& recording_context) {
   filter_.ClearInvalidationMask();
 
-  if (FilterData* filter_data = filter_.GetFilterDataForLayoutObject(&object)) {
+  SVGResourceClient* client = SVGResources::GetClient(object);
+  if (FilterData* filter_data = filter_.GetFilterDataForClient(client)) {
     // If the filterData already exists we do not need to record the content
     // to be filtered. This can occur if the content was previously recorded
     // or we are in a cycle.
@@ -115,8 +116,7 @@ GraphicsContext* SVGFilterPainter::PrepareEffect(
   DCHECK_EQ(filter_data->state_, FilterData::kInitial);
 
   // TODO(pdr): Can this be moved out of painter?
-  filter_.SetFilterDataForLayoutObject(const_cast<LayoutObject*>(&object),
-                                       filter_data);
+  filter_.SetFilterDataForClient(client, filter_data);
   filter_data->state_ = FilterData::kRecordingContent;
   return recording_context.BeginContent();
 }
@@ -124,7 +124,8 @@ GraphicsContext* SVGFilterPainter::PrepareEffect(
 void SVGFilterPainter::FinishEffect(
     const LayoutObject& object,
     SVGFilterRecordingContext& recording_context) {
-  FilterData* filter_data = filter_.GetFilterDataForLayoutObject(&object);
+  SVGResourceClient* client = SVGResources::GetClient(object);
+  FilterData* filter_data = filter_.GetFilterDataForClient(client);
   if (!filter_data) {
     // Our state was torn down while we were being painted (selection style for
     // <text> can have this effect), or it was never created (invalid filter.)

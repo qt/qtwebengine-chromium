@@ -6,11 +6,12 @@
 #define COMPONENTS_CRYPTAUTH_CONNECTION_H_
 
 #include <memory>
+#include <ostream>
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
-#include "components/cryptauth/remote_device.h"
+#include "components/cryptauth/remote_device_ref.h"
 
 namespace cryptauth {
 
@@ -21,14 +22,14 @@ class WireMessage;
 // persistent bidirectional channel for sending and receiving wire messages.
 class Connection {
  public:
-  enum Status {
+  enum class Status {
     DISCONNECTED,
     IN_PROGRESS,
     CONNECTED,
   };
 
   // Constructs a connection to the given |remote_device|.
-  explicit Connection(const RemoteDevice& remote_device);
+  explicit Connection(RemoteDeviceRef remote_device);
   virtual ~Connection();
 
   // Returns true iff the connection's status is CONNECTED.
@@ -45,9 +46,7 @@ class Connection {
   virtual void AddObserver(ConnectionObserver* observer);
   virtual void RemoveObserver(ConnectionObserver* observer);
 
-  const RemoteDevice& remote_device() const {
-    return remote_device_;
-  }
+  RemoteDeviceRef remote_device() const { return remote_device_; }
 
   // Abstract methods that subclasses should implement:
 
@@ -58,7 +57,7 @@ class Connection {
   virtual void Disconnect() = 0;
 
   // The bluetooth address of the connected device.
-  virtual std::string GetDeviceAddress();
+  virtual std::string GetDeviceAddress() = 0;
 
   Status status() const { return status_; }
 
@@ -99,7 +98,7 @@ class Connection {
 
  private:
   // The remote device corresponding to this connection.
-  const RemoteDevice remote_device_;
+  const RemoteDeviceRef remote_device_;
 
   // The current status of the connection.
   Status status_;
@@ -116,6 +115,9 @@ class Connection {
 
   DISALLOW_COPY_AND_ASSIGN(Connection);
 };
+
+std::ostream& operator<<(std::ostream& stream,
+                         const Connection::Status& status);
 
 }  // namespace cryptauth
 

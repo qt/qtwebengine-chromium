@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/modules/vr/vr_display.h"
 
+#include "base/auto_reset.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -34,7 +35,6 @@
 #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
-#include "third_party/blink/renderer/platform/wtf/auto_reset.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 
 #include <array>
@@ -471,6 +471,10 @@ ScriptPromise VRDisplay::requestPresent(ScriptState* script_state,
         WTF::Bind(&VRDisplay::OnPresentationProviderConnectionError,
                   WrapWeakPersistent(this)));
     pending_present_request_ = true;
+
+    // The old vr_presentation_provider_ won't be delivering any vsyncs anymore,
+    // so we aren't waiting on it anymore.
+    pending_presenting_vsync_ = false;
   } else {
     UpdateLayerBounds();
     resolver->Resolve();
@@ -821,7 +825,7 @@ void VRDisplay::OnActivate(device::mojom::blink::VRDisplayEventReason reason,
   if (reason == device::mojom::blink::VRDisplayEventReason::MOUNTED)
     gesture_indicator = Frame::NotifyUserActivation(doc->GetFrame());
 
-  AutoReset<bool> in_activate(&in_display_activate_, true);
+  base::AutoReset<bool> in_activate(&in_display_activate_, true);
 
   navigator_vr_->DispatchVREvent(
       VRDisplayEvent::Create(EventTypeNames::vrdisplayactivate, this, reason));
@@ -845,7 +849,8 @@ void VRDisplay::ProcessScheduledWindowAnimations(double timestamp) {
 
   bool had_pending_vrdisplay_raf = pending_vrdisplay_raf_;
   // TODO(klausw): update timestamp based on scheduling delay?
-  page->Animator().ServiceScriptedAnimations(timestamp);
+  page->Animator().ServiceScriptedAnimations(
+      base::TimeTicks() + base::TimeDelta::FromSecondsD(timestamp));
 
   if (had_pending_vrdisplay_raf != pending_vrdisplay_raf_) {
     DVLOG(1) << __FUNCTION__
@@ -886,10 +891,11 @@ void VRDisplay::ProcessScheduledAnimations(double timestamp) {
     // Run the callback, making sure that in_animation_frame_ is only
     // true for the vrDisplay rAF and not for a legacy window rAF
     // that may be called later.
-    AutoReset<bool> animating(&in_animation_frame_, true);
+    base::AutoReset<bool> animating(&in_animation_frame_, true);
     pending_vrdisplay_raf_ = false;
     did_submit_this_frame_ = false;
-    scripted_animation_controller_->ServiceScriptedAnimations(timestamp);
+    scripted_animation_controller_->ServiceScriptedAnimations(
+        base::TimeTicks() + base::TimeDelta::FromSecondsD(timestamp));
     // If presenting and the script didn't call SubmitFrame, let the device
     // side know so that it can cleanly reuse resources and make appropriate
     // timing decisions. Note that is_presenting_ could become false during
@@ -1075,7 +1081,7 @@ void VRDisplay::Trace(blink::Visitor* visitor) {
   ContextLifecycleObserver::Trace(visitor);
 }
 
-void VRDisplay::TraceWrappers(const ScriptWrappableVisitor* visitor) const {
+void VRDisplay::TraceWrappers(ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(scripted_animation_controller_);
   EventTargetWithInlineData::TraceWrappers(visitor);
 }

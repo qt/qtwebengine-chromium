@@ -16,7 +16,7 @@
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #include "components/viz/common/surfaces/local_surface_id.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
-#include "content/common/frame_resize_params.h"
+#include "content/common/frame_visual_properties.h"
 #include "content/public/common/screen_info.h"
 #include "content/renderer/child_frame_compositor.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
@@ -32,6 +32,11 @@
 
 namespace base {
 class UnguessableToken;
+}
+
+namespace cc {
+class Layer;
+class RenderFrameMetadata;
 }
 
 namespace viz {
@@ -76,6 +81,8 @@ class CONTENT_EXPORT BrowserPlugin : public blink::WebPlugin,
 
   void ScreenInfoChanged(const ScreenInfo& screen_info);
 
+  void UpdateCaptureSequenceNumber(uint32_t capture_sequence_number);
+
   // Indicates whether the guest should be focused.
   bool ShouldGuestBeFocused() const;
 
@@ -90,7 +97,7 @@ class CONTENT_EXPORT BrowserPlugin : public blink::WebPlugin,
   // Returns the last allocated LocalSurfaceId.
   const viz::LocalSurfaceId& GetLocalSurfaceId() const;
 
-  void WasResized();
+  void SynchronizeVisualProperties();
 
   // Returns whether a message should be forwarded to BrowserPlugin.
   static bool ShouldForwardToBrowserPlugin(const IPC::Message& message);
@@ -165,17 +172,13 @@ class CONTENT_EXPORT BrowserPlugin : public blink::WebPlugin,
   ~BrowserPlugin() override;
 
   const gfx::Rect& screen_space_rect() const {
-    return pending_resize_params_.screen_space_rect;
+    return pending_visual_properties_.screen_space_rect;
   }
   gfx::Rect FrameRectInPixels() const;
   float GetDeviceScaleFactor() const;
 
   const ScreenInfo& screen_info() const {
-    return pending_resize_params_.screen_info;
-  }
-
-  uint64_t auto_size_sequence_number() const {
-    return pending_resize_params_.auto_resize_sequence_number;
+    return pending_visual_properties_.screen_info;
   }
 
   void UpdateInternalInstanceId();
@@ -192,8 +195,8 @@ class CONTENT_EXPORT BrowserPlugin : public blink::WebPlugin,
       const base::Optional<viz::LocalSurfaceId>& child_local_surface_id);
   void OnGuestGone(int instance_id);
   void OnGuestReady(int instance_id, const viz::FrameSinkId& frame_sink_id);
-  void OnResizeDueToAutoResize(int browser_plugin_instance_id,
-                               uint64_t sequence_number);
+  void OnDidUpdateVisualProperties(int browser_plugin_instance_id,
+                                   const cc::RenderFrameMetadata& metadata);
   void OnEnableAutoResize(int browser_plugin_instance_id,
                           const gfx::Size& min_size,
                           const gfx::Size& max_size);
@@ -218,8 +221,9 @@ class CONTENT_EXPORT BrowserPlugin : public blink::WebPlugin,
 #endif
 
   // ChildFrameCompositor:
-  blink::WebLayer* GetLayer() override;
-  void SetLayer(std::unique_ptr<blink::WebLayer> web_layer) override;
+  cc::Layer* GetLayer() override;
+  void SetLayer(scoped_refptr<cc::Layer> layer,
+                bool prevent_contents_opaque_changes) override;
   SkBitmap* GetSadPageBitmap() override;
 
   // This indicates whether this BrowserPlugin has been attached to a
@@ -258,11 +262,11 @@ class CONTENT_EXPORT BrowserPlugin : public blink::WebPlugin,
   bool enable_surface_synchronization_ = false;
 
   // The last ResizeParams sent to the browser process, if any.
-  base::Optional<FrameResizeParams> sent_resize_params_;
+  base::Optional<FrameVisualProperties> sent_visual_properties_;
 
   // The current set of ResizeParams. This may or may not match
-  // |sent_resize_params_|.
-  FrameResizeParams pending_resize_params_;
+  // |sent_visual_properties_|.
+  FrameVisualProperties pending_visual_properties_;
 
   // We call lifetime managing methods on |delegate_|, but we do not directly
   // own this. The delegate destroys itself.
@@ -281,7 +285,7 @@ class CONTENT_EXPORT BrowserPlugin : public blink::WebPlugin,
   base::WeakPtr<RenderWidget> embedding_render_widget_;
 
   // The layer used to embed the out-of-process content.
-  std::unique_ptr<blink::WebLayer> web_layer_;
+  scoped_refptr<cc::Layer> embedded_layer_;
 
   // Weak factory used in v8 |MakeWeak| callback, since the v8 callback might
   // get called after BrowserPlugin has been destroyed.

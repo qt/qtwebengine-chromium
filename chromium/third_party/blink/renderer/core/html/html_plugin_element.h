@@ -67,7 +67,7 @@ class CORE_EXPORT HTMLPlugInElement
 
  public:
   ~HTMLPlugInElement() override;
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
   bool IsPlugin() override { return true; }
 
@@ -100,12 +100,8 @@ class CORE_EXPORT HTMLPlugInElement
 
   bool ShouldAccelerate() const;
 
-  void RequestPluginCreationWithoutLayoutObjectIfPossible();
-  void CreatePluginWithoutLayoutObject();
-
-  virtual ParsedFeaturePolicy ConstructContainerPolicy(
-      Vector<String>* /* messages */,
-      bool* /* old_syntax */) const;
+  ParsedFeaturePolicy ConstructContainerPolicy(
+      Vector<String>* /* messages */) const override;
 
  protected:
   HTMLPlugInElement(const QualifiedName& tag_name,
@@ -191,8 +187,7 @@ class CORE_EXPORT HTMLPlugInElement
   bool LoadPlugin(const KURL&,
                   const String& mime_type,
                   const PluginParameters& plugin_params,
-                  bool use_fallback,
-                  bool require_layout_object);
+                  bool use_fallback);
   // Perform checks after we have determined that a plugin will be used to
   // show the object (i.e after allowedToLoadObject).
   bool AllowedToLoadPlugin(const KURL&, const String& mime_type);

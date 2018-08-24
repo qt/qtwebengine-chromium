@@ -6,7 +6,7 @@
 #define NGLineBreaker_h
 
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/layout/ng/exclusions/ng_layout_opportunity.h"
+#include "third_party/blink/renderer/core/layout/ng/exclusions/ng_line_layout_opportunity.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_item_result.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_node.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/harf_buzz_shaper.h"
@@ -17,10 +17,12 @@
 namespace blink {
 
 class Hyphenation;
+class NGContainerFragmentBuilder;
 class NGInlineBreakToken;
 class NGInlineItem;
 class NGInlineLayoutStateStack;
 struct NGPositionedFloat;
+struct NGUnpositionedFloat;
 
 // The line breaker needs to know which mode its in to properly handle floats.
 enum class NGLineBreakerMode { kContent, kMinContent, kMaxContent };
@@ -38,14 +40,15 @@ class CORE_EXPORT NGLineBreaker {
                 const NGConstraintSpace&,
                 Vector<NGPositionedFloat>*,
                 Vector<scoped_refptr<NGUnpositionedFloat>>*,
+                NGContainerFragmentBuilder* container_builder,
                 NGExclusionSpace*,
                 unsigned handled_float_index,
                 const NGInlineBreakToken* = nullptr);
-  ~NGLineBreaker() = default;
+  ~NGLineBreaker();
 
   // Compute the next line break point and produces NGInlineItemResults for
   // the line.
-  bool NextLine(const NGLayoutOpportunity&, NGLineInfo*);
+  bool NextLine(const NGLineLayoutOpportunity& line_opportunity, NGLineInfo*);
 
   // Create an NGInlineBreakToken for the last line returned by NextLine().
   scoped_refptr<NGInlineBreakToken> CreateBreakToken(
@@ -63,15 +66,19 @@ class CORE_EXPORT NGLineBreaker {
   struct LineData {
     STACK_ALLOCATED();
 
+    LineData(NGInlineNode node, const NGInlineBreakToken* break_token);
+
     // The current position from inline_start. Unlike NGInlineLayoutAlgorithm
     // that computes position in visual order, this position in logical order.
     LayoutUnit position;
 
-    // The current opportunity.
-    NGLayoutOpportunity opportunity;
+    NGLineLayoutOpportunity line_opportunity;
 
-    LayoutUnit line_left_bfc_offset;
-    LayoutUnit line_right_bfc_offset;
+    // True if this line is the "first formatted line".
+    // https://www.w3.org/TR/CSS22/selector.html#first-formatted-line
+    bool is_first_formatted_line;
+
+    bool use_first_line_style;
 
     // We don't create "certain zero-height line boxes".
     // https://drafts.csswg.org/css2/visuren.html#phantom-line-box
@@ -85,16 +92,20 @@ class CORE_EXPORT NGLineBreaker {
     bool is_after_forced_break = false;
 
     LayoutUnit AvailableWidth() const {
-      DCHECK_GE(line_right_bfc_offset, line_left_bfc_offset);
-      return line_right_bfc_offset - line_left_bfc_offset;
+      return line_opportunity.AvailableInlineSize();
     }
     bool CanFit() const { return position <= AvailableWidth(); }
     bool CanFit(LayoutUnit extra) const {
       return position + extra <= AvailableWidth();
     }
+    bool CanFloatFit(LayoutUnit extra) const {
+      return position + extra <= line_opportunity.AvailableFloatInlineSize();
+    }
   };
 
-  const String& Text() const { return break_iterator_.GetString(); }
+  const String& Text() const { return items_data_.text_content; }
+  const Vector<NGInlineItem>& Items() const { return items_data_.items; }
+
   NGInlineItemResult* AddItem(const NGInlineItem&,
                               unsigned end_offset,
                               NGInlineItemResults*);
@@ -104,7 +115,7 @@ class CORE_EXPORT NGLineBreaker {
 
   void BreakLine(NGLineInfo*);
 
-  void PrepareNextLine(const NGLayoutOpportunity&, NGLineInfo*);
+  void PrepareNextLine(const NGLineLayoutOpportunity&, NGLineInfo*);
 
   void UpdatePosition(const NGInlineItemResults&);
   void ComputeLineLocation(NGLineInfo*) const;
@@ -128,6 +139,7 @@ class CORE_EXPORT NGLineBreaker {
                  LayoutUnit available_width,
                  NGLineInfo*);
   LineBreakState HandleTrailingSpaces(const NGInlineItem&, NGLineInfo*);
+  void RemoveTrailingCollapsibleSpace(NGLineInfo*);
   void AppendHyphen(const NGInlineItem& item, NGLineInfo*);
 
   LineBreakState HandleControlItem(const NGInlineItem&,
@@ -137,7 +149,7 @@ class CORE_EXPORT NGLineBreaker {
                                        LineBreakState,
                                        NGLineInfo*);
   void HandleAtomicInline(const NGInlineItem&, NGLineInfo*);
-  void HandleFloat(const NGInlineItem&, NGInlineItemResult*);
+  void HandleFloat(const NGInlineItem&, NGLineInfo*, NGInlineItemResult*);
 
   void HandleOpenTag(const NGInlineItem&, NGInlineItemResult*);
   void HandleCloseTag(const NGInlineItem&, NGInlineItemResults*);
@@ -147,33 +159,33 @@ class CORE_EXPORT NGLineBreaker {
   void Rewind(NGLineInfo*, unsigned new_end);
 
   LayoutObject* CurrentLayoutObject(const NGLineInfo&) const;
-  void TruncateOverflowingText(NGLineInfo*);
 
   void SetCurrentStyle(const ComputedStyle&);
 
   void MoveToNextOf(const NGInlineItem&);
   void MoveToNextOf(const NGInlineItemResult&);
 
-  bool IsFirstFormattedLine() const;
-  void ComputeBaseDirection();
+  void ComputeBaseDirection(const NGLineInfo&);
+  bool IsTrailing(const NGInlineItem&, const NGLineInfo&) const;
 
   LineData line_;
   NGInlineNode node_;
+  const NGInlineItemsData& items_data_;
+
   NGLineBreakerMode mode_;
   const NGConstraintSpace& constraint_space_;
   Vector<NGPositionedFloat>* positioned_floats_;
   Vector<scoped_refptr<NGUnpositionedFloat>>* unpositioned_floats_;
+  NGContainerFragmentBuilder* container_builder_; /* May be nullptr */
   NGExclusionSpace* exclusion_space_;
   scoped_refptr<const ComputedStyle> current_style_;
 
   unsigned item_index_ = 0;
   unsigned offset_ = 0;
-  bool previous_line_had_forced_break_ = false;
-  LayoutUnit bfc_line_offset_;
-  LayoutUnit bfc_block_offset_;
   LazyLineBreakIterator break_iterator_;
   HarfBuzzShaper shaper_;
   ShapeResultSpacing<String> spacing_;
+  bool previous_line_had_forced_break_ = false;
   const Hyphenation* hyphenation_ = nullptr;
 
   // Keep track of handled float items. See HandleFloat().

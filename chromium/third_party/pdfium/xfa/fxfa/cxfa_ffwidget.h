@@ -39,8 +39,7 @@ void XFA_DrawImage(CXFA_Graphics* pGS,
                    const CFX_Matrix& matrix,
                    const RetainPtr<CFX_DIBitmap>& pDIBitmap,
                    XFA_AttributeEnum iAspect,
-                   int32_t iImageXDpi,
-                   int32_t iImageYDpi,
+                   const CFX_Size& dpi,
                    XFA_AttributeEnum iHorzAlign = XFA_AttributeEnum::Left,
                    XFA_AttributeEnum iVertAlign = XFA_AttributeEnum::Top);
 
@@ -50,9 +49,7 @@ RetainPtr<CFX_DIBitmap> XFA_LoadImageFromBuffer(
     int32_t& iImageXDpi,
     int32_t& iImageYDpi);
 
-void XFA_RectWithoutMargin(CFX_RectF& rt,
-                           const CXFA_Margin* margin,
-                           bool bUI = false);
+void XFA_RectWithoutMargin(CFX_RectF* rt, const CXFA_Margin* margin);
 CXFA_FFWidget* XFA_GetWidgetFromLayoutItem(CXFA_LayoutItem* pLayoutItem);
 
 class CXFA_CalcData {
@@ -140,6 +137,7 @@ class CXFA_FFWidget : public CXFA_ContentLayoutItem {
   virtual void SelectAll();
   virtual void Delete();
   virtual void DeSelect();
+  virtual WideString GetText();
 
   virtual FormFieldType GetFormFieldType();
 

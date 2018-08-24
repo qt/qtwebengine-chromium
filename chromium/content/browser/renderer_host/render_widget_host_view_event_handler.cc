@@ -27,7 +27,7 @@
 #include "ui/base/ime/text_input_client.h"
 #include "ui/events/blink/blink_event_util.h"
 #include "ui/events/blink/web_input_event.h"
-#include "ui/events/keycodes/dom/keycode_converter.h"
+#include "ui/events/keycodes/dom/dom_code.h"
 #include "ui/touch_selection/touch_selection_controller.h"
 
 #if defined(OS_WIN)
@@ -234,14 +234,14 @@ void RenderWidgetHostViewEventHandler::UnlockMouse() {
 }
 
 bool RenderWidgetHostViewEventHandler::LockKeyboard(
-    base::Optional<base::flat_set<int>> keys) {
+    base::Optional<base::flat_set<ui::DomCode>> codes) {
   aura::Window* root_window = window_->GetRootWindow();
   if (!root_window)
     return false;
 
   // Remove existing hook, if registered.
   UnlockKeyboard();
-  scoped_keyboard_hook_ = root_window->CaptureSystemKeyEvents(std::move(keys));
+  scoped_keyboard_hook_ = root_window->CaptureSystemKeyEvents(std::move(codes));
 
   return IsKeyboardLocked();
 }
@@ -442,9 +442,10 @@ void RenderWidgetHostViewEventHandler::OnScrollEvent(ui::ScrollEvent* event) {
     gesture_event.SetPositionInWidget(event->location_f());
     blink::WebMouseWheelEvent mouse_wheel_event = ui::MakeWebMouseWheelEvent(
         *event, base::Bind(&GetScreenLocationFromEvent));
-    if (host_view_->wheel_scroll_latching_enabled())
+    if (host_view_->wheel_scroll_latching_enabled()) {
       mouse_wheel_phase_handler_.AddPhaseIfNeededAndScheduleEndEvent(
           mouse_wheel_event, should_route_event);
+    }
     if (should_route_event) {
       host_->delegate()->GetInputEventRouter()->RouteGestureEvent(
           host_view_, &gesture_event,
@@ -568,7 +569,6 @@ void RenderWidgetHostViewEventHandler::OnGestureEvent(ui::GestureEvent* event) {
 
   if (gesture.GetType() != blink::WebInputEvent::kUndefined) {
     if (event->type() == ui::ET_GESTURE_SCROLL_BEGIN) {
-      RecordAction(base::UserMetricsAction("TouchscreenScroll"));
       // If there is a current scroll going on and a new scroll that isn't
       // wheel based send a synthetic wheel event with kPhaseEnded to cancel
       // the current scroll.
@@ -953,11 +953,10 @@ bool RenderWidgetHostViewEventHandler::IsKeyLocked(const ui::KeyEvent& event) {
   // Note: We never consider 'ESC' to be locked as we don't want to prevent it
   // from being handled by the browser.  Doing so would have adverse effects
   // such as the user being unable to exit fullscreen mode.
-  if (!IsKeyboardLocked() || event.key_code() == ui::VKEY_ESCAPE)
+  if (!IsKeyboardLocked() || event.code() == ui::DomCode::ESCAPE)
     return false;
 
-  int key_code = ui::KeycodeConverter::DomCodeToNativeKeycode(event.code());
-  return scoped_keyboard_hook_->IsKeyLocked(key_code);
+  return scoped_keyboard_hook_->IsKeyLocked(event.code());
 }
 
 }  // namespace content

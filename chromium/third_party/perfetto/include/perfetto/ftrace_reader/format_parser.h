@@ -17,13 +17,75 @@
 #ifndef INCLUDE_PERFETTO_FTRACE_READER_FORMAT_PARSER_H_
 #define INCLUDE_PERFETTO_FTRACE_READER_FORMAT_PARSER_H_
 
+#include <stdint.h>
 #include <string>
+
+#include <iosfwd>
+#include <iostream>
+#include <string>
+#include <tuple>
+#include <vector>
 
 namespace perfetto {
 
-struct FtraceEvent;
+struct FtraceEvent {
+  struct Field {
+    std::string type_and_name;
+    uint16_t offset;
+    uint16_t size;
+    bool is_signed;
 
-bool ParseFtraceEvent(const std::string& input, FtraceEvent* output = nullptr);
+    bool operator==(const Field& other) const {
+      return std::tie(type_and_name, offset, size, is_signed) ==
+             std::tie(other.type_and_name, other.offset, other.size,
+                      other.is_signed);
+    }
+  };
+
+  std::string name;
+  uint32_t id;
+  std::vector<Field> common_fields;
+  std::vector<Field> fields;
+};
+
+std::string GetNameFromTypeAndName(const std::string& type_and_name);
+
+// Allow gtest to pretty print FtraceEvent::Field.
+::std::ostream& operator<<(::std::ostream& os, const FtraceEvent::Field&);
+void PrintTo(const FtraceEvent::Field& args, ::std::ostream* os);
+
+// Parses only the body (i.e. contents of format) of an ftrace event format
+// file, e.g.
+//
+//   field:unsigned short common_type;  offset:0;  size:2;  signed:0;
+//   field:unsigned char common_flags;  offset:2;  size:1;  signed:0;
+//   field:unsigned char common_preempt_count;  offset:3;  size:1;  signed:0;
+//   field:int common_pid;  offset:4;  size:4;  signed:1;
+//
+//   field:dev_t dev;  offset:8;  size:4;  signed:0;
+//   field:ino_t ino;  offset:12;  size:4;  signed:0;
+//   field:ino_t dir;  offset:16;  size:4;  signed:0;
+//   field:__u16 mode;  offset:20;  size:2;  signed:0;
+bool ParseFtraceEventBody(std::string input,
+                          std::vector<FtraceEvent::Field>* common_fields,
+                          std::vector<FtraceEvent::Field>* fields,
+                          bool disable_logging_for_testing = false);
+// Parses ftrace event format file. This includes the headers specifying
+// name and ID of the event, e.g.
+//
+// name: ext4_allocate_inode
+// ID: 309
+// format:
+//   field:unsigned short common_type;  offset:0;  size:2;  signed:0;
+//   field:unsigned char common_flags;  offset:2;  size:1;  signed:0;
+//   field:unsigned char common_preempt_count;  offset:3;  size:1;  signed:0;
+//   field:int common_pid;  offset:4;  size:4;  signed:1;
+//
+//   field:dev_t dev;  offset:8;  size:4;  signed:0;
+//   field:ino_t ino;  offset:12;  size:4;  signed:0;
+//   field:ino_t dir;  offset:16;  size:4;  signed:0;
+//   field:__u16 mode;  offset:20;  size:2;  signed:0;
+bool ParseFtraceEvent(std::string input, FtraceEvent* output = nullptr);
 
 }  // namespace perfetto
 

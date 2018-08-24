@@ -8,6 +8,7 @@
 
 #include <utility>
 
+#include "constants/stream_dict_common.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_number.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
@@ -36,7 +37,11 @@ CPDF_Object::Type CPDF_Stream::GetType() const {
   return STREAM;
 }
 
-CPDF_Dictionary* CPDF_Stream::GetDict() const {
+CPDF_Dictionary* CPDF_Stream::GetDict() {
+  return m_pDict.get();
+}
+
+const CPDF_Dictionary* CPDF_Stream::GetDict() const {
   return m_pDict.get();
 }
 
@@ -83,11 +88,12 @@ std::unique_ptr<CPDF_Object> CPDF_Stream::CloneNonCyclic(
   pAcc->LoadAllDataRaw();
 
   uint32_t streamSize = pAcc->GetSize();
-  CPDF_Dictionary* pDict = GetDict();
+  const CPDF_Dictionary* pDict = GetDict();
   std::unique_ptr<CPDF_Dictionary> pNewDict;
   if (pDict && !pdfium::ContainsKey(*pVisited, pDict)) {
-    pNewDict = ToDictionary(
-        static_cast<CPDF_Object*>(pDict)->CloneNonCyclic(bDirect, pVisited));
+    pNewDict =
+        ToDictionary(static_cast<const CPDF_Object*>(pDict)->CloneNonCyclic(
+            bDirect, pVisited));
   }
   return pdfium::MakeUnique<CPDF_Stream>(pAcc->DetachData(), streamSize,
                                          std::move(pNewDict));
@@ -96,7 +102,7 @@ std::unique_ptr<CPDF_Object> CPDF_Stream::CloneNonCyclic(
 void CPDF_Stream::SetDataAndRemoveFilter(const uint8_t* pData, uint32_t size) {
   SetData(pData, size);
   m_pDict->RemoveFor("Filter");
-  m_pDict->RemoveFor("DecodeParms");
+  m_pDict->RemoveFor(pdfium::stream::kDecodeParms);
 }
 
 void CPDF_Stream::SetDataAndRemoveFilter(std::ostringstream* stream) {

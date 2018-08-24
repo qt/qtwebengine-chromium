@@ -184,10 +184,6 @@ class CORE_EXPORT LayoutView final : public LayoutBlockFlow {
 
   IntRect DocumentRect() const;
 
-  // LayoutObject that paints the root background has background-images which
-  // all have background-attachment: fixed.
-  bool RootBackgroundIsEntirelyFixed() const;
-
   IntervalArena* GetIntervalArena();
 
   void SetLayoutQuoteHead(LayoutQuote* head) { layout_quote_head_ = head; }
@@ -224,7 +220,6 @@ class CORE_EXPORT LayoutView final : public LayoutBlockFlow {
     layout_state_ = layout_state_->Next();
   }
 
-  LayoutRect VisualOverflowRect() const override;
   LayoutRect LocalVisualRectIgnoringVisibility() const override;
 
   // Invalidates paint for the entire view, including composited descendants,
@@ -243,13 +238,9 @@ class CORE_EXPORT LayoutView final : public LayoutBlockFlow {
     return false;
   }
 
-  // The rootLayerScrolls setting will ultimately determine whether
-  // LocalFrameView or PaintLayerScrollableArea handle the scroll.
-  ScrollResult Scroll(ScrollGranularity, const FloatSize&) override;
-
   LayoutRect DebugRect() const override;
 
-  virtual IntSize ScrolledContentOffset() const;
+  IntSize ScrolledContentOffset() const override;
 
  private:
   void MapLocalToAncestor(
@@ -275,16 +266,17 @@ class CORE_EXPORT LayoutView final : public LayoutBlockFlow {
 #endif
 
   void UpdateFromStyle() override;
-  bool AllowsOverflowClip() const override;
 
   bool ShouldUsePrintingLayout() const;
 
-  int ViewLogicalWidthForBoxSizing() const;
-  int ViewLogicalHeightForBoxSizing() const;
+  int ViewLogicalWidthForBoxSizing() const {
+    return ViewLogicalWidth(kIncludeScrollbars);
+  }
+  int ViewLogicalHeightForBoxSizing() const {
+    return ViewLogicalHeight(kIncludeScrollbars);
+  }
 
   bool UpdateLogicalWidthAndColumnWidth() override;
-
-  bool PaintedOutputOfObjectHasNoEffectRegardlessOfSize() const override;
 
   UntracedMember<LocalFrameView> frame_view_;
 

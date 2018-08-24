@@ -41,7 +41,7 @@
 
 namespace base {
 namespace trace_event {
-class ConvertableToTraceFormat;
+class TracedValue;
 }
 }
 
@@ -117,7 +117,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
   // A layer's bounds are in logical, non-page-scaled pixels (however, the
   // root layer's bounds are in physical pixels).
   void SetBounds(const gfx::Size& bounds);
-  gfx::Size bounds() const { return inputs_.bounds; }
+  const gfx::Size& bounds() const { return inputs_.bounds; }
 
   void SetOverscrollBehavior(const OverscrollBehavior& behavior);
   OverscrollBehavior overscroll_behavior() const {
@@ -136,7 +136,13 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
   Layer* mask_layer() { return inputs_.mask_layer.get(); }
   const Layer* mask_layer() const { return inputs_.mask_layer.get(); }
 
+  // Marks the |dirty_rect| as being changed, which will cause a commit and
+  // the compositor to submit a new frame with a damage rect that includes the
+  // layer's dirty area.
   virtual void SetNeedsDisplayRect(const gfx::Rect& dirty_rect);
+  // Marks the entire layer's bounds as being changed, which will cause a commit
+  // and the compositor to submit a new frame with a damage rect that includes
+  // the entire layer.
   void SetNeedsDisplay() { SetNeedsDisplayRect(gfx::Rect(bounds())); }
 
   virtual void SetOpacity(float opacity);
@@ -166,8 +172,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
   const FilterOperations& filters() const { return inputs_.filters; }
 
   // Background filters are filters applied to what is behind this layer, when
-  // they are viewed through non-opaque regions in this layer. They are used
-  // through the WebLayer interface, and are not exposed to HTML.
+  // they are viewed through non-opaque regions in this layer.
   void SetBackgroundFilters(const FilterOperations& filters);
   const FilterOperations& background_filters() const {
     return inputs_.background_filters;
@@ -177,7 +182,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
   bool contents_opaque() const { return inputs_.contents_opaque; }
 
   void SetPosition(const gfx::PointF& position);
-  gfx::PointF position() const { return inputs_.position; }
+  const gfx::PointF& position() const { return inputs_.position; }
 
   // A layer that is a container for fixed position layers cannot be both
   // scrollable and have a non-identity transform.
@@ -204,7 +209,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
   const gfx::Transform& transform() const { return inputs_.transform; }
 
   void SetTransformOrigin(const gfx::Point3F&);
-  gfx::Point3F transform_origin() const { return inputs_.transform_origin; }
+  const gfx::Point3F& transform_origin() const {
+    return inputs_.transform_origin;
+  }
 
   void SetScrollParent(Layer* parent);
 
@@ -230,14 +237,18 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
 
   void SetScrollOffset(const gfx::ScrollOffset& scroll_offset);
 
-  gfx::ScrollOffset scroll_offset() const { return inputs_.scroll_offset; }
+  const gfx::ScrollOffset& scroll_offset() const {
+    return inputs_.scroll_offset;
+  }
+  // Called internally during commit to update the layer with state from the
+  // compositor thread. Not to be called externally by users of this class.
   void SetScrollOffsetFromImplSide(const gfx::ScrollOffset& scroll_offset);
 
   // Marks this layer as being scrollable and needing an associated scroll node.
   // The scroll node's bounds and container_bounds will be kept in sync
   // with this layer. Once scrollable, a Layer cannot become un-scrollable.
   void SetScrollable(const gfx::Size& scroll_container_bounds);
-  gfx::Size scroll_container_bounds() const {
+  const gfx::Size& scroll_container_bounds() const {
     return inputs_.scroll_container_bounds;
   }
   bool scrollable() const { return inputs_.scrollable; }
@@ -284,7 +295,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
     return force_render_surface_for_testing_;
   }
 
-  gfx::ScrollOffset CurrentScrollOffset() const {
+  const gfx::ScrollOffset& CurrentScrollOffset() const {
     return inputs_.scroll_offset;
   }
 
@@ -310,6 +321,11 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
 
   virtual void SetLayerTreeHost(LayerTreeHost* host);
 
+  // When true the layer may contribute to the compositor's output. When false,
+  // it does not. This property does not apply to children of the layer, they
+  // may contribute while this layer does not. The layer itself will determine
+  // if it has content to contribute, but when false, this prevents it from
+  // doing so.
   void SetIsDrawable(bool is_drawable);
 
   void SetHideLayerAndSubtree(bool hide);
@@ -320,6 +336,10 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
 
   int NumDescendantsThatDrawContent() const;
 
+  // Is true if the layer will contribute content to the compositor's output.
+  // Will be false if SetIsDrawable(false) is called. But will also be false if
+  // the layer itself has no content to contribute, even though the layer was
+  // given SetIsDrawable(true).
   // This is only virtual for tests.
   // TODO(awoloszyn): Remove this once we no longer need it for tests
   virtual bool DrawsContent() const;
@@ -331,11 +351,10 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
   virtual bool HasSlowPaths() const;
   virtual bool HasNonAAPaint() const;
 
-  virtual std::unique_ptr<base::trace_event::ConvertableToTraceFormat>
-  TakeDebugInfo();
-  virtual void didUpdateMainThreadScrollingReasons();
+  void UpdateDebugInfo();
 
   void SetLayerClient(base::WeakPtr<LayerClient> client);
+  LayerClient* GetLayerClientForTesting() const { return inputs_.client.get(); }
 
   virtual bool IsSnapped();
 
@@ -628,9 +647,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
 
     // The following elements can not and are not serialized.
     base::WeakPtr<LayerClient> client;
-    // During commit, the main thread is blocked on the compositor thread, so
-    // we use the raw pointer to the LayerClient.
-    LayerClient* client_rawptr;
+    std::unique_ptr<base::trace_event::TracedValue> debug_info;
 
     base::Callback<void(const gfx::ScrollOffset&, const ElementId&)>
         did_scroll_callback;

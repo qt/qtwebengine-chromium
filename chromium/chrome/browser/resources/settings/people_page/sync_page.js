@@ -15,6 +15,24 @@ const RadioButtonNames = {
 };
 
 /**
+ * Names of the individual data type properties to be cached from
+ * settings.SyncPrefs when the user checks 'Sync All'.
+ * @type {!Array<string>}
+ */
+const SyncPrefsIndividualDataTypes = [
+  'appsSynced',
+  'extensionsSynced',
+  'preferencesSynced',
+  'autofillSynced',
+  'typedUrlsSynced',
+  'themesSynced',
+  'bookmarksSynced',
+  'passwordsSynced',
+  'tabsSynced',
+  'paymentsIntegrationEnabled',
+];
+
+/**
  * @fileoverview
  * 'settings-sync-page' is the settings page containing sync settings.
  */
@@ -27,6 +45,14 @@ Polymer({
   ],
 
   properties: {
+    /**
+     * Preferences state.
+     */
+    prefs: {
+      type: Object,
+      notify: true,
+    },
+
     /** @private */
     pages_: {
       type: Object,
@@ -44,6 +70,12 @@ Polymer({
       type: String,
       value: settings.PageStatus.CONFIGURE,
     },
+
+    /**
+     * Dictionary defining page visibility.
+     * @type {!PrivacyPageVisibility}
+     */
+    pageVisibility: Object,
 
     /**
      * The current sync preferences, supplied by SyncBrowserProxy.
@@ -106,6 +138,12 @@ Polymer({
     },
 
     /** @private */
+    personalizeSectionOpened_: {
+      type: Boolean,
+      value: true,
+    },
+
+    /** @private */
     syncSectionOpened_: {
       type: Boolean,
       value: true,
@@ -138,6 +176,13 @@ Polymer({
    * @private {boolean}
    */
   didAbort_: false,
+
+  /**
+   * Caches the individually selected synced data types. This is used to
+   * be able to restore the selections after checking and unchecking Sync All.
+   * @private {?Object}
+   */
+  cachedSyncPrefs_: null,
 
   /** @override */
   created: function() {
@@ -245,7 +290,7 @@ Polymer({
       listenOnce(document, 'show-container', () => {
         const input = /** @type {!PaperInputElement} */ (
             this.$$('#existingPassphraseInput'));
-        input.inputElement.focus();
+        input.focus();
       });
     }
   },
@@ -256,8 +301,25 @@ Polymer({
    * @private
    */
   onSyncAllDataTypesChanged_: function(event) {
-    this.browserProxy_.setSyncEverything(event.target.checked)
-        .then(this.handlePageStatusChanged_.bind(this));
+    if (event.target.checked) {
+      this.set('syncPrefs.syncAllDataTypes', true);
+
+      // Cache the previously selected preference before checking every box.
+      this.cachedSyncPrefs_ = {};
+      for (const dataType of SyncPrefsIndividualDataTypes) {
+        // These are all booleans, so this shallow copy is sufficient.
+        this.cachedSyncPrefs_[dataType] = this.syncPrefs[dataType];
+
+        this.set(['syncPrefs', dataType], true);
+      }
+    } else if (this.cachedSyncPrefs_) {
+      // Restore the previously selected preference.
+      for (const dataType of SyncPrefsIndividualDataTypes) {
+        this.set(['syncPrefs', dataType], this.cachedSyncPrefs_[dataType]);
+      }
+    }
+
+    this.onSingleSyncDataTypeChanged_();
   },
 
   /**

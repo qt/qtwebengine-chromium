@@ -10,6 +10,7 @@
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/single_thread_task_runner.h"
 #include "base/trace_event/trace_event.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/scheduler/base/task_queue.h"
@@ -20,6 +21,9 @@
 #include "third_party/blink/renderer/platform/scheduler/util/tracing_helper.h"
 
 namespace base {
+namespace sequence_manager {
+class TaskQueue;
+}  // namespace sequence_manager
 namespace trace_event {
 class BlameContext;
 class TracedValue;
@@ -32,7 +36,6 @@ namespace scheduler {
 class MainThreadSchedulerImpl;
 class MainThreadTaskQueue;
 class PageSchedulerImpl;
-class TaskQueue;
 
 namespace main_thread_scheduler_impl_unittest {
 class MainThreadSchedulerImplTest;
@@ -63,8 +66,6 @@ class PLATFORM_EXPORT FrameSchedulerImpl : public FrameScheduler {
   bool IsFrameVisible() const override;
   bool IsPageVisible() const override;
   void SetPaused(bool frame_paused) override;
-  void SetPageFrozen(bool) override;
-  void SetKeepActive(bool) override;
 
   void SetCrossOrigin(bool cross_origin) override;
   bool IsCrossOrigin() const override;
@@ -84,12 +85,17 @@ class PLATFORM_EXPORT FrameSchedulerImpl : public FrameScheduler {
   void AsValueInto(base::trace_event::TracedValue* state) const;
   bool IsExemptFromBudgetBasedThrottling() const override;
 
-  scoped_refptr<TaskQueue> ControlTaskQueue();
-  void SetPageVisibility(PageVisibilityState page_visibility);
+  scoped_refptr<base::SingleThreadTaskRunner> ControlTaskRunner();
+
+  void UpdatePolicy();
 
   bool has_active_connection() const { return has_active_connection_; }
 
   void OnTraceLogEnabled() { tracing_controller_.OnTraceLogEnabled(); }
+
+  void SetPageVisibilityForTracing(PageVisibilityState page_visibility);
+  void SetPageKeepActiveForTracing(bool keep_active);
+  void SetPageFrozenForTracing(bool frozen);
 
  private:
   friend class PageSchedulerImpl;
@@ -125,23 +131,24 @@ class PLATFORM_EXPORT FrameSchedulerImpl : public FrameScheduler {
   void RemoveThrottleableQueueFromBackgroundCPUTimeBudgetPool();
   void ApplyPolicyToThrottleableQueue();
   bool ShouldThrottleTimers() const;
-  void UpdateTaskQueueThrottling();
-  FrameScheduler::ThrottlingState CalculateThrottlingState() const;
-  void UpdateThrottlingState();
+  FrameScheduler::ThrottlingState CalculateThrottlingState(
+      ObserverType type) const;
   void RemoveThrottlingObserver(Observer* observer);
-  void UpdateTaskQueues();
-  void UpdateTaskQueue(const scoped_refptr<MainThreadTaskQueue>& queue,
-                       TaskQueue::QueueEnabledVoter* voter);
+  void UpdateQueuePolicy(
+      const scoped_refptr<MainThreadTaskQueue>& queue,
+      base::sequence_manager::TaskQueue::QueueEnabledVoter* voter);
+  void UpdateThrottling();
+  void NotifyThrottlingObservers();
 
   void DidOpenActiveConnection();
   void DidCloseActiveConnection();
 
-  scoped_refptr<TaskQueue> LoadingTaskQueue();
-  scoped_refptr<TaskQueue> LoadingControlTaskQueue();
-  scoped_refptr<TaskQueue> ThrottleableTaskQueue();
-  scoped_refptr<TaskQueue> DeferrableTaskQueue();
-  scoped_refptr<TaskQueue> PausableTaskQueue();
-  scoped_refptr<TaskQueue> UnpausableTaskQueue();
+  scoped_refptr<base::sequence_manager::TaskQueue> LoadingTaskQueue();
+  scoped_refptr<base::sequence_manager::TaskQueue> LoadingControlTaskQueue();
+  scoped_refptr<base::sequence_manager::TaskQueue> ThrottleableTaskQueue();
+  scoped_refptr<base::sequence_manager::TaskQueue> DeferrableTaskQueue();
+  scoped_refptr<base::sequence_manager::TaskQueue> PausableTaskQueue();
+  scoped_refptr<base::sequence_manager::TaskQueue> UnpausableTaskQueue();
 
   base::WeakPtr<FrameSchedulerImpl> GetWeakPtr();
 
@@ -154,23 +161,23 @@ class PLATFORM_EXPORT FrameSchedulerImpl : public FrameScheduler {
   scoped_refptr<MainThreadTaskQueue> deferrable_task_queue_;
   scoped_refptr<MainThreadTaskQueue> pausable_task_queue_;
   scoped_refptr<MainThreadTaskQueue> unpausable_task_queue_;
-  std::unique_ptr<TaskQueue::QueueEnabledVoter> loading_queue_enabled_voter_;
-  std::unique_ptr<TaskQueue::QueueEnabledVoter>
+  std::unique_ptr<base::sequence_manager::TaskQueue::QueueEnabledVoter>
+      loading_queue_enabled_voter_;
+  std::unique_ptr<base::sequence_manager::TaskQueue::QueueEnabledVoter>
       loading_control_queue_enabled_voter_;
-  std::unique_ptr<TaskQueue::QueueEnabledVoter>
+  std::unique_ptr<base::sequence_manager::TaskQueue::QueueEnabledVoter>
       throttleable_queue_enabled_voter_;
-  std::unique_ptr<TaskQueue::QueueEnabledVoter> deferrable_queue_enabled_voter_;
-  std::unique_ptr<TaskQueue::QueueEnabledVoter> pausable_queue_enabled_voter_;
+  std::unique_ptr<base::sequence_manager::TaskQueue::QueueEnabledVoter>
+      deferrable_queue_enabled_voter_;
+  std::unique_ptr<base::sequence_manager::TaskQueue::QueueEnabledVoter>
+      pausable_queue_enabled_voter_;
   MainThreadSchedulerImpl* main_thread_scheduler_;  // NOT OWNED
   PageSchedulerImpl* parent_page_scheduler_;        // NOT OWNED
   base::trace_event::BlameContext* blame_context_;  // NOT OWNED
-  std::set<Observer*> loader_observers_;            // NOT OWNED
+  // Observers are not owned by the scheduler.
+  std::unordered_map<Observer*, ObserverType> throttling_observers_;
   FrameScheduler::ThrottlingState throttling_state_;
   TraceableState<bool, kTracingCategoryNameInfo> frame_visible_;
-  TraceableState<PageVisibilityState, kTracingCategoryNameInfo>
-      page_visibility_;
-  TraceableState<bool, kTracingCategoryNameInfo> page_frozen_;
-  TraceableState<bool, kTracingCategoryNameInfo> keep_active_;
   TraceableState<bool, kTracingCategoryNameInfo> frame_paused_;
   TraceableState<FrameOriginType, kTracingCategoryNameInfo> frame_origin_type_;
   StateTracer<kTracingCategoryNameInfo> url_tracer_;
@@ -180,6 +187,14 @@ class PLATFORM_EXPORT FrameSchedulerImpl : public FrameScheduler {
   // Trace active connection count.
   int active_connection_count_;
   TraceableState<bool, kTracingCategoryNameInfo> has_active_connection_;
+
+  // These are the states of the Page.
+  // They should be accessed via GetPageScheduler()->SetPageState().
+  // they are here because we don't support page-level tracing yet.
+  TraceableState<bool, kTracingCategoryNameInfo> page_frozen_for_tracing_;
+  TraceableState<PageVisibilityState, kTracingCategoryNameInfo>
+      page_visibility_for_tracing_;
+  TraceableState<bool, kTracingCategoryNameInfo> page_keep_active_for_tracing_;
 
   base::WeakPtrFactory<FrameSchedulerImpl> weak_factory_;
 

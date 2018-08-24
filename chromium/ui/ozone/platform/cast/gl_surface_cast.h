@@ -5,6 +5,8 @@
 #ifndef UI_OZONE_PLATFORM_CAST_GL_SURFACE_CAST_H_
 #define UI_OZONE_PLATFORM_CAST_GL_SURFACE_CAST_H_
 
+#include <vector>
+
 #include "base/macros.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/native_widget_types.h"
@@ -36,7 +38,8 @@ class GLSurfaceCast : public gl::NativeViewGLSurfaceEGL {
                             gl::GLImage* image,
                             const gfx::Rect& bounds_rect,
                             const gfx::RectF& crop_rect,
-                            bool enable_blend) override;
+                            bool enable_blend,
+                            std::unique_ptr<gfx::GpuFence> gpu_fence) override;
   EGLConfig GetConfig() override;
 
  protected:

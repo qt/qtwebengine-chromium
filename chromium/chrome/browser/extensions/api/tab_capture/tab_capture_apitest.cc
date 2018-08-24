@@ -3,8 +3,10 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
+#include "base/feature_list.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/test_timeouts.h"
@@ -21,6 +23,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/common/content_features.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/extension_registry.h"
@@ -155,7 +158,13 @@ TEST(TabCaptureCaptureOffscreenTabTest, DetermineInitialSize) {
 // Tests API behaviors, including info queries, and constraints violations.
 IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_ApiTests) {
   AddExtensionToCommandLineWhitelist();
-  ASSERT_TRUE(RunExtensionSubtest("tab_capture", "api_tests.html")) << message_;
+  ASSERT_TRUE(RunExtensionSubtest(
+      "tab_capture", base::StringPrintf("api_tests.html%s",
+                                        base::FeatureList::IsEnabled(
+                                            features::kAudioServiceAudioStreams)
+                                            ? ""
+                                            : "?includeLegacyUnmuteTest=true")))
+      << message_;
 }
 
 #if defined(OS_MACOSX) && defined(ADDRESS_SANITIZER)
@@ -259,15 +268,10 @@ IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_GetUserMediaTest) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-// http://crbug.com/177163
-#if defined(OS_WIN) && !defined(NDEBUG)
-#define MAYBE_ActiveTabPermission DISABLED_ActiveTabPermission
-#else
-#define MAYBE_ActiveTabPermission ActiveTabPermission
-#endif
+// http://crbug.com/177163, http://crbug.com/427730
 // Make sure tabCapture.capture only works if the tab has been granted
 // permission via an extension icon click or the extension is whitelisted.
-IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_ActiveTabPermission) {
+IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, DISABLED_ActiveTabPermission) {
   ExtensionTestMessageListener before_open_tab("ready1", true);
   ExtensionTestMessageListener before_grant_permission("ready2", true);
   ExtensionTestMessageListener before_open_new_tab("ready3", true);
@@ -338,15 +342,11 @@ IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, DISABLED_FullscreenEvents) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-// Times out on Win dbg bots: http://crbug.com/177163
-// Flaky on MSan bots: http://crbug.com/294431
-#if (defined(OS_WIN) && !defined(NDEBUG)) || defined(MEMORY_SANITIZER)
-#define MAYBE_GrantForChromePages DISABLED_GrantForChromePages
-#else
-#define MAYBE_GrantForChromePages GrantForChromePages
-#endif
+// Times out on Win dbg bots: https://crbug.com/177163
+// Flaky on MSan bots: https://crbug.com/294431
+// But really, just flaky everywhere. http://crbug.com/294431#c33
 // Make sure tabCapture API can be granted for Chrome:// pages.
-IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_GrantForChromePages) {
+IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, DISABLED_GrantForChromePages) {
   ExtensionTestMessageListener before_open_tab("ready1", true);
   ASSERT_TRUE(RunExtensionSubtest("tab_capture",
                                   "active_tab_chrome_pages.html"))
@@ -436,7 +436,7 @@ IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_TabIndicator) {
       if (alert_state != last_alert_state_) {
         last_alert_state_ = alert_state;
         base::ThreadTaskRunnerHandle::Get()->PostTask(
-            FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
+            FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated());
       }
     }
 

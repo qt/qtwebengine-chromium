@@ -33,14 +33,22 @@ class PictureInPictureWindowController {
 
   virtual ~PictureInPictureWindowController() = default;
 
-  virtual void Show() = 0;
+  // Shows the Picture-in-Picture window.
+  // Returns the size of the window in pixels.
+  virtual gfx::Size Show() = 0;
+
   virtual void Close() = 0;
   virtual void EmbedSurface(const viz::SurfaceId& surface_id,
                             const gfx::Size& natural_size) = 0;
   virtual OverlayWindow* GetWindowForTesting() = 0;
+  virtual void UpdateLayerBounds() = 0;
+  virtual bool IsPlayerActive() = 0;
+  virtual WebContents* GetInitiatorWebContents() = 0;
 
   // Commands.
-  virtual void TogglePlayPause() = 0;
+  // Returns true if the player is active (i.e. currently playing) after this
+  // call.
+  virtual bool TogglePlayPause() = 0;
 
  protected:
   // Use PictureInPictureWindowController::GetOrCreateForWebContents() to

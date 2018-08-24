@@ -12,7 +12,6 @@
 #include "base/auto_reset.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
-#include "base/message_loop/message_loop.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/run_loop.h"
 #include "base/time/time.h"
@@ -245,7 +244,6 @@ class FakeSchedulerClient : public SchedulerClient,
 
   size_t CompositedAnimationsCount() const override { return 0; }
   size_t MainThreadAnimationsCount() const override { return 0; }
-  size_t MainThreadCompositableAnimationsCount() const override { return 0; }
   bool CurrentFrameHadRAF() const override { return false; }
   bool NextFrameHasPendingRAF() const override { return false; }
 

@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/platform/graphics/paint/display_item.h"
 
+#include "cc/paint/display_item_list.h"
+
 namespace blink {
 
 struct SameSizeAsDisplayItem {
@@ -122,6 +124,8 @@ static String ForeignLayerTypeAsDebugString(DisplayItem::Type type) {
     DEBUG_STRING_CASE(ForeignLayerCanvas);
     DEBUG_STRING_CASE(ForeignLayerPlugin);
     DEBUG_STRING_CASE(ForeignLayerVideo);
+    DEBUG_STRING_CASE(ForeignLayerWrapper);
+    DEBUG_STRING_CASE(ForeignLayerContentsWrapper);
     DEFAULT_CASE;
   }
 }
@@ -214,6 +218,12 @@ WTF::String DisplayItem::TypeAsDebugString(Type type) {
     DEBUG_STRING_CASE(EndTransform);
     DEBUG_STRING_CASE(BeginClipPath);
     DEBUG_STRING_CASE(EndClipPath);
+    DEBUG_STRING_CASE(LayerChunkBackground);
+    DEBUG_STRING_CASE(LayerChunkNegativeZOrderChildren);
+    DEBUG_STRING_CASE(LayerChunkDescendantBackgrounds);
+    DEBUG_STRING_CASE(LayerChunkFloat);
+    DEBUG_STRING_CASE(LayerChunkForeground);
+    DEBUG_STRING_CASE(LayerChunkNormalFlowAndPositiveZOrderChildren);
     DEBUG_STRING_CASE(UninitializedType);
     DEFAULT_CASE;
   }

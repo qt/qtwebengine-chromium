@@ -37,15 +37,6 @@ namespace {
 // after a certain timeout has passed without receiving an ACK.
 bool g_connect_backup_jobs_enabled = true;
 
-void SetSocketMotivation(StreamSocket* socket,
-                         HttpRequestInfo::RequestMotivation motivation) {
-  if (motivation == HttpRequestInfo::PRECONNECT_MOTIVATED)
-    socket->SetSubresourceSpeculation();
-  else if (motivation == HttpRequestInfo::OMNIBOX_MOTIVATED)
-    socket->SetOmniboxSpeculation();
-  // TODO(mbelshe): Add other motivations (like EARLY_LOAD_MOTIVATED).
-}
-
 }  // namespace
 
 ConnectJob::ConnectJob(const std::string& group_name,
@@ -62,7 +53,6 @@ ConnectJob::ConnectJob(const std::string& group_name,
       respect_limits_(respect_limits),
       delegate_(delegate),
       net_log_(net_log),
-      motivation_(HttpRequestInfo::NORMAL_MOTIVATION),
       idle_(true) {
   DCHECK(!group_name.empty());
   DCHECK(delegate);
@@ -109,9 +99,6 @@ void ConnectJob::NotifyDelegateOfCompletion(int rv) {
   // The delegate will own |this|.
   Delegate* delegate = delegate_;
   delegate_ = NULL;
-
-  if (socket_)
-    SetSocketMotivation(socket_.get(), motivation_);
 
   LogConnectCompletion(rv);
   delegate->OnConnectJobComplete(rv, this);
@@ -293,8 +280,7 @@ int ClientSocketPoolBaseHelper::RequestSocket(
   request->net_log().BeginEvent(NetLogEventType::SOCKET_POOL);
   Group* group = GetOrCreateGroup(group_name);
 
-  int rv = RequestSocketInternal(group_name, *request,
-                                 HttpRequestInfo::NORMAL_MOTIVATION);
+  int rv = RequestSocketInternal(group_name, *request);
   if (rv != ERR_IO_PENDING) {
     if (rv == OK) {
       request->handle()->socket()->ApplySocketTag(request->socket_tag());
@@ -320,11 +306,9 @@ int ClientSocketPoolBaseHelper::RequestSocket(
   return rv;
 }
 
-void ClientSocketPoolBaseHelper::RequestSockets(
-    const std::string& group_name,
-    const Request& request,
-    int num_sockets,
-    HttpRequestInfo::RequestMotivation motivation) {
+void ClientSocketPoolBaseHelper::RequestSockets(const std::string& group_name,
+                                                const Request& request,
+                                                int num_sockets) {
   DCHECK(request.callback().is_null());
   DCHECK(!request.handle());
 
@@ -348,7 +332,7 @@ void ClientSocketPoolBaseHelper::RequestSockets(
   for (int num_iterations_left = num_sockets;
        group->NumActiveSocketSlots() < num_sockets &&
        num_iterations_left > 0 ; num_iterations_left--) {
-    rv = RequestSocketInternal(group_name, request, motivation);
+    rv = RequestSocketInternal(group_name, request);
     if (rv < 0 && rv != ERR_IO_PENDING) {
       // We're encountering a synchronous error.  Give up.
       if (!base::ContainsKey(group_map_, group_name))
@@ -375,8 +359,7 @@ void ClientSocketPoolBaseHelper::RequestSockets(
 
 int ClientSocketPoolBaseHelper::RequestSocketInternal(
     const std::string& group_name,
-    const Request& request,
-    HttpRequestInfo::RequestMotivation motivation) {
+    const Request& request) {
   ClientSocketHandle* const handle = request.handle();
   const bool preconnecting = !handle;
   Group* group = GetOrCreateGroup(group_name);
@@ -429,8 +412,6 @@ int ClientSocketPoolBaseHelper::RequestSocketInternal(
   // so allocate and connect a new one.
   std::unique_ptr<ConnectJob> connect_job(
       connect_job_factory_->NewConnectJob(group_name, request, this));
-
-  connect_job->set_motivation(motivation);
 
   int rv = connect_job->Connect();
   if (rv == OK) {
@@ -1051,8 +1032,7 @@ void ClientSocketPoolBaseHelper::ProcessPendingRequest(
     return;
   }
 
-  int rv = RequestSocketInternal(group_name, *next_request,
-                                 HttpRequestInfo::NORMAL_MOTIVATION);
+  int rv = RequestSocketInternal(group_name, *next_request);
   if (rv != ERR_IO_PENDING) {
     std::unique_ptr<Request> request = group->PopNextPendingRequest();
     DCHECK(request);

@@ -23,11 +23,12 @@
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/trace_event_impl.h"
 #include "base/trace_event/tracing_agent.h"
-#include "components/tracing/common/trace_config_file.h"
+#include "components/tracing/common/trace_startup_config.h"
 #include "components/viz/common/features.h"
 #include "content/browser/devtools/devtools_frame_trace_recorder.h"
 #include "content/browser/devtools/devtools_io_context.h"
 #include "content/browser/devtools/devtools_session.h"
+#include "content/browser/devtools/devtools_stream_file.h"
 #include "content/browser/devtools/devtools_traceable_screenshot.h"
 #include "content/browser/devtools/devtools_video_consumer.h"
 #include "content/browser/frame_host/frame_tree.h"
@@ -125,7 +126,7 @@ class DevToolsStreamEndpoint : public TracingController::TraceDataEndpoint {
  public:
   explicit DevToolsStreamEndpoint(
       base::WeakPtr<TracingHandler> handler,
-      const scoped_refptr<DevToolsIOContext::RWStream>& stream)
+      const scoped_refptr<DevToolsStreamFile>& stream)
       : stream_(stream), tracing_handler_(handler) {}
 
   void ReceiveTraceChunk(std::unique_ptr<std::string> chunk) override {
@@ -156,7 +157,7 @@ class DevToolsStreamEndpoint : public TracingController::TraceDataEndpoint {
  private:
   ~DevToolsStreamEndpoint() override {}
 
-  scoped_refptr<DevToolsIOContext::RWStream> stream_;
+  scoped_refptr<DevToolsStreamFile> stream_;
   base::WeakPtr<TracingHandler> tracing_handler_;
 };
 
@@ -169,8 +170,7 @@ void SendProcessReadyInBrowserEvent(const base::UnguessableToken& frame_token,
   auto data = std::make_unique<base::trace_event::TracedValue>();
   data->SetString("frame", frame_token.ToString());
   data->SetString("processPseudoId", GetProcessHostHex(host));
-  data->SetInteger("processId",
-                   static_cast<int>(base::GetProcId(host->GetHandle())));
+  data->SetInteger("processId", static_cast<int>(host->GetProcess().Pid()));
   TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
                        "ProcessReadyInBrowser", TRACE_EVENT_SCOPE_THREAD,
                        "data", std::move(data));
@@ -190,7 +190,7 @@ void FillFrameData(base::trace_event::TracedValue* data,
                     node->parent()->devtools_frame_token().ToString());
   if (frame_host) {
     RenderProcessHost* process_host = frame_host->GetProcess();
-    base::ProcessId process_id = base::GetProcId(process_host->GetHandle());
+    base::ProcessId process_id = process_host->GetProcess().Pid();
     if (process_id == base::kNullProcessId) {
       data->SetString("processPseudoId", GetProcessHostHex(process_host));
       frame_host->GetProcess()->PostTaskWhenProcessIsReady(
@@ -423,8 +423,9 @@ void TracingHandler::End(std::unique_ptr<EndCallback> callback) {
   scoped_refptr<TracingController::TraceDataEndpoint> endpoint;
   if (return_as_stream_) {
     endpoint = new DevToolsStreamEndpoint(
-        weak_factory_.GetWeakPtr(), io_context_->CreateTempFileBackedStream(
-                                        gzip_compression_ /* binary */));
+        weak_factory_.GetWeakPtr(),
+        DevToolsStreamFile::Create(io_context_,
+                                   gzip_compression_ /* binary */));
     if (gzip_compression_) {
       endpoint = TracingControllerImpl::CreateCompressedStringEndpoint(
           endpoint, true /* compress_with_background_priority */);
@@ -620,7 +621,7 @@ void TracingHandler::FrameDeleted(RenderFrameHostImpl* frame_host) {
 
 // static
 bool TracingHandler::IsStartupTracingActive() {
-  return ::tracing::TraceConfigFile::GetInstance()->IsEnabled();
+  return ::tracing::TraceStartupConfig::GetInstance()->IsEnabled();
 }
 
 // static

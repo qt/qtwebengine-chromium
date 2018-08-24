@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/threading/sequenced_task_runner_handle.h"
+#include "base/trace_event/trace_event.h"
 #include "services/audio/group_coordinator.h"
 
 namespace audio {
@@ -22,7 +23,6 @@ OutputStream::OutputStream(
     CreatedCallback created_callback,
     DeleteCallback delete_callback,
     media::mojom::AudioOutputStreamRequest stream_request,
-    media::mojom::AudioOutputStreamClientPtr client,
     media::mojom::AudioOutputStreamObserverAssociatedPtr observer,
     media::mojom::AudioLogPtr log,
     media::AudioManager* audio_manager,
@@ -33,7 +33,6 @@ OutputStream::OutputStream(
     : foreign_socket_(),
       delete_callback_(std::move(delete_callback)),
       binding_(this, std::move(stream_request)),
-      client_(std::move(client)),
       observer_(std::move(observer)),
       log_(media::mojom::ThreadSafeAudioLogPtr::Create(std::move(log))),
       coordinator_(coordinator),
@@ -50,17 +49,19 @@ OutputStream::OutputStream(
                   &reader_),
       weak_factory_(this) {
   DCHECK(binding_.is_bound());
-  DCHECK(client_.is_bound());
   DCHECK(observer_.is_bound());
   DCHECK(created_callback);
   DCHECK(delete_callback_);
   DCHECK(coordinator_);
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("audio", "audio::OutputStream", this);
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN2("audio", "OutputStream", this, "device id",
+                                    output_device_id, "params",
+                                    params.AsHumanReadableString());
 
   // |this| owns these objects, so unretained is safe.
   base::RepeatingClosure error_handler =
       base::BindRepeating(&OutputStream::OnError, base::Unretained(this));
   binding_.set_connection_error_handler(error_handler);
-  client_.set_connection_error_handler(error_handler);
 
   // We allow the observer to terminate the stream by closing the message pipe.
   observer_.set_connection_error_handler(std::move(error_handler));
@@ -84,8 +85,23 @@ OutputStream::~OutputStream() {
 
   log_->get()->OnClosed();
 
+  if (observer_)
+    observer_.ResetWithReason(
+        static_cast<uint32_t>(media::mojom::AudioOutputStreamObserver::
+                                  DisconnectReason::kTerminatedByClient),
+        std::string());
+
   controller_.Close();
   coordinator_->UnregisterGroupMember(&controller_);
+
+  if (is_audible_)
+    TRACE_EVENT_NESTABLE_ASYNC_END0("audio", "Audible", this);
+
+  if (playing_)
+    TRACE_EVENT_NESTABLE_ASYNC_END0("audio", "Playing", this);
+
+  TRACE_EVENT_NESTABLE_ASYNC_END0("audio", "OutputStream", this);
+  TRACE_EVENT_NESTABLE_ASYNC_END0("audio", "audio::OutputStream", this);
 }
 
 void OutputStream::Play() {
@@ -104,10 +120,12 @@ void OutputStream::Pause() {
 
 void OutputStream::SetVolume(double volume) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(owning_sequence_);
+  TRACE_EVENT_NESTABLE_ASYNC_INSTANT1("audio", "SetVolume", this, "volume",
+                                      volume);
 
   if (volume < 0 || volume > 1) {
     mojo::ReportBadMessage("Invalid volume");
-    OnError();
+    OnControllerError();
     return;
   }
 
@@ -118,6 +136,7 @@ void OutputStream::SetVolume(double volume) {
 void OutputStream::CreateAudioPipe(CreatedCallback created_callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(owning_sequence_);
   DCHECK(reader_.IsValid());
+  TRACE_EVENT_NESTABLE_ASYNC_INSTANT0("audio", "CreateAudioPipe", this);
 
   const base::SharedMemory* memory = reader_.shared_memory();
   base::SharedMemoryHandle foreign_memory_handle =
@@ -147,6 +166,7 @@ void OutputStream::OnControllerPlaying() {
   if (playing_)
     return;
 
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("audio", "Playing", this);
   playing_ = true;
   observer_->DidStartPlaying();
   if (OutputController::will_monitor_audio_levels()) {
@@ -177,14 +197,26 @@ void OutputStream::OnControllerPaused() {
     poll_timer_.Stop();
   }
   observer_->DidStopPlaying();
+  TRACE_EVENT_NESTABLE_ASYNC_END0("audio", "Playing", this);
 }
 
 void OutputStream::OnControllerError() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(owning_sequence_);
+  TRACE_EVENT_NESTABLE_ASYNC_INSTANT0("audio", "OnControllerError", this);
 
-  // Only propagate platform errors to the renderer.
-  client_->OnError();
+  // Stop checking the audio level to avoid using this object while it's being
+  // torn down.
+  poll_timer_.Stop();
+
   log_->get()->OnError();
+
+  if (observer_) {
+    observer_.ResetWithReason(
+        static_cast<uint32_t>(media::mojom::AudioOutputStreamObserver::
+                                  DisconnectReason::kPlatformError),
+        std::string());
+  }
+
   OnError();
 }
 
@@ -195,6 +227,7 @@ void OutputStream::OnLog(base::StringPiece message) {
 
 void OutputStream::OnError() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(owning_sequence_);
+  TRACE_EVENT_NESTABLE_ASYNC_INSTANT0("audio", "OnError", this);
 
   // Defer callback so we're not destructed while in the constructor.
   base::SequencedTaskRunnerHandle::Get()->PostTask(
@@ -217,8 +250,13 @@ void OutputStream::PollAudioLevel() {
   bool was_audible = is_audible_;
   is_audible_ = IsAudible();
 
-  if (is_audible_ != was_audible)
+  if (is_audible_ && !was_audible) {
+    TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("audio", "Audible", this);
     observer_->DidChangeAudibleState(is_audible_);
+  } else if (!is_audible_ && was_audible) {
+    TRACE_EVENT_NESTABLE_ASYNC_END0("audio", "Audible", this);
+    observer_->DidChangeAudibleState(is_audible_);
+  }
 }
 
 bool OutputStream::IsAudible() {

@@ -13,7 +13,6 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/test/scoped_task_environment.h"
@@ -72,6 +71,13 @@
 #define MAYBE_CaptureMjpeg CaptureMjpeg
 #define MAYBE_TakePhoto TakePhoto
 #define MAYBE_GetPhotoState GetPhotoState
+#define MAYBE_CaptureWithSize CaptureWithSize
+#elif defined(OS_CHROMEOS)
+#define MAYBE_AllocateBadSize DISABLED_AllocateBadSize
+#define MAYBE_CaptureMjpeg CaptureMjpeg
+#define MAYBE_TakePhoto TakePhoto
+#define MAYBE_GetPhotoState GetPhotoState
+#define MAYBE_CaptureWithSize CaptureWithSize
 #elif defined(OS_LINUX)
 // AllocateBadSize will hang when a real camera is attached and if more than one
 // test is trying to use the camera (even across processes). Do NOT renable
@@ -169,10 +175,20 @@ class MockVideoCaptureClient : public VideoCaptureDevice::Client {
     main_thread_->PostTask(FROM_HERE, base::BindOnce(frame_cb_, format));
   }
 
+  void OnIncomingCapturedGfxBuffer(gfx::GpuMemoryBuffer* buffer,
+                                   const VideoCaptureFormat& frame_format,
+                                   int clockwise_rotation,
+                                   base::TimeTicks reference_time,
+                                   base::TimeDelta timestamp,
+                                   int frame_feedback_id = 0) override {
+    ASSERT_TRUE(buffer);
+    ASSERT_GT(buffer->GetSize().width() * buffer->GetSize().height(), 0);
+    main_thread_->PostTask(FROM_HERE, base::BindOnce(frame_cb_, frame_format));
+  }
+
   // Trampoline methods to workaround GMOCK problems with std::unique_ptr<>.
   Buffer ReserveOutputBuffer(const gfx::Size& dimensions,
                              VideoPixelFormat format,
-                             VideoPixelStorage storage,
                              int frame_feedback_id) override {
     DoReserveOutputBuffer();
     NOTREACHED() << "This should never be called";
@@ -195,8 +211,7 @@ class MockVideoCaptureClient : public VideoCaptureDevice::Client {
   }
   Buffer ResurrectLastOutputBuffer(const gfx::Size& dimensions,
                                    VideoPixelFormat format,
-                                   VideoPixelStorage storage,
-                                   int frame_feedback_id) {
+                                   int frame_feedback_id) override {
     DoResurrectLastOutputBuffer();
     NOTREACHED() << "This should never be called";
     return Buffer();
@@ -649,13 +664,6 @@ WRAPPED_TEST_P(VideoCaptureDeviceTest, MAYBE_TakePhoto) {
   if (!descriptor)
     return;
 
-#if defined(OS_CHROMEOS)
-  // TODO(jcliang): Remove this after we implement TakePhoto.
-  if (VideoCaptureDeviceFactoryChromeOS::ShouldEnable()) {
-    return;
-  }
-#endif
-
 #if defined(OS_ANDROID)
   // TODO(mcasas): fails on Lollipop devices, reconnect https://crbug.com/646840
   if (base::android::BuildInfo::GetInstance()->sdk_int() <
@@ -698,13 +706,6 @@ WRAPPED_TEST_P(VideoCaptureDeviceTest, MAYBE_GetPhotoState) {
   if (!descriptor)
     return;
 
-#if defined(OS_CHROMEOS)
-  // TODO(jcliang): Remove this after we implement GetPhotoCapabilities.
-  if (VideoCaptureDeviceFactoryChromeOS::ShouldEnable()) {
-    return;
-  }
-#endif
-
 #if defined(OS_ANDROID)
   // TODO(mcasas): fails on Lollipop devices, reconnect https://crbug.com/646840
   if (base::android::BuildInfo::GetInstance()->sdk_int() <
@@ -730,6 +731,9 @@ WRAPPED_TEST_P(VideoCaptureDeviceTest, MAYBE_GetPhotoState) {
       base::BindOnce(&MockImageCaptureClient::DoOnGetPhotoState,
                      image_capture_client_);
 
+  // On Chrome OS AllocateAndStart() is asynchronous, so wait until we get the
+  // first frame.
+  WaitForCapturedFrame();
   base::RunLoop run_loop;
   base::Closure quit_closure = BindToCurrentLoop(run_loop.QuitClosure());
   EXPECT_CALL(*image_capture_client_.get(), OnCorrectGetPhotoState())

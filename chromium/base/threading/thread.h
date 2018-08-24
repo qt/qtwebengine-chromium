@@ -29,7 +29,7 @@ class MessagePump;
 class RunLoop;
 
 // IMPORTANT: Instead of creating a base::Thread, consider using
-// base::Create(Sequenced|SingleTreaded)TaskRunnerWithTraits().
+// base::Create(Sequenced|SingleThread)TaskRunnerWithTraits().
 //
 // A simple thread abstraction that establishes a MessageLoop on a new thread.
 // The consumer uses the MessageLoop of the thread to cause code to execute on
@@ -43,7 +43,7 @@ class RunLoop;
 //
 //  (1) Thread::CleanUp()
 //  (2) MessageLoop::~MessageLoop
-//  (3.b)    MessageLoop::DestructionObserver::WillDestroyCurrentMessageLoop
+//  (3.b) MessageLoopCurrent::DestructionObserver::WillDestroyCurrentMessageLoop
 //
 // This API is not thread-safe: unless indicated otherwise its methods are only
 // valid from the owning sequence (which is the one from which Start() is

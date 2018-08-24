@@ -7,6 +7,7 @@
 #include "third_party/blink/renderer/core/layout/ng/ng_base_layout_algorithm_test.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_block_layout_algorithm.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_column_layout_algorithm.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_physical_box_fragment.h"
 
 namespace blink {
 namespace {
@@ -1971,13 +1972,15 @@ TEST_F(NGColumnLayoutAlgorithmTest, MinMax) {
   ASSERT_TRUE(layout_object);
   ASSERT_TRUE(layout_object->IsBox());
   NGBlockNode node = NGBlockNode(ToLayoutBox(layout_object));
-  ComputedStyle* style = layout_object->MutableStyle();
+  scoped_refptr<ComputedStyle> style =
+      ComputedStyle::Clone(layout_object->StyleRef());
+  layout_object->SetStyle(style);
   scoped_refptr<NGConstraintSpace> space =
       ConstructBlockLayoutTestConstraintSpace(
           WritingMode::kHorizontalTb, TextDirection::kLtr,
           NGLogicalSize(LayoutUnit(1000), NGSizeIndefinite));
   NGColumnLayoutAlgorithm algorithm(node, *space.get());
-  Optional<MinMaxSize> size;
+  base::Optional<MinMaxSize> size;
   MinMaxSizeInput zero_input;
 
   // Both column-count and column-width set.

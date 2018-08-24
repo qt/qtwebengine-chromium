@@ -24,18 +24,19 @@ namespace incremental_marking_test {
 
 // Visitor that expects every directly reachable object from a given backing
 // store to be in the set of provided objects.
-template <typename T>
 class BackingVisitor : public Visitor {
  public:
-  explicit BackingVisitor(ThreadState* state, std::vector<T*>* objects)
+  BackingVisitor(ThreadState* state, std::vector<void*>* objects)
       : Visitor(state), objects_(objects) {}
-  virtual ~BackingVisitor() {}
+  ~BackingVisitor() final {}
 
   void ProcessBackingStore(HeapObjectHeader* header) {
     EXPECT_TRUE(header->IsValid());
     EXPECT_TRUE(header->IsMarked());
     header->Unmark();
-    ThreadHeap::GcInfo(header->GcInfoIndex())->trace_(this, header->Payload());
+    GCInfoTable::Get()
+        .GCInfoFromIndex(header->GcInfoIndex())
+        ->trace_(this, header->Payload());
   }
 
   void Visit(void* obj, TraceDescriptor desc) final {
@@ -68,15 +69,19 @@ class BackingVisitor : public Visitor {
                                     MovingObjectCallback,
                                     void* callback_data) final {}
   void RegisterWeakCallback(void* closure, WeakCallback) final {}
+  void Visit(const TraceWrapperV8Reference<v8::Value>&) final {}
+  void Visit(DOMWrapperMap<ScriptWrappable>*,
+             const ScriptWrappable* key) final {}
+  void Visit(void*, TraceWrapperDescriptor) final {}
 
  private:
-  std::vector<T*>* objects_;
+  std::vector<void*>* objects_;
 };
 
 // Base class for initializing worklists.
 class IncrementalMarkingScopeBase {
  public:
-  IncrementalMarkingScopeBase(ThreadState* thread_state)
+  explicit IncrementalMarkingScopeBase(ThreadState* thread_state)
       : thread_state_(thread_state), heap_(thread_state_->Heap()) {
     heap_.CommitCallbackStacks();
   }
@@ -132,14 +137,15 @@ class IncrementalMarkingScope : public IncrementalMarkingScopeBase {
 // Expects that the write barrier fires for the objects passed to the
 // constructor. This requires that the objects are added to the marking stack
 // as well as headers being marked.
-template <typename T>
 class ExpectWriteBarrierFires : public IncrementalMarkingScope {
  public:
   ExpectWriteBarrierFires(ThreadState* thread_state,
-                          std::initializer_list<T*> objects)
-      : IncrementalMarkingScope(thread_state), objects_(objects) {
+                          std::initializer_list<void*> objects)
+      : IncrementalMarkingScope(thread_state),
+        objects_(objects),
+        backing_visitor_(thread_state_, &objects_) {
     EXPECT_TRUE(marking_worklist_->IsGlobalEmpty());
-    for (T* object : objects_) {
+    for (void* object : objects_) {
       // Ensure that the object is in the normal arena so we can ignore backing
       // objects on the marking stack.
       CHECK(ThreadHeap::IsNormalArenaIndex(
@@ -155,16 +161,15 @@ class ExpectWriteBarrierFires : public IncrementalMarkingScope {
     MarkingItem item;
     // All objects watched should be on the marking stack.
     while (marking_worklist_->Pop(WorklistTaskId::MainThread, &item)) {
-      T* obj = reinterpret_cast<T*>(item.object);
       // Inspect backing stores to allow specifying objects that are only
       // reachable through a backing store.
       if (!ThreadHeap::IsNormalArenaIndex(
-              PageFromObject(obj)->Arena()->ArenaIndex())) {
-        BackingVisitor<T> visitor(thread_state_, &objects_);
-        visitor.ProcessBackingStore(HeapObjectHeader::FromPayload(obj));
+              PageFromObject(item.object)->Arena()->ArenaIndex())) {
+        backing_visitor_.ProcessBackingStore(
+            HeapObjectHeader::FromPayload(item.object));
         continue;
       }
-      auto pos = std::find(objects_.begin(), objects_.end(), obj);
+      auto pos = std::find(objects_.begin(), objects_.end(), item.object);
       if (objects_.end() != pos)
         objects_.erase(pos);
     }
@@ -178,39 +183,37 @@ class ExpectWriteBarrierFires : public IncrementalMarkingScope {
   }
 
  private:
-  std::vector<T*> objects_;
+  std::vector<void*> objects_;
   std::vector<HeapObjectHeader*> headers_;
+  BackingVisitor backing_visitor_;
 };
 
 // Expects that no write barrier fires for the objects passed to the
 // constructor. This requires that the marking stack stays empty and the marking
 // state of the object stays the same across the lifetime of the scope.
-template <typename T>
 class ExpectNoWriteBarrierFires : public IncrementalMarkingScope {
  public:
   ExpectNoWriteBarrierFires(ThreadState* thread_state,
-                            std::initializer_list<T*> objects)
-      : IncrementalMarkingScope(thread_state), objects_(objects) {
+                            std::initializer_list<void*> objects)
+      : IncrementalMarkingScope(thread_state) {
     EXPECT_TRUE(marking_worklist_->IsGlobalEmpty());
-    for (T* object : objects_) {
+    for (void* object : objects_) {
       HeapObjectHeader* header = HeapObjectHeader::FromPayload(object);
-      headers_.push_back(header);
-      was_marked_.push_back(header->IsMarked());
+      headers_.push_back({header, header->IsMarked()});
     }
   }
 
   ~ExpectNoWriteBarrierFires() {
     EXPECT_TRUE(marking_worklist_->IsGlobalEmpty());
-    for (size_t i = 0; i < headers_.size(); i++) {
-      EXPECT_EQ(was_marked_[i], headers_[i]->IsMarked());
-      headers_[i]->Unmark();
+    for (const auto& pair : headers_) {
+      EXPECT_EQ(pair.second, pair.first->IsMarked());
+      pair.first->Unmark();
     }
   }
 
  private:
-  std::vector<T*> objects_;
-  std::vector<HeapObjectHeader*> headers_;
-  std::vector<bool> was_marked_;
+  std::vector<void*> objects_;
+  std::vector<std::pair<HeapObjectHeader*, bool /* was marked */>> headers_;
 };
 
 class Object : public GarbageCollected<Object> {
@@ -220,11 +223,11 @@ class Object : public GarbageCollected<Object> {
 
   void set_next(Object* next) { next_ = next; }
 
-  virtual void Trace(blink::Visitor* visitor) { visitor->Trace(next_); }
-
   bool IsMarked() const {
     return HeapObjectHeader::FromPayload(this)->IsMarked();
   }
+
+  virtual void Trace(blink::Visitor* visitor) { visitor->Trace(next_); }
 
  private:
   Object() : next_(nullptr) {}
@@ -254,7 +257,7 @@ TEST(IncrementalMarkingTest, StackFrameDepthDisabled) {
 TEST(IncrementalMarkingTest, ManualWriteBarrierTriggersWhenMarkingIsOn) {
   Object* object = Object::Create();
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {object});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {object});
     EXPECT_FALSE(object->IsMarked());
     MarkingVisitor::WriteBarrier(object);
     EXPECT_TRUE(object->IsMarked());
@@ -276,7 +279,7 @@ TEST(IncrementalMarkingTest, MemberSetUnmarkedObject) {
   Object* parent = Object::Create();
   Object* child = Object::Create();
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {child});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {child});
     EXPECT_FALSE(child->IsMarked());
     parent->set_next(child);
     EXPECT_TRUE(child->IsMarked());
@@ -288,7 +291,7 @@ TEST(IncrementalMarkingTest, MemberSetMarkedObjectNoBarrier) {
   Object* child = Object::Create();
   HeapObjectHeader::FromPayload(child)->Mark();
   {
-    ExpectNoWriteBarrierFires<Object> scope(ThreadState::Current(), {child});
+    ExpectNoWriteBarrierFires scope(ThreadState::Current(), {child});
     parent->set_next(child);
   }
 }
@@ -312,7 +315,7 @@ TEST(IncrementalMarkingTest, MemberReferenceAssignMember) {
   Member<Object>& m2 = m1;
   Member<Object> m3(obj);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
     m2 = m3;
   }
 }
@@ -320,7 +323,7 @@ TEST(IncrementalMarkingTest, MemberReferenceAssignMember) {
 TEST(IncrementalMarkingTest, MemberSetDeletedValueNoBarrier) {
   Member<Object> m;
   {
-    ExpectNoWriteBarrierFires<Object> scope(ThreadState::Current(), {});
+    ExpectNoWriteBarrierFires scope(ThreadState::Current(), {});
     m = WTF::kHashTableDeletedValue;
   }
 }
@@ -328,7 +331,7 @@ TEST(IncrementalMarkingTest, MemberSetDeletedValueNoBarrier) {
 TEST(IncrementalMarkingTest, MemberCopyDeletedValueNoBarrier) {
   Member<Object> m1(WTF::kHashTableDeletedValue);
   {
-    ExpectNoWriteBarrierFires<Object> scope(ThreadState::Current(), {});
+    ExpectNoWriteBarrierFires scope(ThreadState::Current(), {});
     Member<Object> m2(m1);
   }
 }
@@ -336,7 +339,7 @@ TEST(IncrementalMarkingTest, MemberCopyDeletedValueNoBarrier) {
 TEST(IncrementalMarkingTest, MemberHashTraitConstructDeletedValueNoBarrier) {
   Member<Object> m1;
   {
-    ExpectNoWriteBarrierFires<Object> scope(ThreadState::Current(), {});
+    ExpectNoWriteBarrierFires scope(ThreadState::Current(), {});
     HashTraits<Member<Object>>::ConstructDeletedValue(m1, false);
   }
 }
@@ -344,7 +347,7 @@ TEST(IncrementalMarkingTest, MemberHashTraitConstructDeletedValueNoBarrier) {
 TEST(IncrementalMarkingTest, MemberHashTraitIsDeletedValueNoBarrier) {
   Member<Object> m1(Object::Create());
   {
-    ExpectNoWriteBarrierFires<Object> scope(ThreadState::Current(), {});
+    ExpectNoWriteBarrierFires scope(ThreadState::Current(), {});
     EXPECT_FALSE(HashTraits<Member<Object>>::IsDeletedValue(m1));
   }
 }
@@ -360,7 +363,7 @@ class Mixin : public GarbageCollectedMixin {
   Mixin() : next_(nullptr) {}
   virtual ~Mixin() {}
 
-  virtual void Trace(blink::Visitor* visitor) { visitor->Trace(next_); }
+  void Trace(blink::Visitor* visitor) override { visitor->Trace(next_); }
 
   virtual void Bar() {}
 
@@ -380,12 +383,12 @@ class Child : public GarbageCollected<Child>,
 
  public:
   static Child* Create() { return new Child(); }
-  virtual ~Child() {}
+  ~Child() override {}
 
-  virtual void Trace(blink::Visitor* visitor) { Mixin::Trace(visitor); }
+  void Trace(blink::Visitor* visitor) override { Mixin::Trace(visitor); }
 
-  virtual void Foo() {}
-  virtual void Bar() {}
+  void Foo() override {}
+  void Bar() override {}
 
  protected:
   Child() : ClassWithVirtual(), Mixin() {}
@@ -415,7 +418,7 @@ TEST(IncrementalMarkingTest, WriteBarrierOnUnmarkedMixinApplication) {
   Mixin* mixin = static_cast<Mixin*>(child);
   EXPECT_NE(static_cast<void*>(child), static_cast<void*>(mixin));
   {
-    ExpectWriteBarrierFires<Child> scope(ThreadState::Current(), {child});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {child});
     parent->set_mixin(mixin);
   }
 }
@@ -427,7 +430,7 @@ TEST(IncrementalMarkingTest, NoWriteBarrierOnMarkedMixinApplication) {
   Mixin* mixin = static_cast<Mixin*>(child);
   EXPECT_NE(static_cast<void*>(child), static_cast<void*>(mixin));
   {
-    ExpectNoWriteBarrierFires<Child> scope(ThreadState::Current(), {child});
+    ExpectNoWriteBarrierFires scope(ThreadState::Current(), {child});
     parent->set_mixin(mixin);
   }
 }
@@ -478,7 +481,7 @@ TEST(IncrementalMarkingTest, HeapVectorPushBackMember) {
   Object* obj = Object::Create();
   HeapVector<Member<Object>> vec;
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
     vec.push_back(obj);
   }
 }
@@ -487,7 +490,7 @@ TEST(IncrementalMarkingTest, HeapVectorPushBackNonGCedContainer) {
   Object* obj = Object::Create();
   HeapVector<NonGarbageCollectedContainer> vec;
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
     vec.push_back(NonGarbageCollectedContainer(obj, 1));
   }
 }
@@ -497,7 +500,7 @@ TEST(IncrementalMarkingTest, HeapVectorPushBackStdPair) {
   Object* obj2 = Object::Create();
   HeapVector<std::pair<Member<Object>, Member<Object>>> vec;
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     vec.push_back(std::make_pair(Member<Object>(obj1), Member<Object>(obj2)));
   }
 }
@@ -506,7 +509,7 @@ TEST(IncrementalMarkingTest, HeapVectorEmplaceBackMember) {
   Object* obj = Object::Create();
   HeapVector<Member<Object>> vec;
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
     vec.emplace_back(obj);
   }
 }
@@ -515,7 +518,7 @@ TEST(IncrementalMarkingTest, HeapVectorEmplaceBackNonGCedContainer) {
   Object* obj = Object::Create();
   HeapVector<NonGarbageCollectedContainer> vec;
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
     vec.emplace_back(obj, 1);
   }
 }
@@ -525,7 +528,7 @@ TEST(IncrementalMarkingTest, HeapVectorEmplaceBackStdPair) {
   Object* obj2 = Object::Create();
   HeapVector<std::pair<Member<Object>, Member<Object>>> vec;
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     vec.emplace_back(obj1, obj2);
   }
 }
@@ -535,7 +538,7 @@ TEST(IncrementalMarkingTest, HeapVectorCopyMember) {
   HeapVector<Member<Object>> vec1;
   vec1.push_back(object);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {object});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {object});
     HeapVector<Member<Object>> vec2(vec1);
   }
 }
@@ -545,7 +548,7 @@ TEST(IncrementalMarkingTest, HeapVectorCopyNonGCedContainer) {
   HeapVector<NonGarbageCollectedContainer> vec1;
   vec1.emplace_back(obj, 1);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
     HeapVector<NonGarbageCollectedContainer> vec2(vec1);
   }
 }
@@ -556,7 +559,7 @@ TEST(IncrementalMarkingTest, HeapVectorCopyStdPair) {
   HeapVector<std::pair<Member<Object>, Member<Object>>> vec1;
   vec1.emplace_back(obj1, obj2);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     HeapVector<std::pair<Member<Object>, Member<Object>>> vec2(vec1);
   }
 }
@@ -566,7 +569,7 @@ TEST(IncrementalMarkingTest, HeapVectorMoveMember) {
   HeapVector<Member<Object>> vec1;
   vec1.push_back(obj);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
     HeapVector<Member<Object>> vec2(std::move(vec1));
   }
 }
@@ -576,7 +579,7 @@ TEST(IncrementalMarkingTest, HeapVectorMoveNonGCedContainer) {
   HeapVector<NonGarbageCollectedContainer> vec1;
   vec1.emplace_back(obj, 1);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
     HeapVector<NonGarbageCollectedContainer> vec2(std::move(vec1));
   }
 }
@@ -587,7 +590,7 @@ TEST(IncrementalMarkingTest, HeapVectorMoveStdPair) {
   HeapVector<std::pair<Member<Object>, Member<Object>>> vec1;
   vec1.emplace_back(obj1, obj2);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     HeapVector<std::pair<Member<Object>, Member<Object>>> vec2(std::move(vec1));
   }
 }
@@ -600,7 +603,7 @@ TEST(IncrementalMarkingTest, HeapVectorSwapMember) {
   HeapVector<Member<Object>> vec2;
   vec2.push_back(obj2);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     std::swap(vec1, vec2);
   }
 }
@@ -613,7 +616,7 @@ TEST(IncrementalMarkingTest, HeapVectorSwapNonGCedContainer) {
   HeapVector<NonGarbageCollectedContainer> vec2;
   vec2.emplace_back(obj2, 2);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     std::swap(vec1, vec2);
   }
 }
@@ -626,7 +629,7 @@ TEST(IncrementalMarkingTest, HeapVectorSwapStdPair) {
   HeapVector<std::pair<Member<Object>, Member<Object>>> vec2;
   vec2.emplace_back(nullptr, obj2);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     std::swap(vec1, vec2);
   }
 }
@@ -637,7 +640,7 @@ TEST(IncrementalMarkingTest, HeapVectorSubscriptOperator) {
   HeapVector<Member<Object>> vec;
   vec.push_back(obj1);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj2});
     EXPECT_EQ(1u, vec.size());
     EXPECT_EQ(obj1, vec[0]);
     vec[0] = obj2;
@@ -653,7 +656,7 @@ TEST(IncrementalMarkingTest, HeapVectorEagerTracingStopsAtMember) {
   obj1->set_next(obj3);
   HeapVector<NonGarbageCollectedContainerRoot> vec;
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     vec.emplace_back(obj1, obj2, 3);
     // |obj3| is only reachable from |obj1| which is not eagerly traced. Only
     // objects without object headers are eagerly traced.
@@ -693,8 +696,7 @@ TEST(IncrementalMarkingTest, HeapDoublyLinkedListPush) {
   ObjectNode* obj_node = new ObjectNode(obj);
   HeapDoublyLinkedList<ObjectNode> list;
   {
-    ExpectWriteBarrierFires<ObjectNode> scope(ThreadState::Current(),
-                                              {obj_node});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj_node});
     list.Push(obj_node);
     // |obj| will be marked once |obj_node| gets processed.
     EXPECT_FALSE(obj->IsMarked());
@@ -706,8 +708,7 @@ TEST(IncrementalMarkingTest, HeapDoublyLinkedListAppend) {
   ObjectNode* obj_node = new ObjectNode(obj);
   HeapDoublyLinkedList<ObjectNode> list;
   {
-    ExpectWriteBarrierFires<ObjectNode> scope(ThreadState::Current(),
-                                              {obj_node});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj_node});
     list.Append(obj_node);
     // |obj| will be marked once |obj_node| gets processed.
     EXPECT_FALSE(obj->IsMarked());
@@ -722,7 +723,7 @@ TEST(IncrementalMarkingTest, HeapDequePushBackMember) {
   Object* obj = Object::Create();
   HeapDeque<Member<Object>> deq;
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
     deq.push_back(obj);
   }
 }
@@ -731,7 +732,7 @@ TEST(IncrementalMarkingTest, HeapDequePushFrontMember) {
   Object* obj = Object::Create();
   HeapDeque<Member<Object>> deq;
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
     deq.push_front(obj);
   }
 }
@@ -740,7 +741,7 @@ TEST(IncrementalMarkingTest, HeapDequeEmplaceBackMember) {
   Object* obj = Object::Create();
   HeapDeque<Member<Object>> deq;
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
     deq.emplace_back(obj);
   }
 }
@@ -749,7 +750,7 @@ TEST(IncrementalMarkingTest, HeapDequeEmplaceFrontMember) {
   Object* obj = Object::Create();
   HeapDeque<Member<Object>> deq;
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
     deq.emplace_front(obj);
   }
 }
@@ -759,7 +760,7 @@ TEST(IncrementalMarkingTest, HeapDequeCopyMember) {
   HeapDeque<Member<Object>> deq1;
   deq1.push_back(object);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {object});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {object});
     HeapDeque<Member<Object>> deq2(deq1);
   }
 }
@@ -769,7 +770,7 @@ TEST(IncrementalMarkingTest, HeapDequeMoveMember) {
   HeapDeque<Member<Object>> deq1;
   deq1.push_back(object);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {object});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {object});
     HeapDeque<Member<Object>> deq2(std::move(deq1));
   }
 }
@@ -782,7 +783,7 @@ TEST(IncrementalMarkingTest, HeapDequeSwapMember) {
   HeapDeque<Member<Object>> deq2;
   deq2.push_back(obj2);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     std::swap(deq1, deq2);
   }
 }
@@ -798,7 +799,7 @@ void Insert() {
   Object* obj = Object::Create();
   Container container;
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
     container.insert(obj);
   }
 }
@@ -808,7 +809,7 @@ void InsertNoBarrier() {
   Object* obj = Object::Create();
   Container container;
   {
-    ExpectNoWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectNoWriteBarrierFires scope(ThreadState::Current(), {obj});
     container.insert(obj);
   }
 }
@@ -819,7 +820,7 @@ void Copy() {
   Container container1;
   container1.insert(obj);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
     Container container2(container1);
     EXPECT_TRUE(container1.Contains(obj));
     EXPECT_TRUE(container2.Contains(obj));
@@ -832,7 +833,7 @@ void CopyNoBarrier() {
   Container container1;
   container1.insert(obj);
   {
-    ExpectNoWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectNoWriteBarrierFires scope(ThreadState::Current(), {obj});
     Container container2(container1);
     EXPECT_TRUE(container1.Contains(obj));
     EXPECT_TRUE(container2.Contains(obj));
@@ -845,7 +846,7 @@ void Move() {
   Container container1;
   container1.insert(obj);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
     Container container2(std::move(container1));
   }
 }
@@ -856,7 +857,7 @@ void MoveNoBarrier() {
   Container container1;
   container1.insert(obj);
   {
-    ExpectNoWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+    ExpectNoWriteBarrierFires scope(ThreadState::Current(), {obj});
     Container container2(std::move(container1));
   }
 }
@@ -870,7 +871,7 @@ void Swap() {
   Container container2;
   container2.insert(obj2);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     std::swap(container1, container2);
   }
 }
@@ -884,8 +885,7 @@ void SwapNoBarrier() {
   Container container2;
   container2.insert(obj2);
   {
-    ExpectNoWriteBarrierFires<Object> scope(ThreadState::Current(),
-                                            {obj1, obj2});
+    ExpectNoWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     std::swap(container1, container2);
   }
 }
@@ -1015,7 +1015,7 @@ TEST(IncrementalMarkingTest, HeapHashSetStrongWeakPair) {
   {
     // Only the strong field in the StrongWeakPair should be hit by the
     // write barrier.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1});
     set.insert(StrongWeakPair(obj1, obj2));
     EXPECT_FALSE(obj2->IsMarked());
   }
@@ -1028,7 +1028,7 @@ TEST(IncrementalMarkingTest, HeapLinkedHashSetStrongWeakPair) {
   {
     // Only the strong field in the StrongWeakPair should be hit by the
     // write barrier.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1});
     set.insert(StrongWeakPair(obj1, obj2));
     EXPECT_FALSE(obj2->IsMarked());
   }
@@ -1084,8 +1084,7 @@ TEST(IncrementalMarkingTest, HeapHashCountedSetSwap) {
     HeapHashCountedSet<Member<Object>> container2;
     container2.insert(obj2);
     {
-      ExpectWriteBarrierFires<Object> scope(ThreadState::Current(),
-                                            {obj1, obj2});
+      ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
       container1.swap(container2);
     }
   }
@@ -1098,8 +1097,7 @@ TEST(IncrementalMarkingTest, HeapHashCountedSetSwap) {
     container2.insert(obj2);
     {
       // Weak references are strongified for the current cycle.
-      ExpectWriteBarrierFires<Object> scope(ThreadState::Current(),
-                                            {obj1, obj2});
+      ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
       container1.swap(container2);
     }
   }
@@ -1144,7 +1142,7 @@ TEST(IncrementalMarkingTest, HeapTerminatedArrayBuilder) {
     HeapTerminatedArrayBuilder<TerminatedArrayNode> builder(array);
     builder.Grow(1);
     {
-      ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj});
+      ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
       builder.Append(TerminatedArrayNode(obj));
     }
     array = builder.Release();
@@ -1160,7 +1158,7 @@ TEST(IncrementalMarkingTest, HeapHashMapInsertMember) {
   Object* obj2 = Object::Create();
   HeapHashMap<Member<Object>, Member<Object>> map;
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     map.insert(obj1, obj2);
   }
 }
@@ -1171,7 +1169,7 @@ TEST(IncrementalMarkingTest, HeapHashMapInsertWeakMember) {
   HeapHashMap<WeakMember<Object>, WeakMember<Object>> map;
   {
     // Weak references are strongified for the current cycle.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     map.insert(obj1, obj2);
   }
 }
@@ -1182,7 +1180,7 @@ TEST(IncrementalMarkingTest, HeapHashMapInsertMemberWeakMember) {
   HeapHashMap<Member<Object>, WeakMember<Object>> map;
   {
     // Weak references are strongified for the current cycle.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     map.insert(obj1, obj2);
   }
 }
@@ -1193,7 +1191,7 @@ TEST(IncrementalMarkingTest, HeapHashMapInsertWeakMemberMember) {
   HeapHashMap<WeakMember<Object>, Member<Object>> map;
   {
     // Weak references are strongified for the current cycle.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     map.insert(obj1, obj2);
   }
 }
@@ -1203,7 +1201,7 @@ TEST(IncrementalMarkingTest, HeapHashMapSetMember) {
   Object* obj2 = Object::Create();
   HeapHashMap<Member<Object>, Member<Object>> map;
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     map.Set(obj1, obj2);
   }
 }
@@ -1217,7 +1215,7 @@ TEST(IncrementalMarkingTest, HeapHashMapSetMemberUpdateValue) {
   {
     // Only |obj3| is newly added to |map|, so we only expect the barrier to
     // fire on this one.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj3});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj3});
     map.Set(obj1, obj3);
     EXPECT_FALSE(HeapObjectHeader::FromPayload(obj1)->IsMarked());
     EXPECT_FALSE(HeapObjectHeader::FromPayload(obj2)->IsMarked());
@@ -1231,7 +1229,7 @@ TEST(IncrementalMarkingTest, HeapHashMapIteratorChangeKey) {
   HeapHashMap<Member<Object>, Member<Object>> map;
   map.insert(obj1, obj2);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj3});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj3});
     auto it = map.find(obj1);
     EXPECT_NE(map.end(), it);
     it->key = obj3;
@@ -1245,7 +1243,7 @@ TEST(IncrementalMarkingTest, HeapHashMapIteratorChangeValue) {
   HeapHashMap<Member<Object>, Member<Object>> map;
   map.insert(obj1, obj2);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj3});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj3});
     auto it = map.find(obj1);
     EXPECT_NE(map.end(), it);
     it->value = obj3;
@@ -1258,7 +1256,7 @@ TEST(IncrementalMarkingTest, HeapHashMapCopyMemberMember) {
   HeapHashMap<Member<Object>, Member<Object>> map1;
   map1.insert(obj1, obj2);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     EXPECT_TRUE(map1.Contains(obj1));
     HeapHashMap<Member<Object>, Member<Object>> map2(map1);
     EXPECT_TRUE(map1.Contains(obj1));
@@ -1273,7 +1271,7 @@ TEST(IncrementalMarkingTest, HeapHashMapCopyWeakMemberWeakMember) {
   map1.insert(obj1, obj2);
   {
     // Weak references are strongified for the current cycle.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     EXPECT_TRUE(map1.Contains(obj1));
     HeapHashMap<WeakMember<Object>, WeakMember<Object>> map2(map1);
     EXPECT_TRUE(map1.Contains(obj1));
@@ -1288,7 +1286,7 @@ TEST(IncrementalMarkingTest, HeapHashMapCopyMemberWeakMember) {
   map1.insert(obj1, obj2);
   {
     // Weak references are strongified for the current cycle.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     EXPECT_TRUE(map1.Contains(obj1));
     HeapHashMap<Member<Object>, WeakMember<Object>> map2(map1);
     EXPECT_TRUE(map1.Contains(obj1));
@@ -1303,7 +1301,7 @@ TEST(IncrementalMarkingTest, HeapHashMapCopyWeakMemberMember) {
   map1.insert(obj1, obj2);
   {
     // Weak references are strongified for the current cycle.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     EXPECT_TRUE(map1.Contains(obj1));
     HeapHashMap<WeakMember<Object>, Member<Object>> map2(map1);
     EXPECT_TRUE(map1.Contains(obj1));
@@ -1317,7 +1315,7 @@ TEST(IncrementalMarkingTest, HeapHashMapMoveMember) {
   HeapHashMap<Member<Object>, Member<Object>> map1;
   map1.insert(obj1, obj2);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     HeapHashMap<Member<Object>, Member<Object>> map2(std::move(map1));
   }
 }
@@ -1329,7 +1327,7 @@ TEST(IncrementalMarkingTest, HeapHashMapMoveWeakMember) {
   map1.insert(obj1, obj2);
   {
     // Weak references are strongified for the current cycle.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     HeapHashMap<WeakMember<Object>, WeakMember<Object>> map2(std::move(map1));
   }
 }
@@ -1341,7 +1339,7 @@ TEST(IncrementalMarkingTest, HeapHashMapMoveMemberWeakMember) {
   map1.insert(obj1, obj2);
   {
     // Weak references are strongified for the current cycle.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     HeapHashMap<Member<Object>, WeakMember<Object>> map2(std::move(map1));
   }
 }
@@ -1353,7 +1351,7 @@ TEST(IncrementalMarkingTest, HeapHashMapMoveWeakMemberMember) {
   map1.insert(obj1, obj2);
   {
     // Weak references are strongified for the current cycle.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     HeapHashMap<WeakMember<Object>, Member<Object>> map2(std::move(map1));
   }
 }
@@ -1368,8 +1366,8 @@ TEST(IncrementalMarkingTest, HeapHashMapSwapMemberMember) {
   HeapHashMap<Member<Object>, Member<Object>> map2;
   map2.insert(obj3, obj4);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(),
-                                          {obj1, obj2, obj3, obj4});
+    ExpectWriteBarrierFires scope(ThreadState::Current(),
+                                  {obj1, obj2, obj3, obj4});
     std::swap(map1, map2);
   }
 }
@@ -1385,8 +1383,8 @@ TEST(IncrementalMarkingTest, HeapHashMapSwapWeakMemberWeakMember) {
   map2.insert(obj3, obj4);
   {
     // Weak references are strongified for the current cycle.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(),
-                                          {obj1, obj2, obj3, obj4});
+    ExpectWriteBarrierFires scope(ThreadState::Current(),
+                                  {obj1, obj2, obj3, obj4});
     std::swap(map1, map2);
   }
 }
@@ -1402,8 +1400,8 @@ TEST(IncrementalMarkingTest, HeapHashMapSwapMemberWeakMember) {
   map2.insert(obj3, obj4);
   {
     // Weak references are strongified for the current cycle.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(),
-                                          {obj1, obj2, obj3, obj4});
+    ExpectWriteBarrierFires scope(ThreadState::Current(),
+                                  {obj1, obj2, obj3, obj4});
     std::swap(map1, map2);
   }
 }
@@ -1419,8 +1417,8 @@ TEST(IncrementalMarkingTest, HeapHashMapSwapWeakMemberMember) {
   map2.insert(obj3, obj4);
   {
     // Weak references are strongified for the current cycle.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(),
-                                          {obj1, obj2, obj3, obj4});
+    ExpectWriteBarrierFires scope(ThreadState::Current(),
+                                  {obj1, obj2, obj3, obj4});
     std::swap(map1, map2);
   }
 }
@@ -1433,7 +1431,7 @@ TEST(IncrementalMarkingTest, HeapHashMapInsertStrongWeakPairMember) {
   {
     // Tests that the write barrier also fires for entities such as
     // StrongWeakPair that don't overload assignment operators in translators.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj3});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj3});
     map.insert(StrongWeakPair(obj1, obj2), obj3);
   }
 }
@@ -1446,7 +1444,7 @@ TEST(IncrementalMarkingTest, HeapHashMapInsertMemberStrongWeakPair) {
   {
     // Tests that the write barrier also fires for entities such as
     // StrongWeakPair that don't overload assignment operators in translators.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1, obj2});
     map.insert(obj1, StrongWeakPair(obj2, obj3));
   }
 }
@@ -1460,7 +1458,7 @@ TEST(IncrementalMarkingTest, HeapHashMapCopyKeysToVectorMember) {
   {
     // Only key should have its write barrier fired. A write barrier call for
     // value hints to an inefficient implementation.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj1});
     CopyKeysToVector(map, vec);
   }
 }
@@ -1474,7 +1472,7 @@ TEST(IncrementalMarkingTest, HeapHashMapCopyValuesToVectorMember) {
   {
     // Only value should have its write barrier fired. A write barrier call for
     // key hints to an inefficient implementation.
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj2});
+    ExpectWriteBarrierFires scope(ThreadState::Current(), {obj2});
     CopyValuesToVector(map, vec);
   }
 }
@@ -1548,30 +1546,35 @@ TEST(IncrementalMarkingTest, WriteBarrierDuringMixinConstruction) {
   IncrementalMarkingScope scope(ThreadState::Current());
   ObjectRegistry registry;
   RegisteringObject* object = new RegisteringObject(&registry);
+
+  // Clear any objects that have been added to the regular marking worklist in
+  // the process of calling the constructor.
   EXPECT_FALSE(scope.marking_worklist()->IsGlobalEmpty());
-  MarkingItem item;
-  EXPECT_TRUE(scope.marking_worklist()->Pop(WorklistTaskId::MainThread, &item));
-  RegisteringObject* recorded_object =
-      reinterpret_cast<RegisteringObject*>(item.object);
-  // In this case, the Member write barrier will also add the object to the
-  // regular marking stack. The not-fully-constructed object marking stack is
-  // only needed when going through custom off-heap data structures that require
-  // eager tracing.
-  EXPECT_EQ(object, recorded_object);
-  // In this example, there are two more objects on the callback stack: the
-  // backing store for which a write barrier triggers after rehashing, and
-  // a write barrier for the Member assignment (which might not always happen).
-  scope.marking_worklist()->Pop(WorklistTaskId::MainThread, &item);
-  scope.marking_worklist()->Pop(WorklistTaskId::MainThread, &item);
-  // The mixin object should be on the not-fully-constructed object marking
-  // stack.
+  MarkingItem marking_item;
+  while (scope.marking_worklist()->Pop(WorklistTaskId::MainThread,
+                                       &marking_item)) {
+    HeapObjectHeader* header =
+        HeapObjectHeader::FromPayload(marking_item.object);
+    if (header->IsMarked())
+      header->Unmark();
+  }
+  EXPECT_TRUE(scope.marking_worklist()->IsGlobalEmpty());
+
   EXPECT_FALSE(scope.not_fully_constructed_worklist()->IsGlobalEmpty());
-  NotFullyConstructedItem item2;
-  EXPECT_TRUE(scope.not_fully_constructed_worklist()->Pop(
-      WorklistTaskId::MainThread, &item2));
-  RegisteringObject* recorded_object2 =
-      reinterpret_cast<RegisteringObject*>(item2);
-  EXPECT_EQ(object, recorded_object2);
+  NotFullyConstructedItem partial_item;
+  bool found_mixin_object = false;
+  // The same object may be on the marking work list because of expanding
+  // and rehashing of the backing store in the registry.
+  while (scope.not_fully_constructed_worklist()->Pop(WorklistTaskId::MainThread,
+                                                     &partial_item)) {
+    if (object == partial_item)
+      found_mixin_object = true;
+    HeapObjectHeader* header = HeapObjectHeader::FromPayload(partial_item);
+    if (header->IsMarked())
+      header->Unmark();
+  }
+  EXPECT_TRUE(found_mixin_object);
+  EXPECT_TRUE(scope.not_fully_constructed_worklist()->IsGlobalEmpty());
 }
 
 TEST(IncrementalMarkingTest, OverrideAfterMixinConstruction) {

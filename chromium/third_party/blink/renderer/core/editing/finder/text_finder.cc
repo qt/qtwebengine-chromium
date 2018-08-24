@@ -90,7 +90,7 @@ class TextFinder::DeferredScopeStringMatches
                              const WebString& search_text,
                              const WebFindOptions& options)
       : timer_(text_finder->OwnerFrame().GetFrame()->GetTaskRunner(
-                   TaskType::kUnspecedTimer),
+                   TaskType::kInternalDefault),
                this,
                &DeferredScopeStringMatches::DoTimeout),
         text_finder_(text_finder),
@@ -534,7 +534,7 @@ void TextFinder::ScopeStringMatches(int identifier,
     last_match_count_ += match_count;
 
     // Let the frame know how many matches we found during this pass.
-    OwnerFrame().IncreaseMatchCount(match_count, identifier);
+    IncreaseMatchCount(identifier, match_count);
   }
 
   if (timed_out) {
@@ -557,7 +557,7 @@ void TextFinder::FlushCurrentScopingEffort(int identifier) {
     return;
 
   frame_scoping_ = false;
-  OwnerFrame().IncreaseMatchCount(0, identifier);
+  IncreaseMatchCount(identifier, 0);
 }
 
 void TextFinder::FinishCurrentScopingEffort(int identifier) {
@@ -674,7 +674,7 @@ WebFloatRect TextFinder::ActiveFindMatchRect() {
   return WebFloatRect(FindInPageRectFromRange(EphemeralRange(ActiveMatch())));
 }
 
-void TextFinder::FindMatchRects(WebVector<WebFloatRect>& output_rects) {
+Vector<WebFloatRect> TextFinder::FindMatchRects() {
   UpdateFindMatchRects();
 
   Vector<WebFloatRect> match_rects;
@@ -684,7 +684,7 @@ void TextFinder::FindMatchRects(WebVector<WebFloatRect>& output_rects) {
     match_rects.push_back(match.rect_);
   }
 
-  output_rects = match_rects;
+  return match_rects;
 }
 
 int TextFinder::SelectNearestFindMatch(const WebFloatPoint& point,
@@ -763,20 +763,17 @@ int TextFinder::SelectFindMatch(unsigned index, WebRect* selection_rect) {
                                   ScrollAlignment::kAlignCenterIfNeeded,
                                   kUserScroll));
 
-      if (RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-        // If RLS is on, absolute coordinates are scroll-variant so the
-        // bounding box will change if the page is scrolled by
-        // ScrollRectToVisible above. Recompute the bounding box so we have the
-        // updated location for the zoom below.
-        // TODO(bokan): This should really use the return value from
-        // ScrollRectToVisible which returns the updated position of the
-        // scrolled rect. However, this was recently added and this is a fix
-        // that needs to be merged to a release branch.
-        // https://crbug.com/823365.
-        active_match_bounding_box =
-            EnclosingIntRect(LayoutObject::AbsoluteBoundingBoxRectForRange(
-                EphemeralRange(active_match_.Get())));
-      }
+      // Absolute coordinates are scroll-variant so the bounding box will change
+      // if the page is scrolled by ScrollRectToVisible above. Recompute the
+      // bounding box so we have the updated location for the zoom below.
+      // TODO(bokan): This should really use the return value from
+      // ScrollRectToVisible which returns the updated position of the
+      // scrolled rect. However, this was recently added and this is a fix
+      // that needs to be merged to a release branch.
+      // https://crbug.com/823365.
+      active_match_bounding_box =
+          EnclosingIntRect(LayoutObject::AbsoluteBoundingBoxRectForRange(
+              EphemeralRange(active_match_.Get())));
     }
 
     // Zoom to the active match.

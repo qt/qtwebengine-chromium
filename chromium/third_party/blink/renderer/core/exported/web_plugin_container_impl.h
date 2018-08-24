@@ -44,6 +44,10 @@
 #include "third_party/blink/renderer/platform/wtf/compiler.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
+namespace cc {
+class Layer;
+}
+
 namespace blink {
 
 class Event;
@@ -101,7 +105,8 @@ class CORE_EXPORT WebPluginContainerImpl final
   void Show() override;
   void Hide() override;
 
-  WebLayer* PlatformLayer() const;
+  cc::Layer* CcLayer() const;
+  bool PreventContentsOpaqueChangesToCcLayer() const;
   v8::Local<v8::Object> ScriptableObject(v8::Isolate*);
   bool SupportsKeyboardFocus() const;
   bool SupportsInputMethod() const;
@@ -143,11 +148,13 @@ class CORE_EXPORT WebPluginContainerImpl final
   WebPlugin* Plugin() override { return web_plugin_; }
   void SetPlugin(WebPlugin*) override;
 
+  void UsePluginAsFindHandler() override;
+
   float DeviceScaleFactor() override;
   float PageScaleFactor() override;
   float PageZoomFactor() override;
 
-  void SetWebLayer(WebLayer*) override;
+  void SetCcLayer(cc::Layer*, bool prevent_contents_opaque_changes) override;
 
   void RequestFullscreen() override;
   bool IsFullscreenElement() const override;
@@ -186,7 +193,7 @@ class CORE_EXPORT WebPluginContainerImpl final
   void DidFinishLoading();
   void DidFailLoading(const ResourceError&);
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
   // USING_PRE_FINALIZER does not allow for virtual dispatch from the finalizer
   // method. Here we call Dispose() which does the correct virtual dispatch.
   void PreFinalize() { Dispose(); }
@@ -231,9 +238,10 @@ class CORE_EXPORT WebPluginContainerImpl final
 
   Member<HTMLPlugInElement> element_;
   WebPlugin* web_plugin_;
-  WebLayer* web_layer_;
+  cc::Layer* layer_;
   IntRect frame_rect_;
   TouchEventRequestType touch_event_request_type_;
+  bool prevent_contents_opaque_changes_;
   bool wants_wheel_events_;
   bool self_visible_;
   bool parent_visible_;

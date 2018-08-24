@@ -18,10 +18,12 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/browser_resources.h"
 #include "chrome/grit/generated_resources.h"
+#include "chrome/grit/theme_resources.h"
 #include "components/strings/grit/components_strings.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
 
 namespace {
 
@@ -36,6 +38,8 @@ void AddLocalizedString(content::WebUIDataSource* source,
 content::WebUIDataSource* CreateMdBookmarksUIHTMLSource(Profile* profile) {
   content::WebUIDataSource* source =
       content::WebUIDataSource::Create(chrome::kChromeUIBookmarksHost);
+  source->OverrideContentSecurityPolicyScriptSrc(
+      "script-src chrome://resources 'self';");
 
   // Localized strings (alphabetical order).
   AddLocalizedString(source, "addBookmarkTitle",
@@ -226,6 +230,8 @@ MdBookmarksUI::MdBookmarksUI(content::WebUI* web_ui) : WebUIController(web_ui) {
 }
 
 // static
-bool MdBookmarksUI::IsEnabled() {
-  return base::FeatureList::IsEnabled(features::kMaterialDesignBookmarks);
+base::RefCountedMemory* MdBookmarksUI::GetFaviconResourceBytes(
+    ui::ScaleFactor scale_factor) {
+  return ui::ResourceBundle::GetSharedInstance().LoadDataResourceBytesForScale(
+      IDR_BOOKMARKS_FAVICON, scale_factor);
 }

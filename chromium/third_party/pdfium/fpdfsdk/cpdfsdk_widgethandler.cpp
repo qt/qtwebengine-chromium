@@ -47,7 +47,7 @@ bool CPDFSDK_WidgetHandler::CanAnswer(CPDFSDK_Annot* pAnnot) {
     return true;
 
   CPDF_Page* pPage = pWidget->GetPDFPage();
-  uint32_t dwPermissions = pPage->m_pDocument->GetUserPermissions();
+  uint32_t dwPermissions = pPage->GetDocument()->GetUserPermissions();
   return (dwPermissions & FPDFPERM_FILL_FORM) ||
          (dwPermissions & FPDFPERM_ANNOT_FORM);
 }
@@ -281,10 +281,15 @@ CFX_FloatRect CPDFSDK_WidgetHandler::GetViewBBox(CPDFSDK_PageView* pPageView,
   return CFX_FloatRect();
 }
 
+WideString CPDFSDK_WidgetHandler::GetText(CPDFSDK_Annot* pAnnot) {
+  if (!pAnnot->IsSignatureWidget() && m_pFormFiller)
+    return m_pFormFiller->GetText(pAnnot);
+  return WideString();
+}
+
 WideString CPDFSDK_WidgetHandler::GetSelectedText(CPDFSDK_Annot* pAnnot) {
   if (!pAnnot->IsSignatureWidget() && m_pFormFiller)
     return m_pFormFiller->GetSelectedText(pAnnot);
-
   return WideString();
 }
 
@@ -292,6 +297,30 @@ void CPDFSDK_WidgetHandler::ReplaceSelection(CPDFSDK_Annot* pAnnot,
                                              const WideString& text) {
   if (!pAnnot->IsSignatureWidget() && m_pFormFiller)
     m_pFormFiller->ReplaceSelection(pAnnot, text);
+}
+
+bool CPDFSDK_WidgetHandler::CanUndo(CPDFSDK_Annot* pAnnot) {
+  if (!pAnnot->IsSignatureWidget() && m_pFormFiller)
+    return m_pFormFiller->CanUndo(pAnnot);
+  return false;
+}
+
+bool CPDFSDK_WidgetHandler::CanRedo(CPDFSDK_Annot* pAnnot) {
+  if (!pAnnot->IsSignatureWidget() && m_pFormFiller)
+    return m_pFormFiller->CanRedo(pAnnot);
+  return false;
+}
+
+bool CPDFSDK_WidgetHandler::Undo(CPDFSDK_Annot* pAnnot) {
+  if (!pAnnot->IsSignatureWidget() && m_pFormFiller)
+    return m_pFormFiller->Undo(pAnnot);
+  return false;
+}
+
+bool CPDFSDK_WidgetHandler::Redo(CPDFSDK_Annot* pAnnot) {
+  if (!pAnnot->IsSignatureWidget() && m_pFormFiller)
+    return m_pFormFiller->Redo(pAnnot);
+  return false;
 }
 
 bool CPDFSDK_WidgetHandler::HitTest(CPDFSDK_PageView* pPageView,

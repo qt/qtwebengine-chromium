@@ -2,23 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+/** @enum {number} */
+const ShortcutError = {
+  NO_ERROR: 0,
+  INCLUDE_START_MODIFIER: 1,
+  TOO_MANY_MODIFIERS: 2,
+  NEED_CHARACTER: 3,
+};
+
 cr.define('extensions', function() {
   'use strict';
-
-  /** @enum {number} */
-  const ShortcutError = {
-    NO_ERROR: 0,
-    INCLUDE_START_MODIFIER: 1,
-    TOO_MANY_MODIFIERS: 2,
-    NEED_CHARACTER: 3,
-  };
 
   // The UI to display and manage keyboard shortcuts set for extension commands.
   const ShortcutInput = Polymer({
     is: 'extensions-shortcut-input',
 
     properties: {
-      /** @type {!Object} */
+      /** @type {!extensions.KeyboardShortcutDelegate} */
       delegate: Object,
 
       item: {
@@ -180,7 +180,7 @@ cr.define('extensions', function() {
     /** @private */
     commitPending_: function() {
       this.shortcut = this.pendingShortcut_;
-      this.delegate.updateExtensionCommand(
+      this.delegate.updateExtensionCommandKeybinding(
           this.item, this.commandName, this.shortcut);
     },
 

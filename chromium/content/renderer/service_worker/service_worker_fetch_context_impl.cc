@@ -5,14 +5,15 @@
 #include "content/renderer/service_worker/service_worker_fetch_context_impl.h"
 
 #include "base/feature_list.h"
-#include "content/common/wrapper_shared_url_loader_factory.h"
 #include "content/public/common/content_features.h"
 #include "content/public/renderer/url_loader_throttle_provider.h"
+#include "content/public/renderer/websocket_handshake_throttle_provider.h"
 #include "content/renderer/loader/request_extra_data.h"
 #include "content/renderer/loader/resource_dispatcher.h"
 #include "content/renderer/loader/web_url_loader_impl.h"
 #include "content/renderer/loader/web_url_request_util.h"
 #include "ipc/ipc_message.h"
+#include "services/network/public/cpp/wrapper_shared_url_loader_factory.h"
 
 namespace content {
 
@@ -21,11 +22,15 @@ ServiceWorkerFetchContextImpl::ServiceWorkerFetchContextImpl(
     std::unique_ptr<network::SharedURLLoaderFactoryInfo>
         url_loader_factory_info,
     int service_worker_provider_id,
-    std::unique_ptr<URLLoaderThrottleProvider> throttle_provider)
+    std::unique_ptr<URLLoaderThrottleProvider> throttle_provider,
+    std::unique_ptr<WebSocketHandshakeThrottleProvider>
+        websocket_handshake_throttle_provider)
     : worker_script_url_(worker_script_url),
       url_loader_factory_info_(std::move(url_loader_factory_info)),
       service_worker_provider_id_(service_worker_provider_id),
-      throttle_provider_(std::move(throttle_provider)) {}
+      throttle_provider_(std::move(throttle_provider)),
+      websocket_handshake_throttle_provider_(
+          std::move(websocket_handshake_throttle_provider)) {}
 
 ServiceWorkerFetchContextImpl::~ServiceWorkerFetchContextImpl() {}
 
@@ -47,16 +52,16 @@ void ServiceWorkerFetchContextImpl::InitializeOnWorkerThread() {
 std::unique_ptr<blink::WebURLLoaderFactory>
 ServiceWorkerFetchContextImpl::CreateURLLoaderFactory() {
   DCHECK(url_loader_factory_);
-  return std::make_unique<content::WebURLLoaderFactoryImpl>(
+  return std::make_unique<WebURLLoaderFactoryImpl>(
       resource_dispatcher_->GetWeakPtr(), std::move(url_loader_factory_));
 }
 
 std::unique_ptr<blink::WebURLLoaderFactory>
 ServiceWorkerFetchContextImpl::WrapURLLoaderFactory(
     mojo::ScopedMessagePipeHandle url_loader_factory_handle) {
-  return std::make_unique<content::WebURLLoaderFactoryImpl>(
+  return std::make_unique<WebURLLoaderFactoryImpl>(
       resource_dispatcher_->GetWeakPtr(),
-      base::MakeRefCounted<WrapperSharedURLLoaderFactory>(
+      base::MakeRefCounted<network::WrapperSharedURLLoaderFactory>(
           network::mojom::URLLoaderFactoryPtrInfo(
               std::move(url_loader_factory_handle),
               network::mojom::URLLoaderFactory::Version_)));
@@ -85,6 +90,14 @@ blink::WebURL ServiceWorkerFetchContextImpl::SiteForCookies() const {
   // the service worker's origin's host's registrable domain.
   // https://tools.ietf.org/html/draft-ietf-httpbis-cookie-same-site-07#section-2.1.2
   return worker_script_url_;
+}
+
+std::unique_ptr<blink::WebSocketHandshakeThrottle>
+ServiceWorkerFetchContextImpl::CreateWebSocketHandshakeThrottle() {
+  if (!websocket_handshake_throttle_provider_)
+    return nullptr;
+  return websocket_handshake_throttle_provider_->CreateThrottle(
+      MSG_ROUTING_NONE);
 }
 
 }  // namespace content

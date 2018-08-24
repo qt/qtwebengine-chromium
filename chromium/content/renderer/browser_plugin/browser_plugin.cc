@@ -95,7 +95,8 @@ BrowserPlugin::BrowserPlugin(
       ready_(false),
       browser_plugin_instance_id_(browser_plugin::kInstanceIDNone),
       delegate_(delegate),
-      task_runner_(render_frame->GetTaskRunner(blink::TaskType::kUnthrottled)),
+      task_runner_(
+          render_frame->GetTaskRunner(blink::TaskType::kInternalDefault)),
       weak_ptr_factory_(this) {
   browser_plugin_instance_id_ =
       BrowserPluginManager::Get()->GetNextInstanceID();
@@ -126,8 +127,8 @@ bool BrowserPlugin::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_GuestReady, OnGuestReady)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_EnableAutoResize, OnEnableAutoResize)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_DisableAutoResize, OnDisableAutoResize)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_ResizeDueToAutoResize,
-                        OnResizeDueToAutoResize)
+    IPC_MESSAGE_HANDLER(BrowserPluginMsg_DidUpdateVisualProperties,
+                        OnDidUpdateVisualProperties)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetCursor, OnSetCursor)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetMouseLock, OnSetMouseLock)
 #if defined(USE_AURA)
@@ -209,7 +210,7 @@ void BrowserPlugin::Attach() {
     }
   }
 
-  sent_resize_params_ = base::nullopt;
+  sent_visual_properties_ = base::nullopt;
 }
 
 void BrowserPlugin::Detach() {
@@ -218,7 +219,7 @@ void BrowserPlugin::Detach() {
 
   attached_ = false;
   guest_crashed_ = false;
-  web_layer_ = nullptr;
+  embedded_layer_ = nullptr;
 
   BrowserPluginManager::Get()->Send(
       new BrowserPluginHostMsg_Detach(browser_plugin_instance_id_));
@@ -250,57 +251,72 @@ void BrowserPlugin::CreateMusWindowAndEmbed(
 }
 #endif
 
-void BrowserPlugin::WasResized() {
-  bool size_changed = !sent_resize_params_ ||
-                      sent_resize_params_->auto_resize_enabled !=
-                          pending_resize_params_.auto_resize_enabled ||
-                      sent_resize_params_->min_size_for_auto_resize !=
-                          pending_resize_params_.min_size_for_auto_resize ||
-                      sent_resize_params_->max_size_for_auto_resize !=
-                          pending_resize_params_.max_size_for_auto_resize ||
-                      sent_resize_params_->local_frame_size !=
-                          pending_resize_params_.local_frame_size ||
-                      sent_resize_params_->screen_space_rect.size() !=
-                          pending_resize_params_.screen_space_rect.size() ||
-                      sent_resize_params_->auto_resize_sequence_number !=
-                          pending_resize_params_.auto_resize_sequence_number;
+void BrowserPlugin::SynchronizeVisualProperties() {
+  bool size_changed = !sent_visual_properties_ ||
+                      sent_visual_properties_->auto_resize_enabled !=
+                          pending_visual_properties_.auto_resize_enabled ||
+                      sent_visual_properties_->min_size_for_auto_resize !=
+                          pending_visual_properties_.min_size_for_auto_resize ||
+                      sent_visual_properties_->max_size_for_auto_resize !=
+                          pending_visual_properties_.max_size_for_auto_resize ||
+                      sent_visual_properties_->local_frame_size !=
+                          pending_visual_properties_.local_frame_size ||
+                      sent_visual_properties_->screen_space_rect.size() !=
+                          pending_visual_properties_.screen_space_rect.size();
 
-  bool synchronized_params_changed =
-      !sent_resize_params_ || size_changed ||
-      sent_resize_params_->screen_info != pending_resize_params_.screen_info;
+  // Note that the following flag is true if the capture sequence number
+  // actually changed. That is, it is false if we did not have
+  // |sent_visual_properties_|, which is different from the other local flags
+  // here.
+  bool capture_sequence_number_changed =
+      sent_visual_properties_ &&
+      sent_visual_properties_->capture_sequence_number !=
+          pending_visual_properties_.capture_sequence_number;
 
-  if (synchronized_params_changed)
+  bool synchronized_props_changed =
+      !sent_visual_properties_ || size_changed ||
+      sent_visual_properties_->screen_info !=
+          pending_visual_properties_.screen_info ||
+      capture_sequence_number_changed;
+
+  if (synchronized_props_changed)
     parent_local_surface_id_allocator_.GenerateId();
 
   if (enable_surface_synchronization_ && frame_sink_id_.is_valid()) {
-    // TODO(vmpstr): When capture_sequence_number is available, the deadline
-    // should be infinite if the sequence number has changed.
+    // If we're synchronizing surfaces, then use an infinite deadline to ensure
+    // everything is synchronized.
+    cc::DeadlinePolicy deadline =
+        capture_sequence_number_changed
+            ? cc::DeadlinePolicy::UseInfiniteDeadline()
+            : cc::DeadlinePolicy::UseDefaultDeadline();
     compositing_helper_->SetPrimarySurfaceId(
         viz::SurfaceId(frame_sink_id_, GetLocalSurfaceId()),
-        screen_space_rect().size(), cc::DeadlinePolicy::UseDefaultDeadline());
+        screen_space_rect().size(), deadline);
   }
 
-  bool position_changed = !sent_resize_params_ ||
-                          sent_resize_params_->screen_space_rect.origin() !=
-                              pending_resize_params_.screen_space_rect.origin();
-  bool resize_params_changed = synchronized_params_changed || position_changed;
+  bool position_changed =
+      !sent_visual_properties_ ||
+      sent_visual_properties_->screen_space_rect.origin() !=
+          pending_visual_properties_.screen_space_rect.origin();
+  bool visual_properties_changed =
+      synchronized_props_changed || position_changed;
 
-  if (resize_params_changed && attached()) {
+  if (visual_properties_changed && attached()) {
     // Let the browser know about the updated view rect.
     BrowserPluginManager::Get()->Send(
-        new BrowserPluginHostMsg_UpdateResizeParams(browser_plugin_instance_id_,
-                                                    GetLocalSurfaceId(),
-                                                    pending_resize_params_));
+        new BrowserPluginHostMsg_SynchronizeVisualProperties(
+            browser_plugin_instance_id_, GetLocalSurfaceId(),
+            pending_visual_properties_));
   }
 
   if (delegate_ && size_changed)
     delegate_->DidResizeElement(screen_space_rect().size());
 
-  if (resize_params_changed && attached())
-    sent_resize_params_ = pending_resize_params_;
+  if (visual_properties_changed && attached())
+    sent_visual_properties_ = pending_visual_properties_;
 
 #if defined(USE_AURA)
-  if (features::IsMusEnabled() && mus_embedded_frame_) {
+  if (features::IsMashEnabled() && mus_embedded_frame_) {
     mus_embedded_frame_->SetWindowBounds(GetLocalSurfaceId(),
                                          FrameRectInPixels());
   }
@@ -323,7 +339,7 @@ void BrowserPlugin::OnAttachACK(
   attached_ = true;
   if (child_local_surface_id)
     parent_local_surface_id_allocator_.Reset(*child_local_surface_id);
-  WasResized();
+  SynchronizeVisualProperties();
 }
 
 void BrowserPlugin::OnGuestGone(int browser_plugin_instance_id) {
@@ -336,28 +352,35 @@ void BrowserPlugin::OnGuestReady(int browser_plugin_instance_id,
                                  const viz::FrameSinkId& frame_sink_id) {
   guest_crashed_ = false;
   frame_sink_id_ = frame_sink_id;
-  sent_resize_params_ = base::nullopt;
-  WasResized();
+  sent_visual_properties_ = base::nullopt;
+  SynchronizeVisualProperties();
 }
 
-void BrowserPlugin::OnResizeDueToAutoResize(int browser_plugin_instance_id,
-                                            uint64_t sequence_number) {
-  pending_resize_params_.auto_resize_sequence_number = sequence_number;
-  WasResized();
+void BrowserPlugin::OnDidUpdateVisualProperties(
+    int browser_plugin_instance_id,
+    const cc::RenderFrameMetadata& metadata) {
+  if (!parent_local_surface_id_allocator_.UpdateFromChild(
+          metadata.local_surface_id.value_or(viz::LocalSurfaceId()))) {
+    return;
+  }
+
+  // The viz::LocalSurfaceId has changed so we call SynchronizeVisualProperties
+  // here to embed it.
+  SynchronizeVisualProperties();
 }
 
 void BrowserPlugin::OnEnableAutoResize(int browser_plugin_instance_id,
                                        const gfx::Size& min_size,
                                        const gfx::Size& max_size) {
-  pending_resize_params_.auto_resize_enabled = true;
-  pending_resize_params_.min_size_for_auto_resize = min_size;
-  pending_resize_params_.max_size_for_auto_resize = max_size;
-  WasResized();
+  pending_visual_properties_.auto_resize_enabled = true;
+  pending_visual_properties_.min_size_for_auto_resize = min_size;
+  pending_visual_properties_.max_size_for_auto_resize = max_size;
+  SynchronizeVisualProperties();
 }
 
 void BrowserPlugin::OnDisableAutoResize(int browser_plugin_instance_id) {
-  pending_resize_params_.auto_resize_enabled = false;
-  WasResized();
+  pending_visual_properties_.auto_resize_enabled = false;
+  SynchronizeVisualProperties();
 }
 
 void BrowserPlugin::OnSetCursor(int browser_plugin_instance_id,
@@ -418,7 +441,7 @@ gfx::Rect BrowserPlugin::FrameRectInPixels() const {
 }
 
 float BrowserPlugin::GetDeviceScaleFactor() const {
-  return pending_resize_params_.screen_info.device_scale_factor;
+  return pending_visual_properties_.screen_info.device_scale_factor;
 }
 
 void BrowserPlugin::UpdateInternalInstanceId() {
@@ -442,14 +465,20 @@ void BrowserPlugin::UpdateGuestFocusState(blink::WebFocusType focus_type) {
 }
 
 void BrowserPlugin::ScreenInfoChanged(const ScreenInfo& screen_info) {
-  pending_resize_params_.screen_info = screen_info;
+  pending_visual_properties_.screen_info = screen_info;
   if (guest_crashed_) {
     // Update the sad page to match the current ScreenInfo.
     compositing_helper_->ChildFrameGone(screen_space_rect().size(),
                                         screen_info.device_scale_factor);
     return;
   }
-  WasResized();
+  SynchronizeVisualProperties();
+}
+
+void BrowserPlugin::UpdateCaptureSequenceNumber(
+    uint32_t capture_sequence_number) {
+  pending_visual_properties_.capture_sequence_number = capture_sequence_number;
+  SynchronizeVisualProperties();
 }
 
 bool BrowserPlugin::ShouldGuestBeFocused() const {
@@ -574,14 +603,14 @@ void BrowserPlugin::UpdateGeometry(const WebRect& plugin_rect_in_viewport,
     ready_ = true;
   }
 
-  pending_resize_params_.screen_space_rect = screen_space_rect;
+  pending_visual_properties_.screen_space_rect = screen_space_rect;
   if (guest_crashed_) {
     // Update the sad page to match the current ScreenInfo.
     compositing_helper_->ChildFrameGone(screen_space_rect.size(),
                                         screen_info().device_scale_factor);
     return;
   }
-  WasResized();
+  SynchronizeVisualProperties();
 }
 
 void BrowserPlugin::UpdateFocus(bool focused, blink::WebFocusType focus_type) {
@@ -823,14 +852,15 @@ void BrowserPlugin::OnMusEmbeddedFrameSinkIdAllocated(
 }
 #endif
 
-blink::WebLayer* BrowserPlugin::GetLayer() {
-  return web_layer_.get();
+cc::Layer* BrowserPlugin::GetLayer() {
+  return embedded_layer_.get();
 }
 
-void BrowserPlugin::SetLayer(std::unique_ptr<blink::WebLayer> web_layer) {
+void BrowserPlugin::SetLayer(scoped_refptr<cc::Layer> layer,
+                             bool prevent_contents_opaque_changes) {
   if (container_)
-    container_->SetWebLayer(web_layer.get());
-  web_layer_ = std::move(web_layer);
+    container_->SetCcLayer(layer.get(), prevent_contents_opaque_changes);
+  embedded_layer_ = std::move(layer);
 }
 
 SkBitmap* BrowserPlugin::GetSadPageBitmap() {

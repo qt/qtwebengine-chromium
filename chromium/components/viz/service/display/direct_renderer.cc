@@ -80,7 +80,7 @@ DirectRenderer::DrawingFrame::~DrawingFrame() = default;
 
 DirectRenderer::DirectRenderer(const RendererSettings* settings,
                                OutputSurface* output_surface,
-                               cc::DisplayResourceProvider* resource_provider)
+                               DisplayResourceProvider* resource_provider)
     : settings_(settings),
       output_surface_(output_surface),
       resource_provider_(resource_provider),
@@ -273,7 +273,7 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
   // Create the overlay candidate for the output surface, and mark it as
   // always handled.
   if (output_surface_->IsDisplayedAsOverlayPlane()) {
-    cc::OverlayCandidate output_surface_plane;
+    OverlayCandidate output_surface_plane;
     output_surface_plane.display_rect =
         gfx::RectF(device_viewport_size.width(), device_viewport_size.height());
     output_surface_plane.resource_size_in_pixels = device_viewport_size;
@@ -328,8 +328,23 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
   if (!skip_drawing_root_render_pass && !use_partial_swap_)
     current_frame()->root_damage_rect = gfx::Rect(device_viewport_size);
 
-  if (!skip_drawing_root_render_pass)
+  if (!skip_drawing_root_render_pass) {
     DrawRenderPassAndExecuteCopyRequests(root_render_pass);
+    // Use a fence to synchronize display of the surface overlay. Note that
+    // gpu_fence_id may have the special value 0 ("no fence") if fences are not
+    // supported. In that case synchronization will happen through other means
+    // on the service side.
+    // TODO(crbug.com/840805): We currently only use fences for root render
+    // passes but we may also need to use fences for non-root passes in some
+    // cases (e.g. WebGL canvas).
+    auto gpu_fence_id = output_surface_->UpdateGpuFence();
+    for (auto& overlay : current_frame()->overlay_list) {
+      if (overlay.use_output_surface_for_resource) {
+        overlay.gpu_fence_id = gpu_fence_id;
+        break;
+      }
+    }
+  }
 
   FinishDrawingFrame();
   render_passes_in_draw_order->clear();

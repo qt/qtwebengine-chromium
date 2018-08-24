@@ -6,8 +6,8 @@
 #include <stdint.h>
 
 #include "base/bind.h"
+#include "base/containers/flat_map.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
@@ -246,7 +246,7 @@ class TestWindowTreeClient : public mojom::WindowTreeClient,
   // Generally you want NewWindow(), but use this if you need to test given
   // a complete window id (NewWindow() ors with the client id).
   Id NewWindowWithCompleteId(Id id) {
-    std::unordered_map<std::string, std::vector<uint8_t>> properties;
+    base::flat_map<std::string, std::vector<uint8_t>> properties;
     const uint32_t change_id = GetAndAdvanceChangeId();
     tree()->NewWindow(change_id, id, std::move(properties));
     return WaitForChangeCompleted(change_id) ? id : 0;
@@ -422,9 +422,8 @@ class TestWindowTreeClient : public mojom::WindowTreeClient,
     tracker_.OnWindowCursorChanged(window_id, cursor);
   }
 
-  void OnDragDropStart(
-      const std::unordered_map<std::string, std::vector<uint8_t>>& drag_data)
-      override {
+  void OnDragDropStart(const base::flat_map<std::string, std::vector<uint8_t>>&
+                           drag_data) override {
     NOTIMPLEMENTED();
   }
 
@@ -512,7 +511,7 @@ class TestWindowTreeClient : public mojom::WindowTreeClient,
   void WmCreateTopLevelWindow(
       uint32_t change_id,
       const viz::FrameSinkId& frame_sink_id,
-      const std::unordered_map<std::string, std::vector<uint8_t>>& properties)
+      const base::flat_map<std::string, std::vector<uint8_t>>& properties)
       override {
     NOTIMPLEMENTED();
   }
@@ -2430,8 +2429,8 @@ TEST_F(WindowTreeClientTest, SurfaceIdPropagation) {
     compositor_frame.metadata.device_scale_factor = 1.f;
     compositor_frame.metadata.begin_frame_ack = viz::BeginFrameAck(0, 1, true);
     viz::LocalSurfaceId local_surface_id(1, base::UnguessableToken::Create());
-    surface_ptr->SubmitCompositorFrame(local_surface_id,
-                                       std::move(compositor_frame), nullptr, 0);
+    surface_ptr->SubmitCompositorFrame(
+        local_surface_id, std::move(compositor_frame), base::nullopt, 0);
   }
   // Make sure the parent connection gets the surface ID.
   wt_client1()->WaitForChangeCount(1);
@@ -2470,8 +2469,8 @@ TEST_F(WindowTreeClientTest, SurfaceIdPropagation) {
     compositor_frame.metadata.device_scale_factor = 1.f;
     compositor_frame.metadata.begin_frame_ack = viz::BeginFrameAck(0, 1, true);
     viz::LocalSurfaceId local_surface_id(2, base::UnguessableToken::Create());
-    surface_ptr->SubmitCompositorFrame(local_surface_id,
-                                       std::move(compositor_frame), nullptr, 0);
+    surface_ptr->SubmitCompositorFrame(
+        local_surface_id, std::move(compositor_frame), base::nullopt, 0);
   }
   // Make sure the parent connection gets the surface ID.
   wt_client2()->WaitForChangeCount(1);

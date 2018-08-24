@@ -36,6 +36,7 @@
 #include "third_party/blink/renderer/core/css/css_to_length_conversion_data.h"
 #include "third_party/blink/renderer/core/css/document_style_sheet_collection.h"
 #include "third_party/blink/renderer/core/css/media_values_initial_viewport.h"
+#include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
 #include "third_party/blink/renderer/core/css/style_rule.h"
 #include "third_party/blink/renderer/core/css/style_rule_import.h"
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
@@ -51,6 +52,16 @@
 
 namespace blink {
 
+namespace {
+
+bool HasViewportFitProperty(const CSSPropertyValueSet* property_set) {
+  DCHECK(property_set);
+  return RuntimeEnabledFeatures::DisplayCutoutViewportFitEnabled() &&
+         property_set->HasProperty(CSSPropertyViewportFit);
+}
+
+}  // namespace
+
 ViewportStyleResolver::ViewportStyleResolver(Document& document)
     : document_(document) {
   DCHECK(document.GetFrame());
@@ -64,6 +75,8 @@ void ViewportStyleResolver::Reset() {
   property_set_ = nullptr;
   has_author_style_ = false;
   has_viewport_units_ = false;
+  DCHECK(initial_style_);
+  initial_style_->SetHasViewportUnits(false);
   needs_update_ = kNoUpdate;
 }
 
@@ -202,8 +215,14 @@ void ViewportStyleResolver::Resolve() {
   description.min_height = ViewportLengthValue(CSSPropertyMinHeight);
   description.max_height = ViewportLengthValue(CSSPropertyMaxHeight);
   description.orientation = ViewportArgumentValue(CSSPropertyOrientation);
+  if (HasViewportFitProperty(property_set_))
+    description.SetViewportFit(ViewportFitValue());
 
   document_->SetViewportDescription(description);
+
+  DCHECK(initial_style_);
+  if (initial_style_->HasViewportUnits())
+    has_viewport_units_ = true;
 }
 
 float ViewportStyleResolver::ViewportArgumentValue(CSSPropertyID id) const {
@@ -243,9 +262,10 @@ float ViewportStyleResolver::ViewportArgumentValue(CSSPropertyID id) const {
   if (primitive_value->IsNumber() || primitive_value->IsPx())
     return primitive_value->GetFloatValue();
 
-  if (primitive_value->IsFontRelativeLength())
+  if (primitive_value->IsFontRelativeLength()) {
     return primitive_value->GetFloatValue() *
-           document_->GetComputedStyle()->GetFontDescription().ComputedSize();
+           initial_style_->GetFontDescription().ComputedSize();
+  }
 
   if (primitive_value->IsPercentage()) {
     float percent_value = primitive_value->GetFloatValue() / 100.0f;
@@ -281,26 +301,17 @@ Length ViewportStyleResolver::ViewportLengthValue(CSSPropertyID id) {
   }
 
   const CSSPrimitiveValue* primitive_value = ToCSSPrimitiveValue(value);
-  ComputedStyle* document_style = document_->MutableComputedStyle();
-
-  // If we have viewport units the conversion will mark the document style as
-  // having viewport units.
-  bool document_style_has_viewport_units = document_style->HasViewportUnits();
-  document_style->SetHasViewportUnits(false);
 
   LocalFrameView* view = document_->GetFrame()->View();
   DCHECK(view);
 
-  CSSToLengthConversionData::FontSizes font_sizes(document_style,
-                                                  document_style);
+  CSSToLengthConversionData::FontSizes font_sizes(initial_style_.get(),
+                                                  initial_style_.get());
   CSSToLengthConversionData::ViewportSize viewport_size(
       view->InitialViewportWidth(), view->InitialViewportHeight());
 
   Length result = primitive_value->ConvertToLength(CSSToLengthConversionData(
-      document_style, font_sizes, viewport_size, 1.0f));
-  if (document_style->HasViewportUnits())
-    has_viewport_units_ = true;
-  document_style->SetHasViewportUnits(document_style_has_viewport_units);
+      initial_style_.get(), font_sizes, viewport_size, 1.0f));
 
   if (result.IsFixed() && document_->GetPage()) {
     float scaled_value =
@@ -309,6 +320,33 @@ Length ViewportStyleResolver::ViewportLengthValue(CSSPropertyID id) {
     result.SetValue(scaled_value);
   }
   return result;
+}
+
+ViewportDescription::ViewportFit ViewportStyleResolver::ViewportFitValue()
+    const {
+  const CSSValue* value =
+      property_set_->GetPropertyCSSValue(CSSPropertyViewportFit);
+  if (value->IsIdentifierValue()) {
+    switch (ToCSSIdentifierValue(value)->GetValueID()) {
+      case CSSValueCover:
+        return ViewportDescription::ViewportFit::kCover;
+      case CSSValueContain:
+        return ViewportDescription::ViewportFit::kContain;
+      case CSSValueAuto:
+      default:
+        return ViewportDescription::ViewportFit::kAuto;
+    }
+  }
+
+  NOTREACHED();
+  return ViewportDescription::ViewportFit::kAuto;
+}
+
+void ViewportStyleResolver::InitialStyleChanged() {
+  initial_style_ = nullptr;
+  // We need to recollect if the initial font size changed and media queries
+  // depend on font relative lengths.
+  needs_update_ = kCollectRules;
 }
 
 void ViewportStyleResolver::InitialViewportChanged() {
@@ -337,8 +375,14 @@ void ViewportStyleResolver::SetNeedsCollectRules() {
 
 void ViewportStyleResolver::UpdateViewport(
     DocumentStyleSheetCollection& collection) {
-  if (needs_update_ == kNoUpdate)
+  if (needs_update_ == kNoUpdate) {
+    // If initial_style_ is cleared it means things are dirty, so we should not
+    // end up here.
+    DCHECK(initial_style_);
     return;
+  }
+  if (!initial_style_)
+    initial_style_ = StyleResolver::StyleForViewport(*document_);
   if (needs_update_ == kCollectRules) {
     Reset();
     CollectViewportRulesFromUASheets();

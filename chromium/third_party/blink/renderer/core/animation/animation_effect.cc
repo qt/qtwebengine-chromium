@@ -98,9 +98,7 @@ double AnimationEffect::EndTimeInternal() const {
 void AnimationEffect::UpdateSpecifiedTiming(const Timing& timing) {
   // FIXME: Test whether the timing is actually different?
   timing_ = timing;
-  Invalidate();
-  if (owner_)
-    owner_->SpecifiedTimingChanged();
+  InvalidateAndNotifyOwner();
 }
 
 void AnimationEffect::getTiming(EffectTiming& effect_timing) const {
@@ -179,9 +177,7 @@ void AnimationEffect::updateTiming(OptionalEffectTiming& optional_timing,
   // (and which) to resolve the CSS secure/insecure context against.
   if (!TimingInput::Update(timing_, optional_timing, nullptr, exception_state))
     return;
-  Invalidate();
-  if (owner_)
-    owner_->SpecifiedTimingChanged();
+  InvalidateAndNotifyOwner();
 }
 
 void AnimationEffect::UpdateInheritedTime(double inherited_time,
@@ -209,7 +205,7 @@ void AnimationEffect::UpdateInheritedTime(double inherited_time,
         kParentPhase, current_phase, timing_);
 
     double current_iteration;
-    WTF::Optional<double> progress;
+    base::Optional<double> progress;
     if (const double iteration_duration = this->IterationDuration()) {
       const double start_offset = MultiplyZeroAlwaysGivesZero(
           timing_.iteration_start, iteration_duration);
@@ -222,7 +218,7 @@ void AnimationEffect::UpdateInheritedTime(double inherited_time,
 
       current_iteration = CalculateCurrentIteration(
           iteration_duration, iteration_time, scaled_active_time, timing_);
-      const WTF::Optional<double> transformed_time = CalculateTransformedTime(
+      const base::Optional<double> transformed_time = CalculateTransformedTime(
           current_iteration, iteration_duration, iteration_time, timing_);
 
       // The infinite iterationDuration case here is a workaround because
@@ -303,6 +299,12 @@ void AnimationEffect::UpdateInheritedTime(double inherited_time,
     calculated_.time_to_reverse_effect_change =
         CalculateTimeToEffectChange(false, local_time, time_to_next_iteration);
   }
+}
+
+void AnimationEffect::InvalidateAndNotifyOwner() const {
+  Invalidate();
+  if (owner_)
+    owner_->EffectInvalidated();
 }
 
 const AnimationEffect::CalculatedTiming& AnimationEffect::EnsureCalculated()

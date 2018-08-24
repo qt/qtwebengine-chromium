@@ -7,14 +7,18 @@
 #include <stddef.h>
 
 #include <algorithm>
+#include <set>
 #include <string>
 
+#include "base/containers/flat_set.h"
 #include "base/i18n/case_conversion.h"
 #include "base/lazy_instance.h"
 #include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/no_destructor.h"
 #include "base/stl_util.h"
 #include "base/strings/string16.h"
+#include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -35,8 +39,8 @@
 #include "third_party/blink/public/web/web_input_element.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/re2/src/re2/re2.h"
+#include "url/gurl.h"
 
-using blink::WebDocument;
 using blink::WebFormControlElement;
 using blink::WebFormElement;
 using blink::WebInputElement;
@@ -46,6 +50,82 @@ using blink::WebString;
 namespace autofill {
 
 namespace {
+
+constexpr char kAutocompleteUsername[] = "username";
+constexpr char kAutocompleteCurrentPassword[] = "current-password";
+constexpr char kAutocompleteNewPassword[] = "new-password";
+constexpr char kAutocompleteCreditCardPrefix[] = "cc-";
+
+// Parses the string with the value of an autocomplete attribute. If any of the
+// tokens "username", "current-password" or "new-password" are present, returns
+// an appropriate enum value, picking an arbitrary one if more are applicable.
+// Otherwise, it returns CREDIT_CARD if a token with a "cc-" prefix is found.
+// Otherwise, returns NONE.
+AutocompleteFlag ExtractAutocompleteFlag(const std::string& attribute) {
+  std::vector<base::StringPiece> tokens =
+      base::SplitStringPiece(attribute, base::kWhitespaceASCII,
+                             base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+  bool cc_seen = false;
+  for (base::StringPiece token : tokens) {
+    if (base::LowerCaseEqualsASCII(token, kAutocompleteUsername))
+      return AutocompleteFlag::USERNAME;
+    if (base::LowerCaseEqualsASCII(token, kAutocompleteCurrentPassword))
+      return AutocompleteFlag::CURRENT_PASSWORD;
+    if (base::LowerCaseEqualsASCII(token, kAutocompleteNewPassword))
+      return AutocompleteFlag::NEW_PASSWORD;
+
+    if (!cc_seen) {
+      cc_seen = base::StartsWith(token, kAutocompleteCreditCardPrefix,
+                                 base::CompareCase::SENSITIVE);
+    }
+  }
+  return cc_seen ? AutocompleteFlag::CREDIT_CARD : AutocompleteFlag::NONE;
+}
+
+// Helper to spare map::find boilerplate when caching element's autocomplete
+// attributes.
+class AutocompleteCache {
+ public:
+  AutocompleteCache();
+
+  ~AutocompleteCache();
+
+  // Computes and stores the AutocompleteFlag for |element| based on its
+  // autocomplete attribute. Note that this cannot be done on-demand during
+  // RetrieveFor, because the cache spares space and look-up time by not storing
+  // AutocompleteFlag::NONE values, hence for all elements without an
+  // autocomplete attribute, every retrieval would result in a new computation.
+  void Store(const WebInputElement& element);
+
+  // Retrieves the value previously stored for |element|.
+  AutocompleteFlag RetrieveFor(const WebInputElement& element) const;
+
+ private:
+  std::map<WebInputElement, AutocompleteFlag> cache_;
+
+  DISALLOW_COPY_AND_ASSIGN(AutocompleteCache);
+};
+
+AutocompleteCache::AutocompleteCache() = default;
+
+AutocompleteCache::~AutocompleteCache() = default;
+
+void AutocompleteCache::Store(const WebInputElement& element) {
+  const AutocompleteFlag flag = AutocompleteFlagForElement(element);
+  // Only store non-trivial flags. Most of the elements will have the NONE
+  // value, so spare storage and lookup time by assuming anything not stored in
+  // |cache_| has the NONE flag.
+  if (flag != AutocompleteFlag::NONE)
+    cache_[element] = flag;
+}
+
+AutocompleteFlag AutocompleteCache::RetrieveFor(
+    const WebInputElement& element) const {
+  auto it = cache_.find(element);
+  if (it == cache_.end())
+    return AutocompleteFlag::NONE;
+  return it->second;
+}
 
 // Describes fields filtering criteria. More priority criteria has higher value
 // in the enum. The fields with the maximal criteria are considered in a form,
@@ -65,21 +145,22 @@ enum class FieldFilteringLevel {
 // view of the underlying data, regardless of its origin.
 struct SyntheticForm {
   SyntheticForm();
+  SyntheticForm(SyntheticForm&& other);
   ~SyntheticForm();
 
-  std::vector<blink::WebElement> fieldsets;
   // Contains control elements of the represented form, including not fillable
   // ones.
   std::vector<blink::WebFormControlElement> control_elements;
-  blink::WebDocument document;
-  blink::WebString action;
+  // The origin of the containing document.
+  GURL origin;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SyntheticForm);
 };
 
-SyntheticForm::SyntheticForm() {}
-SyntheticForm::~SyntheticForm() {}
+SyntheticForm::SyntheticForm() = default;
+SyntheticForm::SyntheticForm(SyntheticForm&& other) = default;
+SyntheticForm::~SyntheticForm() = default;
 
 // Layout classification of password forms
 // A layout sequence of a form is the sequence of it's non-password and password
@@ -109,11 +190,6 @@ const char kLoginAndSignupRegex[] =
     "N+P"  // Sign-up section.
     ".*";  // Anything beyond that.
 
-const char kAutocompleteUsername[] = "username";
-const char kAutocompleteCurrentPassword[] = "current-password";
-const char kAutocompleteNewPassword[] = "new-password";
-const char kAutocompleteCreditCardPrefix[] = "cc-";
-
 struct LoginAndSignupLazyInstanceTraits
     : public base::internal::DestructorAtExitLazyInstanceTraits<re2::RE2> {
   static re2::RE2* New(void* instance) {
@@ -126,9 +202,9 @@ base::LazyInstance<re2::RE2, LoginAndSignupLazyInstanceTraits>
 
 // Return a pointer to WebInputElement iff |control_element| is an enabled text
 // input element. Otherwise, returns nullptr.
-WebInputElement* GetEnabledTextInputFieldOrNull(
-    WebFormControlElement* control_element) {
-  WebInputElement* input_element = ToWebInputElement(control_element);
+const WebInputElement* GetEnabledTextInputFieldOrNull(
+    const WebFormControlElement& control_element) {
+  const WebInputElement* input_element = ToWebInputElement(&control_element);
   if (input_element && input_element->IsEnabled() &&
       input_element->IsTextField()) {
     return input_element;
@@ -160,8 +236,8 @@ void PopulateSyntheticFormFromWebForm(const WebFormElement& web_form,
   web_form.GetFormControlElements(web_control_elements);
   synthetic_form->control_elements.assign(web_control_elements.begin(),
                                           web_control_elements.end());
-  synthetic_form->action = web_form.Action();
-  synthetic_form->document = web_form.GetDocument();
+  synthetic_form->origin =
+      form_util::GetCanonicalOriginForDocument(web_form.GetDocument());
 }
 
 // Helper to determine which password is the main (current) one, and which is
@@ -171,7 +247,8 @@ void PopulateSyntheticFormFromWebForm(const WebFormElement& web_form,
 void LocateSpecificPasswords(std::vector<WebInputElement> passwords,
                              WebInputElement* current_password,
                              WebInputElement* new_password,
-                             WebInputElement* confirmation_password) {
+                             WebInputElement* confirmation_password,
+                             const AutocompleteCache& autocomplete_cache) {
   DCHECK(!passwords.empty());
   DCHECK(current_password && current_password->IsNull());
   DCHECK(new_password && new_password->IsNull());
@@ -180,16 +257,17 @@ void LocateSpecificPasswords(std::vector<WebInputElement> passwords,
   // First, look for elements marked with either autocomplete='current-password'
   // or 'new-password' -- if we find any, take the hint, and treat the first of
   // each kind as the element we are looking for.
-  for (const WebInputElement& it : passwords) {
-    if (HasAutocompleteAttributeValue(it, kAutocompleteCurrentPassword) &&
+  for (const WebInputElement& password : passwords) {
+    const AutocompleteFlag flag = autocomplete_cache.RetrieveFor(password);
+    if (flag == AutocompleteFlag::CURRENT_PASSWORD &&
         current_password->IsNull()) {
-      *current_password = it;
-    } else if (HasAutocompleteAttributeValue(it, kAutocompleteNewPassword) &&
+      *current_password = password;
+    } else if (flag == AutocompleteFlag::NEW_PASSWORD &&
                new_password->IsNull()) {
-      *new_password = it;
+      *new_password = password;
     } else if (!new_password->IsNull() &&
-               (new_password->Value() == it.Value())) {
-      *confirmation_password = it;
+               (new_password->Value() == password.Value())) {
+      *confirmation_password = password;
     }
   }
 
@@ -253,25 +331,8 @@ void LocateSpecificPasswords(std::vector<WebInputElement> passwords,
   }
 }
 
-// Checks the |form_predictions| map to see if there is a key associated with
-// the |prediction_type| value. Assigns the key to |prediction_field| and
-// returns true if it is found.
-bool MapContainsPrediction(
-    const std::map<WebInputElement, PasswordFormFieldPredictionType>&
-        form_predictions,
-    PasswordFormFieldPredictionType prediction_type,
-    WebInputElement* prediction_field) {
-  for (auto it = form_predictions.begin(); it != form_predictions.end(); ++it) {
-    if (it->second == prediction_type) {
-      (*prediction_field) = it->first;
-      return true;
-    }
-  }
-  return false;
-}
-
 void FindPredictedElements(
-    const SyntheticForm& form,
+    const std::vector<blink::WebFormControlElement>& control_elements,
     const FormData& form_data,
     const FormsPredictionsMap& form_predictions,
     std::map<WebInputElement, PasswordFormFieldPredictionType>*
@@ -279,22 +340,21 @@ void FindPredictedElements(
   // Matching only requires that action and name of the form match to allow
   // the username to be updated even if the form is changed after page load.
   // See https://crbug.com/476092 for more details.
-  auto predictions_it = form_predictions.begin();
-  for (; predictions_it != form_predictions.end(); ++predictions_it) {
-    if (predictions_it->first.action == form_data.action &&
-        predictions_it->first.name == form_data.name) {
+  const PasswordFormFieldPredictionMap* field_predictions = nullptr;
+  for (const auto& form_predictions_pair : form_predictions) {
+    if (form_predictions_pair.first.action == form_data.action &&
+        form_predictions_pair.first.name == form_data.name) {
+      field_predictions = &form_predictions_pair.second;
       break;
     }
   }
 
-  if (predictions_it == form_predictions.end())
+  if (!field_predictions)
     return;
 
   std::vector<blink::WebFormControlElement> autofillable_elements =
-      form_util::ExtractAutofillableElementsFromSet(form.control_elements);
-  const PasswordFormFieldPredictionMap& field_predictions =
-      predictions_it->second;
-  for (const auto& prediction : field_predictions) {
+      form_util::ExtractAutofillableElementsFromSet(control_elements);
+  for (const auto& prediction : *field_predictions) {
     const FormFieldData& target_field = prediction.first;
     const PasswordFormFieldPredictionType& type = prediction.second;
     for (const auto& control_element : autofillable_elements)  {
@@ -407,8 +467,7 @@ void GetFieldFilteringLevels(
   }
 }
 
-autofill::ValueElementPair MakePossibleUsernamePair(
-    const blink::WebInputElement& input) {
+ValueElementPair MakePossibleUsernamePair(const blink::WebInputElement& input) {
   base::string16 trimmed_input_value, trimmed_input_autofill;
   base::TrimString(input.Value().Utf16(), base::ASCIIToUTF16(" "),
                    &trimmed_input_value);
@@ -455,66 +514,329 @@ bool ScriptModifiedUsernameAcceptable(
   return false;
 }
 
+bool StringMatchesCVC(const base::string16& str) {
+  static const base::NoDestructor<base::string16> kCardCvcReCached(
+      base::UTF8ToUTF16(kCardCvcRe));
+
+  return MatchesPattern(str, *kCardCvcReCached);
+}
+
+bool IsEnabledPasswordFieldPresent(const std::vector<FormFieldData>& fields) {
+  return std::find_if(
+             fields.begin(), fields.end(), [](const FormFieldData& field) {
+               return field.is_enabled && field.form_control_type == "password";
+             }) != fields.end();
+}
+
+// Find the first element in |username_predictions| (i.e. the most reliable
+// prediction) that occurs in |possible_usernames|. If the element is found, the
+// method saves it to |username_element| and returns true.
+bool FindUsernameInPredictions(
+    const std::vector<blink::WebInputElement>& username_predictions,
+    const std::vector<blink::WebInputElement>& possible_usernames,
+    WebInputElement* username_element) {
+  // To speed-up the matching for-loop below, convert |possible_usernames| to a
+  // set. Creating is O(N log N) for N=possible_usernames.size(). Retrieval is
+  // O(log N), so the whole for-loop is O(M log N) for
+  // M=username_predictions.size(). Use flat_set, because of cache locality (the
+  // M and N are likely small, so this can make a difference) and less heap
+  // allocations.
+  const base::flat_set<blink::WebInputElement> usernames(
+      possible_usernames.begin(), possible_usernames.end());
+
+  for (const blink::WebInputElement& prediction : username_predictions) {
+    auto iter = usernames.find(prediction);
+    if (iter != usernames.end()) {
+      *username_element = *iter;
+      return true;
+    }
+  }
+  return false;
+}
+
 // Get information about a login form encapsulated in a PasswordForm struct.
 // If an element of |form| has an entry in |nonscript_modified_values|, the
 // associated string is used instead of the element's value to create
 // the PasswordForm.
 bool GetPasswordForm(
-    const SyntheticForm& form,
+    SyntheticForm form,
     PasswordForm* password_form,
     const FieldValueAndPropertiesMaskMap* field_value_and_properties_map,
     const FormsPredictionsMap* form_predictions,
     UsernameDetectorCache* username_detector_cache) {
-  bool form_has_password_field =
-      std::find_if(form.control_elements.begin(), form.control_elements.end(),
-                   [](WebFormControlElement e) {
-                     WebInputElement* input_element =
-                         GetEnabledTextInputFieldOrNull(&e);
-                     return input_element &&
-                            input_element->IsPasswordFieldForAutofill();
-                   }) != form.control_elements.end();
-  if (!form_has_password_field)
+  DCHECK(!form.control_elements.empty());
+
+  // Early exit if no passwords to be typed into.
+  if (!IsEnabledPasswordFieldPresent(password_form->form_data.fields))
     return false;
 
+  // Narrow the scope to enabled inputs.
+  std::vector<WebInputElement> enabled_inputs;
+  enabled_inputs.reserve(form.control_elements.size());
+  for (const WebFormControlElement& control_element : form.control_elements) {
+    const WebInputElement* input_element =
+        GetEnabledTextInputFieldOrNull(control_element);
+    if (input_element)
+      enabled_inputs.push_back(*input_element);
+  }
+
+  // Remember the list of password fields without any heuristics applied in case
+  // the heuristics fail and a fall-back is needed:
+  // All password fields.
+  std::vector<WebInputElement> passwords_without_heuristics;
+  // Map from all password fields to the most recent non-password text input.
+  std::map<WebInputElement, WebInputElement>
+      preceding_text_input_for_password_without_heuristics;
+  WebInputElement most_recent_text_input;  // Just a temporary.
+  for (const WebInputElement& input : enabled_inputs) {
+    if (input.IsPasswordFieldForAutofill()) {
+      passwords_without_heuristics.push_back(input);
+      preceding_text_input_for_password_without_heuristics[input] =
+          most_recent_text_input;
+    } else {
+      most_recent_text_input = input;
+    }
+  }
+
+  // Fill the cache with autocomplete flags.
+  AutocompleteCache autocomplete_cache;
+  for (const WebInputElement& input : enabled_inputs) {
+    autocomplete_cache.Store(input);
+  }
+
+  // Narrow the scope further: drop credit-card fields.
+  std::vector<WebInputElement> plausible_inputs;
+  plausible_inputs.reserve(enabled_inputs.size());
+  for (const WebInputElement& input : enabled_inputs) {
+    const AutocompleteFlag flag = autocomplete_cache.RetrieveFor(input);
+    if (flag == AutocompleteFlag::CURRENT_PASSWORD ||
+        flag == AutocompleteFlag::NEW_PASSWORD) {
+      // A field marked as a password is considered not a credit-card field, no
+      // matter what.
+      plausible_inputs.push_back(input);
+    } else if (flag != AutocompleteFlag::CREDIT_CARD &&
+               !IsCreditCardVerificationPasswordField(input)) {
+      // Otherwise ensure that nothing hints that |input| is a credit-card
+      // field.
+      plausible_inputs.push_back(input);
+    }
+  }
+
+  // Further narrow to interesting fields (e.g., with user input, visible), if
+  // present.
+  // Compute the best filtering levels for usernames and for passwords.
+  FieldFilteringLevel username_fields_level = FieldFilteringLevel::NO_FILTER;
+  FieldFilteringLevel password_fields_level = FieldFilteringLevel::NO_FILTER;
+  GetFieldFilteringLevels(form.control_elements, field_value_and_properties_map,
+                          &username_fields_level, &password_fields_level);
+  // Remove all fields with filtering level below the best.
+  base::EraseIf(
+      plausible_inputs, [&field_value_and_properties_map, password_fields_level,
+                         username_fields_level](const WebInputElement& input) {
+        FieldFilteringLevel current_field_level =
+            GetFiltertingLevelForField(input, field_value_and_properties_map,
+                                       false /* ignore_autofilled_values */);
+        if (input.IsPasswordFieldForAutofill())
+          return (current_field_level < password_fields_level);
+        else
+          return (current_field_level < username_fields_level);
+      });
+
+  // Further, remove all readonly passwords. If the password field is readonly,
+  // the page is likely using a virtual keyboard and bypassing the password
+  // field value (see http://crbug.com/475488). There is nothing Chrome can do
+  // to fill passwords for now. Notable exceptions: if the password field was
+  // made readonly by JavaScript before submission, it remains interesting. If
+  // the password was marked via the autocomplete attribute, it also remains
+  // interesting.
+  base::EraseIf(plausible_inputs, [&field_value_and_properties_map,
+                                   &autocomplete_cache](
+                                      const WebInputElement& input) {
+    if (!input.IsPasswordFieldForAutofill())
+      return false;
+    if (!input.IsReadOnly())
+      return false;
+    // Check if the field was only made readonly before submission.
+    if (FieldHasPropertiesMask(field_value_and_properties_map, input,
+                               FieldPropertiesFlags::USER_TYPED |
+                                   FieldPropertiesFlags::AUTOFILLED)) {
+      return false;
+    }
+    // Check whether the field was explicitly marked as password.
+    const AutocompleteFlag flag = autocomplete_cache.RetrieveFor(input);
+    if (flag == AutocompleteFlag::CURRENT_PASSWORD ||
+        flag == AutocompleteFlag::NEW_PASSWORD) {
+      return false;
+    }
+    return true;
+  });
+
+  // Evaluate available server-side predictions.
+  std::map<WebInputElement, PasswordFormFieldPredictionType> predicted_elements;
+  WebInputElement predicted_username_element;
+  if (form_predictions) {
+    FindPredictedElements(form.control_elements, password_form->form_data,
+                          *form_predictions, &predicted_elements);
+
+    for (const auto& predicted_pair : predicted_elements) {
+      if (predicted_pair.second == PREDICTION_USERNAME) {
+        predicted_username_element = predicted_pair.first;
+        break;
+      }
+    }
+  }
+
+  // Finally, remove all password fields for which we have a negative
+  // prediction, unless they are explicitly marked by the autocomplete attribute
+  // as a password.
+  base::EraseIf(plausible_inputs, [&predicted_elements, &autocomplete_cache](
+                                      const WebInputElement& input) {
+    if (!input.IsPasswordFieldForAutofill())
+      return false;
+    const AutocompleteFlag flag = autocomplete_cache.RetrieveFor(input);
+    if (flag == AutocompleteFlag::CURRENT_PASSWORD ||
+        flag == AutocompleteFlag::NEW_PASSWORD) {
+      return false;
+    }
+    auto possible_password_element_iterator = predicted_elements.find(input);
+    return possible_password_element_iterator != predicted_elements.end() &&
+           possible_password_element_iterator->second ==
+               PREDICTION_NOT_PASSWORD;
+  });
+
+  // Derive the list of all plausible passwords, usernames and the non-password
+  // inputs preceding the plausible passwords.
+  std::vector<WebInputElement> plausible_passwords;
+  std::vector<WebInputElement> plausible_usernames;
+  std::map<WebInputElement, WebInputElement>
+      preceding_text_input_for_plausible_password;
+  most_recent_text_input.Reset();
+  plausible_usernames.reserve(plausible_inputs.size());
+  for (const WebInputElement& input : plausible_inputs) {
+    if (input.IsPasswordFieldForAutofill()) {
+      plausible_passwords.push_back(input);
+      preceding_text_input_for_plausible_password[input] =
+          most_recent_text_input;
+    } else {
+      plausible_usernames.push_back(input);
+      most_recent_text_input = input;
+    }
+  }
+
+  // Evaluate autocomplete attributes for username.
+  WebInputElement username_by_attribute;
+  for (const WebInputElement& input : plausible_inputs) {
+    if (!input.IsPasswordFieldForAutofill()) {
+      if (autocomplete_cache.RetrieveFor(input) == AutocompleteFlag::USERNAME) {
+        // Only consider the first occurrence of autocomplete='username'.
+        // Multiple occurences hint at the attribute being used incorrectly, in
+        // which case sticking to the first one is just a bet.
+        if (username_by_attribute.IsNull()) {
+          username_by_attribute = input;
+        }
+      }
+    }
+  }
+
+  // Evaluate the context of the fields.
+  WebInputElement username_element_by_context;
+  if (base::FeatureList::IsEnabled(
+          password_manager::features::kHtmlBasedUsernameDetector)) {
+    // Call HTML based username detector only if neither server predictions nor
+    // autocomplete attributes were useful to detect the username.
+    if (predicted_username_element.IsNull() && username_by_attribute.IsNull()) {
+      // Dummy cache stores the predictions in case no real cache was passed to
+      // here.
+      UsernameDetectorCache dummy_cache;
+      if (!username_detector_cache)
+        username_detector_cache = &dummy_cache;
+
+      const std::vector<blink::WebInputElement>& username_predictions =
+          GetPredictionsFieldBasedOnHtmlAttributes(form.control_elements,
+                                                   password_form->form_data,
+                                                   username_detector_cache);
+
+      if (!FindUsernameInPredictions(username_predictions, plausible_usernames,
+                                     &username_element_by_context)) {
+        username_element_by_context.Reset();
+      }
+    }
+  }
+
+  // Evaluate the structure of the form for determining the form type (e.g.,
+  // sign-up, sign-in, etc.).
+  std::string layout_sequence;
+  layout_sequence.reserve(plausible_inputs.size());
+  for (const WebInputElement& input : plausible_inputs) {
+    layout_sequence.push_back((input.IsPasswordFieldForAutofill()) ? 'P' : 'N');
+  }
+
+  // Populate all_possible_passwords and form_has_autofilled_value in
+  // |password_form|.
+  // Contains the first password element for each non-empty password value.
+  std::vector<ValueElementPair> all_possible_passwords;
+  // Reserve enough space to prevent re-allocation. A re-allocation would
+  // invalidate the contents of |seen_values|.
+  all_possible_passwords.reserve(passwords_without_heuristics.size());
+  std::set<base::StringPiece16> seen_values;
+  // Pretend that an empty value has been already seen, so that empty-valued
+  // password elements won't get added to |all_possible_passwords|.
+  seen_values.insert(base::StringPiece16());
+  for (const WebInputElement& password_element : passwords_without_heuristics) {
+    const base::string16 value = password_element.Value().Utf16();
+    if (seen_values.count(value) > 0)
+      continue;
+    all_possible_passwords.push_back(
+        {std::move(value), password_element.NameForAutofill().Utf16()});
+    seen_values.insert(
+        base::StringPiece16(all_possible_passwords.back().first));
+  }
+
+  bool form_has_autofilled_value = false;
+  for (const WebInputElement& password_element : passwords_without_heuristics) {
+    bool element_has_autofilled_value =
+        FieldHasPropertiesMask(field_value_and_properties_map, password_element,
+                               FieldPropertiesFlags::AUTOFILLED);
+    form_has_autofilled_value |= element_has_autofilled_value;
+  }
+
+  if (!all_possible_passwords.empty()) {
+    password_form->all_possible_passwords = std::move(all_possible_passwords);
+    password_form->form_has_autofilled_value = form_has_autofilled_value;
+  }
+
+  // If for some reason (e.g. only credit card fields, confusing autocomplete
+  // attributes) the passwords list is empty, build list based on user input (if
+  // there is any non-empty password field) and the type of a field. Also mark
+  // that the form should be available only for fallback saving (automatic
+  // bubble will not pop up).
+  password_form->only_for_fallback_saving = plausible_passwords.empty();
+  if (plausible_passwords.empty()) {
+    plausible_passwords = std::move(passwords_without_heuristics);
+    preceding_text_input_for_plausible_password =
+        std::move(preceding_text_input_for_password_without_heuristics);
+  }
+
+  // Find the password fields.
+  WebInputElement password;
+  WebInputElement new_password;
+  WebInputElement confirmation_password;
+  LocateSpecificPasswords(std::move(plausible_passwords), &password,
+                          &new_password, &confirmation_password,
+                          autocomplete_cache);
+
+  // Choose the username element.
   WebInputElement username_element;
   UsernameDetectionMethod username_detection_method =
       UsernameDetectionMethod::NO_USERNAME_DETECTED;
   password_form->username_marked_by_site = false;
 
-  std::vector<WebInputElement> passwords;
-  WebInputElement latest_input_element;
-  std::map<blink::WebInputElement, blink::WebInputElement>
-      last_text_input_before_password;
-
-  std::vector<WebInputElement> passwords_without_heuristics;
-  WebInputElement latest_input_element_without_heuristics;
-  std::map<blink::WebInputElement, blink::WebInputElement>
-      last_text_input_without_heuristics;
-
-  std::vector<WebInputElement> possible_usernames;
-
-  // Calculate filtering levels for password and username fields. For details
-  // see to the comment to |FieldFilteringLevel|.
-  FieldFilteringLevel username_fields_level = FieldFilteringLevel::NO_FILTER;
-  FieldFilteringLevel password_fields_level = FieldFilteringLevel::NO_FILTER;
-  GetFieldFilteringLevels(form.control_elements, field_value_and_properties_map,
-                          &username_fields_level, &password_fields_level);
-
-  std::map<WebInputElement, PasswordFormFieldPredictionType> predicted_elements;
-  if (form_predictions) {
-    FindPredictedElements(form, password_form->form_data, *form_predictions,
-                          &predicted_elements);
-    WebInputElement predicted_username_element;
-    bool map_has_username_prediction = MapContainsPrediction(
-        predicted_elements, PREDICTION_USERNAME, &predicted_username_element);
-
-    // Let server predictions override the selection of the username field. This
-    // allows instant adjusting without changing Chromium code.
-    // If a form already has user input, but the predicted username field has
-    // empty value, then don't trust the prediction (e.g. a <form> actually
-    // contains several forms).
-    if (map_has_username_prediction &&
-        (password_fields_level < FieldFilteringLevel::USER_INPUT ||
+  if (!predicted_username_element.IsNull()) {
+    // Server predictions are most trusted, so try them first. Only if the form
+    // already has user input and the predicted username field has an empty
+    // value, then don't trust the prediction (can be caused by, e.g., a <form>
+    // actually contains several forms).
+    if ((password_fields_level < FieldFilteringLevel::USER_INPUT ||
          !predicted_username_element.Value().IsEmpty())) {
       username_element = predicted_username_element;
       password_form->was_parsed_using_autofill_predictions = true;
@@ -523,202 +845,39 @@ bool GetPasswordForm(
     }
   }
 
-  std::string layout_sequence;
-  layout_sequence.reserve(form.control_elements.size());
-  size_t number_of_non_empty_text_non_password_fields = 0;
-  for (size_t i = 0; i < form.control_elements.size(); ++i) {
-    WebFormControlElement control_element = form.control_elements[i];
-
-    WebInputElement* input_element =
-        GetEnabledTextInputFieldOrNull(&control_element);
-    if (!input_element)
-      continue;
-
-    // Fill |...without_heuristics| variables before heuristics are applied.
-    if (input_element->IsPasswordFieldForAutofill()) {
-      passwords_without_heuristics.push_back(*input_element);
-      last_text_input_without_heuristics[*input_element] =
-          latest_input_element_without_heuristics;
-    } else {
-      latest_input_element_without_heuristics = *input_element;
-    }
-
-    bool password_marked_by_autocomplete_attribute =
-        HasAutocompleteAttributeValue(*input_element,
-                                      kAutocompleteCurrentPassword) ||
-        HasAutocompleteAttributeValue(*input_element, kAutocompleteNewPassword);
-    if (!password_marked_by_autocomplete_attribute &&
-        (HasCreditCardAutocompleteAttributes(*input_element) ||
-         IsCreditCardVerificationPasswordField(*input_element)))
-      continue;
-
-    FieldFilteringLevel current_field_level = GetFiltertingLevelForField(
-        control_element, field_value_and_properties_map,
-        false /* ignore_autofilled_values */);
-
-    if (input_element->IsPasswordFieldForAutofill()) {
-      if (current_field_level < password_fields_level)
-        continue;
-      layout_sequence.push_back('P');
-    } else {
-      if (current_field_level == FieldFilteringLevel::USER_INPUT)
-        ++number_of_non_empty_text_non_password_fields;
-      if (current_field_level < username_fields_level)
-        continue;
-      layout_sequence.push_back('N');
-    }
-
-    // If the password field is readonly, the page is likely using a virtual
-    // keyboard and bypassing the password field value (see
-    // http://crbug.com/475488). There is nothing Chrome can do to fill
-    // passwords for now. Continue processing in case when the password field
-    // was made readonly by JavaScript before submission. We can do this by
-    // checking whether password element was updated not from JavaScript.
-    if (input_element->IsPasswordFieldForAutofill() &&
-        (!input_element->IsReadOnly() ||
-         FieldHasPropertiesMask(field_value_and_properties_map, *input_element,
-                                FieldPropertiesFlags::USER_TYPED |
-                                    FieldPropertiesFlags::AUTOFILLED) ||
-         password_marked_by_autocomplete_attribute)) {
-      // We add the field to the list of password fields if it was not flagged
-      // as a special NOT_PASSWORD prediction by Autofill. The NOT_PASSWORD
-      // mechanism exists because some webpages use the type "password" for
-      // fields which Autofill knows shouldn't be treated as passwords by the
-      // Password Manager. This is ultimately bypassed if the field has
-      // autocomplete attributes.
-      auto possible_password_element_iterator =
-          predicted_elements.find(*input_element);
-      if (password_marked_by_autocomplete_attribute ||
-          possible_password_element_iterator == predicted_elements.end() ||
-          possible_password_element_iterator->second !=
-              PREDICTION_NOT_PASSWORD) {
-        passwords.push_back(*input_element);
-        last_text_input_before_password[*input_element] = latest_input_element;
-      }
-    }
-
-    // Various input types such as text, url, email can be a username field.
-    if (!input_element->IsPasswordFieldForAutofill()) {
-      possible_usernames.push_back(*input_element);
-      if (HasAutocompleteAttributeValue(*input_element,
-                                        kAutocompleteUsername)) {
-        if (password_form->username_marked_by_site) {
-          // A second or subsequent element marked with autocomplete='username'.
-          // This makes us less confident that we have understood the form. We
-          // will stick to our choice that the first such element was the real
-          // username.
-        } else {
-          // The first element marked with autocomplete='username'. Take the
-          // hint and treat it as the username (overruling the tentative choice
-          // we might have made before). Furthermore, drop all other possible
-          // usernames we have accrued so far: they come from fields not marked
-          // with the autocomplete attribute, making them unlikely alternatives.
-
-          // Don't override the server-side prediction if any.
-          if (username_element.IsNull()) {
-            username_element = *input_element;
-            password_form->username_marked_by_site = true;
-            username_detection_method =
-                UsernameDetectionMethod::AUTOCOMPLETE_ATTRIBUTE;
-          }
-        }
-      } else {
-        if (password_form->username_marked_by_site) {
-          // Having seen elements with autocomplete='username', elements without
-          // this attribute are no longer interesting. No-op.
-        } else {
-          // No elements marked with autocomplete='username' so far whatsoever.
-          // If we have not yet selected a username element even provisionally,
-          // then remember this element for the case when the next field turns
-          // out to be a password. Save a non-empty username as a possible
-          // alternative, at least for now.
-          if (username_element.IsNull())
-            latest_input_element = *input_element;
-        }
-      }
-    }
+  if (username_element.IsNull() && !username_by_attribute.IsNull()) {
+    // Next in the trusted queue: autocomplete attributes.
+    username_element = username_by_attribute;
+    username_detection_method = UsernameDetectionMethod::AUTOCOMPLETE_ATTRIBUTE;
   }
 
-  // If for some reason (e.g. only credit card fields, confusing autocomplete
-  // attributes) the passwords list is empty, build list based on user input (if
-  // there is any non-empty password field) and the type of a field. Also mark
-  // that the form should be available only for fallback saving (automatic
-  // bubble will not pop up).
-  password_form->only_for_fallback_saving = passwords.empty();
-  if (passwords.empty()) {
-    passwords = passwords_without_heuristics;
-    last_text_input_before_password = last_text_input_without_heuristics;
-  }
-  DCHECK_EQ(passwords.size(), last_text_input_before_password.size());
-
-  // |passwords| must be non-empty. Just in case the heuristics above have a
-  // bug, return now.
-  if (passwords.empty()) {
-    NOTREACHED();
-    return false;
+  if (username_element.IsNull() && !username_element_by_context.IsNull()) {
+    // Last step before base heuristics: HTML-based classifier.
+    username_element = username_element_by_context;
+    username_detection_method = UsernameDetectionMethod::HTML_BASED_CLASSIFIER;
   }
 
-  // Call HTML based username detector, only if corresponding flag is enabled.
-  if (base::FeatureList::IsEnabled(
-          password_manager::features::kHtmlBasedUsernameDetector)) {
-    if (username_element.IsNull()) {
-      GetUsernameFieldBasedOnHtmlAttributes(
-          form.control_elements, possible_usernames, password_form->form_data,
-          &username_element, username_detector_cache);
-      if (!username_element.IsNull()) {
-        username_detection_method =
-            UsernameDetectionMethod::HTML_BASED_CLASSIFIER;
-      }
-    }
+  // Compute base heuristic for username detection.
+  WebInputElement base_heuristic_username;
+  if (!password.IsNull()) {
+    base_heuristic_username =
+        preceding_text_input_for_plausible_password[password];
+  }
+  if (base_heuristic_username.IsNull() && !new_password.IsNull()) {
+    base_heuristic_username =
+        preceding_text_input_for_plausible_password[new_password];
   }
 
-  WebInputElement password;
-  WebInputElement new_password;
-  WebInputElement confirmation_password;
-  LocateSpecificPasswords(passwords, &password, &new_password,
-                          &confirmation_password);
-
-  bool form_has_autofilled_value = false;
-  // Add non-empty unique possible passwords to the vector.
-  std::vector<autofill::ValueElementPair> all_possible_passwords;
-  for (const WebInputElement& password_element : passwords_without_heuristics) {
-    const base::string16 value = password_element.Value().Utf16();
-    if (value.empty())
-      continue;
-    bool element_has_autofilled_value =
-        FieldHasPropertiesMask(field_value_and_properties_map, password_element,
-                               FieldPropertiesFlags::AUTOFILLED);
-    form_has_autofilled_value |= element_has_autofilled_value;
-    if (find_if(all_possible_passwords.begin(), all_possible_passwords.end(),
-                [&value](const auto& pair) -> bool {
-                  return pair.first == value;
-                }) == all_possible_passwords.end()) {
-      all_possible_passwords.push_back(
-          {std::move(value), password_element.NameForAutofill().Utf16()});
-    }
-  }
-
-  if (!all_possible_passwords.empty()) {
-    password_form->all_possible_passwords = std::move(all_possible_passwords);
-    password_form->form_has_autofilled_value = form_has_autofilled_value;
-  }
-
-  // Base heuristic for username detection.
-  WebInputElement base_heuristic_prediction;
-  if (!password.IsNull())
-    base_heuristic_prediction = last_text_input_before_password[password];
-  if (base_heuristic_prediction.IsNull() && !new_password.IsNull())
-    base_heuristic_prediction = last_text_input_before_password[new_password];
-
+  // Apply base heuristic for username detection.
   if (username_element.IsNull()) {
-    username_element = base_heuristic_prediction;
-    if (!base_heuristic_prediction.IsNull())
+    username_element = base_heuristic_username;
+    if (!username_element.IsNull())
       username_detection_method = UsernameDetectionMethod::BASE_HEURISTIC;
-  } else if (base_heuristic_prediction == username_element &&
+  } else if (base_heuristic_username == username_element &&
              username_detection_method !=
                  UsernameDetectionMethod::AUTOCOMPLETE_ATTRIBUTE) {
     // TODO(crbug.com/786404): when the bug is fixed, remove this block and
-    // calculate |base_heuristic_prediction| only if |username_element.IsNull()|
+    // calculate |base_heuristic_username| only if |username_element.IsNull()|
     // This block was added to measure the impact of server-side predictions and
     // HTML based classifier compared to "old classifiers" (the based heuristic
     // and 'autocomplete' attribute).
@@ -728,8 +887,7 @@ bool GetPasswordForm(
       "PasswordManager.UsernameDetectionMethod", username_detection_method,
       UsernameDetectionMethod::USERNAME_DETECTION_METHOD_COUNT);
 
-  password_form->layout = SequenceToLayout(layout_sequence);
-
+  // Populate the username fields in |password_form|.
   if (!username_element.IsNull()) {
     password_form->username_element =
         FieldName(username_element, "anonymous_username");
@@ -743,30 +901,16 @@ bool GetPasswordForm(
       if (!ScriptModifiedUsernameAcceptable(username_value,
                                             typed_username_value, password_form,
                                             field_value_and_properties_map)) {
-        // We check that |username_value| was not obtained by autofilling
-        // |typed_username_value|. In case when it was, |typed_username_value|
-        // is incomplete, so we should leave autofilled value.
+        // If |username_value| was obtained by autofilling
+        // |typed_username_value|, |typed_username_value| might be incomplete,
+        // so we should leave autofilled value.
         username_value = typed_username_value;
       }
     }
     password_form->username_value = username_value;
   }
 
-  password_form->origin =
-      form_util::GetCanonicalOriginForDocument(form.document);
-  password_form->signon_realm = GetSignOnRealm(password_form->origin);
-
-  // Convert |possible_usernames| to ValueElementVector.
-  autofill::ValueElementVector other_possible_usernames;
-  for (const WebInputElement& possible_username : possible_usernames) {
-    if (possible_username == username_element)
-      continue;
-    auto pair = MakePossibleUsernamePair(possible_username);
-    if (!pair.first.empty())
-      other_possible_usernames.push_back(std::move(pair));
-  }
-  password_form->other_possible_usernames.swap(other_possible_usernames);
-
+  // Populate the password fields in |password_form|.
   if (!password.IsNull()) {
     password_form->password_element = FieldName(password, "anonymous_password");
     blink::WebString password_value = password.Value();
@@ -784,14 +928,28 @@ bool GetPasswordForm(
     password_form->new_password_value = new_password.Value().Utf16();
     password_form->new_password_value_is_default =
         new_password.GetAttribute("value") == new_password.Value();
-    if (HasAutocompleteAttributeValue(new_password, kAutocompleteNewPassword))
+    if (autocomplete_cache.RetrieveFor(new_password) ==
+        AutocompleteFlag::NEW_PASSWORD) {
       password_form->new_password_marked_by_site = true;
+    }
     if (!confirmation_password.IsNull()) {
       password_form->confirmation_password_element =
           FieldName(confirmation_password, "anonymous_confirmation_password");
     }
   }
 
+  // Populate |other_possible_usernames| in |password_form|.
+  ValueElementVector other_possible_usernames;
+  for (const WebInputElement& plausible_username : plausible_usernames) {
+    if (plausible_username == username_element)
+      continue;
+    auto pair = MakePossibleUsernamePair(plausible_username);
+    if (!pair.first.empty())
+      other_possible_usernames.push_back(std::move(pair));
+  }
+  password_form->other_possible_usernames = std::move(other_possible_usernames);
+
+  // Report metrics.
   if (username_element.IsNull()) {
     // To get a better idea on how password forms without a username field
     // look like, report the total number of text and password fields.
@@ -804,23 +962,25 @@ bool GetPasswordForm(
         std::count(layout_sequence.begin(), layout_sequence.end(), 'P'));
   }
 
+  password_form->origin = std::move(form.origin);
+  password_form->signon_realm = GetSignOnRealm(password_form->origin);
   password_form->scheme = PasswordForm::SCHEME_HTML;
   password_form->preferred = false;
   password_form->blacklisted_by_user = false;
   password_form->type = PasswordForm::TYPE_MANUAL;
+  password_form->layout = SequenceToLayout(layout_sequence);
 
-  // The password form is considered that it looks like SignUp form if it has
-  // more than 1 text field with user input or it has a new password field and
-  // no current password field.
-  password_form->does_look_like_signup_form =
-      number_of_non_empty_text_non_password_fields > 1 ||
-      (number_of_non_empty_text_non_password_fields == 1 &&
-       password_form->password_element.empty() &&
-       !password_form->new_password_element.empty());
   return true;
 }
 
 }  // namespace
+
+AutocompleteFlag AutocompleteFlagForElement(const WebInputElement& element) {
+  static const base::NoDestructor<WebString> kAutocomplete(("autocomplete"));
+  return ExtractAutocompleteFlag(
+      element.GetAttribute(*kAutocomplete)
+          .Utf8(WebString::UTF8ConversionMode::kStrictReplacingErrorsWithFFFD));
+}
 
 re2::RE2* CreateMatcher(void* instance, const char* pattern) {
   re2::RE2::Options options;
@@ -886,27 +1046,30 @@ std::unique_ptr<PasswordForm> CreatePasswordFormFromWebForm(
     const FormsPredictionsMap* form_predictions,
     UsernameDetectorCache* username_detector_cache) {
   if (web_form.IsNull())
-    return std::unique_ptr<PasswordForm>();
+    return nullptr;
 
-  std::unique_ptr<PasswordForm> password_form(new PasswordForm());
+  auto password_form = std::make_unique<PasswordForm>();
   password_form->action = form_util::GetCanonicalActionForForm(web_form);
   if (!password_form->action.is_valid())
-    return std::unique_ptr<PasswordForm>();
+    return nullptr;
+  password_form->is_gaia_with_skip_save_password_form =
+      IsGaiaWithSkipSavePasswordForm(web_form) ||
+      IsGaiaReauthenticationForm(web_form);
 
   SyntheticForm synthetic_form;
   PopulateSyntheticFormFromWebForm(web_form, &synthetic_form);
 
   if (!WebFormElementToFormData(
           web_form, blink::WebFormControlElement(),
-          field_value_and_properties_map, form_util::EXTRACT_NONE,
+          field_value_and_properties_map, form_util::EXTRACT_VALUE,
           &password_form->form_data, nullptr /* FormFieldData */)) {
-    return std::unique_ptr<PasswordForm>();
+    return nullptr;
   }
 
-  if (!GetPasswordForm(synthetic_form, password_form.get(),
+  if (!GetPasswordForm(std::move(synthetic_form), password_form.get(),
                        field_value_and_properties_map, form_predictions,
                        username_detector_cache)) {
-    return std::unique_ptr<PasswordForm>();
+    return nullptr;
   }
   return password_form;
 }
@@ -917,25 +1080,28 @@ std::unique_ptr<PasswordForm> CreatePasswordFormFromUnownedInputElements(
     const FormsPredictionsMap* form_predictions,
     UsernameDetectorCache* username_detector_cache) {
   SyntheticForm synthetic_form;
+  std::vector<blink::WebElement> fieldsets;
   synthetic_form.control_elements = form_util::GetUnownedFormFieldElements(
-      frame.GetDocument().All(), &synthetic_form.fieldsets);
-  synthetic_form.document = frame.GetDocument();
+      frame.GetDocument().All(), &fieldsets);
+  synthetic_form.origin =
+      form_util::GetCanonicalOriginForDocument(frame.GetDocument());
 
   if (synthetic_form.control_elements.empty())
-    return std::unique_ptr<PasswordForm>();
+    return nullptr;
 
-  std::unique_ptr<PasswordForm> password_form(new PasswordForm());
+  auto password_form = std::make_unique<PasswordForm>();
   if (!UnownedPasswordFormElementsAndFieldSetsToFormData(
-          synthetic_form.fieldsets, synthetic_form.control_elements, nullptr,
+          fieldsets, synthetic_form.control_elements, nullptr,
           frame.GetDocument(), field_value_and_properties_map,
-          form_util::EXTRACT_NONE, &password_form->form_data,
+          form_util::EXTRACT_VALUE, &password_form->form_data,
           nullptr /* FormFieldData */)) {
-    return std::unique_ptr<PasswordForm>();
+    return nullptr;
   }
-  if (!GetPasswordForm(synthetic_form, password_form.get(),
+
+  if (!GetPasswordForm(std::move(synthetic_form), password_form.get(),
                        field_value_and_properties_map, form_predictions,
                        username_detector_cache)) {
-    return std::unique_ptr<PasswordForm>();
+    return nullptr;
   }
 
   // No actual action on the form, so use the the origin as the action.
@@ -943,49 +1109,12 @@ std::unique_ptr<PasswordForm> CreatePasswordFormFromUnownedInputElements(
   return password_form;
 }
 
-bool HasAutocompleteAttributeValue(const blink::WebInputElement& element,
-                                   base::StringPiece value_in_lowercase) {
-  CR_DEFINE_STATIC_LOCAL(WebString, kAutocomplete, ("autocomplete"));
-  const std::string autocomplete_value =
-      element.GetAttribute(kAutocomplete)
-          .Utf8(WebString::UTF8ConversionMode::kStrictReplacingErrorsWithFFFD);
-
-  std::vector<base::StringPiece> tokens =
-      base::SplitStringPiece(autocomplete_value, base::kWhitespaceASCII,
-                             base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
-  return std::find_if(tokens.begin(), tokens.end(),
-                      [value_in_lowercase](base::StringPiece token) {
-                        return base::LowerCaseEqualsASCII(token,
-                                                          value_in_lowercase);
-                      }) != tokens.end();
-}
-
-bool HasCreditCardAutocompleteAttributes(
-    const blink::WebInputElement& element) {
-  CR_DEFINE_STATIC_LOCAL(WebString, kAutocomplete, ("autocomplete"));
-  const std::string autocomplete_value =
-      element.GetAttribute(kAutocomplete)
-          .Utf8(WebString::UTF8ConversionMode::kStrictReplacingErrorsWithFFFD);
-
-  std::vector<base::StringPiece> tokens =
-      base::SplitStringPiece(autocomplete_value, base::kWhitespaceASCII,
-                             base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
-  return std::find_if(
-             tokens.begin(), tokens.end(), [](base::StringPiece token) {
-               return base::StartsWith(token, kAutocompleteCreditCardPrefix,
-                                       base::CompareCase::INSENSITIVE_ASCII);
-             }) != tokens.end();
-}
-
 bool IsCreditCardVerificationPasswordField(
     const blink::WebInputElement& field) {
   if (!field.IsPasswordFieldForAutofill())
     return false;
-
-  static const base::string16 kCardCvcReCached = base::UTF8ToUTF16(kCardCvcRe);
-
-  return MatchesPattern(field.GetAttribute("id").Utf16(), kCardCvcReCached) ||
-         MatchesPattern(field.GetAttribute("name").Utf16(), kCardCvcReCached);
+  return StringMatchesCVC(field.GetAttribute("id").Utf16()) ||
+         StringMatchesCVC(field.GetAttribute("name").Utf16());
 }
 
 std::string GetSignOnRealm(const GURL& origin) {

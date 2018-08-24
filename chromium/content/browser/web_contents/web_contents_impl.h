@@ -19,6 +19,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/observer_list.h"
+#include "base/optional.h"
 #include "base/process/process.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -33,6 +34,7 @@
 #include "content/browser/frame_host/render_frame_host_delegate.h"
 #include "content/browser/frame_host/render_frame_host_manager.h"
 #include "content/browser/media/audio_stream_monitor.h"
+#include "content/browser/media/forwarding_audio_stream_factory.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
@@ -137,7 +139,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 
   ~WebContentsImpl() override;
 
-  static WebContentsImpl* CreateWithOpener(
+  static std::unique_ptr<WebContentsImpl> CreateWithOpener(
       const WebContents::CreateParams& params,
       RenderFrameHostImpl* opener_rfh);
 
@@ -286,16 +288,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
     return manifest_manager_host_.get();
   }
 
-  // TODO(https://crbug.com/826293): This is a simple mitigation to validate
-  // that an action that requires a user gesture actually has one in the
-  // trustworthy browser process, rather than relying on the untrustworthy
-  // renderer. This should be eventually merged into and accounted for in the
-  // user activation work.
-  bool HasRecentInteractiveInputEvent() const;
-
 #if defined(OS_ANDROID)
-  std::set<RenderWidgetHostImpl*> GetAllRenderWidgetHosts();
-  void SetImportance(ChildProcessImportance importance);
+  void SetMainFrameImportance(ChildProcessImportance importance);
 #endif
 
   // WebContents ------------------------------------------------------
@@ -355,6 +349,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void SetAudioMuted(bool mute) override;
   bool IsCurrentlyAudible() override;
   bool IsConnectedToBluetoothDevice() const override;
+  bool HasPictureInPictureVideo() const override;
   bool IsCrashed() const override;
   void SetIsCrashed(base::TerminationStatus status, int error_code) override;
   base::TerminationStatus GetCrashedStatus() const override;
@@ -379,7 +374,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 
   void Stop() override;
   void FreezePage() override;
-  WebContents* Clone() override;
+  std::unique_ptr<WebContents> Clone() override;
   void ReloadFocusedFrame(bool bypass_cache) override;
   void Undo() override;
   void Redo() override;
@@ -480,6 +475,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   bool CompletedFirstVisuallyNonEmptyPaint() const override;
 #endif
 
+  bool HasRecentInteractiveInputEvent() const override;
+
   // Implementation of PageNavigator.
   WebContents* OpenURL(const OpenURLParams& params) override;
 
@@ -538,7 +535,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 #if defined(OS_ANDROID)
   void GetNFC(device::mojom::NFCRequest request) override;
 #endif
-  void EnterFullscreenMode(const GURL& origin) override;
+  void EnterFullscreenMode(const GURL& origin,
+                           const blink::WebFullscreenOptions& options) override;
   void ExitFullscreenMode(bool will_cause_resize) override;
   bool ShouldRouteMessageEvent(
       RenderFrameHost* target_rfh,
@@ -584,11 +582,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void SubresourceResponseStarted(const GURL& url,
                                   net::CertStatus cert_status) override;
   void ResourceLoadComplete(
+      RenderFrameHost* render_frame_host,
       mojom::ResourceLoadInfoPtr resource_load_information) override;
-  void UpdatePictureInPictureSurfaceId(const viz::SurfaceId& surface_id,
-                                       const gfx::Size& natural_size) override;
-  void ExitPictureInPicture() override;
-
   // RenderViewHostDelegate ----------------------------------------------------
   RenderViewHostDelegateView* GetDelegateView() override;
   bool OnMessageReceived(RenderViewHostImpl* render_view_host,
@@ -696,8 +691,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                               const ScreenInfo& screen_info,
                               bool width_changed) override;
   void ResizeDueToAutoResize(RenderWidgetHostImpl* render_widget_host,
-                             const gfx::Size& new_size,
-                             uint64_t sequence_number) override;
+                             const gfx::Size& new_size) override;
   gfx::Size GetAutoResizeSize() override;
   void ResetAutoResizeSize() override;
   KeyboardEventProcessingResult PreHandleKeyboardEvent(
@@ -871,6 +865,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
     return &audio_stream_monitor_;
   }
 
+  ForwardingAudioStreamFactory* GetAudioStreamFactory();
+
   // Called by MediaWebContentsObserver when playback starts or stops.  See the
   // WebContentsObserver function stubs for more details.
   void MediaStartedPlaying(
@@ -936,6 +932,20 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // that the guest will be detached.
   void BrowserPluginGuestWillDetach();
 
+  // Notifies the Picture-in-Picture controller that there is a new player
+  // entering Picture-in-Picture.
+  // Returns the size of the Picture-in-Picture window.
+  gfx::Size EnterPictureInPicture(const viz::SurfaceId&,
+                                  const gfx::Size& natural_size);
+
+  // Updates the Picture-in-Picture controller with a signal that
+  // Picture-in-Picture mode has ended.
+  void ExitPictureInPicture();
+
+  // Updates the tracking information for |this| to know if there is
+  // a video currently in Picture-in-Picture mode.
+  void SetHasPictureInPictureVideo(bool has_picture_in_picture_video);
+
 #if defined(OS_ANDROID)
   // Called by FindRequestManager when all of the find match rects are in.
   void NotifyFindMatchRectsReply(int version,
@@ -943,9 +953,15 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                                  const gfx::RectF& active_rect);
 #endif
 
+  // Returns a base salt used to generate group IDs for media-device
+  // enumerations.
+  const std::string& GetMediaDeviceGroupIDSaltBase() const;
+
  private:
   friend class WebContentsObserver;
   friend class WebContents;  // To implement factory methods.
+
+  friend class RenderFrameHostImplBeforeUnloadBrowserTest;
 
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest, NoJSMessageOnInterstitials);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest, UpdateTitle);
@@ -1147,13 +1163,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                    int active_match_ordinal,
                    bool final_update);
 #if defined(OS_ANDROID)
-  void OnFindMatchRectsReply(RenderFrameHostImpl* source,
-                             int version,
-                             const std::vector<gfx::RectF>& rects,
-                             const gfx::RectF& active_rect);
-  void OnGetNearestFindResultReply(RenderFrameHostImpl* source,
-                                   int request_id,
-                                   float distance);
   void OnOpenDateTimeDialog(
       RenderViewHostImpl* source,
       const ViewHostMsg_DateTimeDialogValue_Params& value);
@@ -1260,8 +1269,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // Finds the new WebContentsImpl by |main_frame_widget_route_id|, initializes
   // it for renderer-initiated creation, and returns it. Note that this can only
   // be called once as this call also removes it from the internal map.
-  WebContentsImpl* GetCreatedWindow(int process_id,
-                                    int main_frame_widget_route_id);
+  std::unique_ptr<WebContents> GetCreatedWindow(int process_id,
+                                                int main_frame_widget_route_id);
 
   // Sends a Page message IPC.
   void SendPageMessage(IPC::Message* msg);
@@ -1380,7 +1389,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // Tracks created WebContentsImpl objects that have not been shown yet. They
   // are identified by the process ID and routing ID passed to CreateNewWindow.
   typedef std::pair<int, int> ProcessRoutingIdPair;
-  std::map<ProcessRoutingIdPair, WebContentsImpl*> pending_contents_;
+  std::map<ProcessRoutingIdPair, std::unique_ptr<WebContents>>
+      pending_contents_;
 
   // This map holds widgets that were created on behalf of the renderer but
   // haven't been shown yet.
@@ -1644,10 +1654,15 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // Monitors power levels for audio streams associated with this WebContents.
   AudioStreamMonitor audio_stream_monitor_;
 
+  // Coordinates all the audio streams for this WebContents. Lazily initialized.
+  base::Optional<ForwardingAudioStreamFactory> audio_stream_factory_;
+
   // Created on-demand to mute all audio output from this WebContents.
   std::unique_ptr<WebContentsAudioMuter> audio_muter_;
 
   size_t bluetooth_connected_device_count_;
+
+  bool has_picture_in_picture_video_ = false;
 
   // Notifies ResourceDispatcherHostImpl of various events related to loading.
   std::unique_ptr<LoaderIOThreadNotifier> loader_io_thread_notifier_;
@@ -1667,6 +1682,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   std::unique_ptr<RenderWidgetHostInputEventRouter> rwh_input_event_router_;
 
   PageImportanceSignals page_importance_signals_;
+
+  std::string media_device_group_id_salt_base_;
 
 #if !defined(OS_ANDROID)
   bool page_scale_factor_is_one_;

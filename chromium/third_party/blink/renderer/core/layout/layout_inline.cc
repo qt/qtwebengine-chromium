@@ -36,14 +36,16 @@
 #include "third_party/blink/renderer/core/layout/line/inline_text_box.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_fragment_traversal.h"
 #include "third_party/blink/renderer/core/layout/ng/layout_ng_block_flow.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_physical_box_fragment.h"
 #include "third_party/blink/renderer/core/paint/box_painter.h"
 #include "third_party/blink/renderer/core/paint/inline_painter.h"
+#include "third_party/blink/renderer/core/paint/ng/ng_box_fragment_painter.h"
 #include "third_party/blink/renderer/core/paint/ng/ng_paint_fragment.h"
 #include "third_party/blink/renderer/core/paint/object_painter.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/platform/geometry/float_quad.h"
 #include "third_party/blink/renderer/platform/geometry/region.h"
-#include "third_party/blink/renderer/platform/geometry/transform_state.h"
+#include "third_party/blink/renderer/platform/transforms/transform_state.h"
 
 namespace blink {
 
@@ -242,6 +244,9 @@ void LayoutInline::StyleDidChange(StyleDifference diff,
   }
 
   PropagateStyleToAnonymousChildren();
+
+  // Only filtered inlines can contain fixed position elements.
+  SetCanContainFixedPositionObjects(new_style.HasFilter());
 }
 
 void LayoutInline::UpdateAlwaysCreateLineBoxes(bool full_layout) {
@@ -902,6 +907,26 @@ bool LayoutInline::NodeAtPoint(HitTestResult& result,
                                const HitTestLocation& location_in_container,
                                const LayoutPoint& accumulated_offset,
                                HitTestAction hit_test_action) {
+  if (EnclosingNGBlockFlow()) {
+    // In LayoutNG, we reach here only when called from
+    // PaintLayer::HitTestContents() without going through any ancestor, in
+    // which case the element must have self painting layer.
+    DCHECK(HasSelfPaintingLayer());
+    for (const NGPaintFragment* fragment :
+         NGPaintFragment::InlineFragmentsFor(this)) {
+      // NGBoxFragmentPainter::NodeAtPoint() takes an offset that is accumulated
+      // up to its parent fragment. Compute this offset.
+      LayoutPoint adjusted_location =
+          accumulated_offset +
+          fragment->Parent()->InlineOffsetToContainerBox().ToLayoutPoint();
+      if (NGBoxFragmentPainter(*fragment).NodeAtPoint(
+              result, location_in_container, adjusted_location,
+              accumulated_offset, hit_test_action))
+        return true;
+    }
+    return false;
+  }
+
   return line_boxes_.HitTest(LineLayoutBoxModel(this), result,
                              location_in_container, accumulated_offset,
                              hit_test_action);
@@ -1318,8 +1343,9 @@ bool LayoutInline::MapToVisualRectInAncestorSpaceInternal(
       ancestor, transform_state, visual_rect_flags);
 }
 
-LayoutSize LayoutInline::OffsetFromContainer(
-    const LayoutObject* container) const {
+LayoutSize LayoutInline::OffsetFromContainerInternal(
+    const LayoutObject* container,
+    bool ignore_scroll_offset) const {
   DCHECK_EQ(container, Container());
 
   LayoutSize offset;
@@ -1327,7 +1353,7 @@ LayoutSize LayoutInline::OffsetFromContainer(
     offset += OffsetForInFlowPosition();
 
   if (container->HasOverflowClip())
-    offset -= ToLayoutBox(container)->ScrolledContentOffset();
+    offset += OffsetFromScrollableContainer(container, ignore_scroll_offset);
 
   return offset;
 }
@@ -1467,8 +1493,8 @@ LayoutSize LayoutInline::OffsetForInFlowPositionedInline(
     const LayoutBox& child) const {
   // FIXME: This function isn't right with mixed writing modes.
 
-  DCHECK(IsInFlowPositioned());
-  if (!IsInFlowPositioned())
+  DCHECK(IsInFlowPositioned() || StyleRef().HasFilter());
+  if (!IsInFlowPositioned() && !StyleRef().HasFilter())
     return LayoutSize();
 
   // When we have an enclosing relpositioned inline, we need to add in the
@@ -1618,9 +1644,6 @@ void LayoutInline::AddAnnotatedRegions(Vector<AnnotatedRegionValue>& regions) {
 
 void LayoutInline::InvalidateDisplayItemClients(
     PaintInvalidationReason invalidation_reason) const {
-  // TODO(yoichio): Cover other PaintInvalidateionReasons.
-  DCHECK(invalidation_reason != PaintInvalidationReason::kSelection ||
-         !EnclosingNGBlockFlow());
   ObjectPaintInvalidator paint_invalidator(*this);
 
   if (RuntimeEnabledFeatures::LayoutNGEnabled()) {

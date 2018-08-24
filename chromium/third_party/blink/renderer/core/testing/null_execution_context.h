@@ -6,6 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_TESTING_NULL_EXECUTION_CONTEXT_H_
 
 #include <memory>
+#include "base/single_thread_task_runner.h"
 #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
 #include "third_party/blink/renderer/core/dom/events/event_queue.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
@@ -54,13 +55,13 @@ class NullExecutionContext
 
   ResourceFetcher* Fetcher() const override { return nullptr; }
 
-  FrameOrWorkerGlobalScopeScheduler* GetScheduler() override;
+  FrameOrWorkerScheduler* GetScheduler() override;
   scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(TaskType) override;
 
   using SecurityContext::GetSecurityOrigin;
   using SecurityContext::GetContentSecurityPolicy;
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(queue_);
     SecurityContext::Trace(visitor);
     ExecutionContext::Trace(visitor);

@@ -147,6 +147,8 @@ std::string GetDownloadDangerNames(DownloadDangerType type) {
       return "DANGEROUS_HOST";
     case DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED:
       return "POTENTIALLY_UNWANTED";
+    case DOWNLOAD_DANGER_TYPE_WHITELISTED_BY_POLICY:
+      return "WHITELISTED_BY_POLICY";
     default:
       NOTREACHED();
       return "UNKNOWN_DANGER_TYPE";
@@ -418,7 +420,7 @@ DownloadItemImpl::~DownloadItemImpl() {
 
   // Should always have been nuked before now, at worst in
   // DownloadManager shutdown.
-  DCHECK(!download_file_.get());
+  DCHECK(!download_file_);
   CHECK(!is_updating_observers_);
 
   for (auto& observer : observers_)
@@ -957,6 +959,11 @@ bool DownloadItemImpl::IsTransient() const {
   return transient_;
 }
 
+bool DownloadItemImpl::IsParallelDownload() const {
+  bool is_parallelizable = job_ ? job_->IsParallelizable() : false;
+  return is_parallelizable && download::IsParallelDownloadEnabled();
+}
+
 void DownloadItemImpl::OnContentCheckCompleted(DownloadDangerType danger_type,
                                                DownloadInterruptReason reason) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
@@ -1040,7 +1047,7 @@ std::string DownloadItemImpl::DebugString(bool verbose) const {
         IsPaused() ? 'T' : 'F', DebugResumeModeString(GetResumeMode()),
         auto_resume_count_, GetDangerType(), AllDataSaved() ? 'T' : 'F',
         GetLastModifiedTime().c_str(), GetETag().c_str(),
-        download_file_.get() ? "true" : "false", url_list.c_str(),
+        download_file_ ? "true" : "false", url_list.c_str(),
         GetFullPath().value().c_str(), GetTargetFilePath().value().c_str(),
         GetReferrerUrl().spec().c_str(), GetSiteUrl().spec().c_str());
   } else {
@@ -1383,17 +1390,18 @@ void DownloadItemImpl::Start(
     std::unique_ptr<DownloadFile> file,
     std::unique_ptr<DownloadRequestHandleInterface> req_handle,
     const DownloadCreateInfo& new_create_info,
-    scoped_refptr<network::SharedURLLoaderFactory> shared_url_loader_factory,
+    scoped_refptr<download::DownloadURLLoaderFactoryGetter>
+        url_loader_factory_getter,
     net::URLRequestContextGetter* url_request_context_getter) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  DCHECK(!download_file_.get());
+  DCHECK(!download_file_);
   DVLOG(20) << __func__ << "() this=" << DebugString(true);
   RecordDownloadCountWithSource(START_COUNT, download_source_);
 
   download_file_ = std::move(file);
   job_ = DownloadJobFactory::CreateJob(
       this, std::move(req_handle), new_create_info, false,
-      std::move(shared_url_loader_factory), url_request_context_getter);
+      std::move(url_loader_factory_getter), url_request_context_getter);
   if (job_->IsParallelizable()) {
     RecordParallelizableDownloadCount(START_COUNT, IsParallelDownloadEnabled());
   }
@@ -1422,23 +1430,20 @@ void DownloadItemImpl::Start(
   // If a resumption attempted failed, or if the download was DOA, then the
   // download should go back to being interrupted.
   if (new_create_info.result != DOWNLOAD_INTERRUPT_REASON_NONE) {
-    DCHECK(!download_file_.get());
+    DCHECK(!download_file_);
 
     // Download requests that are interrupted by Start() should result in a
     // DownloadCreateInfo with an intact DownloadSaveInfo.
     DCHECK(new_create_info.save_info);
 
-    int64_t offset = new_create_info.save_info->offset;
     std::unique_ptr<crypto::SecureHash> hash_state =
         new_create_info.save_info->hash_state
             ? new_create_info.save_info->hash_state->Clone()
             : nullptr;
 
-    destination_info_.received_bytes = offset;
     hash_state_ = std::move(hash_state);
     destination_info_.hash.clear();
     deferred_interrupt_reason_ = new_create_info.result;
-    received_slices_.clear();
     TransitionTo(INTERRUPTED_TARGET_PENDING_INTERNAL);
     DetermineDownloadTarget();
     return;
@@ -1473,9 +1478,8 @@ void DownloadItemImpl::Start(
   if (state_ == RESUMING_INTERNAL)
     UpdateValidatorsOnResumption(new_create_info);
 
-  // If the download is not parallel download during resumption, clear the
-  // |received_slices_|.
-  if (!job_->IsParallelizable() && !received_slices_.empty()) {
+  // If the download is not parallel, clear the |received_slices_|.
+  if (!received_slices_.empty() && !job_->IsParallelizable()) {
     destination_info_.received_bytes =
         GetMaxContiguousDataBlockSizeFromBeginning(received_slices_);
     received_slices_.clear();
@@ -1715,7 +1719,7 @@ void DownloadItemImpl::OnDownloadCompleting() {
   DCHECK(!GetTargetFilePath().empty());
   DCHECK(!IsDangerous());
 
-  DCHECK(download_file_.get());
+  DCHECK(download_file_);
   // Unilaterally rename; even if it already has the right name,
   // we need theannotation.
   DownloadFile::RenameCompletionCallback callback =
@@ -1727,7 +1731,9 @@ void DownloadItemImpl::OnDownloadCompleting() {
                      base::Unretained(download_file_.get()),
                      GetTargetFilePath(),
                      delegate_->GetApplicationClientIdForFileScanning(),
-                     GetURL(), GetReferrerUrl(), std::move(callback)));
+                     delegate_->IsOffTheRecord() ? GURL() : GetURL(),
+                     delegate_->IsOffTheRecord() ? GURL() : GetReferrerUrl(),
+                     std::move(callback)));
 }
 
 void DownloadItemImpl::OnDownloadRenamedToFinalName(
@@ -2229,7 +2235,8 @@ void DownloadItemImpl::SetDangerType(DownloadDangerType danger_type) {
   if ((danger_type_ == DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS ||
        danger_type_ == DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE ||
        danger_type_ == DOWNLOAD_DANGER_TYPE_UNCOMMON_CONTENT ||
-       danger_type_ == DOWNLOAD_DANGER_TYPE_MAYBE_DANGEROUS_CONTENT) &&
+       danger_type_ == DOWNLOAD_DANGER_TYPE_MAYBE_DANGEROUS_CONTENT ||
+       danger_type_ == DOWNLOAD_DANGER_TYPE_WHITELISTED_BY_POLICY) &&
       (danger_type == DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST ||
        danger_type == DOWNLOAD_DANGER_TYPE_DANGEROUS_URL ||
        danger_type == DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT ||
@@ -2341,6 +2348,9 @@ void DownloadItemImpl::ResumeInterruptedDownload(
   for (const auto& header : request_headers_) {
     download_params->add_request_header(header.first, header.second);
   }
+  // The offset is calculated after decompression, so the range request cannot
+  // involve any compression,
+  download_params->add_request_header("Accept-Encoding", "identity");
 
   auto entry = delegate_->GetInProgressEntry(this);
   if (entry)

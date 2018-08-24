@@ -104,6 +104,14 @@ void PointerEvent::ReceivedTarget() {
   MouseEvent::ReceivedTarget();
 }
 
+Node* PointerEvent::toElement() const {
+  return nullptr;
+}
+
+Node* PointerEvent::fromElement() const {
+  return nullptr;
+}
+
 HeapVector<Member<PointerEvent>> PointerEvent::getCoalescedEvents() {
   if (coalesced_events_targets_dirty_) {
     for (auto coalesced_event : coalesced_events_)
@@ -111,6 +119,14 @@ HeapVector<Member<PointerEvent>> PointerEvent::getCoalescedEvents() {
     coalesced_events_targets_dirty_ = false;
   }
   return coalesced_events_;
+}
+
+TimeTicks PointerEvent::OldestPlatformTimeStamp() const {
+  if (coalesced_events_.size() > 0) {
+    // Assume that time stamps of coalesced events are in ascending order.
+    return coalesced_events_[0]->PlatformTimeStamp();
+  }
+  return this->PlatformTimeStamp();
 }
 
 void PointerEvent::Trace(blink::Visitor* visitor) {

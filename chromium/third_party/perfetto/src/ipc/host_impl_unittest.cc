@@ -21,6 +21,8 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "perfetto/base/scoped_file.h"
+#include "perfetto/base/temp_file.h"
+#include "perfetto/base/utils.h"
 #include "perfetto/ipc/service.h"
 #include "perfetto/ipc/service_descriptor.h"
 #include "src/base/test/test_task_runner.h"
@@ -38,6 +40,7 @@ namespace {
 using ::testing::_;
 using ::testing::Invoke;
 using ::testing::InvokeWithoutArgs;
+using ::testing::Return;
 
 constexpr char kSockName[] = TEST_SOCK_NAME("host_impl_unittest.sock");
 
@@ -45,7 +48,6 @@ constexpr char kSockName[] = TEST_SOCK_NAME("host_impl_unittest.sock");
 
 class FakeService : public Service {
  public:
-  MOCK_METHOD0(Destroyed, void());
   MOCK_METHOD2(OnFakeMethod1, void(const RequestProto&, DeferredBase*));
 
   static void Invoker(Service* service,
@@ -62,7 +64,7 @@ class FakeService : public Service {
     return reply;
   }
 
-  FakeService(const char* service_name) {
+  explicit FakeService(const char* service_name) {
     descriptor_.service_name = service_name;
     descriptor_.methods.push_back(
         {"FakeMethod1", &RequestDecoder, nullptr, &Invoker});
@@ -70,6 +72,9 @@ class FakeService : public Service {
 
   const ServiceDescriptor& GetDescriptor() override { return descriptor_; }
 
+  base::ScopedFile TakeReceivedFD() { return ipc::Service::TakeReceivedFD(); }
+
+  base::ScopedFile received_fd_;
   ServiceDescriptor descriptor_;
 };
 
@@ -99,15 +104,18 @@ class FakeClient : public UnixSocket::EventListener {
 
   void InvokeMethod(ServiceID service_id,
                     MethodID method_id,
-                    const ProtoMessage& args) {
+                    const ProtoMessage& args,
+                    bool drop_reply = false,
+                    int fd = -1) {
     Frame frame;
     uint64_t request_id = requests_.empty() ? 1 : requests_.rbegin()->first + 1;
     requests_.emplace(request_id, 0);
     frame.set_request_id(request_id);
     frame.mutable_msg_invoke_method()->set_service_id(service_id);
     frame.mutable_msg_invoke_method()->set_method_id(method_id);
+    frame.mutable_msg_invoke_method()->set_drop_reply(drop_reply);
     frame.mutable_msg_invoke_method()->set_args_proto(args.SerializeAsString());
-    SendFrame(frame);
+    SendFrame(frame, fd);
   }
 
   // UnixSocket::EventListener implementation.
@@ -142,9 +150,9 @@ class FakeClient : public UnixSocket::EventListener {
     }
   }
 
-  void SendFrame(const Frame& frame) {
+  void SendFrame(const Frame& frame, int fd = -1) {
     std::string buf = BufferedFrameDeserializer::Serialize(frame);
-    ASSERT_TRUE(sock_->Send(buf.data(), buf.size()));
+    ASSERT_TRUE(sock_->Send(buf.data(), buf.size(), fd));
   }
 
   BufferedFrameDeserializer frame_deserializer_;
@@ -265,6 +273,49 @@ TEST_F(HostImplTest, InvokeMethod) {
   task_runner_->RunUntilCheckpoint("on_reply_received");
 }
 
+TEST_F(HostImplTest, InvokeMethodDropReply) {
+  FakeService* fake_service = new FakeService("FakeService");
+  ASSERT_TRUE(host_->ExposeService(std::unique_ptr<Service>(fake_service)));
+  auto on_bind = task_runner_->CreateCheckpoint("on_bind");
+  cli_->BindService("FakeService");
+  EXPECT_CALL(*cli_, OnServiceBound(_)).WillOnce(InvokeWithoutArgs(on_bind));
+  task_runner_->RunUntilCheckpoint("on_bind");
+
+  // OnFakeMethod1 will:
+  // - Do nothing on the 1st call, when |drop_reply| == true.
+  // - Reply on the the 2nd call, when |drop_reply| == false.
+  EXPECT_CALL(*fake_service, OnFakeMethod1(_, _))
+      .Times(2)
+      .WillRepeatedly(Invoke([](const RequestProto& req, DeferredBase* reply) {
+        if (req.data() == "drop_reply")
+          return;
+        std::unique_ptr<ReplyProto> reply_args(new ReplyProto());
+        reply_args->set_data("the_reply");
+        reply->Resolve(AsyncResult<ProtoMessage>(
+            std::unique_ptr<ProtoMessage>(reply_args.release())));
+      }));
+
+  auto on_reply_received = task_runner_->CreateCheckpoint("on_reply_received");
+  EXPECT_CALL(*cli_, OnInvokeMethodReply(_))
+      .WillOnce(
+          Invoke([on_reply_received](const Frame::InvokeMethodReply& reply) {
+            ASSERT_TRUE(reply.success());
+            ReplyProto reply_args;
+            reply_args.ParseFromString(reply.reply_proto());
+            ASSERT_EQ("the_reply", reply_args.data());
+            on_reply_received();
+          }));
+
+  // Invoke the method first with |drop_reply|=true, then |drop_reply|=false.
+  RequestProto rp;
+  rp.set_data("drop_reply");
+  cli_->InvokeMethod(cli_->last_bound_service_id_, 1, rp, true /*drop_reply*/);
+  rp.set_data("do_reply");
+  cli_->InvokeMethod(cli_->last_bound_service_id_, 1, rp, false /*drop_reply*/);
+
+  task_runner_->RunUntilCheckpoint("on_reply_received");
+}
+
 TEST_F(HostImplTest, SendFileDescriptor) {
   FakeService* fake_service = new FakeService("FakeService");
   ASSERT_TRUE(host_->ExposeService(std::unique_ptr<Service>(fake_service)));
@@ -277,21 +328,20 @@ TEST_F(HostImplTest, SendFileDescriptor) {
   RequestProto req_args;
   cli_->InvokeMethod(cli_->last_bound_service_id_, 1, req_args);
   auto on_reply_sent = task_runner_->CreateCheckpoint("on_reply_sent");
-  FILE* tx_file = tmpfile();
-  fwrite(kFileContent, sizeof(kFileContent), 1, tx_file);
-  fflush(tx_file);
+  base::TempFile tx_file = base::TempFile::CreateUnlinked();
+  base::ignore_result(write(tx_file.fd(), kFileContent, sizeof(kFileContent)));
   EXPECT_CALL(*fake_service, OnFakeMethod1(_, _))
-      .WillOnce(Invoke([on_reply_sent, tx_file](const RequestProto& req,
-                                                DeferredBase* reply) {
+      .WillOnce(Invoke([on_reply_sent, &tx_file](const RequestProto&,
+                                                 DeferredBase* reply) {
         std::unique_ptr<ReplyProto> reply_args(new ReplyProto());
         auto async_res = AsyncResult<ProtoMessage>(
             std::unique_ptr<ProtoMessage>(reply_args.release()));
-        async_res.set_fd(fileno(tx_file));
+        async_res.set_fd(tx_file.fd());
         reply->Resolve(std::move(async_res));
         on_reply_sent();
       }));
   task_runner_->RunUntilCheckpoint("on_reply_sent");
-  fclose(tx_file);
+  tx_file.ReleaseFD();
 
   auto on_fd_received = task_runner_->CreateCheckpoint("on_fd_received");
   EXPECT_CALL(*cli_, OnFileDescriptorReceived(_))
@@ -305,6 +355,40 @@ TEST_F(HostImplTest, SendFileDescriptor) {
       }));
   EXPECT_CALL(*cli_, OnInvokeMethodReply(_));
   task_runner_->RunUntilCheckpoint("on_fd_received");
+}
+
+TEST_F(HostImplTest, ReceiveFileDescriptor) {
+  auto received = task_runner_->CreateCheckpoint("received");
+  FakeService* fake_service = new FakeService("FakeService");
+  ASSERT_TRUE(host_->ExposeService(std::unique_ptr<Service>(fake_service)));
+  auto on_bind = task_runner_->CreateCheckpoint("on_bind");
+  cli_->BindService("FakeService");
+  EXPECT_CALL(*cli_, OnServiceBound(_)).WillOnce(InvokeWithoutArgs(on_bind));
+  task_runner_->RunUntilCheckpoint("on_bind");
+
+  static constexpr char kFileContent[] = "shared file";
+  RequestProto req_args;
+  base::TempFile tx_file = base::TempFile::CreateUnlinked();
+  base::ignore_result(write(tx_file.fd(), kFileContent, sizeof(kFileContent)));
+  cli_->InvokeMethod(cli_->last_bound_service_id_, 1, req_args, false,
+                     tx_file.fd());
+  EXPECT_CALL(*cli_, OnInvokeMethodReply(_));
+  base::ScopedFile rx_fd;
+  EXPECT_CALL(*fake_service, OnFakeMethod1(_, _))
+      .WillOnce(Invoke([received, &fake_service, &rx_fd](const RequestProto&,
+                                                         DeferredBase*) {
+        rx_fd = fake_service->TakeReceivedFD();
+        received();
+      }));
+
+  task_runner_->RunUntilCheckpoint("received");
+
+  ASSERT_TRUE(rx_fd);
+  char buf[sizeof(kFileContent)] = {};
+  ASSERT_EQ(0, lseek(*rx_fd, 0, SEEK_SET));
+  ASSERT_EQ(static_cast<int32_t>(sizeof(buf)),
+            PERFETTO_EINTR(read(*rx_fd, buf, sizeof(buf))));
+  ASSERT_STREQ(kFileContent, buf);
 }
 
 // Invoke a method and immediately after disconnect the client.
@@ -323,8 +407,8 @@ TEST_F(HostImplTest, OnClientDisconnect) {
   cli_.reset();  // Disconnect the client.
   auto on_host_method = task_runner_->CreateCheckpoint("on_host_method");
   EXPECT_CALL(*fake_service, OnFakeMethod1(_, _))
-      .WillOnce(Invoke(
-          [on_host_method](const RequestProto& req, DeferredBase* reply) {
+      .WillOnce(
+          Invoke([on_host_method](const RequestProto& req, DeferredBase*) {
             ASSERT_EQ("foo", req.data());
             on_host_method();
           }));
@@ -348,11 +432,11 @@ TEST_F(HostImplTest, MoveReplyObjectAndReplyAsynchronously) {
   auto on_invoke = task_runner_->CreateCheckpoint("on_invoke");
   DeferredBase moved_reply;
   EXPECT_CALL(*fake_service, OnFakeMethod1(_, _))
-      .WillOnce(Invoke([on_invoke, &moved_reply](const RequestProto& req,
-                                                 DeferredBase* reply) {
-        moved_reply = std::move(*reply);
-        on_invoke();
-      }));
+      .WillOnce(Invoke(
+          [on_invoke, &moved_reply](const RequestProto&, DeferredBase* reply) {
+            moved_reply = std::move(*reply);
+            on_invoke();
+          }));
   task_runner_->RunUntilCheckpoint("on_invoke");
 
   // Check that the FakeClient doesn't see any reply yet.
@@ -386,6 +470,7 @@ TEST_F(HostImplTest, MoveReplyObjectAndReplyAsynchronously) {
 // TEST(HostImplTest, ManyClients) {}
 // TEST(HostImplTest, OverlappingRequstsOutOfOrder) {}
 // TEST(HostImplTest, StreamingRequest) {}
+// TEST(HostImplTest, ManyDropReplyRequestsDontLeakMemory) {}
 
 }  // namespace
 }  // namespace ipc

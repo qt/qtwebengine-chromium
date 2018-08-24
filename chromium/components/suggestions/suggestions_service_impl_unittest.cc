@@ -8,6 +8,7 @@
 
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/macros.h"
@@ -83,7 +84,7 @@ SuggestionsProfile CreateSuggestionsProfile() {
 class MockSyncService : public syncer::FakeSyncService {
  public:
   MockSyncService() {}
-  virtual ~MockSyncService() {}
+  ~MockSyncService() override {}
   MOCK_CONST_METHOD0(CanSyncStart, bool());
   MOCK_CONST_METHOD0(IsSyncActive, bool());
   MOCK_CONST_METHOD0(ConfigurationDone, bool());
@@ -115,7 +116,7 @@ class TestSuggestionsStore : public suggestions::SuggestionsStore {
 class MockImageManager : public suggestions::ImageManager {
  public:
   MockImageManager() {}
-  virtual ~MockImageManager() {}
+  ~MockImageManager() override {}
   MOCK_METHOD1(Initialize, void(const SuggestionsProfile&));
   MOCK_METHOD2(GetImageForURL,
                void(const GURL&,
@@ -182,7 +183,10 @@ class SuggestionsServiceTest : public testing::Test {
             2, 7, false, 0, base::Time::Now(), base::Time::Now(),
             std::vector<int>(syncer::MODEL_TYPE_COUNT, 0),
             std::vector<int>(syncer::MODEL_TYPE_COUNT, 0),
-            sync_pb::SyncEnums::UNKNOWN_ORIGIN)));
+            sync_pb::SyncEnums::UNKNOWN_ORIGIN,
+            /*short_poll_interval=*/base::TimeDelta::FromMinutes(30),
+            /*long_poll_interval=*/base::TimeDelta::FromMinutes(180),
+            /*has_remaining_local_changes=*/false)));
     // These objects are owned by the SuggestionsService, but we keep the
     // pointers around for testing.
     test_suggestions_store_ = new TestSuggestionsStore();
@@ -436,7 +440,7 @@ TEST_F(SuggestionsServiceTest, FetchSuggestionsDataNoAccessToken) {
 
   suggestions_service()->FetchSuggestionsData();
 
-  identity_test_env()->WaitForAccessTokenRequestAndRespondWithError(
+  identity_test_env()->WaitForAccessTokenRequestIfNecessaryAndRespondWithError(
       GoogleServiceAuthError(
           GoogleServiceAuthError::State::INVALID_GAIA_CREDENTIALS));
 

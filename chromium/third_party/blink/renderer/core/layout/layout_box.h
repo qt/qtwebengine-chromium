@@ -65,8 +65,8 @@ struct LayoutBoxRareData {
  public:
   LayoutBoxRareData()
       : spanner_placeholder_(nullptr),
-        override_logical_content_width_(-1),
-        override_logical_content_height_(-1),
+        override_logical_width_(-1),
+        override_logical_height_(-1),
         has_override_containing_block_content_logical_width_(false),
         has_override_containing_block_content_logical_height_(false),
         has_previous_content_box_size_and_layout_overflow_rect_(false),
@@ -78,8 +78,8 @@ struct LayoutBoxRareData {
   // container.
   LayoutMultiColumnSpannerPlaceholder* spanner_placeholder_;
 
-  LayoutUnit override_logical_content_width_;
-  LayoutUnit override_logical_content_height_;
+  LayoutUnit override_logical_width_;
+  LayoutUnit override_logical_height_;
 
   bool has_override_containing_block_content_logical_width_ : 1;
   bool has_override_containing_block_content_logical_height_ : 1;
@@ -689,30 +689,26 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   LayoutUnit MinPreferredLogicalWidth() const override;
   LayoutUnit MaxPreferredLogicalWidth() const override;
 
-  // FIXME: We should rename these back to overrideLogicalHeight/Width and have
-  // them store the border-box height/width like the regular height/width
-  // accessors on LayoutBox. Right now, these are different than contentHeight/
-  // contentWidth because they still include the scrollbar height/width.
-  LayoutUnit OverrideLogicalContentWidth() const;
-  LayoutUnit OverrideLogicalContentHeight() const;
-  bool HasOverrideLogicalContentHeight() const;
-  bool HasOverrideLogicalContentWidth() const;
-  void SetOverrideLogicalContentHeight(LayoutUnit);
-  void SetOverrideLogicalContentWidth(LayoutUnit);
+  LayoutUnit OverrideLogicalHeight() const;
+  LayoutUnit OverrideLogicalWidth() const;
+  bool HasOverrideLogicalHeight() const;
+  bool HasOverrideLogicalWidth() const;
+  void SetOverrideLogicalHeight(LayoutUnit);
+  void SetOverrideLogicalWidth(LayoutUnit);
+  void ClearOverrideLogicalHeight();
+  void ClearOverrideLogicalWidth();
   void ClearOverrideSize();
-  void ClearOverrideLogicalContentHeight();
-  void ClearOverrideLogicalContentWidth();
+
+  LayoutUnit OverrideContentLogicalWidth() const;
+  LayoutUnit OverrideContentLogicalHeight() const;
 
   LayoutUnit OverrideContainingBlockContentLogicalWidth() const;
   LayoutUnit OverrideContainingBlockContentLogicalHeight() const;
-  bool HasOverrideContainingBlockLogicalWidth() const;
-  bool HasOverrideContainingBlockLogicalHeight() const;
+  bool HasOverrideContainingBlockContentLogicalWidth() const;
+  bool HasOverrideContainingBlockContentLogicalHeight() const;
   void SetOverrideContainingBlockContentLogicalWidth(LayoutUnit);
   void SetOverrideContainingBlockContentLogicalHeight(LayoutUnit);
-  void ClearContainingBlockOverrideSize();
-  void ClearOverrideContainingBlockContentLogicalHeight();
-
-  LayoutSize OffsetFromContainer(const LayoutObject*) const override;
+  void ClearOverrideContainingBlockContentSize();
 
   LayoutUnit AdjustBorderBoxLogicalWidthForBoxSizing(float width) const;
   LayoutUnit AdjustBorderBoxLogicalHeightForBoxSizing(float height) const;
@@ -998,7 +994,6 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   // scrollWidth. For the full story, visit crbug.com/724255
   LayoutUnit VerticalScrollbarWidthClampedToContentBox() const;
 
-  virtual ScrollResult Scroll(ScrollGranularity, const FloatSize&);
   bool CanBeScrolledAndHasScrollableArea() const;
   virtual bool CanBeProgramaticallyScrolled() const;
   virtual void Autoscroll(const IntPoint&);
@@ -1120,6 +1115,7 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   void UnmarkOrthogonalWritingModeRoot();
 
   bool IsCustomItem() const;
+  bool IsCustomItemShrinkToFit() const;
 
   bool IsDeprecatedFlexItem() const {
     return !IsInline() && !IsFloatingOrOutOfFlowPositioned() && Parent() &&
@@ -1157,6 +1153,12 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 
   LayoutPoint FlipForWritingModeForChild(const LayoutBox* child,
                                          const LayoutPoint&) const;
+
+  // NG: Like FlipForWritingModeForChild, except that it will not flip
+  // if LayoutBox will be painted by NG using fragment.Offset.
+  LayoutPoint FlipForWritingModeForChildForPaint(const LayoutBox* child,
+                                                 const LayoutPoint&) const;
+
   WARN_UNUSED_RESULT LayoutUnit FlipForWritingMode(LayoutUnit position) const {
     // The offset is in the block direction (y for horizontal writing modes, x
     // for vertical writing modes).
@@ -1529,6 +1531,15 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 
   LayoutRect LocalVisualRectIgnoringVisibility() const override;
 
+  LayoutSize OffsetFromContainerInternal(
+      const LayoutObject*,
+      bool ignore_scroll_offset) const override;
+
+  // For atomic inlines, returns its resolved direction in text flow. Not to be
+  // confused with the CSS property 'direction'.
+  // Returns the CSS 'direction' property value when it is not atomic inline.
+  TextDirection ResolvedDirection() const;
+
  private:
   void UpdateShapeOutsideInfoAfterStyleChange(const ComputedStyle&,
                                               const ComputedStyle* old_style);
@@ -1628,6 +1639,11 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 
   void AddSnapArea(const LayoutBox&);
   void RemoveSnapArea(const LayoutBox&);
+
+  // Returns true when the current recursive scroll into visible could propagate
+  // to parent frame.
+  bool AllowedToPropageRecursiveScrollToParentFrame(
+      const WebScrollIntoViewParams&);
 
   LayoutRect DebugRect() const override;
 

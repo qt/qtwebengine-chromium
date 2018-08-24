@@ -43,6 +43,10 @@ typedef struct CGPoint CGPoint;
 #endif
 #endif
 
+namespace gfx {
+class Point;
+}
+
 namespace blink {
 
 class PLATFORM_EXPORT IntPoint {
@@ -100,6 +104,8 @@ class PLATFORM_EXPORT IntPoint {
   operator CGPoint() const;
 #endif
 
+  operator gfx::Point() const;
+
   String ToString() const;
 
  private:
@@ -153,6 +159,7 @@ inline int IntPoint::DistanceSquaredToPoint(const IntPoint& point) const {
 }
 
 PLATFORM_EXPORT std::ostream& operator<<(std::ostream&, const IntPoint&);
+PLATFORM_EXPORT WTF::TextStream& operator<<(WTF::TextStream&, const IntPoint&);
 
 }  // namespace blink
 

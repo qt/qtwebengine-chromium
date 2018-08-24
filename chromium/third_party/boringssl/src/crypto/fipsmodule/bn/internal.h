@@ -185,6 +185,16 @@ extern "C" {
 #error "Must define either OPENSSL_32_BIT or OPENSSL_64_BIT"
 #endif
 
+// |BN_mod_exp_mont_consttime| is based on the assumption that the L1 data
+// cache line width of the target processor is at least the following value.
+#define MOD_EXP_CTIME_MIN_CACHE_LINE_WIDTH 64
+
+// The number of |BN_ULONG|s needed for the |BN_mod_exp_mont_consttime| stack-
+// allocated storage buffer. The buffer is just the right size for the RSAZ
+// and is about ~1KB larger than what's necessary (4480 bytes) for 1024-bit
+// inputs.
+#define MOD_EXP_CTIME_STORAGE_LEN \
+  (((320u * 3u) + (32u * 9u * 16u)) / sizeof(BN_ULONG))
 
 #define STATIC_BIGNUM(x)                                    \
   {                                                         \
@@ -370,10 +380,30 @@ int bn_odd_number_is_obviously_composite(const BIGNUM *bn);
 // bn_rshift1_words sets |r| to |a| >> 1, where both arrays are |num| bits wide.
 void bn_rshift1_words(BN_ULONG *r, const BN_ULONG *a, size_t num);
 
+// bn_rshift_words sets |r| to |a| >> |shift|, where both arrays are |num| bits
+// wide.
+void bn_rshift_words(BN_ULONG *r, const BN_ULONG *a, unsigned shift,
+                     size_t num);
+
 // bn_rshift_secret_shift behaves like |BN_rshift| but runs in time independent
 // of both |a| and |n|.
 OPENSSL_EXPORT int bn_rshift_secret_shift(BIGNUM *r, const BIGNUM *a,
                                           unsigned n, BN_CTX *ctx);
+
+// bn_reduce_once sets |r| to |a| mod |m| where 0 <= |a| < 2*|m|. It returns
+// zero if |a| < |m| and a mask of all ones if |a| >= |m|. Each array is |num|
+// words long, but |a| has an additional word specified by |carry|. |carry| must
+// be zero or one, as implied by the bounds on |a|.
+//
+// |r|, |a|, and |m| may not alias. Use |bn_reduce_once_in_place| if |r| and |a|
+// must alias.
+BN_ULONG bn_reduce_once(BN_ULONG *r, const BN_ULONG *a, BN_ULONG carry,
+                        const BN_ULONG *m, size_t num);
+
+// bn_reduce_once_in_place behaves like |bn_reduce_once| but acts in-place on
+// |r|, using |tmp| as scratch space. |r|, |tmp|, and |m| may not alias.
+BN_ULONG bn_reduce_once_in_place(BN_ULONG *r, BN_ULONG carry, const BN_ULONG *m,
+                                 BN_ULONG *tmp, size_t num);
 
 
 // Constant-time non-modular arithmetic.
@@ -434,9 +464,21 @@ OPENSSL_EXPORT int bn_lcm_consttime(BIGNUM *r, const BIGNUM *a, const BIGNUM *b,
 //
 // The following functions implement basic constant-time modular arithmetic.
 
+// bn_mod_add_words sets |r| to |a| + |b| (mod |m|), using |tmp| as scratch
+// space. Each array is |num| words long. |a| and |b| must be < |m|. Any pair of
+// |r|, |a|, and |b| may alias.
+void bn_mod_add_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
+                      const BN_ULONG *m, BN_ULONG *tmp, size_t num);
+
 // bn_mod_add_consttime acts like |BN_mod_add_quick| but takes a |BN_CTX|.
 int bn_mod_add_consttime(BIGNUM *r, const BIGNUM *a, const BIGNUM *b,
                          const BIGNUM *m, BN_CTX *ctx);
+
+// bn_mod_sub_words sets |r| to |a| - |b| (mod |m|), using |tmp| as scratch
+// space. Each array is |num| words long. |a| and |b| must be < |m|. Any pair of
+// |r|, |a|, and |b| may alias.
+void bn_mod_sub_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
+                      const BN_ULONG *m, BN_ULONG *tmp, size_t num);
 
 // bn_mod_sub_consttime acts like |BN_mod_sub_quick| but takes a |BN_CTX|.
 int bn_mod_sub_consttime(BIGNUM *r, const BIGNUM *a, const BIGNUM *b,
@@ -493,77 +535,59 @@ int bn_mod_inverse_secret_prime(BIGNUM *out, const BIGNUM *a, const BIGNUM *p,
 #endif
 
 // bn_mul_small sets |r| to |a|*|b|. |num_r| must be |num_a| + |num_b|. |r| may
-// not alias with |a| or |b|. This function returns one on success and zero if
-// lengths are inconsistent.
-int bn_mul_small(BN_ULONG *r, size_t num_r, const BN_ULONG *a, size_t num_a,
+// not alias with |a| or |b|.
+void bn_mul_small(BN_ULONG *r, size_t num_r, const BN_ULONG *a, size_t num_a,
                  const BN_ULONG *b, size_t num_b);
 
 // bn_sqr_small sets |r| to |a|^2. |num_a| must be at most |BN_SMALL_MAX_WORDS|.
-// |num_r| must be |num_a|*2. |r| and |a| may not alias. This function returns
-// one on success and zero on programmer error.
-int bn_sqr_small(BN_ULONG *r, size_t num_r, const BN_ULONG *a, size_t num_a);
+// |num_r| must be |num_a|*2. |r| and |a| may not alias.
+void bn_sqr_small(BN_ULONG *r, size_t num_r, const BN_ULONG *a, size_t num_a);
 
 // In the following functions, the modulus must be at most |BN_SMALL_MAX_WORDS|
 // words long.
 
 // bn_to_montgomery_small sets |r| to |a| translated to the Montgomery domain.
-// |num_a| and |num_r| must be the length of the modulus, which is
-// |mont->N.top|. |a| must be fully reduced. This function returns one on
-// success and zero if lengths are inconsistent. |r| and |a| may alias.
-int bn_to_montgomery_small(BN_ULONG *r, size_t num_r, const BN_ULONG *a,
-                           size_t num_a, const BN_MONT_CTX *mont);
+// |r| and |a| are |num| words long, which must be |mont->N.width|. |a| must be
+// fully reduced and may alias |r|.
+void bn_to_montgomery_small(BN_ULONG *r, const BN_ULONG *a, size_t num,
+                            const BN_MONT_CTX *mont);
 
 // bn_from_montgomery_small sets |r| to |a| translated out of the Montgomery
-// domain. |num_r| must be the length of the modulus, which is |mont->N.top|.
-// |a| must be at most |mont->N.top| * R and |num_a| must be at most 2 *
-// |mont->N.top|. This function returns one on success and zero if lengths are
-// inconsistent. |r| and |a| may alias.
-int bn_from_montgomery_small(BN_ULONG *r, size_t num_r, const BN_ULONG *a,
-                             size_t num_a, const BN_MONT_CTX *mont);
-
-// bn_one_to_montgomery_small sets |r| to one in Montgomery form. It returns one
-// on success and zero on error. |num_r| must be the length of the modulus,
-// which is |mont->N.top|. This function treats the bit width of the modulus as
-// public.
-int bn_one_to_montgomery_small(BN_ULONG *r, size_t num_r,
-                               const BN_MONT_CTX *mont);
+// domain. |r| and |a| are |num| words long, which must be |mont->N.width|. |a|
+// must be fully-reduced and may alias |r|.
+void bn_from_montgomery_small(BN_ULONG *r, const BN_ULONG *a, size_t num,
+                              const BN_MONT_CTX *mont);
 
 // bn_mod_mul_montgomery_small sets |r| to |a| * |b| mod |mont->N|. Both inputs
-// and outputs are in the Montgomery domain. |num_r| must be the length of the
-// modulus, which is |mont->N.top|. This function returns one on success and
-// zero on internal error or inconsistent lengths. Any two of |r|, |a|, and |b|
-// may alias.
-//
-// This function requires |a| * |b| < N * R, where N is the modulus and R is the
-// Montgomery divisor, 2^(N.top * BN_BITS2). This should generally be satisfied
-// by ensuring |a| and |b| are fully reduced, however ECDSA has one computation
-// which requires the more general bound.
-int bn_mod_mul_montgomery_small(BN_ULONG *r, size_t num_r, const BN_ULONG *a,
-                                size_t num_a, const BN_ULONG *b, size_t num_b,
-                                const BN_MONT_CTX *mont);
+// and outputs are in the Montgomery domain. Each array is |num| words long,
+// which must be |mont->N.width|. Any two of |r|, |a|, and |b| may alias. |a|
+// and |b| must be reduced on input.
+void bn_mod_mul_montgomery_small(BN_ULONG *r, const BN_ULONG *a,
+                                 const BN_ULONG *b, size_t num,
+                                 const BN_MONT_CTX *mont);
 
 // bn_mod_exp_mont_small sets |r| to |a|^|p| mod |mont->N|. It returns one on
 // success and zero on programmer or internal error. Both inputs and outputs are
-// in the Montgomery domain. |num_r| and |num_a| must be |mont->N.top|, which
-// must be at most |BN_SMALL_MAX_WORDS|. |a| must be fully-reduced. This
-// function runs in time independent of |a|, but |p| and |mont->N| are public
-// values.
+// in the Montgomery domain. |r| and |a| are |num| words long, which must be
+// |mont->N.width| and at most |BN_SMALL_MAX_WORDS|. |a| must be fully-reduced.
+// This function runs in time independent of |a|, but |p| and |mont->N| are
+// public values. |a| must be fully-reduced and may alias with |r|.
 //
 // Note this function differs from |BN_mod_exp_mont| which uses Montgomery
 // reduction but takes input and output outside the Montgomery domain. Combine
 // this function with |bn_from_montgomery_small| and |bn_to_montgomery_small|
 // if necessary.
-int bn_mod_exp_mont_small(BN_ULONG *r, size_t num_r, const BN_ULONG *a,
-                          size_t num_a, const BN_ULONG *p, size_t num_p,
-                          const BN_MONT_CTX *mont);
+void bn_mod_exp_mont_small(BN_ULONG *r, const BN_ULONG *a, size_t num,
+                           const BN_ULONG *p, size_t num_p,
+                           const BN_MONT_CTX *mont);
 
 // bn_mod_inverse_prime_mont_small sets |r| to |a|^-1 mod |mont->N|. |mont->N|
-// must be a prime. |num_r| and |num_a| must be |mont->N.top|, which must be at
-// most |BN_SMALL_MAX_WORDS|. |a| must be fully-reduced. This function runs in
-// time independent of |a|, but |mont->N| is a public value.
-int bn_mod_inverse_prime_mont_small(BN_ULONG *r, size_t num_r,
-                                    const BN_ULONG *a, size_t num_a,
-                                    const BN_MONT_CTX *mont);
+// must be a prime. |r| and |a| are |num| words long, which must be
+// |mont->N.width| and at most |BN_SMALL_MAX_WORDS|. |a| must be fully-reduced
+// and may alias |r|. This function runs in time independent of |a|, but
+// |mont->N| is a public value.
+void bn_mod_inverse_prime_mont_small(BN_ULONG *r, const BN_ULONG *a, size_t num,
+                                     const BN_MONT_CTX *mont);
 
 
 #if defined(__cplusplus)

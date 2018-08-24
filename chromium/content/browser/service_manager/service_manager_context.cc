@@ -91,14 +91,6 @@
 #include "ui/aura/env.h"
 #endif
 
-#if BUILDFLAG(ENABLE_MUS)
-#include "components/discardable_memory/service/discardable_shared_memory_manager.h"
-#include "content/public/browser/discardable_shared_memory_manager.h"
-#include "services/ui/common/image_cursors_set.h"
-#include "services/ui/public/interfaces/constants.mojom.h"
-#include "services/ui/service.h"
-#endif
-
 namespace content {
 
 namespace {
@@ -263,6 +255,25 @@ class NullServiceProcessLauncherFactory
   DISALLOW_COPY_AND_ASSIGN(NullServiceProcessLauncherFactory);
 };
 
+// This class is intended for tests that want to load service binaries (rather
+// than via the utility process). Production code uses
+// NullServiceProcessLauncherFactory.
+class ServiceBinaryLauncherFactory
+    : public service_manager::ServiceProcessLauncherFactory {
+ public:
+  ServiceBinaryLauncherFactory() = default;
+  ~ServiceBinaryLauncherFactory() override = default;
+
+ private:
+  std::unique_ptr<service_manager::ServiceProcessLauncher> Create(
+      const base::FilePath& service_path) override {
+    return std::make_unique<service_manager::ServiceProcessLauncher>(
+        nullptr, service_path);
+  }
+
+  DISALLOW_COPY_AND_ASSIGN(ServiceBinaryLauncherFactory);
+};
+
 // Helper to invoke GetGeolocationRequestContext on the currently-set
 // ContentBrowserClient.
 void GetGeolocationRequestContextFromContentClient(
@@ -281,44 +292,6 @@ bool ShouldEnableVizService() {
   return false;
 #endif
 }
-
-#if BUILDFLAG(ENABLE_MUS)
-std::unique_ptr<service_manager::Service> CreateEmbeddedUIService(
-    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
-    base::WeakPtr<ui::ImageCursorsSet> image_cursors_set_weak_ptr,
-    discardable_memory::DiscardableSharedMemoryManager* memory_manager) {
-  ui::Service::InitParams params;
-  params.running_standalone = false;
-  params.resource_runner = task_runner;
-  params.image_cursors_set_weak_ptr = image_cursors_set_weak_ptr;
-  params.memory_manager = memory_manager;
-  params.should_host_viz = base::FeatureList::IsEnabled(features::kMash);
-  return std::make_unique<ui::Service>(params);
-}
-
-void RegisterUIServiceInProcessIfNecessary(
-    ServiceManagerConnection* connection) {
-  // Some tests don't create BrowserMainLoop.
-  if (!BrowserMainLoop::GetInstance())
-    return;
-  // Do not embed the UI service when running in mash.
-  if (base::FeatureList::IsEnabled(features::kMash))
-    return;
-  // Do not embed the UI service if not running with mus.
-  if (!features::IsMusEnabled())
-    return;
-
-  service_manager::EmbeddedServiceInfo info;
-  info.factory = base::Bind(
-      &CreateEmbeddedUIService, base::ThreadTaskRunnerHandle::Get(),
-      BrowserMainLoop::GetInstance()->image_cursors_set()->GetWeakPtr(),
-      GetDiscardableSharedMemoryManager());
-  info.use_own_thread = true;
-  info.message_loop_type = base::MessageLoop::TYPE_UI;
-  info.thread_priority = base::ThreadPriority::DISPLAY;
-  connection->AddEmbeddedService(ui::mojom::kServiceName, info);
-}
-#endif
 
 std::unique_ptr<service_manager::Service> CreateNetworkService() {
   // The test interface doesn't need to be implemented in the in-process case.
@@ -364,8 +337,18 @@ class ServiceManagerContext::InProcessServiceManagerContext
       std::unique_ptr<BuiltinManifestProvider> manifest_provider,
       service_manager::mojom::ServicePtrInfo packaged_services_service_info) {
     manifest_provider_ = std::move(manifest_provider);
+    std::unique_ptr<service_manager::ServiceProcessLauncherFactory>
+        service_process_launcher_factory;
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kEnableServiceBinaryLauncher)) {
+      service_process_launcher_factory =
+          std::make_unique<ServiceBinaryLauncherFactory>();
+    } else {
+      service_process_launcher_factory =
+          std::make_unique<NullServiceProcessLauncherFactory>();
+    }
     service_manager_ = std::make_unique<service_manager::ServiceManager>(
-        std::make_unique<NullServiceProcessLauncherFactory>(), nullptr,
+        std::move(service_process_launcher_factory), nullptr,
         manifest_provider_.get());
 
     service_manager::mojom::ServicePtr packaged_services_service;
@@ -541,28 +524,13 @@ ServiceManagerContext::ServiceManagerContext() {
         metrics::mojom::kMetricsServiceName, info);
   }
 
-  if (BrowserMainLoop* bml = BrowserMainLoop::GetInstance()) {
-    service_manager::EmbeddedServiceInfo info;
-    info.factory = base::BindRepeating(
-        [](BrowserMainLoop* bml) -> std::unique_ptr<service_manager::Service> {
-          return audio::CreateEmbeddedService(bml->audio_manager());
-        },
-        bml);
-    info.task_runner = bml->audio_service_runner();
-    packaged_services_connection_->AddEmbeddedService(
-        audio::mojom::kServiceName, info);
-  }
-
   ContentBrowserClient::StaticServiceMap services;
-  GetContentClient()->browser()->RegisterInProcessServices(&services);
+  GetContentClient()->browser()->RegisterInProcessServices(
+      &services, packaged_services_connection_.get());
   for (const auto& entry : services) {
     packaged_services_connection_->AddEmbeddedService(entry.first,
                                                       entry.second);
   }
-
-#if BUILDFLAG(ENABLE_MUS)
-  RegisterUIServiceInProcessIfNecessary(packaged_services_connection_.get());
-#endif
 
   // This is safe to assign directly from any thread, because
   // ServiceManagerContext must be constructed before anyone can call
@@ -598,6 +566,26 @@ ServiceManagerContext::ServiceManagerContext() {
     // Create the in-process NetworkService object so that its getter is
     // available on the IO thread.
     GetNetworkService();
+  }
+
+  if (BrowserMainLoop* bml = BrowserMainLoop::GetInstance()) {
+    if (bml->AudioServiceOutOfProcess()) {
+      DCHECK(base::FeatureList::IsEnabled(features::kAudioServiceAudioStreams));
+      out_of_process_services[audio::mojom::kServiceName] =
+          base::ASCIIToUTF16("Audio Service");
+    } else {
+      service_manager::EmbeddedServiceInfo info;
+      info.factory = base::BindRepeating(
+          [](BrowserMainLoop* bml)
+              -> std::unique_ptr<service_manager::Service> {
+            return audio::CreateEmbeddedService(bml->audio_manager());
+          },
+          bml);
+      info.task_runner = bml->audio_service_runner();
+      DCHECK(info.task_runner);
+      packaged_services_connection_->AddEmbeddedService(
+          audio::mojom::kServiceName, info);
+    }
   }
 
   if (features::IsVideoCaptureServiceEnabledForOutOfProcess()) {

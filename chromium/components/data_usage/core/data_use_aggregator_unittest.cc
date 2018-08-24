@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "base/callback.h"
+#include "base/containers/span.h"
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
@@ -60,8 +61,7 @@ class TestDataUseAggregator : public DataUseAggregator {
 class TestNetworkChangeNotifier : public net::NetworkChangeNotifier {
  public:
   explicit TestNetworkChangeNotifier(TestDataUseAggregator* data_use_aggregator)
-      : net::NetworkChangeNotifier(),
-        data_use_aggregator_(data_use_aggregator),
+      : data_use_aggregator_(data_use_aggregator),
         connection_type_to_return_(
             net::NetworkChangeNotifier::CONNECTION_UNKNOWN) {}
 
@@ -275,7 +275,7 @@ class DataUseAggregatorTest : public testing::Test {
         net::MockRead("HTTP/1.1 200 OK\r\n\r\n"), net::MockRead("hello world"),
         net::MockRead(net::SYNCHRONOUS, net::OK),
     };
-    net::StaticSocketDataProvider socket(reads, arraysize(reads), nullptr, 0);
+    net::StaticSocketDataProvider socket(reads, base::span<net::MockWrite>());
     mock_socket_factory_->AddSocketDataProvider(&socket);
 
     net::TestDelegate delegate;

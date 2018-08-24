@@ -13,14 +13,8 @@
 namespace rx
 {
 
-SurfaceEGL::SurfaceEGL(const egl::SurfaceState &state,
-                       const FunctionsEGL *egl,
-                       EGLConfig config,
-                       RendererGL *renderer)
-    : SurfaceGL(state, renderer),
-      mEGL(egl),
-      mConfig(config),
-      mSurface(EGL_NO_SURFACE)
+SurfaceEGL::SurfaceEGL(const egl::SurfaceState &state, const FunctionsEGL *egl, EGLConfig config)
+    : SurfaceGL(state), mEGL(egl), mConfig(config), mSurface(EGL_NO_SURFACE)
 {
 }
 
@@ -65,7 +59,7 @@ egl::Error SurfaceEGL::querySurfacePointerANGLE(EGLint attribute, void **value)
     return egl::EglBadSurface();
 }
 
-egl::Error SurfaceEGL::bindTexImage(gl::Texture *texture, EGLint buffer)
+egl::Error SurfaceEGL::bindTexImage(const gl::Context *context, gl::Texture *texture, EGLint buffer)
 {
     EGLBoolean success = mEGL->bindTexImage(mSurface, buffer);
     if (success == EGL_FALSE)
@@ -75,7 +69,7 @@ egl::Error SurfaceEGL::bindTexImage(gl::Texture *texture, EGLint buffer)
     return egl::NoError();
 }
 
-egl::Error SurfaceEGL::releaseTexImage(EGLint buffer)
+egl::Error SurfaceEGL::releaseTexImage(const gl::Context *context, EGLint buffer)
 {
     EGLBoolean success = mEGL->releaseTexImage(mSurface, buffer);
     if (success == EGL_FALSE)

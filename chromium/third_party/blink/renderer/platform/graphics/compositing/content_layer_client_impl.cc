@@ -5,19 +5,33 @@
 #include "third_party/blink/renderer/platform/graphics/compositing/content_layer_client_impl.h"
 
 #include <memory>
+#include "base/optional.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "cc/paint/paint_op_buffer.h"
 #include "third_party/blink/renderer/platform/geometry/geometry_as_json.h"
 #include "third_party/blink/renderer/platform/graphics/compositing/paint_chunks_to_cc_layer.h"
 #include "third_party/blink/renderer/platform/graphics/logging_canvas.h"
 #include "third_party/blink/renderer/platform/graphics/paint/display_item_list.h"
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_display_item.h"
-#include "third_party/blink/renderer/platform/graphics/paint/paint_chunk.h"
+#include "third_party/blink/renderer/platform/graphics/paint/paint_artifact.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_chunk_subset.h"
 #include "third_party/blink/renderer/platform/graphics/paint/raster_invalidation_tracking.h"
 #include "third_party/blink/renderer/platform/json/json_values.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
 
 namespace blink {
+
+ContentLayerClientImpl::ContentLayerClientImpl()
+    : cc_picture_layer_(cc::PictureLayer::Create(this)),
+      raster_invalidator_([this](const IntRect& rect) {
+        cc_picture_layer_->SetNeedsDisplayRect(rect);
+      }),
+      layer_state_(nullptr, nullptr, nullptr),
+      weak_ptr_factory_(this) {
+  cc_picture_layer_->SetLayerClient(weak_ptr_factory_.GetWeakPtr());
+}
+
+ContentLayerClientImpl::~ContentLayerClientImpl() = default;
 
 static int GetTransformId(const TransformPaintPropertyNode* transform,
                           ContentLayerClientImpl::LayerAsJSONContext& context) {
@@ -126,6 +140,21 @@ std::unique_ptr<JSONObject> ContentLayerClientImpl::LayerAsJSON(
   return json;
 }
 
+std::unique_ptr<base::trace_event::TracedValue>
+ContentLayerClientImpl::TakeDebugInfo(cc::Layer* layer) {
+  DCHECK_EQ(layer, cc_picture_layer_.get());
+  auto traced_value = std::make_unique<base::trace_event::TracedValue>();
+  traced_value->SetString("layer_name",
+                          WTF::StringUTF8Adaptor(debug_name_).AsStringPiece());
+  if (auto* tracking = raster_invalidator_.GetTracking()) {
+    tracking->AddToTracedValue(*traced_value);
+    tracking->ClearInvalidations();
+  }
+  // TODO(wangxianzhu): Do we need compositing_reasons,
+  // squashing_disallowed_reasons and owner_node_id?
+  return traced_value;
+}
+
 static SkColor DisplayItemBackgroundColor(const DisplayItem& item) {
   if (item.GetType() != DisplayItem::kBoxDecorationBackground &&
       item.GetType() != DisplayItem::kDocumentBackground)
@@ -150,12 +179,13 @@ static SkColor DisplayItemBackgroundColor(const DisplayItem& item) {
 }
 
 scoped_refptr<cc::PictureLayer> ContentLayerClientImpl::UpdateCcPictureLayer(
-    const DisplayItemList& display_item_list,
-    const gfx::Rect& layer_bounds,
+    const PaintArtifact& paint_artifact,
     const PaintChunkSubset& paint_chunks,
+    const gfx::Rect& layer_bounds,
     const PropertyTreeState& layer_state) {
   // TODO(wangxianzhu): Avoid calling DebugName() in official release build.
   debug_name_ = paint_chunks[0].id.client.DebugName();
+  const auto& display_item_list = paint_artifact.GetDisplayItemList();
 
 #if DCHECK_IS_ON()
   paint_chunk_debug_data_ = JSONArray::Create();
@@ -163,23 +193,23 @@ scoped_refptr<cc::PictureLayer> ContentLayerClientImpl::UpdateCcPictureLayer(
     auto json = JSONObject::Create();
     json->SetString("data", chunk.ToString());
     json->SetArray("displayItems",
-                   display_item_list.SubsequenceAsJSON(
+                   paint_artifact.GetDisplayItemList().SubsequenceAsJSON(
                        chunk.begin_index, chunk.end_index,
                        DisplayItemList::kSkipNonDrawings |
                            DisplayItemList::kShownOnlyDisplayItemTypes));
-    json->SetString("propertyTreeState",
-                    chunk.properties.property_tree_state.ToTreeString());
+    json->SetString("propertyTreeState", chunk.properties.ToTreeString());
     paint_chunk_debug_data_->PushObject(std::move(json));
   }
 #endif
 
-  raster_invalidator_.Generate(layer_bounds, paint_chunks, layer_state);
+  raster_invalidator_.Generate(paint_artifact, paint_chunks, layer_bounds,
+                               layer_state);
   layer_state_ = layer_state;
 
   cc_picture_layer_->SetBounds(layer_bounds.size());
   cc_picture_layer_->SetIsDrawable(true);
 
-  Optional<RasterUnderInvalidationCheckingParams> params;
+  base::Optional<RasterUnderInvalidationCheckingParams> params;
   if (RuntimeEnabledFeatures::PaintUnderInvalidationCheckingEnabled()) {
     params.emplace(*raster_invalidator_.GetTracking(),
                    IntRect(0, 0, layer_bounds.width(), layer_bounds.height()),
@@ -188,7 +218,7 @@ scoped_refptr<cc::PictureLayer> ContentLayerClientImpl::UpdateCcPictureLayer(
   cc_display_item_list_ = PaintChunksToCcLayer::Convert(
       paint_chunks, layer_state, layer_bounds.OffsetFromOrigin(),
       display_item_list, cc::DisplayItemList::kTopLevelDisplayItemList,
-      WTF::OptionalOrNullptr(params));
+      base::OptionalOrNullptr(params));
 
   if (paint_chunks[0].size()) {
     cc_picture_layer_->SetBackgroundColor(DisplayItemBackgroundColor(

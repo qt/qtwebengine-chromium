@@ -10,6 +10,24 @@ namespace blink {
 
 class PropertyTreeStateTest : public testing::Test {};
 
+static scoped_refptr<TransformPaintPropertyNode>
+CreateTransformWithCompositorElementId(
+    const CompositorElementId& compositor_element_id) {
+  TransformPaintPropertyNode::State state;
+  state.compositor_element_id = compositor_element_id;
+  return TransformPaintPropertyNode::Create(TransformPaintPropertyNode::Root(),
+                                            std::move(state));
+}
+
+static scoped_refptr<EffectPaintPropertyNode>
+CreateEffectWithCompositorElementId(
+    const CompositorElementId& compositor_element_id) {
+  EffectPaintPropertyNode::State state;
+  state.compositor_element_id = compositor_element_id;
+  return EffectPaintPropertyNode::Create(EffectPaintPropertyNode::Root(),
+                                         std::move(state));
+}
+
 TEST_F(PropertyTreeStateTest, CompositorElementIdNoElementIdOnAnyNode) {
   PropertyTreeState state(TransformPaintPropertyNode::Root(),
                           ClipPaintPropertyNode::Root(),
@@ -21,10 +39,7 @@ TEST_F(PropertyTreeStateTest, CompositorElementIdNoElementIdOnAnyNode) {
 TEST_F(PropertyTreeStateTest, CompositorElementIdWithElementIdOnTransformNode) {
   CompositorElementId expected_compositor_element_id = CompositorElementId(2);
   scoped_refptr<TransformPaintPropertyNode> transform =
-      TransformPaintPropertyNode::Create(TransformPaintPropertyNode::Root(),
-                                         TransformationMatrix(), FloatPoint3D(),
-                                         false, 0, CompositingReason::kNone,
-                                         expected_compositor_element_id);
+      CreateTransformWithCompositorElementId(expected_compositor_element_id);
   PropertyTreeState state(transform.get(), ClipPaintPropertyNode::Root(),
                           EffectPaintPropertyNode::Root());
   EXPECT_EQ(expected_compositor_element_id,
@@ -34,11 +49,7 @@ TEST_F(PropertyTreeStateTest, CompositorElementIdWithElementIdOnTransformNode) {
 TEST_F(PropertyTreeStateTest, CompositorElementIdWithElementIdOnEffectNode) {
   CompositorElementId expected_compositor_element_id = CompositorElementId(2);
   scoped_refptr<EffectPaintPropertyNode> effect =
-      EffectPaintPropertyNode::Create(
-          EffectPaintPropertyNode::Root(), TransformPaintPropertyNode::Root(),
-          ClipPaintPropertyNode::Root(), kColorFilterNone,
-          CompositorFilterOperations(), 1.0, SkBlendMode::kSrcOver,
-          CompositingReason::kNone, expected_compositor_element_id);
+      CreateEffectWithCompositorElementId(expected_compositor_element_id);
   PropertyTreeState state(TransformPaintPropertyNode::Root(),
                           ClipPaintPropertyNode::Root(), effect.get());
   EXPECT_EQ(expected_compositor_element_id,
@@ -48,16 +59,9 @@ TEST_F(PropertyTreeStateTest, CompositorElementIdWithElementIdOnEffectNode) {
 TEST_F(PropertyTreeStateTest, CompositorElementIdWithElementIdOnMultipleNodes) {
   CompositorElementId expected_compositor_element_id = CompositorElementId(2);
   scoped_refptr<TransformPaintPropertyNode> transform =
-      TransformPaintPropertyNode::Create(TransformPaintPropertyNode::Root(),
-                                         TransformationMatrix(), FloatPoint3D(),
-                                         false, 0, CompositingReason::kNone,
-                                         expected_compositor_element_id);
+      CreateTransformWithCompositorElementId(expected_compositor_element_id);
   scoped_refptr<EffectPaintPropertyNode> effect =
-      EffectPaintPropertyNode::Create(
-          EffectPaintPropertyNode::Root(), TransformPaintPropertyNode::Root(),
-          ClipPaintPropertyNode::Root(), kColorFilterNone,
-          CompositorFilterOperations(), 1.0, SkBlendMode::kSrcOver,
-          CompositingReason::kNone, expected_compositor_element_id);
+      CreateEffectWithCompositorElementId(expected_compositor_element_id);
   PropertyTreeState state(transform.get(), ClipPaintPropertyNode::Root(),
                           effect.get());
   EXPECT_EQ(expected_compositor_element_id,
@@ -68,16 +72,9 @@ TEST_F(PropertyTreeStateTest, CompositorElementIdWithDifferingElementIds) {
   CompositorElementId first_compositor_element_id = CompositorElementId(2);
   CompositorElementId second_compositor_element_id = CompositorElementId(3);
   scoped_refptr<TransformPaintPropertyNode> transform =
-      TransformPaintPropertyNode::Create(TransformPaintPropertyNode::Root(),
-                                         TransformationMatrix(), FloatPoint3D(),
-                                         false, 0, CompositingReason::kNone,
-                                         first_compositor_element_id);
+      CreateTransformWithCompositorElementId(first_compositor_element_id);
   scoped_refptr<EffectPaintPropertyNode> effect =
-      EffectPaintPropertyNode::Create(
-          EffectPaintPropertyNode::Root(), TransformPaintPropertyNode::Root(),
-          ClipPaintPropertyNode::Root(), kColorFilterNone,
-          CompositorFilterOperations(), 1.0, SkBlendMode::kSrcOver,
-          CompositingReason::kNone, second_compositor_element_id);
+      CreateEffectWithCompositorElementId(second_compositor_element_id);
   PropertyTreeState state(transform.get(), ClipPaintPropertyNode::Root(),
                           effect.get());
 

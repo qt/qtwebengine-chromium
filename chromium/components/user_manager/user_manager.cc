@@ -5,7 +5,7 @@
 #include "components/user_manager/user_manager.h"
 
 #include "base/logging.h"
-#include "components/signin/core/account_id/account_id.h"
+#include "components/account_id/account_id.h"
 
 namespace user_manager {
 
@@ -22,8 +22,6 @@ void UserManager::Observer::OnUserProfileImageUpdateFailed(const User& user) {}
 void UserManager::Observer::OnUserProfileImageUpdated(
     const User& user,
     const gfx::ImageSkia& profile_image) {}
-
-void UserManager::Observer::OnChildStatusChanged(const User& user) {}
 
 void UserManager::Observer::OnUsersSignInConstraintsChanged() {}
 

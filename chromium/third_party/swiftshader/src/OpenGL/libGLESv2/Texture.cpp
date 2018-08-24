@@ -609,14 +609,6 @@ void Texture2D::subImageCompressed(GLint level, GLint xoffset, GLint yoffset, GL
 
 void Texture2D::copyImage(GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width, GLsizei height, Renderbuffer *source)
 {
-	egl::Image *renderTarget = source->getRenderTarget();
-
-	if(!renderTarget)
-	{
-		ERR("Failed to retrieve the render target.");
-		return error(GL_OUT_OF_MEMORY);
-	}
-
 	if(image[level])
 	{
 		image[level]->release();
@@ -631,13 +623,21 @@ void Texture2D::copyImage(GLint level, GLenum internalformat, GLint x, GLint y, 
 
 	if(width != 0 && height != 0)
 	{
+		egl::Image *renderTarget = source->getRenderTarget();
+
+		if(!renderTarget)
+		{
+			ERR("Failed to retrieve the render target.");
+			return error(GL_OUT_OF_MEMORY);
+		}
+
 		sw::SliceRect sourceRect(x, y, x + width, y + height, 0);
 		sourceRect.clip(0, 0, renderTarget->getWidth(), renderTarget->getHeight());
 
 		copy(renderTarget, sourceRect, 0, 0, 0, image[level]);
-	}
 
-	renderTarget->release();
+		renderTarget->release();
+	}
 }
 
 void Texture2D::copySubImage(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height, Renderbuffer *source)
@@ -769,7 +769,15 @@ bool Texture2D::isDepth(GLenum target, GLint level) const
 
 void Texture2D::generateMipmaps()
 {
-	ASSERT(image[mBaseLevel]);
+	if(!image[mBaseLevel])
+	{
+		return;   // Image unspecified. Not an error.
+	}
+
+	if(image[mBaseLevel]->getWidth() == 0 || image[mBaseLevel]->getHeight() == 0)
+	{
+		return;   // Zero dimension. Not an error.
+	}
 
 	int maxsize = std::max(image[mBaseLevel]->getWidth(), image[mBaseLevel]->getHeight());
 	int p = log2(maxsize) + mBaseLevel;
@@ -1240,14 +1248,6 @@ void TextureCubeMap::setImage(GLenum target, GLint level, GLsizei width, GLsizei
 
 void TextureCubeMap::copyImage(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width, GLsizei height, Renderbuffer *source)
 {
-	egl::Image *renderTarget = source->getRenderTarget();
-
-	if(!renderTarget)
-	{
-		ERR("Failed to retrieve the render target.");
-		return error(GL_OUT_OF_MEMORY);
-	}
-
 	int face = CubeFaceIndex(target);
 
 	if(image[face][level])
@@ -1265,13 +1265,21 @@ void TextureCubeMap::copyImage(GLenum target, GLint level, GLenum internalformat
 
 	if(width != 0 && height != 0)
 	{
+		egl::Image *renderTarget = source->getRenderTarget();
+
+		if(!renderTarget)
+		{
+			ERR("Failed to retrieve the render target.");
+			return error(GL_OUT_OF_MEMORY);
+		}
+
 		sw::SliceRect sourceRect(x, y, x + width, y + height, 0);
 		sourceRect.clip(0, 0, renderTarget->getWidth(), renderTarget->getHeight());
 
 		copy(renderTarget, sourceRect, 0, 0, 0, image[face][level]);
-	}
 
-	renderTarget->release();
+		renderTarget->release();
+	}
 }
 
 egl::Image *TextureCubeMap::getImage(int face, unsigned int level)
@@ -1321,7 +1329,10 @@ void TextureCubeMap::copySubImage(GLenum target, GLint level, GLint xoffset, GLi
 
 void TextureCubeMap::generateMipmaps()
 {
-	ASSERT(isCubeComplete());
+	if(!isCubeComplete())
+	{
+		return error(GL_INVALID_OPERATION);
+	}
 
 	int p = log2(image[0][mBaseLevel]->getWidth()) + mBaseLevel;
 	int q = std::min(p, mMaxLevel);
@@ -1571,14 +1582,6 @@ void Texture3D::subImageCompressed(GLint level, GLint xoffset, GLint yoffset, GL
 
 void Texture3D::copyImage(GLint level, GLenum internalformat, GLint x, GLint y, GLint z, GLsizei width, GLsizei height, GLsizei depth, Renderbuffer *source)
 {
-	egl::Image *renderTarget = source->getRenderTarget();
-
-	if(!renderTarget)
-	{
-		ERR("Failed to retrieve the render target.");
-		return error(GL_OUT_OF_MEMORY);
-	}
-
 	if(image[level])
 	{
 		image[level]->release();
@@ -1593,6 +1596,14 @@ void Texture3D::copyImage(GLint level, GLenum internalformat, GLint x, GLint y, 
 
 	if(width != 0 && height != 0 && depth != 0)
 	{
+		egl::Image *renderTarget = source->getRenderTarget();
+
+		if(!renderTarget)
+		{
+			ERR("Failed to retrieve the render target.");
+			return error(GL_OUT_OF_MEMORY);
+		}
+
 		sw::SliceRect sourceRect(x, y, x + width, y + height, z);
 		sourceRect.clip(0, 0, renderTarget->getWidth(), renderTarget->getHeight());
 
@@ -1600,9 +1611,9 @@ void Texture3D::copyImage(GLint level, GLenum internalformat, GLint x, GLint y, 
 		{
 			copy(renderTarget, sourceRect, 0, 0, sliceZ, image[level]);
 		}
-	}
 
-	renderTarget->release();
+		renderTarget->release();
+	}
 }
 
 void Texture3D::copySubImage(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height, Renderbuffer *source)
@@ -1739,7 +1750,15 @@ bool Texture3D::isDepth(GLenum target, GLint level) const
 
 void Texture3D::generateMipmaps()
 {
-	ASSERT(image[mBaseLevel]);
+	if(!image[mBaseLevel])
+	{
+		return;   // Image unspecified. Not an error.
+	}
+
+	if(image[mBaseLevel]->getWidth() == 0 || image[mBaseLevel]->getHeight() == 0 || image[mBaseLevel]->getDepth() == 0)
+	{
+		return;   // Zero dimension. Not an error.
+	}
 
 	int maxsize = std::max(std::max(image[mBaseLevel]->getWidth(), image[mBaseLevel]->getHeight()), image[mBaseLevel]->getDepth());
 	int p = log2(maxsize) + mBaseLevel;
@@ -1833,7 +1852,15 @@ GLenum Texture2DArray::getTarget() const
 
 void Texture2DArray::generateMipmaps()
 {
-	ASSERT(image[mBaseLevel]);
+	if(!image[mBaseLevel])
+	{
+		return;   // Image unspecified. Not an error.
+	}
+
+	if(image[mBaseLevel]->getWidth() == 0 || image[mBaseLevel]->getHeight() == 0 || image[mBaseLevel]->getDepth() == 0)
+	{
+		return;   // Zero dimension. Not an error.
+	}
 
 	int depth = image[mBaseLevel]->getDepth();
 	int maxsize = std::max(image[mBaseLevel]->getWidth(), image[mBaseLevel]->getHeight());

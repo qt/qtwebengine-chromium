@@ -28,15 +28,37 @@ namespace rx
 namespace
 {
 
+constexpr char kQualifierMarkerBegin[] = "@@ QUALIFIER-";
+constexpr char kLayoutMarkerBegin[]    = "@@ LAYOUT-";
+constexpr char kMarkerEnd[]            = " @@";
+constexpr char kUniformQualifier[]     = "uniform";
+
 void InsertLayoutSpecifierString(std::string *shaderString,
                                  const std::string &variableName,
                                  const std::string &layoutString)
 {
     std::stringstream searchStringBuilder;
-    searchStringBuilder << "@@ LAYOUT-" << variableName << " @@";
+    searchStringBuilder << kLayoutMarkerBegin << variableName << kMarkerEnd;
     std::string searchString = searchStringBuilder.str();
 
-    angle::ReplaceSubstring(shaderString, searchString, layoutString);
+    if (layoutString != "")
+    {
+        angle::ReplaceSubstring(shaderString, searchString, "layout(" + layoutString + ")");
+    }
+    else
+    {
+        angle::ReplaceSubstring(shaderString, searchString, layoutString);
+    }
+}
+
+void InsertQualifierSpecifierString(std::string *shaderString,
+                                    const std::string &variableName,
+                                    const std::string &replacementString)
+{
+    std::stringstream searchStringBuilder;
+    searchStringBuilder << kQualifierMarkerBegin << variableName << kMarkerEnd;
+    std::string searchString = searchStringBuilder.str();
+    angle::ReplaceSubstring(shaderString, searchString, replacementString);
 }
 
 }  // anonymous namespace
@@ -98,23 +120,53 @@ gl::LinkResult GlslangWrapper::linkProgram(const gl::Context *glContext,
     // Parse attribute locations and replace them in the vertex shader.
     // See corresponding code in OutputVulkanGLSL.cpp.
     // TODO(jmadill): Also do the same for ESSL 3 fragment outputs.
-    for (const auto &attribute : programState.getAttributes())
+    for (const sh::Attribute &attribute : programState.getAttributes())
     {
-        if (!attribute.staticUse)
-            continue;
+        // Warning: If we endup supporting ES 3.0 shaders and up, Program::linkAttributes is going
+        // to bring us all attributes in this list instead of only the active ones.
+        ASSERT(attribute.active);
 
         std::string locationString = "location = " + Str(attribute.location);
         InsertLayoutSpecifierString(&vertexSource, attribute.name, locationString);
+        InsertQualifierSpecifierString(&vertexSource, attribute.name, "in");
+    }
+
+    // The attributes in the programState could have been filled with active attributes only
+    // depending on the shader version. If there is inactive attributes left, we have to remove
+    // their @@ QUALIFIER and @@ LAYOUT markers.
+    for (const sh::Attribute &attribute : glVertexShader->getAllAttributes(glContext))
+    {
+        if (attribute.active)
+        {
+            continue;
+        }
+
+        InsertLayoutSpecifierString(&vertexSource, attribute.name, "");
+        InsertQualifierSpecifierString(&vertexSource, attribute.name, "");
     }
 
     // Assign varying locations.
-    // TODO(jmadill): This might need to be redone.
-    for (const auto &varyingReg : resources.varyingPacking.getRegisterList())
+    for (const gl::PackedVaryingRegister &varyingReg : resources.varyingPacking.getRegisterList())
     {
         const auto &varying        = *varyingReg.packedVarying;
-        std::string locationString = "location = " + Str(varyingReg.registerRow);
+
+        std::string locationString = "location = " + Str(varyingReg.registerRow) +
+                                     ", component = " + Str(varyingReg.registerColumn);
         InsertLayoutSpecifierString(&vertexSource, varying.varying->name, locationString);
         InsertLayoutSpecifierString(&fragmentSource, varying.varying->name, locationString);
+
+        ASSERT(varying.interpolation == sh::INTERPOLATION_SMOOTH);
+        InsertQualifierSpecifierString(&vertexSource, varying.varying->name, "out");
+        InsertQualifierSpecifierString(&fragmentSource, varying.varying->name, "in");
+    }
+
+    // Remove all the markers for unused varyings.
+    for (const std::string &varyingName : resources.varyingPacking.getInactiveVaryingNames())
+    {
+        InsertLayoutSpecifierString(&vertexSource, varyingName, "");
+        InsertLayoutSpecifierString(&fragmentSource, varyingName, "");
+        InsertQualifierSpecifierString(&vertexSource, varyingName, "");
+        InsertQualifierSpecifierString(&fragmentSource, varyingName, "");
     }
 
     // Bind the default uniforms for vertex and fragment shaders.
@@ -143,18 +195,27 @@ gl::LinkResult GlslangWrapper::linkProgram(const gl::Context *glContext,
         if (samplerUniform.isActive(gl::ShaderType::Vertex))
         {
             InsertLayoutSpecifierString(&vertexSource, samplerUniform.name, setBindingString);
+            InsertQualifierSpecifierString(&vertexSource, samplerUniform.name, kUniformQualifier);
+        }
+        else
+        {
+            InsertQualifierSpecifierString(&vertexSource, samplerUniform.name, "");
         }
 
         if (samplerUniform.isActive(gl::ShaderType::Fragment))
         {
             InsertLayoutSpecifierString(&fragmentSource, samplerUniform.name, setBindingString);
+            InsertQualifierSpecifierString(&fragmentSource, samplerUniform.name, kUniformQualifier);
+        }
+        else
+        {
+            InsertQualifierSpecifierString(&fragmentSource, samplerUniform.name, "");
         }
 
         textureCount += samplerUniform.getBasicTypeElementCount();
     }
 
     std::array<const char *, 2> strings = {{vertexSource.c_str(), fragmentSource.c_str()}};
-
     std::array<int, 2> lengths = {
         {static_cast<int>(vertexSource.length()), static_cast<int>(fragmentSource.length())}};
 

@@ -192,6 +192,9 @@ void AddPrintPreviewStrings(content::WebUIDataSource* source) {
                              IDS_PRINT_PREVIEW_DESTINATION_LABEL);
   source->AddLocalizedString("copiesLabel", IDS_PRINT_PREVIEW_COPIES_LABEL);
   source->AddLocalizedString("scalingLabel", IDS_PRINT_PREVIEW_SCALING_LABEL);
+  source->AddLocalizedString("pagesPerSheetLabel",
+                             IDS_PRINT_PREVIEW_PAGES_PER_SHEET_LABEL);
+
   source->AddLocalizedString("examplePageRangeText",
                              IDS_PRINT_PREVIEW_EXAMPLE_PAGE_RANGE_TEXT);
   source->AddLocalizedString("layoutLabel", IDS_PRINT_PREVIEW_LAYOUT_LABEL);
@@ -395,14 +398,6 @@ void AddPrintPreviewImages(content::WebUIDataSource* source) {
 }
 
 void AddPrintPreviewFlags(content::WebUIDataSource* source, Profile* profile) {
-#if !defined(OS_MACOSX) && !defined(OS_WIN)
-  bool print_pdf_as_image_enabled = base::FeatureList::IsEnabled(
-      features::kPrintPdfAsImage);
-  source->AddBoolean("printPdfAsImageEnabled", print_pdf_as_image_enabled);
-#else
-  source->AddBoolean("printPdfAsImageEnabled", false);
-#endif
-
 #if defined(OS_CHROMEOS)
   source->AddBoolean("useSystemDefaultPrinter", false);
 #else
@@ -420,6 +415,10 @@ void AddPrintPreviewFlags(content::WebUIDataSource* source, Profile* profile) {
   enterprise_managed = base::win::IsEnterpriseManaged();
 #endif
   source->AddBoolean("isEnterpriseManaged", enterprise_managed);
+
+  bool nup_printing_enabled =
+      base::FeatureList::IsEnabled(features::kNupPrinting);
+  source->AddBoolean("pagesPerSheetEnabled", nup_printing_enabled);
 }
 
 void SetupPrintPreviewPlugin(content::WebUIDataSource* source) {
@@ -621,11 +620,6 @@ void PrintPreviewUI::ClearAllPreviewData() {
   PrintPreviewDataService::GetInstance()->RemoveEntry(id_);
 }
 
-int PrintPreviewUI::GetAvailableDraftPageCount() const {
-  return PrintPreviewDataService::GetInstance()->GetAvailableDraftPageCount(
-      id_);
-}
-
 void PrintPreviewUI::SetInitiatorTitle(
     const base::string16& job_title) {
   initiator_title_ = job_title;
@@ -786,7 +780,7 @@ void PrintPreviewUI::OnHidePreviewDialog() {
       delegate->ReleaseWebContents();
   DCHECK_EQ(preview_dialog, preview_contents.get());
   background_printing_manager->OwnPrintPreviewDialog(
-      preview_contents.release());
+      std::move(preview_contents));
   OnClosePrintPreviewDialog();
 }
 

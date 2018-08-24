@@ -11,6 +11,8 @@
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/peerconnectionproxy.h"
+#include "api/video_codecs/builtin_video_decoder_factory.h"
+#include "api/video_codecs/builtin_video_encoder_factory.h"
 #include "p2p/base/fakeportallocator.h"
 #include "p2p/base/teststunserver.h"
 #include "p2p/client/basicportallocator.h"
@@ -168,8 +170,10 @@ class PeerConnectionBundleBaseTest : public ::testing::Test {
 #endif
     pc_factory_ = CreatePeerConnectionFactory(
         rtc::Thread::Current(), rtc::Thread::Current(), rtc::Thread::Current(),
-        FakeAudioCaptureModule::Create(), CreateBuiltinAudioEncoderFactory(),
-        CreateBuiltinAudioDecoderFactory(), nullptr, nullptr);
+        rtc::scoped_refptr<AudioDeviceModule>(FakeAudioCaptureModule::Create()),
+        CreateBuiltinAudioEncoderFactory(), CreateBuiltinAudioDecoderFactory(),
+        CreateBuiltinVideoEncoderFactory(), CreateBuiltinVideoDecoderFactory(),
+        nullptr /* audio_mixer */, nullptr /* audio_processing */);
   }
 
   WrapperPtr CreatePeerConnection() {
@@ -664,6 +668,42 @@ TEST_P(PeerConnectionBundleTest, BundleOnFirstMidInAnswer) {
 
   EXPECT_EQ(old_video_transport, caller->video_rtp_transport());
   EXPECT_EQ(caller->voice_rtp_transport(), caller->video_rtp_transport());
+}
+
+// This tests that applying description with conflicted RTP demuxing criteria
+// will fail.
+TEST_P(PeerConnectionBundleTest,
+       ApplyDescriptionWithConflictedDemuxCriteriaFail) {
+  auto caller = CreatePeerConnectionWithAudioVideo();
+  auto callee = CreatePeerConnectionWithAudioVideo();
+
+  RTCOfferAnswerOptions options;
+  options.use_rtp_mux = false;
+  auto offer = caller->CreateOffer(options);
+  // Modified the SDP to make two m= sections have the same SSRC.
+  ASSERT_GE(offer->description()->contents().size(), 2U);
+  offer->description()
+      ->contents()[0]
+      .description->mutable_streams()[0]
+      .ssrcs[0] = 1111222;
+  offer->description()
+      ->contents()[1]
+      .description->mutable_streams()[0]
+      .ssrcs[0] = 1111222;
+  EXPECT_TRUE(
+      caller->SetLocalDescription(CloneSessionDescription(offer.get())));
+  EXPECT_TRUE(callee->SetRemoteDescription(std::move(offer)));
+  EXPECT_TRUE(callee->CreateAnswerAndSetAsLocal(options));
+
+  // Enable BUNDLE in subsequent offer/answer exchange and two m= sections are
+  // expectd to use one RtpTransport underneath.
+  options.use_rtp_mux = true;
+  EXPECT_TRUE(
+      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(options)));
+  auto answer = callee->CreateAnswer(options);
+  // When BUNDLE is enabled, applying the description is expected to fail
+  // because the demuxing criteria is conflicted.
+  EXPECT_FALSE(callee->SetLocalDescription(std::move(answer)));
 }
 
 // This tests that changing the pre-negotiated BUNDLE tag is not supported.

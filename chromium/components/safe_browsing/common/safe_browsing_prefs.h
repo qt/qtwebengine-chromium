@@ -51,6 +51,10 @@ extern const char kSafeBrowsingScoutGroupSelected[];
 // collects data for malware detection.
 extern const char kSafeBrowsingScoutReportingEnabled[];
 
+// Dictionary containing safe browsing triggers and the list of times they have
+// fired recently.
+extern const char kSafeBrowsingTriggerEventTimestamps[];
+
 // Dictionary that records the origin and navigation ID pairs of unhandled sync
 // password reuses.
 extern const char kSafeBrowsingUnhandledSyncPasswordReuses[];
@@ -65,14 +69,6 @@ extern const char kSafeBrowsingWhitelistDomains[];
 // also captures new password on this page in a change password event.
 extern const char kPasswordProtectionChangePasswordURL[];
 
-// String indicating the organization name that should be include in the
-// password reuse warning text.
-extern const char kPasswordProtectionEnterpriseName[];
-
-// String indicating the enterprise email domain that is covered by password
-// protection.
-extern const char kPasswordProtectionEnterpriseEmailDomain[];
-
 // List of string indicating the URL(s) users use to log in. Password protection
 // service will capture passwords on these URLs.
 // This is managed by enterprise policy and has no effect on users who are not
@@ -83,11 +79,6 @@ extern const char kPasswordProtectionLoginURLs[];
 // by enterprise policy and has no effect on users who are not managed by
 // enterprise policy.
 extern const char kPasswordProtectionWarningTrigger[];
-
-// Integer indicating the password protection at-risk account flagging trigger.
-// This is managed by enterprise policy and has no effect on users who are not
-// managed by enterprise policy.
-extern const char kPasswordProtectionRiskTrigger[];
 }
 
 namespace safe_browsing {
@@ -194,6 +185,9 @@ void RecordExtendedReportingMetrics(const PrefService& prefs);
 
 // Registers user preferences related to Safe Browsing.
 void RegisterProfilePrefs(PrefRegistrySimple* registry);
+
+// Registers local state prefs related to Safe Browsing.
+void RegisterLocalStatePrefs(PrefRegistrySimple* registry);
 
 // Sets the currently active Safe Browsing Extended Reporting preference to the
 // specified value. The |location| indicates the UI where the change was

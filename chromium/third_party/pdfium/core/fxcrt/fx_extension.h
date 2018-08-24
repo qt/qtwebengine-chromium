@@ -12,7 +12,13 @@
 #include <memory>
 
 #include "core/fxcrt/fx_string.h"
+#include "third_party/base/span.h"
+
+#if defined(USE_SYSTEM_ICUUC)
+#include <unicode/uchar.h>
+#else
 #include "third_party/icu/source/common/unicode/uchar.h"
+#endif
 
 #define FX_INVALID_OFFSET static_cast<uint32_t>(-1)
 
@@ -82,11 +88,8 @@ inline int FXSYS_DecimalCharToInt(const wchar_t c) {
 }
 
 void FXSYS_IntToTwoHexChars(uint8_t c, char* buf);
-
 void FXSYS_IntToFourHexChars(uint16_t c, char* buf);
 
 size_t FXSYS_ToUTF16BE(uint32_t unicode, char* buf);
-
-uint32_t GetBits32(const uint8_t* pData, int bitpos, int nbits);
 
 #endif  // CORE_FXCRT_FX_EXTENSION_H_

@@ -30,12 +30,17 @@ std::string LatencySourceEventTypeToInputModalityString(
     case ui::SourceEventType::MOUSE:
       return "Mouse";
     case ui::SourceEventType::TOUCH:
+    case ui::SourceEventType::INERTIAL:
       return "Touch";
     case ui::SourceEventType::KEY_PRESS:
       return "KeyPress";
     default:
       return "";
   }
+}
+
+bool IsInertialScroll(const LatencyInfo& latency) {
+  return latency.source_event_type() == ui::SourceEventType::INERTIAL;
 }
 
 // This UMA metric tracks the time from when the original wheel event is created
@@ -54,15 +59,12 @@ void RecordUmaEventLatencyScrollWheelTimeToScrollUpdateSwapBegin2Histogram(
 
 }  // namespace
 
-LatencyTracker::LatencyTracker(bool metric_sampling,
-                               ukm::SourceId ukm_source_id)
-    : metric_sampling_(metric_sampling), ukm_source_id_(ukm_source_id) {
-}
+LatencyTracker::LatencyTracker() = default;
 
-void LatencyTracker::OnEventStart(LatencyInfo* latency) {
-  static uint64_t global_trace_id = 0;
-  latency->set_trace_id(++global_trace_id);
-  latency->set_ukm_source_id(ukm_source_id_);
+void LatencyTracker::OnGpuSwapBuffersCompleted(
+    const std::vector<ui::LatencyInfo>& latency_info) {
+  for (const auto& latency : latency_info)
+    OnGpuSwapBuffersCompleted(latency);
 }
 
 void LatencyTracker::OnGpuSwapBuffersCompleted(const LatencyInfo& latency) {
@@ -98,10 +100,15 @@ void LatencyTracker::OnGpuSwapBuffersCompleted(const LatencyInfo& latency) {
   if (source_event_type == ui::SourceEventType::WHEEL ||
       source_event_type == ui::SourceEventType::MOUSE ||
       source_event_type == ui::SourceEventType::TOUCH ||
+      source_event_type == ui::SourceEventType::INERTIAL ||
       source_event_type == ui::SourceEventType::KEY_PRESS) {
     ComputeEndToEndLatencyHistograms(gpu_swap_begin_component,
                                      gpu_swap_end_component, latency);
   }
+}
+
+void LatencyTracker::DisableMetricSamplingForTesting() {
+  metric_sampling_ = false;
 }
 
 void LatencyTracker::ReportUkmScrollLatency(
@@ -140,20 +147,21 @@ void LatencyTracker::ReportUkmScrollLatency(
       event_name = "Event.ScrollUpdate.Wheel";
       break;
   }
-  std::unique_ptr<ukm::UkmEntryBuilder> builder =
-      ukm_recorder->GetEntryBuilder(ukm_source_id, event_name.c_str());
-  builder->AddMetric(
+
+  ukm::UkmEntryBuilder builder(ukm_source_id, event_name.c_str());
+  builder.SetMetric(
       "TimeToScrollUpdateSwapBegin",
       std::max(static_cast<int64_t>(0),
                (time_to_scroll_update_swap_begin_component.last_event_time -
                 start_component.first_event_time)
                    .InMicroseconds()));
-  builder->AddMetric("TimeToHandled",
-                     std::max(static_cast<int64_t>(0),
-                              (time_to_handled_component.last_event_time -
-                               start_component.first_event_time)
-                                  .InMicroseconds()));
-  builder->AddMetric("IsMainThread", is_main_thread);
+  builder.SetMetric("TimeToHandled",
+                    std::max(static_cast<int64_t>(0),
+                             (time_to_handled_component.last_event_time -
+                              start_component.first_event_time)
+                                 .InMicroseconds()));
+  builder.SetMetric("IsMainThread", is_main_thread);
+  builder.Record(ukm_recorder);
 }
 
 void LatencyTracker::ComputeEndToEndLatencyHistograms(
@@ -171,13 +179,32 @@ void LatencyTracker::ComputeEndToEndLatencyHistograms(
   if (latency.FindLatency(
           ui::INPUT_EVENT_LATENCY_FIRST_SCROLL_UPDATE_ORIGINAL_COMPONENT,
           &original_component)) {
-    scroll_name = "ScrollBegin";
     DCHECK(input_modality == "Wheel" || input_modality == "Touch");
+
+    // For inertial scrolling we don't separate the first event from the rest of
+    // them.
+    scroll_name = IsInertialScroll(latency) ? "ScrollInertial" : "ScrollBegin";
+
+    // This UMA metric tracks the performance of overall scrolling as a high
+    // level metric.
+    UMA_HISTOGRAM_INPUT_LATENCY_5_SECONDS_MAX_MICROSECONDS(
+        "Event.Latency.ScrollBegin.TimeToScrollUpdateSwapBegin2",
+        original_component, gpu_swap_begin_component);
+
     // This UMA metric tracks the time between the final frame swap for the
     // first scroll event in a sequence and the original timestamp of that
     // scroll event's underlying touch/wheel event.
+    UMA_HISTOGRAM_INPUT_LATENCY_5_SECONDS_MAX_MICROSECONDS(
+        "Event.Latency." + scroll_name + "." + input_modality +
+            ".TimeToScrollUpdateSwapBegin4",
+        original_component, gpu_swap_begin_component);
+
+    // This is the same metric as above. But due to a change in rebucketing,
+    // UMA pipeline cannot process this for the chirp alerts. Hence adding a
+    // newer version the this metric above. TODO(nzolghadr): Remove it in a
+    // future milesone like M70.
     UMA_HISTOGRAM_INPUT_LATENCY_HIGH_RESOLUTION_MICROSECONDS(
-        "Event.Latency.ScrollBegin." + input_modality +
+        "Event.Latency." + scroll_name + "." + input_modality +
             ".TimeToScrollUpdateSwapBegin2",
         original_component, gpu_swap_begin_component);
 
@@ -189,13 +216,32 @@ void LatencyTracker::ComputeEndToEndLatencyHistograms(
   } else if (latency.FindLatency(
                  ui::INPUT_EVENT_LATENCY_SCROLL_UPDATE_ORIGINAL_COMPONENT,
                  &original_component)) {
-    scroll_name = "ScrollUpdate";
     DCHECK(input_modality == "Wheel" || input_modality == "Touch");
+
+    // For inertial scrolling we don't separate the first event from the rest of
+    // them.
+    scroll_name = IsInertialScroll(latency) ? "ScrollInertial" : "ScrollUpdate";
+
+    // This UMA metric tracks the performance of overall scrolling as a high
+    // level metric.
+    UMA_HISTOGRAM_INPUT_LATENCY_5_SECONDS_MAX_MICROSECONDS(
+        "Event.Latency.ScrollUpdate.TimeToScrollUpdateSwapBegin2",
+        original_component, gpu_swap_begin_component);
+
     // This UMA metric tracks the time from when the original touch/wheel event
     // is created to when the scroll gesture results in final frame swap.
     // First scroll events are excluded from this metric.
+    UMA_HISTOGRAM_INPUT_LATENCY_5_SECONDS_MAX_MICROSECONDS(
+        "Event.Latency." + scroll_name + "." + input_modality +
+            ".TimeToScrollUpdateSwapBegin4",
+        original_component, gpu_swap_begin_component);
+
+    // This is the same metric as above. But due to a change in rebucketing,
+    // UMA pipeline cannot process this for the chirp alerts. Hence adding a
+    // newer version the this metric above. TODO(nzolghadr): Remove it in a
+    // future milesone like M70.
     UMA_HISTOGRAM_INPUT_LATENCY_HIGH_RESOLUTION_MICROSECONDS(
-        "Event.Latency.ScrollUpdate." + input_modality +
+        "Event.Latency." + scroll_name + "." + input_modality +
             ".TimeToScrollUpdateSwapBegin2",
         original_component, gpu_swap_begin_component);
 
@@ -222,7 +268,8 @@ void LatencyTracker::ComputeEndToEndLatencyHistograms(
   }
 
   // Record scroll latency metrics.
-  DCHECK(scroll_name == "ScrollBegin" || scroll_name == "ScrollUpdate");
+  DCHECK(scroll_name == "ScrollBegin" || scroll_name == "ScrollUpdate" ||
+         (IsInertialScroll(latency) && scroll_name == "ScrollInertial"));
   LatencyInfo::LatencyComponent rendering_scheduled_component;
   bool rendering_scheduled_on_main = latency.FindLatency(
       ui::INPUT_EVENT_LATENCY_RENDERING_SCHEDULED_MAIN_COMPONENT, 0,
@@ -233,7 +280,10 @@ void LatencyTracker::ComputeEndToEndLatencyHistograms(
         &rendering_scheduled_component);
     DCHECK_AND_RETURN_ON_FAIL(found_component);
   }
-  if (input_modality == "Touch" || input_modality == "Wheel") {
+
+  // Inertial scrolls are excluded from Ukm metrics.
+  if ((input_modality == "Touch" && !IsInertialScroll(latency)) ||
+      input_modality == "Wheel") {
     InputMetricEvent input_metric_event;
     if (scroll_name == "ScrollBegin") {
       input_metric_event = input_modality == "Touch"

@@ -18,10 +18,76 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_load_priority.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loading_log.h"
 #include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
+#include "third_party/blink/renderer/platform/weborigin/origin_access_entry.h"
 #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
 #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
 
 namespace blink {
+
+namespace {
+
+// This function maps from Blink's internal "request context" concept to Fetch's
+// notion of a request's "destination":
+// https://fetch.spec.whatwg.org/#concept-request-destination.
+const char* GetDestinationFromContext(WebURLRequest::RequestContext context) {
+  switch (context) {
+    case WebURLRequest::kRequestContextUnspecified:
+    case WebURLRequest::kRequestContextBeacon:
+    case WebURLRequest::kRequestContextDownload:
+    case WebURLRequest::kRequestContextEventSource:
+    case WebURLRequest::kRequestContextFetch:
+    case WebURLRequest::kRequestContextPing:
+    case WebURLRequest::kRequestContextXMLHttpRequest:
+    case WebURLRequest::kRequestContextSubresource:
+    case WebURLRequest::kRequestContextPrefetch:
+      return "\"\"";
+    case WebURLRequest::kRequestContextCSPReport:
+      return "report";
+    case WebURLRequest::kRequestContextAudio:
+      return "audio";
+    case WebURLRequest::kRequestContextEmbed:
+      return "embed";
+    case WebURLRequest::kRequestContextFont:
+      return "font";
+    case WebURLRequest::kRequestContextFrame:
+    case WebURLRequest::kRequestContextHyperlink:
+    case WebURLRequest::kRequestContextIframe:
+    case WebURLRequest::kRequestContextLocation:
+    case WebURLRequest::kRequestContextForm:
+      return "document";
+    case WebURLRequest::kRequestContextImage:
+    case WebURLRequest::kRequestContextFavicon:
+    case WebURLRequest::kRequestContextImageSet:
+      return "image";
+    case WebURLRequest::kRequestContextManifest:
+      return "manifest";
+    case WebURLRequest::kRequestContextObject:
+      return "object";
+    case WebURLRequest::kRequestContextScript:
+      return "script";
+    case WebURLRequest::kRequestContextSharedWorker:
+      return "sharedworker";
+    case WebURLRequest::kRequestContextStyle:
+      return "style";
+    case WebURLRequest::kRequestContextTrack:
+      return "track";
+    case WebURLRequest::kRequestContextVideo:
+      return "video";
+    case WebURLRequest::kRequestContextWorker:
+      return "worker";
+    case WebURLRequest::kRequestContextXSLT:
+      return "xslt";
+    case WebURLRequest::kRequestContextImport:
+    case WebURLRequest::kRequestContextInternal:
+    case WebURLRequest::kRequestContextPlugin:
+    case WebURLRequest::kRequestContextServiceWorker:
+      return "unknown";
+  }
+  NOTREACHED();
+  return "";
+}
+
+}  // namespace
 
 void BaseFetchContext::AddAdditionalRequestHeaders(ResourceRequest& request,
                                                    FetchResourceType type) {
@@ -44,9 +110,37 @@ void BaseFetchContext::AddAdditionalRequestHeaders(ResourceRequest& request,
   auto address_space = GetAddressSpace();
   if (address_space)
     request.SetExternalRequestStateFromRequestorAddressSpace(*address_space);
+
+  if (blink::RuntimeEnabledFeatures::SecMetadataEnabled()) {
+    const char* destination_value =
+        GetDestinationFromContext(request.GetRequestContext());
+    // We'll handle adding the header to navigations outside of Blink.
+    if (strncmp(destination_value, "document", 8) != 0 &&
+        request.GetRequestContext() != WebURLRequest::kRequestContextInternal) {
+      const char* site_value = "cross-site";
+      if (SecurityOrigin::Create(request.Url())
+              ->IsSameSchemeHostPort(GetSecurityOrigin())) {
+        site_value = "same-origin";
+      } else {
+        OriginAccessEntry access_entry(
+            request.Url().Protocol(), request.Url().Host(),
+            OriginAccessEntry::kAllowRegisterableDomains);
+        if (access_entry.MatchesOrigin(*GetSecurityOrigin()) ==
+            OriginAccessEntry::kMatchesOrigin) {
+          site_value = "same-site";
+        }
+      }
+
+      String value = String::Format(
+          "cause=%s, destination=%s, target=subresource, site=%s",
+          request.HasUserGesture() ? "user-activation" : "forced",
+          destination_value, site_value);
+      request.AddHTTPHeaderField("Sec-Metadata", AtomicString(value));
+    }
+  }
 }
 
-ResourceRequestBlockedReason BaseFetchContext::CanRequest(
+base::Optional<ResourceRequestBlockedReason> BaseFetchContext::CanRequest(
     Resource::Type type,
     const ResourceRequest& resource_request,
     const KURL& url,
@@ -54,13 +148,13 @@ ResourceRequestBlockedReason BaseFetchContext::CanRequest(
     SecurityViolationReportingPolicy reporting_policy,
     FetchParameters::OriginRestriction origin_restriction,
     ResourceRequest::RedirectStatus redirect_status) const {
-  ResourceRequestBlockedReason blocked_reason =
+  base::Optional<ResourceRequestBlockedReason> blocked_reason =
       CanRequestInternal(type, resource_request, url, options, reporting_policy,
                          origin_restriction, redirect_status);
-  if (blocked_reason != ResourceRequestBlockedReason::kNone &&
+  if (blocked_reason &&
       reporting_policy == SecurityViolationReportingPolicy::kReport) {
     DispatchDidBlockRequest(resource_request, options.initiator_info,
-                            blocked_reason, type);
+                            blocked_reason.value(), type);
   }
   return blocked_reason;
 }
@@ -126,7 +220,8 @@ void BaseFetchContext::AddCSPHeaderIfNecessary(Resource::Type type,
     request.AddHTTPHeaderField("CSP", "active");
 }
 
-ResourceRequestBlockedReason BaseFetchContext::CheckCSPForRequest(
+base::Optional<ResourceRequestBlockedReason>
+BaseFetchContext::CheckCSPForRequest(
     WebURLRequest::RequestContext request_context,
     const KURL& url,
     const ResourceLoaderOptions& options,
@@ -137,7 +232,8 @@ ResourceRequestBlockedReason BaseFetchContext::CheckCSPForRequest(
       ContentSecurityPolicy::CheckHeaderType::kCheckReportOnly);
 }
 
-ResourceRequestBlockedReason BaseFetchContext::CheckCSPForRequestInternal(
+base::Optional<ResourceRequestBlockedReason>
+BaseFetchContext::CheckCSPForRequestInternal(
     WebURLRequest::RequestContext request_context,
     const KURL& url,
     const ResourceLoaderOptions& options,
@@ -146,7 +242,7 @@ ResourceRequestBlockedReason BaseFetchContext::CheckCSPForRequestInternal(
     ContentSecurityPolicy::CheckHeaderType check_header_type) const {
   if (ShouldBypassMainWorldCSP() || options.content_security_policy_option ==
                                         kDoNotCheckContentSecurityPolicy) {
-    return ResourceRequestBlockedReason::kNone;
+    return base::nullopt;
   }
 
   const ContentSecurityPolicy* csp = GetContentSecurityPolicy();
@@ -156,10 +252,11 @@ ResourceRequestBlockedReason BaseFetchContext::CheckCSPForRequestInternal(
                  redirect_status, reporting_policy, check_header_type)) {
     return ResourceRequestBlockedReason::kCSP;
   }
-  return ResourceRequestBlockedReason::kNone;
+  return base::nullopt;
 }
 
-ResourceRequestBlockedReason BaseFetchContext::CanRequestInternal(
+base::Optional<ResourceRequestBlockedReason>
+BaseFetchContext::CanRequestInternal(
     Resource::Type type,
     const ResourceRequest& resource_request,
     const KURL& url,
@@ -232,7 +329,7 @@ ResourceRequestBlockedReason BaseFetchContext::CanRequestInternal(
   // restricted to data urls.
   if (options.initiator_info.name == FetchInitiatorTypeNames::uacss) {
     if (type == Resource::kImage && url.ProtocolIsData()) {
-      return ResourceRequestBlockedReason::kNone;
+      return base::nullopt;
     }
     return ResourceRequestBlockedReason::kOther;
   }
@@ -312,17 +409,18 @@ ResourceRequestBlockedReason BaseFetchContext::CanRequestInternal(
     }
   }
 
-  return ResourceRequestBlockedReason::kNone;
+  return base::nullopt;
 }
 
-ResourceRequestBlockedReason BaseFetchContext::CheckResponseNosniff(
+base::Optional<ResourceRequestBlockedReason>
+BaseFetchContext::CheckResponseNosniff(
     WebURLRequest::RequestContext request_context,
     const ResourceResponse& response) const {
   bool sniffing_allowed =
       ParseContentTypeOptionsHeader(response.HttpHeaderField(
           HTTPNames::X_Content_Type_Options)) != kContentTypeOptionsNosniff;
   if (sniffing_allowed)
-    return ResourceRequestBlockedReason::kNone;
+    return base::nullopt;
 
   String mime_type = response.HttpContentType();
   if (request_context == WebURLRequest::kRequestContextStyle &&
@@ -338,7 +436,7 @@ ResourceRequestBlockedReason BaseFetchContext::CheckResponseNosniff(
   // TODO(mkwst): Move the 'nosniff' bit of 'AllowedByNosniff::MimeTypeAsScript'
   // here alongside the style checks, and put its use counters somewhere else.
 
-  return ResourceRequestBlockedReason::kNone;
+  return base::nullopt;
 }
 
 void BaseFetchContext::Trace(blink::Visitor* visitor) {

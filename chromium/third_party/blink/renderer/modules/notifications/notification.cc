@@ -33,10 +33,7 @@
 #include "base/unguessable_token.h"
 #include "third_party/blink/public/platform/modules/notifications/web_notification_action.h"
 #include "third_party/blink/public/platform/modules/notifications/web_notification_constants.h"
-#include "third_party/blink/public/platform/modules/notifications/web_notification_manager.h"
-#include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
-#include "third_party/blink/public/platform/web_security_origin.h"
 #include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value_factory.h"
 #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
@@ -46,9 +43,9 @@
 #include "third_party/blink/renderer/core/dom/scoped_window_focus_allowed_indicator.h"
 #include "third_party/blink/renderer/core/dom/user_gesture_indicator.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
-#include "third_party/blink/renderer/core/frame/PerformanceMonitor.h"
 #include "third_party/blink/renderer/core/frame/deprecation.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/frame/performance_monitor.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/modules/notifications/notification_action.h"
@@ -63,13 +60,6 @@
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
-namespace {
-
-WebNotificationManager* GetWebNotificationManager() {
-  return Platform::Current()->GetWebNotificationManager();
-}
-
-}  // namespace
 
 Notification* Notification::Create(ExecutionContext* context,
                                    const String& title,
@@ -167,7 +157,6 @@ Notification::Notification(ExecutionContext* context,
       state_(State::kLoading),
       data_(data),
       listener_binding_(this) {
-  DCHECK(GetWebNotificationManager());
 }
 
 Notification::~Notification() = default;
@@ -231,16 +220,8 @@ void Notification::close() {
 
   state_ = State::kClosed;
 
-  if (RuntimeEnabledFeatures::NotificationsWithMojoEnabled()) {
-    // TODO(https://crbug.com/796991): Implement this via mojo.
-    return;
-  }
-
-  const SecurityOrigin* origin = GetExecutionContext()->GetSecurityOrigin();
-  DCHECK(origin);
-
-  GetWebNotificationManager()->ClosePersistent(WebSecurityOrigin(origin),
-                                               data_.tag, notification_id_);
+  NotificationManager::From(GetExecutionContext())
+      ->ClosePersistentNotification(notification_id_);
 }
 
 void Notification::OnShow() {
@@ -257,14 +238,14 @@ void Notification::OnClick() {
   DispatchEvent(Event::Create(EventTypeNames::click));
 }
 
-void Notification::OnClose() {
+void Notification::OnClose(OnCloseCallback completed_closure) {
   // The notification should be Showing if the user initiated the close, or it
   // should be Closing if the developer initiated the close.
-  if (state_ != State::kShowing && state_ != State::kClosing)
-    return;
-
-  state_ = State::kClosed;
-  DispatchEvent(Event::Create(EventTypeNames::close));
+  if (state_ == State::kShowing || state_ == State::kClosing) {
+    state_ = State::kClosed;
+    DispatchEvent(Event::Create(EventTypeNames::close));
+  }
+  std::move(completed_closure).Run();
 }
 
 void Notification::DispatchErrorEvent() {

@@ -21,13 +21,15 @@
 
 #include <vector>
 
+#include "perfetto/base/export.h"
+
 namespace perfetto {
 
 class TracePacket;
 
-class Consumer {
+class PERFETTO_EXPORT Consumer {
  public:
-  virtual ~Consumer() = default;
+  virtual ~Consumer();
 
   // Called by Service (or more typically by the transport layer, on behalf of
   // the remote Service), once the Consumer <> Service connection has been
@@ -39,6 +41,14 @@ class Consumer {
   // obtained through Service::ConnectConsumer()) or involuntarily (e.g., if the
   // Service process crashes).
   virtual void OnDisconnect() = 0;
+
+  // Called by the Service after the tracing session has ended. This can happen
+  // for a variety of reasons:
+  // - The consumer explicitly called DisableTracing()
+  // - The TraceConfig's |duration_ms| has been reached.
+  // - The TraceConfig's |max_file_size_bytes| has been reached.
+  // - An error occurred while trying to enable tracing.
+  virtual void OnTracingDisabled() = 0;
 
   // Called back by the Service (or transport layer) after invoking
   // Service::ConsumerEndpoint::ReadBuffers(). This function can be called more

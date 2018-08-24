@@ -18,9 +18,11 @@
 #include <vector>
 
 #include "api/video/video_rotation.h"
+#include "api/video/video_sink_interface.h"
+#include "api/video/video_stream_encoder_interface.h"
 #include "api/video_codecs/video_encoder.h"
-#include "api/videosinkinterface.h"
 #include "call/call.h"
+#include "call/video_send_stream.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "common_video/include/video_bitrate_allocator.h"
 #include "modules/video_coding/include/video_coding_defines.h"
@@ -32,12 +34,10 @@
 #include "rtc_base/task_queue.h"
 #include "typedefs.h"  // NOLINT(build/include)
 #include "video/overuse_frame_detector.h"
-#include "call/video_send_stream.h"
 
 namespace webrtc {
 
 class SendStatisticsProxy;
-class VideoBitrateAllocationObserver;
 
 // VideoStreamEncoder represent a video encoder that accepts raw video frames as
 // input and produces an encoded bit stream.
@@ -47,20 +47,11 @@ class VideoBitrateAllocationObserver;
 //  Call SetSource.
 //  Call ConfigureEncoder with the codec settings.
 //  Call Stop() when done.
-class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
+class VideoStreamEncoder : public VideoStreamEncoderInterface,
                            private EncodedImageCallback,
                            // Protected only to provide access to tests.
                            protected AdaptationObserverInterface {
  public:
-  // Interface for receiving encoded video frames and notifications about
-  // configuration changes.
-  class EncoderSink : public EncodedImageCallback {
-   public:
-    virtual void OnEncoderConfigurationChanged(
-        std::vector<VideoStream> streams,
-        int min_transmit_bitrate_bps) = 0;
-  };
-
   // Number of resolution and framerate reductions (-1: disabled).
   struct AdaptCounts {
     int resolution = 0;
@@ -74,37 +65,29 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
                      std::unique_ptr<OveruseFrameDetector> overuse_detector);
   ~VideoStreamEncoder();
 
-  // Sets the source that will provide I420 video frames.
-  // |degradation_preference| control whether or not resolution or frame rate
-  // may be reduced.
-  void SetSource(
-      rtc::VideoSourceInterface<VideoFrame>* source,
-      const VideoSendStream::DegradationPreference& degradation_preference);
+  void SetSource(rtc::VideoSourceInterface<VideoFrame>* source,
+                 const DegradationPreference& degradation_preference) override;
 
-  // Sets the |sink| that gets the encoded frames. |rotation_applied| means
-  // that the source must support rotation. Only set |rotation_applied| if the
-  // remote side does not support the rotation extension.
-  void SetSink(EncoderSink* sink, bool rotation_applied);
+  void SetSink(EncoderSink* sink, bool rotation_applied) override;
 
   // TODO(perkj): Can we remove VideoCodec.startBitrate ?
-  void SetStartBitrate(int start_bitrate_bps);
+  void SetStartBitrate(int start_bitrate_bps) override;
 
-  void SetBitrateObserver(VideoBitrateAllocationObserver* bitrate_observer);
+  void SetBitrateAllocationObserver(
+      VideoBitrateAllocationObserver* bitrate_observer) override;
 
   void ConfigureEncoder(VideoEncoderConfig config,
-                        size_t max_data_payload_length,
-                        bool nack_enabled);
+                        size_t max_data_payload_length) override;
 
   // Permanently stop encoding. After this method has returned, it is
   // guaranteed that no encoded frames will be delivered to the sink.
-  void Stop();
+  void Stop() override;
 
-  // virtual to test EncoderRtcpFeedback with mocks.
-  virtual void SendKeyFrame();
+  void SendKeyFrame() override;
 
   void OnBitrateUpdated(uint32_t bitrate_bps,
                         uint8_t fraction_lost,
-                        int64_t round_trip_time_ms);
+                        int64_t round_trip_time_ms) override;
 
  protected:
   // Used for testing. For example the |ScalingObserverInterface| methods must
@@ -134,8 +117,7 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
   };
 
   void ConfigureEncoderOnTaskQueue(VideoEncoderConfig config,
-                                   size_t max_data_payload_length,
-                                   bool nack_enabled);
+                                   size_t max_data_payload_length);
   void ReconfigureEncoder() RTC_RUN_ON(&encoder_queue_);
 
   void ConfigureQualityScaler();
@@ -144,8 +126,14 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
   void OnFrame(const VideoFrame& video_frame) override;
   void OnDiscardedFrame() override;
 
+  void MaybeEncodeVideoFrame(const VideoFrame& frame,
+                             int64_t time_when_posted_in_ms);
+
   void EncodeVideoFrame(const VideoFrame& frame,
                         int64_t time_when_posted_in_ms);
+  // Indicates wether frame should be dropped because the pixel count is too
+  // large for the current bitrate configuration.
+  bool DropDueToSize(uint32_t pixel_count) const RTC_RUN_ON(&encoder_queue_);
 
   // Implements EncodedImageCallback.
   EncodedImageCallback::Result OnEncodedImage(
@@ -207,6 +195,8 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
   // Counts how many frames we've dropped in the initial rampup phase.
   int initial_rampup_;
 
+  const bool quality_scaling_experiment_enabled_;
+
   const std::unique_ptr<VideoSourceProxy> source_proxy_;
   EncoderSink* sink_;
   const VideoSendStream::Config::EncoderSettings settings_;
@@ -225,6 +215,8 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
   rtc::ThreadChecker thread_checker_;
 
   VideoEncoderConfig encoder_config_ RTC_GUARDED_BY(&encoder_queue_);
+  std::unique_ptr<VideoEncoder> encoder_ RTC_GUARDED_BY(&encoder_queue_)
+      RTC_PT_GUARDED_BY(&encoder_queue_);
   std::unique_ptr<VideoBitrateAllocator> rate_allocator_
       RTC_GUARDED_BY(&encoder_queue_)
       RTC_PT_GUARDED_BY(&encoder_queue_);
@@ -235,13 +227,15 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
   // Set when ConfigureEncoder has been called in order to lazy reconfigure the
   // encoder on the next frame.
   bool pending_encoder_reconfiguration_ RTC_GUARDED_BY(&encoder_queue_);
+  // Set when configuration must create a new encoder object, e.g.,
+  // because of a codec change.
+  bool pending_encoder_creation_ RTC_GUARDED_BY(&encoder_queue_);
   rtc::Optional<VideoFrameInfo> last_frame_info_
       RTC_GUARDED_BY(&encoder_queue_);
   int crop_width_ RTC_GUARDED_BY(&encoder_queue_);
   int crop_height_ RTC_GUARDED_BY(&encoder_queue_);
   uint32_t encoder_start_bitrate_bps_ RTC_GUARDED_BY(&encoder_queue_);
   size_t max_data_payload_length_ RTC_GUARDED_BY(&encoder_queue_);
-  bool nack_enabled_ RTC_GUARDED_BY(&encoder_queue_);
   uint32_t last_observed_bitrate_bps_ RTC_GUARDED_BY(&encoder_queue_);
   bool encoder_paused_and_dropped_frame_ RTC_GUARDED_BY(&encoder_queue_);
   Clock* const clock_;
@@ -250,11 +244,10 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
   // basis.
   // TODO(sprang): Replace this with a state holding a relative overuse measure
   // instead, that can be translated into suitable down-scale or fps limit.
-  std::map<const VideoSendStream::DegradationPreference, AdaptCounter>
-      adapt_counters_ RTC_GUARDED_BY(&encoder_queue_);
-  // Set depending on degradation preferences.
-  VideoSendStream::DegradationPreference degradation_preference_
+  std::map<const DegradationPreference, AdaptCounter> adapt_counters_
       RTC_GUARDED_BY(&encoder_queue_);
+  // Set depending on degradation preferences.
+  DegradationPreference degradation_preference_ RTC_GUARDED_BY(&encoder_queue_);
 
   struct AdaptationRequest {
     // The pixel count produced by the source at the time of the adaptation.
@@ -281,6 +274,8 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
   int64_t last_frame_log_ms_ RTC_GUARDED_BY(incoming_frame_race_checker_);
   int captured_frame_count_ RTC_GUARDED_BY(&encoder_queue_);
   int dropped_frame_count_ RTC_GUARDED_BY(&encoder_queue_);
+  rtc::Optional<VideoFrame> pending_frame_ RTC_GUARDED_BY(&encoder_queue_);
+  int64_t pending_frame_post_time_us_ RTC_GUARDED_BY(&encoder_queue_);
 
   VideoBitrateAllocationObserver* bitrate_observer_
       RTC_GUARDED_BY(&encoder_queue_);

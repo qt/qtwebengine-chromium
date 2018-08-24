@@ -51,6 +51,7 @@ class RtcEventLog;
 // - Generating stats.
 class PeerConnection : public PeerConnectionInternal,
                        public DataChannelProviderInterface,
+                       public JsepTransportController::Observer,
                        public rtc::MessageHandler,
                        public sigslot::has_slots<> {
  public:
@@ -60,9 +61,7 @@ class PeerConnection : public PeerConnectionInternal,
 
   bool Initialize(
       const PeerConnectionInterface::RTCConfiguration& configuration,
-      std::unique_ptr<cricket::PortAllocator> allocator,
-      std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
-      PeerConnectionObserver* observer);
+      PeerConnectionDependencies dependencies);
 
   rtc::scoped_refptr<StreamCollectionInterface> local_streams() override;
   rtc::scoped_refptr<StreamCollectionInterface> remote_streams() override;
@@ -178,7 +177,7 @@ class PeerConnection : public PeerConnectionInternal,
 
   void RegisterUMAObserver(UMAObserver* observer) override;
 
-  RTCError SetBitrate(const BitrateParameters& bitrate) override;
+  RTCError SetBitrate(const BitrateSettings& bitrate) override;
 
   void SetBitrateAllocationStrategy(
       std::unique_ptr<rtc::BitrateAllocationStrategy>
@@ -654,6 +653,8 @@ class PeerConnection : public PeerConnectionInternal,
       webrtc::TurnCustomizer* turn_customizer,
       rtc::Optional<int> stun_candidate_keepalive_interval);
 
+  void SetMetricObserver_n(UMAObserver* observer);
+
   // Starts output of an RTC event log to the given output object.
   // This function should only be called from the worker thread.
   bool StartRtcEventLog_w(std::unique_ptr<RtcEventLogOutput> output,
@@ -707,10 +708,6 @@ class PeerConnection : public PeerConnectionInternal,
   void OnCertificateReady(
       const rtc::scoped_refptr<rtc::RTCCertificate>& certificate);
   void OnDtlsSrtpSetupFailure(cricket::BaseChannel*, bool rtcp);
-
-  JsepTransportController* transport_controller() const {
-    return transport_controller_.get();
-  }
 
   // Non-const versions of local_description()/remote_description(), for use
   // internally.
@@ -877,11 +874,16 @@ class PeerConnection : public PeerConnectionInternal,
   // method is called.
   void DestroyBaseChannel(cricket::BaseChannel* channel);
 
-  void OnRtpTransportChanged(const std::string& mid,
-                             RtpTransportInternal* rtp_transport);
-
-  void OnDtlsTransportChanged(const std::string& mid,
-                              cricket::DtlsTransportInternal* dtls_transport);
+  // JsepTransportController::Observer override.
+  //
+  // Called by |transport_controller_| when processing transport information
+  // from a session description, and the mapping from m= sections to transports
+  // changed (as a result of BUNDLE negotiation, or m= sections being
+  // rejected).
+  bool OnTransportChanged(
+      const std::string& mid,
+      RtpTransportInternal* rtp_transport,
+      cricket::DtlsTransportInternal* dtls_transport) override;
 
   sigslot::signal1<DataChannel*> SignalDataChannelCreated_;
 
@@ -904,6 +906,8 @@ class PeerConnection : public PeerConnectionInternal,
   PeerConnectionInterface::RTCConfiguration configuration_;
 
   std::unique_ptr<cricket::PortAllocator> port_allocator_;
+  std::unique_ptr<rtc::SSLCertificateVerifier> tls_cert_verifier_;
+  int port_allocator_flags_ = 0;
 
   // One PeerConnection has only one RTCP CNAME.
   // https://tools.ietf.org/html/draft-ietf-rtcweb-rtp-usage-26#section-4.9

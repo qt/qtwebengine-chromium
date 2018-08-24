@@ -16,6 +16,7 @@
 #include "ui/aura/client/window_parenting_client.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
+#include "ui/aura/window_occlusion_tracker.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/class_property.h"
 #include "ui/base/hit_test.h"
@@ -51,6 +52,7 @@
 #include "ui/wm/core/focus_controller.h"
 #include "ui/wm/core/native_cursor_manager.h"
 #include "ui/wm/core/shadow_controller.h"
+#include "ui/wm/core/shadow_controller_delegate.h"
 #include "ui/wm/core/shadow_types.h"
 #include "ui/wm/core/visibility_controller.h"
 #include "ui/wm/core/window_animations.h"
@@ -533,8 +535,8 @@ void DesktopNativeWidgetAura::InitNativeWidget(
   event_client_.reset(new DesktopEventClient);
   aura::client::SetEventClient(host_->window(), event_client_.get());
 
-  shadow_controller_.reset(
-      new wm::ShadowController(wm::GetActivationClient(host_->window())));
+  shadow_controller_.reset(new wm::ShadowController(
+      wm::GetActivationClient(host_->window()), nullptr));
 
   OnSizeConstraintsChanged();
 
@@ -588,6 +590,11 @@ const ui::Layer* DesktopNativeWidgetAura::GetLayer() const {
 }
 
 void DesktopNativeWidgetAura::ReorderNativeViews() {
+  // Reordering native views causes multiple changes to the window tree.
+  // Instantiate a ScopedPauseOcclusionTracking to recompute occlusion once at
+  // the end of this scope rather than after each individual change.
+  // https://crbug.com/829918
+  aura::WindowOcclusionTracker::ScopedPauseOcclusionTracking pause_occlusion;
   window_reorderer_->ReorderChildWindows();
 }
 
@@ -696,6 +703,12 @@ void DesktopNativeWidgetAura::SetBounds(const gfx::Rect& bounds) {
   gfx::Rect bounds_in_pixels = screen->DIPToScreenRectInWindow(root, bounds);
   desktop_window_tree_host_->AsWindowTreeHost()->SetBoundsInPixels(
       bounds_in_pixels);
+}
+
+void DesktopNativeWidgetAura::SetBoundsConstrained(const gfx::Rect& bounds) {
+  if (!content_window_)
+    return;
+  SetBounds(NativeWidgetPrivate::ConstrainBoundsToDisplayWorkArea(bounds));
 }
 
 void DesktopNativeWidgetAura::SetSize(const gfx::Size& size) {

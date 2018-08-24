@@ -38,10 +38,12 @@ BluetoothAdapterCast::DiscoveryParams::DiscoveryParams(
     DiscoverySessionErrorCallback error_callback)
     : filter(filter),
       success_callback(success_callback),
-      error_callback(error_callback) {}
+      error_callback(std::move(error_callback)) {}
 
-BluetoothAdapterCast::DiscoveryParams::DiscoveryParams(const DiscoveryParams&) =
-    default;
+BluetoothAdapterCast::DiscoveryParams::DiscoveryParams(
+    DiscoveryParams&& params) noexcept = default;
+BluetoothAdapterCast::DiscoveryParams& BluetoothAdapterCast::DiscoveryParams::
+operator=(DiscoveryParams&& params) = default;
 BluetoothAdapterCast::DiscoveryParams::~DiscoveryParams() = default;
 
 BluetoothAdapterCast::BluetoothAdapterCast(
@@ -184,7 +186,7 @@ bool BluetoothAdapterCast::SetPoweredImpl(bool powered) {
 void BluetoothAdapterCast::AddDiscoverySession(
     BluetoothDiscoveryFilter* discovery_filter,
     const base::Closure& callback,
-    const DiscoverySessionErrorCallback& error_callback) {
+    DiscoverySessionErrorCallback error_callback) {
   // The discovery filter is unused for now, as the Cast bluetooth stack does
   // not expose scan filters yet. However, implementation of filtering would
   // save numerous UI<->IO threadhops by eliminating uneccessary calls to
@@ -200,8 +202,8 @@ void BluetoothAdapterCast::AddDiscoverySession(
   }
 
   // Add this request to the queue.
-  pending_discovery_requests_.push(DiscoveryParams(
-      discovery_filter, std::move(callback), std::move(error_callback)));
+  pending_discovery_requests_.emplace(discovery_filter, std::move(callback),
+                                      std::move(error_callback));
 
   // If the queue length is greater than 1 (i.e. there was a pending request
   // when this method was called), exit early. This request will be processed
@@ -219,7 +221,7 @@ void BluetoothAdapterCast::AddDiscoverySession(
 void BluetoothAdapterCast::RemoveDiscoverySession(
     BluetoothDiscoveryFilter* discovery_filter,
     const base::Closure& callback,
-    const DiscoverySessionErrorCallback& error_callback) {
+    DiscoverySessionErrorCallback error_callback) {
   // The discovery filter is unused for now, as the Cast bluetooth stack does
   // not expose scan filters yet. However, implementation of filtering would
   // save numerous UI<->IO threadhops by eliminating uneccessary calls to
@@ -230,8 +232,8 @@ void BluetoothAdapterCast::RemoveDiscoverySession(
   // If there are pending requests, run the error call immediately.
   if (pending_discovery_requests_.size() > 0u ||
       pending_disable_discovery_request_) {
-    error_callback.Run(
-        UMABluetoothDiscoverySessionOutcome::REMOVE_WITH_PENDING_REQUEST);
+    std::move(error_callback)
+        .Run(UMABluetoothDiscoverySessionOutcome::REMOVE_WITH_PENDING_REQUEST);
     return;
   }
 
@@ -242,8 +244,8 @@ void BluetoothAdapterCast::RemoveDiscoverySession(
   }
 
   // This was the last active discovery session. Disable scanning.
-  pending_disable_discovery_request_ =
-      DiscoveryParams(discovery_filter, callback, error_callback);
+  pending_disable_discovery_request_.emplace(discovery_filter, callback,
+                                             std::move(error_callback));
   le_scan_manager_->SetScanEnable(
       false, base::BindOnce(&BluetoothAdapterCast::OnScanDisabled,
                             weak_factory_.GetWeakPtr()));
@@ -252,7 +254,7 @@ void BluetoothAdapterCast::RemoveDiscoverySession(
 void BluetoothAdapterCast::SetDiscoveryFilter(
     std::unique_ptr<BluetoothDiscoveryFilter> discovery_filter,
     const base::Closure& callback,
-    const DiscoverySessionErrorCallback& error_callback) {
+    DiscoverySessionErrorCallback error_callback) {
   // The discovery filter is unused for now, as the Cast bluetooth stack does
   // not expose scan filters yet. However, implementation of filtering would
   // save numerous UI<->IO threadhops by eliminating unnecessary calls to
@@ -298,24 +300,6 @@ void BluetoothAdapterCast::OnMtuChanged(
            << " mtu: " << mtu;
 }
 
-void BluetoothAdapterCast::OnServicesUpdated(
-    scoped_refptr<chromecast::bluetooth::RemoteDevice> device,
-    std::vector<scoped_refptr<chromecast::bluetooth::RemoteService>> services) {
-  DVLOG(1) << __func__;
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  std::string address = GetCanonicalBluetoothAddress(device->addr());
-  BluetoothDeviceCast* cast_device = GetCastDevice(address);
-  if (!cast_device)
-    return;
-
-  if (!cast_device->UpdateServices(services))
-    LOG(WARNING) << "The services were not updated. Alerting anyway.";
-
-  cast_device->SetGattServicesDiscoveryComplete(true);
-  NotifyGattServicesDiscovered(cast_device);
-}
-
 void BluetoothAdapterCast::OnCharacteristicNotification(
     scoped_refptr<chromecast::bluetooth::RemoteDevice> device,
     scoped_refptr<chromecast::bluetooth::RemoteCharacteristic> characteristic,
@@ -345,17 +329,19 @@ void BluetoothAdapterCast::OnNewScanResult(
   // to send an async request to |gatt_client_manager_| for a handle to the
   // device.
   if (devices_.find(address) == devices_.end()) {
+    bool first_time_seen =
+        pending_scan_results_.find(address) == pending_scan_results_.end();
+    // These results will be used to construct the BluetoothDeviceCast.
+    pending_scan_results_[address].push_back(result);
+
     // Only send a request if this is the first time we've seen this |address|
     // in a scan. This may happen if we pick up additional GAP advertisements
     // while the first request is in-flight.
-    if (pending_scan_results_.find(address) == pending_scan_results_.end()) {
+    if (first_time_seen) {
       gatt_client_manager_->GetDevice(
           result.addr, base::BindOnce(&BluetoothAdapterCast::OnGetDevice,
                                       weak_factory_.GetWeakPtr()));
     }
-
-    // These results will be used to construct the BluetoothDeviceCast.
-    pending_scan_results_[address].push_back(result);
     return;
   }
 
@@ -416,8 +402,8 @@ void BluetoothAdapterCast::OnScanEnabled(bool enabled) {
 
     // Run the error callback.
     DCHECK(!pending_discovery_requests_.empty());
-    pending_discovery_requests_.front().error_callback.Run(
-        UMABluetoothDiscoverySessionOutcome::FAILED);
+    std::move(pending_discovery_requests_.front().error_callback)
+        .Run(UMABluetoothDiscoverySessionOutcome::FAILED);
     pending_discovery_requests_.pop();
 
     // If there is another pending request, try again.
@@ -450,8 +436,8 @@ void BluetoothAdapterCast::OnScanDisabled(bool success) {
     LOG(WARNING) << "Failed to stop scan.";
 
     // Run the error callback.
-    pending_disable_discovery_request_->error_callback.Run(
-        UMABluetoothDiscoverySessionOutcome::FAILED);
+    std::move(pending_disable_discovery_request_->error_callback)
+        .Run(UMABluetoothDiscoverySessionOutcome::FAILED);
     pending_disable_discovery_request_ = base::nullopt;
     return;
   }
@@ -527,7 +513,7 @@ base::WeakPtr<BluetoothAdapter> BluetoothAdapterCast::Create(
 
 // static
 base::WeakPtr<BluetoothAdapter> BluetoothAdapter::CreateAdapter(
-    const InitCallback& init_callback) {
+    InitCallback init_callback) {
   return BluetoothAdapterCast::Create(std::move(init_callback));
 }
 

@@ -50,11 +50,17 @@ class CORE_EXPORT PointerEvent final : public MouseEvent {
 
   void ReceivedTarget() override;
 
+  // Always return null for fromElement and toElement because these fields
+  // (inherited from MouseEvents) are non-standard.
+  Node* fromElement() const final;
+  Node* toElement() const final;
+
   HeapVector<Member<PointerEvent>> getCoalescedEvents();
+  TimeTicks OldestPlatformTimeStamp() const;
 
   DispatchEventResult DispatchEvent(EventDispatcher&) override;
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   PointerEvent(const AtomicString&,

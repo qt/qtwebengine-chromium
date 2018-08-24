@@ -25,7 +25,6 @@ class CPWL_EditCtrl : public CPWL_Wnd {
   CPWL_EditCtrl();
   ~CPWL_EditCtrl() override;
 
-  WideString GetText() const;
   void SetSelection(int32_t nStartChar, int32_t nEndChar);
   void GetSelection(int32_t& nStartChar, int32_t& nEndChar) const;
   void ClearSelection();
@@ -37,10 +36,10 @@ class CPWL_EditCtrl : public CPWL_Wnd {
   void SetCharSet(uint8_t nCharSet) { m_nCharSet = nCharSet; }
   int32_t GetCharSet() const;
 
-  bool CanUndo() const;
-  bool CanRedo() const;
-  void Redo();
-  void Undo();
+  bool CanUndo() override;
+  bool CanRedo() override;
+  bool Undo() override;
+  bool Redo() override;
 
   void SetReadyToInput();
 
@@ -60,6 +59,7 @@ class CPWL_EditCtrl : public CPWL_Wnd {
   void SetFontSize(float fFontSize) override;
   float GetFontSize() const override;
   void SetCursor() override;
+  WideString GetText() override;
   WideString GetSelectedText() override;
   void ReplaceSelection(const WideString& text) override;
 

@@ -15,7 +15,9 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "gpu/command_buffer/service/sequence_id.h"
 #include "gpu/ipc/service/command_buffer_stub.h"
+#include "media/base/callback_registry.h"
 #include "media/base/video_decoder.h"
 #include "media/gpu/gles2_decoder_helper.h"
 #include "media/gpu/media_gpu_export.h"
@@ -27,7 +29,7 @@ namespace media {
 class MEDIA_GPU_EXPORT D3D11VideoDecoderImpl : public VideoDecoder,
                                                public D3D11VideoDecoderClient {
  public:
-  D3D11VideoDecoderImpl(
+  explicit D3D11VideoDecoderImpl(
       base::RepeatingCallback<gpu::CommandBufferStub*()> get_stub_cb);
   ~D3D11VideoDecoderImpl() override;
 
@@ -62,8 +64,13 @@ class MEDIA_GPU_EXPORT D3D11VideoDecoderImpl : public VideoDecoder,
     // in which |codec_| might be non-null. If |codec_| is null, a codec
     // creation is pending.
     kRunning,
+    // The decoder cannot make progress because it doesn't have the key to
+    // decrypt the buffer. Waiting for a new key to be available.
+    // This should only be transitioned from kRunning, and should only
+    // transition to kRunning.
+    kWaitingForNewKey,
     // A fatal error occurred. A terminal state.
-    kError
+    kError,
   };
 
   void DoDecode();
@@ -71,6 +78,10 @@ class MEDIA_GPU_EXPORT D3D11VideoDecoderImpl : public VideoDecoder,
 
   void OnMailboxReleased(scoped_refptr<D3D11PictureBuffer> buffer,
                          const gpu::SyncToken& sync_token);
+  void OnSyncTokenReleased(scoped_refptr<D3D11PictureBuffer> buffer);
+
+  // Callback to notify that new usable key is available.
+  void NotifyNewKey();
 
   // Enter the kError state.  This will fail any pending |init_cb_| and / or
   // pending decode as well.
@@ -97,12 +108,19 @@ class MEDIA_GPU_EXPORT D3D11VideoDecoderImpl : public VideoDecoder,
   // During init, these will be set.
   InitCB init_cb_;
   OutputCB output_cb_;
+  bool is_encrypted_ = false;
 
   // It would be nice to unique_ptr these, but we give a ref to the VideoFrame
   // so that the texture is retained until the mailbox is opened.
   std::vector<scoped_refptr<D3D11PictureBuffer>> picture_buffers_;
 
   State state_ = State::kInitializing;
+
+  // Callback registration to keep the new key callback registered.
+  std::unique_ptr<CallbackRegistration> new_key_callback_registration_;
+
+  // Wait sequence for sync points.
+  gpu::SequenceId wait_sequence_id_;
 
   base::WeakPtrFactory<D3D11VideoDecoderImpl> weak_factory_;
 

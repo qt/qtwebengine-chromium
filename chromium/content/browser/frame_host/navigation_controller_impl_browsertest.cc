@@ -1430,79 +1430,73 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 
 // Verify that reloading a page with url anchor scrolls to correct position.
 IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest, ReloadWithUrlAnchor) {
-  GURL url1(embedded_test_server()->GetURL(
-      "/navigation_controller/reload-with-url-anchor.html#d2"));
-  EXPECT_TRUE(NavigateToURL(shell(), url1));
+  GURL url(embedded_test_server()->GetURL(
+      "/navigation_controller/reload-with-url-anchor.html#center-element"));
+  EXPECT_TRUE(NavigateToURL(shell(), url));
 
-  std::string script =
-      "domAutomationController.send(document.getElementById('div').scrollTop)";
-  double value = 0;
-  EXPECT_TRUE(ExecuteScriptAndExtractDouble(shell(), script, &value));
+  double window_scroll_y = 0;
+  std::string get_window_scroll_y =
+      "domAutomationController.send(window.scrollY);";
+  EXPECT_TRUE(ExecuteScriptAndExtractDouble(shell(), get_window_scroll_y,
+                                            &window_scroll_y));
 
-  double expected = 100;
+  // The 'center-element' y-position is 2000px. 2000px is an arbitrary value.
+  double expected_window_scroll_y = 2000;
   if (IsUseZoomForDSFEnabled()) {
     float device_scale_factor = shell()
                                     ->web_contents()
                                     ->GetRenderWidgetHostView()
                                     ->GetDeviceScaleFactor();
-    expected = floor(device_scale_factor * expected) / device_scale_factor;
+    expected_window_scroll_y =
+        floor(device_scale_factor * expected_window_scroll_y) /
+        device_scale_factor;
   }
-  EXPECT_FLOAT_EQ(expected, value);
+  EXPECT_FLOAT_EQ(expected_window_scroll_y, window_scroll_y);
 
   // Reload.
   ReloadBlockUntilNavigationsComplete(shell(), 1);
 
-  EXPECT_TRUE(ExecuteScriptAndExtractDouble(shell(), script, &value));
-  EXPECT_FLOAT_EQ(expected, value);
+  EXPECT_TRUE(ExecuteScriptAndExtractDouble(shell(), get_window_scroll_y,
+                                            &window_scroll_y));
+  EXPECT_FLOAT_EQ(expected_window_scroll_y, window_scroll_y);
 }
 
 // Verify that reloading a page with url anchor and scroll scrolls to correct
 // position.
 IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
                        ReloadWithUrlAnchorAndScroll) {
-  GURL url1(embedded_test_server()->GetURL(
-      "/navigation_controller/reload-with-url-anchor.html#d2"));
-  EXPECT_TRUE(NavigateToURL(shell(), url1));
+  GURL url(embedded_test_server()->GetURL(
+      "/navigation_controller/reload-with-url-anchor.html#center-element"));
+  EXPECT_TRUE(NavigateToURL(shell(), url));
 
-  std::string script_scroll_down = "window.scroll(0, 10)";
+  // The 'center-element' y-position is 2000px. This script scrolls the view
+  // 100px below this element. 2000px and 100px are arbitrary values.
+  std::string script_scroll_down = "window.scroll(0, 2100)";
   EXPECT_TRUE(ExecuteScript(shell(), script_scroll_down));
 
-  std::string get_div_scroll_top =
-      "domAutomationController.send(document.getElementById('div').scrollTop)";
   std::string get_window_scroll_y =
       "domAutomationController.send(window.scrollY)";
-  double div_scroll_top = 0;
   double window_scroll_y = 0;
-  EXPECT_TRUE(ExecuteScriptAndExtractDouble(shell(), get_div_scroll_top,
-                                            &div_scroll_top));
   EXPECT_TRUE(ExecuteScriptAndExtractDouble(shell(), get_window_scroll_y,
                                             &window_scroll_y));
 
-  double expected_div_scroll_top = 100;
-  double expected_window_scroll_y = 10;
+  double expected_window_scroll_y = 2100;
   if (IsUseZoomForDSFEnabled()) {
     float device_scale_factor = shell()
                                     ->web_contents()
                                     ->GetRenderWidgetHostView()
                                     ->GetDeviceScaleFactor();
-    expected_div_scroll_top =
-        floor(device_scale_factor * expected_div_scroll_top) /
-        device_scale_factor;
     expected_window_scroll_y =
         floor(device_scale_factor * expected_window_scroll_y) /
         device_scale_factor;
   }
-  EXPECT_FLOAT_EQ(expected_div_scroll_top, div_scroll_top);
   EXPECT_FLOAT_EQ(expected_window_scroll_y, window_scroll_y);
 
   // Reload.
   ReloadBlockUntilNavigationsComplete(shell(), 1);
 
-  EXPECT_TRUE(ExecuteScriptAndExtractDouble(shell(), get_div_scroll_top,
-                                            &div_scroll_top));
   EXPECT_TRUE(ExecuteScriptAndExtractDouble(shell(), get_window_scroll_y,
                                             &window_scroll_y));
-  EXPECT_FLOAT_EQ(expected_div_scroll_top, div_scroll_top);
   EXPECT_FLOAT_EQ(expected_window_scroll_y, window_scroll_y);
 }
 
@@ -3845,9 +3839,10 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   // it has the same FrameNavigationEntry structure.
   std::unique_ptr<NavigationEntryImpl> restored_entry =
       NavigationEntryImpl::FromNavigationEntry(
-          NavigationControllerImpl::CreateNavigationEntry(
+          NavigationController::CreateNavigationEntry(
               main_url_a, Referrer(), ui::PAGE_TRANSITION_RELOAD, false,
-              std::string(), controller.GetBrowserContext()));
+              std::string(), controller.GetBrowserContext(),
+              nullptr /* blob_url_loader_factory */));
   EXPECT_EQ(0U, restored_entry->root_node()->children.size());
   restored_entry->SetPageState(entry2->GetPageState());
 
@@ -3915,9 +3910,10 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   // its default URL.
   std::unique_ptr<NavigationEntryImpl> restored_entry =
       NavigationEntryImpl::FromNavigationEntry(
-          NavigationControllerImpl::CreateNavigationEntry(
+          NavigationController::CreateNavigationEntry(
               main_url, Referrer(), ui::PAGE_TRANSITION_RELOAD, false,
-              std::string(), controller.GetBrowserContext()));
+              std::string(), controller.GetBrowserContext(),
+              nullptr /* blob_url_loader_factory */));
   restored_entry->SetPageState(PageState::CreateFromURL(main_url));
   EXPECT_EQ(0U, restored_entry->root_node()->children.size());
 
@@ -4501,9 +4497,9 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest, CloneNamedWindow) {
   EXPECT_TRUE(NavigateToURL(shell(), url_2));
 
   // Clone the tab and load the page.
-  std::unique_ptr<WebContentsImpl> new_tab(
-      static_cast<WebContentsImpl*>(shell()->web_contents()->Clone()));
-  NavigationController& new_controller = new_tab->GetController();
+  std::unique_ptr<WebContents> new_tab = shell()->web_contents()->Clone();
+  WebContentsImpl* new_tab_impl = static_cast<WebContentsImpl*>(new_tab.get());
+  NavigationController& new_controller = new_tab_impl->GetController();
   EXPECT_TRUE(new_controller.IsInitialNavigation());
   EXPECT_TRUE(new_controller.NeedsReload());
   {
@@ -4538,9 +4534,9 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   EXPECT_TRUE(NavigateToURL(shell(), url_1));
 
   // Clone the tab and load the page.
-  std::unique_ptr<WebContentsImpl> new_tab(
-      static_cast<WebContentsImpl*>(shell()->web_contents()->Clone()));
-  NavigationController& new_controller = new_tab->GetController();
+  std::unique_ptr<WebContents> new_tab = shell()->web_contents()->Clone();
+  WebContentsImpl* new_tab_impl = static_cast<WebContentsImpl*>(new_tab.get());
+  NavigationController& new_controller = new_tab_impl->GetController();
   EXPECT_TRUE(new_controller.IsInitialNavigation());
   EXPECT_TRUE(new_controller.NeedsReload());
   {
@@ -4574,9 +4570,9 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   EXPECT_TRUE(NavigateToURL(shell(), url_2));
 
   // Clone the tab but don't load last committed page.
-  std::unique_ptr<WebContentsImpl> new_tab(
-      static_cast<WebContentsImpl*>(shell()->web_contents()->Clone()));
-  NavigationController& new_controller = new_tab->GetController();
+  std::unique_ptr<WebContents> new_tab = shell()->web_contents()->Clone();
+  WebContentsImpl* new_tab_impl = static_cast<WebContentsImpl*>(new_tab.get());
+  NavigationController& new_controller = new_tab_impl->GetController();
   EXPECT_TRUE(new_controller.IsInitialNavigation());
   EXPECT_TRUE(new_controller.NeedsReload());
 
@@ -4589,7 +4585,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 
   // Make sure the new tab isn't still loading.
   EXPECT_EQ(url_1, new_controller.GetLastCommittedEntry()->GetURL());
-  EXPECT_FALSE(new_tab->IsLoading());
+  EXPECT_FALSE(new_tab_impl->IsLoading());
 
   // Also check going back in the original tab after a renderer crash.
   NavigationController& controller = shell()->web_contents()->GetController();
@@ -4897,9 +4893,10 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerOopifBrowserTest,
   // 3. Create a NavigationEntry with the same PageState as |entry2|.
   std::unique_ptr<NavigationEntryImpl> restored_entry =
       NavigationEntryImpl::FromNavigationEntry(
-          NavigationControllerImpl::CreateNavigationEntry(
+          NavigationController::CreateNavigationEntry(
               main_url_a, Referrer(), ui::PAGE_TRANSITION_RELOAD, false,
-              std::string(), controller.GetBrowserContext()));
+              std::string(), controller.GetBrowserContext(),
+              nullptr /* blob_url_loader_factory */));
   EXPECT_EQ(0U, restored_entry->root_node()->children.size());
   restored_entry->SetPageState(entry2->GetPageState());
 
@@ -6281,10 +6278,10 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   EXPECT_EQ(url_1, root->current_url());
 
   // Clone the tab without navigating it.
-  std::unique_ptr<WebContentsImpl> new_tab(
-      static_cast<WebContentsImpl*>(shell()->web_contents()->Clone()));
-  NavigationController& new_controller = new_tab->GetController();
-  FrameTreeNode* new_root = new_tab->GetFrameTree()->root();
+  std::unique_ptr<WebContents> new_tab = shell()->web_contents()->Clone();
+  WebContentsImpl* new_tab_impl = static_cast<WebContentsImpl*>(new_tab.get());
+  NavigationController& new_controller = new_tab_impl->GetController();
+  FrameTreeNode* new_root = new_tab_impl->GetFrameTree()->root();
   EXPECT_TRUE(new_controller.IsInitialNavigation());
   EXPECT_TRUE(new_controller.NeedsReload());
 
@@ -8138,41 +8135,6 @@ IN_PROC_BROWSER_TEST_F(ContentBrowserTest, DataURLSameDocumentNavigation) {
   shell()->LoadURL(url_second);
   capturer.Wait();
   EXPECT_TRUE(capturer.is_same_document());
-}
-
-IN_PROC_BROWSER_TEST_F(ContentBrowserTest, HideDownloadFromUnmodifiedNewTab) {
-  GURL url("data:application/octet-stream,");
-
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
-
-  {
-    base::ScopedAllowBlockingForTesting allow_blocking;
-    base::ScopedTempDir downloads_directory;
-    ASSERT_TRUE(downloads_directory.CreateUniqueTempDir());
-    DownloadManager* download_manager = BrowserContext::GetDownloadManager(
-        shell()->web_contents()->GetBrowserContext());
-    ShellDownloadManagerDelegate* download_delegate =
-        static_cast<ShellDownloadManagerDelegate*>(
-            download_manager->GetDelegate());
-    download_delegate->SetDownloadBehaviorForTesting(
-        downloads_directory.GetPath());
-
-    DownloadTestObserverTerminal observer(
-        download_manager, 1, DownloadTestObserver::ON_DANGEROUS_DOWNLOAD_FAIL);
-
-    OpenURLParams params(url, Referrer(), WindowOpenDisposition::CURRENT_TAB,
-                         ui::PAGE_TRANSITION_LINK, true);
-    params.suggested_filename = std::string("foo");
-
-    shell()->web_contents()->OpenURL(params);
-    WaitForLoadStop(shell()->web_contents());
-    observer.WaitForFinished();
-  }
-
-  EXPECT_FALSE(controller.GetPendingEntry());
-  EXPECT_FALSE(controller.GetVisibleEntry());
 }
 
 }  // namespace content

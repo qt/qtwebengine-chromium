@@ -11,17 +11,18 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
 #include "components/viz/common/features.h"
+#include "components/viz/common/hit_test/hit_test_region_list.h"
 #include "components/viz/common/quads/surface_draw_quad.h"
 #include "components/viz/host/host_frame_sink_manager.h"
 #include "components/viz/service/surfaces/surface_manager.h"
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/frame_host/render_widget_host_view_guest.h"
 #include "content/browser/renderer_host/cursor_manager.h"
+#include "content/browser/renderer_host/input/touch_emulator.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/render_widget_host_view_child_frame.h"
 #include "content/common/frame_messages.h"
-#include "services/viz/public/interfaces/hit_test/hit_test_region_list.mojom.h"
 #include "third_party/blink/public/platform/web_input_event.h"
 #include "ui/base/layout.h"
 #include "ui/gfx/geometry/dip_util.h"
@@ -39,16 +40,16 @@ void TransformEventTouchPositions(blink::WebTouchEvent* event,
   }
 }
 
-blink::WebGestureEvent DummyGestureScrollUpdate(double timeStampSeconds) {
+blink::WebGestureEvent DummyGestureScrollUpdate(base::TimeTicks time_stamp) {
   return blink::WebGestureEvent(blink::WebInputEvent::kGestureScrollUpdate,
-                                blink::WebInputEvent::kNoModifiers,
-                                timeStampSeconds);
+                                blink::WebInputEvent::kNoModifiers, time_stamp);
 }
 
 viz::HitTestQuery* GetHitTestQuery(
     viz::HostFrameSinkManager* host_frame_sink_manager,
     const viz::FrameSinkId& frame_sink_id) {
-  DCHECK(frame_sink_id.is_valid());
+  if (!frame_sink_id.is_valid())
+    return nullptr;
   const auto& display_hit_test_query_map =
       host_frame_sink_manager->display_hit_test_query();
   const auto iter = display_hit_test_query_map.find(frame_sink_id);
@@ -61,8 +62,20 @@ gfx::PointF ComputePointInRootInPixels(
     const gfx::PointF& point,
     content::RenderWidgetHostViewBase* root_view,
     float device_scale_factor) {
-  gfx::PointF point_in_root = point + root_view->GetOffsetFromRootSurface();
+  gfx::PointF point_in_root = point;
+  root_view->TransformPointToRootSurface(&point_in_root);
   return gfx::ConvertPointToPixel(device_scale_factor, point_in_root);
+}
+
+bool IsMouseButtonDown(const blink::WebMouseEvent& event) {
+  constexpr int mouse_button_modifiers =
+      blink::WebInputEvent::kLeftButtonDown |
+      blink::WebInputEvent::kMiddleButtonDown |
+      blink::WebInputEvent::kRightButtonDown |
+      blink::WebInputEvent::kBackButtonDown |
+      blink::WebInputEvent::kForwardButtonDown;
+
+  return event.GetModifiers() & mouse_button_modifiers;
 }
 
 }  // anonymous namespace
@@ -85,6 +98,9 @@ void RenderWidgetHostInputEventRouter::OnRenderWidgetHostViewBaseDestroyed(
       break;
     }
   }
+
+  if (touch_emulator_)
+    touch_emulator_->OnViewDestroyed(view);
 
   if (view == touch_target_.target) {
     touch_target_.target = nullptr;
@@ -180,8 +196,11 @@ bool RenderWidgetHostInputEventRouter::HittestDelegate::AcceptHitTarget(
 }
 
 RenderWidgetHostInputEventRouter::RenderWidgetHostInputEventRouter()
-    : last_mouse_move_target_(nullptr),
+    : touchscreen_gesture_target_in_map_(false),
+      last_mouse_move_target_(nullptr),
       last_mouse_move_root_view_(nullptr),
+      last_emulated_event_root_view_(nullptr),
+      last_device_scale_factor_(1.f),
       active_touches_(0),
       in_touchscreen_gesture_pinch_(false),
       gesture_pinch_did_send_scroll_begin_(false),
@@ -200,30 +219,27 @@ RenderWidgetTargetResult RenderWidgetHostInputEventRouter::FindMouseEventTarget(
     const blink::WebMouseEvent& event) const {
   RenderWidgetHostViewBase* target = nullptr;
   bool needs_transform_point = true;
+  bool latched_target = true;
   if (root_view->IsMouseLocked()) {
     target = root_view->host()->delegate()->GetMouseLockWidget()->GetView();
   }
 
-  constexpr int mouse_button_modifiers =
-      blink::WebInputEvent::kLeftButtonDown |
-      blink::WebInputEvent::kMiddleButtonDown |
-      blink::WebInputEvent::kRightButtonDown |
-      blink::WebInputEvent::kBackButtonDown |
-      blink::WebInputEvent::kForwardButtonDown;
+  // Ignore mouse_capture_target_ if there are no mouse buttons currently down
+  // because this is only for the purpose of dragging.
   if (!target && mouse_capture_target_.target &&
-      event.GetType() != blink::WebInputEvent::kMouseDown &&
       (event.GetType() == blink::WebInputEvent::kMouseUp ||
-       event.GetModifiers() & mouse_button_modifiers)) {
+       IsMouseButtonDown(event))) {
     target = mouse_capture_target_.target;
   }
 
   gfx::PointF transformed_point;
   if (!target) {
+    latched_target = false;
     auto result = FindViewAtLocation(
         root_view, event.PositionInWidget(), event.PositionInScreen(),
         viz::EventSource::MOUSE, &transformed_point);
     if (result.should_query_view) {
-      return {result.view, true, transformed_point};
+      return {result.view, true, transformed_point, latched_target};
     }
     target = result.view;
     // |transformed_point| is already transformed.
@@ -231,13 +247,13 @@ RenderWidgetTargetResult RenderWidgetHostInputEventRouter::FindMouseEventTarget(
   }
 
   if (needs_transform_point) {
-    if (!TransformPointToTargetCoordSpace(
-            root_view, target, event.PositionInWidget(), &transformed_point,
+    if (!root_view->TransformPointToCoordSpaceForView(
+            event.PositionInWidget(), target, &transformed_point,
             viz::EventSource::MOUSE)) {
-      return {nullptr, false, base::nullopt};
+      return {nullptr, false, base::nullopt, latched_target};
     }
   }
-  return {target, false, transformed_point};
+  return {target, false, transformed_point, latched_target};
 }
 
 RenderWidgetTargetResult
@@ -248,12 +264,12 @@ RenderWidgetHostInputEventRouter::FindMouseWheelEventTarget(
   gfx::PointF transformed_point;
   if (root_view->IsMouseLocked()) {
     target = root_view->host()->delegate()->GetMouseLockWidget()->GetView();
-    if (!TransformPointToTargetCoordSpace(
-            root_view, target, event.PositionInWidget(), &transformed_point,
+    if (!root_view->TransformPointToCoordSpaceForView(
+            event.PositionInWidget(), target, &transformed_point,
             viz::EventSource::MOUSE)) {
-      return {nullptr, false, base::nullopt};
+      return {nullptr, false, base::nullopt, true};
     }
-    return {target, false, transformed_point};
+    return {target, false, transformed_point, true};
   }
 
   if (root_view->wheel_scroll_latching_enabled()) {
@@ -261,17 +277,17 @@ RenderWidgetHostInputEventRouter::FindMouseWheelEventTarget(
       auto result = FindViewAtLocation(
           root_view, event.PositionInWidget(), event.PositionInScreen(),
           viz::EventSource::MOUSE, &transformed_point);
-      return {result.view, result.should_query_view, transformed_point};
+      return {result.view, result.should_query_view, transformed_point, false};
     }
     // For non-begin events, the target found for the previous phaseBegan is
     // used.
-    return {nullptr, false, base::nullopt};
+    return {nullptr, false, base::nullopt, true};
   }
 
   auto result = FindViewAtLocation(root_view, event.PositionInWidget(),
                                    event.PositionInScreen(),
                                    viz::EventSource::MOUSE, &transformed_point);
-  return {result.view, result.should_query_view, transformed_point};
+  return {result.view, result.should_query_view, transformed_point, false};
 }
 
 RenderWidgetTargetResult RenderWidgetHostInputEventRouter::FindViewAtLocation(
@@ -284,7 +300,7 @@ RenderWidgetTargetResult RenderWidgetHostInputEventRouter::FindViewAtLocation(
   // hit testing.
   if (owner_map_.size() <= 1) {
     *transformed_point = point;
-    return {root_view, false, *transformed_point};
+    return {root_view, false, *transformed_point, false};
   }
 
   viz::FrameSinkId frame_sink_id;
@@ -293,7 +309,7 @@ RenderWidgetTargetResult RenderWidgetHostInputEventRouter::FindViewAtLocation(
     viz::HitTestQuery* query = GetHitTestQuery(GetHostFrameSinkManager(),
                                                root_view->GetRootFrameSinkId());
     if (!query)
-      return {root_view, false, base::nullopt};
+      return {root_view, false, base::nullopt, false};
     // |point_in_screen| is in the coordinate space of of the screen, but the
     // display HitTestQuery does a hit test in the coordinate space of the root
     // window. The following translation should account for that discrepancy.
@@ -311,7 +327,7 @@ RenderWidgetTargetResult RenderWidgetHostInputEventRouter::FindViewAtLocation(
     } else {
       *transformed_point = point;
     }
-    if (target.flags & viz::mojom::kHitTestAsk)
+    if (target.flags & viz::HitTestRegionFlags::kHitTestAsk)
       query_renderer = true;
   } else {
     // The hittest delegate is used to reject hittesting quads based on extra
@@ -334,7 +350,7 @@ RenderWidgetTargetResult RenderWidgetHostInputEventRouter::FindViewAtLocation(
     *transformed_point = point;
   }
 
-  return {view, query_renderer, *transformed_point};
+  return {view, query_renderer, *transformed_point, false};
 }
 
 void RenderWidgetHostInputEventRouter::RouteMouseEvent(
@@ -355,10 +371,24 @@ void RenderWidgetHostInputEventRouter::DispatchMouseEvent(
   if (!target)
     return;
 
-  if (mouse_event.GetType() == blink::WebInputEvent::kMouseUp)
+  // Implicitly release any capture when a MouseUp arrives, so that if any
+  // events arrive before the renderer can explicitly release capture, we can
+  // target those correctly. This also releases if there are no mouse buttons
+  // down, which is to protect against problems that can occur on some
+  // platforms where MouseUps are not received when the mouse cursor is off the
+  // browser window.
+  // Also, this is strictly necessary for touch emulation.
+  if (mouse_event.GetType() == blink::WebInputEvent::kMouseUp ||
+      !IsMouseButtonDown(mouse_event))
     mouse_capture_target_.target = nullptr;
-  else if (mouse_event.GetType() == blink::WebInputEvent::kMouseDown)
+
+  // When touch emulation is active, mouse events have to act like touch
+  // events, which requires that there be implicit capture between MouseDown
+  // and MouseUp.
+  if (mouse_event.GetType() == blink::WebInputEvent::kMouseDown &&
+      touch_emulator_ && touch_emulator_->enabled()) {
     mouse_capture_target_.target = target;
+  }
 
   DCHECK(target_location.has_value());
   blink::WebMouseEvent event = mouse_event;
@@ -370,7 +400,7 @@ void RenderWidgetHostInputEventRouter::DispatchMouseEvent(
   // notify the CursorManager that it might need to change the cursor.
   if ((event.GetType() == blink::WebInputEvent::kMouseLeave ||
        event.GetType() == blink::WebInputEvent::kMouseMove) &&
-      target != last_mouse_move_target_) {
+      target != last_mouse_move_target_ && !root_view->IsMouseLocked()) {
     SendMouseEnterOrLeaveEvents(mouse_event, target, root_view);
     if (root_view->GetCursorManager())
       root_view->GetCursorManager()->UpdateViewUnderCursor(target);
@@ -416,7 +446,7 @@ void RenderWidgetHostInputEventRouter::DispatchMouseWheelEvent(
         // the wheel target view is destroyed and the wheel end event won't get
         // processed.
         blink::WebGestureEvent fake_scroll_update =
-            DummyGestureScrollUpdate(mouse_wheel_event.TimeStampSeconds());
+            DummyGestureScrollUpdate(mouse_wheel_event.TimeStamp());
         fake_scroll_update.SetSourceDevice(blink::kWebGestureDeviceTouchpad);
         SendGestureScrollEnd(bubbling_gesture_scroll_target_.target,
                              fake_scroll_update);
@@ -527,7 +557,7 @@ RenderWidgetTargetResult RenderWidgetHostInputEventRouter::FindTouchEventTarget(
   // Tests may call this without an initial TouchStart, so check event type
   // explicitly here.
   if (active_touches_ || event.GetType() != blink::WebInputEvent::kTouchStart)
-    return {nullptr, false, base::nullopt};
+    return {nullptr, false, base::nullopt, true};
 
   active_touches_ += CountChangedTouchPoints(event);
   gfx::PointF original_point = gfx::PointF(event.touches[0].PositionInWidget());
@@ -587,9 +617,8 @@ void RenderWidgetHostInputEventRouter::DispatchTouchEvent(
 
   if (is_sequence_start) {
     if (touch_target_.target == bubbling_gesture_scroll_target_.target) {
-      SendGestureScrollEnd(
-          bubbling_gesture_scroll_target_.target,
-          DummyGestureScrollUpdate(touch_event.TimeStampSeconds()));
+      SendGestureScrollEnd(bubbling_gesture_scroll_target_.target,
+                           DummyGestureScrollUpdate(touch_event.TimeStamp()));
       CancelScrollBubbling(bubbling_gesture_scroll_target_.target);
     }
   }
@@ -694,8 +723,8 @@ void RenderWidgetHostInputEventRouter::SendMouseEnterOrLeaveEvents(
     // new compositor surface. The SurfaceID for that might not have
     // propagated to its embedding surface, which makes it impossible to
     // compute the transformation for it
-    if (!TransformPointToTargetCoordSpace(
-            root_view, view, event.PositionInWidget(), &transformed_point,
+    if (!root_view->TransformPointToCoordSpaceForView(
+            event.PositionInWidget(), view, &transformed_point,
             viz::EventSource::MOUSE)) {
       transformed_point = gfx::PointF();
     }
@@ -708,9 +737,9 @@ void RenderWidgetHostInputEventRouter::SendMouseEnterOrLeaveEvents(
   if (common_ancestor && common_ancestor != target) {
     blink::WebMouseEvent mouse_move(event);
     mouse_move.SetType(blink::WebInputEvent::kMouseMove);
-    if (!TransformPointToTargetCoordSpace(
-            root_view, common_ancestor, event.PositionInWidget(),
-            &transformed_point, viz::EventSource::MOUSE)) {
+    if (!root_view->TransformPointToCoordSpaceForView(
+            event.PositionInWidget(), common_ancestor, &transformed_point,
+            viz::EventSource::MOUSE)) {
       transformed_point = gfx::PointF();
     }
     mouse_move.SetPositionInWidget(transformed_point.x(),
@@ -724,8 +753,8 @@ void RenderWidgetHostInputEventRouter::SendMouseEnterOrLeaveEvents(
       continue;
     blink::WebMouseEvent mouse_enter(event);
     mouse_enter.SetType(blink::WebInputEvent::kMouseMove);
-    if (!TransformPointToTargetCoordSpace(
-            root_view, view, event.PositionInWidget(), &transformed_point,
+    if (!root_view->TransformPointToCoordSpaceForView(
+            event.PositionInWidget(), view, &transformed_point,
             viz::EventSource::MOUSE)) {
       transformed_point = gfx::PointF();
     }
@@ -944,8 +973,7 @@ void RenderWidgetHostInputEventRouter::SendGestureScrollEnd(
     const blink::WebGestureEvent& event) {
   blink::WebGestureEvent scroll_end(event);
   scroll_end.SetType(blink::WebInputEvent::kGestureScrollEnd);
-  scroll_end.SetTimeStampSeconds(
-      (base::TimeTicks::Now() - base::TimeTicks()).InSecondsF());
+  scroll_end.SetTimeStamp(base::TimeTicks::Now());
   switch (event.GetType()) {
     case blink::WebInputEvent::kGestureScrollBegin:
       DCHECK(view->wheel_scroll_latching_enabled());
@@ -1046,7 +1074,7 @@ RenderWidgetHostInputEventRouter::FindTouchscreenGestureEventTarget(
   // target we could just return nullptr for pinch events, but since we know
   // where they are going we return the correct target.
   if (blink::WebInputEvent::IsPinchGestureEventType(gesture_event.GetType()))
-    return {root_view, false, base::nullopt};
+    return {root_view, false, gesture_event.PositionInWidget(), true};
 
   // Android sends gesture events that have no corresponding touch sequence, so
   // these we hit-test explicitly.
@@ -1061,7 +1089,16 @@ RenderWidgetHostInputEventRouter::FindTouchscreenGestureEventTarget(
 
   // Remaining gesture events will defer to the gesture event target queue
   // during dispatch.
-  return {nullptr, false, base::nullopt};
+  return {nullptr, false, base::nullopt, true};
+}
+
+bool RenderWidgetHostInputEventRouter::IsViewInMap(
+    const RenderWidgetHostViewBase* view) const {
+  for (auto entry : owner_map_) {
+    if (entry.second == view)
+      return true;
+  }
+  return false;
 }
 
 void RenderWidgetHostInputEventRouter::DispatchTouchscreenGestureEvent(
@@ -1150,6 +1187,7 @@ void RenderWidgetHostInputEventRouter::DispatchTouchscreenGestureEvent(
     // RenderWidgetTargeter. These gesture events should always have a
     // unique_touch_event_id of 0.
     touchscreen_gesture_target_.target = target;
+    touchscreen_gesture_target_in_map_ = IsViewInMap(target);
     base::debug::SetCrashKeyString(target_source_key, "touch_id=0");
     touchscreen_gesture_target_.delta =
         target_location.has_value()
@@ -1176,19 +1214,21 @@ void RenderWidgetHostInputEventRouter::DispatchTouchscreenGestureEvent(
     // don't worry about the fact we're ignoring |result.should_query_view|, as
     // this is the best we can do until we fix https://crbug.com/595422.
     touchscreen_gesture_target_.target = result.view;
+    touchscreen_gesture_target_in_map_ = IsViewInMap(result.view);
     base::debug::SetCrashKeyString(target_source_key, "no_matching_id");
     touchscreen_gesture_target_.delta = transformed_point - original_point;
   } else if (is_gesture_start) {
     touchscreen_gesture_target_ = gesture_target_it->second;
     touchscreen_gesture_target_map_.erase(gesture_target_it);
+    touchscreen_gesture_target_in_map_ =
+        IsViewInMap(touchscreen_gesture_target_.target);
 
     // Abort any scroll bubbling in progress to avoid double entry.
     if (touchscreen_gesture_target_.target &&
         touchscreen_gesture_target_.target ==
             bubbling_gesture_scroll_target_.target) {
-      SendGestureScrollEnd(
-          bubbling_gesture_scroll_target_.target,
-          DummyGestureScrollUpdate(gesture_event.TimeStampSeconds()));
+      SendGestureScrollEnd(bubbling_gesture_scroll_target_.target,
+                           DummyGestureScrollUpdate(gesture_event.TimeStamp()));
       CancelScrollBubbling(bubbling_gesture_scroll_target_.target);
     }
   }
@@ -1208,6 +1248,21 @@ void RenderWidgetHostInputEventRouter::DispatchTouchscreenGestureEvent(
   base::debug::SetCrashKeyString(
       target_ptr_key,
       base::StringPrintf("%p", touchscreen_gesture_target_.target));
+  static auto* root_ptr_key = base::debug::AllocateCrashKeyString(
+      "touchscreen-gesture-root-ptr", base::debug::CrashKeySize::Size64);
+  base::debug::SetCrashKeyString(root_ptr_key,
+                                 base::StringPrintf("%p", root_view));
+  static auto* target_ptr_in_map_key = base::debug::AllocateCrashKeyString(
+      "touchscreen-gesture-target-in-map", base::debug::CrashKeySize::Size32);
+  base::debug::SetCrashKeyString(
+      target_ptr_in_map_key,
+      touchscreen_gesture_target_in_map_ ? "true" : "false");
+  static auto* map_size_key = base::debug::AllocateCrashKeyString(
+      "touchscreen-gesture-map-size", base::debug::CrashKeySize::Size32);
+  base::debug::SetCrashKeyString(
+      map_size_key,
+      base::StringPrintf("%u", static_cast<int>(owner_map_.size())));
+
   touchscreen_gesture_target_.target->ProcessGestureEvent(event, latency);
 }
 
@@ -1225,7 +1280,7 @@ RenderWidgetHostInputEventRouter::FindTouchpadGestureEventTarget(
     const blink::WebGestureEvent& event) const {
   if (event.GetType() != blink::WebInputEvent::kGesturePinchBegin &&
       event.GetType() != blink::WebInputEvent::kGestureFlingStart) {
-    return {nullptr, false, base::nullopt};
+    return {nullptr, false, base::nullopt, true};
   }
 
   gfx::PointF transformed_point;
@@ -1265,7 +1320,7 @@ void RenderWidgetHostInputEventRouter::DispatchTouchpadGestureEvent(
             bubbling_gesture_scroll_target_.target) {
       SendGestureScrollEnd(
           bubbling_gesture_scroll_target_.target,
-          DummyGestureScrollUpdate(touchpad_gesture_event.TimeStampSeconds()));
+          DummyGestureScrollUpdate(touchpad_gesture_event.TimeStamp()));
       CancelScrollBubbling(bubbling_gesture_scroll_target_.target);
     }
   }
@@ -1283,6 +1338,18 @@ void RenderWidgetHostInputEventRouter::DispatchTouchpadGestureEvent(
   touchpad_gesture_target_.target->ProcessGestureEvent(gesture_event, latency);
 }
 
+RenderWidgetHostViewBase*
+RenderWidgetHostInputEventRouter::FindViewFromFrameSinkId(
+    const viz::FrameSinkId& frame_sink_id) const {
+  // TODO(kenrb): There should be a better way to handle hit tests to surfaces
+  // that are no longer valid for hit testing. See https://crbug.com/790044.
+  auto iter = owner_map_.find(frame_sink_id);
+  // If the point hit a Surface whose namspace is no longer in the map, then
+  // it likely means the RenderWidgetHostView has been destroyed but its
+  // parent frame has not sent a new compositor frame since that happened.
+  return iter == owner_map_.end() ? nullptr : iter->second;
+}
+
 std::vector<RenderWidgetHostView*>
 RenderWidgetHostInputEventRouter::GetRenderWidgetHostViewsForTests() const {
   std::vector<RenderWidgetHostView*> hosts;
@@ -1295,59 +1362,6 @@ RenderWidgetHostInputEventRouter::GetRenderWidgetHostViewsForTests() const {
 RenderWidgetTargeter*
 RenderWidgetHostInputEventRouter::GetRenderWidgetTargeterForTests() {
   return event_targeter_.get();
-}
-
-bool RenderWidgetHostInputEventRouter::TransformPointToTargetCoordSpace(
-    RenderWidgetHostViewBase* root_view,
-    RenderWidgetHostViewBase* target,
-    const gfx::PointF& point,
-    gfx::PointF* transformed_point,
-    viz::EventSource source) const {
-  if (root_view == target) {
-    *transformed_point = point;
-    return true;
-  }
-
-  if (!use_viz_hit_test_) {
-    return root_view->TransformPointToCoordSpaceForView(point, target,
-                                                        transformed_point);
-  }
-
-  viz::HitTestQuery* query = GetHitTestQuery(GetHostFrameSinkManager(),
-                                             root_view->GetRootFrameSinkId());
-  if (!query)
-    return false;
-
-  std::vector<viz::FrameSinkId> target_ancestors;
-  target_ancestors.push_back(target->GetFrameSinkId());
-  RenderWidgetHostViewBase* cur_view = target;
-  while (cur_view->IsRenderWidgetHostViewChildFrame()) {
-    if (cur_view->IsRenderWidgetHostViewGuest()) {
-      cur_view = static_cast<RenderWidgetHostViewGuest*>(cur_view)
-                     ->GetOwnerRenderWidgetHostView();
-    } else {
-      cur_view = static_cast<RenderWidgetHostViewChildFrame*>(cur_view)
-                     ->GetParentView();
-    }
-    if (!cur_view)
-      return false;
-    target_ancestors.push_back(cur_view->GetFrameSinkId());
-  }
-  DCHECK_EQ(cur_view, root_view);
-  target_ancestors.push_back(root_view->GetRootFrameSinkId());
-
-  float device_scale_factor = root_view->GetDeviceScaleFactor();
-  DCHECK_GT(device_scale_factor, 0.0f);
-  gfx::PointF point_in_root_in_pixels =
-      ComputePointInRootInPixels(point, root_view, device_scale_factor);
-  if (!query->TransformLocationForTarget(source, target_ancestors,
-                                         point_in_root_in_pixels,
-                                         transformed_point)) {
-    return false;
-  }
-  *transformed_point =
-      gfx::ConvertPointToDIP(device_scale_factor, *transformed_point);
-  return true;
 }
 
 RenderWidgetTargetResult
@@ -1400,8 +1414,18 @@ void RenderWidgetHostInputEventRouter::DispatchEventToTarget(
     return;
   }
   if (blink::WebInputEvent::IsTouchEventType(event.GetType())) {
-    DispatchTouchEvent(root_view, target,
-                       static_cast<const blink::WebTouchEvent&>(event), latency,
+    auto& touch_event = static_cast<const blink::WebTouchEvent&>(event);
+    TouchEventWithLatencyInfo touch_with_latency(touch_event, latency);
+    if (touch_emulator_ &&
+        touch_emulator_->HandleTouchEvent(touch_with_latency.event)) {
+      // We cheat a litle bit here, and assume that we know that even if the
+      // target is a RenderWidgetHostViewChildFrame, that it would only try to
+      // forward the ack to the root view anyways, so we send it there directly.
+      root_view->ProcessAckedTouchEvent(touch_with_latency,
+                                        INPUT_EVENT_ACK_STATE_CONSUMED);
+      return;
+    }
+    DispatchTouchEvent(root_view, target, touch_event, latency,
                        target_location);
     return;
   }
@@ -1423,16 +1447,81 @@ void RenderWidgetHostInputEventRouter::DispatchEventToTarget(
   NOTREACHED();
 }
 
-RenderWidgetHostViewBase*
-RenderWidgetHostInputEventRouter::FindViewFromFrameSinkId(
-    const viz::FrameSinkId& frame_sink_id) const {
-  // TODO(kenrb): There should be a better way to handle hit tests to surfaces
-  // that are no longer valid for hit testing. See https://crbug.com/790044.
-  auto iter = owner_map_.find(frame_sink_id);
-  // If the point hit a Surface whose namspace is no longer in the map, then
-  // it likely means the RenderWidgetHostView has been destroyed but its
-  // parent frame has not sent a new compositor frame since that happened.
-  return iter == owner_map_.end() ? nullptr : iter->second;
+TouchEmulator* RenderWidgetHostInputEventRouter::GetTouchEmulator() {
+  if (!touch_emulator_)
+    touch_emulator_.reset(new TouchEmulator(this, last_device_scale_factor_));
+
+  return touch_emulator_.get();
+}
+
+void RenderWidgetHostInputEventRouter::ForwardEmulatedGestureEvent(
+    const blink::WebGestureEvent& event) {
+  TRACE_EVENT0("input",
+               "RenderWidgetHostInputEventRouter::ForwardEmulatedGestureEvent");
+  DCHECK(last_emulated_event_root_view_);
+  DispatchTouchscreenGestureEvent(last_emulated_event_root_view_, nullptr,
+                                  event, ui::LatencyInfo(),
+                                  event.PositionInWidget());
+}
+
+void RenderWidgetHostInputEventRouter::ForwardEmulatedTouchEvent(
+    const blink::WebTouchEvent& event,
+    RenderWidgetHostViewBase* target) {
+  TRACE_EVENT0("input",
+               "RenderWidgetHostInputEventRouter::ForwardEmulatedTouchEvent");
+  // Here we re-use the last root view we saw for a mouse move event, or fall
+  // back to using |target| as the root_view if we haven't seen a mouse event;
+  // this latter case only happens for injected touch events.
+  // TODO(wjmaclean): Why doesn't this class just track its root view?
+  DCHECK(IsViewInMap(static_cast<RenderWidgetHostViewBase*>(target)));
+  last_emulated_event_root_view_ =
+      last_mouse_move_root_view_ ? last_mouse_move_root_view_ : target;
+
+  if (event.GetType() == blink::WebInputEvent::kTouchStart)
+    active_touches_ += CountChangedTouchPoints(event);
+  blink::WebFloatPoint position_in_widget = event.touches[0].PositionInWidget();
+  gfx::PointF transformed_point = target->TransformRootPointToViewCoordSpace(
+      gfx::PointF(position_in_widget.x, position_in_widget.y));
+  DispatchTouchEvent(last_emulated_event_root_view_, target, event,
+                     ui::LatencyInfo(), transformed_point);
+}
+
+void RenderWidgetHostInputEventRouter::SetCursor(const WebCursor& cursor) {
+  if (!last_mouse_move_root_view_)
+    return;
+
+  last_device_scale_factor_ =
+      last_mouse_move_root_view_->current_device_scale_factor();
+  if (auto* cursor_manager = last_mouse_move_root_view_->GetCursorManager()) {
+    for (auto it : owner_map_)
+      cursor_manager->UpdateCursor(it.second, cursor);
+  }
+}
+
+void RenderWidgetHostInputEventRouter::ShowContextMenuAtPoint(
+    const gfx::Point& point,
+    const ui::MenuSourceType source_type) {
+  DCHECK(last_mouse_move_target_);
+
+  auto* rwhi = static_cast<RenderWidgetHostImpl*>(
+      last_mouse_move_target_->GetRenderWidgetHost());
+  DCHECK(rwhi);
+  rwhi->ShowContextMenuAtPoint(point, source_type);
+}
+
+void RenderWidgetHostInputEventRouter::SetMouseCaptureTarget(
+    RenderWidgetHostViewBase* target,
+    bool capture) {
+  if (touch_emulator_ && touch_emulator_->enabled())
+    return;
+
+  if (capture) {
+    mouse_capture_target_.target = target;
+    return;
+  }
+
+  if (mouse_capture_target_.target == target)
+    mouse_capture_target_.target = nullptr;
 }
 
 }  // namespace content

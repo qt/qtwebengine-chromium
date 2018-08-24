@@ -12,6 +12,7 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/sha1.h"
+#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/test/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
@@ -199,6 +200,20 @@ bool ScopedTestRootCanTrustTargetCert(CertVerifyProcType verify_proc_type) {
          verify_proc_type == CERT_VERIFY_PROC_ANDROID;
 }
 
+// TODO(crbug.com/649017): This is not parameterized by the CertVerifyProc
+// because the CertVerifyProc::Verify() does this unconditionally based on the
+// platform.
+bool AreSHA1IntermediatesAllowed() {
+#if defined(OS_WIN)
+  // TODO(rsleevi): Remove this once https://crbug.com/588789 is resolved
+  // for Windows 7/2008 users.
+  // Note: This must be kept in sync with cert_verify_proc.cc
+  return base::win::GetVersion() < base::win::VERSION_WIN8;
+#else
+  return false;
+#endif
+}
+
 }  // namespace
 
 // This fixture is for tests that apply to concrete implementations of
@@ -246,23 +261,6 @@ class CertVerifyProcInternalTest
             base::android::SDK_VERSION_JELLY_BEAN_MR1)
       return false;
 #endif
-    return true;
-  }
-
-  bool SupportsDetectingKnownRoots() const {
-#if defined(OS_ANDROID)
-    // Before API level 17 (SDK_VERSION_JELLY_BEAN_MR1), Android does not expose
-    // the APIs necessary to get at the verified certificate chain and detect
-    // known roots.
-    if (verify_proc_type() == CERT_VERIFY_PROC_ANDROID)
-      return base::android::BuildInfo::GetInstance()->sdk_int() >=
-             base::android::SDK_VERSION_JELLY_BEAN_MR1;
-#endif
-
-    // iOS does not expose the APIs necessary to get the known system roots.
-    if (verify_proc_type() == CERT_VERIFY_PROC_IOS)
-      return false;
-
     return true;
   }
 
@@ -768,7 +766,7 @@ TEST_P(CertVerifyProcInternalTest, GoogleDigiNotarTest) {
 TEST(CertVerifyProcTest, BlacklistIsSorted) {
 // Defines kBlacklistedSPKIs.
 #include "net/cert/cert_verify_proc_blacklist.inc"
-  for (size_t i = 0; i < arraysize(kBlacklistedSPKIs) - 1; ++i) {
+  for (size_t i = 0; i < base::size(kBlacklistedSPKIs) - 1; ++i) {
     EXPECT_GT(0, memcmp(kBlacklistedSPKIs[i], kBlacklistedSPKIs[i + 1],
                         crypto::kSHA256Length))
         << " at index " << i;
@@ -1229,7 +1227,7 @@ TEST(CertVerifyProcTest, TestHasTooLongValidity) {
     const char* const file;
     bool is_valid_too_long;
   } tests[] = {
-      {"twitter-chain.pem", false},
+      {"daltonridgeapts.com-chain.pem", false},
       {"start_after_expiry.pem", true},
       {"pre_br_validity_ok.pem", false},
       {"pre_br_validity_bad_121.pem", true},
@@ -1248,43 +1246,31 @@ TEST(CertVerifyProcTest, TestHasTooLongValidity) {
 
   base::FilePath certs_dir = GetTestCertsDirectory();
 
-  for (size_t i = 0; i < arraysize(tests); ++i) {
+  for (const auto& test : tests) {
+    SCOPED_TRACE(test.file);
+
     scoped_refptr<X509Certificate> certificate =
-        ImportCertFromFile(certs_dir, tests[i].file);
-    SCOPED_TRACE(tests[i].file);
+        ImportCertFromFile(certs_dir, test.file);
     ASSERT_TRUE(certificate);
-    EXPECT_EQ(tests[i].is_valid_too_long,
+    EXPECT_EQ(test.is_valid_too_long,
               CertVerifyProc::HasTooLongValidity(*certificate));
   }
 }
 
-// TODO(crbug.com/610546): Fix and re-enable this test.
-TEST_P(CertVerifyProcInternalTest, DISABLED_TestKnownRoot) {
-  if (!SupportsDetectingKnownRoots()) {
-    LOG(INFO) << "Skipping this test on this platform.";
-    return;
-  }
-
+TEST_P(CertVerifyProcInternalTest, TestKnownRoot) {
   base::FilePath certs_dir = GetTestCertsDirectory();
-  CertificateList certs = CreateCertificateListFromFile(
-      certs_dir, "twitter-chain.pem", X509Certificate::FORMAT_AUTO);
-  ASSERT_EQ(3U, certs.size());
-
-  std::vector<bssl::UniquePtr<CRYPTO_BUFFER>> intermediates;
-  intermediates.push_back(x509_util::DupCryptoBuffer(certs[1]->cert_buffer()));
-
-  scoped_refptr<X509Certificate> cert_chain = X509Certificate::CreateFromBuffer(
-      x509_util::DupCryptoBuffer(certs[0]->cert_buffer()),
-      std::move(intermediates));
+  scoped_refptr<X509Certificate> cert_chain = CreateCertificateChainFromFile(
+      certs_dir, "daltonridgeapts.com-chain.pem", X509Certificate::FORMAT_AUTO);
   ASSERT_TRUE(cert_chain);
 
   int flags = 0;
   CertVerifyResult verify_result;
-  // This will blow up, May 9th, 2016. Sorry! Please disable and file a bug
-  // against agl.
-  int error = Verify(cert_chain.get(), "twitter.com", flags, NULL,
+  int error = Verify(cert_chain.get(), "daltonridgeapts.com", flags, NULL,
                      CertificateList(), &verify_result);
-  EXPECT_THAT(error, IsOk());
+  EXPECT_THAT(error, IsOk()) << "This test relies on a real certificate that "
+                             << "expires on May 28, 2021. If failing on/after "
+                             << "that date, please disable and file a bug "
+                             << "against rsleevi.";
   EXPECT_TRUE(verify_result.is_issued_by_known_root);
 }
 
@@ -1375,6 +1361,44 @@ TEST_P(CertVerifyProcInternalTest, WrongKeyPurpose) {
     EXPECT_THAT(error, IsError(ERR_CERT_AUTHORITY_INVALID));
   } else {
     EXPECT_THAT(error, IsError(ERR_CERT_INVALID));
+  }
+}
+
+// Tests that a Netscape Server Gated crypto is accepted in place of a
+// serverAuth EKU.
+// TODO(crbug.com/843735): Deprecate support for this.
+TEST_P(CertVerifyProcInternalTest, Sha1IntermediateUsesServerGatedCrypto) {
+  base::FilePath certs_dir =
+      GetTestNetDataDirectory()
+          .AppendASCII("verify_certificate_chain_unittest")
+          .AppendASCII("intermediate-eku-server-gated-crypto");
+
+  scoped_refptr<X509Certificate> cert_chain = CreateCertificateChainFromFile(
+      certs_dir, "sha1-chain.pem", X509Certificate::FORMAT_AUTO);
+
+  ASSERT_TRUE(cert_chain);
+  ASSERT_FALSE(cert_chain->intermediate_buffers().empty());
+
+  auto root = X509Certificate::CreateFromBuffer(
+      x509_util::DupCryptoBuffer(
+          cert_chain->intermediate_buffers().back().get()),
+      {});
+
+  ScopedTestRoot scoped_root(root.get());
+
+  int flags = 0;
+  CertVerifyResult verify_result;
+  int error = Verify(cert_chain.get(), "test.example", flags, NULL,
+                     CertificateList(), &verify_result);
+
+  if (AreSHA1IntermediatesAllowed()) {
+    EXPECT_THAT(error, IsOk());
+    EXPECT_EQ(CERT_STATUS_SHA1_SIGNATURE_PRESENT, verify_result.cert_status);
+  } else {
+    EXPECT_THAT(error, IsError(ERR_CERT_WEAK_SIGNATURE_ALGORITHM));
+    EXPECT_EQ(CERT_STATUS_WEAK_SIGNATURE_ALGORITHM |
+                  CERT_STATUS_SHA1_SIGNATURE_PRESENT,
+              verify_result.cert_status);
   }
 }
 
@@ -2089,26 +2113,13 @@ TEST_P(CertVerifyProcInternalTest, CRLSetDuringPathBuilding) {
             x509_util::DupCryptoBuffer(verified_intermediates[1].get()), {});
     ASSERT_TRUE(intermediate);
 
-    EXPECT_TRUE(testcase.expected_intermediate->Equals(intermediate.get()))
+    EXPECT_TRUE(testcase.expected_intermediate->EqualsExcludingChain(
+        intermediate.get()))
         << "Expected: " << testcase.expected_intermediate->subject().common_name
         << " issued by " << testcase.expected_intermediate->issuer().common_name
         << "; Got: " << intermediate->subject().common_name << " issued by "
         << intermediate->issuer().common_name;
   }
-}
-
-// TODO(crbug.com/649017): This is not parameterized by the CertVerifyProc
-// because the CertVerifyProc::Verify() does this unconditionally based on the
-// platform.
-bool AreSHA1IntermediatesAllowed() {
-#if defined(OS_WIN)
-  // TODO(rsleevi): Remove this once https://crbug.com/588789 is resolved
-  // for Windows 7/2008 users.
-  // Note: This must be kept in sync with cert_verify_proc.cc
-  return base::win::GetVersion() < base::win::VERSION_WIN8;
-#else
-  return false;
-#endif
 }
 
 TEST(CertVerifyProcTest, RejectsMD2) {

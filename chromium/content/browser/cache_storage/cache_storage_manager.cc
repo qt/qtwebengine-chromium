@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include <map>
+#include <numeric>
 #include <set>
 #include <utility>
 
@@ -71,7 +72,8 @@ int64_t GetCacheStorageSize(const proto::CacheStorageIndex& index) {
 // sizes (if current), and last modified times.
 void ListOriginsAndLastModifiedOnTaskRunner(
     std::vector<CacheStorageUsageInfo>* usages,
-    base::FilePath root_path) {
+    base::FilePath root_path,
+    CacheStorageOwner owner) {
   base::FileEnumerator file_enum(root_path, false /* recursive */,
                                  base::FileEnumerator::DIRECTORIES);
 
@@ -88,21 +90,26 @@ void ListOriginsAndLastModifiedOnTaskRunner(
     proto::CacheStorageIndex index;
     if (index.ParseFromString(protobuf)) {
       if (index.has_origin()) {
-        if (base::GetFileInfo(path, &file_info)) {
-          int64_t storage_size = CacheStorage::kSizeUnknown;
-          if (file_info.last_modified < index_last_modified)
-            storage_size = GetCacheStorageSize(index);
-          usages->push_back(CacheStorageUsageInfo(
-              GURL(index.origin()), storage_size, file_info.last_modified));
+        if (path ==
+            CacheStorageManager::ConstructOriginPath(
+                root_path, url::Origin::Create(GURL(index.origin())), owner)) {
+          if (base::GetFileInfo(path, &file_info)) {
+            int64_t storage_size = CacheStorage::kSizeUnknown;
+            if (file_info.last_modified < index_last_modified)
+              storage_size = GetCacheStorageSize(index);
+            usages->push_back(CacheStorageUsageInfo(
+                GURL(index.origin()), storage_size, file_info.last_modified));
+          }
         }
       }
     }
   }
 }
 
-std::set<url::Origin> ListOriginsOnTaskRunner(base::FilePath root_path) {
+std::set<url::Origin> ListOriginsOnTaskRunner(base::FilePath root_path,
+                                              CacheStorageOwner owner) {
   std::vector<CacheStorageUsageInfo> usages;
-  ListOriginsAndLastModifiedOnTaskRunner(&usages, root_path);
+  ListOriginsAndLastModifiedOnTaskRunner(&usages, root_path, owner);
 
   std::set<url::Origin> out_origins;
   for (const CacheStorageUsageInfo& usage : usages)
@@ -177,65 +184,87 @@ CacheStorageManager::~CacheStorageManager() = default;
 
 void CacheStorageManager::OpenCache(
     const url::Origin& origin,
+    CacheStorageOwner owner,
     const std::string& cache_name,
     CacheStorage::CacheAndErrorCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  CacheStorage* cache_storage = FindOrCreateCacheStorage(origin);
+  CacheStorage* cache_storage = FindOrCreateCacheStorage(origin, owner);
 
   cache_storage->OpenCache(cache_name, std::move(callback));
 }
 
 void CacheStorageManager::HasCache(
     const url::Origin& origin,
+    CacheStorageOwner owner,
     const std::string& cache_name,
     CacheStorage::BoolAndErrorCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  CacheStorage* cache_storage = FindOrCreateCacheStorage(origin);
+  CacheStorage* cache_storage = FindOrCreateCacheStorage(origin, owner);
   cache_storage->HasCache(cache_name, std::move(callback));
 }
 
 void CacheStorageManager::DeleteCache(const url::Origin& origin,
+                                      CacheStorageOwner owner,
                                       const std::string& cache_name,
                                       CacheStorage::ErrorCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  CacheStorage* cache_storage = FindOrCreateCacheStorage(origin);
+  CacheStorage* cache_storage = FindOrCreateCacheStorage(origin, owner);
   cache_storage->DoomCache(cache_name, std::move(callback));
 }
 
 void CacheStorageManager::EnumerateCaches(
     const url::Origin& origin,
+    CacheStorageOwner owner,
     CacheStorage::IndexCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  CacheStorage* cache_storage = FindOrCreateCacheStorage(origin);
+  CacheStorage* cache_storage = FindOrCreateCacheStorage(origin, owner);
 
   cache_storage->EnumerateCaches(std::move(callback));
 }
 
 void CacheStorageManager::MatchCache(
     const url::Origin& origin,
+    CacheStorageOwner owner,
     const std::string& cache_name,
     std::unique_ptr<ServiceWorkerFetchRequest> request,
-    const CacheStorageCacheQueryParams& match_params,
+    blink::mojom::QueryParamsPtr match_params,
     CacheStorageCache::ResponseCallback callback) {
-  CacheStorage* cache_storage = FindOrCreateCacheStorage(origin);
+  CacheStorage* cache_storage = FindOrCreateCacheStorage(origin, owner);
 
-  cache_storage->MatchCache(cache_name, std::move(request), match_params,
-                            std::move(callback));
+  cache_storage->MatchCache(cache_name, std::move(request),
+                            std::move(match_params), std::move(callback));
 }
 
 void CacheStorageManager::MatchAllCaches(
     const url::Origin& origin,
+    CacheStorageOwner owner,
     std::unique_ptr<ServiceWorkerFetchRequest> request,
-    const CacheStorageCacheQueryParams& match_params,
+    blink::mojom::QueryParamsPtr match_params,
     CacheStorageCache::ResponseCallback callback) {
-  CacheStorage* cache_storage = FindOrCreateCacheStorage(origin);
+  CacheStorage* cache_storage = FindOrCreateCacheStorage(origin, owner);
 
-  cache_storage->MatchAllCaches(std::move(request), match_params,
+  cache_storage->MatchAllCaches(std::move(request), std::move(match_params),
                                 std::move(callback));
+}
+
+void CacheStorageManager::WriteToCache(
+    const url::Origin& origin,
+    CacheStorageOwner owner,
+    const std::string& cache_name,
+    std::unique_ptr<ServiceWorkerFetchRequest> request,
+    std::unique_ptr<ServiceWorkerResponse> response,
+    CacheStorage::ErrorCallback callback) {
+  // Cache API should write through the dispatcher.
+  DCHECK_NE(owner, CacheStorageOwner::kCacheAPI);
+
+  CacheStorage* cache_storage = FindOrCreateCacheStorage(origin, owner);
+
+  cache_storage->WriteToCache(cache_name, std::move(request),
+                              std::move(response), std::move(callback));
 }
 
 void CacheStorageManager::SetBlobParametersForCache(
@@ -273,6 +302,7 @@ void CacheStorageManager::NotifyCacheContentChanged(const url::Origin& origin,
 }
 
 void CacheStorageManager::GetAllOriginsUsage(
+    CacheStorageOwner owner,
     CacheStorageContext::GetUsageInfoCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
@@ -281,9 +311,11 @@ void CacheStorageManager::GetAllOriginsUsage(
 
   if (IsMemoryBacked()) {
     for (const auto& origin_details : cache_storage_map_) {
-      usages->push_back(
-          CacheStorageUsageInfo(origin_details.first.GetURL(), 0 /* size */,
-                                base::Time() /* last modified */));
+      if (origin_details.first.second != owner)
+        continue;
+      usages->push_back(CacheStorageUsageInfo(
+          origin_details.first.first.GetURL(), 0 /* size */,
+          base::Time() /* last modified */));
     }
     GetAllOriginsUsageGetSizes(std::move(usages), std::move(callback));
     return;
@@ -293,7 +325,7 @@ void CacheStorageManager::GetAllOriginsUsage(
   cache_task_runner_->PostTaskAndReply(
       FROM_HERE,
       base::BindOnce(&ListOriginsAndLastModifiedOnTaskRunner, usages_ptr,
-                     root_path_),
+                     root_path_, owner),
       base::BindOnce(&CacheStorageManager::GetAllOriginsUsageGetSizes,
                      weak_ptr_factory_.GetWeakPtr(), std::move(usages),
                      std::move(callback)));
@@ -325,8 +357,8 @@ void CacheStorageManager::GetAllOriginsUsageGetSizes(
       base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE, barrier_closure);
       continue;
     }
-    CacheStorage* cache_storage =
-        FindOrCreateCacheStorage(url::Origin::Create(usage.origin));
+    CacheStorage* cache_storage = FindOrCreateCacheStorage(
+        url::Origin::Create(usage.origin), CacheStorageOwner::kCacheAPI);
     cache_storage->Size(
         base::BindOnce(&OneOriginSizeReported, barrier_closure, &usage));
   }
@@ -334,22 +366,25 @@ void CacheStorageManager::GetAllOriginsUsageGetSizes(
 
 void CacheStorageManager::GetOriginUsage(
     const url::Origin& origin,
+    CacheStorageOwner owner,
     storage::QuotaClient::GetUsageCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  CacheStorage* cache_storage = FindOrCreateCacheStorage(origin);
+  CacheStorage* cache_storage = FindOrCreateCacheStorage(origin, owner);
 
   cache_storage->Size(std::move(callback));
 }
 
 void CacheStorageManager::GetOrigins(
+    CacheStorageOwner owner,
     storage::QuotaClient::GetOriginsCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (IsMemoryBacked()) {
     std::set<url::Origin> origins;
     for (const auto& key_value : cache_storage_map_)
-      origins.insert(key_value.first);
+      if (key_value.first.second == owner)
+        origins.insert(key_value.first.first);
 
     base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), origins));
@@ -358,20 +393,23 @@ void CacheStorageManager::GetOrigins(
 
   PostTaskAndReplyWithResult(
       cache_task_runner_.get(), FROM_HERE,
-      base::BindOnce(&ListOriginsOnTaskRunner, root_path_),
+      base::BindOnce(&ListOriginsOnTaskRunner, root_path_, owner),
       std::move(callback));
 }
 
 void CacheStorageManager::GetOriginsForHost(
     const std::string& host,
+    CacheStorageOwner owner,
     storage::QuotaClient::GetOriginsCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (IsMemoryBacked()) {
     std::set<url::Origin> origins;
     for (const auto& key_value : cache_storage_map_) {
-      if (host == net::GetHostOrSpecFromURL(key_value.first.GetURL()))
-        origins.insert(key_value.first);
+      if (key_value.first.second != owner)
+        continue;
+      if (host == net::GetHostOrSpecFromURL(key_value.first.first.GetURL()))
+        origins.insert(key_value.first.first);
     }
     base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), origins));
@@ -380,38 +418,41 @@ void CacheStorageManager::GetOriginsForHost(
 
   PostTaskAndReplyWithResult(
       cache_task_runner_.get(), FROM_HERE,
-      base::BindOnce(&ListOriginsOnTaskRunner, root_path_),
+      base::BindOnce(&ListOriginsOnTaskRunner, root_path_, owner),
       base::BindOnce(&GetOriginsForHostDidListOrigins, host,
                      std::move(callback)));
 }
 
 void CacheStorageManager::DeleteOriginData(
     const url::Origin& origin,
+    CacheStorageOwner owner,
     storage::QuotaClient::DeletionCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // Create the CacheStorage for the origin if it hasn't been loaded yet.
-  FindOrCreateCacheStorage(origin);
+  FindOrCreateCacheStorage(origin, owner);
 
-  CacheStorageMap::iterator it = cache_storage_map_.find(origin);
+  CacheStorageMap::iterator it = cache_storage_map_.find({origin, owner});
   DCHECK(it != cache_storage_map_.end());
 
   CacheStorage* cache_storage = it->second.release();
   cache_storage->ResetManager();
-  cache_storage_map_.erase(origin);
+  cache_storage_map_.erase({origin, owner});
   cache_storage->GetSizeThenCloseAllCaches(
       base::BindOnce(&CacheStorageManager::DeleteOriginDidClose,
-                     weak_ptr_factory_.GetWeakPtr(), origin,
+                     weak_ptr_factory_.GetWeakPtr(), origin, owner,
                      std::move(callback), base::WrapUnique(cache_storage)));
 }
 
-void CacheStorageManager::DeleteOriginData(const url::Origin& origin) {
+void CacheStorageManager::DeleteOriginData(const url::Origin& origin,
+                                           CacheStorageOwner owner) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  DeleteOriginData(origin, base::DoNothing());
+  DeleteOriginData(origin, owner, base::DoNothing());
 }
 
 void CacheStorageManager::DeleteOriginDidClose(
     const url::Origin& origin,
+    CacheStorageOwner owner,
     storage::QuotaClient::DeletionCallback callback,
     std::unique_ptr<CacheStorage> cache_storage,
     int64_t origin_size) {
@@ -421,9 +462,11 @@ void CacheStorageManager::DeleteOriginDidClose(
   cache_storage.reset();
 
   quota_manager_proxy_->NotifyStorageModified(
-      storage::QuotaClient::kServiceWorkerCache, origin,
+      CacheStorageQuotaClient::GetIDFromOwner(owner), origin,
       blink::mojom::StorageType::kTemporary, -1 * origin_size);
-  NotifyCacheListChanged(origin);
+
+  if (owner == CacheStorageOwner::kCacheAPI)
+    NotifyCacheListChanged(origin);
 
   if (IsMemoryBacked()) {
     base::ThreadTaskRunnerHandle::Get()->PostTask(
@@ -434,7 +477,8 @@ void CacheStorageManager::DeleteOriginDidClose(
 
   PostTaskAndReplyWithResult(
       cache_task_runner_.get(), FROM_HERE,
-      base::BindOnce(&DeleteDir, ConstructOriginPath(root_path_, origin)),
+      base::BindOnce(&DeleteDir,
+                     ConstructOriginPath(root_path_, origin, owner)),
       base::BindOnce(&DeleteOriginDidDeleteDir, std::move(callback)));
 }
 
@@ -447,23 +491,25 @@ CacheStorageManager::CacheStorageManager(
       quota_manager_proxy_(std::move(quota_manager_proxy)),
       weak_ptr_factory_(this) {
   if (quota_manager_proxy_.get()) {
-    quota_manager_proxy_->RegisterClient(
-        new CacheStorageQuotaClient(weak_ptr_factory_.GetWeakPtr()));
+    quota_manager_proxy_->RegisterClient(new CacheStorageQuotaClient(
+        weak_ptr_factory_.GetWeakPtr(), CacheStorageOwner::kCacheAPI));
+    quota_manager_proxy_->RegisterClient(new CacheStorageQuotaClient(
+        weak_ptr_factory_.GetWeakPtr(), CacheStorageOwner::kBackgroundFetch));
   }
 }
 
 CacheStorage* CacheStorageManager::FindOrCreateCacheStorage(
-    const url::Origin& origin) {
+    const url::Origin& origin,
+    CacheStorageOwner owner) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(request_context_getter_);
-  CacheStorageMap::const_iterator it = cache_storage_map_.find(origin);
+  CacheStorageMap::const_iterator it = cache_storage_map_.find({origin, owner});
   if (it == cache_storage_map_.end()) {
     CacheStorage* cache_storage = new CacheStorage(
-        ConstructOriginPath(root_path_, origin), IsMemoryBacked(),
+        ConstructOriginPath(root_path_, origin, owner), IsMemoryBacked(),
         cache_task_runner_.get(), request_context_getter_, quota_manager_proxy_,
-        blob_context_, this, origin);
-    cache_storage_map_.insert(
-        std::make_pair(origin, base::WrapUnique(cache_storage)));
+        blob_context_, this, origin, owner);
+    cache_storage_map_[{origin, owner}] = base::WrapUnique(cache_storage);
     return cache_storage;
   }
   return it->second.get();
@@ -472,8 +518,12 @@ CacheStorage* CacheStorageManager::FindOrCreateCacheStorage(
 // static
 base::FilePath CacheStorageManager::ConstructOriginPath(
     const base::FilePath& root_path,
-    const url::Origin& origin) {
-  const std::string identifier = storage::GetIdentifierFromOrigin(origin);
+    const url::Origin& origin,
+    CacheStorageOwner owner) {
+  std::string identifier = storage::GetIdentifierFromOrigin(origin);
+  if (owner != CacheStorageOwner::kCacheAPI) {
+    identifier += "-" + std::to_string(static_cast<int>(owner));
+  }
   const std::string origin_hash = base::SHA1HashString(identifier);
   const std::string origin_hash_hex = base::ToLowerASCII(
       base::HexEncode(origin_hash.c_str(), origin_hash.length()));

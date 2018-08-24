@@ -168,7 +168,7 @@ std::unique_ptr<net::SSLClientSocket> CastSocketImpl::CreateSslSocket(
   cert_verifier_ = base::WrapUnique(new FakeCertVerifier);
   transport_security_state_.reset(new net::TransportSecurityState);
   cert_transparency_verifier_.reset(new net::MultiLogCTVerifier());
-  ct_policy_enforcer_.reset(new net::CTPolicyEnforcer());
+  ct_policy_enforcer_.reset(new net::DefaultCTPolicyEnforcer());
 
   // Note that |context| fields remain owned by CastSocketImpl.
   net::SSLClientSocketContext context;
@@ -189,7 +189,7 @@ std::unique_ptr<net::SSLClientSocket> CastSocketImpl::CreateSslSocket(
 
 scoped_refptr<net::X509Certificate> CastSocketImpl::ExtractPeerCert() {
   net::SSLInfo ssl_info;
-  if (!socket_->GetSSLInfo(&ssl_info) || !ssl_info.cert.get())
+  if (!socket_->GetSSLInfo(&ssl_info) || !ssl_info.cert)
     return nullptr;
 
   return ssl_info.cert;
@@ -430,7 +430,7 @@ int CastSocketImpl::DoSslConnectComplete(int result) {
     }
 
     // SSL connection succeeded.
-    if (!transport_.get()) {
+    if (!transport_) {
       // Create a channel transport if one wasn't already set (e.g. by test
       // code).
       transport_.reset(new CastTransportImpl(

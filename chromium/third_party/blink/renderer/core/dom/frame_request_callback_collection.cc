@@ -4,7 +4,7 @@
 
 #include "third_party/blink/renderer/core/dom/frame_request_callback_collection.h"
 
-#include "third_party/blink/renderer/core/inspector/InspectorTraceEvents.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 
 namespace blink {
@@ -87,7 +87,7 @@ void FrameRequestCallbackCollection::Trace(blink::Visitor* visitor) {
 }
 
 void FrameRequestCallbackCollection::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+    ScriptWrappableVisitor* visitor) const {
   for (const auto& callback : callbacks_)
     visitor->TraceWrappers(callback);
   for (const auto& callback_to_invoke : callbacks_to_invoke_)
@@ -105,7 +105,7 @@ void FrameRequestCallbackCollection::V8FrameCallback::Trace(
 }
 
 void FrameRequestCallbackCollection::V8FrameCallback::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+    ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(callback_);
   FrameRequestCallbackCollection::FrameCallback::TraceWrappers(visitor);
 }

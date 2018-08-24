@@ -904,7 +904,7 @@ int LayoutTableSection::CalcRowLogicalHeight() {
           row_span_cells.push_back(cell);
         }
 
-        if (cell->HasOverrideLogicalContentHeight()) {
+        if (cell->HasOverrideLogicalHeight()) {
           cell->ClearIntrinsicPadding();
           cell->ClearOverrideSize();
           cell->ForceChildLayout();
@@ -1926,7 +1926,7 @@ void LayoutTableSection::RelayoutCellIfFlexed(LayoutTableCell& cell,
 
   // Alignment within a cell is based off the calculated height, which becomes
   // irrelevant once the cell has been resized based off its percentage.
-  cell.SetOverrideLogicalContentHeightFromRowHeight(LayoutUnit(row_height));
+  cell.SetOverrideLogicalHeightFromRowHeight(LayoutUnit(row_height));
   cell.ForceChildLayout();
 
   // If the baseline moved, we may have to update the data for our row. Find
@@ -2044,10 +2044,6 @@ void LayoutTableSection::AdjustRowForPagination(LayoutTableRow& row_object,
 bool LayoutTableSection::GroupShouldRepeat() const {
   DCHECK(Table()->Header() == this || Table()->Footer() == this);
   if (GetPaginationBreakability() == kAllowAnyBreaks)
-    return false;
-
-  // TODO(rhogan): Sections can be self-painting.
-  if (HasSelfPaintingLayer())
     return false;
 
   // If we don't know the page height yet, just assume we fit.

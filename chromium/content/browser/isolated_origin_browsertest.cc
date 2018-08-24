@@ -6,7 +6,9 @@
 
 #include "base/command_line.h"
 #include "base/macros.h"
+#include "base/strings/string_util.h"
 #include "base/test/scoped_feature_list.h"
+#include "build/build_config.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/storage_partition_impl.h"
@@ -18,6 +20,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/navigation_handle_observer.h"
 #include "content/public/test/test_frame_navigation_observer.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
@@ -26,6 +29,7 @@
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "services/network/public/cpp/features.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -1019,8 +1023,7 @@ class StoragePartitonInterceptor
   // Ensure this object is cleaned up when the process goes away, since it
   // is not owned by anyone else.
   void RenderProcessExited(RenderProcessHost* host,
-                           base::TerminationStatus status,
-                           int exit_code) override {
+                           const ChildProcessTerminationInfo& info) override {
     host->RemoveObserver(this);
     delete this;
   }
@@ -1172,6 +1175,111 @@ IN_PROC_BROWSER_TEST_F(IsolatedOriginLongListTest, Test) {
   EXPECT_NE(main_frame->GetSiteInstance(), subframe2->GetSiteInstance());
   EXPECT_NE(subframe1->GetProcess()->GetID(), subframe2->GetProcess()->GetID());
   EXPECT_NE(subframe1->GetSiteInstance(), subframe2->GetSiteInstance());
+}
+
+// Check that navigating a subframe to an isolated origin error page puts the
+// subframe into an OOPIF and its own SiteInstance.  Also check that a
+// non-isolated error page in a subframe ends up in the correct SiteInstance.
+IN_PROC_BROWSER_TEST_F(IsolatedOriginTest, SubframeErrorPages) {
+  GURL top_url(
+      embedded_test_server()->GetURL("/frame_tree/page_with_two_frames.html"));
+  GURL isolated_url(
+      embedded_test_server()->GetURL("isolated.foo.com", "/close-socket"));
+  GURL regular_url(embedded_test_server()->GetURL("a.com", "/close-socket"));
+
+  EXPECT_TRUE(NavigateToURL(shell(), top_url));
+  FrameTreeNode* root = web_contents()->GetFrameTree()->root();
+  EXPECT_EQ(2u, root->child_count());
+
+  FrameTreeNode* child1 = root->child_at(0);
+  FrameTreeNode* child2 = root->child_at(1);
+
+  {
+    TestFrameNavigationObserver observer(child1);
+    NavigationHandleObserver handle_observer(web_contents(), isolated_url);
+    EXPECT_TRUE(ExecuteScript(
+        child1, "location.href = '" + isolated_url.spec() + "';"));
+    observer.Wait();
+    EXPECT_EQ(child1->current_url(), isolated_url);
+    EXPECT_TRUE(handle_observer.is_error());
+
+    EXPECT_NE(root->current_frame_host()->GetSiteInstance(),
+              child1->current_frame_host()->GetSiteInstance());
+    EXPECT_EQ(GURL(isolated_url.GetOrigin()),
+              child1->current_frame_host()->GetSiteInstance()->GetSiteURL());
+  }
+
+  {
+    TestFrameNavigationObserver observer(child2);
+    NavigationHandleObserver handle_observer(web_contents(), regular_url);
+    EXPECT_TRUE(
+        ExecuteScript(child2, "location.href = '" + regular_url.spec() + "';"));
+    observer.Wait();
+    EXPECT_EQ(child2->current_url(), regular_url);
+    EXPECT_TRUE(handle_observer.is_error());
+    if (AreAllSitesIsolatedForTesting()) {
+      EXPECT_NE(root->current_frame_host()->GetSiteInstance(),
+                child2->current_frame_host()->GetSiteInstance());
+      EXPECT_EQ(SiteInstance::GetSiteForURL(web_contents()->GetBrowserContext(),
+                                            regular_url),
+                child2->current_frame_host()->GetSiteInstance()->GetSiteURL());
+    } else {
+      EXPECT_EQ(root->current_frame_host()->GetSiteInstance(),
+                child2->current_frame_host()->GetSiteInstance());
+    }
+    EXPECT_NE(GURL(kUnreachableWebDataURL),
+              child2->current_frame_host()->GetSiteInstance()->GetSiteURL());
+  }
+}
+
+class IsolatedOriginTestWithMojoBlobURLs : public IsolatedOriginTest {
+ public:
+  IsolatedOriginTestWithMojoBlobURLs() {
+    // Enabling NetworkService implies enabling MojoBlobURLs.
+    scoped_feature_list_.InitAndEnableFeature(
+        network::features::kNetworkService);
+  }
+
+ private:
+  base::test::ScopedFeatureList scoped_feature_list_;
+};
+
+#if defined(OS_ANDROID) || defined(OS_MACOSX)
+// Times out on android, and crashes on mac due to its dependency on network
+// service.
+#define MAYBE_NavigateToBlobURL DISABLED_NavigateToBlobURL
+#else
+#define MAYBE_NavigateToBlobURL NavigateToBlobURL
+#endif
+
+IN_PROC_BROWSER_TEST_F(IsolatedOriginTestWithMojoBlobURLs,
+                       MAYBE_NavigateToBlobURL) {
+  GURL top_url(
+      embedded_test_server()->GetURL("www.foo.com", "/page_with_iframe.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), top_url));
+
+  GURL isolated_url(embedded_test_server()->GetURL("isolated.foo.com",
+                                                   "/page_with_iframe.html"));
+
+  FrameTreeNode* root = web_contents()->GetFrameTree()->root();
+  FrameTreeNode* child = root->child_at(0);
+
+  NavigateIframeToURL(web_contents(), "test_iframe", isolated_url);
+  EXPECT_EQ(child->current_url(), isolated_url);
+  EXPECT_TRUE(child->current_frame_host()->IsCrossProcessSubframe());
+
+  // Now navigate the child frame to a Blob URL.
+  TestNavigationObserver load_observer(shell()->web_contents());
+  EXPECT_TRUE(ExecuteScript(shell()->web_contents()->GetMainFrame(),
+                            "const b = new Blob(['foo']);\n"
+                            "const u = URL.createObjectURL(b);\n"
+                            "frames[0].location = u;\n"
+                            "URL.revokeObjectURL(u);"));
+  load_observer.Wait();
+  EXPECT_TRUE(base::StartsWith(child->current_url().spec(),
+                               "blob:http://www.foo.com",
+                               base::CompareCase::SENSITIVE));
+  EXPECT_TRUE(load_observer.last_navigation_succeeded());
 }
 
 // Ensure that --disable-site-isolation-trials disables field trials.

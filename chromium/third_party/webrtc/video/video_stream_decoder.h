@@ -16,7 +16,7 @@
 #include <memory>
 #include <vector>
 
-#include "api/videosinkinterface.h"
+#include "api/video/video_sink_interface.h"
 #include "modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
 #include "modules/video_coding/include/video_coding_defines.h"
 #include "rtc_base/criticalsection.h"
@@ -26,11 +26,7 @@
 
 namespace webrtc {
 
-class CallStatsObserver;
-class ChannelStatsObserver;
-class EncodedImageCallback;
 class ReceiveStatisticsProxy;
-class VideoRenderCallback;
 
 namespace vcm {
 class VideoReceiver;
@@ -44,8 +40,6 @@ enum StreamType {
 class VideoStreamDecoder : public VCMReceiveCallback,
                            public VCMReceiveStatisticsCallback {
  public:
-  friend class ChannelStatsObserver;
-
   VideoStreamDecoder(
       vcm::VideoReceiver* video_receiver,
       VCMFrameTypeCallback* vcm_frame_type_callback,

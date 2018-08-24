@@ -62,10 +62,8 @@ const DictionaryValue* FindDictionaryWithValue(const ListValue* list,
 
 namespace extensions {
 
-VerifiedContents::VerifiedContents(const uint8_t* public_key,
-                                   size_t public_key_size)
+VerifiedContents::VerifiedContents(base::span<const uint8_t> public_key)
     : public_key_(public_key),
-      public_key_size_(public_key_size),
       valid_signature_(false),  // Guilty until proven innocent.
       block_size_(0) {}
 
@@ -301,22 +299,18 @@ bool VerifiedContents::VerifySignature(const std::string& protected_value,
   crypto::SignatureVerifier signature_verifier;
   if (!signature_verifier.VerifyInit(
           crypto::SignatureVerifier::RSA_PKCS1_SHA256,
-          reinterpret_cast<const uint8_t*>(signature_bytes.data()),
-          signature_bytes.size(), public_key_, public_key_size_)) {
+          base::as_bytes(base::make_span(signature_bytes)), public_key_)) {
     VLOG(1) << "Could not verify signature - VerifyInit failure";
     return false;
   }
 
   signature_verifier.VerifyUpdate(
-      reinterpret_cast<const uint8_t*>(protected_value.data()),
-      protected_value.size());
+      base::as_bytes(base::make_span(protected_value)));
 
   std::string dot(".");
-  signature_verifier.VerifyUpdate(reinterpret_cast<const uint8_t*>(dot.data()),
-                                  dot.size());
+  signature_verifier.VerifyUpdate(base::as_bytes(base::make_span(dot)));
 
-  signature_verifier.VerifyUpdate(
-      reinterpret_cast<const uint8_t*>(payload.data()), payload.size());
+  signature_verifier.VerifyUpdate(base::as_bytes(base::make_span(payload)));
 
   if (!signature_verifier.VerifyFinal()) {
     VLOG(1) << "Could not verify signature - VerifyFinal failure";

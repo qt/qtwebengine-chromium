@@ -13,6 +13,7 @@
 namespace gpu {
 
 class DecoderClient;
+class ServiceTransferCache;
 
 namespace gles2 {
 class CopyTextureCHROMIUMResourceManager;
@@ -66,20 +67,25 @@ class GPU_GLES2_EXPORT RasterDecoder : public DecoderContext,
   bool debug() const { return debug_; }
 
   // Set to true to LOG every command.
-  void set_log_commands(bool log_commands) { log_commands_ = log_commands; }
+  void SetLogCommands(bool log_commands) override;
+  gles2::Outputter* outputter() const override;
   bool log_commands() const { return log_commands_; }
 
   virtual void SetCopyTextureResourceManagerForTest(
       gles2::CopyTextureCHROMIUMResourceManager*
           copy_texture_resource_manager) = 0;
 
+  virtual ServiceTransferCache* GetTransferCacheForTest() = 0;
+
  protected:
-  RasterDecoder(CommandBufferServiceBase* command_buffer_service);
+  RasterDecoder(CommandBufferServiceBase* command_buffer_service,
+                gles2::Outputter* outputter);
 
  private:
-  bool initialized_;
-  bool debug_;
-  bool log_commands_;
+  bool initialized_ = false;
+  bool debug_ = false;
+  bool log_commands_ = false;
+  gles2::Outputter* outputter_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(RasterDecoder);
 };

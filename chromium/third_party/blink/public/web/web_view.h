@@ -31,13 +31,14 @@
 #ifndef THIRD_PARTY_BLINK_PUBLIC_WEB_WEB_VIEW_H_
 #define THIRD_PARTY_BLINK_PUBLIC_WEB_WEB_VIEW_H_
 
+#include "base/time/time.h"
+#include "third_party/blink/public/common/manifest/web_display_mode.h"
 #include "third_party/blink/public/mojom/page/page_visibility_state.mojom-shared.h"
-#include "third_party/blink/public/platform/web_color.h"
-#include "third_party/blink/public/platform/web_display_mode.h"
 #include "third_party/blink/public/platform/web_drag_operation.h"
 #include "third_party/blink/public/platform/web_focus_type.h"
 #include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/public/web/web_widget.h"
+#include "third_party/skia/include/core/SkColor.h"
 
 namespace blink {
 
@@ -363,7 +364,7 @@ class WebView : protected WebWidget {
 
   // Generate a synthetic touch event applying the result of a tap
   // disambiguation popup.
-  virtual void ResolveTapDisambiguation(double timestamp_seconds,
+  virtual void ResolveTapDisambiguation(base::TimeTicks timestamp,
                                         WebPoint tap_viewport_offset,
                                         bool is_long_press) = 0;
 
@@ -411,7 +412,7 @@ class WebView : protected WebWidget {
   // PageOverlay ----------------------------------------------------------
 
   // Overlay this WebView with a solid color.
-  virtual void SetPageOverlayColor(WebColor) = 0;
+  virtual void SetPageOverlayColor(SkColor) = 0;
 
   // Page Importance Signals ----------------------------------------------
 

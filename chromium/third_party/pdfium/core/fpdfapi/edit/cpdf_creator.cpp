@@ -18,8 +18,10 @@
 #include "core/fpdfapi/parser/cpdf_security_handler.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
+#include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_random.h"
+#include "third_party/base/span.h"
 
 namespace {
 
@@ -163,13 +165,12 @@ bool CPDF_Creator::WriteStream(const CPDF_Object* pStream,
                                uint32_t objnum,
                                CPDF_CryptoHandler* pCrypto) {
   CPDF_FlateEncoder encoder(pStream->AsStream(), pStream != m_pMetadata);
-  CPDF_Encryptor encryptor(pCrypto, objnum, encoder.GetData(),
-                           encoder.GetSize());
+  CPDF_Encryptor encryptor(pCrypto, objnum, encoder.GetSpan());
   if (static_cast<uint32_t>(encoder.GetDict()->GetIntegerFor("Length")) !=
-      encryptor.GetSize()) {
+      encryptor.GetSpan().size()) {
     encoder.CloneDict();
-    encoder.GetDict()->SetNewFor<CPDF_Number>(
-        "Length", static_cast<int>(encryptor.GetSize()));
+    encoder.GetClonedDict()->SetNewFor<CPDF_Number>(
+        "Length", static_cast<int>(encryptor.GetSpan().size()));
   }
 
   if (!WriteDirectObj(objnum, encoder.GetDict(), true) ||
@@ -178,8 +179,9 @@ bool CPDF_Creator::WriteStream(const CPDF_Object* pStream,
   }
 
   // Allow for empty streams.
-  if (encryptor.GetSize() > 0 &&
-      !m_Archive->WriteBlock(encryptor.GetData(), encryptor.GetSize())) {
+  if (encryptor.GetSpan().size() > 0 &&
+      !m_Archive->WriteBlock(encryptor.GetSpan().data(),
+                             encryptor.GetSpan().size())) {
     return false;
   }
 
@@ -223,28 +225,30 @@ bool CPDF_Creator::WriteDirectObj(uint32_t objnum,
           return false;
         break;
       }
-      CPDF_Encryptor encryptor(GetCryptoHandler(), objnum,
-                               reinterpret_cast<const uint8_t*>(str.c_str()),
-                               str.GetLength());
+      CPDF_Encryptor encryptor(
+          GetCryptoHandler(), objnum,
+          pdfium::make_span(reinterpret_cast<const uint8_t*>(str.c_str()),
+                            str.GetLength()));
       ByteString content = PDF_EncodeString(
-          ByteString(encryptor.GetData(), encryptor.GetSize()), bHex);
+          ByteString(encryptor.GetSpan().data(), encryptor.GetSpan().size()),
+          bHex);
       if (!m_Archive->WriteString(content.AsStringView()))
         return false;
       break;
     }
     case CPDF_Object::STREAM: {
       CPDF_FlateEncoder encoder(pObj->AsStream(), true);
-      CPDF_Encryptor encryptor(GetCryptoHandler(), objnum, encoder.GetData(),
-                               encoder.GetSize());
+      CPDF_Encryptor encryptor(GetCryptoHandler(), objnum, encoder.GetSpan());
       if (static_cast<uint32_t>(encoder.GetDict()->GetIntegerFor("Length")) !=
-          encryptor.GetSize()) {
+          encryptor.GetSpan().size()) {
         encoder.CloneDict();
-        encoder.GetDict()->SetNewFor<CPDF_Number>(
-            "Length", static_cast<int>(encryptor.GetSize()));
+        encoder.GetClonedDict()->SetNewFor<CPDF_Number>(
+            "Length", static_cast<int>(encryptor.GetSpan().size()));
       }
       if (!WriteDirectObj(objnum, encoder.GetDict(), true) ||
           !m_Archive->WriteString("stream\r\n") ||
-          !m_Archive->WriteBlock(encryptor.GetData(), encryptor.GetSize()) ||
+          !m_Archive->WriteBlock(encryptor.GetSpan().data(),
+                                 encryptor.GetSpan().size()) ||
           !m_Archive->WriteString("\r\nendstream")) {
         return false;
       }
@@ -257,7 +261,7 @@ bool CPDF_Creator::WriteDirectObj(uint32_t objnum,
 
       const CPDF_Array* p = pObj->AsArray();
       for (size_t i = 0; i < p->GetCount(); i++) {
-        CPDF_Object* pElement = p->GetObjectAt(i);
+        const CPDF_Object* pElement = p->GetObjectAt(i);
         if (!pElement->IsInline()) {
           if (!m_Archive->WriteString(" ") ||
               !m_Archive->WriteDWord(pElement->GetObjNum()) ||
@@ -626,7 +630,8 @@ int32_t CPDF_Creator::WriteDoc_Stage4() {
       CPDF_Object* pValue = it.second.get();
       if (key == "Encrypt" || key == "Size" || key == "Filter" ||
           key == "Index" || key == "Length" || key == "Prev" || key == "W" ||
-          key == "XRefStm" || key == "ID") {
+          key == "XRefStm" || key == "ID" || key == "DecodeParms" ||
+          key == "Type") {
         continue;
       }
       if (!m_Archive->WriteString(("/")) ||
@@ -771,7 +776,8 @@ void CPDF_Creator::InitID() {
   bool idArrayPreExisting = !!m_pIDArray;
   if (!idArrayPreExisting) {
     m_pIDArray = pdfium::MakeUnique<CPDF_Array>();
-    CPDF_Object* pID1 = pOldIDArray ? pOldIDArray->GetObjectAt(0) : nullptr;
+    const CPDF_Object* pID1 =
+        pOldIDArray ? pOldIDArray->GetObjectAt(0) : nullptr;
     if (pID1) {
       m_pIDArray->Add(pID1->Clone());
     } else {
@@ -783,7 +789,7 @@ void CPDF_Creator::InitID() {
   }
 
   if (pOldIDArray) {
-    CPDF_Object* pID2 = pOldIDArray->GetObjectAt(1);
+    const CPDF_Object* pID2 = pOldIDArray->GetObjectAt(1);
     if (IsIncremental() && m_pEncryptDict && pID2) {
       m_pIDArray->Add(pID2->Clone());
       return;

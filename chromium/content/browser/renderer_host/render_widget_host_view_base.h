@@ -20,6 +20,7 @@
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/surfaces/scoped_surface_id_allocator.h"
 #include "components/viz/common/surfaces/surface_id.h"
+#include "components/viz/host/hit_test/hit_test_query.h"
 #include "content/browser/renderer_host/event_with_latency_info.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/render_frame_metadata_provider.h"
@@ -29,7 +30,7 @@
 #include "ipc/ipc_listener.h"
 #include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
 #include "services/viz/public/interfaces/hit_test/hit_test_region_list.mojom.h"
-#include "third_party/blink/public/platform/modules/screen_orientation/web_screen_orientation_type.h"
+#include "third_party/blink/public/common/screen_orientation/web_screen_orientation_type.h"
 #include "third_party/blink/public/web/web_popup_type.h"
 #include "third_party/blink/public/web/web_text_direction.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
@@ -65,7 +66,9 @@ class WebMouseWheelEvent;
 }
 
 namespace ui {
+enum class DomCode;
 class LatencyInfo;
+class Layer;
 struct DidOverscrollParams;
 }
 
@@ -78,6 +81,7 @@ namespace content {
 class BrowserAccessibilityDelegate;
 class BrowserAccessibilityManager;
 class CursorManager;
+class MouseWheelPhaseHandler;
 class RenderWidgetHostImpl;
 class RenderWidgetHostViewBaseObserver;
 class SyntheticGestureTarget;
@@ -107,16 +111,18 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
 
   // RenderWidgetHostView implementation.
   RenderWidgetHost* GetRenderWidgetHost() const final;
-  void SetBackgroundColorToDefault() final;
   ui::TextInputClient* GetTextInputClient() override;
   void WasUnOccluded() override {}
   void WasOccluded() override {}
   void SetIsInVR(bool is_in_vr) override;
   base::string16 GetSelectedText() override;
   bool IsMouseLocked() override;
-  bool LockKeyboard(base::Optional<base::flat_set<int>> keys) override;
+  bool LockKeyboard(base::Optional<base::flat_set<ui::DomCode>> codes) override;
+  void SetBackgroundColor(SkColor color) override;
+  base::Optional<SkColor> GetBackgroundColor() const override;
   void UnlockKeyboard() override;
   bool IsKeyboardLocked() override;
+  base::flat_map<std::string, std::string> GetKeyboardLayoutMap() override;
   gfx::Size GetVisibleViewportSize() const override;
   void SetInsets(const gfx::Insets& insets) override;
   bool IsSurfaceAvailableForCopy() const override;
@@ -124,7 +130,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
       const gfx::Rect& src_rect,
       const gfx::Size& output_size,
       base::OnceCallback<void(const SkBitmap&)> callback) override;
-  viz::mojom::FrameSinkVideoCapturerPtr CreateVideoCapturer() override;
+  std::unique_ptr<viz::ClientFrameSinkVideoCapturer> CreateVideoCapturer()
+      override;
   void FocusedNodeTouched(bool editable) override;
   void GetScreenInfo(ScreenInfo* screen_info) const override;
   void EnableAutoResize(const gfx::Size& min_size,
@@ -148,6 +155,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // RenderFrameMetadataProvider::Observer
   void OnRenderFrameMetadataChanged() override;
   void OnRenderFrameSubmission() override;
+  void OnLocalSurfaceIdChanged(
+      const cc::RenderFrameMetadata& metadata) override;
 
   void SetPopupType(blink::WebPopupType popup_type);
 
@@ -174,11 +183,10 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // to nullptr.
   void DidUnregisterFromTextInputManager(TextInputManager* text_input_manager);
 
-  // Informs the view that the renderer has resized to |new_size| because auto-
-  // resize is enabled.
-  virtual viz::ScopedSurfaceIdAllocator ResizeDueToAutoResize(
-      const gfx::Size& new_size,
-      uint64_t sequence_number);
+  // Informs the view that the renderer's visual properties have been updated
+  // and a new viz::LocalSurfaceId has been allocated.
+  virtual viz::ScopedSurfaceIdAllocator DidUpdateVisualProperties(
+      const cc::RenderFrameMetadata& metadata);
 
   virtual bool IsLocalSurfaceIdAllocationSuppressed() const;
 
@@ -195,6 +203,9 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // The requested size of the renderer. May differ from GetViewBounds().size()
   // when the view requires additional throttling.
   virtual gfx::Size GetRequestedRendererSize() const;
+
+  // Returns the current capture sequence number.
+  virtual uint32_t GetCaptureSequenceNumber() const;
 
   // The size of the view's backing surface in non-DPI-adjusted pixels.
   virtual gfx::Size GetCompositorViewportPixelSize() const;
@@ -272,7 +283,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   virtual void SubmitCompositorFrame(
       const viz::LocalSurfaceId& local_surface_id,
       viz::CompositorFrame frame,
-      viz::mojom::HitTestRegionListPtr hit_test_region_list) = 0;
+      base::Optional<viz::HitTestRegionList> hit_test_region_list) = 0;
 
   virtual void OnDidNotProduceFrame(const viz::BeginFrameAck& ack) {}
 
@@ -280,6 +291,10 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // page has been loaded, to prevent the displayed URL from being out of sync
   // with what is visible on screen.
   virtual void ClearCompositorFrame() = 0;
+
+  // Requests a new CompositorFrame from the renderer. This is done by
+  // allocating a new viz::LocalSurfaceId which forces a commit and draw.
+  virtual bool RequestRepaintForTesting();
 
   // Because the associated remote WebKit instance can asynchronously
   // prevent-default on a dispatched touch event, the touch events are queued in
@@ -316,6 +331,9 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
       gfx::PointF* transformed_point,
       bool* out_query_renderer);
 
+  virtual void InjectTouchEvent(const blink::WebTouchEvent& event,
+                                const ui::LatencyInfo& latency) {}
+
   virtual void PreProcessMouseEvent(const blink::WebMouseEvent& event) {}
   virtual void PreProcessTouchEvent(const blink::WebTouchEvent& event) {}
 
@@ -339,7 +357,14 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // spaces of surfaces where one does not contain the other. To transform
   // between sibling surfaces, the point must be transformed to the root's
   // coordinate space as an intermediate step.
-  virtual bool TransformPointToLocalCoordSpace(
+  bool TransformPointToLocalCoordSpace(
+      const gfx::PointF& point,
+      const viz::SurfaceId& original_surface,
+      gfx::PointF* transformed_point,
+      viz::EventSource source = viz::EventSource::ANY);
+
+  // This is deprecated, and will be removed once Viz hit-test is the default.
+  virtual bool TransformPointToLocalCoordSpaceLegacy(
       const gfx::PointF& point,
       const viz::SurfaceId& original_surface,
       gfx::PointF* transformed_point);
@@ -349,7 +374,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   virtual bool TransformPointToCoordSpaceForView(
       const gfx::PointF& point,
       RenderWidgetHostViewBase* target_view,
-      gfx::PointF* transformed_point);
+      gfx::PointF* transformed_point,
+      viz::EventSource source = viz::EventSource::ANY);
 
   // TODO(kenrb, wjmaclean): This is a temporary subclass identifier for
   // RenderWidgetHostViewGuests that is needed for special treatment during
@@ -457,9 +483,9 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // Displays the requested tooltip on the screen.
   virtual void DisplayTooltipText(const base::string16& tooltip_text) {}
 
-  // Returns the offset of the view from the origin of the browser compositor's
+  // Transforms |point| to be in the coordinate space of browser compositor's
   // surface. This is in DIP.
-  virtual gfx::Vector2d GetOffsetFromRootSurface() = 0;
+  virtual void TransformPointToRootSurface(gfx::PointF* point);
 
   // Gets the bounds of the top-level window, in screen coordinates.
   virtual gfx::Rect GetBoundsInRootWindow() = 0;
@@ -477,6 +503,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // of context menu. The view can then perform platform specific tasks and
   // changes.
   virtual void SetShowingContextMenu(bool showing) {}
+
+  virtual void OnAutoscrollStart();
 
   // Returns the associated RenderWidgetHostImpl.
   RenderWidgetHostImpl* host() const { return host_; }
@@ -532,6 +560,11 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // Use only for resize on macOS. Returns true if there is not currently a
   // frame of the view's size being displayed.
   virtual bool ShouldContinueToPauseForFrame();
+
+  // Specify a ui::Layer into which the renderer's content should be
+  // composited. If nullptr is specified, then this layer will create a
+  // separate ui::Compositor as needed (e.g, for tab capture).
+  virtual void SetParentUiLayer(ui::Layer* parent_ui_layer);
 #endif
 
   virtual void DidNavigate();
@@ -542,7 +575,18 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
  protected:
   explicit RenderWidgetHostViewBase(RenderWidgetHost* host);
 
+  // SetContentBackgroundColor is called when the render wants to  update the
+  // view's background color.
+  void SetContentBackgroundColor(SkColor color);
   void NotifyObserversAboutShutdown();
+
+  virtual MouseWheelPhaseHandler* GetMouseWheelPhaseHandler();
+
+  // Applies background color without notifying the RenderWidget about
+  // opaqueness changes. This allows us to, when navigating to a new page,
+  // transfer this color to that page. This allows us to pass this background
+  // color to new views on navigation.
+  virtual void UpdateBackgroundColor() = 0;
 
 #if defined(USE_AURA)
   virtual void ScheduleEmbed(
@@ -592,13 +636,24 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // destroyed before the RWHV is destroyed.
   TextInputManager* text_input_manager_;
 
+  // The background color used in the current renderer.
+  base::Optional<SkColor> content_background_color_;
+
+  // The default background color used before getting the
+  // |content_background_color|.
+  base::Optional<SkColor> default_background_color_;
+
   const bool wheel_scroll_latching_enabled_;
 
   WebContentsAccessibility* web_contents_accessibility_;
 
   bool is_currently_scrolling_viewport_;
 
+  bool use_viz_hit_test_ = false;
+
  private:
+  void SynchronizeVisualProperties();
+
 #if defined(USE_AURA)
   void OnDidScheduleEmbed(int routing_id,
                           int embed_id,
@@ -611,7 +666,22 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // LocalSurfaceId.
   virtual void OnSynchronizedDisplayPropertiesChanged() {}
 
-  void OnResizeDueToAutoResizeComplete(uint64_t sequence_number);
+  // Transforms |point| from |original_view| coord space to |target_view| coord
+  // space. Result is stored in |transformed_point|. Returns true if the
+  // transform is successful, false otherwise.
+  bool TransformPointToTargetCoordSpace(RenderWidgetHostViewBase* original_view,
+                                        RenderWidgetHostViewBase* target_view,
+                                        const gfx::PointF& point,
+                                        gfx::PointF* transformed_point,
+                                        viz::EventSource source) const;
+
+  // Used to transform |point| when Viz hit-test is enabled.
+  // TransformPointToLocalCoordSpaceLegacy is used in non-Viz hit-testing.
+  bool TransformPointToLocalCoordSpaceViz(
+      const gfx::PointF& point,
+      const viz::SurfaceId& original_surface,
+      gfx::PointF* transformed_point,
+      viz::EventSource source);
 
   gfx::Rect current_display_area_;
 

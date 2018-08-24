@@ -121,7 +121,7 @@ class ThreadedImageCursorsFactoryImpl : public ws::ThreadedImageCursorsFactory {
 struct Service::PendingRequest {
   service_manager::BindSourceInfo source_info;
   std::unique_ptr<mojom::WindowTreeFactoryRequest> wtf_request;
-  std::unique_ptr<mojom::DisplayManagerRequest> dm_request;
+  std::unique_ptr<mojom::ScreenProviderRequest> screen_request;
 };
 
 Service::InitParams::InitParams() = default;
@@ -282,8 +282,8 @@ void Service::OnStart() {
                           base::Unretained(this)));
   registry_with_source_info_.AddInterface<mojom::Clipboard>(base::BindRepeating(
       &Service::BindClipboardRequest, base::Unretained(this)));
-  registry_with_source_info_.AddInterface<mojom::DisplayManager>(
-      base::BindRepeating(&Service::BindDisplayManagerRequest,
+  registry_with_source_info_.AddInterface<mojom::ScreenProvider>(
+      base::BindRepeating(&Service::BindScreenProviderRequest,
                           base::Unretained(this)));
   registry_.AddInterface<mojom::IMERegistrar>(base::BindRepeating(
       &Service::BindIMERegistrarRequest, base::Unretained(this)));
@@ -316,8 +316,15 @@ void Service::OnStart() {
 
   // On non-Linux platforms there will be no DeviceDataManager instance and no
   // purpose in adding the Mojo interface to connect to.
-  if (input_device_server_.IsRegisteredAsObserver())
-    input_device_server_.AddInterface(&registry_with_source_info_);
+  if (input_device_server_.IsRegisteredAsObserver()) {
+    registry_.AddInterface<mojom::InputDeviceServer>(base::BindRepeating(
+        &Service::BindInputDeviceServerRequest, base::Unretained(this)));
+  }
+
+#if defined(OS_CHROMEOS)
+  registry_.AddInterface<mojom::TouchDeviceServer>(base::BindRepeating(
+      &Service::BindTouchDeviceServerRequest, base::Unretained(this)));
+#endif  // defined(OS_CHROMEOS)
 
 #if defined(USE_OZONE)
   ui::OzonePlatform::GetInstance()->AddInterfaces(&registry_with_source_info_);
@@ -349,7 +356,7 @@ void Service::OnFirstDisplayReady() {
       BindWindowTreeFactoryRequest(std::move(*request->wtf_request),
                                    request->source_info);
     } else {
-      BindDisplayManagerRequest(std::move(*request->dm_request),
+      BindScreenProviderRequest(std::move(*request->screen_request),
                                 request->source_info);
     }
   }
@@ -423,16 +430,16 @@ void Service::BindClipboardRequest(
   clipboard_->AddBinding(std::move(request));
 }
 
-void Service::BindDisplayManagerRequest(
-    mojom::DisplayManagerRequest request,
+void Service::BindScreenProviderRequest(
+    mojom::ScreenProviderRequest request,
     const service_manager::BindSourceInfo& source_info) {
   // Wait for the DisplayManager to be configured before binding display
   // requests. Otherwise the client sees no displays.
   if (!window_server_->display_manager()->IsReady()) {
     std::unique_ptr<PendingRequest> pending_request(new PendingRequest);
     pending_request->source_info = source_info;
-    pending_request->dm_request.reset(
-        new mojom::DisplayManagerRequest(std::move(request)));
+    pending_request->screen_request =
+        std::make_unique<mojom::ScreenProviderRequest>(std::move(request));
     pending_requests_.push_back(std::move(pending_request));
     return;
   }
@@ -451,6 +458,11 @@ void Service::BindIMERegistrarRequest(mojom::IMERegistrarRequest request) {
 
 void Service::BindIMEDriverRequest(mojom::IMEDriverRequest request) {
   ime_driver_.AddBinding(std::move(request));
+}
+
+void Service::BindInputDeviceServerRequest(
+    mojom::InputDeviceServerRequest request) {
+  input_device_server_.AddBinding(std::move(request));
 }
 
 void Service::BindUserActivityMonitorRequest(
@@ -523,6 +535,12 @@ void Service::BindVideoDetectorRequest(mojom::VideoDetectorRequest request) {
 void Service::BindArcRequest(mojom::ArcRequest request) {
   window_server_->gpu_host()->AddArc(std::move(request));
 }
+
+void Service::BindTouchDeviceServerRequest(
+    mojom::TouchDeviceServerRequest request) {
+  touch_device_server_.AddBinding(std::move(request));
+}
+
 #endif  // defined(OS_CHROMEOS)
 
 }  // namespace ui

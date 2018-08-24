@@ -42,8 +42,7 @@ MojoResult Dispatcher::Arm(uint32_t* num_ready_contexts,
 }
 
 MojoResult Dispatcher::WriteMessage(
-    std::unique_ptr<ports::UserMessageEvent> message,
-    MojoWriteMessageFlags flags) {
+    std::unique_ptr<ports::UserMessageEvent> message) {
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
@@ -61,8 +60,7 @@ MojoResult Dispatcher::DuplicateBufferHandle(
 MojoResult Dispatcher::MapBuffer(
     uint64_t offset,
     uint64_t num_bytes,
-    MojoMapBufferFlags flags,
-    std::unique_ptr<PlatformSharedBufferMapping>* mapping) {
+    std::unique_ptr<PlatformSharedMemoryMapping>* mapping) {
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
@@ -70,15 +68,14 @@ MojoResult Dispatcher::GetBufferInfo(MojoSharedBufferInfo* info) {
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
-MojoResult Dispatcher::ReadData(void* elements,
-                                uint32_t* num_bytes,
-                                MojoReadDataFlags flags) {
+MojoResult Dispatcher::ReadData(const MojoReadDataOptions& options,
+                                void* elements,
+                                uint32_t* num_bytes) {
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
 MojoResult Dispatcher::BeginReadData(const void** buffer,
-                                     uint32_t* buffer_num_bytes,
-                                     MojoReadDataFlags flags) {
+                                     uint32_t* buffer_num_bytes) {
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
@@ -88,13 +85,12 @@ MojoResult Dispatcher::EndReadData(uint32_t num_bytes_read) {
 
 MojoResult Dispatcher::WriteData(const void* elements,
                                  uint32_t* num_bytes,
-                                 MojoWriteDataFlags flags) {
+                                 const MojoWriteDataOptions& options) {
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
 MojoResult Dispatcher::BeginWriteData(void** buffer,
-                                      uint32_t* buffer_num_bytes,
-                                      MojoWriteDataFlags flags) {
+                                      uint32_t* buffer_num_bytes) {
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
@@ -102,22 +98,13 @@ MojoResult Dispatcher::EndWriteData(uint32_t num_bytes_written) {
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
-MojoResult Dispatcher::AddWaitingDispatcher(
-    const scoped_refptr<Dispatcher>& dispatcher,
-    MojoHandleSignals signals,
-    uintptr_t context) {
+MojoResult Dispatcher::AttachMessagePipe(base::StringPiece name,
+                                         ports::PortRef remote_peer_port) {
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
-MojoResult Dispatcher::RemoveWaitingDispatcher(
-    const scoped_refptr<Dispatcher>& dispatcher) {
-  return MOJO_RESULT_INVALID_ARGUMENT;
-}
-
-MojoResult Dispatcher::GetReadyDispatchers(uint32_t* count,
-                                           DispatcherVector* dispatchers,
-                                           MojoResult* results,
-                                           uintptr_t* contexts) {
+MojoResult Dispatcher::ExtractMessagePipe(base::StringPiece name,
+                                          MojoHandle* message_pipe_handle) {
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
@@ -146,7 +133,7 @@ void Dispatcher::StartSerialize(uint32_t* num_bytes,
 
 bool Dispatcher::EndSerialize(void* destination,
                               ports::PortName* ports,
-                              ScopedPlatformHandle* handles) {
+                              ScopedInternalPlatformHandle* handles) {
   LOG(ERROR) << "Attempting to serialize a non-transferrable dispatcher.";
   return true;
 }
@@ -166,7 +153,7 @@ scoped_refptr<Dispatcher> Dispatcher::Deserialize(
     size_t num_bytes,
     const ports::PortName* ports,
     size_t num_ports,
-    ScopedPlatformHandle* platform_handles,
+    ScopedInternalPlatformHandle* platform_handles,
     size_t num_platform_handles) {
   switch (type) {
     case Type::MESSAGE_PIPE:

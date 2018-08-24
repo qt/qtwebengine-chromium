@@ -165,12 +165,9 @@ bool ServiceWorkerContext::ScopeMatches(const GURL& scope, const GURL& url) {
 ServiceWorkerContextWrapper::ServiceWorkerContextWrapper(
     BrowserContext* browser_context)
     : core_observer_list_(
-          new base::ObserverListThreadSafe<ServiceWorkerContextCoreObserver>()),
+          base::MakeRefCounted<ServiceWorkerContextObserverList>()),
       process_manager_(
-          std::make_unique<ServiceWorkerProcessManager>(browser_context)),
-      is_incognito_(false),
-      storage_partition_(nullptr),
-      resource_context_(nullptr) {
+          std::make_unique<ServiceWorkerProcessManager>(browser_context)) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // Add this object as an observer of the wrapped |context_core_|. This lets us
@@ -245,10 +242,11 @@ ResourceContext* ServiceWorkerContextWrapper::resource_context() {
   return resource_context_;
 }
 
-void ServiceWorkerContextWrapper::OnRegistrationStored(int64_t registration_id,
-                                                       const GURL& pattern) {
+void ServiceWorkerContextWrapper::OnRegistrationCompleted(
+    int64_t registration_id,
+    const GURL& pattern) {
   for (auto& observer : observer_list_)
-    observer.OnRegistrationStored(pattern);
+    observer.OnRegistrationCompleted(pattern);
 }
 
 void ServiceWorkerContextWrapper::AddObserver(
@@ -527,7 +525,8 @@ ServiceWorkerContextWrapper::GetProviderHostIds(const GURL& origin) const {
       new std::vector<std::pair<int, int>>());
 
   for (std::unique_ptr<ServiceWorkerContextCore::ProviderHostIterator> it =
-           context_core_->GetClientProviderHostIterator(origin);
+           context_core_->GetClientProviderHostIterator(
+               origin, false /* include_reserved_clients */);
        !it->IsAtEnd(); it->Advance()) {
     ServiceWorkerProviderHost* provider_host = it->GetProviderHost();
     provider_host_ids->push_back(
@@ -858,10 +857,10 @@ void ServiceWorkerContextWrapper::InitInternal(
     quota_manager_proxy->RegisterClient(new ServiceWorkerQuotaClient(this));
   }
 
-  context_core_.reset(new ServiceWorkerContextCore(
+  context_core_ = std::make_unique<ServiceWorkerContextCore>(
       user_data_directory, std::move(database_task_runner), quota_manager_proxy,
       special_storage_policy, loader_factory_getter, core_observer_list_.get(),
-      this));
+      this);
 }
 
 void ServiceWorkerContextWrapper::ShutdownOnIO() {

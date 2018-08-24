@@ -144,20 +144,10 @@ class GPU_EXPORT CommandBufferProxyImpl : public gpu::CommandBuffer,
 
   bool EnsureBackbuffer();
 
-  using SwapBuffersCompletionCallback =
-      base::RepeatingCallback<void(const SwapBuffersCompleteParams& params)>;
-  void SetSwapBuffersCompletionCallback(
-      const SwapBuffersCompletionCallback& callback);
-
   using UpdateVSyncParametersCallback =
       base::Callback<void(base::TimeTicks timebase, base::TimeDelta interval)>;
   void SetUpdateVSyncParametersCallback(
       const UpdateVSyncParametersCallback& callback);
-
-  using PresentationCallback =
-      base::Callback<void(uint64_t swap_id,
-                          const gfx::PresentationFeedback& feedback)>;
-  void SetPresentationCallback(const PresentationCallback& callback);
 
   void SetNeedsVSync(bool needs_vsync);
 
@@ -197,8 +187,6 @@ class GPU_EXPORT CommandBufferProxyImpl : public gpu::CommandBuffer,
   void OnConsoleMessage(const GPUCommandBufferConsoleMessage& message);
   void OnSignalAck(uint32_t id, const CommandBuffer::State& state);
   void OnSwapBuffersCompleted(const SwapBuffersCompleteParams& params);
-  void OnUpdateVSyncParameters(base::TimeTicks timebase,
-                               base::TimeDelta interval);
   void OnBufferPresented(uint64_t swap_id,
                          const gfx::PresentationFeedback& feedback);
   void OnGetGpuFenceHandleComplete(uint32_t gpu_fence_id,
@@ -294,9 +282,7 @@ class GPU_EXPORT CommandBufferProxyImpl : public gpu::CommandBuffer,
 
   bool snapshot_requested_ = false;
 
-  SwapBuffersCompletionCallback swap_buffers_completion_callback_;
   UpdateVSyncParametersCallback update_vsync_parameters_completion_callback_;
-  PresentationCallback presentation_callback_;
 
   using GetGpuFenceTaskMap =
       base::flat_map<uint32_t,

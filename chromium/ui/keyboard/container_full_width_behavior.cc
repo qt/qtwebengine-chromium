@@ -56,7 +56,7 @@ void ContainerFullWidthBehavior::InitializeShowAnimationStartingState(
   container->layer()->SetOpacity(kAnimationStartOrAfterHideOpacity);
 }
 
-const gfx::Rect ContainerFullWidthBehavior::AdjustSetBoundsRequest(
+gfx::Rect ContainerFullWidthBehavior::AdjustSetBoundsRequest(
     const gfx::Rect& display_bounds,
     const gfx::Rect& requested_bounds_in_screen_coords) {
   gfx::Rect new_bounds;
@@ -112,11 +112,12 @@ bool ContainerFullWidthBehavior::TextBlurHidesKeyboard() const {
   return !controller_->keyboard_locked();
 }
 
-bool ContainerFullWidthBehavior::BoundsObscureUsableRegion() const {
-  return true;
+gfx::Rect ContainerFullWidthBehavior::GetOccludedBounds(
+    const gfx::Rect& visual_bounds_in_screen) const {
+  return visual_bounds_in_screen;
 }
 
-bool ContainerFullWidthBehavior::BoundsAffectWorkspaceLayout() const {
+bool ContainerFullWidthBehavior::OccludedBoundsAffectWorkspaceLayout() const {
   return controller_->keyboard_locked();
 }
 

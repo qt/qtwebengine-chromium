@@ -153,8 +153,6 @@ void CFWL_Edit::DrawWidget(CXFA_Graphics* pGraphics, const CFX_Matrix& matrix) {
     return;
 
   IFWL_ThemeProvider* pTheme = m_pProperties->m_pThemeProvider;
-  if (!m_pWidgetMgr->IsFormDisabled())
-    DrawTextBk(pGraphics, pTheme, &matrix);
   DrawContent(pGraphics, pTheme, &matrix);
 
   if (HasBorder())
@@ -236,7 +234,9 @@ Optional<WideString> CFWL_Edit::Cut() {
   if (!m_EdtEngine.HasSelection())
     return {};
 
-  return {m_EdtEngine.DeleteSelectedText()};
+  WideString cut_text = m_EdtEngine.DeleteSelectedText();
+  UpdateCaret();
+  return {cut_text};
 }
 
 bool CFWL_Edit::Paste(const WideString& wsPaste) {
@@ -1074,10 +1074,7 @@ void CFWL_Edit::OnDrawWidget(CXFA_Graphics* pGraphics,
 }
 
 void CFWL_Edit::DoRButtonDown(CFWL_MessageMouse* pMsg) {
-  if ((m_pProperties->m_dwStates & FWL_WGTSTATE_Focused) == 0)
-    SetFocus(true);
-
-  m_CursorPosition = m_EdtEngine.GetIndexForPoint(DeviceToEngine(pMsg->m_pos));
+  SetCursorPosition(m_EdtEngine.GetIndexForPoint(DeviceToEngine(pMsg->m_pos)));
 }
 
 void CFWL_Edit::OnFocusChanged(CFWL_Message* pMsg, bool bSet) {
@@ -1115,9 +1112,6 @@ void CFWL_Edit::OnLButtonDown(CFWL_MessageMouse* pMsg) {
   m_bLButtonDown = true;
   SetGrab(true);
 
-  if ((m_pProperties->m_dwStates & FWL_WGTSTATE_Focused) == 0)
-    SetFocus(true);
-
   bool bRepaint = false;
   if (m_EdtEngine.HasSelection()) {
     m_EdtEngine.ClearSelection();
@@ -1135,7 +1129,7 @@ void CFWL_Edit::OnLButtonDown(CFWL_MessageMouse* pMsg) {
     m_EdtEngine.SetSelection(start, end - start);
     bRepaint = true;
   } else {
-    m_CursorPosition = index_at_click;
+    SetCursorPosition(index_at_click);
   }
 
   if (bRepaint)
@@ -1224,10 +1218,8 @@ void CFWL_Edit::OnKeyDown(CFWL_MessageKey* pMsg) {
         break;
       }
 
-      if (m_CursorPosition > 0) {
-        SetCursorPosition(m_EdtEngine.GetIndexBefore(m_CursorPosition));
-        m_EdtEngine.Delete(m_CursorPosition, 1);
-      }
+      m_EdtEngine.Delete(m_CursorPosition, 1);
+      UpdateCaret();
       break;
     }
     case FWL_VKEY_Insert:
@@ -1253,37 +1245,28 @@ void CFWL_Edit::OnChar(CFWL_MessageKey* pMsg) {
 
   wchar_t c = static_cast<wchar_t>(pMsg->m_dwKeyCode);
   switch (c) {
-    case FWL_VKEY_Back:
+    case L'\b':
       if (m_CursorPosition > 0) {
-        SetCursorPosition(m_EdtEngine.GetIndexBefore(m_CursorPosition));
+        SetCursorPosition(m_CursorPosition - 1);
         m_EdtEngine.Delete(m_CursorPosition, 1);
+        UpdateCaret();
       }
       break;
-    case FWL_VKEY_NewLine:
-    case FWL_VKEY_Escape:
+    case L'\n':
+    case 27:   // Esc
+    case 127:  // Delete
       break;
-    case FWL_VKEY_Tab:
+    case L'\t':
       m_EdtEngine.Insert(m_CursorPosition, L"\t");
       SetCursorPosition(m_CursorPosition + 1);
       break;
-    case FWL_VKEY_Return:
+    case L'\r':
       if (m_pProperties->m_dwStyleExes & FWL_STYLEEXT_EDT_WantReturn) {
         m_EdtEngine.Insert(m_CursorPosition, L"\n");
         SetCursorPosition(m_CursorPosition + 1);
       }
       break;
     default: {
-      if (!m_pWidgetMgr->IsFormDisabled()) {
-        if (m_pProperties->m_dwStyleExes & FWL_STYLEEXT_EDT_Number) {
-          if (((pMsg->m_dwKeyCode < FWL_VKEY_0) &&
-               (pMsg->m_dwKeyCode != 0x2E && pMsg->m_dwKeyCode != 0x2D)) ||
-              pMsg->m_dwKeyCode > FWL_VKEY_9) {
-            break;
-          }
-          if (!ValidateNumberChar(c))
-            break;
-        }
-      }
       if (pMsg->m_dwFlags & kEditingModifier)
         break;
 

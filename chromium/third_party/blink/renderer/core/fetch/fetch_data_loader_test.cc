@@ -55,7 +55,7 @@ constexpr char kQuickBrownFoxFormData[] =
     "Quick brown fox\r\n"
     "--boundary--\r\n";
 constexpr size_t kQuickBrownFoxFormDataLength =
-    WTF_ARRAY_LENGTH(kQuickBrownFoxFormData) - 1u;
+    arraysize(kQuickBrownFoxFormData) - 1u;
 
 TEST(FetchDataLoaderTest, LoadAsBlob) {
   Checkpoint checkpoint;
@@ -426,7 +426,8 @@ TEST(FetchDataLoaderTest, LoadAsFormData) {
   EXPECT_EQ("text/plain; charset=iso-8859-1",
             form_data->Entries()[0]->GetBlob()->type());
 
-  EXPECT_EQ("blob\xC2\xA0without\xC2\xA0type", form_data->Entries()[1]->name());
+  EXPECT_EQ("blob\xC2\xA0without\xC2\xA0type",
+            form_data->Entries()[1]->name().Utf8());
   EXPECT_EQ("blob\xC2\xA0without\xC2\xA0type.txt",
             form_data->Entries()[1]->Filename().Utf8());
   ASSERT_TRUE(form_data->Entries()[1]->isFile());

@@ -103,7 +103,12 @@ void HostImpl::OnDataAvailable(UnixSocket* sock) {
   size_t rsize;
   do {
     auto buf = frame_deserializer.BeginReceive();
-    rsize = client->sock->Receive(buf.data, buf.size);
+    base::ScopedFile fd;
+    rsize = client->sock->Receive(buf.data, buf.size, &fd);
+    if (fd) {
+      PERFETTO_DCHECK(!client->received_fd);
+      client->received_fd = std::move(fd);
+    }
     if (!frame_deserializer.EndReceive(rsize))
       return OnDisconnect(client->sock.get());
   } while (rsize > 0);
@@ -118,11 +123,11 @@ void HostImpl::OnDataAvailable(UnixSocket* sock) {
 
 void HostImpl::OnReceivedFrame(ClientConnection* client,
                                const Frame& req_frame) {
-  if (req_frame.msg_case() == Frame::kMsgBindService) {
+  if (req_frame.msg_case() == Frame::kMsgBindService)
     return OnBindService(client, req_frame);
-  } else if (req_frame.msg_case() == Frame::kMsgInvokeMethod) {
+  if (req_frame.msg_case() == Frame::kMsgInvokeMethod)
     return OnInvokeMethod(client, req_frame);
-  }
+
   PERFETTO_DLOG("Received invalid RPC frame %u from client %" PRIu64,
                 req_frame.msg_case(), client->id);
   Frame reply_frame;
@@ -166,11 +171,11 @@ void HostImpl::OnInvokeMethod(ClientConnection* client,
   Service* service = svc_it->second.instance.get();
   const ServiceDescriptor& svc = service->GetDescriptor();
   const auto& methods = svc.methods;
-  if (req.method_id() <= 0 ||
-      static_cast<uint32_t>(req.method_id()) > methods.size())
+  const uint32_t method_id = req.method_id();
+  if (method_id == 0 || method_id > methods.size())
     return SendFrame(client, reply_frame);
 
-  const ServiceDescriptor::Method& method = methods[req.method_id() - 1];
+  const ServiceDescriptor::Method& method = methods[method_id - 1];
   std::unique_ptr<ProtoMessage> decoded_req_args(
       method.request_proto_decoder(req.args_proto()));
   if (!decoded_req_args)
@@ -179,16 +184,21 @@ void HostImpl::OnInvokeMethod(ClientConnection* client,
   Deferred<ProtoMessage> deferred_reply;
   base::WeakPtr<HostImpl> host_weak_ptr = weak_ptr_factory_.GetWeakPtr();
   ClientID client_id = client->id;
-  deferred_reply.Bind(
-      [host_weak_ptr, client_id, request_id](AsyncResult<ProtoMessage> reply) {
-        if (!host_weak_ptr)
-          return;  // The reply came too late, the HostImpl has gone.
-        host_weak_ptr->ReplyToMethodInvocation(client_id, request_id,
-                                               std::move(reply));
-      });
+
+  if (!req.drop_reply()) {
+    deferred_reply.Bind([host_weak_ptr, client_id,
+                         request_id](AsyncResult<ProtoMessage> reply) {
+      if (!host_weak_ptr)
+        return;  // The reply came too late, the HostImpl has gone.
+      host_weak_ptr->ReplyToMethodInvocation(client_id, request_id,
+                                             std::move(reply));
+    });
+  }
 
   service->client_info_ = ClientInfo(client->id, client->sock->peer_uid());
+  service->received_fd_ = &client->received_fd;
   method.invoker(service, *decoded_req_args, std::move(deferred_reply));
+  service->received_fd_ = nullptr;
   service->client_info_ = ClientInfo();
 }
 
@@ -203,9 +213,9 @@ void HostImpl::ReplyToMethodInvocation(ClientID client_id,
   Frame reply_frame;
   reply_frame.set_request_id(request_id);
 
-  // TODO: add a test to guarantee that the reply is consumed within the same
-  // call stack and not kept around. ConsumerIPCService::OnTraceData() relies
-  // on this behavior.
+  // TODO(fmayer): add a test to guarantee that the reply is consumed within the
+  // same call stack and not kept around. ConsumerIPCService::OnTraceData()
+  // relies on this behavior.
   auto* reply_frame_data = reply_frame.mutable_msg_invoke_method_reply();
   reply_frame_data->set_has_more(reply.has_more());
   if (reply.success()) {

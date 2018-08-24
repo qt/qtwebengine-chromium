@@ -28,6 +28,8 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_HTML_MEDIA_HTML_MEDIA_ELEMENT_H_
 
 #include <memory>
+
+#include "base/optional.h"
 #include "third_party/blink/public/platform/web_audio_source_provider_client.h"
 #include "third_party/blink/public/platform/web_media_player_client.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
@@ -44,7 +46,10 @@
 #include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/web_task_runner.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
+
+namespace cc {
+class Layer;
+}
 
 namespace blink {
 
@@ -74,7 +79,6 @@ class VideoTrack;
 class VideoTrackList;
 class WebAudioSourceProvider;
 class WebInbandTextTrack;
-class WebLayer;
 class WebRemotePlaybackClient;
 
 class CORE_EXPORT HTMLMediaElement
@@ -106,7 +110,7 @@ class CORE_EXPORT HTMLMediaElement
 
   void Trace(blink::Visitor*) override;
 
-  void TraceWrappers(const ScriptWrappableVisitor*) const override;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
   void ClearWeakMembers(Visitor*);
   WebMediaPlayer* GetWebMediaPlayer() const { return web_media_player_.get(); }
@@ -120,7 +124,7 @@ class CORE_EXPORT HTMLMediaElement
 
   bool SupportsSave() const;
 
-  WebLayer* PlatformLayer() const;
+  cc::Layer* CcLayer() const;
 
   enum DelayedActionType {
     kLoadMediaResource = 1 << 0,
@@ -187,11 +191,13 @@ class CORE_EXPORT HTMLMediaElement
   bool Loop() const;
   void SetLoop(bool);
   ScriptPromise playForBindings(ScriptState*);
-  Optional<ExceptionCode> Play();
+  base::Optional<ExceptionCode> Play();
   void pause();
   void RequestRemotePlayback();
   void RequestRemotePlaybackControl();
   void RequestRemotePlaybackStop();
+  void FlingingStarted();
+  void FlingingStopped();
 
   // statistics
   unsigned webkitAudioDecodedByteCount() const;
@@ -211,7 +217,8 @@ class CORE_EXPORT HTMLMediaElement
   bool muted() const;
   void setMuted(bool);
   virtual bool SupportsPictureInPicture() const { return false; }
-  void enterPictureInPicture();
+  void enterPictureInPicture(WebMediaPlayer::PipWindowOpenedCallback callback);
+  void exitPictureInPicture(WebMediaPlayer::PipWindowClosedCallback callback);
 
   void TogglePlayState();
 
@@ -260,8 +267,8 @@ class CORE_EXPORT HTMLMediaElement
   using HTMLElement::GetExecutionContext;
 
   bool HasSingleSecurityOrigin() const {
-    return GetWebMediaPlayer() &&
-           GetWebMediaPlayer()->HasSingleSecurityOrigin();
+    return GetWebMediaPlayer() ? GetWebMediaPlayer()->HasSingleSecurityOrigin()
+                               : true;
   }
 
   bool IsFullscreen() const;
@@ -344,6 +351,11 @@ class CORE_EXPORT HTMLMediaElement
   InsertionNotificationRequest InsertedInto(ContainerNode*) override;
   void RemovedFrom(ContainerNode*) override;
 
+  // Return true if media is cross origin from the current document
+  // and has not passed a cors check, meaning that we should return
+  // as little information as possible about it.
+  bool MediaShouldBeOpaque() const;
+
   void DidMoveToNewDocument(Document& old_document) override;
   virtual KURL PosterImageURL() const { return KURL(); }
 
@@ -391,7 +403,7 @@ class CORE_EXPORT HTMLMediaElement
   void SizeChanged() final;
   void PlaybackStateChanged() final;
 
-  void SetWebLayer(WebLayer*) final;
+  void SetCcLayer(cc::Layer*) final;
   WebMediaPlayer::TrackId AddAudioTrack(const WebString&,
                                         WebMediaPlayerClient::AudioTrackKind,
                                         const WebString&,
@@ -428,6 +440,7 @@ class CORE_EXPORT HTMLMediaElement
   }
   gfx::ColorSpace TargetColorSpace() override;
   bool WasAutoplayInitiated() override;
+  bool IsInAutoPIP() const override { return false; }
 
   void LoadTimerFired(TimerBase*);
   void ProgressEventTimerFired(TimerBase*);
@@ -493,7 +506,7 @@ class CORE_EXPORT HTMLMediaElement
   void UpdatePlayState();
   bool PotentiallyPlaying() const;
   bool StoppedDueToErrors() const;
-  bool CouldPlayIfEnoughData() const;
+  bool CouldPlayIfEnoughData() const override;
 
   // Generally the presence of the loop attribute should be considered to mean
   // playback has not "ended", as "ended" and "looping" are mutually exclusive.
@@ -609,7 +622,7 @@ class CORE_EXPORT HTMLMediaElement
   TaskRunnerTimer<HTMLMediaElement> deferred_load_timer_;
 
   std::unique_ptr<WebMediaPlayer> web_media_player_;
-  WebLayer* web_layer_;
+  cc::Layer* cc_layer_;
 
   DisplayMode display_mode_;
 
@@ -730,6 +743,7 @@ class CORE_EXPORT HTMLMediaElement
   friend class MediaControlsOrientationLockDelegateTest;
   friend class MediaControlsRotateToFullscreenDelegateTest;
   friend class MediaControlLoadingPanelElementTest;
+  friend class ContextMenuControllerTest;
 
   Member<AutoplayPolicy> autoplay_policy_;
 

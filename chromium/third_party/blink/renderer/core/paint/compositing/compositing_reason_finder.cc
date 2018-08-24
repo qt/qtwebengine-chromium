@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/paint/compositing/compositing_reason_finder.h"
 
+#include "third_party/blink/renderer/core/animation/scroll_timeline.h"
 #include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
@@ -177,6 +178,14 @@ CompositingReasons CompositingReasonFinder::NonStyleDeterminedDirectReasons(
   if (RequiresCompositingForScrollDependentPosition(layer, ignore_lcd_text))
     direct_reasons |= CompositingReason::kScrollDependentPosition;
 
+  // TODO(crbug.com/839341): Remove once we support main-thread AnimationWorklet
+  // and don't need to promote the scroll-source.
+  if (layer->GetScrollableArea() && layer->GetLayoutObject().GetNode() &&
+      ScrollTimeline::HasActiveScrollTimeline(
+          layer->GetLayoutObject().GetNode())) {
+    direct_reasons |= CompositingReason::kScrollTimelineTarget;
+  }
+
   direct_reasons |= layout_object.AdditionalCompositingReasons();
 
   DCHECK(
@@ -234,10 +243,8 @@ bool CompositingReasonFinder::RequiresCompositingForRootScroller(
     const PaintLayer& layer) {
   // The root scroller needs composited scrolling layers even if it doesn't
   // actually have scrolling since CC has these assumptions baked in for the
-  // viewport. If we're in non-RootLayerScrolling mode, the root layer will be
-  // the global root scroller (by default) but it doesn't actually handle
-  // scrolls itself so we don't need composited scrolling for it.
-  return RootScrollerUtil::IsGlobal(layer) && !layer.IsScrolledByFrameView();
+  // viewport.
+  return RootScrollerUtil::IsGlobal(layer);
 }
 
 bool CompositingReasonFinder::RequiresCompositingForScrollDependentPosition(

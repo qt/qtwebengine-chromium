@@ -538,12 +538,6 @@ class UIThreadExtensionFunction : public ExtensionFunction {
     service_worker_version_id_ = version_id;
   }
 
-  // Gets the "current" web contents if any. If there is no associated web
-  // contents then defaults to the foremost one.
-  // NOTE: "current" can mean different things in different contexts. You
-  // probably want to use GetSenderWebContents().
-  virtual content::WebContents* GetAssociatedWebContents();
-
   // Returns the web contents associated with the sending |render_frame_host_|.
   // This can be null.
   content::WebContents* GetSenderWebContents();

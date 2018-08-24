@@ -8,7 +8,8 @@
 
 #include "base/bind.h"
 #include "device/fido/authenticator_get_assertion_response.h"
-#include "device/fido/fido_device.h"
+#include "device/fido/fido_authenticator.h"
+#include "device/fido/fido_cable_discovery.h"
 #include "device/fido/get_assertion_task.h"
 
 namespace device {
@@ -20,16 +21,27 @@ GetAssertionRequestHandler::GetAssertionRequestHandler(
     SignResponseCallback completion_callback)
     : FidoRequestHandler(connector, protocols, std::move(completion_callback)),
       request_(std::move(request)),
-      weak_factory_(this) {}
+      weak_factory_(this) {
+  if (base::ContainsKey(
+          protocols, FidoTransportProtocol::kCloudAssistedBluetoothLowEnergy) &&
+      request_.cable_extension()) {
+    auto discovery =
+        std::make_unique<FidoCableDiscovery>(*request_.cable_extension());
+    discovery->set_observer(this);
+    discoveries().push_back(std::move(discovery));
+  }
+
+  Start();
+}
 
 GetAssertionRequestHandler::~GetAssertionRequestHandler() = default;
 
-std::unique_ptr<FidoTask> GetAssertionRequestHandler::CreateTaskForNewDevice(
-    FidoDevice* device) {
-  return std::make_unique<GetAssertionTask>(
-      device, request_,
-      base::BindOnce(&GetAssertionRequestHandler::OnDeviceResponse,
-                     weak_factory_.GetWeakPtr(), device));
+void GetAssertionRequestHandler::DispatchRequest(
+    FidoAuthenticator* authenticator) {
+  authenticator->GetAssertion(
+      request_,
+      base::BindOnce(&GetAssertionRequestHandler::OnAuthenticatorResponse,
+                     weak_factory_.GetWeakPtr(), authenticator));
 }
 
 }  // namespace device

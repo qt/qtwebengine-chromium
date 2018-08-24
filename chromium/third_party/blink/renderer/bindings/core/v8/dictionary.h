@@ -26,7 +26,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_BINDINGS_CORE_V8_DICTIONARY_H_
 #define THIRD_PARTY_BLINK_RENDERER_BINDINGS_CORE_V8_DICTIONARY_H_
 
-#include "third_party/blink/renderer/bindings/core/v8/dictionary_iterator.h"
 #include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/core_export.h"
@@ -36,8 +35,6 @@
 #include "v8/include/v8.h"
 
 namespace blink {
-
-class ExecutionContext;
 
 // Dictionary class provides ways to retrieve property values as C++ objects
 // from a V8 object. Instances of this class must not outlive V8's handle scope
@@ -73,7 +70,7 @@ class CORE_EXPORT Dictionary final {
   }
 
   bool Get(const StringView& key, v8::Local<v8::Value>& value) const {
-    return isolate_ && GetInternal(V8String(isolate_, key), value);
+    return isolate_ && Get(V8String(isolate_, key), value);
   }
   bool Get(const StringView& key,
            v8::Local<v8::Value>& value,
@@ -93,24 +90,26 @@ class CORE_EXPORT Dictionary final {
   //    where the stored value is |undefined|), returns nothing.
   //  - Otherwise, returns the value.
   template <typename IDLType>
-  WTF::Optional<typename IDLType::ImplType> Get(
+  base::Optional<typename IDLType::ImplType> Get(
       const StringView& key,
       ExceptionState& exception_state) const {
     v8::Local<v8::Value> v8_value;
     DCHECK(!exception_state.HadException());
     if (!Get(key, v8_value, exception_state))
-      return WTF::nullopt;
+      return base::nullopt;
     DCHECK(!exception_state.HadException());
     DCHECK(!v8_value.IsEmpty());
     if (v8_value->IsUndefined())
-      return WTF::nullopt;
+      return base::nullopt;
 
     auto value = NativeValueTraits<IDLType>::NativeValue(isolate_, v8_value,
                                                          exception_state);
     if (exception_state.HadException())
-      return WTF::nullopt;
+      return base::nullopt;
     return value;
   }
+
+  bool Get(v8::Local<v8::Value> key, v8::Local<v8::Value>& result) const;
 
   HashMap<String, String> GetOwnPropertiesAsStringHashMap(
       ExceptionState&) const;
@@ -124,11 +123,7 @@ class CORE_EXPORT Dictionary final {
     return isolate_->GetCurrentContext();
   }
 
-  DictionaryIterator GetIterator(ExecutionContext*) const;
-
  private:
-  bool GetInternal(const v8::Local<v8::Value>& key,
-                   v8::Local<v8::Value>& result) const;
   bool GetInternal(const v8::Local<v8::Value>& key,
                    v8::Local<v8::Value>& result,
                    ExceptionState&) const;

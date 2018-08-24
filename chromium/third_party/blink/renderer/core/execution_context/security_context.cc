@@ -63,7 +63,6 @@ void SecurityContext::Trace(blink::Visitor* visitor) {
 void SecurityContext::SetSecurityOrigin(
     scoped_refptr<SecurityOrigin> security_origin) {
   security_origin_ = std::move(security_origin);
-  UpdateFeaturePolicyOrigin();
 }
 
 void SecurityContext::SetContentSecurityPolicy(
@@ -80,10 +79,10 @@ void SecurityContext::ApplySandboxFlags(SandboxFlags mask,
   sandbox_flags_ |= mask;
 
   if (IsSandboxed(kSandboxOrigin) && GetSecurityOrigin() &&
-      !GetSecurityOrigin()->IsUnique()) {
+      !GetSecurityOrigin()->IsOpaque()) {
     scoped_refptr<SecurityOrigin> security_origin =
-        SecurityOrigin::CreateUnique();
-    security_origin->SetUniqueOriginIsPotentiallyTrustworthy(
+        SecurityOrigin::CreateUniqueOpaque();
+    security_origin->SetOpaqueOriginIsPotentiallyTrustworthy(
         is_potentially_trustworthy);
     SetSecurityOrigin(std::move(security_origin));
     DidUpdateSecurityOrigin();
@@ -112,13 +111,6 @@ void SecurityContext::InitializeFeaturePolicy(
   feature_policy_ = FeaturePolicy::CreateFromParentPolicy(
       parent_feature_policy, container_policy, security_origin_->ToUrlOrigin());
   feature_policy_->SetHeaderPolicy(parsed_header);
-}
-
-void SecurityContext::UpdateFeaturePolicyOrigin() {
-  if (!feature_policy_)
-    return;
-  feature_policy_ = FeaturePolicy::CreateFromPolicyWithOrigin(
-      *feature_policy_, security_origin_->ToUrlOrigin());
 }
 
 }  // namespace blink

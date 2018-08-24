@@ -226,7 +226,7 @@ class CORE_EXPORT LayoutTableCell : public LayoutBlockFlow {
   LayoutUnit PaddingLeft() const override;
   LayoutUnit PaddingRight() const override;
 
-  void SetOverrideLogicalContentHeightFromRowHeight(LayoutUnit);
+  void SetOverrideLogicalHeightFromRowHeight(LayoutUnit);
 
   void ScrollbarsChanged(bool horizontal_scrollbar_changed,
                          bool vertical_scrollbar_changed,
@@ -364,6 +364,10 @@ class CORE_EXPORT LayoutTableCell : public LayoutBlockFlow {
   PaintInvalidationReason InvalidatePaint(
       const PaintInvalidatorContext&) const override;
 
+  LayoutSize OffsetFromContainerInternal(
+      const LayoutObject*,
+      bool ignore_scroll_offset) const override;
+
  protected:
   bool IsOfType(LayoutObjectType type) const override {
     return type == kLayoutObjectTableCell || LayoutBlockFlow::IsOfType(type);
@@ -379,8 +383,6 @@ class CORE_EXPORT LayoutTableCell : public LayoutBlockFlow {
   void PaintBoxDecorationBackground(const PaintInfo&,
                                     const LayoutPoint&) const override;
   void PaintMask(const PaintInfo&, const LayoutPoint&) const override;
-
-  LayoutSize OffsetFromContainer(const LayoutObject*) const override;
 
   bool ShouldClipOverflow() const override;
 

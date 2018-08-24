@@ -12,7 +12,6 @@
 #include "base/bind.h"
 #include "base/format_macros.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "media/base/media_log.h"
@@ -215,7 +214,6 @@ class ResourceMultiBufferDataProviderTest : public testing::Test {
     return url_loader;
   }
 
-  base::MessageLoop message_loop_;
   GURL gurl_;
   int64_t first_position_;
 

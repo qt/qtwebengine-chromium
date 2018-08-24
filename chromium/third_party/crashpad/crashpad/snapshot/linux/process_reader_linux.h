@@ -32,7 +32,6 @@
 #include "util/misc/initialization_state_dcheck.h"
 #include "util/posix/process_info.h"
 #include "util/process/process_memory.h"
-#include "util/process/process_memory_linux.h"
 
 namespace crashpad {
 
@@ -44,6 +43,20 @@ class ProcessReaderLinux {
   struct Thread {
     Thread();
     ~Thread();
+
+    //! \brief Initializes the thread's stack using \a stack_pointer instead of
+    //!   the stack pointer in \a thread_info.
+    //!
+    //! This method initializes \a stack_region_address and \a stack_region_size
+    //! overwriting any values they previously contained. This is useful, for
+    //! example, if the thread is currently in a signal handler context, which
+    //! may execute on a different stack than was used before the signal was
+    //! received.
+    //!
+    //! \param[in] reader A process reader for the target process.
+    //! \param[in] stack_pointer The stack pointer for the stack to initialize.
+    void InitializeStackFromSP(ProcessReaderLinux* reader,
+                               LinuxVMAddress stack_pointer);
 
     ThreadInfo thread_info;
     LinuxVMAddress stack_region_address;
@@ -103,7 +116,7 @@ class ProcessReaderLinux {
   pid_t ParentProcessID() const { return process_info_.ParentProcessID(); }
 
   //! \brief Return a memory reader for the target process.
-  ProcessMemory* Memory() { return &process_memory_; }
+  ProcessMemory* Memory() { return connection_->Memory(); }
 
   //! \brief Return a memory map of the target process.
   MemoryMap* GetMemoryMap() { return &memory_map_; }
@@ -146,7 +159,6 @@ class ProcessReaderLinux {
   std::vector<Thread> threads_;
   std::vector<Module> modules_;
   std::vector<std::unique_ptr<ElfImageReader>> elf_readers_;
-  ProcessMemoryLinux process_memory_;
   bool is_64_bit_;
   bool initialized_threads_;
   bool initialized_modules_;

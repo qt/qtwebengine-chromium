@@ -31,6 +31,13 @@ class CONTENT_EXPORT RenderFrameMetadataProvider {
 
     virtual void OnRenderFrameMetadataChanged() = 0;
     virtual void OnRenderFrameSubmission() = 0;
+
+    // Called to indicate that the viz::LocalSurfaceId within the
+    // RenderFrameMetadata has changed. Note that this is called as
+    // soon as |metadata| arrives and does not wait for the frame token
+    // to pass in Viz.
+    virtual void OnLocalSurfaceIdChanged(
+        const cc::RenderFrameMetadata& metadata) = 0;
   };
 
   RenderFrameMetadataProvider() = default;

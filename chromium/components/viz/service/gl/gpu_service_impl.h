@@ -62,7 +62,10 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
                  std::unique_ptr<gpu::GpuWatchdogThread> watchdog,
                  scoped_refptr<base::SingleThreadTaskRunner> io_runner,
                  const gpu::GpuFeatureInfo& gpu_feature_info,
-                 const gpu::GpuPreferences& gpu_preferences);
+                 const gpu::GpuPreferences& gpu_preferences,
+                 const base::Optional<gpu::GPUInfo>& gpu_info_for_hardware_gpu,
+                 const base::Optional<gpu::GpuFeatureInfo>&
+                     gpu_feature_info_for_hardware_gpu);
 
   ~GpuServiceImpl() override;
 
@@ -184,7 +187,8 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
   void GetVideoMemoryUsageStats(
       GetVideoMemoryUsageStatsCallback callback) override;
   void RequestCompleteGpuInfo(RequestCompleteGpuInfoCallback callback) override;
-  void GetGpuSupportedRuntimeVersion() override;
+  void GetGpuSupportedRuntimeVersion(
+      GetGpuSupportedRuntimeVersionCallback callback) override;
   void RequestHDRStatus(RequestHDRStatusCallback callback) override;
   void LoadedShader(const std::string& key, const std::string& data) override;
   void DestroyingVideoSurface(int32_t surface_id,
@@ -192,7 +196,9 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
   void WakeUpGpu() override;
   void GpuSwitched() override;
   void DestroyAllChannels() override;
+  void OnBackgroundCleanup() override;
   void OnBackgrounded() override;
+  void OnForegrounded() override;
   void Crash() override;
   void Hang() override;
   void ThrowJavaException() override;
@@ -225,6 +231,11 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
 
   // Information about general chrome feature support for the GPU.
   gpu::GpuFeatureInfo gpu_feature_info_;
+
+  // What we would have gotten if we haven't fallen back to SwiftShader or
+  // pure software (in the viz case).
+  base::Optional<gpu::GPUInfo> gpu_info_for_hardware_gpu_;
+  base::Optional<gpu::GpuFeatureInfo> gpu_feature_info_for_hardware_gpu_;
 
   scoped_refptr<mojom::ThreadSafeGpuHostPtr> gpu_host_;
   std::unique_ptr<gpu::GpuChannelManager> gpu_channel_manager_;

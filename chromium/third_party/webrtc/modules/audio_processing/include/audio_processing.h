@@ -270,6 +270,13 @@ class AudioProcessing : public rtc::RefCountInterface {
       bool enabled = false;
     } high_pass_filter;
 
+    // Enabled the pre-amplifier. It amplifies the capture signal
+    // before any other processing is done.
+    struct PreAmplifier {
+      bool enabled = false;
+      float fixed_gain_factor = 1.f;
+    } pre_amplifier;
+
     // Enables the next generation AGC functionality. This feature
     // replaces the standard methods of gain control in the previous
     // AGC. This functionality is currently only partially
@@ -300,6 +307,40 @@ class AudioProcessing : public rtc::RefCountInterface {
     kMonoAndKeyboard,
     // Left, right, keyboard, and mic.
     kStereoAndKeyboard
+  };
+
+  // Specifies the properties of a setting to be passed to AudioProcessing at
+  // runtime.
+  class RuntimeSetting {
+   public:
+    enum class Type {
+      kNotSpecified,
+      kCapturePreGain,
+      kCustomRenderProcessingRuntimeSetting
+    };
+
+    RuntimeSetting() : type_(Type::kNotSpecified), value_(0.f) {}
+    ~RuntimeSetting() = default;
+
+    static RuntimeSetting CreateCapturePreGain(float gain) {
+      RTC_DCHECK_GE(gain, 1.f) << "Attenuation is not allowed.";
+      return {Type::kCapturePreGain, gain};
+    }
+
+    static RuntimeSetting CreateCustomRenderSetting(float payload) {
+      return {Type::kCustomRenderProcessingRuntimeSetting, payload};
+    }
+
+    Type type() const { return type_; }
+    void GetFloat(float* value) const {
+      RTC_DCHECK(value);
+      *value = value_;
+    }
+
+   private:
+    RuntimeSetting(Type id, float value) : type_(id), value_(value) {}
+    Type type_;
+    float value_;
   };
 
   ~AudioProcessing() override {}
@@ -358,6 +399,9 @@ class AudioProcessing : public rtc::RefCountInterface {
   // but some components may change behavior based on this information.
   // Default false.
   virtual void set_output_will_be_muted(bool muted) = 0;
+
+  // Enqueue a runtime setting.
+  virtual void SetRuntimeSetting(RuntimeSetting setting) = 0;
 
   // Processes a 10 ms |frame| of the primary audio stream. On the client-side,
   // this is the near-end (or captured) audio.
@@ -1083,6 +1127,9 @@ class CustomProcessing {
   virtual void Process(AudioBuffer* audio) = 0;
   // Returns a string representation of the module state.
   virtual std::string ToString() const = 0;
+  // Handles RuntimeSettings. TODO(webrtc:9262): make pure virtual
+  // after updating dependencies.
+  virtual void SetRuntimeSetting(AudioProcessing::RuntimeSetting setting);
 
   virtual ~CustomProcessing() {}
 };

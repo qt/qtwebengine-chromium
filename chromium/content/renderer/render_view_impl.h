@@ -19,6 +19,7 @@
 #include "base/macros.h"
 #include "base/observer_list.h"
 #include "base/process/process.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_piece.h"
 #include "base/timer/timer.h"
@@ -91,7 +92,7 @@ class RenderViewImplTest;
 class RenderViewObserver;
 class RenderViewTest;
 struct FileChooserParams;
-struct ResizeParams;
+struct VisualProperties;
 
 namespace mojom {
 class CreateViewParams;
@@ -262,7 +263,7 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
                      const blink::WebFloatSize& accumulatedOverscroll,
                      const blink::WebFloatPoint& positionInViewport,
                      const blink::WebFloatSize& velocityInViewport,
-                     const blink::WebOverscrollBehavior& behavior) override;
+                     const cc::OverscrollBehavior& behavior) override;
   void HasTouchEventHandlers(bool has_handlers) override;
   blink::WebScreenInfo GetScreenInfo() override;
   void SetToolTipText(const blink::WebString&,
@@ -341,7 +342,6 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   blink::WebFrameWidget* GetWebFrameWidget() override;
   bool ShouldDisplayScrollbars(int width, int height) const override;
   bool GetContentStateImmediately() const override;
-  void Repaint(const gfx::Size& size) override;
   void SetEditCommandForNextKeyEvent(const std::string& name,
                                      const std::string& value) override;
   void ClearEditCommands() override;
@@ -353,7 +353,6 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
 #endif
   void ConvertViewportToWindowViaWidget(blink::WebRect* rect) override;
   gfx::RectF ElementBoundsInWindow(const blink::WebElement& element) override;
-  bool HasAddedInputHandler() const override;
 
   bool uses_temporary_zoom_level() const { return uses_temporary_zoom_level_; }
 
@@ -378,7 +377,7 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   blink::WebWidget* GetWebWidget() const override;
   void CloseForFrame() override;
   void Close() override;
-  void OnResize(const ResizeParams& params) override;
+  void OnSynchronizeVisualProperties(const VisualProperties& params) override;
   void OnSetFocus(bool enable) override;
   GURL GetURLForGraphicsContext3D() override;
   void DidCommitCompositorFrame() override;
@@ -514,8 +513,8 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   void OnPluginActionAt(const gfx::Point& location,
                         const blink::WebPluginAction& action);
   void OnMoveOrResizeStarted();
-  void OnResolveTapDisambiguation(double timestamp_seconds,
-                                  gfx::Point tap_viewport_offset,
+  void OnResolveTapDisambiguation(base::TimeTicks timestamp,
+                                  const gfx::Point& tap_viewport_offset,
                                   bool is_long_press);
   void OnSetActive(bool active);
   void OnSetBackgroundOpaque(bool opaque);
@@ -555,10 +554,10 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   void SuspendVideoCaptureDevices(bool suspend);
 #endif
 
-#if defined(OS_WIN) || (defined(OS_POSIX) && !defined(OS_MACOSX))
-  void UpdateFontRenderingFromRendererPrefs();
-#else
+#if defined(OS_MACOSX)
   void UpdateFontRenderingFromRendererPrefs() {}
+#else
+  void UpdateFontRenderingFromRendererPrefs();
 #endif
 
   // In OOPIF-enabled modes, this tells each RenderFrame with a pending state
@@ -586,16 +585,9 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
 // Platform specific theme preferences if any are updated here.
 #if defined(OS_WIN)
   void UpdateThemePrefs();
-#else
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   void UpdateThemePrefs() {}
 #endif
-
-  // Send the appropriate ack to be able discard this input event message.
-  void OnDiscardInputEvent(
-      const blink::WebInputEvent* input_event,
-      const std::vector<const blink::WebInputEvent*>& coalesced_events,
-      const ui::LatencyInfo& latency_info,
-      InputEventDispatchType dispatch_type);
 
   // ---------------------------------------------------------------------------
   // ADDING NEW FUNCTIONS? Please keep private functions alphabetized and put

@@ -14,7 +14,7 @@ class RemoteFrameClientImpl final : public RemoteFrameClient {
  public:
   static RemoteFrameClientImpl* Create(WebRemoteFrameImpl*);
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
   // FrameClient overrides:
   bool InShadowTree() const override;
@@ -30,7 +30,8 @@ class RemoteFrameClientImpl final : public RemoteFrameClient {
 
   // RemoteFrameClient overrides:
   void Navigate(const ResourceRequest&,
-                bool should_replace_current_entry) override;
+                bool should_replace_current_entry,
+                mojom::blink::BlobURLTokenPtr) override;
   void Reload(FrameLoadType, ClientRedirectPolicy) override;
   unsigned BackForwardLength() override;
   void CheckCompleted() override;
@@ -44,6 +45,7 @@ class RemoteFrameClientImpl final : public RemoteFrameClient {
   void AdvanceFocus(WebFocusType, LocalFrame*) override;
   void VisibilityChanged(bool visible) override;
   void SetIsInert(bool) override;
+  void SetInheritedEffectiveTouchAction(TouchAction) override;
   void UpdateRenderThrottlingStatus(bool is_throttled,
                                     bool subtree_throttled) override;
   uint32_t Print(const IntRect&, WebCanvas*) const override;

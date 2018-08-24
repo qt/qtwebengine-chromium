@@ -7,7 +7,6 @@
 #include <stddef.h>
 
 #include "content/common/service_worker/service_worker_messages.h"
-#include "content/renderer/service_worker/service_worker_dispatcher.h"
 #include "ipc/ipc_message_macros.h"
 
 namespace content {
@@ -26,8 +25,6 @@ bool ServiceWorkerMessageFilter::ShouldHandleMessage(
 
 void ServiceWorkerMessageFilter::OnFilteredMessageReceived(
     const IPC::Message& msg) {
-  ServiceWorkerDispatcher::GetOrCreateThreadSpecificInstance()
-      ->OnMessageReceived(msg);
 }
 
 bool ServiceWorkerMessageFilter::GetWorkerThreadIdForMessage(

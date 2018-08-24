@@ -7,6 +7,7 @@
 
 #include <stddef.h>
 
+#include <memory>
 #include <string>
 
 #include "base/callback.h"
@@ -44,9 +45,9 @@ class MEDIA_BLINK_EXPORT WebAudioSourceProviderImpl
     : public blink::WebAudioSourceProvider,
       public SwitchableAudioRendererSink {
  public:
-  using CopyAudioCB = base::Callback<void(std::unique_ptr<AudioBus>,
-                                          uint32_t frames_delayed,
-                                          int sample_rate)>;
+  using CopyAudioCB = base::RepeatingCallback<void(std::unique_ptr<AudioBus>,
+                                                   uint32_t frames_delayed,
+                                                   int sample_rate)>;
 
   WebAudioSourceProviderImpl(scoped_refptr<SwitchableAudioRendererSink> sink,
                              MediaLog* media_log);
@@ -68,11 +69,10 @@ class MEDIA_BLINK_EXPORT WebAudioSourceProviderImpl
   bool IsOptimizedForHardwareParameters() override;
   bool CurrentThreadIsRenderingThread() override;
   void SwitchOutputDevice(const std::string& device_id,
-                          const url::Origin& security_origin,
                           const OutputDeviceStatusCB& callback) override;
 
   // These methods allow a client to get a copy of the rendered audio.
-  void SetCopyAudioCallback(const CopyAudioCB& callback);
+  void SetCopyAudioCallback(CopyAudioCB callback);
   void ClearCopyAudioCallback();
 
   int RenderForTesting(AudioBus* audio_bus);

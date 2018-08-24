@@ -71,9 +71,12 @@ class CONTENT_EXPORT InputRouterClient {
       const blink::WebMouseWheelEvent& wheel_event,
       const ui::LatencyInfo& latency_info) = 0;
 
-  // Called when the input router needs a begin frame to advance an active
-  // fling.
-  virtual void SetNeedsBeginFrameForFlingProgress() = 0;
+  // Called to see if there is an ongoing wheel scroll sequence on the client.
+  virtual bool IsWheelScrollInProgress() = 0;
+
+  // Called to toggle whether the RenderWidgetHost should capture all mouse
+  // input.
+  virtual void SetMouseCapture(bool capture) = 0;
 };
 
 } // namespace content

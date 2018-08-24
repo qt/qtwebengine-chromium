@@ -15,6 +15,7 @@
 #include "base/timer/timer.h"
 #include "net/socket/socket_test_util.h"
 #include "net/ssl/ssl_info.h"
+#include "net/test/test_with_scoped_task_environment.h"
 #include "net/websockets/websocket_event_interface.h"
 #include "net/websockets/websocket_test_util.h"
 
@@ -30,7 +31,7 @@ class WebSocketStreamRequest;
 struct WebSocketHandshakeRequestInfo;
 struct WebSocketHandshakeResponseInfo;
 
-class WebSocketStreamCreateTestBase {
+class WebSocketStreamCreateTestBase : public WithScopedTaskEnvironment {
  public:
   using HeaderKeyValuePair = std::pair<std::string, std::string>;
 
@@ -43,7 +44,7 @@ class WebSocketStreamCreateTestBase {
                               const std::vector<std::string>& sub_protocols,
                               const url::Origin& origin,
                               const GURL& site_for_cookies,
-                              const std::string& additional_headers,
+                              const HttpRequestHeaders& additional_headers,
                               std::unique_ptr<base::Timer> timer);
 
   static std::vector<HeaderKeyValuePair> RequestHeadersToVector(

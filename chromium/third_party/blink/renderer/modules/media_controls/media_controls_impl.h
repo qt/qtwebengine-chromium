@@ -75,7 +75,7 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
 
  public:
   static MediaControlsImpl* Create(HTMLMediaElement&, ShadowRoot&);
-  ~MediaControlsImpl() = default;
+  ~MediaControlsImpl() override = default;
 
   // Returns whether the ModernMediaControlsEnabled runtime flag is on.
   static bool IsModern();
@@ -148,13 +148,11 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   void DidDismissDownloadInProductHelp();
   MediaDownloadInProductHelpManager* DownloadInProductHelp();
 
-  void MaybeRecordOverflowTimeToAction();
-
   // Accessors for UI elements.
   const MediaControlCurrentTimeDisplayElement& CurrentTimeDisplay() const;
   MediaControlToggleClosedCaptionsButtonElement& ToggleClosedCaptions();
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
   // Track the state of the controls.
   enum ControlsState {
@@ -220,6 +218,9 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   // Update the CSS class when we think the state has updated.
   void UpdateCSSClassFromState();
 
+  // Sets/removes a CSS class from this element based on |should_have_class|.
+  void SetClass(const AtomicString& class_name, bool should_have_class);
+
   // Get the HTMLVideoElement that the controls are attached to. The caller must
   // check that the element is a video element first.
   HTMLVideoElement& VideoElement();
@@ -259,8 +260,6 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
 
   void ElementSizeChangedTimerFired(TimerBase*);
 
-  void HideAllMenus();
-
   // Hide elements that don't fit, and show those things that we want which
   // do fit.  This requires that m_effectiveWidth and m_effectiveHeight are
   // current.
@@ -268,6 +267,8 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
 
   void UpdateOverflowMenuWanted() const;
   void UpdateScrubbingMessageFits() const;
+  void UpdateSizingCSSClass();
+  void UpdateOverlayPlayButtonWidthCSSVar();
   void MaybeRecordElementsDisplayed() const;
 
   // Takes a popup menu (caption, overflow) and position on the screen. This is
@@ -347,7 +348,6 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   Member<MediaControlDownloadButtonElement> download_button_;
 
   Member<MediaControlsMediaEventListener> media_event_listener_;
-  Member<MediaControlsWindowEventListener> window_event_listener_;
   Member<MediaControlsOrientationLockDelegate> orientation_lock_delegate_;
   Member<MediaControlsRotateToFullscreenDelegate>
       rotate_to_fullscreen_delegate_;
@@ -380,6 +380,10 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   // certain pointer events. In particular, when the user is interacting via
   // touch events, we want to ignore pointerover/pointerout/pointermove events.
   bool is_touch_interaction_ = false;
+
+  // Holds the currently set --overlay-play-button-width value. Used to check if
+  // we need to update.
+  base::Optional<double> overlay_play_button_width_;
 
   bool is_test_mode_ = false;
 };

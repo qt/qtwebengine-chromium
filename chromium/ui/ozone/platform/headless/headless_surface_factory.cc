@@ -92,7 +92,8 @@ class TestPixmap : public gfx::NativePixmap {
                             gfx::OverlayTransform plane_transform,
                             const gfx::Rect& display_bounds,
                             const gfx::RectF& crop_rect,
-                            bool enable_blend) override {
+                            bool enable_blend,
+                            gfx::GpuFence* gpu_fence) override {
     return true;
   }
   gfx::NativePixmapHandle ExportHandle() override {
@@ -143,7 +144,13 @@ base::FilePath HeadlessSurfaceFactory::GetPathForWidget(
     return base_path_;
 
   // Disambiguate multiple window output files with the window id.
+#if defined(OS_WIN)
+  std::string path = base::IntToString(reinterpret_cast<int>(widget)) + ".png";
+  std::wstring wpath(path.begin(), path.end());
+  return base_path_.Append(wpath);
+#else
   return base_path_.Append(base::IntToString(widget) + ".png");
+#endif
 }
 
 std::vector<gl::GLImplementation>

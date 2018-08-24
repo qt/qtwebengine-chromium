@@ -98,8 +98,8 @@ struct PasswordForm {
     MANUAL_SAVE,
     DOM_MUTATION_AFTER_XHR,
     PROVISIONALLY_SAVED_FORM_ON_START_PROVISIONAL_LOAD,
-    FILLED_FORM_ON_START_PROVISIONAL_LOAD,
-    FILLED_INPUT_ELEMENTS_ON_START_PROVISIONAL_LOAD,
+    DEPRECATED_FILLED_FORM_ON_START_PROVISIONAL_LOAD,            // unused
+    DEPRECATED_FILLED_INPUT_ELEMENTS_ON_START_PROVISIONAL_LOAD,  // unused
     SUBMISSION_INDICATOR_EVENT_COUNT
   };
 
@@ -317,9 +317,6 @@ struct PasswordForm {
   // found using affiliation-based match.
   bool is_affiliation_based_match;
 
-  // If true, this form looks like SignUp form according to local heuristics.
-  bool does_look_like_signup_form;
-
   // The type of the event that was taken as an indication that this form is
   // being or has already been submitted. This field is not persisted and filled
   // out only for submitted forms.
@@ -328,6 +325,9 @@ struct PasswordForm {
   // True iff heuristics declined this form for saving (e.g. only credit card
   // fields were found). But this form can be saved only with the fallback.
   bool only_for_fallback_saving;
+
+  // True iff this is Gaia form which should be skipped on saving.
+  bool is_gaia_with_skip_save_password_form;
 
   // Return true if we consider this form to be a change password form.
   // We use only client heuristics, so it could include signup forms.

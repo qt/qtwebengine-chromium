@@ -43,27 +43,25 @@ class PictureInPictureControllerImpl : public PictureInPictureController {
   // request Picture-in-Picture.
   Status IsDocumentAllowed() const;
 
-  // Implementation of PictureInPictureController.
-  Status IsElementAllowed(const HTMLVideoElement&) const override;
+  // Enter Picture-in-Picture for a video element and resolve promise.
+  void EnterPictureInPicture(HTMLVideoElement*, ScriptPromiseResolver*);
 
-  // Meant to be called by HTMLVideoElementPictureInPicture and DOM objects
-  // but not internally.
-  void SetPictureInPictureElement(HTMLVideoElement&);
+  // Meant to be called internally when an element has entered successfully
+  // Picture-in-Picture.
+  void OnEnteredPictureInPicture(HTMLVideoElement*,
+                                 ScriptPromiseResolver*,
+                                 const WebSize& picture_in_picture_window_size);
 
-  // Meant to be called by DocumentPictureInPicture,
-  // HTMLVideoElementPictureInPicture, and DOM objects but not internally.
-  void UnsetPictureInPictureElement();
+  // Exit Picture-in-Picture for a video element and resolve promise if any.
+  void ExitPictureInPicture(HTMLVideoElement*, ScriptPromiseResolver*);
 
   // Returns element currently in Picture-in-Picture if any. Null otherwise.
   Element* PictureInPictureElement(TreeScope&) const;
 
-  // Meant to be called by HTMLVideoElementPictureInPicture, and DOM objects but
-  // not internally. It closes the current Picture-in-Picture window if any.
-  PictureInPictureWindow* CreatePictureInPictureWindow(int width, int height);
-
-  // Meant to be called by DocumentPictureInPicture,
-  // HTMLVideoElementPictureInPicture, and DOM objects but not internally.
-  void OnClosePictureInPictureWindow();
+  // Implementation of PictureInPictureController.
+  void OnExitedPictureInPicture(ScriptPromiseResolver*) override;
+  Status IsElementAllowed(const HTMLVideoElement&) const override;
+  bool IsPictureInPictureElement(const Element*) const override;
 
   void Trace(blink::Visitor*) override;
 

@@ -162,11 +162,9 @@ AudioWorkletProcessor* AudioWorkletGlobalScope::CreateProcessor(
   // the global scope to perform the construction properly.
   v8::Local<v8::Value> result;
   bool did_construct =
-      V8ScriptRunner::CallAsConstructor(isolate,
-                                        definition->ConstructorLocal(isolate),
-                                        ExecutionContext::From(script_state),
-                                        WTF_ARRAY_LENGTH(argv),
-                                        argv)
+      V8ScriptRunner::CallAsConstructor(
+          isolate, definition->ConstructorLocal(isolate),
+          ExecutionContext::From(script_state), arraysize(argv), argv)
           .ToLocal(&result);
   processor_creation_params_.reset();
 
@@ -215,7 +213,7 @@ bool AudioWorkletGlobalScope::Process(
   // 1st arg of JS callback: inputs
   v8::Local<v8::Array> inputs = v8::Array::New(isolate, input_buses->size());
   uint32_t input_bus_index = 0;
-  for (const auto input_bus : *input_buses) {
+  for (auto* const input_bus : *input_buses) {
     // If |input_bus| is null, then the input is not connected, and
     // the array for that input should have one channel and a length
     // of 0.
@@ -258,7 +256,7 @@ bool AudioWorkletGlobalScope::Process(
   // holding v8::ArrayBuffers.
   Vector<Vector<void*>> js_output_raw_ptrs;
   js_output_raw_ptrs.ReserveInitialCapacity(output_buses->size());
-  for (const auto& output_bus : *output_buses) {
+  for (auto* const output_bus : *output_buses) {
     js_output_raw_ptrs.UncheckedAppend(Vector<void*>());
     js_output_raw_ptrs.back().ReserveInitialCapacity(
         output_bus->NumberOfChannels());
@@ -318,8 +316,8 @@ bool AudioWorkletGlobalScope::Process(
   v8::Local<v8::Value> local_result;
   if (!V8ScriptRunner::CallFunction(definition->ProcessLocal(isolate),
                                     ExecutionContext::From(script_state),
-                                    processor_handle, WTF_ARRAY_LENGTH(argv),
-                                    argv, isolate)
+                                    processor_handle, arraysize(argv), argv,
+                                    isolate)
            .ToLocal(&local_result) ||
       block.HasCaught()) {
     // process() method call method call failed for some reason or an exception
@@ -397,7 +395,7 @@ void AudioWorkletGlobalScope::Trace(blink::Visitor* visitor) {
 }
 
 void AudioWorkletGlobalScope::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
+    ScriptWrappableVisitor* visitor) const {
   for (auto definition : processor_definition_map_)
     visitor->TraceWrappers(definition.value);
 

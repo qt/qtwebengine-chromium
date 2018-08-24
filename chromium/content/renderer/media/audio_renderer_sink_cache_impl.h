@@ -23,36 +23,36 @@ namespace content {
 class CONTENT_EXPORT AudioRendererSinkCacheImpl
     : public AudioRendererSinkCache {
  public:
+  class FrameObserver;
+
   // Callback to be used for AudioRendererSink creation
   using CreateSinkCallback =
       base::RepeatingCallback<scoped_refptr<media::AudioRendererSink>(
           int render_frame_id,
           int session_id,
-          const std::string& device_id,
-          const url::Origin& security_origin)>;
+          const std::string& device_id)>;
 
   AudioRendererSinkCacheImpl(
       scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-      const CreateSinkCallback& create_sink_callback,
+      CreateSinkCallback create_sink_callback,
       base::TimeDelta delete_timeout);
 
   ~AudioRendererSinkCacheImpl() final;
 
   media::OutputDeviceInfo GetSinkInfo(int source_render_frame_id,
                                       int session_id,
-                                      const std::string& device_id,
-                                      const url::Origin& security_origin) final;
+                                      const std::string& device_id) final;
 
   scoped_refptr<media::AudioRendererSink> GetSink(
       int source_render_frame_id,
-      const std::string& device_id,
-      const url::Origin& security_origin) final;
+      const std::string& device_id) final;
 
   void ReleaseSink(const media::AudioRendererSink* sink_ptr) final;
 
  private:
   friend class AudioRendererSinkCacheTest;
   friend class CacheEntryFinder;
+  friend class AudioRendererSinkCacheImpl::FrameObserver;
 
   struct CacheEntry;
   using CacheContainer = std::vector<CacheEntry>;
@@ -70,18 +70,21 @@ class CONTENT_EXPORT AudioRendererSinkCacheImpl
   CacheContainer::iterator FindCacheEntry_Locked(
       int source_render_frame_id,
       const std::string& device_id,
-      const url::Origin& security_origin,
       bool unused_only);
 
   void CacheOrStopUnusedSink(int source_render_frame_id,
                              const std::string& device_id,
-                             const url::Origin& security_origin,
                              scoped_refptr<media::AudioRendererSink> sink);
+
+  void DropSinksForFrame(int source_render_frame_id);
 
   // To avoid publishing CacheEntry structure in the header.
   int GetCacheSizeForTesting();
 
-  // Task runner for scheduled sink garbage collection.
+  // Global instance, set in constructor and unset in destructor.
+  static AudioRendererSinkCacheImpl* instance_;
+
+  // Renderer main task runner.
   const scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   // Callback used for sink creation.

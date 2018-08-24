@@ -32,6 +32,8 @@ component("blink") {
     "multibuffer_reader.h",
     "new_session_cdm_result_promise.cc",
     "new_session_cdm_result_promise.h",
+    "remote_playback_client_wrapper_impl.cc",
+    "remote_playback_client_wrapper_impl.h",
     "resource_fetch_context.h",
     "resource_multibuffer_data_provider.cc",
     "resource_multibuffer_data_provider.h",
@@ -75,7 +77,6 @@ component("blink") {
   deps = [
     "//base",
     "//cc",
-    "//cc/blink",
     "//gpu",
     "//media",
     "//media:shared_memory_support",
@@ -110,7 +111,6 @@ test("media_blink_unittests") {
     "//base",
     "//base/test:test_support",
     "//cc",
-    "//cc/blink",
     "//gin",
     "//media:test_support",
     "//media/mojo/interfaces",
@@ -168,5 +168,8 @@ test("media_blink_unittests") {
     } else {
       deps += [ "//v8:v8_external_startup_data_assets" ]
     }
+
+    # KeySystemConfigSelectorTest fails on Android (crbug.com/608541).
+    sources -= [ "key_system_config_selector_unittest.cc" ]
   }
 }

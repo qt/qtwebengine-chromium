@@ -62,12 +62,10 @@ class LayoutEmbeddedObject final : public LayoutEmbeddedContent {
     return type == kLayoutObjectEmbeddedObject ||
            LayoutEmbeddedContent::IsOfType(type);
   }
+  void ComputeIntrinsicSizingInfo(IntrinsicSizingInfo&) const override;
   bool NeedsPreferredWidthsRecalculation() const override;
-  bool GetNestedIntrinsicSizingInfo(IntrinsicSizingInfo&) const override;
 
   PaintLayerType LayerTypeRequired() const final;
-
-  ScrollResult Scroll(ScrollGranularity, const FloatSize&) final;
 
   CompositingReasons AdditionalCompositingReasons() const override;
 

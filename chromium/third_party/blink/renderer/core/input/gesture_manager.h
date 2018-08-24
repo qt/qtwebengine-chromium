@@ -11,8 +11,6 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/layout/hit_test_request.h"
 #include "third_party/blink/renderer/core/page/event_with_hit_test_results.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
-#include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
 
@@ -40,11 +38,6 @@ class CORE_EXPORT GestureManager
       WebInputEvent::Type);
   WebInputEventResult HandleGestureEventInFrame(
       const GestureEventWithHitTestResults&);
-
-  // TODO(nzolghadr): This can probably be hidden and the related logic
-  // be moved to this class (see crrev.com/112023010). Since that might cause
-  // regression it's better to move that logic in another change.
-  WTF::Optional<WTF::TimeTicks> GetLastShowPressTimestamp() const;
 
  private:
   WebInputEventResult HandleGestureShowPress();
@@ -85,7 +78,6 @@ class CORE_EXPORT GestureManager
 
   const Member<SelectionController> selection_controller_;
 
-  WTF::Optional<WTF::TimeTicks> last_show_press_timestamp_;
   DISALLOW_COPY_AND_ASSIGN(GestureManager);
 };
 

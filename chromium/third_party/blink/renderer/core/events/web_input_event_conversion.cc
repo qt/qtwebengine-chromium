@@ -86,7 +86,7 @@ void UpdateWebMouseEventFromCoreMouseEvent(const MouseEvent& event,
                                            const LocalFrameView* plugin_parent,
                                            const LayoutObject* layout_object,
                                            WebMouseEvent& web_event) {
-  web_event.SetTimeStampSeconds(TimeTicksInSeconds(event.PlatformTimeStamp()));
+  web_event.SetTimeStamp(event.PlatformTimeStamp());
   web_event.SetModifiers(event.GetModifiers());
 
   // TODO(bokan): If plugin_parent == nullptr, pointInRootFrame will really be
@@ -191,7 +191,7 @@ WebMouseEventBuilder::WebMouseEventBuilder(const LocalFrameView* plugin_parent,
   else
     return;  // Skip all other mouse events.
 
-  time_stamp_seconds_ = TimeTicksInSeconds(event.PlatformTimeStamp());
+  time_stamp_ = event.PlatformTimeStamp();
   modifiers_ = event.GetModifiers();
   UpdateWebMouseEventFromCoreMouseEvent(event, plugin_parent, layout_object,
                                         *this);
@@ -269,7 +269,7 @@ WebMouseEventBuilder::WebMouseEventBuilder(const LocalFrameView* plugin_parent,
   else
     return;
 
-  time_stamp_seconds_ = TimeTicksInSeconds(event.PlatformTimeStamp());
+  time_stamp_ = event.PlatformTimeStamp();
   modifiers_ = event.GetModifiers();
   frame_scale_ = 1;
   frame_translate_ = WebFloatPoint();
@@ -313,7 +313,7 @@ WebKeyboardEventBuilder::WebKeyboardEventBuilder(const KeyboardEvent& event) {
     return;  // Skip all other keyboard events.
 
   modifiers_ = event.GetModifiers();
-  time_stamp_seconds_ = TimeTicksInSeconds(event.PlatformTimeStamp());
+  time_stamp_ = event.PlatformTimeStamp();
   windows_key_code = event.keyCode();
 }
 
@@ -321,7 +321,7 @@ Vector<WebMouseEvent> TransformWebMouseEventVector(
     LocalFrameView* frame_view,
     const std::vector<const WebInputEvent*>& coalesced_events) {
   Vector<WebMouseEvent> result;
-  for (const auto& event : coalesced_events) {
+  for (auto* const event : coalesced_events) {
     DCHECK(WebInputEvent::IsMouseEventType(event->GetType()));
     result.push_back(TransformWebMouseEvent(
         frame_view, static_cast<const WebMouseEvent&>(*event)));
@@ -335,7 +335,7 @@ Vector<WebPointerEvent> TransformWebPointerEventVector(
   float scale = FrameScale(frame_view);
   FloatPoint translation = FrameTranslation(frame_view);
   Vector<WebPointerEvent> result;
-  for (const auto& event : coalesced_events) {
+  for (auto* const event : coalesced_events) {
     DCHECK(WebInputEvent::IsPointerEventType(event->GetType()));
     result.push_back(TransformWebPointerEvent(
         scale, translation, static_cast<const WebPointerEvent&>(*event)));

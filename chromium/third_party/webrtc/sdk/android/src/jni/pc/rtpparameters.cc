@@ -35,7 +35,8 @@ ScopedJavaLocalRef<jobject> NativeToJavaRtpCodecParameter(
                                 NativeToJavaString(env, codec.name),
                                 NativeToJavaMediaType(env, codec.kind),
                                 NativeToJavaInteger(env, codec.clock_rate),
-                                NativeToJavaInteger(env, codec.num_channels));
+                                NativeToJavaInteger(env, codec.num_channels),
+                                NativeToJavaStringMap(env, codec.parameters));
 }
 
 }  // namespace
@@ -59,6 +60,10 @@ RtpParameters JavaToNativeRtpParameters(JNIEnv* jni,
                                         const JavaRef<jobject>& j_parameters) {
   RtpParameters parameters;
 
+  ScopedJavaLocalRef<jstring> j_transaction_id =
+      Java_RtpParameters_getTransactionId(jni, j_parameters);
+  parameters.transaction_id = JavaToNativeString(jni, j_transaction_id);
+
   // Convert encodings.
   ScopedJavaLocalRef<jobject> j_encodings =
       Java_RtpParameters_getEncodings(jni, j_parameters);
@@ -81,6 +86,9 @@ RtpParameters JavaToNativeRtpParameters(JNIEnv* jni,
         JavaToNativeOptionalInt(jni, Java_Codec_getClockRate(jni, j_codec));
     codec.num_channels =
         JavaToNativeOptionalInt(jni, Java_Codec_getNumChannels(jni, j_codec));
+    auto parameters_map =
+        JavaToNativeStringMap(jni, Java_Codec_getParameters(jni, j_codec));
+    codec.parameters.insert(parameters_map.begin(), parameters_map.end());
     parameters.codecs.push_back(codec);
   }
   return parameters;
@@ -90,7 +98,7 @@ ScopedJavaLocalRef<jobject> NativeToJavaRtpParameters(
     JNIEnv* env,
     const RtpParameters& parameters) {
   return Java_RtpParameters_Constructor(
-      env,
+      env, NativeToJavaString(env, parameters.transaction_id),
       NativeToJavaList(env, parameters.encodings,
                        &NativeToJavaRtpEncodingParameter),
       NativeToJavaList(env, parameters.codecs, &NativeToJavaRtpCodecParameter));

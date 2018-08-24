@@ -148,10 +148,6 @@ struct HEADLESS_EXPORT HeadlessBrowser::Options {
   // string can be used to disable GL rendering (e.g., WebGL support).
   std::string gl_implementation;
 
-  // Names of mojo services exposed by the browser to the renderer. These
-  // services will be added to the browser's service manifest.
-  std::unordered_set<std::string> mojo_service_names;
-
   // Default per-context options, can be specialized on per-context basis.
 
   std::string product_name_and_version;
@@ -178,10 +174,6 @@ struct HEADLESS_EXPORT HeadlessBrowser::Options {
 
   // If true, then all pop-ups and calls to window.open will fail.
   bool block_new_web_contents = false;
-
-  // If set the renderer will be constructed with virtual time enabled and
-  // base::Time::Now will be overridden to initially return this value.
-  base::Optional<base::Time> initial_virtual_time;
 
   // Whether cookies are allowed. Enabled by default.
   bool allow_cookies = true;
@@ -255,7 +247,6 @@ class HEADLESS_EXPORT HeadlessBrowser::Options::Builder {
   Builder& SetDisableSandbox(bool disable_sandbox);
   Builder& SetEnableResourceScheduler(bool enable_resource_scheduler);
   Builder& SetGLImplementation(const std::string& gl_implementation);
-  Builder& AddMojoServiceName(const std::string& mojo_service_name);
   Builder& SetAppendCommandLineFlagsCallback(
       const Options::AppendCommandLineFlagsCallback& callback);
 #if defined(OS_WIN)
@@ -277,7 +268,6 @@ class HEADLESS_EXPORT HeadlessBrowser::Options::Builder {
   Builder& SetIncognitoMode(bool incognito_mode);
   Builder& SetSitePerProcess(bool site_per_process);
   Builder& SetBlockNewWebContents(bool block_new_web_contents);
-  Builder& SetInitialVirtualTime(base::Time initial_virtual_time);
   Builder& SetAllowCookies(bool allow_cookies);
   Builder& SetOverrideWebPreferencesCallback(
       base::RepeatingCallback<void(WebPreferences*)> callback);

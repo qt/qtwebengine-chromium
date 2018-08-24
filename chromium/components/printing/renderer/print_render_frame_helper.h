@@ -127,6 +127,10 @@ class PrintRenderFrameHelper
 
   void PrintNode(const blink::WebNode& node);
 
+  // Get the scale factor. Returns |input_scale_factor| if it is valid and
+  // |is_pdf| is false, and 1.0f otherwise.
+  static double GetScaleFactor(double input_scale_factor, bool is_pdf);
+
  private:
   friend class PrintRenderFrameHelperTestBase;
   FRIEND_TEST_ALL_PREFIXES(MAYBE_PrintRenderFrameHelperPreviewTest,
@@ -182,10 +186,8 @@ class PrintRenderFrameHelper
   bool OnMessageReceived(const IPC::Message& message) override;
 
   // Message handlers ---------------------------------------------------------
-#if BUILDFLAG(ENABLE_BASIC_PRINTING)
   void OnPrintPages();
   void OnPrintForSystemDialog();
-#endif  // BUILDFLAG(ENABLE_BASIC_PRINTING)
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
   void OnInitiatePrintPreview(bool has_selection);
   void OnPrintPreview(const base::DictionaryValue& settings);
@@ -228,14 +230,12 @@ class PrintRenderFrameHelper
 
   // Main printing code -------------------------------------------------------
 
-#if BUILDFLAG(ENABLE_BASIC_PRINTING)
   // Print with the system dialog.
   // |is_scripted| should be true when the call is coming from window.print().
   // WARNING: |this| may be gone after this method returns.
   void Print(blink::WebLocalFrame* frame,
              const blink::WebNode& node,
              bool is_scripted);
-#endif  // BUILDFLAG(ENABLE_BASIC_PRINTING)
 
   // Notification when printing is done - signal tear-down/free resources.
   void DidFinishPrinting(PrintingResult result);
@@ -264,7 +264,6 @@ class PrintRenderFrameHelper
                            const base::DictionaryValue& passed_job_settings);
 #endif  // BUILDFLAG(ENABLE_PRINT_PREVIEW)
 
-#if BUILDFLAG(ENABLE_BASIC_PRINTING)
   // Get final print settings from the user.
   // WARNING: |this| may be gone after this method returns.
   void GetPrintSettingsFromUser(blink::WebLocalFrame* frame,
@@ -272,24 +271,24 @@ class PrintRenderFrameHelper
                                 int expected_pages_count,
                                 bool is_scripted,
                                 PrintMsg_PrintPages_Params* print_settings);
-#endif  // BUILDFLAG(ENABLE_BASIC_PRINTING)
 
   // Page Printing / Rendering ------------------------------------------------
 
-#if BUILDFLAG(ENABLE_BASIC_PRINTING)
   void OnFramePreparedForPrintPages();
   void PrintPages();
-  bool PrintPagesNative(blink::WebLocalFrame* frame, int page_count);
+  bool PrintPagesNative(blink::WebLocalFrame* frame,
+                        int page_count,
+                        bool is_pdf);
   void FinishFramePrinting();
   // Render the frame for printing.
   bool RenderPagesForPrint(blink::WebLocalFrame* frame,
                            const blink::WebNode& node);
-#endif  // BUILDFLAG(ENABLE_BASIC_PRINTING)
 
   // Platform-specific helper function for rendering page(s) to |metafile|.
   void PrintPageInternal(const PrintMsg_Print_Params& params,
                          int page_number,
                          int page_count,
+                         double scale_factor,
                          blink::WebLocalFrame* frame,
                          PdfMetafileSkia* metafile,
                          gfx::Size* page_size_in_dpi,

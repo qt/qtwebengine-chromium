@@ -9,10 +9,10 @@
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/common/capabilities.h"
 #include "gpu/command_buffer/common/gpu_memory_buffer_support.h"
-#include "skia/ext/texture_handle.h"
+#include "gpu/config/gpu_driver_bug_workaround_type.h"
+#include "gpu/config/gpu_feature_info.h"
 #include "third_party/blink/renderer/platform/graphics/accelerated_static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_heuristic_parameters.h"
-#include "third_party/blink/renderer/platform/graphics/canvas_resource.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -23,15 +23,15 @@
 
 namespace blink {
 
-// CanvasResourceProvider_Texture
+// CanvasResourceProviderTexture
 //==============================================================================
 //
 // * Renders to a texture managed by skia. Mailboxes are straight GL textures.
 // * Layers are not overlay candidates
 
-class CanvasResourceProvider_Texture : public CanvasResourceProvider {
+class CanvasResourceProviderTexture : public CanvasResourceProvider {
  public:
-  CanvasResourceProvider_Texture(
+  CanvasResourceProviderTexture(
       const IntSize& size,
       unsigned msaa_sample_count,
       const CanvasColorParams color_params,
@@ -42,16 +42,20 @@ class CanvasResourceProvider_Texture : public CanvasResourceProvider {
                                std::move(context_provider_wrapper)),
         msaa_sample_count_(msaa_sample_count) {}
 
-  virtual ~CanvasResourceProvider_Texture() = default;
+  ~CanvasResourceProviderTexture() override = default;
 
   bool IsValid() const final { return GetSkSurface() && !IsGpuContextLost(); }
   bool IsAccelerated() const final { return true; }
 
   GLuint GetBackingTextureHandleForOverwrite() override {
-    return skia::GrBackendObjectToGrGLTextureInfo(
-               GetSkSurface()->getTextureHandle(
-                   SkSurface::kDiscardWrite_TextureHandleAccess))
-        ->fID;
+    GrBackendTexture backend_texture = GetSkSurface()->getBackendTexture(
+        SkSurface::kDiscardWrite_TextureHandleAccess);
+    if (!backend_texture.isValid())
+      return 0;
+    GrGLTextureInfo info;
+    if (!backend_texture.getGLTextureInfo(&info))
+      return 0;
+    return info.fID;
   }
 
  protected:
@@ -61,7 +65,7 @@ class CanvasResourceProvider_Texture : public CanvasResourceProvider {
     if (IsGpuContextLost())
       return nullptr;
 
-    auto gl = ContextGL();
+    auto* gl = ContextGL();
     DCHECK(gl);
 
     if (ContextProviderWrapper()
@@ -88,18 +92,18 @@ class CanvasResourceProvider_Texture : public CanvasResourceProvider {
     scoped_refptr<StaticBitmapImage> image =
         StaticBitmapImage::Create(skia_image, ContextProviderWrapper());
 
-    scoped_refptr<CanvasResource> resource =
-        CanvasResource_Bitmap::Create(image, CreateWeakPtr(), FilterQuality());
+    scoped_refptr<CanvasResource> resource = CanvasResourceBitmap::Create(
+        image, CreateWeakPtr(), FilterQuality(), ColorParams());
     if (!resource)
       return nullptr;
 
     return resource;
   }
 
-  virtual sk_sp<SkSurface> CreateSkSurface() const {
+  sk_sp<SkSurface> CreateSkSurface() const override {
     if (IsGpuContextLost())
       return nullptr;
-    auto gr = GetGrContext();
+    auto* gr = GetGrContext();
     DCHECK(gr);
 
     SkImageInfo info = SkImageInfo::Make(
@@ -110,35 +114,35 @@ class CanvasResourceProvider_Texture : public CanvasResourceProvider {
                                        ColorParams().GetSkSurfaceProps());
   }
 
-  unsigned msaa_sample_count_;
+  const unsigned msaa_sample_count_;
 };
 
-// CanvasResourceProvider_Texture_GpuMemoryBuffer
+// CanvasResourceProviderTextureGpuMemoryBuffer
 //==============================================================================
 //
 // * Renders to a texture managed by skia. Mailboxes are
 //     gpu-accelerated platform native surfaces.
 // * Layers are overlay candidates
 
-class CanvasResourceProvider_Texture_GpuMemoryBuffer final
-    : public CanvasResourceProvider_Texture {
+class CanvasResourceProviderTextureGpuMemoryBuffer final
+    : public CanvasResourceProviderTexture {
  public:
-  CanvasResourceProvider_Texture_GpuMemoryBuffer(
+  CanvasResourceProviderTextureGpuMemoryBuffer(
       const IntSize& size,
       unsigned msaa_sample_count,
       const CanvasColorParams color_params,
       base::WeakPtr<WebGraphicsContext3DProviderWrapper>
           context_provider_wrapper)
-      : CanvasResourceProvider_Texture(size,
-                                       msaa_sample_count,
-                                       color_params,
-                                       std::move(context_provider_wrapper)) {}
+      : CanvasResourceProviderTexture(size,
+                                      msaa_sample_count,
+                                      color_params,
+                                      std::move(context_provider_wrapper)) {}
 
-  virtual ~CanvasResourceProvider_Texture_GpuMemoryBuffer() = default;
+  ~CanvasResourceProviderTextureGpuMemoryBuffer() override = default;
 
- protected:
+ private:
   scoped_refptr<CanvasResource> CreateResource() final {
-    return CanvasResource_GpuMemoryBuffer::Create(
+    return CanvasResourceGpuMemoryBuffer::Create(
         Size(), ColorParams(), ContextProviderWrapper(), CreateWeakPtr(),
         FilterQuality());
   }
@@ -152,7 +156,7 @@ class CanvasResourceProvider_Texture_GpuMemoryBuffer final
     scoped_refptr<CanvasResource> output_resource = NewOrRecycledResource();
     if (!output_resource) {
       // GpuMemoryBuffer creation failed, fallback to Texture resource
-      return CanvasResourceProvider_Texture::ProduceFrame();
+      return CanvasResourceProviderTexture::ProduceFrame();
     }
 
     sk_sp<SkImage> image = GetSkSurface()->makeImageSnapshot();
@@ -160,33 +164,66 @@ class CanvasResourceProvider_Texture_GpuMemoryBuffer final
       return nullptr;
     DCHECK(image->isTextureBacked());
 
-    GLuint skia_texture_id =
-        skia::GrBackendObjectToGrGLTextureInfo(image->getTextureHandle(true))
-            ->fID;
+    GrBackendTexture backend_texture = image->getBackendTexture(true);
+    DCHECK(backend_texture.isValid());
 
+    GrGLTextureInfo info;
+    if (!backend_texture.getGLTextureInfo(&info))
+      return nullptr;
+
+    GLuint skia_texture_id = info.fID;
     output_resource->CopyFromTexture(skia_texture_id,
                                      ColorParams().GLInternalFormat(),
                                      ColorParams().GLType());
 
     return output_resource;
   }
+
+  void RecycleResource(scoped_refptr<CanvasResource> resource) override {
+    DCHECK(resource->HasOneRef());
+    if (resource_recycling_enabled_)
+      recycled_resources_.push_back(std::move(resource));
+  }
+
+  void SetResourceRecyclingEnabled(bool value) override {
+    resource_recycling_enabled_ = value;
+    if (!resource_recycling_enabled_)
+      ClearRecycledResources();
+  }
+
+  void ClearRecycledResources() { recycled_resources_.clear(); }
+
+  scoped_refptr<CanvasResource> NewOrRecycledResource() {
+    if (recycled_resources_.size()) {
+      scoped_refptr<CanvasResource> resource =
+          std::move(recycled_resources_.back());
+      recycled_resources_.pop_back();
+      // Recycling implies releasing the old content
+      resource->WaitSyncTokenBeforeRelease();
+      return resource;
+    }
+    return CreateResource();
+  }
+
+  WTF::Vector<scoped_refptr<CanvasResource>> recycled_resources_;
+  bool resource_recycling_enabled_ = true;
 };
 
-// CanvasResourceProvider_Bitmap
+// CanvasResourceProviderBitmap
 //==============================================================================
 //
 // * Renders to a skia RAM-backed bitmap
 // * Mailboxing is not supported : cannot be directly composited
 
-class CanvasResourceProvider_Bitmap final : public CanvasResourceProvider {
+class CanvasResourceProviderBitmap final : public CanvasResourceProvider {
  public:
-  CanvasResourceProvider_Bitmap(const IntSize& size,
-                                const CanvasColorParams color_params)
+  CanvasResourceProviderBitmap(const IntSize& size,
+                               const CanvasColorParams color_params)
       : CanvasResourceProvider(size,
                                color_params,
                                nullptr /*context_provider_wrapper*/) {}
 
-  ~CanvasResourceProvider_Bitmap() = default;
+  ~CanvasResourceProviderBitmap() override = default;
 
   bool IsValid() const final { return GetSkSurface(); }
   bool IsAccelerated() const final { return false; }
@@ -203,8 +240,6 @@ class CanvasResourceProvider_Bitmap final : public CanvasResourceProvider {
         kPremul_SkAlphaType, ColorParams().GetSkColorSpaceForSkSurfaces());
     return SkSurface::MakeRaster(info, ColorParams().GetSkSurfaceProps());
   }
-
-  sk_sp<SkSurface> surface_;
 };
 
 // CanvasResourceProvider base class implementation
@@ -266,35 +301,34 @@ std::unique_ptr<CanvasResourceProvider> CanvasResourceProvider::Create(
     switch (resource_type_fallback_list[i]) {
       case kTextureGpuMemoryBufferResourceType:
         DCHECK(SharedGpuContext::IsGpuCompositingEnabled());
-        if (RuntimeEnabledFeatures::Canvas2dImageChromiumEnabled()) {
-          if (!gpu::IsImageFromGpuMemoryBufferFormatSupported(
-                  colorParams.GetBufferFormat(),
-                  context_provider_wrapper->ContextProvider()
-                      ->GetCapabilities()))
-            continue;
-          if (!gpu::IsImageSizeValidForGpuMemoryBufferFormat(
-                  gfx::Size(size), colorParams.GetBufferFormat()))
-            continue;
-          DCHECK(gpu::IsImageFormatCompatibleWithGpuMemoryBufferFormat(
-              colorParams.GLInternalFormat(), colorParams.GetBufferFormat()));
+        if (!RuntimeEnabledFeatures::Canvas2dImageChromiumEnabled())
+          break;
 
-          provider =
-              std::make_unique<CanvasResourceProvider_Texture_GpuMemoryBuffer>(
-                  size, msaa_sample_count, colorParams,
-                  context_provider_wrapper);
+        if (!gpu::IsImageFromGpuMemoryBufferFormatSupported(
+                colorParams.GetBufferFormat(),
+                context_provider_wrapper->ContextProvider()
+                    ->GetCapabilities())) {
+          continue;
         }
+        if (!gpu::IsImageSizeValidForGpuMemoryBufferFormat(
+                gfx::Size(size), colorParams.GetBufferFormat())) {
+          continue;
+        }
+        DCHECK(gpu::IsImageFormatCompatibleWithGpuMemoryBufferFormat(
+            colorParams.GLInternalFormat(), colorParams.GetBufferFormat()));
+
+        provider =
+            std::make_unique<CanvasResourceProviderTextureGpuMemoryBuffer>(
+                size, msaa_sample_count, colorParams, context_provider_wrapper);
         break;
       case kTextureResourceType:
-        // TODO(xlai): Check gpu acclereration mode before using this Resource
-        // Type of CanvasResourceProvider and then Add
-        // "DCHECK(SharedGpuContext::IsGpuCompositingEnabled());" here.
-        // See crbug.com/802053.
-        provider = std::make_unique<CanvasResourceProvider_Texture>(
+        DCHECK(SharedGpuContext::IsGpuCompositingEnabled());
+        provider = std::make_unique<CanvasResourceProviderTexture>(
             size, msaa_sample_count, colorParams, context_provider_wrapper);
         break;
       case kBitmapResourceType:
         provider =
-            std::make_unique<CanvasResourceProvider_Bitmap>(size, colorParams);
+            std::make_unique<CanvasResourceProviderBitmap>(size, colorParams);
         break;
     }
     if (provider && provider->IsValid())
@@ -348,11 +382,11 @@ CanvasResourceProvider::CanvasResourceProvider(
     const IntSize& size,
     const CanvasColorParams& color_params,
     base::WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider_wrapper)
-    : weak_ptr_factory_(this),
-      context_provider_wrapper_(std::move(context_provider_wrapper)),
+    : context_provider_wrapper_(std::move(context_provider_wrapper)),
       size_(size),
       color_params_(color_params),
-      snapshot_paint_image_id_(cc::PaintImage::GetNextId()) {
+      snapshot_paint_image_id_(cc::PaintImage::GetNextId()),
+      weak_ptr_factory_(this) {
   if (context_provider_wrapper_)
     context_provider_wrapper_->AddObserver(this);
 }
@@ -363,9 +397,8 @@ CanvasResourceProvider::~CanvasResourceProvider() {
 }
 
 SkSurface* CanvasResourceProvider::GetSkSurface() const {
-  if (!surface_) {
+  if (!surface_)
     surface_ = CreateSkSurface();
-  }
   return surface_.get();
 }
 
@@ -373,15 +406,20 @@ PaintCanvas* CanvasResourceProvider::Canvas() {
   if (!canvas_) {
     DCHECK(!canvas_image_provider_);
 
-    cc::ImageProvider* image_provider = nullptr;
-    if (ImageDecodeCache()) {
-      canvas_image_provider_.emplace(ImageDecodeCache(),
-                                     ColorParams().GetStorageGfxColorSpace());
-      image_provider = &*canvas_image_provider_;
-    }
+    gfx::ColorSpace target_color_space =
+        ColorParams().NeedsSkColorSpaceXformCanvas()
+            ? ColorParams().GetStorageGfxColorSpace()
+            : gfx::ColorSpace::CreateSRGB();
+
+    canvas_image_provider_.emplace(ImageDecodeCache(), target_color_space);
+    cc::ImageProvider* image_provider = &*canvas_image_provider_;
 
     cc::SkiaPaintCanvas::ContextFlushes context_flushes;
-    if (IsAccelerated()) {
+    if (IsAccelerated() &&
+        !ContextProviderWrapper()
+             ->ContextProvider()
+             ->GetGpuFeatureInfo()
+             .IsWorkaroundEnabled(gpu::DISABLE_2D_CANVAS_AUTO_FLUSH)) {
       context_flushes.enable =
           CanvasHeuristicParameters::kEnableGrContextFlushes;
       context_flushes.max_draws_before_flush =
@@ -390,11 +428,10 @@ PaintCanvas* CanvasResourceProvider::Canvas() {
     if (ColorParams().NeedsSkColorSpaceXformCanvas()) {
       canvas_ = std::make_unique<cc::SkiaPaintCanvas>(
           GetSkSurface()->getCanvas(), ColorParams().GetSkColorSpace(),
-          std::move(image_provider), context_flushes);
+          image_provider, context_flushes);
     } else {
       canvas_ = std::make_unique<cc::SkiaPaintCanvas>(
-          GetSkSurface()->getCanvas(), std::move(image_provider),
-          context_flushes);
+          GetSkSurface()->getCanvas(), image_provider, context_flushes);
     }
   }
 
@@ -459,33 +496,13 @@ void CanvasResourceProvider::FlushSkia() const {
   GetSkSurface()->flush();
 }
 
-void CanvasResourceProvider::RecycleResource(
-    scoped_refptr<CanvasResource> resource) {
-  DCHECK(resource->HasOneRef());
-  if (resource_recycling_enabled_)
-    recycled_resources_.push_back(std::move(resource));
-}
-
-void CanvasResourceProvider::SetResourceRecyclingEnabled(bool value) {
-  resource_recycling_enabled_ = value;
-  if (!resource_recycling_enabled_)
-    ClearRecycledResources();
-}
-
-scoped_refptr<CanvasResource> CanvasResourceProvider::NewOrRecycledResource() {
-  if (recycled_resources_.size()) {
-    scoped_refptr<CanvasResource> resource =
-        std::move(recycled_resources_.back());
-    recycled_resources_.pop_back();
-    // Recycling implies releasing the old content
-    resource->WaitSyncTokenBeforeRelease();
-    return resource;
-  }
-  return CreateResource();
+void CanvasResourceProvider::RecycleResource(scoped_refptr<CanvasResource>) {
+  // To be implemented in subclasses that use resource recycling.
+  NOTREACHED();
 }
 
 bool CanvasResourceProvider::IsGpuContextLost() const {
-  auto gl = ContextGL();
+  auto* gl = ContextGL();
   return !gl || gl->GetGraphicsResetStatusKHR() != GL_NO_ERROR;
 }
 
@@ -504,15 +521,10 @@ void CanvasResourceProvider::Clear() {
   // if this wasn't required, but the canvas is currently filled with the magic
   // transparency color. Can we have another way to manage this?
   DCHECK(IsValid());
-  if (color_params_.GetOpacityMode() == kOpaque) {
+  if (color_params_.GetOpacityMode() == kOpaque)
     Canvas()->clear(SK_ColorBLACK);
-  } else {
+  else
     Canvas()->clear(SK_ColorTRANSPARENT);
-  }
-}
-
-void CanvasResourceProvider::ClearRecycledResources() {
-  recycled_resources_.clear();
 }
 
 void CanvasResourceProvider::InvalidateSurface() {
@@ -533,10 +545,9 @@ scoped_refptr<CanvasResource> CanvasResourceProvider::CreateResource() {
 }
 
 cc::ImageDecodeCache* CanvasResourceProvider::ImageDecodeCache() {
-  // TODO(khushalsagar): Hook up a software cache.
-  if (!context_provider_wrapper_)
-    return nullptr;
-  return context_provider_wrapper_->ContextProvider()->ImageDecodeCache();
+  if (context_provider_wrapper_)
+    return context_provider_wrapper_->ContextProvider()->ImageDecodeCache();
+  return &Image::SharedCCDecodeCache();
 }
 
 }  // namespace blink

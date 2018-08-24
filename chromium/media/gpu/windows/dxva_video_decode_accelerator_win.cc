@@ -46,6 +46,7 @@
 #include "build/build_config.h"
 #include "gpu/command_buffer/service/gpu_preferences.h"
 #include "gpu/config/gpu_driver_bug_workarounds.h"
+#include "media/base/media_log.h"
 #include "media/base/media_switches.h"
 #include "media/base/win/mf_helpers.h"
 #include "media/base/win/mf_initializer.h"
@@ -477,9 +478,7 @@ class H264ConfigChangeDetector : public ConfigChangeDetector {
 };
 
 H264ConfigChangeDetector::H264ConfigChangeDetector()
-    : last_sps_id_(0),
-      last_pps_id_(0),
-      pending_config_changed_(false) {}
+    : last_sps_id_(0), last_pps_id_(0), pending_config_changed_(false) {}
 
 H264ConfigChangeDetector::~H264ConfigChangeDetector() {}
 
@@ -700,7 +699,8 @@ DXVAVideoDecodeAccelerator::DXVAVideoDecodeAccelerator(
     const MakeGLContextCurrentCallback& make_context_current_cb,
     const BindGLImageCallback& bind_image_cb,
     const gpu::GpuDriverBugWorkarounds& workarounds,
-    const gpu::GpuPreferences& gpu_preferences)
+    const gpu::GpuPreferences& gpu_preferences,
+    MediaLog* media_log)
     : client_(NULL),
       dev_manager_reset_token_(0),
       dx11_dev_manager_reset_token_(0),
@@ -712,6 +712,7 @@ DXVAVideoDecodeAccelerator::DXVAVideoDecodeAccelerator(
       get_gl_context_cb_(get_gl_context_cb),
       make_context_current_cb_(make_context_current_cb),
       bind_image_cb_(bind_image_cb),
+      media_log_(media_log),
       codec_(kUnknownVideoCodec),
       decoder_thread_("DXVAVideoDecoderThread"),
       pending_flush_(false),
@@ -892,6 +893,9 @@ bool DXVAVideoDecodeAccelerator::CreateD3DDevManager() {
   if (d3d9_.Get())
     return true;
 
+  if (media_log_)
+    MEDIA_LOG(INFO, media_log_) << __func__ << ": Creating D3D9 device.";
+
   HRESULT hr = E_FAIL;
 
   hr = Direct3DCreate9Ex(D3D_SDK_VERSION, d3d9_.GetAddressOf());
@@ -1039,6 +1043,10 @@ bool DXVAVideoDecodeAccelerator::CreateDX11DevManager() {
   // The device may exist if the last state was a config change.
   if (D3D11Device())
     return true;
+
+  if (media_log_)
+    MEDIA_LOG(INFO, media_log_) << __func__ << ": Creating D3D11 device.";
+
   HRESULT hr = create_dxgi_device_manager_(
       &dx11_dev_manager_reset_token_, d3d11_device_manager_.GetAddressOf());
   RETURN_ON_HR_FAILURE(hr, "MFCreateDXGIDeviceManager failed", false);
@@ -1146,44 +1154,40 @@ bool DXVAVideoDecodeAccelerator::CreateDX11DevManager() {
   return true;
 }
 
-void DXVAVideoDecodeAccelerator::Decode(
-    const BitstreamBuffer& bitstream_buffer) {
+void DXVAVideoDecodeAccelerator::Decode(const BitstreamBuffer& bitstream) {
+  Decode(bitstream.ToDecoderBuffer(), bitstream.id());
+}
+
+void DXVAVideoDecodeAccelerator::Decode(scoped_refptr<DecoderBuffer> buffer,
+                                        int32_t bitstream_id) {
   TRACE_EVENT0("media", "DXVAVideoDecodeAccelerator::Decode");
   DCHECK(main_thread_task_runner_->BelongsToCurrentThread());
 
-  // SharedMemory will take over the ownership of handle.
-  base::SharedMemory shm(bitstream_buffer.handle(), true);
+  RETURN_AND_NOTIFY_ON_FAILURE(bitstream_id >= 0,
+                               "Invalid bitstream, id: " << bitstream_id,
+                               INVALID_ARGUMENT, );
+
+  if (!buffer) {
+    if (client_)
+      client_->NotifyEndOfBitstreamBuffer(bitstream_id);
+    return;
+  }
 
   State state = GetState();
   RETURN_AND_NOTIFY_ON_FAILURE(
       (state == kNormal || state == kStopped || state == kFlushing),
       "Invalid state: " << state, ILLEGAL_STATE, );
-  if (bitstream_buffer.id() < 0) {
-    RETURN_AND_NOTIFY_ON_FAILURE(
-        false, "Invalid bitstream_buffer, id: " << bitstream_buffer.id(),
-        INVALID_ARGUMENT, );
-  }
-
-  if (bitstream_buffer.size() == 0) {
-    if (client_)
-      client_->NotifyEndOfBitstreamBuffer(bitstream_buffer.id());
-    return;
-  }
 
   Microsoft::WRL::ComPtr<IMFSample> sample;
-  RETURN_AND_NOTIFY_ON_FAILURE(shm.Map(bitstream_buffer.size()),
-                               "Failed in base::SharedMemory::Map",
-                               PLATFORM_FAILURE, );
-
   sample = CreateInputSample(
-      reinterpret_cast<const uint8_t*>(shm.memory()), bitstream_buffer.size(),
-      std::min<uint32_t>(bitstream_buffer.size(), input_stream_info_.cbSize),
+      buffer->data(), buffer->data_size(),
+      std::min<uint32_t>(buffer->data_size(), input_stream_info_.cbSize),
       input_stream_info_.cbAlignment);
   RETURN_AND_NOTIFY_ON_FAILURE(sample.Get(), "Failed to create input sample",
                                PLATFORM_FAILURE, );
 
   RETURN_AND_NOTIFY_ON_HR_FAILURE(
-      sample->SetSampleTime(bitstream_buffer.id()),
+      sample->SetSampleTime(bitstream_id),
       "Failed to associate input buffer id with sample", PLATFORM_FAILURE, );
 
   decoder_thread_task_runner_->PostTask(
@@ -1618,7 +1622,7 @@ bool DXVAVideoDecodeAccelerator::InitDecoder(VideoCodecProfile profile) {
         enable_accelerated_vpx_decode_ & gpu::GpuPreferences::VPX_VENDOR_AMD &&
         profile == VP9PROFILE_PROFILE0) {
       base::FilePath dll_path;
-      if (PathService::Get(program_files_key, &dll_path)) {
+      if (base::PathService::Get(program_files_key, &dll_path)) {
         codec_ = media::kCodecVP9;
         dll_path = dll_path.Append(kAMDVPXDecoderDLLPath);
         dll_path = dll_path.Append(kAMDVP9DecoderDLLName);
@@ -1633,8 +1637,8 @@ bool DXVAVideoDecodeAccelerator::InitDecoder(VideoCodecProfile profile) {
     RETURN_ON_FAILURE(false, "Unsupported codec.", false);
   }
 
-  HRESULT hr = CreateCOMObjectFromDll(decoder_dll, clsid,
-                                      IID_PPV_ARGS(&decoder_));
+  HRESULT hr =
+      CreateCOMObjectFromDll(decoder_dll, clsid, IID_PPV_ARGS(&decoder_));
   RETURN_ON_HR_FAILURE(hr, "Failed to create decoder instance", false);
 
   RETURN_ON_FAILURE(CheckDecoderDxvaSupport(),
@@ -1761,6 +1765,8 @@ bool DXVAVideoDecodeAccelerator::CheckDecoderDxvaSupport() {
     UINT32 dx11_aware = 0;
     attributes->GetUINT32(MF_SA_D3D11_AWARE, &dx11_aware);
     use_dx11_ = !!dx11_aware;
+    if (media_log_)
+      MEDIA_LOG(INFO, media_log_) << __func__ << ": Using DX11? " << use_dx11_;
   }
 
   use_keyed_mutex_ =

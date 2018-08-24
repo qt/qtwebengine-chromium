@@ -32,6 +32,7 @@
 #include "third_party/blink/renderer/core/html/forms/slider_thumb_element.h"
 
 #include "third_party/blink/renderer/core/dom/events/event.h"
+#include "third_party/blink/renderer/core/dom/node_computed_style.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/events/mouse_event.h"
 #include "third_party/blink/renderer/core/events/touch_event.h"
@@ -42,8 +43,8 @@
 #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
 #include "third_party/blink/renderer/core/html/shadow/shadow_element_names.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
+#include "third_party/blink/renderer/core/layout/layout_block_flow.h"
 #include "third_party/blink/renderer/core/layout/layout_slider_container.h"
-#include "third_party/blink/renderer/core/layout/layout_slider_thumb.h"
 #include "third_party/blink/renderer/core/layout/layout_theme.h"
 
 namespace blink {
@@ -51,14 +52,13 @@ namespace blink {
 using namespace HTMLNames;
 
 inline static bool HasVerticalAppearance(HTMLInputElement* input) {
-  DCHECK(input->GetLayoutObject());
-  const ComputedStyle& slider_style = input->GetLayoutObject()->StyleRef();
-
-  return slider_style.Appearance() == kSliderVerticalPart;
+  return input->ComputedStyleRef().Appearance() == kSliderVerticalPart;
 }
 
 inline SliderThumbElement::SliderThumbElement(Document& document)
-    : HTMLDivElement(document), in_drag_mode_(false) {}
+    : HTMLDivElement(document), in_drag_mode_(false) {
+  SetHasCustomStyleCallbacks();
+}
 
 SliderThumbElement* SliderThumbElement::Create(Document& document) {
   SliderThumbElement* element = new SliderThumbElement(document);
@@ -76,7 +76,7 @@ void SliderThumbElement::SetPositionFromValue() {
 }
 
 LayoutObject* SliderThumbElement::CreateLayoutObject(const ComputedStyle&) {
-  return new LayoutSliderThumb(this);
+  return new LayoutBlockFlow(this);
 }
 
 bool SliderThumbElement::IsDisabledFormControl() const {
@@ -315,6 +315,26 @@ const AtomicString& SliderThumbElement::ShadowPseudoId() const {
   }
 }
 
+scoped_refptr<ComputedStyle> SliderThumbElement::CustomStyleForLayoutObject() {
+  Element* host = OwnerShadowHost();
+  DCHECK(host);
+  const ComputedStyle& host_style = host->ComputedStyleRef();
+  scoped_refptr<ComputedStyle> style = OriginalStyleForLayoutObject();
+
+  if (host_style.Appearance() == kSliderVerticalPart)
+    style->SetAppearance(kSliderThumbVerticalPart);
+  else if (host_style.Appearance() == kSliderHorizontalPart)
+    style->SetAppearance(kSliderThumbHorizontalPart);
+  else if (host_style.Appearance() == kMediaSliderPart)
+    style->SetAppearance(kMediaSliderThumbPart);
+  else if (host_style.Appearance() == kMediaVolumeSliderPart)
+    style->SetAppearance(kMediaVolumeSliderThumbPart);
+  if (style->HasAppearance())
+    LayoutTheme::GetTheme().AdjustSliderThumbSize(*style);
+
+  return style;
+}
+
 // --------------------------------
 
 inline SliderContainerElement::SliderContainerElement(Document& document)
@@ -323,6 +343,7 @@ inline SliderContainerElement::SliderContainerElement(Document& document)
       touch_started_(false),
       sliding_direction_(kNoMove) {
   UpdateTouchEventHandlerRegistry();
+  SetHasCustomStyleCallbacks();
 }
 
 DEFINE_NODE_FACTORY(SliderContainerElement)
@@ -456,7 +477,7 @@ void SliderContainerElement::UpdateTouchEventHandlerRegistry() {
   if (GetDocument().GetPage() &&
       GetDocument().Lifecycle().GetState() < DocumentLifecycle::kStopping) {
     EventHandlerRegistry& registry =
-        GetDocument().GetPage()->GetEventHandlerRegistry();
+        GetDocument().GetFrame()->GetEventHandlerRegistry();
     registry.DidAddEventHandler(
         *this, EventHandlerRegistry::kTouchStartOrMoveEventPassive);
     registry.DidAddEventHandler(*this, EventHandlerRegistry::kPointerEvent);
@@ -472,6 +493,16 @@ void SliderContainerElement::DidMoveToNewDocument(Document& old_document) {
 void SliderContainerElement::RemoveAllEventListeners() {
   Node::RemoveAllEventListeners();
   has_touch_event_handler_ = false;
+}
+
+scoped_refptr<ComputedStyle>
+SliderContainerElement::CustomStyleForLayoutObject() {
+  HTMLInputElement* input = HostInput();
+  DCHECK(input);
+  scoped_refptr<ComputedStyle> style = OriginalStyleForLayoutObject();
+  style->SetFlexDirection(HasVerticalAppearance(input) ? EFlexDirection::kColumn
+                                                       : EFlexDirection::kRow);
+  return style;
 }
 
 }  // namespace blink

@@ -7,7 +7,6 @@
 #include <memory>
 
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "chrome/common/extensions/extension_test_util.h"
 #include "chromeos/login/scoped_test_public_session_login_state.h"
 #include "content/public/browser/resource_request_info.h"
@@ -199,14 +198,14 @@ TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest,
                             NULL, TRAFFIC_ANNOTATION_FOR_TESTS));
 
   EXPECT_EQ(
-      PermissionsData::ACCESS_ALLOWED,
+      PermissionsData::PageAccess::kAllowed,
       WebRequestPermissions::CanExtensionAccessURL(
           extension_info_map_.get(), permissionless_extension_->id(),
           request->url(),
           -1,     // No tab id.
           false,  // crosses_incognito
           WebRequestPermissions::DO_NOT_CHECK_HOST, request->initiator()));
-  EXPECT_EQ(PermissionsData::ACCESS_DENIED,
+  EXPECT_EQ(PermissionsData::PageAccess::kDenied,
             WebRequestPermissions::CanExtensionAccessURL(
                 extension_info_map_.get(), permissionless_extension_->id(),
                 request->url(),
@@ -214,7 +213,7 @@ TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest,
                 false,  // crosses_incognito
                 WebRequestPermissions::REQUIRE_HOST_PERMISSION_FOR_URL,
                 request->initiator()));
-  EXPECT_EQ(PermissionsData::ACCESS_ALLOWED,
+  EXPECT_EQ(PermissionsData::PageAccess::kAllowed,
             WebRequestPermissions::CanExtensionAccessURL(
                 extension_info_map_.get(), com_extension_->id(), request->url(),
                 -1,     // No tab id.
@@ -222,14 +221,14 @@ TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest,
                 WebRequestPermissions::REQUIRE_HOST_PERMISSION_FOR_URL,
                 request->initiator()));
   EXPECT_EQ(
-      PermissionsData::ACCESS_ALLOWED,
+      PermissionsData::PageAccess::kAllowed,
       WebRequestPermissions::CanExtensionAccessURL(
           extension_info_map_.get(), com_extension_->id(), request->url(),
           -1,     // No tab id.
           false,  // crosses_incognito
           WebRequestPermissions::REQUIRE_HOST_PERMISSION_FOR_URL_AND_INITIATOR,
           request->initiator()));
-  EXPECT_EQ(PermissionsData::ACCESS_DENIED,
+  EXPECT_EQ(PermissionsData::PageAccess::kDenied,
             WebRequestPermissions::CanExtensionAccessURL(
                 extension_info_map_.get(), com_extension_->id(), request->url(),
                 -1,     // No tab id.
@@ -242,7 +241,7 @@ TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest,
   request_with_initiator->set_initiator(
       url::Origin::Create(GURL("http://www.example.org")));
 
-  EXPECT_EQ(PermissionsData::ACCESS_ALLOWED,
+  EXPECT_EQ(PermissionsData::PageAccess::kAllowed,
             WebRequestPermissions::CanExtensionAccessURL(
                 extension_info_map_.get(), permissionless_extension_->id(),
                 request_with_initiator->url(),
@@ -250,7 +249,7 @@ TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest,
                 false,  // crosses_incognito
                 WebRequestPermissions::DO_NOT_CHECK_HOST,
                 request_with_initiator->initiator()));
-  EXPECT_EQ(PermissionsData::ACCESS_DENIED,
+  EXPECT_EQ(PermissionsData::PageAccess::kDenied,
             WebRequestPermissions::CanExtensionAccessURL(
                 extension_info_map_.get(), permissionless_extension_->id(),
                 request_with_initiator->url(),
@@ -258,7 +257,7 @@ TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest,
                 false,  // crosses_incognito
                 WebRequestPermissions::REQUIRE_HOST_PERMISSION_FOR_URL,
                 request_with_initiator->initiator()));
-  EXPECT_EQ(PermissionsData::ACCESS_ALLOWED,
+  EXPECT_EQ(PermissionsData::PageAccess::kAllowed,
             WebRequestPermissions::CanExtensionAccessURL(
                 extension_info_map_.get(), com_extension_->id(),
                 request_with_initiator->url(),
@@ -267,7 +266,7 @@ TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest,
                 WebRequestPermissions::REQUIRE_HOST_PERMISSION_FOR_URL,
                 request_with_initiator->initiator()));
   EXPECT_EQ(
-      PermissionsData::ACCESS_DENIED,
+      PermissionsData::PageAccess::kDenied,
       WebRequestPermissions::CanExtensionAccessURL(
           extension_info_map_.get(), com_extension_->id(),
           request_with_initiator->url(),
@@ -275,7 +274,7 @@ TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest,
           false,  // crosses_incognito
           WebRequestPermissions::REQUIRE_HOST_PERMISSION_FOR_URL_AND_INITIATOR,
           request_with_initiator->initiator()));
-  EXPECT_EQ(PermissionsData::ACCESS_DENIED,
+  EXPECT_EQ(PermissionsData::PageAccess::kDenied,
             WebRequestPermissions::CanExtensionAccessURL(
                 extension_info_map_.get(), com_extension_->id(),
                 request_with_initiator->url(),
@@ -290,7 +289,7 @@ TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest,
       GURL("http://example.org"), net::DEFAULT_PRIORITY, nullptr));
 
   // com_extension_ doesn't have host permission for .org URLs.
-  EXPECT_EQ(PermissionsData::ACCESS_DENIED,
+  EXPECT_EQ(PermissionsData::PageAccess::kDenied,
             WebRequestPermissions::CanExtensionAccessURL(
                 extension_info_map_.get(), com_policy_extension_->id(),
                 org_request->url(),
@@ -303,7 +302,7 @@ TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest,
 
   // Host permission checks are disabled in Public Sessions, instead all URLs
   // are whitelisted.
-  EXPECT_EQ(PermissionsData::ACCESS_ALLOWED,
+  EXPECT_EQ(PermissionsData::PageAccess::kAllowed,
             WebRequestPermissions::CanExtensionAccessURL(
                 extension_info_map_.get(), com_policy_extension_->id(),
                 org_request->url(),
@@ -313,7 +312,7 @@ TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest,
                 org_request->initiator()));
 
   EXPECT_EQ(
-      PermissionsData::ACCESS_ALLOWED,
+      PermissionsData::PageAccess::kAllowed,
       WebRequestPermissions::CanExtensionAccessURL(
           extension_info_map_.get(), com_policy_extension_->id(),
           org_request->url(),
@@ -326,7 +325,7 @@ TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest,
       context.CreateRequest(GURL("chrome://version/"), net::DEFAULT_PRIORITY,
                             nullptr, TRAFFIC_ANNOTATION_FOR_TESTS));
 
-  EXPECT_EQ(PermissionsData::ACCESS_DENIED,
+  EXPECT_EQ(PermissionsData::PageAccess::kDenied,
             WebRequestPermissions::CanExtensionAccessURL(
                 extension_info_map_.get(), com_policy_extension_->id(),
                 chrome_request->url(),

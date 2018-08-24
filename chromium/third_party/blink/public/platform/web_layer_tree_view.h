@@ -27,29 +27,28 @@
 #define THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_LAYER_TREE_VIEW_H_
 
 #include "base/callback.h"
+#include "cc/input/overscroll_behavior.h"
+#include "cc/layers/layer.h"
 #include "cc/trees/layer_tree_mutator.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #include "third_party/blink/public/platform/web_browser_controls_state.h"
-#include "third_party/blink/public/platform/web_color.h"
 #include "third_party/blink/public/platform/web_common.h"
 #include "third_party/blink/public/platform/web_event_listener_properties.h"
 #include "third_party/blink/public/platform/web_float_point.h"
-#include "third_party/blink/public/platform/web_image_layer.h"
-#include "third_party/blink/public/platform/web_overscroll_behavior.h"
 #include "third_party/blink/public/platform/web_size.h"
-
+#include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 
+class SkBitmap;
+
 namespace cc {
 class AnimationHost;
+class PaintImage;
 }
 
 namespace blink {
 
-class WebCompositeAndReadbackAsyncCallback;
-class WebLayer;
-class WebLayoutAndPaintAsyncCallback;
 struct WebPoint;
 class WebSelection;
 
@@ -68,14 +67,15 @@ class WebLayerTreeView {
     kDidNotSwapActivationFails = 4,
     kSwapResultMax,
   };
-  using ReportTimeCallback = base::Callback<void(SwapResult, double)>;
+  using ReportTimeCallback =
+      base::OnceCallback<void(SwapResult, base::TimeTicks)>;
 
   virtual ~WebLayerTreeView() = default;
 
   // Initialization and lifecycle --------------------------------------
 
   // Sets the root of the tree. The root is set by way of the constructor.
-  virtual void SetRootLayer(const WebLayer&) {}
+  virtual void SetRootLayer(scoped_refptr<cc::Layer>) {}
   virtual void ClearRootLayer() {}
 
   // TODO(loyso): This should use CompositorAnimationHost. crbug.com/584551
@@ -87,7 +87,7 @@ class WebLayerTreeView {
   virtual WebSize GetViewportSize() const { return WebSize(); }
 
   // Sets the background color for the viewport.
-  virtual void SetBackgroundColor(WebColor) {}
+  virtual void SetBackgroundColor(SkColor) {}
 
   // Sets whether this view is visible. In threaded mode, a view that is not
   // visible will not composite or trigger UpdateAnimations() or Layout() calls
@@ -135,7 +135,7 @@ class WebLayerTreeView {
 
   // Set the browser's behavior when overscroll happens, e.g. whether to glow
   // or navigate.
-  virtual void SetOverscrollBehavior(const WebOverscrollBehavior&) {}
+  virtual void SetOverscrollBehavior(const cc::OverscrollBehavior&) {}
 
   // Flow control and scheduling ---------------------------------------
 
@@ -147,30 +147,29 @@ class WebLayerTreeView {
   virtual void DidStopFlinging() {}
 
   // Run layout and paint of all pending document changes asynchronously.
-  // The caller is resposible for keeping the WebLayoutAndPaintAsyncCallback
-  // object alive until it is called.
-  virtual void LayoutAndPaintAsync(WebLayoutAndPaintAsyncCallback*) {}
+  virtual void LayoutAndPaintAsync(base::OnceClosure callback) {}
 
-  // The caller is responsible for keeping the
-  // WebCompositeAndReadbackAsyncCallback object alive until it is called.
   virtual void CompositeAndReadbackAsync(
-      WebCompositeAndReadbackAsyncCallback*) {}
+      base::OnceCallback<void(const SkBitmap&)> callback) {}
 
   // Synchronously run all lifecycle phases and compositor update with no
   // raster. Should only be called by layout tests running in synchronous
   // single-threaded mode.
   virtual void SynchronouslyCompositeNoRasterForTesting() {}
 
+  // Synchronously rasterizes and composites a frame.
+  virtual void CompositeWithRasterForTesting() {}
+
   // Prevents updates to layer tree from becoming visible.
   virtual void SetDeferCommits(bool defer_commits) {}
 
   struct ViewportLayers {
-    const WebLayer* overscroll_elasticity = nullptr;
-    const WebLayer* page_scale = nullptr;
-    const WebLayer* inner_viewport_container = nullptr;
-    const WebLayer* outer_viewport_container = nullptr;
-    const WebLayer* inner_viewport_scroll = nullptr;
-    const WebLayer* outer_viewport_scroll = nullptr;
+    scoped_refptr<cc::Layer> overscroll_elasticity;
+    scoped_refptr<cc::Layer> page_scale;
+    scoped_refptr<cc::Layer> inner_viewport_container;
+    scoped_refptr<cc::Layer> outer_viewport_container;
+    scoped_refptr<cc::Layer> inner_viewport_scroll;
+    scoped_refptr<cc::Layer> outer_viewport_scroll;
   };
 
   // Identify key viewport layers to the compositor.
@@ -225,7 +224,7 @@ class WebLayerTreeView {
 
   virtual void RequestBeginMainFrameNotExpected(bool new_state) {}
 
-  virtual void RequestDecode(const PaintImage& image,
+  virtual void RequestDecode(const cc::PaintImage& image,
                              base::OnceCallback<void(bool)> callback) {}
 };
 

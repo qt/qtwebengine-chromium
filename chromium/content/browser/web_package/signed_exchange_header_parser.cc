@@ -195,7 +195,7 @@ class StructuredHeaderParser {
 base::Optional<std::vector<SignedExchangeHeaderParser::Signature>>
 SignedExchangeHeaderParser::ParseSignature(
     base::StringPiece signature_str,
-    const signed_exchange_utils::LogCallback& error_message_callback) {
+    SignedExchangeDevToolsProxy* devtools_proxy) {
   TRACE_EVENT_BEGIN0(TRACE_DISABLED_BY_DEFAULT("loading"),
                      "SignedExchangeHeaderParser::ParseSignature");
 
@@ -203,8 +203,8 @@ SignedExchangeHeaderParser::ParseSignature(
   std::vector<ParameterisedLabel> values;
   parser.ParseParameterisedLabelList(&values);
   if (!parser.ParsedSuccessfully()) {
-    signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
-        "SignedExchangeHeaderParser::ParseSignature", error_message_callback,
+    signed_exchange_utils::ReportErrorAndEndTraceEvent(
+        devtools_proxy, "SignedExchangeHeaderParser::ParseSignature",
         "Failed to parse signature header.");
     return base::nullopt;
   }
@@ -215,35 +215,35 @@ SignedExchangeHeaderParser::ParseSignature(
     signatures.push_back(Signature());
     Signature& sig = signatures.back();
     sig.label = value.label;
-    sig.sig = value.params["sig"];
+    sig.sig = value.params[kSig];
     if (sig.sig.empty()) {
-      signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
-          "SignedExchangeHeaderParser::ParseSignature", error_message_callback,
+      signed_exchange_utils::ReportErrorAndEndTraceEvent(
+          devtools_proxy, "SignedExchangeHeaderParser::ParseSignature",
           "'sig' parameter is not set,");
       return base::nullopt;
     }
-    sig.integrity = value.params["integrity"];
+    sig.integrity = value.params[kIntegrity];
     if (sig.integrity.empty()) {
-      signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
-          "SignedExchangeHeaderParser::ParseSignature", error_message_callback,
+      signed_exchange_utils::ReportErrorAndEndTraceEvent(
+          devtools_proxy, "SignedExchangeHeaderParser::ParseSignature",
           "'integrity' parameter is not set.");
       return base::nullopt;
     }
-    sig.cert_url = GURL(value.params["certUrl"]);
+    sig.cert_url = GURL(value.params[kCertUrl]);
     if (!sig.cert_url.is_valid() || sig.cert_url.has_ref()) {
       // TODO(https://crbug.com/819467) : When we will support "ed25519Key", the
       // params may not have "certUrl".
-      signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
-          "SignedExchangeHeaderParser::ParseSignature", error_message_callback,
+      signed_exchange_utils::ReportErrorAndEndTraceEvent(
+          devtools_proxy, "SignedExchangeHeaderParser::ParseSignature",
           "'certUrl' parameter is not a valid URL.");
       return base::nullopt;
     }
-    const std::string cert_sha256_string = value.params["certSha256"];
+    const std::string cert_sha256_string = value.params[kCertSha256Key];
     if (cert_sha256_string.size() != crypto::kSHA256Length) {
       // TODO(https://crbug.com/819467) : When we will support "ed25519Key", the
       // params may not have "certSha256".
-      signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
-          "SignedExchangeHeaderParser::ParseSignature", error_message_callback,
+      signed_exchange_utils::ReportErrorAndEndTraceEvent(
+          devtools_proxy, "SignedExchangeHeaderParser::ParseSignature",
           "'certSha256' parameter is not a SHA-256 digest.");
       return base::nullopt;
     }
@@ -252,28 +252,28 @@ SignedExchangeHeaderParser::ParseSignature(
     sig.cert_sha256 = std::move(cert_sha256);
     // TODO(https://crbug.com/819467): Support ed25519key.
     // sig.ed25519_key = value.params["ed25519Key"];
-    sig.validity_url = GURL(value.params["validityUrl"]);
+    sig.validity_url = GURL(value.params[kValidityUrlKey]);
     if (!sig.validity_url.is_valid()) {
-      signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
-          "SignedExchangeHeaderParser::ParseSignature", error_message_callback,
+      signed_exchange_utils::ReportErrorAndEndTraceEvent(
+          devtools_proxy, "SignedExchangeHeaderParser::ParseSignature",
           "'validityUrl' parameter is not a valid URL.");
       return base::nullopt;
     }
     if (sig.validity_url.has_ref()) {
-      signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
-          "SignedExchangeHeaderParser::ParseSignature", error_message_callback,
+      signed_exchange_utils::ReportErrorAndEndTraceEvent(
+          devtools_proxy, "SignedExchangeHeaderParser::ParseSignature",
           "'validityUrl' parameter can't have a fragment.");
       return base::nullopt;
     }
-    if (!base::StringToUint64(value.params["date"], &sig.date)) {
-      signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
-          "SignedExchangeHeaderParser::ParseSignature", error_message_callback,
+    if (!base::StringToUint64(value.params[kDateKey], &sig.date)) {
+      signed_exchange_utils::ReportErrorAndEndTraceEvent(
+          devtools_proxy, "SignedExchangeHeaderParser::ParseSignature",
           "'date' parameter is not a number.");
       return base::nullopt;
     }
-    if (!base::StringToUint64(value.params["expires"], &sig.expires)) {
-      signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
-          "SignedExchangeHeaderParser::ParseSignature", error_message_callback,
+    if (!base::StringToUint64(value.params[kExpiresKey], &sig.expires)) {
+      signed_exchange_utils::ReportErrorAndEndTraceEvent(
+          devtools_proxy, "SignedExchangeHeaderParser::ParseSignature",
           "'expires' parameter is not a number.");
       return base::nullopt;
     }
@@ -286,7 +286,7 @@ SignedExchangeHeaderParser::ParseSignature(
 // static
 bool SignedExchangeHeaderParser::GetVersionParamFromContentType(
     base::StringPiece content_type,
-    base::Optional<std::string>* version_param) {
+    base::Optional<SignedExchangeVersion>* version_param) {
   DCHECK(version_param);
   StructuredHeaderParser parser(content_type);
   ParameterisedLabel parameterised_label;
@@ -297,7 +297,12 @@ bool SignedExchangeHeaderParser::GetVersionParamFromContentType(
   if (it == parameterised_label.params.end()) {
     *version_param = base::nullopt;
   } else {
-    *version_param = it->second;
+    if (it->second == "b0")
+      *version_param = SignedExchangeVersion::kB0;
+    else if (it->second == "b1")
+      *version_param = SignedExchangeVersion::kB1;
+    else
+      return false;
   }
   return true;
 }

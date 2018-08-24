@@ -30,6 +30,7 @@ class ImageSkiaRep;
 }
 
 namespace ui {
+enum class DomCode;
 class EventHandler;
 class KeyboardHook;
 class XScopedEventSelector;
@@ -86,6 +87,9 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
 
   // Disables event listening to make |dialog| modal.
   std::unique_ptr<base::Closure> DisableEventListening();
+
+  // Returns a map of KeyboardEvent code to KeyboardEvent key values.
+  base::flat_map<std::string, std::string> GetKeyboardLayoutMap() override;
 
  protected:
   // Overridden from DesktopWindowTreeHost:
@@ -160,14 +164,16 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   void ShowImpl() override;
   void HideImpl() override;
   gfx::Rect GetBoundsInPixels() const override;
-  void SetBoundsInPixels(const gfx::Rect& requested_bounds_in_pixels) override;
+  void SetBoundsInPixels(const gfx::Rect& requested_bounds_in_pixels,
+                         const viz::LocalSurfaceId& local_surface_id =
+                             viz::LocalSurfaceId()) override;
   gfx::Point GetLocationOnScreenInPixels() const override;
   void SetCapture() override;
   void ReleaseCapture() override;
   bool CaptureSystemKeyEventsImpl(
-      base::Optional<base::flat_set<int>> keys_codes) override;
+      base::Optional<base::flat_set<ui::DomCode>> dom_codes) override;
   void ReleaseSystemKeyEventCapture() override;
-  bool IsKeyLocked(int native_key_code) override;
+  bool IsKeyLocked(ui::DomCode dom_code) override;
   void SetCursorNative(gfx::NativeCursor cursor) override;
   void MoveCursorToScreenLocationInPixels(
       const gfx::Point& location_in_pixels) override;
@@ -222,8 +228,8 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   void OnFocusEvent(bool focus_in, int mode, int detail);
 
   // Makes a round trip to the X server to get the enclosing workspace for this
-  // window.  Returns true iff |workspace_| was changed.
-  bool UpdateWorkspace();
+  // window.
+  void UpdateWorkspace();
 
   // Updates |xwindow_|'s minimum and maximum size.
   void UpdateMinAndMaxSize();
@@ -272,7 +278,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   void DelayedResize(const gfx::Size& size_in_pixels);
   void DelayedChangeFrameType(Widget::FrameType new_type);
 
-  gfx::Rect GetWorkAreaBoundsInPixels() const;
   gfx::Rect ToDIPRect(const gfx::Rect& rect_in_pixels) const;
   gfx::Rect ToPixelRect(const gfx::Rect& rect_in_dip) const;
 
@@ -327,8 +332,9 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   // |xwindow_|'s maximum size.
   gfx::Size max_size_in_pixels_;
 
-  // The workspace containing |xwindow_|.
-  std::string workspace_;
+  // The workspace containing |xwindow_|.  This will be base::nullopt when
+  // _NET_WM_DESKTOP is unset.
+  base::Optional<int> workspace_;
 
   // The window manager state bits.
   base::flat_set<::Atom> window_properties_;

@@ -25,8 +25,10 @@
 #include "ui/base/ime/chromeos/input_method_manager.h"
 #include "ui/base/ime/ime_engine_handler_interface.h"
 #include "ui/keyboard/keyboard_controller.h"
+#include "ui/keyboard/keyboard_util.h"
 
 namespace input_ime = extensions::api::input_ime;
+namespace input_method_private = extensions::api::input_method_private;
 namespace DeleteSurroundingText =
     extensions::api::input_ime::DeleteSurroundingText;
 namespace UpdateMenuItems = extensions::api::input_ime::UpdateMenuItems;
@@ -188,6 +190,39 @@ class ImeObserverChromeOS : public ui::ImeObserver {
         OnCompositionBoundsChanged::kEventName, std::move(args));
   }
 
+  void OnFocus(
+      const IMEEngineHandlerInterface::InputContext& context) override {
+    if (extension_id_.empty())
+      return;
+
+    // There is both a public and private OnFocus event. The private OnFocus
+    // event is only for ChromeOS and contains additional information about pen
+    // inputs. We ensure that we only trigger one OnFocus event.
+    if (HasListener(input_method_private::OnFocus::kEventName) &&
+        keyboard::IsStylusVirtualKeyboardEnabled()) {
+      input_method_private::InputContext input_context;
+      input_context.context_id = context.id;
+      input_context.type = input_method_private::ParseInputContextType(
+          ConvertInputContextType(context));
+      input_context.auto_correct = ConvertInputContextAutoCorrect(context);
+      input_context.auto_complete = ConvertInputContextAutoComplete(context);
+      input_context.spell_check = ConvertInputContextSpellCheck(context);
+      input_context.should_do_learning = context.should_do_learning;
+      input_context.focus_reason = input_method_private::ParseFocusReason(
+          ConvertInputContextFocusReason(context));
+
+      std::unique_ptr<base::ListValue> args(
+          input_method_private::OnFocus::Create(input_context));
+
+      DispatchEventToExtension(
+          extensions::events::INPUT_METHOD_PRIVATE_ON_FOCUS,
+          input_method_private::OnFocus::kEventName, std::move(args));
+      return;
+    }
+
+    ImeObserver::OnFocus(context);
+  }
+
  private:
   // ui::ImeObserver overrides.
   void DispatchEventToExtension(
@@ -249,6 +284,22 @@ class ImeObserverChromeOS : public ui::ImeObserver {
     }
     NOTREACHED() << "New screen type is added. Please add new entry above.";
     return "normal";
+  }
+
+  std::string ConvertInputContextFocusReason(
+      ui::IMEEngineHandlerInterface::InputContext input_context) {
+    switch (input_context.focus_reason) {
+      case ui::TextInputClient::FOCUS_REASON_NONE:
+        return "";
+      case ui::TextInputClient::FOCUS_REASON_MOUSE:
+        return "mouse";
+      case ui::TextInputClient::FOCUS_REASON_TOUCH:
+        return "touch";
+      case ui::TextInputClient::FOCUS_REASON_PEN:
+        return "pen";
+      case ui::TextInputClient::FOCUS_REASON_OTHER:
+        return "other";
+    }
   }
 
   DISALLOW_COPY_AND_ASSIGN(ImeObserverChromeOS);
@@ -617,6 +668,26 @@ InputMethodPrivateNotifyImeMenuItemActivatedFunction::Run() {
     return RespondNow(Error(kErrorEngineNotActive));
   engine->PropertyActivate(params->name);
   return RespondNow(NoArguments());
+}
+
+ExtensionFunction::ResponseAction
+InputMethodPrivateGetCompositionBoundsFunction::Run() {
+  InputMethodEngine* engine = GetActiveEngine(
+      Profile::FromBrowserContext(browser_context()), extension_id());
+  if (!engine)
+    return RespondNow(Error(kErrorEngineNotAvailable));
+
+  auto bounds_list = std::make_unique<base::ListValue>();
+  for (const auto& bounds : engine->composition_bounds()) {
+    auto bounds_value = std::make_unique<base::DictionaryValue>();
+    bounds_value->SetInteger("x", bounds.x());
+    bounds_value->SetInteger("y", bounds.y());
+    bounds_value->SetInteger("w", bounds.width());
+    bounds_value->SetInteger("h", bounds.height());
+    bounds_list->Append(std::move(bounds_value));
+  }
+
+  return RespondNow(OneArgument(std::move(bounds_list)));
 }
 
 void InputImeAPI::OnExtensionLoaded(content::BrowserContext* browser_context,

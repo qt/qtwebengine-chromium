@@ -42,6 +42,7 @@
       iron-icon {
         --iron-icon-fill-color: var(--settings-nav-grey);
         -webkit-margin-end: 24px;
+        pointer-events: none;
         vertical-align: top;
       }
 
@@ -52,12 +53,15 @@
       #advancedButton {
         -webkit-padding-end: 0;
         background-color: unset;
+        border: none;
+        border-radius: initial;
         height: unset;
         margin-top: 8px;
         text-transform: none;
       }
 
       #advancedButton:focus {
+        box-shadow: none;
         outline: none;
       }
 
@@ -115,6 +119,12 @@
         <iron-icon icon="cr:search"></iron-icon>
         $i18n{searchPageTitle}
       </a>
+<if expr="chromeos">
+      <a href="/crostini" hidden="[[!showCrostini]]">
+        <iron-icon icon="settings:crostini-mascot"></iron-icon>
+        $i18n{crostiniPageTitle}
+      </a>
+</if>
 <if expr="chromeos">
       <a href="/androidApps" hidden="[[!showAndroidApps]]">
         <iron-icon icon="settings:play-prism"></iron-icon>
@@ -194,7 +204,8 @@
       </iron-collapse>
       <div id="menuSeparator"></div>
       <a id="extensionsLink" href="chrome://extensions" target="_blank"
-          on-click="onExtensionsLinkClick_">
+          on-click="onExtensionsLinkClick_"
+          title="$i18n{extensionsLinkTooltip}">
         <span>$i18n{extensionsPageTitle}</span>
         <iron-icon class="cr-icon icon-external" actionable></iron-icon>
       </a>

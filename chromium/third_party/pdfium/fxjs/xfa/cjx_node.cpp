@@ -16,6 +16,7 @@
 #include "fxjs/js_resources.h"
 #include "third_party/base/ptr_util.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
+#include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/cxfa_ffnotify.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_document_parser.h"
@@ -236,14 +237,26 @@ CJS_Return CJX_Node::loadXML(CFX_V8* runtime,
                                     WideString(wsContentType), false, false);
   }
 
-  std::unique_ptr<CFX_XMLNode> pFakeXMLRoot(pFakeRoot->GetXMLMappingNode());
+  CFX_XMLNode* pFakeXMLRoot = pFakeRoot->GetXMLMappingNode();
   if (!pFakeXMLRoot) {
     CFX_XMLNode* pThisXMLRoot = GetXFANode()->GetXMLMappingNode();
-    pFakeXMLRoot = pThisXMLRoot ? pThisXMLRoot->Clone() : nullptr;
-  }
-  if (!pFakeXMLRoot) {
-    pFakeXMLRoot = pdfium::MakeUnique<CFX_XMLElement>(
-        WideString(GetXFANode()->GetClassName()));
+    CFX_XMLNode* clone;
+    if (pThisXMLRoot) {
+      clone = pThisXMLRoot->Clone(GetXFANode()
+                                      ->GetDocument()
+                                      ->GetNotify()
+                                      ->GetHDOC()
+                                      ->GetXMLDocument());
+    } else {
+      clone = GetXFANode()
+                  ->GetDocument()
+                  ->GetNotify()
+                  ->GetHDOC()
+                  ->GetXMLDocument()
+                  ->CreateNode<CFX_XMLElement>(
+                      WideString(GetXFANode()->GetClassName()));
+    }
+    pFakeXMLRoot = clone;
   }
 
   if (bIgnoreRoot) {
@@ -262,7 +275,7 @@ CJS_Return CJX_Node::loadXML(CFX_V8* runtime,
     pFakeXMLRoot->AppendChild(pXMLNode);
   }
 
-  pParser->ConstructXFANode(pFakeRoot, pFakeXMLRoot.get());
+  pParser->ConstructXFANode(pFakeRoot, pFakeXMLRoot);
   pFakeRoot = pParser->GetRootNode();
   if (!pFakeRoot)
     return CJS_Return(true);
@@ -289,10 +302,10 @@ CJS_Return CJX_Node::loadXML(CFX_V8* runtime,
     if (GetXFANode()->GetPacketType() == XFA_PacketType::Form &&
         GetXFANode()->GetElementType() == XFA_Element::ExData) {
       CFX_XMLNode* pTempXMLNode = GetXFANode()->GetXMLMappingNode();
-      GetXFANode()->SetXMLMappingNode(std::move(pFakeXMLRoot));
+      GetXFANode()->SetXMLMappingNode(pFakeXMLRoot);
 
       if (pTempXMLNode && !pTempXMLNode->GetParent())
-        pFakeXMLRoot.reset(pTempXMLNode);
+        pFakeXMLRoot = pTempXMLNode;
       else
         pFakeXMLRoot = nullptr;
     }
@@ -332,7 +345,7 @@ CJS_Return CJX_Node::saveXML(CFX_V8* runtime,
 
   // TODO(weili): Check whether we need to save pretty print XML, pdfium:501.
 
-  WideString bsXMLHeader = L"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+  ByteString bsXMLHeader = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
   if (GetXFANode()->GetPacketType() != XFA_PacketType::Form &&
       GetXFANode()->GetPacketType() != XFA_PacketType::Datasets) {
     return CJS_Return(runtime->NewString(""));
@@ -342,23 +355,20 @@ CJS_Return CJX_Node::saveXML(CFX_V8* runtime,
   if (GetXFANode()->GetPacketType() == XFA_PacketType::Datasets) {
     pElement = GetXFANode()->GetXMLMappingNode();
     if (!pElement || pElement->GetType() != FX_XMLNODE_Element) {
-      return CJS_Return(
-          runtime->NewString(bsXMLHeader.UTF8Encode().AsStringView()));
+      return CJS_Return(runtime->NewString(bsXMLHeader.AsStringView()));
     }
 
     XFA_DataExporter_DealWithDataGroupNode(GetXFANode());
   }
 
   auto pMemoryStream = pdfium::MakeRetain<CFX_MemoryStream>(true);
-  auto pStream =
-      pdfium::MakeRetain<CFX_SeekableStreamProxy>(pMemoryStream, true);
-  pStream->SetCodePage(FX_CODEPAGE_UTF8);
-  pStream->WriteString(bsXMLHeader.AsStringView());
+  pMemoryStream->WriteString(bsXMLHeader.AsStringView());
 
-  if (GetXFANode()->GetPacketType() == XFA_PacketType::Form)
-    XFA_DataExporter_RegenerateFormFile(GetXFANode(), pStream, true);
-  else
-    pElement->Save(pStream);
+  if (GetXFANode()->GetPacketType() == XFA_PacketType::Form) {
+    XFA_DataExporter_RegenerateFormFile(GetXFANode(), pMemoryStream, true);
+  } else {
+    pElement->Save(pMemoryStream);
+  }
 
   return CJS_Return(runtime->NewString(
       ByteStringView(pMemoryStream->GetBuffer(), pMemoryStream->GetSize())));

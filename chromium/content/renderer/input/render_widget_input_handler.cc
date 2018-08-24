@@ -54,7 +54,6 @@ using blink::WebInputEventResult;
 using blink::WebKeyboardEvent;
 using blink::WebMouseEvent;
 using blink::WebMouseWheelEvent;
-using blink::WebOverscrollBehavior;
 using blink::WebPointerEvent;
 using blink::WebTouchEvent;
 using blink::WebTouchPoint;
@@ -64,21 +63,22 @@ namespace content {
 
 namespace {
 
-int64_t GetEventLatencyMicros(double event_timestamp, base::TimeTicks now) {
-  return (now - base::TimeDelta::FromSecondsD(event_timestamp))
-      .ToInternalValue();
+int64_t GetEventLatencyMicros(base::TimeTicks event_timestamp,
+                              base::TimeTicks now) {
+  return (now - event_timestamp).InMicroseconds();
 }
 
 void LogInputEventLatencyUma(const WebInputEvent& event, base::TimeTicks now) {
-  UMA_HISTOGRAM_CUSTOM_COUNTS(
-      "Event.AggregatedLatency.Renderer2",
-      GetEventLatencyMicros(event.TimeStampSeconds(), now), 1, 10000000, 100);
+  UMA_HISTOGRAM_CUSTOM_COUNTS("Event.AggregatedLatency.Renderer2",
+                              GetEventLatencyMicros(event.TimeStamp(), now), 1,
+                              10000000, 100);
 }
 
 void LogPassiveEventListenersUma(WebInputEventResult result,
                                  WebInputEvent::DispatchType dispatch_type,
-                                 double event_timestamp,
+                                 base::TimeTicks event_timestamp,
                                  const ui::LatencyInfo& latency_info) {
+  // This enum is backing a histogram. Do not remove or reorder members.
   enum ListenerEnum {
     PASSIVE_LISTENER_UMA_ENUM_PASSIVE,
     PASSIVE_LISTENER_UMA_ENUM_UNCANCELABLE,
@@ -86,7 +86,7 @@ void LogPassiveEventListenersUma(WebInputEventResult result,
     PASSIVE_LISTENER_UMA_ENUM_CANCELABLE,
     PASSIVE_LISTENER_UMA_ENUM_CANCELABLE_AND_CANCELED,
     PASSIVE_LISTENER_UMA_ENUM_FORCED_NON_BLOCKING_DUE_TO_FLING,
-    PASSIVE_LISTENER_UMA_ENUM_FORCED_NON_BLOCKING_DUE_TO_MAIN_THREAD_RESPONSIVENESS,
+    PASSIVE_LISTENER_UMA_ENUM_FORCED_NON_BLOCKING_DUE_TO_MAIN_THREAD_RESPONSIVENESS_DEPRECATED,
     PASSIVE_LISTENER_UMA_ENUM_COUNT
   };
 
@@ -94,11 +94,6 @@ void LogPassiveEventListenersUma(WebInputEventResult result,
   switch (dispatch_type) {
     case WebInputEvent::kListenersForcedNonBlockingDueToFling:
       enum_value = PASSIVE_LISTENER_UMA_ENUM_FORCED_NON_BLOCKING_DUE_TO_FLING;
-      break;
-    case WebInputEvent::
-        kListenersForcedNonBlockingDueToMainThreadResponsiveness:
-      enum_value =
-          PASSIVE_LISTENER_UMA_ENUM_FORCED_NON_BLOCKING_DUE_TO_MAIN_THREAD_RESPONSIVENESS;
       break;
     case WebInputEvent::kListenersNonBlockingPassive:
       enum_value = PASSIVE_LISTENER_UMA_ENUM_PASSIVE;
@@ -134,14 +129,6 @@ void LogPassiveEventListenersUma(WebInputEventResult result,
       UMA_HISTOGRAM_CUSTOM_COUNTS(
           "Event.PassiveListeners.ForcedNonBlockingLatencyDueToFling",
           GetEventLatencyMicros(event_timestamp, now), 1, 10000000, 100);
-    } else if (
-        enum_value ==
-        PASSIVE_LISTENER_UMA_ENUM_FORCED_NON_BLOCKING_DUE_TO_MAIN_THREAD_RESPONSIVENESS) {
-      base::TimeTicks now = base::TimeTicks::Now();
-      UMA_HISTOGRAM_CUSTOM_COUNTS(
-          "Event.PassiveListeners."
-          "ForcedNonBlockingLatencyDueToUnresponsiveMainThread",
-          GetEventLatencyMicros(event_timestamp, now), 1, 10000000, 50);
     }
   }
 }
@@ -158,12 +145,12 @@ void LogAllPassiveEventListenersUma(const WebInputEvent& input_event,
     const WebTouchEvent& touch = static_cast<const WebTouchEvent&>(input_event);
 
     LogPassiveEventListenersUma(result, touch.dispatch_type,
-                                input_event.TimeStampSeconds(), latency_info);
+                                input_event.TimeStamp(), latency_info);
   } else if (input_event.GetType() == WebInputEvent::kMouseWheel) {
     LogPassiveEventListenersUma(
         result,
         static_cast<const WebMouseWheelEvent&>(input_event).dispatch_type,
-        input_event.TimeStampSeconds(), latency_info);
+        input_event.TimeStamp(), latency_info);
   }
 }
 
@@ -249,7 +236,7 @@ WebInputEventResult RenderWidgetInputHandler::HandleTouchEvent(
     WebPointerEvent pointer_event =
         WebPointerEvent::CreatePointerCausesUaActionEvent(
             blink::WebPointerProperties::PointerType::kUnknown,
-            input_event.TimeStampSeconds());
+            input_event.TimeStamp());
     return widget_->GetWebWidget()->HandleInputEvent(
         blink::WebCoalescedInputEvent(pointer_event));
   }
@@ -317,16 +304,8 @@ void RenderWidgetInputHandler::HandleInputEvent(
   std::unique_ptr<cc::SwapPromiseMonitor> latency_info_swap_promise_monitor;
   ui::LatencyInfo swap_latency_info(latency_info);
 
-  if (RenderThreadImpl::current()) {
-    swap_latency_info.set_expected_queueing_time_on_dispatch(
-        RenderThreadImpl::current()
-            ->GetWebMainThreadScheduler()
-            ->MostRecentExpectedQueueingTime());
-  }
-
   swap_latency_info.AddLatencyNumber(
-      ui::LatencyComponentType::INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT, 0,
-      0);
+      ui::LatencyComponentType::INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT, 0);
   if (widget_->compositor()) {
     latency_info_swap_promise_monitor =
         widget_->compositor()->CreateLatencyInfoSwapPromiseMonitor(
@@ -465,7 +444,7 @@ void RenderWidgetInputHandler::DidOverscrollFromBlink(
     const WebFloatSize& accumulatedOverscroll,
     const WebFloatPoint& position,
     const WebFloatSize& velocity,
-    const WebOverscrollBehavior& behavior) {
+    const cc::OverscrollBehavior& behavior) {
   std::unique_ptr<DidOverscrollParams> params(new DidOverscrollParams());
   params->accumulated_overscroll = gfx::Vector2dF(
       accumulatedOverscroll.width, accumulatedOverscroll.height);

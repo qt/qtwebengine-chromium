@@ -4,7 +4,7 @@
 
 #include "third_party/blink/renderer/core/html/media/picture_in_picture_interstitial.h"
 
-#include "third_party/blink/public/platform/web_layer.h"
+#include "cc/layers/layer.h"
 #include "third_party/blink/public/platform/web_localized_string.h"
 #include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -25,7 +25,7 @@ PictureInPictureInterstitial::PictureInPictureInterstitial(
     HTMLVideoElement& videoElement)
     : HTMLDivElement(videoElement.GetDocument()),
       interstitial_timer_(
-          videoElement.GetDocument().GetTaskRunner(TaskType::kUnthrottled),
+          videoElement.GetDocument().GetTaskRunner(TaskType::kInternalMedia),
           this,
           &PictureInPictureInterstitial::ToggleInterstitialTimerFired),
       video_element_(&videoElement) {
@@ -62,8 +62,8 @@ void PictureInPictureInterstitial::Show() {
   interstitial_timer_.StartOneShot(kPictureInPictureStyleChangeTransSeconds,
                                    FROM_HERE);
 
-  DCHECK(GetVideoElement().PlatformLayer());
-  GetVideoElement().PlatformLayer()->SetDrawsContent(false);
+  DCHECK(GetVideoElement().CcLayer());
+  GetVideoElement().CcLayer()->SetIsDrawable(false);
 }
 
 void PictureInPictureInterstitial::Hide() {
@@ -78,8 +78,8 @@ void PictureInPictureInterstitial::Hide() {
   interstitial_timer_.StartOneShot(kPictureInPictureHiddenAnimationSeconds,
                                    FROM_HERE);
 
-  DCHECK(GetVideoElement().PlatformLayer());
-  GetVideoElement().PlatformLayer()->SetDrawsContent(true);
+  if (GetVideoElement().CcLayer())
+    GetVideoElement().CcLayer()->SetIsDrawable(true);
 }
 
 void PictureInPictureInterstitial::ToggleInterstitialTimerFired(TimerBase*) {

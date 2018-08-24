@@ -13,7 +13,7 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "components/apdu/apdu_command.h"
-#include "components/apdu/apdu_response.h"
+#include "device/fido/u2f_command_constructor.h"
 #include "services/service_manager/public/cpp/connector.h"
 
 namespace device {
@@ -50,73 +50,18 @@ void U2fRequest::Start() {
   }
 }
 
-// static
-std::vector<uint8_t> U2fRequest::GetBogusRegisterCommand() {
-  apdu::ApduCommand command;
-  std::vector<uint8_t> data(kBogusChallenge.cbegin(), kBogusChallenge.cend());
-  data.insert(data.end(), kBogusAppParam.cbegin(), kBogusAppParam.cend());
-  command.set_ins(base::strict_cast<uint8_t>(U2fApduInstruction::kRegister));
-  command.set_p1(kP1TupRequiredConsumed);
-  command.set_data(data);
-  return command.GetEncodedCommand();
-}
-
-// static
-std::vector<uint8_t> U2fRequest::GetU2fVersionApduCommand(
-    bool is_legacy_version) {
-  apdu::ApduCommand command;
-  command.set_ins(base::strict_cast<uint8_t>(U2fApduInstruction::kVersion));
-  // Set maximum expected response length to maximum length possible.
-  command.set_response_length(kU2fMaxResponseSize);
-  // Early U2F drafts defined the U2F version command a format
-  // incompatible with ISO 7816-4, so 2 additional 0x0 bytes are necessary.
-  // https://fidoalliance.org/specs/fido-u2f-v1.1-id-20160915/fido-u2f-raw-message-formats-v1.1-id-20160915.html#implementation-considerations
-  auto version_cmd = command.GetEncodedCommand();
-  if (is_legacy_version)
-    version_cmd.insert(version_cmd.end(), kLegacyVersionSuffix.cbegin(),
-                       kLegacyVersionSuffix.cend());
-
-  return version_cmd;
-}
-
 base::Optional<std::vector<uint8_t>> U2fRequest::GetU2fSignApduCommand(
     const std::vector<uint8_t>& application_parameter,
     const std::vector<uint8_t>& key_handle,
     bool is_check_only_sign) const {
-  if (application_parameter.size() != kU2fParameterLength ||
-      challenge_digest_.size() != kU2fParameterLength ||
-      key_handle.size() > kMaxKeyHandleLength) {
-    return base::nullopt;
-  }
-  apdu::ApduCommand command;
-  std::vector<uint8_t> data(challenge_digest_.begin(), challenge_digest_.end());
-  data.insert(data.end(), application_parameter.begin(),
-              application_parameter.end());
-  data.push_back(static_cast<uint8_t>(key_handle.size()));
-  data.insert(data.end(), key_handle.begin(), key_handle.end());
-  command.set_ins(base::strict_cast<uint8_t>(U2fApduInstruction::kSign));
-  command.set_p1(is_check_only_sign ? kP1CheckOnly : kP1TupRequiredConsumed);
-  command.set_data(data);
-  command.set_response_length(apdu::ApduCommand::kApduMaxResponseLength);
-  return command.GetEncodedCommand();
+  return ConstructU2fSignCommand(application_parameter, challenge_digest_,
+                                 key_handle, is_check_only_sign);
 }
 
 base::Optional<std::vector<uint8_t>> U2fRequest::GetU2fRegisterApduCommand(
     bool is_individual_attestation) const {
-  if (application_parameter_.size() != kU2fParameterLength ||
-      challenge_digest_.size() != kU2fParameterLength) {
-    return base::nullopt;
-  }
-  apdu::ApduCommand command;
-  std::vector<uint8_t> data(challenge_digest_.begin(), challenge_digest_.end());
-  data.insert(data.end(), application_parameter_.begin(),
-              application_parameter_.end());
-  command.set_ins(base::strict_cast<uint8_t>(U2fApduInstruction::kRegister));
-  command.set_p1(kP1TupRequiredConsumed |
-                 (is_individual_attestation ? kP1IndividualAttestation : 0));
-  command.set_data(data);
-  command.set_response_length(apdu::ApduCommand::kApduMaxResponseLength);
-  return command.GetEncodedCommand();
+  return ConstructU2fRegisterCommand(application_parameter_, challenge_digest_,
+                                     is_individual_attestation);
 }
 
 void U2fRequest::Transition() {
@@ -149,31 +94,6 @@ void U2fRequest::InitiateDeviceTransaction(
     return;
   }
   current_device_->DeviceTransact(std::move(*cmd), std::move(callback));
-}
-
-void U2fRequest::OnDeviceVersionRequest(
-    VersionCallback callback,
-    base::WeakPtr<FidoDevice> device,
-    bool legacy,
-    base::Optional<std::vector<uint8_t>> response) {
-  const auto apdu_response =
-      response ? apdu::ApduResponse::CreateFromMessage(std::move(*response))
-               : base::nullopt;
-  if (apdu_response &&
-      apdu_response->status() == apdu::ApduResponse::Status::SW_NO_ERROR &&
-      std::equal(apdu_response->data().cbegin(), apdu_response->data().cend(),
-                 kU2fVersionResponse.cbegin(), kU2fVersionResponse.cend())) {
-    std::move(callback).Run(ProtocolVersion::kU2f);
-  } else if (!legacy) {
-    // Standard GetVersion failed, attempt legacy GetVersion command.
-    device->DeviceTransact(
-        GetU2fVersionApduCommand(true),
-        base::BindOnce(&U2fRequest::OnDeviceVersionRequest,
-                       weak_factory_.GetWeakPtr(), std::move(callback), device,
-                       true /* legacy */));
-  } else {
-    std::move(callback).Run(ProtocolVersion::kUnknown);
-  }
 }
 
 void U2fRequest::AbandonCurrentDeviceAndTransition() {

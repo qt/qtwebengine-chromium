@@ -54,54 +54,21 @@ MOJO_SYSTEM_IMPL_EXPORT std::string GenerateRandomToken();
 // provide the embedder with some extra capabilities not exposed by public Mojo
 // C APIs.
 
-// Creates a |MojoHandle| that wraps the given |PlatformHandle| (taking
+// Creates a |MojoHandle| that wraps the given |InternalPlatformHandle| (taking
 // ownership of it). This |MojoHandle| can then, e.g., be passed through message
 // pipes. Note: This takes ownership (and thus closes) |platform_handle| even on
 // failure, which is different from what you'd expect from a Mojo API, but it
 // makes for a more convenient embedder API.
-MOJO_SYSTEM_IMPL_EXPORT MojoResult
-CreatePlatformHandleWrapper(ScopedPlatformHandle platform_handle,
-                            MojoHandle* platform_handle_wrapper_handle);
+MOJO_SYSTEM_IMPL_EXPORT MojoResult CreateInternalPlatformHandleWrapper(
+    ScopedInternalPlatformHandle platform_handle,
+    MojoHandle* platform_handle_wrapper_handle);
 
-// Retrieves the |PlatformHandle| that was wrapped into a |MojoHandle| (using
-// |CreatePlatformHandleWrapper()| above). Note that the |MojoHandle| is closed
-// on success.
-MOJO_SYSTEM_IMPL_EXPORT MojoResult
-PassWrappedPlatformHandle(MojoHandle platform_handle_wrapper_handle,
-                          ScopedPlatformHandle* platform_handle);
-
-// Creates a |MojoHandle| that wraps the given |SharedMemoryHandle| (taking
-// ownership of it). |num_bytes| is the size of the shared memory object, and
-// |read_only| is whether the handle is a read-only handle to shared memory.
-// This |MojoHandle| is a Mojo shared buffer and can be manipulated using the
-// shared buffer functions and transferred over a message pipe.
-MOJO_SYSTEM_IMPL_EXPORT MojoResult
-CreateSharedBufferWrapper(base::SharedMemoryHandle shared_memory_handle,
-                          size_t num_bytes,
-                          bool read_only,
-                          MojoHandle* mojo_wrapper_handle);
-
-// Retrieves the underlying |SharedMemoryHandle| from a shared buffer
-// |MojoHandle| and closes the handle. If successful, |num_bytes| will contain
-// the size of the shared memory buffer and |read_only| will contain whether the
-// buffer handle is read-only. Both |num_bytes| and |read_only| may be null.
-// Note: |shared_memory_handle| may be invalid even if this function returns
-// success.
-// Callers should perform appropriate checks.
-MOJO_SYSTEM_IMPL_EXPORT MojoResult
-PassSharedMemoryHandle(MojoHandle mojo_handle,
-                       base::SharedMemoryHandle* shared_memory_handle,
-                       size_t* num_bytes,
-                       bool* read_only);
-
-// Sets system properties that can be read by the MojoGetProperty() API. See the
-// documentation for MojoPropertyType for supported property types and their
-// corresponding value type.
-//
-// Default property values:
-//   |MOJO_PROPERTY_TYPE_SYNC_CALL_ALLOWED| - true
-MOJO_SYSTEM_IMPL_EXPORT MojoResult SetProperty(MojoPropertyType type,
-                                               const void* value);
+// Retrieves the |InternalPlatformHandle| that was wrapped into a |MojoHandle|
+// (using |CreateInternalPlatformHandleWrapper()| above). Note that the
+// |MojoHandle| is closed on success.
+MOJO_SYSTEM_IMPL_EXPORT MojoResult PassWrappedInternalPlatformHandle(
+    MojoHandle platform_handle_wrapper_handle,
+    ScopedInternalPlatformHandle* platform_handle);
 
 // Initialialization/shutdown for interprocess communication (IPC) -------------
 

@@ -52,6 +52,9 @@ class CORE_EXPORT OffscreenCanvas final
   void setWidth(unsigned);
   void setHeight(unsigned);
 
+  // OffscreenCanvasFrameDispatcherClient
+  void BeginFrame() override;
+
   // API Methods
   ImageBitmap* transferToImageBitmap(ScriptState*, ExceptionState&);
   ScriptPromise convertToBlob(ScriptState*,
@@ -78,8 +81,8 @@ class CORE_EXPORT OffscreenCanvas final
   static void RegisterRenderingContextFactory(
       std::unique_ptr<CanvasRenderingContextFactory>);
 
-  bool OriginClean() const;
-  void SetOriginTainted() { origin_clean_ = false; }
+  bool OriginClean() const override;
+  void SetOriginTainted() override { origin_clean_ = false; }
   // TODO(crbug.com/630356): apply the flag to WebGL context as well
   void SetDisableReadingFromCanvasTrue() {
     disable_reading_from_canvas_ = true;
@@ -99,16 +102,20 @@ class CORE_EXPORT OffscreenCanvas final
   uint32_t SinkId() const { return sink_id_; }
 
   // CanvasRenderingContextHost implementation.
-  ScriptPromise Commit(scoped_refptr<StaticBitmapImage>,
-                       const SkIRect& damage_rect,
-                       ScriptState*,
-                       ExceptionState&) override;
-  void FinalizeFrame() override;
+  void FinalizeFrame() override{};
   void DetachContext() override { context_ = nullptr; }
   CanvasRenderingContext* RenderingContext() const override { return context_; }
+  void PushFrame(scoped_refptr<StaticBitmapImage> image,
+                 const SkIRect& damage_rect) override;
+  void DidDraw(const FloatRect&) override;
+  void DidDraw() override;
+  void Commit(scoped_refptr<StaticBitmapImage> bitmap_image,
+              const SkIRect& damage_rect) override;
 
-  // OffscreenCanvasFrameDispatcherClient implementation
-  void BeginFrame() final;
+  // Partial CanvasResourceHost implementation
+  void NotifyGpuContextLost() override{};
+  void SetNeedsCompositingUpdate() override{};
+  void UpdateMemoryUsage() override{/*TODO(crbug.com/842693): implement*/};
 
   // EventTarget implementation
   const AtomicString& InterfaceName() const final {
@@ -130,7 +137,7 @@ class CORE_EXPORT OffscreenCanvas final
   IntSize BitmapSourceSize() const final;
   ScriptPromise CreateImageBitmap(ScriptState*,
                                   EventTarget&,
-                                  Optional<IntRect>,
+                                  base::Optional<IntRect>,
                                   const ImageBitmapOptions&) final;
 
   // CanvasImageSource implementation
@@ -146,7 +153,7 @@ class CORE_EXPORT OffscreenCanvas final
   bool IsOpaque() const final;
   bool IsAccelerated() const final;
 
-  DispatchEventResult HostDispatchEvent(Event* event) {
+  DispatchEventResult HostDispatchEvent(Event* event) override {
     return DispatchEvent(event);
   }
 
@@ -154,15 +161,16 @@ class CORE_EXPORT OffscreenCanvas final
   bool IsWebGL2Enabled() const override { return true; }
   bool IsWebGLBlocked() const override { return false; }
 
+  void RegisterContextToDispatch(CanvasRenderingContext*) override;
+
   FontSelector* GetFontSelector() override;
 
-  virtual void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   friend class OffscreenCanvasTest;
   explicit OffscreenCanvas(const IntSize&);
   OffscreenCanvasFrameDispatcher* GetOrCreateFrameDispatcher();
-  void DoCommit();
   using ContextFactoryVector =
       Vector<std::unique_ptr<CanvasRenderingContextFactory>>;
   static ContextFactoryVector& RenderingContextFactories();
@@ -181,8 +189,6 @@ class CORE_EXPORT OffscreenCanvas final
 
   std::unique_ptr<OffscreenCanvasFrameDispatcher> frame_dispatcher_;
 
-  Member<ScriptPromiseResolver> commit_promise_resolver_;
-  scoped_refptr<StaticBitmapImage> current_frame_;
   SkIRect current_frame_damage_rect_;
 
   std::unique_ptr<CanvasResourceProvider> resource_provider_;

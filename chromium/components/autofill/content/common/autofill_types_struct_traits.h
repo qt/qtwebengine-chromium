@@ -155,6 +155,10 @@ struct StructTraits<autofill::mojom::FormFieldDataDataView,
     return r.css_classes;
   }
 
+  static uint32_t unique_renderer_id(const autofill::FormFieldData& r) {
+    return r.unique_renderer_id;
+  }
+
   static uint32_t properties_mask(const autofill::FormFieldData& r) {
     return r.properties_mask;
   }
@@ -165,6 +169,10 @@ struct StructTraits<autofill::mojom::FormFieldDataDataView,
 
   static bool is_autofilled(const autofill::FormFieldData& r) {
     return r.is_autofilled;
+  }
+
+  static const std::string& section(const autofill::FormFieldData& r) {
+    return r.section;
   }
 
   static autofill::FormFieldData::CheckStatus check_status(
@@ -188,6 +196,22 @@ struct StructTraits<autofill::mojom::FormFieldDataDataView,
   static base::i18n::TextDirection text_direction(
       const autofill::FormFieldData& r) {
     return r.text_direction;
+  }
+
+  static bool is_enabled(const autofill::FormFieldData& r) {
+    return r.is_enabled;
+  }
+
+  static bool is_readonly(const autofill::FormFieldData& r) {
+    return r.is_readonly;
+  }
+
+  static bool is_default(const autofill::FormFieldData& r) {
+    return r.is_default;
+  }
+
+  static const base::string16& typed_value(const autofill::FormFieldData& r) {
+    return r.typed_value;
   }
 
   static const std::vector<base::string16>& option_values(
@@ -227,6 +251,10 @@ struct StructTraits<autofill::mojom::FormDataDataView, autofill::FormData> {
 
   static bool is_formless_checkout(const autofill::FormData& r) {
     return r.is_formless_checkout;
+  }
+
+  static uint32_t unique_renderer_id(const autofill::FormData& r) {
+    return r.unique_renderer_id;
   }
 
   static const std::vector<autofill::FormFieldData>& fields(
@@ -269,6 +297,11 @@ struct StructTraits<autofill::mojom::FormFieldDataPredictionsDataView,
   static const std::string& parseable_name(
       const autofill::FormFieldDataPredictions& r) {
     return r.parseable_name;
+  }
+
+  static const std::string& section(
+      const autofill::FormFieldDataPredictions& r) {
+    return r.section;
   }
 
   static bool Read(autofill::mojom::FormFieldDataPredictionsDataView data,
@@ -544,10 +577,6 @@ struct StructTraits<autofill::mojom::PasswordFormDataView,
     return r.is_affiliation_based_match;
   }
 
-  static bool does_look_like_signup_form(const autofill::PasswordForm& r) {
-    return r.does_look_like_signup_form;
-  }
-
   static autofill::PasswordForm::SubmissionIndicatorEvent submission_event(
       const autofill::PasswordForm& r) {
     return r.submission_event;
@@ -555,6 +584,11 @@ struct StructTraits<autofill::mojom::PasswordFormDataView,
 
   static bool only_for_fallback_saving(const autofill::PasswordForm& r) {
     return r.only_for_fallback_saving;
+  }
+
+  static bool is_gaia_with_skip_save_password_form(
+      const autofill::PasswordForm& r) {
+    return r.is_gaia_with_skip_save_password_form;
   }
 
   static bool Read(autofill::mojom::PasswordFormDataView data,

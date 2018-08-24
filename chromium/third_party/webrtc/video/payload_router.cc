@@ -43,6 +43,8 @@ void CopyCodecSpecific(const CodecSpecificInfo* info, RTPVideoHeader* rtp) {
           info->codecSpecific.VP9.flexible_mode;
       rtp->codecHeader.VP9.ss_data_available =
           info->codecSpecific.VP9.ss_data_available;
+      rtp->codecHeader.VP9.non_ref_for_inter_layer_pred =
+          info->codecSpecific.VP9.non_ref_for_inter_layer_pred;
       rtp->codecHeader.VP9.temporal_idx = info->codecSpecific.VP9.temporal_idx;
       rtp->codecHeader.VP9.spatial_idx = info->codecSpecific.VP9.spatial_idx;
       rtp->codecHeader.VP9.temporal_up_switch =
@@ -70,8 +72,8 @@ void CopyCodecSpecific(const CodecSpecificInfo* info, RTPVideoHeader* rtp) {
       for (int i = 0; i < info->codecSpecific.VP9.num_ref_pics; ++i) {
         rtp->codecHeader.VP9.pid_diff[i] = info->codecSpecific.VP9.p_diff[i];
       }
-      rtp->codecHeader.VP9.end_of_superframe =
-          info->codecSpecific.VP9.end_of_superframe;
+      rtp->codecHeader.VP9.end_of_picture =
+          info->codecSpecific.VP9.end_of_picture;
       return;
     }
     case kVideoCodecH264:
@@ -266,15 +268,15 @@ EncodedImageCallback::Result PayloadRouter::OnEncodedImage(
 }
 
 void PayloadRouter::OnBitrateAllocationUpdated(
-    const BitrateAllocation& bitrate) {
+    const VideoBitrateAllocation& bitrate) {
   rtc::CritScope lock(&crit_);
   if (IsActive()) {
     if (rtp_modules_.size() == 1) {
       // If spatial scalability is enabled, it is covered by a single stream.
       rtp_modules_[0]->SetVideoBitrateAllocation(bitrate);
     } else {
-      // Simulcast is in use, split the BitrateAllocation into one struct per
-      // rtp stream, moving over the temporal layer allocation.
+      // Simulcast is in use, split the VideoBitrateAllocation into one struct
+      // per rtp stream, moving over the temporal layer allocation.
       for (size_t si = 0; si < rtp_modules_.size(); ++si) {
         // Don't send empty TargetBitrate messages on streams not being relayed.
         if (!bitrate.IsSpatialLayerUsed(si)) {
@@ -283,7 +285,7 @@ void PayloadRouter::OnBitrateAllocationUpdated(
           continue;
         }
 
-        BitrateAllocation layer_bitrate;
+        VideoBitrateAllocation layer_bitrate;
         for (int tl = 0; tl < kMaxTemporalStreams; ++tl) {
           if (bitrate.HasBitrate(si, tl))
             layer_bitrate.SetBitrate(0, tl, bitrate.GetBitrate(si, tl));

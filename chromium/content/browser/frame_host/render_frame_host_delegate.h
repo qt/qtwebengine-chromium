@@ -17,6 +17,7 @@
 #include "content/common/content_export.h"
 #include "content/common/frame_message_enums.h"
 #include "content/public/browser/site_instance.h"
+#include "content/public/browser/visibility.h"
 #include "content/public/common/javascript_dialog_type.h"
 #include "content/public/common/media_stream_request.h"
 #include "content/public/common/resource_load_info.mojom.h"
@@ -50,6 +51,10 @@ class Size;
 
 namespace url {
 class Origin;
+}
+
+namespace blink {
+struct WebFullscreenOptions;
 }
 
 namespace content {
@@ -218,7 +223,9 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
 
   // Notification that the frame wants to go into fullscreen mode.
   // |origin| represents the origin of the frame that requests fullscreen.
-  virtual void EnterFullscreenMode(const GURL& origin) {}
+  virtual void EnterFullscreenMode(const GURL& origin,
+                                   const blink::WebFullscreenOptions& options) {
+  }
 
   // Notification that the frame wants to go out of fullscreen mode.
   // |will_cause_resize| indicates whether the fullscreen change causes a
@@ -349,8 +356,10 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   virtual void SubresourceResponseStarted(const GURL& url,
                                           net::CertStatus cert_status) {}
 
-  // Notifies that the render finished loading a subresource.
+  // Notifies that the render finished loading a subresource for the frame
+  // associated with |render_frame_host|.
   virtual void ResourceLoadComplete(
+      RenderFrameHost* render_frame_host,
       mojom::ResourceLoadInfoPtr resource_load_info) {}
 
   // Request to print a frame that is in a different process than its parent.
@@ -363,9 +372,8 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   virtual void UpdatePictureInPictureSurfaceId(const viz::SurfaceId& surface_id,
                                                const gfx::Size& natural_size) {}
 
-  // Updates the Picture-in-Picture controller with a signal that
-  // Picture-in-Picture mode has ended.
-  virtual void ExitPictureInPicture() {}
+  // Returns the visibility of the delegate.
+  virtual Visibility GetVisibility() const;
 
  protected:
   virtual ~RenderFrameHostDelegate() {}

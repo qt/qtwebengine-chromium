@@ -7,11 +7,9 @@
 #include <utility>
 
 #include "base/files/file_util.h"
-#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
-#include "base/test/scoped_task_environment.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "net/base/io_buffer.h"
@@ -27,7 +25,6 @@
 #include "net/disk_cache/simple/simple_file_tracker.h"
 #include "net/disk_cache/simple/simple_index.h"
 #include "net/test/gtest_util.h"
-#include "net/test/net_test_suite.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -42,7 +39,7 @@ DiskCacheTest::~DiskCacheTest() = default;
 
 bool DiskCacheTest::CopyTestCache(const std::string& name) {
   base::FilePath path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &path);
+  base::PathService::Get(base::DIR_SOURCE_ROOT, &path);
   path = path.AppendASCII("net");
   path = path.AppendASCII("data");
   path = path.AppendASCII("cache_tests");
@@ -75,10 +72,6 @@ int DiskCacheTestWithCache::TestIterator::OpenNextEntry(
 }
 
 DiskCacheTestWithCache::DiskCacheTestWithCache()
-    : DiskCacheTestWithCache(NetTestSuite::GetScopedTaskEnvironment()) {}
-
-DiskCacheTestWithCache::DiskCacheTestWithCache(
-    base::test::ScopedTaskEnvironment* scoped_task_env)
     : cache_impl_(NULL),
       simple_cache_impl_(NULL),
       mem_cache_(NULL),
@@ -92,8 +85,7 @@ DiskCacheTestWithCache::DiskCacheTestWithCache(
       new_eviction_(false),
       first_cleanup_(true),
       integrity_(true),
-      use_current_thread_(false),
-      scoped_task_env_(scoped_task_env) {}
+      use_current_thread_(false) {}
 
 DiskCacheTestWithCache::~DiskCacheTestWithCache() = default;
 
@@ -283,21 +275,17 @@ void DiskCacheTestWithCache::AddDelay() {
 }
 
 void DiskCacheTestWithCache::TearDown() {
-  scoped_task_env_->RunUntilIdle();
+  RunUntilIdle();
   cache_.reset();
 
   if (!memory_only_ && !simple_cache_mode_ && integrity_) {
     EXPECT_TRUE(CheckCacheIntegrity(cache_path_, new_eviction_, size_, mask_));
   }
-  scoped_task_env_->RunUntilIdle();
+  RunUntilIdle();
   if (simple_cache_mode_ && simple_file_tracker_)
     EXPECT_TRUE(simple_file_tracker_->IsEmptyForTesting());
 
   DiskCacheTest::TearDown();
-
-  // We are documented as not keeping this past TearDown, and net_perftests
-  // is written under this assumption.
-  scoped_task_env_ = nullptr;
 }
 
 void DiskCacheTestWithCache::InitMemoryCache() {

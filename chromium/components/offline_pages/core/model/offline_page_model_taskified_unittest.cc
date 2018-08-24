@@ -32,7 +32,7 @@
 #include "components/offline_pages/core/offline_page_test_archiver.h"
 #include "components/offline_pages/core/offline_page_types.h"
 #include "components/offline_pages/core/offline_store_utils.h"
-#include "components/offline_pages/core/system_download_manager_stub.h"
+#include "components/offline_pages/core/stub_system_download_manager.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -66,7 +66,7 @@ const ClientId kTestBrowserActionsClientId(kBrowserActionsNamespace, "999");
 const int64_t kTestFileSize = 876543LL;
 const base::string16 kTestTitle = base::UTF8ToUTF16("a title");
 const std::string kTestRequestOrigin("abc.xyz");
-const std::string kEmptyRequestOrigin("");
+const std::string kEmptyRequestOrigin;
 const std::string kTestDigest("test digest");
 const int64_t kDownloadId = 42LL;
 
@@ -133,7 +133,7 @@ class OfflinePageModelTaskifiedTest : public testing::Test,
   OfflinePageMetadataStoreTestUtil* store_test_util() {
     return &store_test_util_;
   }
-  SystemDownloadManagerStub* download_manager_stub() {
+  StubSystemDownloadManager* download_manager_stub() {
     return download_manager_stub_;
   }
   OfflinePageItemGenerator* page_generator() { return &generator_; }
@@ -162,26 +162,12 @@ class OfflinePageModelTaskifiedTest : public testing::Test,
     return model_->last_maintenance_tasks_schedule_time_;
   }
 
-  std::unique_ptr<OfflinePageThumbnail> GetThumbnailSync(int64_t offline_id) {
-    bool called = false;
-    std::unique_ptr<OfflinePageThumbnail> result;
-    auto callback = base::BindLambdaForTesting(
-        [&](std::unique_ptr<OfflinePageThumbnail> thumbnail) {
-          called = true;
-          result = std::move(thumbnail);
-        });
-    model_->GetThumbnailByOfflineId(offline_id, callback);
-    PumpLoop();
-    EXPECT_TRUE(called);
-    return result;
-  }
-
  private:
   scoped_refptr<base::TestMockTimeTaskRunner> task_runner_;
   base::ThreadTaskRunnerHandle task_runner_handle_;
   std::unique_ptr<OfflinePageModelTaskified> model_;
   OfflinePageMetadataStoreTestUtil store_test_util_;
-  SystemDownloadManagerStub* download_manager_stub_;
+  StubSystemDownloadManager* download_manager_stub_;
   OfflinePageItemGenerator generator_;
   std::unique_ptr<base::HistogramTester> histogram_tester_;
   base::ScopedTempDir temporary_dir_;
@@ -243,7 +229,7 @@ void OfflinePageModelTaskifiedTest::BuildStore() {
 void OfflinePageModelTaskifiedTest::BuildModel() {
   ASSERT_TRUE(store_test_util_.store());
   // Keep a copy of the system download manager stub to test against.
-  download_manager_stub_ = new SystemDownloadManagerStub(kDownloadId, true);
+  download_manager_stub_ = new StubSystemDownloadManager(kDownloadId, true);
   auto archive_manager = std::make_unique<ArchiveManager>(
       temporary_dir_path(), private_archive_dir_path(),
       public_archive_dir_path(), base::ThreadTaskRunnerHandle::Get());
@@ -1666,7 +1652,8 @@ TEST_F(OfflinePageModelTaskifiedTest, MaintenanceTasksAreDisabled) {
                                        0);
 }
 
-TEST_F(OfflinePageModelTaskifiedTest, StoreAndGetThumbnail) {
+TEST_F(OfflinePageModelTaskifiedTest, StoreAndCheckThumbnail) {
+  // Store a thumbnail.
   OfflinePageThumbnail thumb;
   thumb.offline_id = 1;
   thumb.expiration = base::Time::Now();
@@ -1675,12 +1662,21 @@ TEST_F(OfflinePageModelTaskifiedTest, StoreAndGetThumbnail) {
   EXPECT_CALL(*this, ThumbnailAdded(_, thumb));
   PumpLoop();
 
+  // Check it exists
+  bool thumbnail_exists = false;
+  auto exists_callback = base::BindLambdaForTesting(
+      [&](bool exists) { thumbnail_exists = exists; });
+  model()->HasThumbnailForOfflineId(thumb.offline_id, exists_callback);
+  PumpLoop();
+  EXPECT_TRUE(thumbnail_exists);
+
+  // Obtain its data.
   std::unique_ptr<OfflinePageThumbnail> result_thumbnail;
-  auto callback = base::BindLambdaForTesting(
+  auto data_callback = base::BindLambdaForTesting(
       [&](std::unique_ptr<OfflinePageThumbnail> result) {
         result_thumbnail = std::move(result);
       });
-  model()->GetThumbnailByOfflineId(thumb.offline_id, callback);
+  model()->GetThumbnailByOfflineId(thumb.offline_id, data_callback);
   PumpLoop();
   EXPECT_EQ(thumb, *result_thumbnail);
 }

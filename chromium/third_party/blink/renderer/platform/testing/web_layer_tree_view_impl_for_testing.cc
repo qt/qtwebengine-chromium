@@ -7,12 +7,10 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "cc/animation/animation_host.h"
 #include "cc/animation/animation_timeline.h"
-#include "cc/blink/web_layer_impl.h"
 #include "cc/layers/layer.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_settings.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_layer.h"
 #include "third_party/blink/public/platform/web_layer_tree_view.h"
 #include "third_party/blink/public/platform/web_size.h"
 
@@ -48,9 +46,8 @@ WebLayerTreeViewImplForTesting::DefaultLayerTreeSettings() {
   return settings;
 }
 
-bool WebLayerTreeViewImplForTesting::HasLayer(const WebLayer& layer) {
-  return layer.CcLayer()->GetLayerTreeHostForTesting() ==
-         layer_tree_host_.get();
+bool WebLayerTreeViewImplForTesting::HasLayer(const cc::Layer& layer) {
+  return layer.GetLayerTreeHostForTesting() == layer_tree_host_.get();
 }
 
 void WebLayerTreeViewImplForTesting::SetViewportSize(
@@ -60,12 +57,12 @@ void WebLayerTreeViewImplForTesting::SetViewportSize(
   // TODO(ccameron): This likely causes surface invariant violations.
   layer_tree_host_->SetViewportSizeAndScale(
       gfx_size, layer_tree_host_->device_scale_factor(),
-      layer_tree_host_->local_surface_id());
+      layer_tree_host_->local_surface_id_from_parent());
 }
 
-void WebLayerTreeViewImplForTesting::SetRootLayer(const blink::WebLayer& root) {
-  layer_tree_host_->SetRootLayer(
-      static_cast<const cc_blink::WebLayerImpl*>(&root)->layer());
+void WebLayerTreeViewImplForTesting::SetRootLayer(
+    scoped_refptr<cc::Layer> root) {
+  layer_tree_host_->SetRootLayer(root);
 }
 
 void WebLayerTreeViewImplForTesting::ClearRootLayer() {
@@ -81,7 +78,7 @@ WebSize WebLayerTreeViewImplForTesting::GetViewportSize() const {
                  layer_tree_host_->device_viewport_size().height());
 }
 
-void WebLayerTreeViewImplForTesting::SetBackgroundColor(WebColor color) {
+void WebLayerTreeViewImplForTesting::SetBackgroundColor(SkColor color) {
   layer_tree_host_->set_background_color(color);
 }
 
@@ -139,31 +136,18 @@ void WebLayerTreeViewImplForTesting::RegisterViewportLayers(
     const WebLayerTreeView::ViewportLayers& layers) {
   cc::LayerTreeHost::ViewportLayers viewport_layers;
   if (layers.overscroll_elasticity) {
-    viewport_layers.overscroll_elasticity =
-        static_cast<const cc_blink::WebLayerImpl*>(layers.overscroll_elasticity)
-            ->layer();
+    viewport_layers.overscroll_elasticity = layers.overscroll_elasticity;
   }
-  viewport_layers.page_scale =
-      static_cast<const cc_blink::WebLayerImpl*>(layers.page_scale)->layer();
+  viewport_layers.page_scale = layers.page_scale;
   if (layers.inner_viewport_container) {
-    viewport_layers.inner_viewport_container =
-        static_cast<const cc_blink::WebLayerImpl*>(
-            layers.inner_viewport_container)
-            ->layer();
+    viewport_layers.inner_viewport_container = layers.inner_viewport_container;
   }
   if (layers.outer_viewport_container) {
-    viewport_layers.outer_viewport_container =
-        static_cast<const cc_blink::WebLayerImpl*>(
-            layers.outer_viewport_container)
-            ->layer();
+    viewport_layers.outer_viewport_container = layers.outer_viewport_container;
   }
-  viewport_layers.inner_viewport_scroll =
-      static_cast<const cc_blink::WebLayerImpl*>(layers.inner_viewport_scroll)
-          ->layer();
+  viewport_layers.inner_viewport_scroll = layers.inner_viewport_scroll;
   if (layers.outer_viewport_scroll) {
-    viewport_layers.outer_viewport_scroll =
-        static_cast<const cc_blink::WebLayerImpl*>(layers.outer_viewport_scroll)
-            ->layer();
+    viewport_layers.outer_viewport_scroll = layers.outer_viewport_scroll;
   }
   layer_tree_host_->RegisterViewportLayers(viewport_layers);
 }

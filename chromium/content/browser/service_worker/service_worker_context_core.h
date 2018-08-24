@@ -45,7 +45,6 @@ class ServiceWorkerContextCoreObserver;
 class ServiceWorkerContextWrapper;
 class ServiceWorkerDispatcherHost;
 class ServiceWorkerJobCoordinator;
-class ServiceWorkerNavigationHandleCore;
 class ServiceWorkerProviderHost;
 class ServiceWorkerRegistration;
 class ServiceWorkerStorage;
@@ -147,9 +146,10 @@ class CONTENT_EXPORT ServiceWorkerContextCore
                               int line_number,
                               const GURL& source_url) override;
   void OnControlleeAdded(ServiceWorkerVersion* version,
-                         ServiceWorkerProviderHost* provider_host) override;
+                         const std::string& client_uuid,
+                         const ServiceWorkerClientInfo& client_info) override;
   void OnControlleeRemoved(ServiceWorkerVersion* version,
-                           ServiceWorkerProviderHost* provider_host) override;
+                           const std::string& client_uuid) override;
 
   ServiceWorkerContextWrapper* wrapper() const { return wrapper_; }
   ServiceWorkerStorage* storage() { return storage_.get(); }
@@ -172,19 +172,24 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   void AddProviderHost(
       std::unique_ptr<ServiceWorkerProviderHost> provider_host);
   ServiceWorkerProviderHost* GetProviderHost(int process_id, int provider_id);
+  std::unique_ptr<ServiceWorkerProviderHost> ReleaseProviderHost(
+      int process_id,
+      int provider_id);
   void RemoveProviderHost(int process_id, int provider_id);
   void RemoveAllProviderHostsForProcess(int process_id);
 
   // Returns a ProviderHost iterator for all service worker clients for the
-  // |origin|. This only returns clients that are execution ready (i.e., for
-  // windows, the navigation has been committed and for workers, the final
-  // response after redirects has been delivered).
+  // |origin|. If |include_reserved_clients| is false, this only returns clients
+  // that are execution ready (i.e., for windows, the navigation has been
+  // committed and for workers, the final response after redirects has been
+  // delivered).
   std::unique_ptr<ProviderHostIterator> GetClientProviderHostIterator(
-      const GURL& origin);
+      const GURL& origin,
+      bool include_reserved_clients);
 
   // Runs the callback with true if there is a ProviderHost for |origin| of type
   // blink::mojom::ServiceWorkerProviderType::kForWindow which is a main
-  // (top-level) frame.
+  // (top-level) frame. Reserved clients are ignored.
   void HasMainFrameProviderHost(const GURL& origin,
                                 BoolCallback callback) const;
 
@@ -245,15 +250,6 @@ class CONTENT_EXPORT ServiceWorkerContextCore
     return live_versions_;
   }
 
-  // PlzNavigate
-  // Methods to manage the map keeping track of all
-  // ServiceWorkerNavigationHandleCores registered for ongoing navigations.
-  void AddNavigationHandleCore(int service_worker_provider_id,
-                               ServiceWorkerNavigationHandleCore* handle);
-  void RemoveNavigationHandleCore(int service_worker_provider_id);
-  ServiceWorkerNavigationHandleCore* GetNavigationHandleCore(
-      int service_worker_provider_id);
-
   std::vector<ServiceWorkerRegistrationInfo> GetAllLiveRegistrationInfo();
   std::vector<ServiceWorkerVersionInfo> GetAllLiveVersionInfo();
 
@@ -261,9 +257,6 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   // called.
   void ProtectVersion(const scoped_refptr<ServiceWorkerVersion>& version);
   void UnprotectVersion(int64_t version_id);
-
-  // Returns new context-local unique ID.
-  int GetNewServiceWorkerHandleId();
 
   void ScheduleDeleteAndStartOver() const;
 
@@ -286,6 +279,9 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   // Returns the count of consecutive start worker failures for the given
   // version. The count resets to zero when the worker successfully starts.
   int GetVersionFailureCount(int64_t version_id);
+
+  // Called by ServiceWorkerStorage when StoreRegistration() succeeds.
+  void NotifyRegistrationStored(int64_t registration_id, const GURL& pattern);
 
   URLLoaderFactoryGetter* loader_factory_getter() {
     return loader_factory_getter_.get();
@@ -357,22 +353,18 @@ class CONTENT_EXPORT ServiceWorkerContextCore
 
   std::map<int64_t /* version_id */, FailureInfo> failure_counts_;
 
-  // PlzNavigate
-  // Map of ServiceWorkerNavigationHandleCores used for navigation requests.
-  std::map<int, ServiceWorkerNavigationHandleCore*>
-      navigation_handle_cores_map_;
-
   // IsServicificationEnabled
   scoped_refptr<URLLoaderFactoryGetter> loader_factory_getter_;
 
   bool force_update_on_page_load_;
-  int next_handle_id_;
   // Set in RegisterServiceWorker(), cleared in ClearAllServiceWorkersForTest().
   // This is used to avoid unnecessary disk read operation in tests. This value
   // is false if Chrome was relaunched after service workers were registered.
   bool was_service_worker_registered_;
-  scoped_refptr<base::ObserverListThreadSafe<ServiceWorkerContextCoreObserver>>
-      observer_list_;
+  using ServiceWorkerContextObserverList =
+      base::ObserverListThreadSafe<ServiceWorkerContextCoreObserver>;
+  const scoped_refptr<ServiceWorkerContextObserverList> observer_list_;
+
   base::WeakPtrFactory<ServiceWorkerContextCore> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerContextCore);

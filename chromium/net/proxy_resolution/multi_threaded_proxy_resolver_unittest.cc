@@ -7,7 +7,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -16,6 +15,7 @@
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/platform_thread.h"
+#include "base/threading/thread_checker_impl.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
 #include "net/log/net_log_event_type.h"
@@ -27,6 +27,7 @@
 #include "net/proxy_resolution/proxy_info.h"
 #include "net/proxy_resolution/proxy_resolver_factory.h"
 #include "net/test/gtest_util.h"
+#include "net/test/test_with_scoped_task_environment.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -45,8 +46,7 @@ namespace {
 //       - returns a single-item proxy list with the query's host.
 class MockProxyResolver : public ProxyResolver {
  public:
-  MockProxyResolver()
-      : worker_loop_(base::MessageLoop::current()), request_count_(0) {}
+  MockProxyResolver() = default;
 
   // ProxyResolver implementation.
   int GetProxyForURL(const GURL& query_url,
@@ -57,7 +57,7 @@ class MockProxyResolver : public ProxyResolver {
     if (!resolve_latency_.is_zero())
       base::PlatformThread::Sleep(resolve_latency_);
 
-    CheckIsOnWorkerThread();
+    EXPECT_TRUE(worker_thread_checker_.CalledOnValidThread());
 
     EXPECT_TRUE(callback.is_null());
     EXPECT_TRUE(request == NULL);
@@ -78,12 +78,8 @@ class MockProxyResolver : public ProxyResolver {
   }
 
  private:
-  void CheckIsOnWorkerThread() {
-    EXPECT_EQ(base::MessageLoop::current(), worker_loop_);
-  }
-
-  base::MessageLoop* worker_loop_;
-  int request_count_;
+  base::ThreadCheckerImpl worker_thread_checker_;
+  int request_count_ = 0;
   base::TimeDelta resolve_latency_;
 };
 
@@ -214,7 +210,7 @@ class SingleShotMultiThreadedProxyResolverFactory
   std::unique_ptr<ProxyResolverFactory> factory_;
 };
 
-class MultiThreadedProxyResolverTest : public testing::Test {
+class MultiThreadedProxyResolverTest : public TestWithScopedTaskEnvironment {
  public:
   void Init(size_t num_threads) {
     std::unique_ptr<BlockableProxyResolverFactory> factory_owner(

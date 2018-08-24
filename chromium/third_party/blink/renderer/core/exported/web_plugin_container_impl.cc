@@ -33,12 +33,9 @@
 
 #include "build/build_config.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_clipboard.h"
 #include "third_party/blink/public/platform/web_coalesced_input_event.h"
-#include "third_party/blink/public/platform/web_compositor_support.h"
 #include "third_party/blink/public/platform/web_cursor_info.h"
 #include "third_party/blink/public/platform/web_drag_data.h"
-#include "third_party/blink/public/platform/web_external_texture_layer.h"
 #include "third_party/blink/public/platform/web_input_event.h"
 #include "third_party/blink/public/platform/web_rect.h"
 #include "third_party/blink/public/platform/web_string.h"
@@ -49,6 +46,7 @@
 #include "third_party/blink/public/web/web_dom_message_event.h"
 #include "third_party/blink/public/web/web_element.h"
 #include "third_party/blink/public/web/web_frame_client.h"
+#include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/blink/public/web/web_plugin.h"
 #include "third_party/blink/public/web/web_print_params.h"
 #include "third_party/blink/public/web/web_print_preset_options.h"
@@ -59,6 +57,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_element.h"
 #include "third_party/blink/renderer/core/clipboard/data_object.h"
 #include "third_party/blink/renderer/core/clipboard/data_transfer.h"
+#include "third_party/blink/renderer/core/clipboard/system_clipboard.h"
 #include "third_party/blink/renderer/core/dom/events/event_queue.h"
 #include "third_party/blink/renderer/core/dom/user_gesture_indicator.h"
 #include "third_party/blink/renderer/core/events/drag_event.h"
@@ -75,6 +74,7 @@
 #include "third_party/blink/renderer/core/exported/web_view_impl.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/frame/event_handler_registry.h"
+#include "third_party/blink/renderer/core/frame/find_in_page.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
@@ -169,11 +169,13 @@ void WebPluginContainerImpl::Paint(GraphicsContext& context,
   if (!cull_rect.IntersectsCullRect(FrameRect()))
     return;
 
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled() && web_layer_) {
+  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled() && layer_) {
+    layer_->SetBounds(static_cast<gfx::Size>(frame_rect_.Size()));
+    layer_->SetIsDrawable(true);
     // With Slimming Paint v2, composited plugins should have their layers
     // inserted rather than invoking WebPlugin::paint.
     RecordForeignLayer(context, *element_->GetLayoutObject(),
-                       DisplayItem::kForeignLayerPlugin, web_layer_,
+                       DisplayItem::kForeignLayerPlugin, layer_,
                        FrameRect().Location(), frame_rect_.Size());
     return;
   }
@@ -304,6 +306,13 @@ void WebPluginContainerImpl::SetPlugin(WebPlugin* plugin) {
   web_plugin_ = plugin;
 }
 
+void WebPluginContainerImpl::UsePluginAsFindHandler() {
+  WebLocalFrameImpl* frame =
+      WebLocalFrameImpl::FromFrame(element_->GetDocument().GetFrame());
+  if (frame)
+    frame->GetFindInPage()->SetPluginFindHandler(this);
+}
+
 float WebPluginContainerImpl::DeviceScaleFactor() {
   Page* page = element_->GetDocument().GetPage();
   if (!page)
@@ -325,16 +334,19 @@ float WebPluginContainerImpl::PageZoomFactor() {
   return frame->PageZoomFactor();
 }
 
-void WebPluginContainerImpl::SetWebLayer(WebLayer* layer) {
-  if (web_layer_ == layer)
+void WebPluginContainerImpl::SetCcLayer(cc::Layer* new_layer,
+                                        bool prevent_contents_opaque_changes) {
+  if (layer_ == new_layer &&
+      prevent_contents_opaque_changes == prevent_contents_opaque_changes_)
     return;
 
-  if (web_layer_)
-    GraphicsLayer::UnregisterContentsLayer(web_layer_);
-  if (layer)
-    GraphicsLayer::RegisterContentsLayer(layer);
+  if (layer_)
+    GraphicsLayer::UnregisterContentsLayer(layer_);
+  if (new_layer)
+    GraphicsLayer::RegisterContentsLayer(new_layer);
 
-  web_layer_ = layer;
+  layer_ = new_layer;
+  prevent_contents_opaque_changes_ = prevent_contents_opaque_changes;
 
   if (element_)
     element_->SetNeedsCompositingUpdate();
@@ -393,9 +405,8 @@ void WebPluginContainerImpl::Copy() {
   if (!web_plugin_->HasSelection())
     return;
 
-  Platform::Current()->Clipboard()->WriteHTML(
-      web_plugin_->SelectionAsMarkup(), WebURL(),
-      web_plugin_->SelectionAsText(), false);
+  SystemClipboard::GetInstance().WriteHTML(
+      web_plugin_->SelectionAsMarkup(), KURL(), web_plugin_->SelectionAsText());
 }
 
 bool WebPluginContainerImpl::ExecuteEditCommand(const WebString& name) {
@@ -417,7 +428,8 @@ bool WebPluginContainerImpl::ExecuteEditCommand(const WebString& name,
 // static
 bool WebPluginContainerImpl::SupportsCommand(const WebString& name) {
   return name == "Copy" || name == "Cut" || name == "Paste" ||
-         name == "PasteAndMatchStyle";
+         name == "PasteAndMatchStyle" || name == "SelectAll" ||
+         name == "Undo" || name == "Redo";
 }
 
 WebElement WebPluginContainerImpl::GetElement() {
@@ -543,7 +555,7 @@ void WebPluginContainerImpl::LoadFrameRequest(const WebURLRequest& request,
 
   FrameLoadRequest frame_request(frame->GetDocument(),
                                  request.ToResourceRequest(), target);
-  frame->Loader().Load(frame_request);
+  frame->Loader().StartNavigation(frame_request);
 }
 
 bool WebPluginContainerImpl::IsRectTopmost(const WebRect& rect) {
@@ -590,8 +602,8 @@ void WebPluginContainerImpl::RequestTouchEventType(
   if (touch_event_request_type_ == request_type || !element_)
     return;
 
-  if (Page* page = element_->GetDocument().GetPage()) {
-    EventHandlerRegistry& registry = page->GetEventHandlerRegistry();
+  if (auto* frame = element_->GetDocument().GetFrame()) {
+    EventHandlerRegistry& registry = frame->GetEventHandlerRegistry();
     if (request_type == kTouchEventRequestTypeRawLowLatency) {
       if (touch_event_request_type_ != kTouchEventRequestTypeNone) {
         registry.DidRemoveEventHandler(
@@ -625,8 +637,9 @@ void WebPluginContainerImpl::RequestTouchEventType(
 void WebPluginContainerImpl::SetWantsWheelEvents(bool wants_wheel_events) {
   if (wants_wheel_events_ == wants_wheel_events)
     return;
-  if (Page* page = element_->GetDocument().GetPage()) {
-    EventHandlerRegistry& registry = page->GetEventHandlerRegistry();
+
+  if (auto* frame = element_->GetDocument().GetFrame()) {
+    EventHandlerRegistry& registry = frame->GetEventHandlerRegistry();
     if (wants_wheel_events) {
       registry.DidAddEventHandler(*element_,
                                   EventHandlerRegistry::kWheelEventBlocking);
@@ -637,7 +650,7 @@ void WebPluginContainerImpl::SetWantsWheelEvents(bool wants_wheel_events) {
   }
 
   wants_wheel_events_ = wants_wheel_events;
-  if (Page* page = element_->GetDocument().GetPage()) {
+  if (auto* page = element_->GetDocument().GetPage()) {
     if (ScrollingCoordinator* scrolling_coordinator =
             page->GetScrollingCoordinator()) {
       // Only call scrolling_coordinator if attached.  SetWantsWheelEvents can
@@ -688,8 +701,12 @@ void WebPluginContainerImpl::DidFailLoading(const ResourceError& error) {
   web_plugin_->DidFailLoading(error);
 }
 
-WebLayer* WebPluginContainerImpl::PlatformLayer() const {
-  return web_layer_;
+cc::Layer* WebPluginContainerImpl::CcLayer() const {
+  return layer_;
+}
+
+bool WebPluginContainerImpl::PreventContentsOpaqueChangesToCcLayer() const {
+  return prevent_contents_opaque_changes_;
 }
 
 v8::Local<v8::Object> WebPluginContainerImpl::ScriptableObject(
@@ -734,8 +751,9 @@ WebPluginContainerImpl::WebPluginContainerImpl(HTMLPlugInElement& element,
     : ContextClient(element.GetDocument().GetFrame()),
       element_(element),
       web_plugin_(web_plugin),
-      web_layer_(nullptr),
+      layer_(nullptr),
       touch_event_request_type_(kTouchEventRequestTypeNone),
+      prevent_contents_opaque_changes_(false),
       wants_wheel_events_(false),
       self_visible_(false),
       parent_visible_(false),
@@ -757,15 +775,21 @@ void WebPluginContainerImpl::Dispose() {
   RequestTouchEventType(kTouchEventRequestTypeNone);
   SetWantsWheelEvents(false);
 
+  if (WebLocalFrameImpl* frame =
+          WebLocalFrameImpl::FromFrame(element_->GetDocument().GetFrame())) {
+    if (frame->GetFindInPage()->PluginFindHandler() == this)
+      frame->GetFindInPage()->SetPluginFindHandler(nullptr);
+  }
+
   if (web_plugin_) {
     CHECK(web_plugin_->Container() == this);
     web_plugin_->Destroy();
     web_plugin_ = nullptr;
   }
 
-  if (web_layer_) {
-    GraphicsLayer::UnregisterContentsLayer(web_layer_);
-    web_layer_ = nullptr;
+  if (layer_) {
+    GraphicsLayer::UnregisterContentsLayer(layer_);
+    layer_ = nullptr;
   }
 }
 

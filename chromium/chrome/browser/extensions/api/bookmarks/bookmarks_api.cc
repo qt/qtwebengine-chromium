@@ -90,7 +90,7 @@ base::FilePath GetDefaultFilepathForBookmarkExport() {
   base::i18n::ReplaceIllegalCharactersInPath(&filename, '_');
 
   base::FilePath default_path;
-  PathService::Get(chrome::DIR_USER_DOCUMENTS, &default_path);
+  base::PathService::Get(chrome::DIR_USER_DOCUMENTS, &default_path);
   return default_path.Append(filename);
 }
 
@@ -733,7 +733,7 @@ void BookmarksIOFunction::ShowSelectFileDialog(
   // either FileSelectionCanceled, MultiFilesSelected, or FileSelected
   AddRef();
 
-  WebContents* web_contents = GetAssociatedWebContents();
+  WebContents* web_contents = GetSenderWebContents();
 
   select_file_dialog_ = ui::SelectFileDialog::Create(
       this, std::make_unique<ChromeSelectFilePolicy>(web_contents));

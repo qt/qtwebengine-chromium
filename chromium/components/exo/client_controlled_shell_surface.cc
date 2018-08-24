@@ -4,8 +4,11 @@
 
 #include "components/exo/client_controlled_shell_surface.h"
 
+#include <utility>
+
 #include "ash/frame/caption_buttons/caption_button_model.h"
 #include "ash/frame/custom_frame_view_ash.h"
+#include "ash/frame/header_view.h"
 #include "ash/frame/wide_frame_view.h"
 #include "ash/public/cpp/immersive/immersive_fullscreen_controller.h"
 #include "ash/public/cpp/shell_window_ids.h"
@@ -24,6 +27,7 @@
 #include "ash/wm/window_state_delegate.h"
 #include "ash/wm/window_util.h"
 #include "base/logging.h"
+#include "base/no_destructor.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_argument.h"
@@ -42,8 +46,14 @@
 #include "ui/wm/core/window_util.h"
 
 namespace exo {
+
 namespace {
-ClientControlledShellSurface::DelegateFactoryCallback g_factory_callback;
+
+ClientControlledShellSurface::DelegateFactoryCallback& GetFactoryForTesting() {
+  using CallbackType = ClientControlledShellSurface::DelegateFactoryCallback;
+  static base::NoDestructor<CallbackType> factory;
+  return *factory;
+}
 
 // Maximum amount of time to wait for contents that match the display's
 // orientation in tablet mode.
@@ -226,7 +236,7 @@ class CaptionButtonModel : public ash::CaptionButtonModel {
 
 class ClientControlledShellSurface::ScopedSetBoundsLocally {
  public:
-  ScopedSetBoundsLocally(ClientControlledShellSurface* shell_surface)
+  explicit ScopedSetBoundsLocally(ClientControlledShellSurface* shell_surface)
       : state_(shell_surface->client_controlled_state_) {
     state_->set_bounds_locally(true);
   }
@@ -240,7 +250,7 @@ class ClientControlledShellSurface::ScopedSetBoundsLocally {
 
 class ClientControlledShellSurface::ScopedLockedToRoot {
  public:
-  ScopedLockedToRoot(views::Widget* widget)
+  explicit ScopedLockedToRoot(views::Widget* widget)
       : window_(widget->GetNativeWindow()) {
     window_->SetProperty(ash::kLockedToRootKey, true);
   }
@@ -303,6 +313,11 @@ void ClientControlledShellSurface::SetSnappedToLeft() {
 void ClientControlledShellSurface::SetSnappedToRight() {
   TRACE_EVENT0("exo", "ClientControlledShellSurface::SetSnappedToRight");
   pending_window_state_ = ash::mojom::WindowStateType::RIGHT_SNAPPED;
+}
+
+void ClientControlledShellSurface::SetPip() {
+  TRACE_EVENT0("exo", "ClientControlledShellSurface::SetPip");
+  pending_window_state_ = ash::mojom::WindowStateType::PIP;
 }
 
 void ClientControlledShellSurface::SetPinned(ash::mojom::WindowPinType type) {
@@ -387,7 +402,7 @@ void ClientControlledShellSurface::SetResizeOutset(int outset) {
 void ClientControlledShellSurface::OnWindowStateChangeEvent(
     ash::mojom::WindowStateType current_state,
     ash::mojom::WindowStateType next_state) {
-  if (!state_changed_callback_.is_null())
+  if (state_changed_callback_)
     state_changed_callback_.Run(current_state, next_state);
 }
 
@@ -414,7 +429,6 @@ void ClientControlledShellSurface::AttemptToStartDrag(
   // 2) mouse was pressed on the target or its subsurfaces.
   if (toplevel_handler->gesture_target() ||
       (mouse_pressed_handler && target->Contains(mouse_pressed_handler))) {
-
     gfx::Point point_in_root(location);
     wm::ConvertPointFromScreen(target->GetRootWindow(), &point_in_root);
     toplevel_handler->AttemptToStartDrag(
@@ -459,9 +473,24 @@ void ClientControlledShellSurface::SetExtraTitle(
   TRACE_EVENT1("exo", "ClientControlledShellSurface::SetExtraTitle",
                "extra_title", base::UTF16ToUTF8(extra_title));
   // The extra title is used in the window frame.
-  frame_title_ = extra_title;
+  extra_title_ = extra_title;
   if (widget_)
     widget_->UpdateWindowTitle();
+}
+
+void ClientControlledShellSurface::SetOrientationLock(
+    ash::OrientationLockType orientation_lock) {
+  TRACE_EVENT1("exo", "ClientControlledShellSurface::SetOrientationLock",
+               "orientation_lock", static_cast<int>(orientation_lock));
+
+  if (!widget_) {
+    initial_orientation_lock_ = orientation_lock;
+    return;
+  }
+
+  ash::Shell* shell = ash::Shell::Get();
+  shell->screen_orientation_controller()->LockOrientationForWindow(
+      widget_->GetNativeWindow(), orientation_lock);
 }
 
 void ClientControlledShellSurface::OnBoundsChangeEvent(
@@ -472,7 +501,7 @@ void ClientControlledShellSurface::OnBoundsChangeEvent(
     int bounds_change) {
   // Do no update the bounds unless we have geometry from client.
   if (!geometry().IsEmpty() && !window_bounds.IsEmpty() &&
-      !bounds_changed_callback_.is_null()) {
+      bounds_changed_callback_) {
     // Sends the client bounds, which matches the geometry
     // when frame is enabled.
     ash::CustomFrameViewAsh* frame_view = GetFrameView();
@@ -492,13 +521,13 @@ void ClientControlledShellSurface::OnBoundsChangeEvent(
 }
 
 void ClientControlledShellSurface::OnDragStarted(int component) {
-  if (!drag_started_callback_.is_null())
+  if (drag_started_callback_)
     drag_started_callback_.Run(component);
 }
 
 void ClientControlledShellSurface::OnDragFinished(bool canceled,
                                                   const gfx::Point& location) {
-  if (!drag_finished_callback_.is_null())
+  if (drag_finished_callback_)
     drag_finished_callback_.Run(location.x(), location.y(), canceled);
 }
 ////////////////////////////////////////////////////////////////////////////////
@@ -545,7 +574,7 @@ void ClientControlledShellSurface::OnSurfaceCommit() {
   UpdateFrame();
   UpdateBackdrop();
 
-  if (!geometry_changed_callback_.is_null())
+  if (geometry_changed_callback_)
     geometry_changed_callback_.Run(GetVisibleBounds());
 
   // Apply new top inset height.
@@ -607,6 +636,7 @@ void ClientControlledShellSurface::OnWindowBoundsChanged(
 
 void ClientControlledShellSurface::OnWindowAddedToRootWindow(
     aura::Window* window) {
+  ScopedSetBoundsLocally scoped_set_bounds(this);
   ScopedLockedToRoot scoped_locked_to_root(widget_);
   UpdateWidgetBounds();
 }
@@ -622,9 +652,9 @@ views::NonClientFrameView*
 ClientControlledShellSurface::CreateNonClientFrameView(views::Widget* widget) {
   ash::wm::WindowState* window_state = GetWindowState();
   std::unique_ptr<ash::wm::ClientControlledState::Delegate> delegate =
-      g_factory_callback.is_null()
-          ? std::make_unique<ClientControlledStateDelegate>(this)
-          : g_factory_callback.Run();
+      GetFactoryForTesting()
+          ? GetFactoryForTesting().Run()
+          : std::make_unique<ClientControlledStateDelegate>(this);
 
   auto window_delegate = std::make_unique<ClientControlledWindowStateDelegate>(
       this, delegate.get());
@@ -664,6 +694,12 @@ gfx::Size ClientControlledShellSurface::GetMaximumSize() const {
   // ClientControlledShellSurface is used only to tell the resizability,
   // but not real maximum size.
   return gfx::Size();
+}
+
+void ClientControlledShellSurface::OnDeviceScaleFactorChanged(float old_dsf,
+                                                              float new_dsf) {
+  views::View::OnDeviceScaleFactorChanged(old_dsf, new_dsf);
+  UpdateFrameWidth();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -733,23 +769,39 @@ void ClientControlledShellSurface::CompositorLockTimedOut() {
 // ShellSurface overrides:
 
 void ClientControlledShellSurface::SetWidgetBounds(const gfx::Rect& bounds) {
-  if ((!client_controlled_move_resize_ && !GetWindowState()->is_dragged()) ||
+
+  if (((!client_controlled_move_resize_ && !GetWindowState()->is_dragged()) ||
       (client_controlled_move_resize_ &&
-       (!resizer_ || resizer_->details().window_component != HTCAPTION))) {
+       (!resizer_ || resizer_->details().window_component != HTCAPTION))) &&
+      !client_controlled_state_->set_bounds_locally()) {
     {
       // Calculate a minimum window visibility required bounds.
       aura::Window* window = widget_->GetNativeWindow();
-      gfx::Rect rect(bounds);
-      wm::ConvertRectFromScreen(window->GetRootWindow(), &rect);
+      gfx::Rect root_rect(bounds);
+      wm::ConvertRectFromScreen(window->GetRootWindow(), &root_rect);
       ash::wm::ClientControlledState::AdjustBoundsForMinimumWindowVisibility(
-          window, &rect);
-      wm::ConvertRectToScreen(window->GetRootWindow(), &rect);
-
-      if (bounds != rect) {
+          window, &root_rect);
+      gfx::Rect screen_rect(root_rect);
+      wm::ConvertRectToScreen(window->GetRootWindow(), &screen_rect);
+      if (bounds != screen_rect &&
+          !GetWindowState()->IsMaximizedOrFullscreenOrPinned()) {
+        {
+          ScopedSetBoundsLocally scoped_set_bounds(this);
+          window->SetBounds(root_rect);
+        }
         // Request the client a new bounds to ensure that it has enough visible
         // area.
-        window->SetBounds(rect);
+        auto state_type = GetWindowState()->GetStateType();
+        int64_t display_id =
+            display::Screen::GetScreen()
+                ->GetDisplayNearestWindow(window->GetRootWindow())
+                .id();
+        OnBoundsChangeEvent(state_type, state_type, display_id, screen_rect, 0);
       } else {
+        // TODO(oshima|domlaskowski): This prevent a client from moving a window
+        // between display. This is ok for now because a user needs to take an
+        // action to move right now. This will be fixed by new API.
+        ScopedLockedToRoot scoped_locked_to_root(widget_);
         ScopedSetBoundsLocally scoped_set_bounds(this);
         widget_->SetBounds(bounds);
       }
@@ -819,6 +871,9 @@ void ClientControlledShellSurface::InitializeWindowState(
   frame_view->SetCaptionButtonModel(std::make_unique<CaptionButtonModel>(
       frame_visible_button_mask_, frame_enabled_button_mask_));
   UpdateAutoHideFrame();
+  UpdateFrameWidth();
+  if (initial_orientation_lock_ != ash::OrientationLockType::kAny)
+    SetOrientationLock(initial_orientation_lock_);
 }
 
 float ClientControlledShellSurface::GetScale() const {
@@ -869,18 +924,17 @@ gfx::Rect ClientControlledShellSurface::GetWidgetBounds() const {
     // bounds.
     if (widget_->IsMaximized())
       return GetVisibleBounds();
-    else
-      return frame_view->GetWindowBoundsForClientBounds(GetVisibleBounds());
-  } else {
-    gfx::Rect bounds(GetVisibleBounds());
-    bounds.Offset(-origin_offset_.x(), -origin_offset_.y());
-    return bounds;
+    return frame_view->GetWindowBoundsForClientBounds(GetVisibleBounds());
   }
+
+  gfx::Rect bounds(GetVisibleBounds());
+  bounds.Offset(-origin_offset_.x(), -origin_offset_.y());
+  return bounds;
 }
 
 gfx::Point ClientControlledShellSurface::GetSurfaceOrigin() const {
   DCHECK(resize_component_ == HTCAPTION);
-  if (!geometry_changed_callback_.is_null())
+  if (geometry_changed_callback_)
     return gfx::Point();
   // TODO(oshima): geometry_changed_callback_ must be always set by now, so
   // this is not necessary any more. Remove this.
@@ -920,6 +974,7 @@ void ClientControlledShellSurface::UpdateFrame() {
           immersive_fullscreen_controller_.get());
       UpdateCaptionButtonModel();
     }
+    UpdateFrameWidth();
   }
   // The autohide should be applied when the window state is in
   // maximzied, fullscreen or pinned. Update the auto hide state
@@ -951,6 +1006,18 @@ void ClientControlledShellSurface::UpdateBackdrop() {
     window->SetProperty(ash::kBackdropWindowMode, target_backdrop_mode);
 }
 
+void ClientControlledShellSurface::UpdateFrameWidth() {
+  int width = -1;
+  if (shadow_bounds_) {
+    float device_scale_factor =
+        GetWidget()->GetNativeWindow()->layer()->device_scale_factor();
+    float dsf_to_default_dsf = device_scale_factor / scale_;
+    width = gfx::ToRoundedInt(shadow_bounds_->width() * dsf_to_default_dsf);
+  }
+  static_cast<ash::HeaderView*>(GetFrameView()->GetHeaderView())
+      ->SetWidthInPixels(width);
+}
+
 void ClientControlledShellSurface::
     EnsureCompositorIsLockedForOrientationChange() {
   if (!orientation_compositor_lock_) {
@@ -980,7 +1047,8 @@ const ash::CustomFrameViewAsh* ClientControlledShellSurface::GetFrameView()
 void ClientControlledShellSurface::
     SetClientControlledStateDelegateFactoryForTest(
         const DelegateFactoryCallback& callback) {
-  g_factory_callback = callback;
+  auto& factory = GetFactoryForTesting();
+  factory = callback;
 }
 
 }  // namespace exo

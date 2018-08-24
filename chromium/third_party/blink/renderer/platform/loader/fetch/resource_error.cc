@@ -28,6 +28,7 @@
 
 #include "net/base/net_errors.h"
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/public/platform/resource_request_blocked_reason.h"
 #include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/public/platform/web_url.h"
 #include "third_party/blink/public/platform/web_url_error.h"
@@ -46,7 +47,7 @@ int ResourceError::BlockedByXSSAuditorErrorCode() {
 }
 
 ResourceError ResourceError::CancelledError(const KURL& url) {
-  return ResourceError(net::ERR_ABORTED, url, WTF::nullopt);
+  return ResourceError(net::ERR_ABORTED, url, base::nullopt);
 }
 
 ResourceError ResourceError::CancelledDueToAccessCheckError(
@@ -69,21 +70,21 @@ ResourceError ResourceError::CancelledDueToAccessCheckError(
 }
 
 ResourceError ResourceError::CacheMissError(const KURL& url) {
-  return ResourceError(net::ERR_CACHE_MISS, url, WTF::nullopt);
+  return ResourceError(net::ERR_CACHE_MISS, url, base::nullopt);
 }
 
 ResourceError ResourceError::TimeoutError(const KURL& url) {
-  return ResourceError(net::ERR_TIMED_OUT, url, WTF::nullopt);
+  return ResourceError(net::ERR_TIMED_OUT, url, base::nullopt);
 }
 
 ResourceError ResourceError::Failure(const KURL& url) {
-  return ResourceError(net::ERR_FAILED, url, WTF::nullopt);
+  return ResourceError(net::ERR_FAILED, url, base::nullopt);
 }
 
 ResourceError::ResourceError(
     int error_code,
     const KURL& url,
-    WTF::Optional<network::CORSErrorStatus> cors_error_status)
+    base::Optional<network::CORSErrorStatus> cors_error_status)
     : error_code_(error_code),
       failing_url_(url),
       cors_error_status_(cors_error_status) {
@@ -148,6 +149,9 @@ bool ResourceError::Compare(const ResourceError& a, const ResourceError& b) {
   if (a.CORSErrorStatus() != b.CORSErrorStatus())
     return false;
 
+  if (a.extended_error_code_ != b.extended_error_code_)
+    return false;
+
   return true;
 }
 
@@ -167,9 +171,54 @@ bool ResourceError::WasBlockedByResponse() const {
   return error_code_ == net::ERR_BLOCKED_BY_RESPONSE;
 }
 
+base::Optional<ResourceRequestBlockedReason>
+ResourceError::GetResourceRequestBlockedReason() const {
+  if (error_code_ != net::ERR_BLOCKED_BY_CLIENT &&
+      error_code_ != net::ERR_BLOCKED_BY_RESPONSE) {
+    return base::nullopt;
+  }
+  return static_cast<ResourceRequestBlockedReason>(extended_error_code_);
+}
+
+namespace {
+String DescriptionForBlockedByClientOrResponse(int error, int extended_error) {
+  if (extended_error == 0)
+    return WebString::FromASCII(net::ErrorToString(error));
+  std::string detail;
+  switch (static_cast<ResourceRequestBlockedReason>(extended_error)) {
+    case ResourceRequestBlockedReason::kOther:
+      NOTREACHED();  // extended_error == 0, handled above
+      break;
+    case ResourceRequestBlockedReason::kCSP:
+      detail = "CSP";
+      break;
+    case ResourceRequestBlockedReason::kMixedContent:
+      detail = "MixedContent";
+      break;
+    case ResourceRequestBlockedReason::kOrigin:
+      detail = "Origin";
+      break;
+    case ResourceRequestBlockedReason::kInspector:
+      detail = "Inspector";
+      break;
+    case ResourceRequestBlockedReason::kSubresourceFilter:
+      detail = "SubresourceFilter";
+      break;
+    case ResourceRequestBlockedReason::kContentType:
+      detail = "ContentType";
+      break;
+  }
+  return WebString::FromASCII(net::ErrorToString(error) + "." + detail);
+}
+}  // namespace
+
 void ResourceError::InitializeDescription() {
   if (error_code_ == net::ERR_TEMPORARILY_THROTTLED) {
     localized_description_ = WebString::FromASCII(kThrottledErrorDescription);
+  } else if (error_code_ == net::ERR_BLOCKED_BY_CLIENT ||
+             error_code_ == net::ERR_BLOCKED_BY_RESPONSE) {
+    localized_description_ = DescriptionForBlockedByClientOrResponse(
+        error_code_, extended_error_code_);
   } else {
     localized_description_ = WebString::FromASCII(
         net::ExtendedErrorToString(error_code_, extended_error_code_));

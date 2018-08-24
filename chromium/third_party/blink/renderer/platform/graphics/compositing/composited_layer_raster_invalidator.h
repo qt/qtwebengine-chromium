@@ -14,6 +14,7 @@
 
 namespace blink {
 
+class PaintArtifact;
 class PaintChunkSubset;
 class IntRect;
 
@@ -32,9 +33,19 @@ class PLATFORM_EXPORT CompositedLayerRasterInvalidator {
 
   RasterInvalidationTracking& EnsureTracking();
 
-  void Generate(const gfx::Rect& layer_bounds,
+  // Generate raster invalidations for all of the paint chunks in the paint
+  // artifact.
+  void Generate(const PaintArtifact&,
+                const gfx::Rect& layer_bounds,
+                const PropertyTreeState& layer_state,
+                const FloatSize& visual_rect_subpixel_offset = FloatSize());
+
+  // Generate raster invalidations for a subset of the paint chunks in the
+  // paint artifact.
+  void Generate(const PaintArtifact&,
                 const PaintChunkSubset&,
-                const PropertyTreeState&,
+                const gfx::Rect& layer_bounds,
+                const PropertyTreeState& layer_state,
                 const FloatSize& visual_rect_subpixel_offset = FloatSize());
 
   bool Matches(const PaintChunk& paint_chunk) const {
@@ -54,7 +65,8 @@ class PLATFORM_EXPORT CompositedLayerRasterInvalidator {
                    const ChunkToLayerMapper& mapper,
                    const PaintChunk& chunk)
         : id(chunk.id),
-          properties(chunk.properties),
+          clip_state(chunk.properties.Clip()),
+          effect_state(chunk.properties.Effect()),
           is_cacheable(chunk.is_cacheable),
           bounds_in_layer(invalidator.ClipByLayerBounds(
               mapper.MapVisualRect(chunk.bounds))),
@@ -67,19 +79,26 @@ class PLATFORM_EXPORT CompositedLayerRasterInvalidator {
     }
 
     PaintChunk::Id id;
-    PaintChunkProperties properties;
+    // These two pointers are for property change detection. The pointed
+    // property nodes can be freed after this structure is created. As newly
+    // created property nodes always have Changed() flag set, it's not a problem
+    // that a new node is created at the address pointed by these pointers.
+    const void* clip_state;
+    const void* effect_state;
     bool is_cacheable;
     IntRect bounds_in_layer;
     FloatClipRect chunk_to_layer_clip;
     SkMatrix chunk_to_layer_transform;
   };
 
-  void GenerateRasterInvalidations(const PaintChunkSubset& new_chunks,
+  void GenerateRasterInvalidations(const PaintArtifact&,
+                                   const PaintChunkSubset&,
                                    const PropertyTreeState& layer_state,
                                    const FloatSize& visual_rect_subpixel_offset,
                                    Vector<PaintChunkInfo>& new_chunks_info);
   size_t MatchNewChunkToOldChunk(const PaintChunk& new_chunk, size_t old_index);
-  void AddDisplayItemRasterInvalidations(const PaintChunk&,
+  void AddDisplayItemRasterInvalidations(const PaintArtifact&,
+                                         const PaintChunk&,
                                          const ChunkToLayerMapper&);
   void IncrementallyInvalidateChunk(const PaintChunkInfo& old_chunk,
                                     const PaintChunkInfo& new_chunk);
@@ -95,6 +114,7 @@ class PLATFORM_EXPORT CompositedLayerRasterInvalidator {
                                            PaintInvalidationReason,
                                            const String* debug_name = nullptr);
   PaintInvalidationReason ChunkPropertiesChanged(
+      const RefCountedPropertyTreeState& new_chunk_state,
       const PaintChunkInfo& new_chunk,
       const PaintChunkInfo& old_chunk,
       const PropertyTreeState& layer_state) const;

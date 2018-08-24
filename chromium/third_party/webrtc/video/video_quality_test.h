@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-#include "media/engine/simulcast_encoder_adapter.h"
+#include "media/engine/internalencoderfactory.h"
 #include "test/call_test.h"
 #include "test/frame_generator.h"
 #include "test/layer_filtering_transport.h"
@@ -82,6 +82,7 @@ class VideoQualityTest : public test::CallTest {
       size_t selected_stream;
       int num_spatial_layers;
       int selected_sl;
+      InterLayerPredMode inter_layer_pred;
       // If empty, bitrates are generated in VP9Impl automatically.
       std::vector<SpatialLayer> spatial_layers;
       // If set, default parameters will be used instead of |streams|.
@@ -109,9 +110,22 @@ class VideoQualityTest : public test::CallTest {
       size_t selected_stream,
       int num_spatial_layers,
       int selected_sl,
+      InterLayerPredMode inter_layer_pred,
       const std::vector<std::string>& sl_descriptors);
 
  protected:
+  class TestVideoEncoderFactory : public VideoEncoderFactory {
+    std::vector<SdpVideoFormat> GetSupportedFormats() const override;
+
+    CodecInfo QueryVideoEncoder(const SdpVideoFormat& format) const override;
+
+    std::unique_ptr<VideoEncoder> CreateVideoEncoder(
+        const SdpVideoFormat& format) override;
+
+   private:
+    InternalEncoderFactory internal_encoder_factory_;
+  };
+
   std::map<uint8_t, webrtc::MediaType> payload_type_map_;
   std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory_;
 
@@ -148,9 +162,8 @@ class VideoQualityTest : public test::CallTest {
 
   std::vector<std::unique_ptr<test::VideoCapturer>> video_capturers_;
   std::vector<std::unique_ptr<test::VideoCapturer>> thumbnail_capturers_;
-  std::vector<std::unique_ptr<VideoEncoder>> video_encoders_;
+  TestVideoEncoderFactory video_encoder_factory_;
 
-  std::vector<std::unique_ptr<VideoEncoder>> thumbnail_encoders_;
   std::vector<VideoSendStream::Config> thumbnail_send_configs_;
   std::vector<VideoEncoderConfig> thumbnail_encoder_configs_;
   std::vector<VideoSendStream*> thumbnail_send_streams_;
@@ -166,8 +179,8 @@ class VideoQualityTest : public test::CallTest {
   int receive_logs_;
   int send_logs_;
 
-  VideoSendStream::DegradationPreference degradation_preference_ =
-      VideoSendStream::DegradationPreference::kMaintainFramerate;
+  DegradationPreference degradation_preference_ =
+      DegradationPreference::MAINTAIN_FRAMERATE;
   Params params_;
 
   std::unique_ptr<webrtc::RtcEventLog> recv_event_log_;

@@ -134,11 +134,6 @@ Builder& Builder::SetGLImplementation(const std::string& gl_implementation) {
   return *this;
 }
 
-Builder& Builder::AddMojoServiceName(const std::string& mojo_service_name) {
-  options_.mojo_service_names.insert(mojo_service_name);
-  return *this;
-}
-
 Builder& Builder::SetAppendCommandLineFlagsCallback(
     const Options::AppendCommandLineFlagsCallback& callback) {
   options_.append_command_line_flags_callback = callback;
@@ -179,11 +174,6 @@ Builder& Builder::SetSitePerProcess(bool site_per_process) {
 
 Builder& Builder::SetBlockNewWebContents(bool block_new_web_contents) {
   options_.block_new_web_contents = block_new_web_contents;
-  return *this;
-}
-
-Builder& Builder::SetInitialVirtualTime(base::Time initial_virtual_time) {
-  options_.initial_virtual_time = initial_virtual_time;
   return *this;
 }
 

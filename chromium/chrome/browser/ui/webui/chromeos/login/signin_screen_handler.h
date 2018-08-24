@@ -11,7 +11,7 @@
 #include <string>
 
 #include "ash/detachable_base/detachable_base_observer.h"
-#include "ash/wallpaper/wallpaper_controller_observer.h"
+#include "ash/public/interfaces/wallpaper.mojom.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
@@ -37,6 +37,7 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_ui.h"
+#include "mojo/public/cpp/bindings/associated_binding.h"
 #include "net/base/net_errors.h"
 #include "ui/base/ime/chromeos/ime_keyboard.h"
 #include "ui/base/ime/chromeos/input_method_manager.h"
@@ -114,8 +115,11 @@ class LoginDisplayWebUIHandler {
   virtual void ShowPasswordChangedDialog(bool show_password_error,
                                          const std::string& email) = 0;
   // Show sign-in screen for the given credentials.
-  virtual void ShowSigninScreenForCreds(const std::string& username,
-                                        const std::string& password) = 0;
+  // |services| - list of services returned by userInfo call as JSON array.
+  // Should be empty array for regular user: "[]".
+  virtual void ShowSigninScreenForTest(const std::string& username,
+                                       const std::string& password,
+                                       const std::string& services) = 0;
   virtual void ShowWhitelistCheckFailedError() = 0;
   virtual void ShowUnrecoverableCrypthomeErrorDialog() = 0;
   virtual void LoadUsers(const user_manager::UserList& users,
@@ -161,9 +165,6 @@ class SigninScreenHandlerDelegate {
 
   // Shows Enable Developer Features screen.
   virtual void ShowEnableDebuggingScreen() = 0;
-
-  // Shows Demo Mode Setup screen.
-  virtual void ShowDemoModeSetupScreen() = 0;
 
   // Shows Kiosk Enable screen.
   virtual void ShowKioskEnableScreen() = 0;
@@ -229,7 +230,7 @@ class SigninScreenHandler
       public lock_screen_apps::StateObserver,
       public OobeUI::Observer,
       public session_manager::SessionManagerObserver,
-      public ash::WallpaperControllerObserver,
+      public ash::mojom::WallpaperObserver,
       public ash::DetachableBaseObserver {
  public:
   SigninScreenHandler(
@@ -269,10 +270,11 @@ class SigninScreenHandler
                               OobeScreen new_screen) override;
   void OnScreenInitialized(OobeScreen screen) override{};
 
-  // ash::WallpaperControllerObserver implementation:
-  void OnWallpaperDataChanged() override;
-  void OnWallpaperColorsChanged() override;
-  void OnWallpaperBlurChanged() override;
+  // ash::mojom::WallpaperObserver implementation:
+  void OnWallpaperChanged(uint32_t image_id) override;
+  void OnWallpaperColorsChanged(
+      const std::vector<SkColor>& prominent_colors) override;
+  void OnWallpaperBlurChanged(bool blurred) override;
 
   // ash::DetachableBaseObserver:
   void OnDetachableBasePairingStatusChanged(
@@ -318,10 +320,6 @@ class SigninScreenHandler
                           NetworkError::ErrorReason reason);
   void ReloadGaia(bool force_reload);
 
-  // Updates the color of the scrollable container on account picker screen,
-  // based on wallpaper color extraction results.
-  void UpdateAccountPickerColors();
-
   // BaseScreenHandler implementation:
   void DeclareLocalizedValues(
       ::login::LocalizedValuesBuilder* builder) override;
@@ -347,8 +345,9 @@ class SigninScreenHandler
   void ShowPasswordChangedDialog(bool show_password_error,
                                  const std::string& email) override;
   void ShowErrorScreen(LoginDisplay::SigninError error_id) override;
-  void ShowSigninScreenForCreds(const std::string& username,
-                                const std::string& password) override;
+  void ShowSigninScreenForTest(const std::string& username,
+                               const std::string& password,
+                               const std::string& services) override;
   void ShowWhitelistCheckFailedError() override;
   void ShowUnrecoverableCrypthomeErrorDialog() override;
   void LoadUsers(const user_manager::UserList& users,
@@ -378,6 +377,10 @@ class SigninScreenHandler
 
   // Enable or disable the pin keyboard for the given account.
   void UpdatePinKeyboardState(const AccountId& account_id);
+  void SetPinEnabledForUser(const AccountId& account_id, bool is_enabled);
+  // Callback run by PinBackend. If |should_preload| is true the PIN keyboard is
+  // preloaded.
+  void PreloadPinKeyboard(bool should_preload);
 
   // WebUI message handlers.
   void HandleGetUsers();
@@ -396,7 +399,6 @@ class SigninScreenHandler
   void HandleToggleEnrollmentScreen();
   void HandleToggleEnrollmentAd();
   void HandleToggleEnableDebuggingScreen();
-  void HandleSetupDemoMode();
   void HandleToggleKioskEnableScreen();
   void HandleToggleResetScreen();
   void HandleToggleKioskAutolaunchScreen();
@@ -458,9 +460,6 @@ class SigninScreenHandler
   // Returns true if current screen is the error screen over signin
   // screen.
   bool IsSigninScreenHiddenByError() const;
-
-  // Returns true if guest signin is allowed.
-  bool IsGuestSigninAllowed() const;
 
   bool ShouldLoadGaia() const;
 
@@ -596,6 +595,9 @@ class SigninScreenHandler
 
   ScopedObserver<ash::DetachableBaseHandler, ash::DetachableBaseObserver>
       detachable_base_observer_;
+
+  // The binding this instance uses to implement ash::mojom::WallpaperObserver.
+  mojo::AssociatedBinding<ash::mojom::WallpaperObserver> observer_binding_;
 
   base::WeakPtrFactory<SigninScreenHandler> weak_factory_;
 

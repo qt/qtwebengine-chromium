@@ -41,8 +41,20 @@ class JBig2_DocumentContext;
 
 class CPDF_Document : public CPDF_IndirectObjectHolder {
  public:
+  // Type from which the XFA extension can subclass itself.
+  class Extension {
+   public:
+    virtual ~Extension() {}
+    virtual CPDF_Document* GetPDFDoc() const = 0;
+    virtual int GetPageCount() const = 0;
+    virtual void DeletePage(int page_index) = 0;
+  };
+
   explicit CPDF_Document(std::unique_ptr<CPDF_Parser> pParser);
   ~CPDF_Document() override;
+
+  Extension* GetExtension() const { return m_pExtension.Get(); }
+  void SetExtension(Extension* pExt) { m_pExtension = pExt; }
 
   CPDF_Parser* GetParser() const { return m_pParser.get(); }
   const CPDF_Dictionary* GetRoot() const { return m_pRootDict; }
@@ -53,7 +65,7 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
   void DeletePage(int iPage);
   int GetPageCount() const;
   bool IsPageLoaded(int iPage) const;
-  CPDF_Dictionary* GetPage(int iPage);
+  CPDF_Dictionary* GetPageDictionary(int iPage);
   int GetPageIndex(uint32_t objnum);
   uint32_t GetUserPermissions() const;
 
@@ -71,8 +83,8 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
 
   // |pFontDict| must not be null.
   CPDF_Font* LoadFont(CPDF_Dictionary* pFontDict);
-  CPDF_ColorSpace* LoadColorSpace(CPDF_Object* pCSObj,
-                                  CPDF_Dictionary* pResources = nullptr);
+  CPDF_ColorSpace* LoadColorSpace(const CPDF_Object* pCSObj,
+                                  const CPDF_Dictionary* pResources = nullptr);
 
   CPDF_Pattern* LoadPattern(CPDF_Object* pObj,
                             bool bShading,
@@ -80,7 +92,7 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
 
   RetainPtr<CPDF_Image> LoadImageFromPageData(uint32_t dwStreamObjNum);
   RetainPtr<CPDF_StreamAcc> LoadFontFile(CPDF_Stream* pStream);
-  RetainPtr<CPDF_IccProfile> LoadIccProfile(CPDF_Stream* pStream);
+  RetainPtr<CPDF_IccProfile> LoadIccProfile(const CPDF_Stream* pStream);
 
   void LoadDoc();
   void LoadLinearizedDoc(const CPDF_LinearizedHeader* pLinearizationParams);
@@ -153,6 +165,7 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
   std::unique_ptr<JBig2_DocumentContext> m_pCodecContext;
   std::unique_ptr<CPDF_LinkList> m_pLinksContext;
   std::vector<uint32_t> m_PageList;
+  UnownedPtr<Extension> m_pExtension;
 };
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_DOCUMENT_H_

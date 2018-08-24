@@ -19,9 +19,12 @@ BackgroundFetchScheduler::Controller::Controller(
 
 BackgroundFetchScheduler::Controller::~Controller() = default;
 
-void BackgroundFetchScheduler::Controller::Finish(bool abort) {
-  DCHECK(abort || !HasMoreRequests());
-  std::move(finished_callback_).Run(registration_id_, abort);
+void BackgroundFetchScheduler::Controller::Finish(
+    BackgroundFetchReasonToAbort reason_to_abort) {
+  DCHECK(reason_to_abort != BackgroundFetchReasonToAbort::NONE ||
+         !HasMoreRequests());
+
+  std::move(finished_callback_).Run(registration_id_, reason_to_abort);
 }
 
 BackgroundFetchScheduler::BackgroundFetchScheduler(
@@ -80,7 +83,7 @@ void BackgroundFetchScheduler::DidMarkRequestAsComplete(
   if (controller->HasMoreRequests())
     controller_queue_.push_back(controller);
   else
-    controller->Finish(false);
+    controller->Finish(BackgroundFetchReasonToAbort::NONE);
 
   ScheduleDownload();
 }

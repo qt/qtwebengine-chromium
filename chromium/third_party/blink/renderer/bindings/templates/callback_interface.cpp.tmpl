@@ -2,13 +2,66 @@
 
 {% include 'copyright_block.txt' %}
 
-#include "{{this_include_header_name}}"
+#include "{{this_include_header_path}}"
 
 {% for filename in cpp_includes %}
 #include "{{filename}}"
 {% endfor %}
 
 namespace blink {
+
+{% if is_legacy_callback_interface %}
+// Support of "legacy callback interface"
+
+// Suppress warning: global constructors, because struct WrapperTypeInfo is
+// trivial and does not depend on another global objects.
+#if defined(COMPONENT_BUILD) && defined(WIN32) && defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wglobal-constructors"
+#endif
+const WrapperTypeInfo {{v8_class}}::wrapperTypeInfo = {
+    gin::kEmbedderBlink,
+    {{v8_class}}::DomTemplate,
+    nullptr,
+    "{{interface_name}}",
+    nullptr,
+    WrapperTypeInfo::kWrapperTypeNoPrototype,
+    WrapperTypeInfo::kObjectClassId,
+    WrapperTypeInfo::kNotInheritFromActiveScriptWrappable,
+};
+#if defined(COMPONENT_BUILD) && defined(WIN32) && defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+
+{% from 'constants.cpp.tmpl' import install_constants with context %}
+static void Install{{v8_class}}Template(v8::Isolate* isolate, const DOMWrapperWorld& world, v8::Local<v8::FunctionTemplate> interface_template) {
+  // Legacy callback interface must not have a prototype object.
+  interface_template->RemovePrototype();
+
+  // Initialize the interface object's template.
+  V8DOMConfiguration::InitializeDOMInterfaceTemplate(
+      isolate, interface_template,
+      {{v8_class}}::wrapperTypeInfo.interface_name,
+      v8::Local<v8::FunctionTemplate>(),
+      kV8DefaultWrapperInternalFieldCount);
+  interface_template->SetLength(0);
+
+  // Register IDL constants.
+  {# |install_constants| requires |interfaceTemplate| and |prototypeTemplate|. #}
+  v8::Local<v8::FunctionTemplate> interfaceTemplate = interface_template;
+  v8::Local<v8::ObjectTemplate> prototypeTemplate =
+      interface_template->PrototypeTemplate();
+  {{install_constants() | trim | indent(2)}}
+}
+
+v8::Local<v8::FunctionTemplate> {{v8_class}}::DomTemplate(v8::Isolate* isolate, const DOMWrapperWorld& world) {
+  return V8DOMConfiguration::DomClassTemplate(
+      isolate,
+      world,
+      const_cast<WrapperTypeInfo*>(&wrapperTypeInfo),
+      Install{{v8_class}}Template);
+}
+{% endif %}{# is_legacy_callback_interface #}
 
 {% for method in methods %}
 
@@ -77,6 +130,7 @@ v8::Maybe<{{method.cpp_type}}> {{v8_class}}::{{method.name}}({{method.argument_d
               "The provided callback is not callable."));
       return v8::Nothing<{{method.cpp_type}}>();
     }
+    function = value.As<v8::Function>();
   }
 
   v8::Local<v8::Value> this_arg;
@@ -102,7 +156,7 @@ v8::Maybe<{{method.cpp_type}}> {{v8_class}}::{{method.name}}({{method.argument_d
                                    ExceptionState::kExecutionContext,
                                    "{{cpp_class}}",
                                    "{{method.name}}");
-    if (!IsValidEnum({{argument.name}}, {{valid_enum_variables}}, WTF_ARRAY_LENGTH({{valid_enum_variables}}), "{{argument.enum_type}}", exception_state)) {
+    if (!IsValidEnum({{argument.name}}, {{valid_enum_variables}}, arraysize({{valid_enum_variables}}), "{{argument.enum_type}}", exception_state)) {
       NOTREACHED();
       return v8::Nothing<{{method.cpp_type}}>();
     }
@@ -115,13 +169,13 @@ v8::Maybe<{{method.cpp_type}}> {{v8_class}}::{{method.name}}({{method.argument_d
   //   arguments list. If this throws an exception, set completion to the
   //   completion value representing the thrown exception and jump to the step
   //   labeled return.
+  {% if method.arguments %}
   v8::Local<v8::Object> argument_creation_context =
       CallbackRelevantScriptState()->GetContext()->Global();
   ALLOW_UNUSED_LOCAL(argument_creation_context);
   {% for argument in method.arguments %}
   v8::Local<v8::Value> {{argument.handle}} = {{argument.cpp_value_to_v8_value}};
   {% endfor %}
-  {% if method.arguments %}
   v8::Local<v8::Value> argv[] = { {{method.arguments | join(', ', 'handle')}} };
   {% else %}
   {# Zero-length arrays are ill-formed in C++. #}
@@ -152,9 +206,8 @@ v8::Maybe<{{method.cpp_type}}> {{v8_class}}::{{method.name}}({{method.argument_d
                                    ExceptionState::kExecutionContext,
                                    "{{cpp_class}}",
                                    "{{method.name}}");
-    {% set idl_return_type = 'IDLBoolean' if method.cpp_type == 'bool' %}
     auto native_result =
-        NativeValueTraits<{{idl_return_type}}>::NativeValue(
+        NativeValueTraits<{{method.native_value_traits_tag}}>::NativeValue(
             GetIsolate(), call_result, exception_state);
     if (exception_state.HadException())
       return v8::Nothing<{{method.cpp_type}}>();

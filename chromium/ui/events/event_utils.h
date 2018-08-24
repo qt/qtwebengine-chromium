@@ -161,7 +161,13 @@ EVENTS_EXPORT bool IsMouseEventFromTouch(UINT message);
 EVENTS_EXPORT uint16_t GetScanCodeFromLParam(LPARAM lParam);
 EVENTS_EXPORT LPARAM GetLParamFromScanCode(uint16_t scan_code);
 
-#endif
+// Creates an MSG from the given KeyEvent if there is no native_event.
+EVENTS_EXPORT MSG MSGFromKeyEvent(KeyEvent* key_event, HWND hwnd = nullptr);
+EVENTS_EXPORT KeyEvent KeyEventFromMSG(const MSG& msg);
+EVENTS_EXPORT MouseEvent MouseEventFromMSG(const MSG& msg);
+EVENTS_EXPORT MouseWheelEvent MouseWheelEventFromMSG(const MSG& msg);
+
+#endif  // defined(OS_WIN)
 
 #if defined(USE_X11)
 // Update the native X11 event to correspond to the new flags.

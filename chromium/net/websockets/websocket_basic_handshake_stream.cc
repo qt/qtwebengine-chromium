@@ -70,8 +70,7 @@ std::string MissingHeaderMessage(const std::string& header_name) {
 
 std::string GenerateHandshakeChallenge() {
   std::string raw_challenge(websockets::kRawChallengeLength, '\0');
-  crypto::RandBytes(base::string_as_array(&raw_challenge),
-                    raw_challenge.length());
+  crypto::RandBytes(base::data(raw_challenge), raw_challenge.length());
   std::string encoded_challenge;
   base::Base64Encode(raw_challenge, &encoded_challenge);
   return encoded_challenge;
@@ -161,6 +160,10 @@ bool ValidateConnection(const HttpResponseHeaders* headers,
 }
 
 }  // namespace
+
+const base::Feature
+    WebSocketBasicHandshakeStream::kWebSocketHandshakeReuseConnection{
+        "WebSocketHandshakeReuseConnection", base::FEATURE_DISABLED_BY_DEFAULT};
 
 WebSocketBasicHandshakeStream::WebSocketBasicHandshakeStream(
     std::unique_ptr<ClientSocketHandle> connection,
@@ -291,7 +294,10 @@ void WebSocketBasicHandshakeStream::SetConnectionReused() {
 }
 
 bool WebSocketBasicHandshakeStream::CanReuseConnection() const {
-  return false;
+  if (!base::FeatureList::IsEnabled(kWebSocketHandshakeReuseConnection))
+    return false;
+
+  return parser() && parser()->CanReuseConnection();
 }
 
 int64_t WebSocketBasicHandshakeStream::GetTotalReceivedBytes() const {
@@ -340,10 +346,8 @@ Error WebSocketBasicHandshakeStream::GetTokenBindingSignature(
     std::vector<uint8_t>* out) {
   DCHECK(url_.SchemeIsCryptographic());
 
-  // Encrypted WebSocket must use an SSL socket.
-  StreamSocket* socket = state_.connection()->socket();
-  SSLClientSocket* ssl_socket = static_cast<SSLClientSocket*>(socket);
-  return ssl_socket->GetTokenBindingSignature(key, tb_type, out);
+  return state_.connection()->socket()->GetTokenBindingSignature(key, tb_type,
+                                                                 out);
 }
 
 void WebSocketBasicHandshakeStream::Drain(HttpNetworkSession* session) {

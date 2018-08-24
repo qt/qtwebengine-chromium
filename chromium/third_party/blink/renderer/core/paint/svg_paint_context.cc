@@ -123,23 +123,25 @@ void SVGPaintContext::ApplyPaintPropertyState() {
   if (object_.IsSVGRoot())
     return;
 
-  if (const auto* properties = object_.FirstFragment().PaintProperties()) {
-    // MaskClip() implies Effect(), thus we don't need to check MaskClip().
-    if (properties->Effect() || properties->ClipPathClip()) {
-      auto& paint_controller = GetPaintInfo().context.GetPaintController();
-      PropertyTreeState state(paint_controller.CurrentPaintChunkProperties()
-                                  .property_tree_state.GetPropertyTreeState());
-      if (const auto* effect = properties->Effect())
-        state.SetEffect(effect);
-      if (const auto* mask_clip = properties->MaskClip())
-        state.SetClip(mask_clip);
-      else if (const auto* clip_path_clip = properties->ClipPathClip())
-        state.SetClip(clip_path_clip);
-      scoped_paint_chunk_properties_.emplace(
-          paint_controller, state, object_,
-          DisplayItem::PaintPhaseToSVGEffectType(GetPaintInfo().phase));
-    }
-  }
+  const auto* fragment = GetPaintInfo().FragmentToPaint(object_);
+  if (!fragment)
+    return;
+  const auto* properties = fragment->PaintProperties();
+  // MaskClip() implies Effect(), thus we don't need to check MaskClip().
+  if (!properties || (!properties->Effect() && !properties->ClipPathClip()))
+    return;
+
+  auto& paint_controller = GetPaintInfo().context.GetPaintController();
+  PropertyTreeState state = paint_controller.CurrentPaintChunkProperties();
+  if (const auto* effect = properties->Effect())
+    state.SetEffect(effect);
+  if (const auto* mask_clip = properties->MaskClip())
+    state.SetClip(mask_clip);
+  else if (const auto* clip_path_clip = properties->ClipPathClip())
+    state.SetClip(clip_path_clip);
+  scoped_paint_chunk_properties_.emplace(
+      paint_controller, state, object_,
+      DisplayItem::PaintPhaseToSVGEffectType(GetPaintInfo().phase));
 }
 
 void SVGPaintContext::ApplyCompositingIfNecessary() {
@@ -147,10 +149,10 @@ void SVGPaintContext::ApplyCompositingIfNecessary() {
 
   const ComputedStyle& style = object_.StyleRef();
   float opacity = style.Opacity();
-  WebBlendMode blend_mode = style.HasBlendMode() && object_.IsBlendingAllowed()
-                                ? style.BlendMode()
-                                : WebBlendMode::kNormal;
-  if (opacity < 1 || blend_mode != WebBlendMode::kNormal) {
+  BlendMode blend_mode = style.HasBlendMode() && object_.IsBlendingAllowed()
+                             ? style.GetBlendMode()
+                             : BlendMode::kNormal;
+  if (opacity < 1 || blend_mode != BlendMode::kNormal) {
     const FloatRect compositing_bounds =
         object_.VisualRectInLocalSVGCoordinates();
     compositing_recorder_ = std::make_unique<CompositingRecorder>(

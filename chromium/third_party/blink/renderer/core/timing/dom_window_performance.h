@@ -7,13 +7,13 @@
 
 #include "base/macros.h"
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/timing/window_performance.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
 
 namespace blink {
 
 class LocalDOMWindow;
-class WindowPerformance;
 
 class CORE_EXPORT DOMWindowPerformance final
     : public GarbageCollected<DOMWindowPerformance>,
@@ -26,8 +26,8 @@ class CORE_EXPORT DOMWindowPerformance final
   static DOMWindowPerformance& From(LocalDOMWindow&);
   static WindowPerformance* performance(LocalDOMWindow&);
 
-  void Trace(blink::Visitor*);
-  void TraceWrappers(const ScriptWrappableVisitor*) const override;
+  void Trace(blink::Visitor*) override;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
  private:
   explicit DOMWindowPerformance(LocalDOMWindow&);

@@ -22,10 +22,6 @@
 #include "components/subresource_filter/core/common/activation_list.h"
 #include "content/public/browser/navigation_throttle.h"
 
-namespace base {
-class GURL;
-}  // namespace base
-
 namespace subresource_filter {
 
 class SubresourceFilterClient;
@@ -46,10 +42,6 @@ class SubresourceFilterSafeBrowsingActivationThrottle
 
   ~SubresourceFilterSafeBrowsingActivationThrottle() override;
 
-  // Returns whether the navigation handle is a page reload, based on the
-  // transition type and referrer.
-  static bool NavigationIsPageReload(content::NavigationHandle* handle);
-
   // content::NavigationThrottle:
   content::NavigationThrottle::ThrottleCheckResult WillRedirectRequest()
       override;
@@ -64,14 +56,22 @@ class SubresourceFilterSafeBrowsingActivationThrottle
   void CheckCurrentUrl();
   void NotifyResult();
 
-  ActivationDecision ComputeActivation(ActivationList matched_list,
-                                       Configuration* configuration);
+  void LogMetricsOnChecksComplete(ActivationList matched_list,
+                                  ActivationDecision decision,
+                                  ActivationLevel level) const;
+  bool HasFinishedAllSafeBrowsingChecks() const;
+  // Gets the configuration with the highest priority among those activated.
+  // Returns it, or none if no valid activated configurations.
+  base::Optional<Configuration> GetHighestPriorityConfiguration(
+      ActivationList matched_list);
+  // Gets the ActivationDecision for the given Configuration.
+  // Returns it, or ACTIVATION_CONDITIONS_NOT_MET if no Configuration.
+  ActivationDecision GetActivationDecision(
+      const base::Optional<Configuration>& config);
 
-  // Returns whether a main-frame navigation to the given |url| satisfies the
-  // activation |conditions| of a given configuration, except for |priority|.
+  // Returns whether a main-frame navigation satisfies the activation
+  // |conditions| of a given configuration, except for |priority|.
   bool DoesMainFrameURLSatisfyActivationConditions(
-      const GURL& url,
-      bool scheme_is_http_or_https,
       const Configuration::ActivationConditions& conditions,
       ActivationList matched_list) const;
 

@@ -11,6 +11,7 @@
 #include "cc/layers/layer.h"
 #include "content/browser/accessibility/browser_accessibility_manager_android.h"
 #include "content/browser/android/content_feature_list.h"
+#include "content/browser/android/content_ui_event_handler.h"
 #include "content/browser/android/gesture_listener_manager.h"
 #include "content/browser/android/select_popup.h"
 #include "content/browser/android/selection/selection_popup_controller.h"
@@ -29,6 +30,8 @@
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/display/screen.h"
 #include "ui/events/android/drag_event_android.h"
+#include "ui/events/android/gesture_event_android.h"
+#include "ui/events/android/key_event_android.h"
 #include "ui/events/android/motion_event_android.h"
 #include "ui/gfx/android/java_bitmap.h"
 #include "ui/gfx/image/image_skia.h"
@@ -103,14 +106,21 @@ WebContentsViewAndroid::WebContentsViewAndroid(
     WebContentsViewDelegate* delegate)
     : web_contents_(web_contents),
       delegate_(delegate),
-      view_(this, ui::ViewAndroid::LayoutType::NORMAL),
+      view_(ui::ViewAndroid::LayoutType::NORMAL),
       synchronous_compositor_client_(nullptr) {
   view_.SetLayer(cc::Layer::Create());
+  view_.set_event_handler(this);
 }
 
 WebContentsViewAndroid::~WebContentsViewAndroid() {
   if (view_.GetLayer())
     view_.GetLayer()->RemoveFromParent();
+  view_.set_event_handler(nullptr);
+}
+
+void WebContentsViewAndroid::SetContentUiEventHandler(
+    std::unique_ptr<ContentUiEventHandler> handler) {
+  content_ui_event_handler_ = std::move(handler);
 }
 
 void WebContentsViewAndroid::SetSelectPopup(
@@ -507,11 +517,43 @@ bool WebContentsViewAndroid::OnMouseEvent(const ui::MotionEventAndroid& event) {
   return manager && manager->OnHoverEvent(event);
 }
 
+bool WebContentsViewAndroid::OnGenericMotionEvent(
+    const ui::MotionEventAndroid& event) {
+  if (content_ui_event_handler_)
+    return content_ui_event_handler_->OnGenericMotionEvent(event);
+  return false;
+}
+
+bool WebContentsViewAndroid::OnKeyUp(const ui::KeyEventAndroid& event) {
+  if (content_ui_event_handler_)
+    return content_ui_event_handler_->OnKeyUp(event);
+  return false;
+}
+
+bool WebContentsViewAndroid::DispatchKeyEvent(
+    const ui::KeyEventAndroid& event) {
+  if (content_ui_event_handler_)
+    return content_ui_event_handler_->DispatchKeyEvent(event);
+  return false;
+}
+
+bool WebContentsViewAndroid::ScrollBy(float delta_x, float delta_y) {
+  if (content_ui_event_handler_)
+    content_ui_event_handler_->ScrollBy(delta_x, delta_y);
+  return false;
+}
+
+bool WebContentsViewAndroid::ScrollTo(float x, float y) {
+  if (content_ui_event_handler_)
+    content_ui_event_handler_->ScrollTo(x, y);
+  return false;
+}
+
 void WebContentsViewAndroid::OnSizeChanged() {
   auto* rwhv = ::content::GetRenderWidgetHostViewAndroid(web_contents_);
   if (rwhv) {
     web_contents_->SendScreenRects();
-    rwhv->WasResized();
+    rwhv->SynchronizeVisualProperties();
   }
 }
 

@@ -7,18 +7,20 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "cc/base/switches.h"
 #include "components/viz/common/display/renderer_settings.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
-#include "components/viz/common/gpu/in_process_context_provider.h"
 #include "components/viz/service/display/display.h"
 #include "components/viz/service/display/display_scheduler.h"
 #include "components/viz/service/display_embedder/external_begin_frame_controller_impl.h"
 #include "components/viz/service/display_embedder/gl_output_surface.h"
 #include "components/viz/service/display_embedder/in_process_gpu_memory_buffer_manager.h"
 #include "components/viz/service/display_embedder/server_shared_bitmap_manager.h"
+#include "components/viz/service/display_embedder/skia_output_surface_impl.h"
 #include "components/viz/service/display_embedder/software_output_surface.h"
+#include "components/viz/service/display_embedder/viz_process_context_provider.h"
 #include "gpu/command_buffer/client/shared_memory_limits.h"
 #include "gpu/command_buffer/service/image_factory.h"
 #include "gpu/ipc/common/surface_handle.h"
@@ -64,11 +66,13 @@ namespace viz {
 
 GpuDisplayProvider::GpuDisplayProvider(
     uint32_t restart_id,
+    GpuServiceImpl* gpu_service_impl,
     scoped_refptr<gpu::InProcessCommandBuffer::Service> gpu_service,
     gpu::GpuChannelManager* gpu_channel_manager,
     bool headless,
     bool wait_for_all_pipeline_stages_before_draw)
     : restart_id_(restart_id),
+      gpu_service_impl_(gpu_service_impl),
       gpu_service_(std::move(gpu_service)),
       gpu_channel_manager_delegate_(gpu_channel_manager->delegate()),
       gpu_memory_buffer_manager_(
@@ -88,6 +92,7 @@ std::unique_ptr<Display> GpuDisplayProvider::CreateDisplay(
     const FrameSinkId& frame_sink_id,
     gpu::SurfaceHandle surface_handle,
     bool gpu_compositing,
+    mojom::DisplayClient* display_client,
     ExternalBeginFrameControllerImpl* external_begin_frame_controller,
     const RendererSettings& renderer_settings,
     std::unique_ptr<SyntheticBeginFrameSource>* out_begin_frame_source) {
@@ -103,21 +108,46 @@ std::unique_ptr<Display> GpuDisplayProvider::CreateDisplay(
     display_begin_frame_source = synthetic_begin_frame_source.get();
   }
 
+  // TODO(penghuang): Merge two output surfaces into one when GLRenderer and
+  // software compositor is removed.
   std::unique_ptr<OutputSurface> output_surface;
+  SkiaOutputSurface* skia_output_surface = nullptr;
 
   if (!gpu_compositing) {
     output_surface = std::make_unique<SoftwareOutputSurface>(
-        CreateSoftwareOutputDeviceForPlatform(surface_handle), task_runner_);
+        CreateSoftwareOutputDeviceForPlatform(surface_handle, display_client));
+  } else if (renderer_settings.use_skia_renderer &&
+             renderer_settings.use_skia_deferred_display_list) {
+#if defined(OS_MACOSX) || defined(OS_WIN)
+    // TODO(penghuang): Support DDL for all platforms.
+    NOTIMPLEMENTED();
+    // Workaround compile error: private field 'gpu_service_impl_' is not used.
+    ALLOW_UNUSED_LOCAL(gpu_service_impl_);
+#else
+    // Create an offscreen context_provider for SkiaOutputSurfaceImpl, because
+    // SkiaRenderer still needs it to draw RenderPass into a texture.
+    // TODO(penghuang): Remove this context_provider. https://crbug.com/825901
+    auto context_provider = base::MakeRefCounted<VizProcessContextProvider>(
+        gpu_service_, gpu::kNullSurfaceHandle, gpu_memory_buffer_manager_.get(),
+        image_factory_, gpu_channel_manager_delegate_,
+        gpu::SharedMemoryLimits());
+    auto result = context_provider->BindToCurrentThread();
+    CHECK_EQ(result, gpu::ContextResult::kSuccess);
+    output_surface = std::make_unique<SkiaOutputSurfaceImpl>(
+        gpu_service_impl_, surface_handle, std::move(context_provider),
+        synthetic_begin_frame_source.get());
+    skia_output_surface = static_cast<SkiaOutputSurface*>(output_surface.get());
+#endif
   } else {
-    scoped_refptr<InProcessContextProvider> context_provider;
+    scoped_refptr<VizProcessContextProvider> context_provider;
 
     // Retry creating and binding |context_provider| on transient failures.
     gpu::ContextResult context_result = gpu::ContextResult::kTransientFailure;
     while (context_result != gpu::ContextResult::kSuccess) {
-      context_provider = base::MakeRefCounted<InProcessContextProvider>(
+      context_provider = base::MakeRefCounted<VizProcessContextProvider>(
           gpu_service_, surface_handle, gpu_memory_buffer_manager_.get(),
           image_factory_, gpu_channel_manager_delegate_,
-          gpu::SharedMemoryLimits(), nullptr /* shared_context */);
+          gpu::SharedMemoryLimits());
       context_result = context_provider->BindToCurrentThread();
 
       // TODO(crbug.com/819474): Don't crash here, instead fallback to software
@@ -166,34 +196,22 @@ std::unique_ptr<Display> GpuDisplayProvider::CreateDisplay(
 
   return std::make_unique<Display>(
       ServerSharedBitmapManager::current(), renderer_settings, frame_sink_id,
-      std::move(output_surface), std::move(scheduler), task_runner_);
+      std::move(output_surface), std::move(scheduler), task_runner_,
+      skia_output_surface);
 }
 
 std::unique_ptr<SoftwareOutputDevice>
 GpuDisplayProvider::CreateSoftwareOutputDeviceForPlatform(
-    gpu::SurfaceHandle surface_handle) {
+    gpu::SurfaceHandle surface_handle,
+    mojom::DisplayClient* display_client) {
   if (headless_)
     return std::make_unique<SoftwareOutputDevice>();
 
-#if defined(GPU_SURFACE_HANDLE_IS_ACCELERATED_WINDOW)
-  gfx::AcceleratedWidget widget = surface_handle;
-#endif
-
 #if defined(OS_WIN)
-  if (!output_device_backing_)
-    output_device_backing_ = std::make_unique<OutputDeviceBacking>();
-  return std::make_unique<SoftwareOutputDeviceWin>(output_device_backing_.get(),
-                                                   widget);
+  return CreateSoftwareOutputDeviceWinGpu(
+      surface_handle, &output_device_backing_, display_client);
 #elif defined(OS_MACOSX)
-  // TODO(crbug.com/730660): What do we do to get something we can draw to? Can
-  // we use an IO surface? Can we use CA layers and overlays like we do for gpu
-  // compositing? See https://crrev.com/c/792295 to no longer have
-  // GpuSurfaceTracker. Part of the SoftwareOutputDeviceMac::EndPaint probably
-  // needs to move to the browser process, and we need to set up transport of an
-  // IO surface to here?
-  NOTIMPLEMENTED();
-  (void)widget;
-  return nullptr;
+  return std::make_unique<SoftwareOutputDeviceMac>(task_runner_);
 #elif defined(OS_ANDROID)
   // Android does not do software compositing, so we can't get here.
   NOTREACHED();
@@ -202,11 +220,11 @@ GpuDisplayProvider::CreateSoftwareOutputDeviceForPlatform(
   ui::SurfaceFactoryOzone* factory =
       ui::OzonePlatform::GetInstance()->GetSurfaceFactoryOzone();
   std::unique_ptr<ui::SurfaceOzoneCanvas> surface_ozone =
-      factory->CreateCanvasForWidget(widget);
+      factory->CreateCanvasForWidget(surface_handle);
   CHECK(surface_ozone);
   return std::make_unique<SoftwareOutputDeviceOzone>(std::move(surface_ozone));
 #elif defined(USE_X11)
-  return std::make_unique<SoftwareOutputDeviceX11>(widget);
+  return std::make_unique<SoftwareOutputDeviceX11>(surface_handle);
 #endif
 }
 

@@ -10,7 +10,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -93,8 +92,8 @@ TEST_P(ProxyResolvingClientSocketTest, SocketLimitNotApply) {
   std::vector<std::unique_ptr<net::StaticSocketDataProvider>> socket_data;
   std::vector<std::unique_ptr<net::SSLSocketDataProvider>> ssl_data;
   for (int i = 0; i < kNumSockets; ++i) {
-    socket_data.push_back(std::make_unique<net::StaticSocketDataProvider>(
-        reads, arraysize(reads), writes, arraysize(writes)));
+    socket_data.push_back(
+        std::make_unique<net::StaticSocketDataProvider>(reads, writes));
     socket_data[i]->set_connect_data(net::MockConnect(net::ASYNC, net::OK));
     socket_factory.AddSocketDataProvider(socket_data[i].get());
     ssl_data.push_back(
@@ -188,8 +187,7 @@ TEST_P(ProxyResolvingClientSocketTest, ConnectToProxy) {
     net::SSLSocketDataProvider ssl_socket(net::ASYNC, net::OK);
     socket_factory.AddSSLSocketDataProvider(&ssl_socket);
 
-    net::StaticSocketDataProvider socket_data(reads, arraysize(reads), writes,
-                                              arraysize(writes));
+    net::StaticSocketDataProvider socket_data(reads, writes);
     net::IPEndPoint remote_addr(net::IPAddress(127, 0, 0, 1),
                                 is_direct ? kDirectPort : kProxyPort);
     socket_data.set_connect_data(
@@ -290,8 +288,7 @@ TEST_P(ProxyResolvingClientSocketTest, ReadWriteErrors) {
       writes.emplace_back(test.is_error_sync ? net::SYNCHRONOUS : net::ASYNC,
                           net::ERR_FAILED);
     }
-    net::StaticSocketDataProvider socket_data(reads.data(), reads.size(),
-                                              writes.data(), writes.size());
+    net::StaticSocketDataProvider socket_data(reads, writes);
     net::IPEndPoint remote_addr(net::IPAddress(127, 0, 0, 1),
                                 test.is_direct ? kDirectPort : kProxyPort);
     socket_data.set_connect_data(
@@ -361,8 +358,7 @@ TEST_P(ProxyResolvingClientSocketTest, ReportsBadProxies) {
       net::MockWrite("CONNECT example.com:443 HTTP/1.1\r\n"
                      "Host: example.com:443\r\n"
                      "Proxy-Connection: keep-alive\r\n\r\n")};
-  net::StaticSocketDataProvider socket_data2(reads, arraysize(reads), writes,
-                                             arraysize(writes));
+  net::StaticSocketDataProvider socket_data2(reads, writes);
   socket_data2.set_connect_data(net::MockConnect(net::ASYNC, net::OK));
   socket_factory.AddSocketDataProvider(&socket_data2);
   net::SSLSocketDataProvider ssl_socket(net::ASYNC, net::OK);
@@ -403,9 +399,7 @@ TEST_P(ProxyResolvingClientSocketTest, ResetSocketAfterTunnelAuth) {
                     "Proxy-Authenticate: Basic realm=\"test_realm\"\r\n"
                     "\r\n")};
 
-  net::StaticSocketDataProvider kSocketData1(
-      kConnectReads1, arraysize(kConnectReads1), kConnectWrites1,
-      arraysize(kConnectWrites1));
+  net::StaticSocketDataProvider kSocketData1(kConnectReads1, kConnectWrites1);
   socket_factory.AddSocketDataProvider(&kSocketData1);
 
   ProxyResolvingClientSocketFactory proxy_resolving_socket_factory(
@@ -458,18 +452,12 @@ TEST_P(ProxyResolvingClientSocketTest, MultiroundAuth) {
   net::MockRead kConnectReads3[] = {
       net::MockRead("HTTP/1.1 200 Success\r\n\r\n")};
 
-  net::StaticSocketDataProvider kSocketData1(
-      kConnectReads1, arraysize(kConnectReads1), kConnectWrites1,
-      arraysize(kConnectWrites1));
+  net::StaticSocketDataProvider kSocketData1(kConnectReads1, kConnectWrites1);
   socket_factory.AddSocketDataProvider(&kSocketData1);
 
-  net::StaticSocketDataProvider kSocketData2(
-      kConnectReads2, arraysize(kConnectReads2), kConnectWrites2,
-      arraysize(kConnectWrites2));
+  net::StaticSocketDataProvider kSocketData2(kConnectReads2, kConnectWrites2);
   socket_factory.AddSocketDataProvider(&kSocketData2);
-  net::StaticSocketDataProvider kSocketData3(
-      kConnectReads3, arraysize(kConnectReads3), kConnectWrites3,
-      arraysize(kConnectWrites3));
+  net::StaticSocketDataProvider kSocketData3(kConnectReads3, kConnectWrites3);
   socket_factory.AddSocketDataProvider(&kSocketData3);
 
   net::SSLSocketDataProvider ssl_socket(net::ASYNC, net::OK);
@@ -530,14 +518,10 @@ TEST_P(ProxyResolvingClientSocketTest, ReusesHTTPAuthCache_Lookup) {
   net::MockRead kConnectReads2[] = {
       net::MockRead("HTTP/1.1 200 Success\r\n\r\n")};
 
-  net::StaticSocketDataProvider kSocketData1(
-      kConnectReads1, arraysize(kConnectReads1), kConnectWrites1,
-      arraysize(kConnectWrites1));
+  net::StaticSocketDataProvider kSocketData1(kConnectReads1, kConnectWrites1);
   socket_factory.AddSocketDataProvider(&kSocketData1);
 
-  net::StaticSocketDataProvider kSocketData2(
-      kConnectReads2, arraysize(kConnectReads2), kConnectWrites2,
-      arraysize(kConnectWrites2));
+  net::StaticSocketDataProvider kSocketData2(kConnectReads2, kConnectWrites2);
   socket_factory.AddSocketDataProvider(&kSocketData2);
   net::SSLSocketDataProvider ssl_socket(net::ASYNC, net::OK);
   socket_factory.AddSSLSocketDataProvider(&ssl_socket);
@@ -614,9 +598,7 @@ TEST_P(ProxyResolvingClientSocketTest, FactoryUsesLatestHTTPAuthCache) {
                     "\r\n"),
       net::MockRead("HTTP/1.1 200 Success\r\n\r\n")};
 
-  net::StaticSocketDataProvider kSocketData(
-      kConnectReads, arraysize(kConnectReads), kConnectWrites,
-      arraysize(kConnectWrites));
+  net::StaticSocketDataProvider kSocketData(kConnectReads, kConnectWrites);
   socket_factory.AddSocketDataProvider(&kSocketData);
   net::SSLSocketDataProvider ssl_socket(net::ASYNC, net::OK);
   socket_factory.AddSSLSocketDataProvider(&ssl_socket);
@@ -644,9 +626,7 @@ TEST_P(ProxyResolvingClientSocketTest, ReusesHTTPAuthCache_Preemptive) {
   net::MockRead kConnectReads[] = {
       net::MockRead("HTTP/1.1 200 Success\r\n\r\n")};
 
-  net::StaticSocketDataProvider kSocketData(
-      kConnectReads, arraysize(kConnectReads), kConnectWrites,
-      arraysize(kConnectWrites));
+  net::StaticSocketDataProvider kSocketData(kConnectReads, kConnectWrites);
   socket_factory.AddSocketDataProvider(&kSocketData);
   net::SSLSocketDataProvider ssl_socket(net::ASYNC, net::OK);
   socket_factory.AddSSLSocketDataProvider(&ssl_socket);
@@ -690,9 +670,7 @@ TEST_P(ProxyResolvingClientSocketTest, ReusesHTTPAuthCache_NoCredentials) {
                     "Proxy-Authenticate: Basic realm=\"test_realm\"\r\n"
                     "\r\n")};
 
-  net::StaticSocketDataProvider kSocketData(
-      kConnectReads, arraysize(kConnectReads), kConnectWrites,
-      arraysize(kConnectWrites));
+  net::StaticSocketDataProvider kSocketData(kConnectReads, kConnectWrites);
   socket_factory.AddSocketDataProvider(&kSocketData);
 
   ProxyResolvingClientSocketFactory proxy_resolving_socket_factory(
@@ -802,15 +780,22 @@ class ReconsiderProxyAfterErrorTest
 };
 
 // List of errors that are used in the proxy resolution tests.
-const int kProxyTestMockErrors[] = {
-    net::ERR_PROXY_CONNECTION_FAILED, net::ERR_NAME_NOT_RESOLVED,
-    net::ERR_ADDRESS_UNREACHABLE,     net::ERR_CONNECTION_CLOSED,
-    net::ERR_CONNECTION_RESET,        net::ERR_CONNECTION_REFUSED,
-    net::ERR_CONNECTION_ABORTED,      net::ERR_TUNNEL_CONNECTION_FAILED,
-    net::ERR_SOCKS_CONNECTION_FAILED, net::ERR_TIMED_OUT,
-    net::ERR_CONNECTION_TIMED_OUT,    net::ERR_PROXY_CERTIFICATE_INVALID,
-    net::ERR_QUIC_PROTOCOL_ERROR,     net::ERR_QUIC_HANDSHAKE_FAILED,
-    net::ERR_SSL_PROTOCOL_ERROR,      net::ERR_MSG_TOO_BIG};
+//
+// Note: ProxyResolvingClientSocket currently removes
+// net::ProxyServer::SCHEME_QUIC, so this list excludes errors that are
+// retryable only for QUIC proxies.
+const int kProxyTestMockErrors[] = {net::ERR_PROXY_CONNECTION_FAILED,
+                                    net::ERR_NAME_NOT_RESOLVED,
+                                    net::ERR_ADDRESS_UNREACHABLE,
+                                    net::ERR_CONNECTION_CLOSED,
+                                    net::ERR_CONNECTION_RESET,
+                                    net::ERR_CONNECTION_REFUSED,
+                                    net::ERR_CONNECTION_ABORTED,
+                                    net::ERR_SOCKS_CONNECTION_FAILED,
+                                    net::ERR_TIMED_OUT,
+                                    net::ERR_CONNECTION_TIMED_OUT,
+                                    net::ERR_PROXY_CERTIFICATE_INVALID,
+                                    net::ERR_SSL_PROTOCOL_ERROR};
 
 INSTANTIATE_TEST_CASE_P(
     /* no prefix */,
@@ -831,22 +816,32 @@ TEST_P(ReconsiderProxyAfterErrorTest, ReconsiderProxyAfterError) {
       << mock_error;
 
   net::MockClientSocketFactory socket_factory;
+  socket_factory.UseMockProxyClientSockets();
+
+  net::ProxyClientSocketDataProvider proxy_data(io_mode, mock_error);
+
   // Connect to first broken proxy.
   net::StaticSocketDataProvider data1;
-  data1.set_connect_data(net::MockConnect(io_mode, mock_error));
+  net::SSLSocketDataProvider ssl_data1(io_mode, net::OK);
+  data1.set_connect_data(net::MockConnect(io_mode, net::OK));
   socket_factory.AddSocketDataProvider(&data1);
+  socket_factory.AddSSLSocketDataProvider(&ssl_data1);
+  socket_factory.AddProxyClientSocketDataProvider(&proxy_data);
 
   // Connect to second broken proxy.
   net::StaticSocketDataProvider data2;
-  data2.set_connect_data(net::MockConnect(io_mode, mock_error));
+  net::SSLSocketDataProvider ssl_data2(io_mode, net::OK);
+  data2.set_connect_data(net::MockConnect(io_mode, net::OK));
   socket_factory.AddSocketDataProvider(&data2);
+  socket_factory.AddSSLSocketDataProvider(&ssl_data2);
+  socket_factory.AddProxyClientSocketDataProvider(&proxy_data);
 
   // Connect using direct.
   net::StaticSocketDataProvider data3;
+  net::SSLSocketDataProvider ssl_data3(io_mode, net::OK);
   data3.set_connect_data(net::MockConnect(io_mode, net::OK));
   socket_factory.AddSocketDataProvider(&data3);
-  net::SSLSocketDataProvider ssl_socket(net::ASYNC, net::OK);
-  socket_factory.AddSSLSocketDataProvider(&ssl_socket);
+  socket_factory.AddSSLSocketDataProvider(&ssl_data3);
 
   const GURL kDestination("https://example.com:443");
   ProxyResolvingClientSocketFactory proxy_resolving_socket_factory(
@@ -865,7 +860,11 @@ TEST_P(ReconsiderProxyAfterErrorTest, ReconsiderProxyAfterError) {
   EXPECT_EQ(2u, retry_info.size()) << mock_error;
   EXPECT_NE(retry_info.end(), retry_info.find("https://badproxy:99"));
   EXPECT_NE(retry_info.end(), retry_info.find("https://badfallbackproxy:98"));
-  EXPECT_EQ(use_tls_, ssl_socket.ConnectDataConsumed());
+  // Should always use HTTPS to talk to HTTPS proxy.
+  EXPECT_TRUE(ssl_data1.ConnectDataConsumed());
+  EXPECT_TRUE(ssl_data2.ConnectDataConsumed());
+  // This depends on whether the consumer has requested to use TLS.
+  EXPECT_EQ(use_tls_, ssl_data3.ConnectDataConsumed());
 }
 
 }  // namespace network

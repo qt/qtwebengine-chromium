@@ -50,10 +50,10 @@ enum UIDismissalReason {
   CLICKED_CANCEL,
   CLICKED_NEVER,
   CLICKED_MANAGE,
-  CLICKED_DONE,
+  CLICKED_DONE_OBSOLETE,         // obsolete
   CLICKED_UNBLACKLIST_OBSOLETE,  // obsolete.
-  CLICKED_OK,
-  CLICKED_CREDENTIAL_OBSOLETE,  // obsolete.
+  CLICKED_OK_OBSOLETE,           // obsolete
+  CLICKED_CREDENTIAL_OBSOLETE,   // obsolete.
   AUTO_SIGNIN_TOAST_TIMEOUT,
   AUTO_SIGNIN_TOAST_CLICKED_OBSOLETE,  // obsolete.
   CLICKED_BRAND_NAME,
@@ -208,7 +208,8 @@ enum class SyncPasswordHashChange {
 
 enum class IsSyncPasswordHashSaved {
   NOT_SAVED,
-  SAVED,
+  SAVED_VIA_STRING_PREF,
+  SAVED_VIA_LIST_PREF,
   IS_SYNC_PASSWORD_HASH_SAVED_COUNT
 };
 #endif
@@ -319,14 +320,6 @@ void LogPasswordReuse(int password_length,
                       int saved_passwords,
                       int number_matches,
                       bool password_field_detected);
-
-// Log when the user selects the "Login not secure" warning in the password
-// autofill dropdown to show more information about the warning.
-void LogShowedHttpNotSecureExplanation();
-
-// Log that the Form-Not-Secure warning was shown. Should be called at most once
-// per main-frame navigation.
-void LogShowedFormNotSecureWarningOnCurrentNavigation();
 
 // Log the context in which the "Show all saved passwords" fallback was shown.
 void LogContextOfShowAllSavedPasswordsShown(

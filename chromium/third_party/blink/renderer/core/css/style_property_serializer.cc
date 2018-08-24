@@ -418,7 +418,7 @@ String StylePropertySerializer::GetPropertyValue(
     case CSSPropertyAnimation:
       return GetLayeredShorthandValue(animationShorthand());
     case CSSPropertyBorderSpacing:
-      return BorderSpacingValue(borderSpacingShorthand());
+      return Get2Values(borderSpacingShorthand());
     case CSSPropertyBackgroundPosition:
       return GetLayeredShorthandValue(backgroundPositionShorthand());
     case CSSPropertyBackgroundRepeat:
@@ -427,6 +427,8 @@ String StylePropertySerializer::GetPropertyValue(
       return GetLayeredShorthandValue(backgroundShorthand());
     case CSSPropertyBorder:
       return BorderPropertyValue();
+    case CSSPropertyBorderImage:
+      return BorderImagePropertyValue();
     case CSSPropertyBorderTop:
       return GetShorthandValue(borderTopShorthand());
     case CSSPropertyBorderRight:
@@ -460,11 +462,11 @@ String StylePropertySerializer::GetPropertyValue(
     case CSSPropertyGap:
       return GetShorthandValue(gapShorthand());
     case CSSPropertyPlaceContent:
-      return GetAlignmentShorthandValue(placeContentShorthand());
+      return Get2Values(placeContentShorthand());
     case CSSPropertyPlaceItems:
-      return GetAlignmentShorthandValue(placeItemsShorthand());
+      return Get2Values(placeItemsShorthand());
     case CSSPropertyPlaceSelf:
-      return GetAlignmentShorthandValue(placeSelfShorthand());
+      return Get2Values(placeSelfShorthand());
     case CSSPropertyFont:
       return FontValue();
     case CSSPropertyFontVariant:
@@ -476,7 +478,7 @@ String StylePropertySerializer::GetPropertyValue(
     case CSSPropertyWebkitMarginCollapse:
       return GetShorthandValue(webkitMarginCollapseShorthand());
     case CSSPropertyOverflow:
-      return GetCommonValue(overflowShorthand());
+      return Get2Values(overflowShorthand());
     case CSSPropertyOverscrollBehavior:
       return GetShorthandValue(overscrollBehaviorShorthand());
     case CSSPropertyPadding:
@@ -526,20 +528,6 @@ String StylePropertySerializer::GetPropertyValue(
     default:
       return String();
   }
-}
-
-String StylePropertySerializer::BorderSpacingValue(
-    const StylePropertyShorthand& shorthand) const {
-  const CSSValue* horizontal_value =
-      property_set_.GetPropertyCSSValue(*shorthand.properties()[0]);
-  const CSSValue* vertical_value =
-      property_set_.GetPropertyCSSValue(*shorthand.properties()[1]);
-
-  String horizontal_value_css_text = horizontal_value->CssText();
-  String vertical_value_css_text = vertical_value->CssText();
-  if (horizontal_value_css_text == vertical_value_css_text)
-    return horizontal_value_css_text;
-  return horizontal_value_css_text + ' ' + vertical_value_css_text;
 }
 
 void StylePropertySerializer::AppendFontLonghandValueIfNotNormal(
@@ -963,19 +951,11 @@ String StylePropertySerializer::GetCommonValue(
   return res;
 }
 
-String StylePropertySerializer::GetAlignmentShorthandValue(
-    const StylePropertyShorthand& shorthand) const {
-  String value = GetCommonValue(shorthand);
-  if (value.IsNull() || value.IsEmpty())
-    return GetShorthandValue(shorthand);
-  return value;
-}
-
 String StylePropertySerializer::BorderPropertyValue() const {
   const StylePropertyShorthand properties[3] = {
       borderWidthShorthand(), borderStyleShorthand(), borderColorShorthand()};
   StringBuilder result;
-  for (size_t i = 0; i < WTF_ARRAY_LENGTH(properties); ++i) {
+  for (size_t i = 0; i < arraysize(properties); ++i) {
     String value = GetCommonValue(properties[i]);
     if (value.IsNull())
       return String();
@@ -986,6 +966,24 @@ String StylePropertySerializer::BorderPropertyValue() const {
     result.Append(value);
   }
   return result.IsEmpty() ? String() : result.ToString();
+}
+
+String StylePropertySerializer::BorderImagePropertyValue() const {
+  StringBuilder result;
+  const CSSProperty* properties[] = {
+      &GetCSSPropertyBorderImageSource(), &GetCSSPropertyBorderImageSlice(),
+      &GetCSSPropertyBorderImageWidth(), &GetCSSPropertyBorderImageOutset(),
+      &GetCSSPropertyBorderImageRepeat()};
+  size_t length = arraysize(properties);
+  for (size_t i = 0; i < length; ++i) {
+    const CSSValue& value = *property_set_.GetPropertyCSSValue(*properties[i]);
+    if (!result.IsEmpty())
+      result.Append(" ");
+    if (i == 2 || i == 3)
+      result.Append("/ ");
+    result.Append(value.CssText());
+  }
+  return result.ToString();
 }
 
 static void AppendBackgroundRepeatValue(StringBuilder& builder,

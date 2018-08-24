@@ -40,7 +40,6 @@ class CORE_EXPORT EventListener
     kImageEventListenerType,
     kCPPEventListenerType,
     kConditionEventListenerType,
-    kNativeEventListenerType,
   };
 
   virtual ~EventListener() = default;
@@ -56,7 +55,7 @@ class CORE_EXPORT EventListener
   ListenerType GetType() const { return type_; }
 
   virtual void Trace(blink::Visitor* visitor) {}
-  void TraceWrappers(const ScriptWrappableVisitor* visitor) const override {}
+  void TraceWrappers(ScriptWrappableVisitor* visitor) const override {}
   const char* NameInHeapSnapshot() const override { return "EventListener"; }
 
  protected:

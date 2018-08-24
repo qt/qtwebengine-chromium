@@ -46,6 +46,7 @@
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
 #include "ui/events/event_target_iterator.h"
+#include "ui/events/keycodes/dom/dom_code.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/scoped_canvas.h"
@@ -643,7 +644,7 @@ bool Window::HasCapture() {
 }
 
 std::unique_ptr<ScopedKeyboardHook> Window::CaptureSystemKeyEvents(
-    base::Optional<base::flat_set<int>> keys) {
+    base::Optional<base::flat_set<ui::DomCode>> dom_codes) {
   Window* root_window = GetRootWindow();
   if (!root_window)
     return nullptr;
@@ -652,7 +653,7 @@ std::unique_ptr<ScopedKeyboardHook> Window::CaptureSystemKeyEvents(
   if (!host)
     return nullptr;
 
-  return host->CaptureSystemKeyEvents(std::move(keys));
+  return host->CaptureSystemKeyEvents(std::move(dom_codes));
 }
 
 void Window::SuppressPaint() {
@@ -762,17 +763,6 @@ void Window::SetBoundsInternal(const gfx::Rect& new_bounds) {
     OnLayerBoundsChanged(old_bounds,
                          ui::PropertyChangeReason::NOT_FROM_ANIMATION);
   }
-}
-
-void Window::SetDeviceScaleFactor(float device_scale_factor) {
-  float old_device_scale_factor = layer()->device_scale_factor();
-  layer()->OnDeviceScaleFactorChanged(device_scale_factor);
-
-  // If we are currently not the layer's delegate, we will not get the device
-  // scale factor changed notification from the layer (this typically happens
-  // after animating hidden). We must notify ourselves.
-  if (layer()->delegate() != this)
-    OnDeviceScaleFactorChanged(old_device_scale_factor, device_scale_factor);
 }
 
 void Window::SetVisible(bool visible) {
@@ -1119,6 +1109,17 @@ viz::ScopedSurfaceIdAllocator Window::GetSurfaceIdAllocator(
 
 const viz::LocalSurfaceId& Window::GetLocalSurfaceId() const {
   return port_->GetLocalSurfaceId();
+}
+
+void Window::UpdateLocalSurfaceIdFromEmbeddedClient(
+    const base::Optional<viz::LocalSurfaceId>&
+        embedded_client_local_surface_id) {
+  if (embedded_client_local_surface_id) {
+    port_->UpdateLocalSurfaceIdFromEmbeddedClient(
+        *embedded_client_local_surface_id);
+  } else {
+    port_->AllocateLocalSurfaceId();
+  }
 }
 
 const viz::FrameSinkId& Window::GetFrameSinkId() const {

@@ -49,9 +49,9 @@ ClassicPendingScript* ClassicPendingScript::Fetch(
   pending_script->intervened_ =
       MaybeDisallowFetchForDocWrittenScript(params, element_document);
 
-  // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-classic-script
-  //
-  // Step 2. Set request's client to settings object. [spec text]
+  // <spec
+  // href="https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-classic-script"
+  // step="2">Set request's client to settings object.</spec>
   //
   // Note: |element_document| corresponds to the settings object.
   ScriptResource::Fetch(params, element_document.Fetcher(), pending_script);
@@ -225,22 +225,18 @@ void ClassicPendingScript::Trace(blink::Visitor* visitor) {
   PendingScript::Trace(visitor);
 }
 
-bool ClassicPendingScript::CheckMIMETypeBeforeRunScript(
-    Document* context_document) const {
-  if (!is_external_)
-    return true;
-
-  return AllowedByNosniff::MimeTypeAsScript(context_document,
-                                            GetResource()->GetResponse());
-}
-
 static SingleCachedMetadataHandler* GetInlineCacheHandler(const String& source,
                                                           Document& document) {
   if (!RuntimeEnabledFeatures::CacheInlineScriptCodeEnabled())
     return nullptr;
 
+  ScriptableDocumentParser* scriptable_parser =
+      document.GetScriptableDocumentParser();
+  if (!scriptable_parser)
+    return nullptr;
+
   SourceKeyedCachedMetadataHandler* document_cache_handler =
-      document.GetScriptableDocumentParser()->GetInlineScriptCacheHandler();
+      scriptable_parser->GetInlineScriptCacheHandler();
 
   if (!document_cache_handler)
     return nullptr;
@@ -277,6 +273,14 @@ ClassicScript* ClassicPendingScript::GetSource(const KURL& document_url,
 
   DCHECK(GetResource()->IsLoaded());
   ScriptResource* resource = ToScriptResource(GetResource());
+
+  // If the MIME check fails, which is considered as load failure.
+  if (!AllowedByNosniff::MimeTypeAsScript(
+          GetElement()->GetDocument().ContextDocument(),
+          resource->GetResponse())) {
+    error_occurred = true;
+  }
+
   bool streamer_ready = (ready_state_ == kReady) && streamer_ &&
                         !streamer_->StreamingSuppressed();
   ScriptSourceCode source_code(streamer_ready ? streamer_ : nullptr, resource);
@@ -380,7 +384,9 @@ void ClassicPendingScript::AdvanceReadyState(ReadyState new_ready_state) {
 
 void ClassicPendingScript::OnPurgeMemory() {
   CheckState();
-  CancelStreaming();
+  // TODO(crbug.com/846951): the implementation of CancelStreaming() is
+  // currently incorrect and consequently a call to this method was removed from
+  // here.
 }
 
 bool ClassicPendingScript::StartStreamingIfPossible(

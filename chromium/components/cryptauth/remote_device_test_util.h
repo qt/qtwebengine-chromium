@@ -7,11 +7,38 @@
 
 #include <vector>
 
-#include "components/cryptauth/remote_device.h"
+#include "components/cryptauth/remote_device_ref.h"
 
 namespace cryptauth {
 
-std::vector<RemoteDevice> GenerateTestRemoteDevices(size_t num_to_create);
+// Attributes of the default test remote device.
+extern const char kTestRemoteDeviceName[];
+extern const char kTestRemoteDevicePublicKey[];
+
+class RemoteDeviceRefBuilder {
+ public:
+  RemoteDeviceRefBuilder();
+  ~RemoteDeviceRefBuilder();
+  RemoteDeviceRefBuilder& SetUserId(const std::string& user_id);
+  RemoteDeviceRefBuilder& SetName(const std::string& name);
+  RemoteDeviceRefBuilder& SetPublicKey(const std::string& public_key);
+  RemoteDeviceRefBuilder& SetSupportsMobileHotspot(
+      bool supports_mobile_hotspot);
+  RemoteDeviceRefBuilder& SetLastUpdateTimeMillis(
+      int64_t last_update_time_millis);
+  RemoteDeviceRef Build();
+
+ private:
+  std::shared_ptr<RemoteDevice> remote_device_;
+};
+
+RemoteDevice CreateRemoteDeviceForTest();
+
+RemoteDeviceRef CreateRemoteDeviceRefForTest();
+
+RemoteDeviceList CreateRemoteDeviceListForTest(size_t num_to_create);
+
+RemoteDeviceRefList CreateRemoteDeviceRefListForTest(size_t num_to_create);
 
 }  // namespace cryptauth
 

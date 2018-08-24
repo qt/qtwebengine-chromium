@@ -26,7 +26,7 @@ class IntersectionObserverController
 
  public:
   static IntersectionObserverController* Create(Document*);
-  ~IntersectionObserverController();
+  ~IntersectionObserverController() override;
 
   void Unpause() override;
 
@@ -36,8 +36,8 @@ class IntersectionObserverController
   void AddTrackedObserver(IntersectionObserver&);
   void RemoveTrackedObserversForRoot(const Node&);
 
-  void Trace(blink::Visitor*);
-  void TraceWrappers(const ScriptWrappableVisitor*) const override;
+  void Trace(blink::Visitor*) override;
+  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override {
     return "IntersectionObserverController";
   }

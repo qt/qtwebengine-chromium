@@ -21,6 +21,8 @@
 #include <numeric>
 
 #include "modules/audio_processing/aec3/vector_math.h"
+#include "modules/audio_processing/logging/apm_data_dumper.h"
+#include "rtc_base/atomicops.h"
 #include "rtc_base/checks.h"
 #include "system_wrappers/include/field_trial.h"
 
@@ -180,6 +182,8 @@ void GainToNoAudibleEcho(
           : config.gain_mask.m8;
 
   for (size_t k = 0; k < gain->size(); ++k) {
+    // TODO(devicentepena): Experiment by removing the reverberation estimation
+    // from the nearend signal before computing the gains.
     const float unity_gain_masker = std::max(nearend[k], masker[k]);
     RTC_DCHECK_LE(0.f, nearend_masking_margin * unity_gain_masker);
     if (weighted_echo[k] <= nearend_masking_margin * unity_gain_masker ||
@@ -269,10 +273,11 @@ void AdjustNonConvergedFrequencies(
 
 }  // namespace
 
+int SuppressionGain::instance_count_ = 0;
+
 // TODO(peah): Add further optimizations, in particular for the divisions.
 void SuppressionGain::LowerBandGain(
     bool low_noise_render,
-    const rtc::Optional<int>& narrow_peak_band,
     const AecState& aec_state,
     const std::array<float, kFftLengthBy2Plus1>& nearend,
     const std::array<float, kFftLengthBy2Plus1>& echo,
@@ -362,12 +367,20 @@ void SuppressionGain::LowerBandGain(
   MaskingPower(config_, enable_transparency_improvements_, nearend,
                comfort_noise, last_masker_, *gain, &last_masker_);
   aec3::VectorMath(optimization_).Sqrt(*gain);
+
+  // Debug outputs for the purpose of development and analysis.
+  data_dumper_->DumpRaw("aec3_suppressor_min_gain", min_gain);
+  data_dumper_->DumpRaw("aec3_suppressor_max_gain", max_gain);
+  data_dumper_->DumpRaw("aec3_suppressor_masker", masker);
+  data_dumper_->DumpRaw("aec3_suppressor_last_masker", last_masker_);
 }
 
 SuppressionGain::SuppressionGain(const EchoCanceller3Config& config,
                                  Aec3Optimization optimization,
                                  int sample_rate_hz)
-    : optimization_(optimization),
+    : data_dumper_(
+          new ApmDataDumper(rtc::AtomicOps::Increment(&instance_count_))),
+      optimization_(optimization),
       config_(config),
       state_change_duration_blocks_(
           static_cast<int>(config_.filter.config_change_duration_blocks)),
@@ -404,8 +417,8 @@ void SuppressionGain::GetGain(
   bool low_noise_render = low_render_detector_.Detect(render);
   const rtc::Optional<int> narrow_peak_band =
       render_signal_analyzer.NarrowPeakBand();
-  LowerBandGain(low_noise_render, narrow_peak_band, aec_state, nearend_spectrum,
-                echo_spectrum, comfort_noise_spectrum, low_band_gain);
+  LowerBandGain(low_noise_render, aec_state, nearend_spectrum, echo_spectrum,
+                comfort_noise_spectrum, low_band_gain);
 
   // Adjust the gain for bands where the coherence indicates not echo.
   if (config_.suppressor.bands_with_reliable_coherence > 0 &&

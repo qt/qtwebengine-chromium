@@ -33,6 +33,7 @@ void GenerateCaps(const VkPhysicalDeviceProperties &physicalDeviceProperties,
     // TODO(jmadill): Support full mapBufferRange extension.
     outExtensions->mapBuffer      = true;
     outExtensions->mapBufferRange = true;
+    outExtensions->textureStorage = true;
 
     // TODO(lucferron): Eventually remove everything above this line in this function as the caps
     // get implemented.
@@ -93,8 +94,12 @@ void GenerateCaps(const VkPhysicalDeviceProperties &physicalDeviceProperties,
     // we'll defer the implementation until we tackle the next version.
     // outCaps->maxServerWaitTimeout
 
-    const GLuint maxUniformVectors = physicalDeviceProperties.limits.maxUniformBufferRange /
-                                     (sizeof(GLfloat) * kComponentsPerVector);
+    GLuint maxUniformVectors = physicalDeviceProperties.limits.maxUniformBufferRange /
+                               (sizeof(GLfloat) * kComponentsPerVector);
+
+    // Clamp the maxUniformVectors to 1024u, on AMD the maxUniformBufferRange is way too high.
+    maxUniformVectors = std::min(1024u, maxUniformVectors);
+
     const GLuint maxUniformComponents = maxUniformVectors * kComponentsPerVector;
 
     // Uniforms are implemented using a uniform buffer, so the max number of uniforms we can
@@ -108,19 +113,27 @@ void GenerateCaps(const VkPhysicalDeviceProperties &physicalDeviceProperties,
     // This is maxDescriptorSetUniformBuffers minus the number of uniform buffers we
     // reserve for internal variables. We reserve one per shader stage for default uniforms
     // and likely one per shader stage for ANGLE internal variables.
-    // outCaps->maxVertexUniformBlocks = ...
-
-    outCaps->maxVertexOutputComponents = physicalDeviceProperties.limits.maxVertexOutputComponents;
+    // outCaps->maxShaderUniformBlocks[gl::ShaderType::Vertex] = ...
 
     // we use the same bindings on each stage, so the limitation is the same combined or not.
     outCaps->maxCombinedTextureImageUnits =
         physicalDeviceProperties.limits.maxPerStageDescriptorSamplers;
-    outCaps->maxTextureImageUnits = physicalDeviceProperties.limits.maxPerStageDescriptorSamplers;
-    outCaps->maxVertexTextureImageUnits =
+    outCaps->maxShaderTextureImageUnits[gl::ShaderType::Fragment] =
+        physicalDeviceProperties.limits.maxPerStageDescriptorSamplers;
+    outCaps->maxShaderTextureImageUnits[gl::ShaderType::Vertex] =
         physicalDeviceProperties.limits.maxPerStageDescriptorSamplers;
 
-    // TODO(jmadill): count reserved varyings
-    outCaps->maxVaryingVectors = physicalDeviceProperties.limits.maxVertexOutputComponents / 4;
+    // The max vertex output components should not include gl_Position.
+    // The gles2.0 section 2.10 states that "gl_Position is not a varying variable and does
+    // not count against this limit.", but the Vulkan spec has no such mention in its Built-in
+    // vars section. It is implicit that we need to actually reserve it for Vulkan in that case.
+    // TODO(lucferron): AMD has a weird behavior when we edge toward the maximum number of varyings
+    // and can often crash. Reserving an additional varying just for them bringing the total to 2.
+    // http://anglebug.com/2483
+    constexpr GLint kReservedVaryingCount = 2;
+    outCaps->maxVaryingVectors =
+        (physicalDeviceProperties.limits.maxVertexOutputComponents / 4) - kReservedVaryingCount;
+    outCaps->maxVertexOutputComponents = outCaps->maxVaryingVectors * 4;
 }
 }  // namespace vk
 }  // namespace rx

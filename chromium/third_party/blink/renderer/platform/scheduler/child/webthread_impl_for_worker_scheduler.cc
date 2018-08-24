@@ -10,8 +10,9 @@
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/time/default_tick_clock.h"
+#include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/platform/scheduler/base/task_queue.h"
-#include "third_party/blink/renderer/platform/scheduler/child/web_scheduler_impl.h"
+#include "third_party/blink/renderer/platform/scheduler/child/task_queue_with_task_type.h"
 #include "third_party/blink/renderer/platform/scheduler/child/worker_scheduler_proxy.h"
 #include "third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.h"
 
@@ -64,12 +65,10 @@ void WebThreadImplForWorkerScheduler::InitOnThread(
   non_main_thread_scheduler_ = CreateNonMainThreadScheduler();
   non_main_thread_scheduler_->Init();
   task_queue_ = non_main_thread_scheduler_->DefaultTaskQueue();
+  task_runner_ = TaskQueueWithTaskType::Create(
+      task_queue_, TaskType::kWorkerThreadTaskQueueDefault);
   idle_task_runner_ = non_main_thread_scheduler_->IdleTaskRunner();
-  web_scheduler_.reset(
-      new WebSchedulerImpl(non_main_thread_scheduler_.get(),
-                           non_main_thread_scheduler_->IdleTaskRunner(),
-                           non_main_thread_scheduler_->DefaultTaskQueue()));
-  base::MessageLoop::current()->AddDestructionObserver(this);
+  base::MessageLoopCurrent::Get()->AddDestructionObserver(this);
   completion->Signal();
 }
 
@@ -78,8 +77,8 @@ void WebThreadImplForWorkerScheduler::ShutdownOnThread(
   was_shutdown_on_thread_.Set();
 
   task_queue_ = nullptr;
+  task_runner_ = nullptr;
   idle_task_runner_ = nullptr;
-  web_scheduler_ = nullptr;
   non_main_thread_scheduler_ = nullptr;
 
   if (completion)
@@ -100,8 +99,8 @@ blink::PlatformThreadId WebThreadImplForWorkerScheduler::ThreadId() const {
   return thread_->GetThreadId();
 }
 
-blink::WebScheduler* WebThreadImplForWorkerScheduler::Scheduler() const {
-  return web_scheduler_.get();
+blink::ThreadScheduler* WebThreadImplForWorkerScheduler::Scheduler() const {
+  return non_main_thread_scheduler_.get();
 }
 
 SingleThreadIdleTaskRunner* WebThreadImplForWorkerScheduler::GetIdleTaskRunner()
@@ -111,7 +110,7 @@ SingleThreadIdleTaskRunner* WebThreadImplForWorkerScheduler::GetIdleTaskRunner()
 
 scoped_refptr<base::SingleThreadTaskRunner>
 WebThreadImplForWorkerScheduler::GetTaskRunner() const {
-  return task_queue_;
+  return task_runner_;
 }
 
 void WebThreadImplForWorkerScheduler::AddTaskObserverInternal(

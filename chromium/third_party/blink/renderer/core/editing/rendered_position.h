@@ -31,96 +31,18 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_EDITING_RENDERED_POSITION_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_EDITING_RENDERED_POSITION_H_
 
+// TODO(editing-dev): Consider rename/move this file.
+
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/editing/forward.h"
-#include "third_party/blink/renderer/core/layout/line/inline_box.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 
 namespace blink {
 
 class FrameSelection;
-class LayoutObject;
 struct CompositedSelection;
 
-class CORE_EXPORT RenderedPosition {
-  STACK_ALLOCATED();
-
- public:
-  RenderedPosition();
-  explicit RenderedPosition(const VisiblePosition&);
-  explicit RenderedPosition(const VisiblePositionInFlatTree&);
-  RenderedPosition(const Position&, TextAffinity);
-  RenderedPosition(const PositionInFlatTree&, TextAffinity);
-  bool IsEquivalent(const RenderedPosition&) const;
-
-  bool IsNull() const { return !layout_object_; }
-  const RootInlineBox* RootBox() const {
-    return inline_box_ ? &inline_box_->Root() : nullptr;
-  }
-
-  unsigned char BidiLevelOnLeft() const;
-  unsigned char BidiLevelOnRight() const;
-  RenderedPosition LeftBoundaryOfBidiRun(unsigned char bidi_level_of_run);
-  RenderedPosition RightBoundaryOfBidiRun(unsigned char bidi_level_of_run);
-
-  enum ShouldMatchBidiLevel { kMatchBidiLevel, kIgnoreBidiLevel };
-  bool AtLeftBoundaryOfBidiRun() const {
-    return AtLeftBoundaryOfBidiRun(kIgnoreBidiLevel, 0);
-  }
-  bool AtRightBoundaryOfBidiRun() const {
-    return AtRightBoundaryOfBidiRun(kIgnoreBidiLevel, 0);
-  }
-  // The following two functions return true only if the current position is
-  // at the end of the bidi run of the specified bidi embedding level.
-  bool AtLeftBoundaryOfBidiRun(unsigned char bidi_level_of_run) const {
-    return AtLeftBoundaryOfBidiRun(kMatchBidiLevel, bidi_level_of_run);
-  }
-  bool AtRightBoundaryOfBidiRun(unsigned char bidi_level_of_run) const {
-    return AtRightBoundaryOfBidiRun(kMatchBidiLevel, bidi_level_of_run);
-  }
-
-  Position PositionAtLeftBoundaryOfBiDiRun() const;
-  Position PositionAtRightBoundaryOfBiDiRun() const;
-
-  // TODO(editing-dev): This function doesn't use RenderedPosition
-  // instance anymore. Consider moving.
-  static CompositedSelection ComputeCompositedSelection(const FrameSelection&);
-
- private:
-  bool operator==(const RenderedPosition&) const { return false; }
-  explicit RenderedPosition(const LayoutObject*, const InlineBox*, int offset);
-
-  const InlineBox* PrevLeafChild() const;
-  const InlineBox* NextLeafChild() const;
-  bool AtLeftmostOffsetInBox() const {
-    return inline_box_ && offset_ == inline_box_->CaretLeftmostOffset();
-  }
-  bool AtRightmostOffsetInBox() const {
-    return inline_box_ && offset_ == inline_box_->CaretRightmostOffset();
-  }
-  bool AtLeftBoundaryOfBidiRun(ShouldMatchBidiLevel,
-                               unsigned char bidi_level_of_run) const;
-  bool AtRightBoundaryOfBidiRun(ShouldMatchBidiLevel,
-                                unsigned char bidi_level_of_run) const;
-
-  const LayoutObject* layout_object_;
-  const InlineBox* inline_box_;
-  int offset_;
-
-  mutable Optional<const InlineBox*> prev_leaf_child_;
-  mutable Optional<const InlineBox*> next_leaf_child_;
-};
-
-inline RenderedPosition::RenderedPosition()
-    : layout_object_(nullptr), inline_box_(nullptr), offset_(0) {}
-
-inline RenderedPosition::RenderedPosition(const LayoutObject* layout_object,
-                                          const InlineBox* box,
-                                          int offset)
-    : layout_object_(layout_object), inline_box_(box), offset_(offset) {}
-
-CORE_EXPORT bool LayoutObjectContainsPosition(LayoutObject*, const Position&);
+CORE_EXPORT CompositedSelection
+ComputeCompositedSelection(const FrameSelection&);
 
 }  // namespace blink
 

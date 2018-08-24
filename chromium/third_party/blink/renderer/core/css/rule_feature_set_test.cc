@@ -23,7 +23,7 @@ class RuleFeatureSetTest : public testing::Test {
  public:
   RuleFeatureSetTest() = default;
 
-  void SetUp() {
+  void SetUp() override {
     document_ = HTMLDocument::CreateForTest();
     HTMLHtmlElement* html = HTMLHtmlElement::Create(*document_);
     html->AppendChild(HTMLBodyElement::Create(*document_));
@@ -277,6 +277,11 @@ class RuleFeatureSetTest : public testing::Test {
   void ExpectFullRecalcForRuleSetInvalidation(bool expected) {
     EXPECT_EQ(expected,
               rule_feature_set_.NeedsFullRecalcForRuleSetInvalidation());
+  }
+
+  void ExpectPartsInvalidation(InvalidationSetVector& invalidation_sets) {
+    EXPECT_EQ(1u, invalidation_sets.size());
+    EXPECT_TRUE(invalidation_sets[0]->InvalidatesParts());
   }
 
  private:
@@ -1090,4 +1095,136 @@ TEST_F(RuleFeatureSetTest, pseudoMatchesTooLarge) {
   ExpectNoInvalidation(invalidation_lists.siblings);
 }
 
+TEST_F(RuleFeatureSetTest, pseudoIS) {
+  EXPECT_EQ(RuleFeatureSet::kSelectorMayMatch, CollectFeatures(":is(.w, .x)"));
+
+  {
+    InvalidationLists invalidation_lists;
+    CollectInvalidationSetsForClass(invalidation_lists, "w");
+    ExpectSelfInvalidation(invalidation_lists.descendants);
+    ExpectNoInvalidation(invalidation_lists.siblings);
+  }
+  {
+    InvalidationLists invalidation_lists;
+    CollectInvalidationSetsForClass(invalidation_lists, "x");
+    ExpectSelfInvalidation(invalidation_lists.descendants);
+    ExpectNoInvalidation(invalidation_lists.siblings);
+  }
+}
+
+TEST_F(RuleFeatureSetTest, pseudoISSibling) {
+  EXPECT_EQ(RuleFeatureSet::kSelectorMayMatch,
+            CollectFeatures(":is(.q, .r) ~ .s .t"));
+  {
+    InvalidationLists invalidation_lists;
+    CollectInvalidationSetsForClass(invalidation_lists, "q");
+    ExpectNoInvalidation(invalidation_lists.descendants);
+    ExpectSiblingDescendantInvalidation(UINT_MAX, "s", "t",
+                                        invalidation_lists.siblings);
+  }
+  {
+    InvalidationLists invalidation_lists;
+    CollectInvalidationSetsForClass(invalidation_lists, "r");
+    ExpectNoInvalidation(invalidation_lists.descendants);
+    ExpectSiblingDescendantInvalidation(UINT_MAX, "s", "t",
+                                        invalidation_lists.siblings);
+  }
+}
+
+TEST_F(RuleFeatureSetTest, pseudoISIdDescendant) {
+  EXPECT_EQ(RuleFeatureSet::kSelectorMayMatch,
+            CollectFeatures(".a :is(#b, #c)"));
+
+  InvalidationLists invalidation_lists;
+  CollectInvalidationSetsForClass(invalidation_lists, "a");
+  ExpectIdInvalidation("b", "c", invalidation_lists.descendants);
+}
+
+TEST_F(RuleFeatureSetTest, pseudoISTagDescendant) {
+  EXPECT_EQ(RuleFeatureSet::kSelectorMayMatch,
+            CollectFeatures(".a :is(span, div)"));
+
+  InvalidationLists invalidation_lists;
+  CollectInvalidationSetsForClass(invalidation_lists, "a");
+  ExpectTagNameInvalidation("span", "div", invalidation_lists.descendants);
+}
+
+TEST_F(RuleFeatureSetTest, pseudoISAnySibling) {
+  EXPECT_EQ(RuleFeatureSet::kSelectorMayMatch,
+            CollectFeatures(".v ~ :is(.w, .x)"));
+
+  InvalidationLists invalidation_lists;
+  CollectInvalidationSetsForClass(invalidation_lists, "v");
+  ExpectNoInvalidation(invalidation_lists.descendants);
+  ExpectClassInvalidation("w", "x", invalidation_lists.siblings);
+}
+
+TEST_F(RuleFeatureSetTest, pseudoISDescendantSibling) {
+  EXPECT_EQ(RuleFeatureSet::kSelectorMayMatch,
+            CollectFeatures(".u .v ~ :is(.w, .x)"));
+
+  InvalidationLists invalidation_lists;
+  CollectInvalidationSetsForClass(invalidation_lists, "u");
+  ExpectClassInvalidation("w", "x", invalidation_lists.descendants);
+  ExpectNoInvalidation(invalidation_lists.siblings);
+}
+
+TEST_F(RuleFeatureSetTest, pseudoISWithComplexSelectors) {
+  EXPECT_EQ(RuleFeatureSet::kSelectorMayMatch,
+            CollectFeatures(".a :is(.w+.b, .x>#c)"));
+
+  InvalidationLists invalidation_lists;
+  CollectInvalidationSetsForClass(invalidation_lists, "a");
+  ExpectClassInvalidation("b", invalidation_lists.descendants);
+  ExpectIdInvalidation("c", invalidation_lists.descendants);
+  ExpectNoInvalidation(invalidation_lists.siblings);
+}
+
+TEST_F(RuleFeatureSetTest, pseudoISNested) {
+  EXPECT_EQ(RuleFeatureSet::kSelectorMayMatch,
+            CollectFeatures(".a :is(.w+.b, .e+:is(.c, #d))"));
+
+  InvalidationLists invalidation_lists;
+  CollectInvalidationSetsForClass(invalidation_lists, "a");
+  ExpectClassInvalidation("b", "c", invalidation_lists.descendants);
+  ExpectIdInvalidation("d", invalidation_lists.descendants);
+  ExpectNoInvalidation(invalidation_lists.siblings);
+}
+
+TEST_F(RuleFeatureSetTest, pseudoISTooLarge) {
+  // RuleData cannot support selectors at index 8192 or beyond so the expansion
+  // is limited to this size
+  EXPECT_EQ(RuleFeatureSet::kSelectorNeverMatches,
+            CollectFeatures(":is(.a#a, .b#b, .c#c, .d#d) + "
+                            ":is(.e#e, .f#f, .g#g, .h#h) + "
+                            ":is(.i#i, .j#j, .k#k, .l#l) + "
+                            ":is(.m#m, .n#n, .o#o, .p#p) + "
+                            ":is(.q#q, .r#r, .s#s, .t#t) + "
+                            ":is(.u#u, .v#v, .w#w, .x#x)"));
+
+  InvalidationLists invalidation_lists;
+  CollectInvalidationSetsForClass(invalidation_lists, "a");
+  ExpectNoInvalidation(invalidation_lists.descendants);
+  ExpectNoInvalidation(invalidation_lists.siblings);
+}
+
+TEST_F(RuleFeatureSetTest, invalidatesParts) {
+  EXPECT_EQ(RuleFeatureSet::kSelectorMayMatch,
+            CollectFeatures(".a .b::part(partname)"));
+
+  {
+    InvalidationLists invalidation_lists;
+    CollectInvalidationSetsForClass(invalidation_lists, "a");
+    EXPECT_EQ(1u, invalidation_lists.descendants.size());
+    ExpectNoSelfInvalidation(invalidation_lists.descendants);
+  }
+
+  {
+    InvalidationLists invalidation_lists;
+    CollectInvalidationSetsForClass(invalidation_lists, "b");
+    EXPECT_EQ(1u, invalidation_lists.descendants.size());
+    ExpectPartsInvalidation(invalidation_lists.descendants);
+    EXPECT_FALSE(invalidation_lists.descendants[0]->WholeSubtreeInvalid());
+  }
+}
 }  // namespace blink

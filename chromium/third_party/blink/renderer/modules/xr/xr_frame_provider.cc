@@ -22,6 +22,7 @@
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/transforms/transformation_matrix.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
+#include "ui/display/display.h"
 
 namespace blink {
 
@@ -37,7 +38,7 @@ class XRFrameProviderRequestCallback
     frame_provider_->OnNonExclusiveVSync(high_res_time_ms / 1000.0);
   }
 
-  virtual void Trace(blink::Visitor* visitor) {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(frame_provider_);
 
     FrameRequestCallbackCollection::FrameCallback::Trace(visitor);
@@ -206,25 +207,39 @@ void XRFrameProvider::OnExclusiveSessionEnded() {
 
 // Schedule a session to be notified when the next XR frame is available.
 void XRFrameProvider::RequestFrame(XRSession* session) {
-  DVLOG(2) << __FUNCTION__;
+  TRACE_EVENT0("gpu", __FUNCTION__);
+  DCHECK(session);
 
-  // If a previous session has already requested a frame don't fire off another
-  // request. All requests will be fullfilled at once when OnVSync is called.
+  // Exclusive frame logic.
   if (session->exclusive()) {
     ScheduleExclusiveFrame();
-  } else {
-    requesting_sessions_.push_back(session);
-
-    // If there's an active exclusive session save the request but suppress
-    // processing it until the exclusive session is no longer active.
-    if (exclusive_session_)
-      return;
-
-    ScheduleNonExclusiveFrame();
+    return;
   }
+
+  // Non-exclusive frame logic.
+
+  requesting_sessions_.push_back(session);
+
+  // If there's an active exclusive session save the request but suppress
+  // processing it until the exclusive session is no longer active.
+  if (exclusive_session_)
+    return;
+
+  if (device_->xrDisplayInfoPtr()
+          ->capabilities->can_provide_pass_through_images) {
+    DoubleSize session_size_double = session->OutputCanvasSize();
+    IntSize session_size(session_size_double.Width(),
+                         session_size_double.Height());
+    ar_requested_transfer_size_ =
+        ar_requested_transfer_size_.ExpandedTo(session_size);
+    // Have to pick an angle so we'll take the last angle.
+    ar_requested_transfer_angle_ = session->OutputCanvasAngle();
+  }
+  ScheduleNonExclusiveFrame();
 }
 
 void XRFrameProvider::ScheduleExclusiveFrame() {
+  TRACE_EVENT0("gpu", __FUNCTION__);
   if (pending_exclusive_vsync_)
     return;
 
@@ -234,7 +249,13 @@ void XRFrameProvider::ScheduleExclusiveFrame() {
       WTF::Bind(&XRFrameProvider::OnExclusiveVSync, WrapWeakPersistent(this)));
 }
 
+// TODO(lincolnfrog): add a ScheduleNonExclusiveARFrame, if we want camera RAF
+// alignment instead of doc RAF alignment.
 void XRFrameProvider::ScheduleNonExclusiveFrame() {
+  TRACE_EVENT0("gpu", __FUNCTION__);
+  DCHECK(!exclusive_session_)
+      << "Scheduling should be done via the exclusive session if present.";
+
   if (pending_non_exclusive_vsync_)
     return;
 
@@ -248,9 +269,36 @@ void XRFrameProvider::ScheduleNonExclusiveFrame() {
 
   pending_non_exclusive_vsync_ = true;
 
-  device_->xrMagicWindowProviderPtr()->GetPose(WTF::Bind(
-      &XRFrameProvider::OnNonExclusivePose, WrapWeakPersistent(this)));
-  doc->RequestAnimationFrame(new XRFrameProviderRequestCallback(this));
+  // TODO(https://crbug.com/839253): Generalize the pass-through images
+  // code path so that it also works for exclusive sessions on an AR device
+  // with pass-through technology.
+  if (device_->xrDisplayInfoPtr()
+          ->capabilities->can_provide_pass_through_images) {
+    DVLOG(2) << __FUNCTION__ << ": transfer_size "
+             << ar_requested_transfer_size_.Width() << "x"
+             << ar_requested_transfer_size_.Height()
+             << " angle=" << ar_requested_transfer_angle_;
+    DCHECK(display::Display::IsValidRotation(ar_requested_transfer_angle_));
+
+    // TODO(https://crbug.com/836496): ensure valid frame sizes, including when
+    // using multiple sessions. Currently, we take the max size of all the
+    // active session's requested sizes and pass that to the browser as-is.
+    // Unsupported sizes such as zero or excessively large ones may be rejected
+    // by the device, resulting in null MagicWindowFrameData responses.
+    // Requests for frames of 0 size are making it to this point - we should
+    // ensure that frames are not scheduled until the frame context is ready.
+    // In the future, we should signal an error back to the client.
+
+    device_->xrMagicWindowProviderPtr()->GetFrameData(
+        ar_requested_transfer_size_,
+        display::Display::DegreesToRotation(ar_requested_transfer_angle_),
+        WTF::Bind(&XRFrameProvider::OnNonExclusiveFrameData,
+                  WrapWeakPersistent(this)));
+  } else {
+    device_->xrMagicWindowProviderPtr()->GetPose(WTF::Bind(
+        &XRFrameProvider::OnNonExclusivePose, WrapWeakPersistent(this)));
+    doc->RequestAnimationFrame(new XRFrameProviderRequestCallback(this));
+  }
 }
 
 void XRFrameProvider::OnExclusiveVSync(
@@ -259,6 +307,7 @@ void XRFrameProvider::OnExclusiveVSync(
     int16_t frame_id,
     device::mojom::blink::VRPresentationProvider::VSyncStatus status,
     const base::Optional<gpu::MailboxHolder>& buffer_holder) {
+  TRACE_EVENT0("gpu", __FUNCTION__);
   DVLOG(2) << __FUNCTION__;
   vsync_connection_failed_ = false;
   switch (status) {
@@ -270,6 +319,8 @@ void XRFrameProvider::OnExclusiveVSync(
 
   // We may have lost the exclusive session since the last VSync request.
   if (!exclusive_session_) {
+    // TODO(https://crbug.com/836496): do we need to include this in the
+    // image size calculation for AR? What about exclusive AR (full-screen?)
     return;
   }
 
@@ -285,11 +336,13 @@ void XRFrameProvider::OnExclusiveVSync(
   // execution context caused extreme input delay due to processing
   // multiple frames without yielding, see crbug.com/701444.
   Platform::Current()->CurrentThread()->GetTaskRunner()->PostTask(
-      FROM_HERE, WTF::Bind(&XRFrameProvider::ProcessScheduledFrame,
-                           WrapWeakPersistent(this), time_delta.InSecondsF()));
+      FROM_HERE,
+      WTF::Bind(&XRFrameProvider::ProcessScheduledFrame,
+                WrapWeakPersistent(this), nullptr, time_delta.InSecondsF()));
 }
 
 void XRFrameProvider::OnNonExclusiveVSync(double timestamp) {
+  TRACE_EVENT0("gpu", __FUNCTION__);
   DVLOG(2) << __FUNCTION__;
 
   pending_non_exclusive_vsync_ = false;
@@ -300,14 +353,67 @@ void XRFrameProvider::OnNonExclusiveVSync(double timestamp) {
 
   Platform::Current()->CurrentThread()->GetTaskRunner()->PostTask(
       FROM_HERE, WTF::Bind(&XRFrameProvider::ProcessScheduledFrame,
-                           WrapWeakPersistent(this), timestamp));
+                           WrapWeakPersistent(this), nullptr, timestamp));
 }
 
 void XRFrameProvider::OnNonExclusivePose(device::mojom::blink::VRPosePtr pose) {
   frame_pose_ = std::move(pose);
 }
 
-void XRFrameProvider::ProcessScheduledFrame(double timestamp) {
+void XRFrameProvider::OnNonExclusiveFrameData(
+    device::mojom::blink::VRMagicWindowFrameDataPtr frame_data) {
+  TRACE_EVENT0("gpu", __FUNCTION__);
+  DVLOG(2) << __FUNCTION__;
+
+  // TODO(https://crbug.com/837834): add unit tests for this code path.
+
+  pending_non_exclusive_vsync_ = false;
+
+  if (!frame_data) {
+    // Unexpectedly didn't get frame data, and we don't have a timestamp.
+    // Try to request a regular animation frame to avoid getting stuck.
+    DVLOG(1) << __FUNCTION__ << ": NO FRAME DATA!";
+    frame_pose_ = nullptr;
+    LocalFrame* frame = device_->xr()->GetFrame();
+    if (!frame)
+      return;
+    Document* doc = frame->GetDocument();
+    if (!doc)
+      return;
+    doc->RequestAnimationFrame(new XRFrameProviderRequestCallback(this));
+    return;
+  }
+
+  frame_pose_ = std::move(frame_data->pose);
+
+  double timestamp = frame_data->time_delta.InSecondsF();
+
+  Platform::Current()->CurrentThread()->GetTaskRunner()->PostTask(
+      FROM_HERE,
+      WTF::Bind(&XRFrameProvider::ProcessScheduledFrame,
+                WrapWeakPersistent(this), std::move(frame_data), timestamp));
+}
+
+// TODO(836349): revisit sending this data to blink at all.
+void XRFrameProvider::RenderBackgroundImage(
+    const device::mojom::blink::VRMagicWindowFrameDataPtr& frame_data,
+    XRSession* session) {
+  DCHECK(frame_data);
+  TRACE_EVENT0("gpu", __FUNCTION__);
+
+  XRLayer* layer = session->baseLayer();
+  if (!layer)
+    return;
+
+  // TODO(https://crbug.com/837509): Remove this static_cast.
+  XRWebGLLayer* webgl_layer = static_cast<XRWebGLLayer*>(layer);
+  webgl_layer->OverwriteColorBufferFromMailboxTexture(
+      frame_data->buffer_holder, IntSize(frame_data->buffer_size));
+}
+
+void XRFrameProvider::ProcessScheduledFrame(
+    device::mojom::blink::VRMagicWindowFrameDataPtr frame_data,
+    double timestamp) {
   DVLOG(2) << __FUNCTION__;
 
   TRACE_EVENT1("gpu", "XRFrameProvider::ProcessScheduledFrame", "frame",
@@ -324,6 +430,10 @@ void XRFrameProvider::ProcessScheduledFrame(double timestamp) {
                                              frame_pose_->input_state.value());
     }
 
+    if (frame_pose_ && frame_pose_->pose_reset) {
+      exclusive_session_->OnPoseReset();
+    }
+
     // If there's an exclusive session active only process its frame.
     std::unique_ptr<TransformationMatrix> pose_matrix =
         getPoseMatrix(frame_pose_);
@@ -338,14 +448,33 @@ void XRFrameProvider::ProcessScheduledFrame(double timestamp) {
     // from the requests to prevent infinite loops.
     HeapVector<Member<XRSession>> processing_sessions;
     swap(requesting_sessions_, processing_sessions);
+    if (device_->xrDisplayInfoPtr()
+            ->capabilities->can_provide_pass_through_images) {
+      // Clear the AR transfer size for next frame.
+      ar_requested_transfer_size_.SetWidth(0);
+      ar_requested_transfer_size_.SetHeight(0);
+    }
 
     // Inform sessions with a pending request of the new frame
     for (unsigned i = 0; i < processing_sessions.size(); ++i) {
       XRSession* session = processing_sessions.at(i).Get();
+      if (frame_data) {
+        // TODO(https://crbug.com/837883): only render background for
+        // sessions that are using AR.
+        RenderBackgroundImage(frame_data, session);
+      }
 
       if (frame_pose_ && frame_pose_->input_state.has_value()) {
         session->OnInputStateChange(frame_id_,
                                     frame_pose_->input_state.value());
+      }
+
+      if (frame_data) {
+        session->SetNonExclusiveProjectionMatrix(frame_data->projection_matrix);
+      }
+
+      if (frame_pose_ && frame_pose_->pose_reset) {
+        session->OnPoseReset();
       }
 
       std::unique_ptr<TransformationMatrix> pose_matrix =

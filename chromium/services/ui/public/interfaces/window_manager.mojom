@@ -70,6 +70,12 @@ interface WindowManager {
   // and the client area should be equivalent to the window area. Type: bool
   const string kRemoveStandardFrame_InitProperty = "init:remove-standard-frame";
 
+  // FIXME Type: int32_t
+  const string kActiveFrameColor_InitProperty = "init:active-frame-color";
+
+  // FIXME Type: int32_t
+  const string kInactiveFrameColor_InitProperty = "init:inactive-frame-color";
+
   // A flag controlling the window's presence on the mash shelf. Type: bool
   const string kWindowIgnoredByShelf_InitProperty =
       "init:window-ignored-by-shelf";
@@ -162,6 +168,9 @@ interface WindowManager {
 
   // The window's title. Maps to aura::client::kTitleKey. Type: mojom::String
   const string kWindowTitle_Property = "prop:window-title";
+
+  // A boolean determining whether to show the window's title.
+  const string kWindowTitleShown_Property = "prop:window-title-shown";
 
   // End long lived properties. ------------------------------------------------
 

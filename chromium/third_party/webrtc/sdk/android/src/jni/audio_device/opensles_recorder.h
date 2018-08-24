@@ -29,7 +29,7 @@ namespace webrtc {
 
 class FineAudioBuffer;
 
-namespace android_adm {
+namespace jni {
 
 // Implements 16-bit mono PCM audio input support for Android using the
 // C based OpenSL ES API. No calls from C/C++ to Java using JNI is done.
@@ -82,7 +82,6 @@ class OpenSLESRecorder : public AudioInput {
   bool IsAcousticEchoCancelerSupported() const override;
   bool IsNoiseSuppressorSupported() const override;
   int EnableBuiltInAEC(bool enable) override;
-  int EnableBuiltInAGC(bool enable) override;
   int EnableBuiltInNS(bool enable) override;
 
  private:
@@ -174,9 +173,9 @@ class OpenSLESRecorder : public AudioInput {
 
   // Queue of audio buffers to be used by the recorder object for capturing
   // audio. They will be used in a Round-robin way and the size of each buffer
-  // is given by AudioParameters::GetBytesPerBuffer(), i.e., it corresponds to
+  // is given by AudioParameters::frames_per_buffer(), i.e., it corresponds to
   // the native OpenSL ES buffer size.
-  std::unique_ptr<std::unique_ptr<SLint8[]>[]> audio_buffers_;
+  std::unique_ptr<std::unique_ptr<SLint16[]>[]> audio_buffers_;
 
   // Keeps track of active audio buffer 'n' in the audio_buffers_[n] queue.
   // Example (kNumOfOpenSLESBuffers = 2): counts 0, 1, 0, 1, ...
@@ -186,7 +185,7 @@ class OpenSLESRecorder : public AudioInput {
   uint32_t last_rec_time_;
 };
 
-}  // namespace android_adm
+}  // namespace jni
 
 }  // namespace webrtc
 

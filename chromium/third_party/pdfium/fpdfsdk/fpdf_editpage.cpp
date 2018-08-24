@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "core/fpdfapi/edit/cpdf_pagecontentgenerator.h"
 #include "core/fpdfapi/page/cpdf_form.h"
@@ -53,16 +54,15 @@ static_assert(FPDF_PAGEOBJ_SHADING == CPDF_PageObject::SHADING,
 static_assert(FPDF_PAGEOBJ_FORM == CPDF_PageObject::FORM,
               "FPDF_PAGEOBJ_FORM/CPDF_PageObject::FORM mismatch");
 
-const CPDF_ContentMarkItem* CPDFContentMarkItemFromFPDFPageObjectMark(
-    FPDF_PAGEOBJECTMARK mark) {
-  return static_cast<const CPDF_ContentMarkItem*>(mark);
-}
-
 bool IsPageObject(CPDF_Page* pPage) {
-  if (!pPage || !pPage->m_pFormDict || !pPage->m_pFormDict->KeyExist("Type"))
+  if (!pPage)
     return false;
 
-  CPDF_Object* pObject = pPage->m_pFormDict->GetObjectFor("Type")->GetDirect();
+  const CPDF_Dictionary* pFormDict = pPage->GetFormDict();
+  if (!pFormDict || !pFormDict->KeyExist("Type"))
+    return false;
+
+  const CPDF_Object* pObject = pFormDict->GetObjectFor("Type")->GetDirect();
   return pObject && !pObject->GetString().Compare("Page");
 }
 
@@ -98,6 +98,32 @@ void CalcBoundingBox(CPDF_PageObject* pPageObj) {
   }
 }
 
+const std::pair<const ByteString, std::unique_ptr<CPDF_Object>>*
+GetMarkParamPairAtIndex(FPDF_PAGEOBJECTMARK mark, unsigned long index) {
+  if (!mark)
+    return nullptr;
+
+  const CPDF_ContentMarkItem* pMarkItem =
+      CPDFContentMarkItemFromFPDFPageObjectMark(mark);
+
+  const CPDF_Dictionary* pParams = pMarkItem->GetParam();
+  if (!pParams)
+    return nullptr;
+
+  for (auto& it : *pParams) {
+    if (index == 0)
+      return &it;
+
+    --index;
+  }
+
+  return nullptr;
+}
+
+unsigned int GetUnsignedAlpha(float alpha) {
+  return static_cast<unsigned int>(alpha * 255.f + 0.5f);
+}
+
 }  // namespace
 
 FPDF_EXPORT FPDF_DOCUMENT FPDF_CALLCONV FPDF_CreateNewDocument() {
@@ -130,8 +156,17 @@ FPDF_EXPORT FPDF_DOCUMENT FPDF_CALLCONV FPDF_CreateNewDocument() {
 
 FPDF_EXPORT void FPDF_CALLCONV FPDFPage_Delete(FPDF_DOCUMENT document,
                                                int page_index) {
-  if (UnderlyingDocumentType* pDoc = UnderlyingFromFPDFDocument(document))
-    pDoc->DeletePage(page_index);
+  auto* pDoc = CPDFDocumentFromFPDFDocument(document);
+  if (!pDoc)
+    return;
+
+  CPDF_Document::Extension* pExtension = pDoc->GetExtension();
+  if (pExtension) {
+    pExtension->DeletePage(page_index);
+    return;
+  }
+
+  pDoc->DeletePage(page_index);
 }
 
 FPDF_EXPORT FPDF_PAGE FPDF_CALLCONV FPDFPage_New(FPDF_DOCUMENT document,
@@ -152,14 +187,18 @@ FPDF_EXPORT FPDF_PAGE FPDF_CALLCONV FPDFPage_New(FPDF_DOCUMENT document,
   pPageDict->SetNewFor<CPDF_Dictionary>("Resources");
 
 #ifdef PDF_ENABLE_XFA
-  auto pXFAPage = pdfium::MakeRetain<CPDFXFA_Page>(
-      static_cast<CPDFXFA_Context*>(document), page_index);
-  pXFAPage->LoadPDFPage(pPageDict);
-  return pXFAPage.Leak();  // Caller takes ownership.
+  auto* pContext = static_cast<CPDFXFA_Context*>(pDoc->GetExtension());
+  if (pContext) {
+    auto pXFAPage = pdfium::MakeRetain<CPDFXFA_Page>(pContext, page_index);
+    pXFAPage->LoadPDFPage(pPageDict);
+    return FPDFPageFromUnderlying(pXFAPage.Leak());  // Caller takes ownership.
+  }
+  // Eventually, fallthru into non-XFA case once page type is consistent.
+  return nullptr;
 #else  // PDF_ENABLE_XFA
   auto pPage = pdfium::MakeUnique<CPDF_Page>(pDoc, pPageDict, true);
   pPage->ParseContent();
-  return pPage.release();  // Caller takes ownership.
+  return FPDFPageFromUnderlying(pPage.release());  // Caller takes ownership.
 #endif  // PDF_ENABLE_XFA
 }
 
@@ -215,7 +254,7 @@ FPDF_EXPORT FPDF_PAGEOBJECT FPDF_CALLCONV FPDFPage_GetObject(FPDF_PAGE page,
   if (!IsPageObject(pPage))
     return nullptr;
 
-  return pPage->GetPageObjectByIndex(index);
+  return FPDFPageObjectFromCPDFPageObject(pPage->GetPageObjectByIndex(index));
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFPage_HasTransparency(FPDF_PAGE page) {
@@ -242,15 +281,14 @@ FPDFPageObj_GetMark(FPDF_PAGEOBJECT page_object, unsigned long index) {
   if (!page_object)
     return nullptr;
 
-  const auto& mark =
-      CPDFPageObjectFromFPDFPageObject(page_object)->m_ContentMark;
-  if (!mark.HasRef())
+  auto* mark = &CPDFPageObjectFromFPDFPageObject(page_object)->m_ContentMark;
+  if (!mark->HasRef())
     return nullptr;
 
-  if (index >= mark.CountItems())
+  if (index >= mark->CountItems())
     return nullptr;
 
-  return static_cast<FPDF_PAGEOBJECTMARK>(&mark.GetItem(index));
+  return FPDFPageObjectMarkFromCPDFContentMarkItem(&mark->GetItem(index));
 }
 
 FPDF_EXPORT unsigned long FPDF_CALLCONV
@@ -266,6 +304,68 @@ FPDFPageObjMark_GetName(FPDF_PAGEOBJECTMARK mark,
   return Utf16EncodeMaybeCopyAndReturnLength(
       WideString::FromUTF8(pMarkItem->GetName().AsStringView()), buffer,
       buflen);
+}
+
+FPDF_EXPORT int FPDF_CALLCONV
+FPDFPageObjMark_CountParams(FPDF_PAGEOBJECTMARK mark) {
+  if (!mark)
+    return -1;
+
+  const CPDF_ContentMarkItem* pMarkItem =
+      CPDFContentMarkItemFromFPDFPageObjectMark(mark);
+
+  const CPDF_Dictionary* pParams = pMarkItem->GetParam();
+  if (!pParams)
+    return 0;
+
+  return pParams->GetCount();
+}
+
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFPageObjMark_GetParamKey(FPDF_PAGEOBJECTMARK mark,
+                            unsigned long index,
+                            void* buffer,
+                            unsigned long buflen) {
+  auto* param_pair = GetMarkParamPairAtIndex(mark, index);
+  if (!param_pair)
+    return 0;
+
+  return Utf16EncodeMaybeCopyAndReturnLength(
+      WideString::FromUTF8(param_pair->first.AsStringView()), buffer, buflen);
+}
+
+FPDF_EXPORT FPDF_OBJECT_TYPE FPDF_CALLCONV
+FPDFPageObjMark_GetParamValueType(FPDF_PAGEOBJECTMARK mark,
+                                  unsigned long index) {
+  auto* param_pair = GetMarkParamPairAtIndex(mark, index);
+  if (!param_pair)
+    return FPDF_OBJECT_UNKNOWN;
+
+  return param_pair->second->GetType();
+}
+
+FPDF_EXPORT int FPDF_CALLCONV
+FPDFPageObjMark_GetParamIntValue(FPDF_PAGEOBJECTMARK mark,
+                                 unsigned long index) {
+  auto* param_pair = GetMarkParamPairAtIndex(mark, index);
+  if (!param_pair)
+    return 0;
+
+  return param_pair->second->GetInteger();
+}
+
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFPageObjMark_GetParamStringValue(FPDF_PAGEOBJECTMARK mark,
+                                    unsigned long index,
+                                    void* buffer,
+                                    unsigned long buflen) {
+  auto* param_pair = GetMarkParamPairAtIndex(mark, index);
+  if (!param_pair)
+    return 0;
+
+  return Utf16EncodeMaybeCopyAndReturnLength(
+      WideString::FromUTF8(param_pair->second->GetString().AsStringView()),
+      buffer, buflen);
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
@@ -293,8 +393,8 @@ FPDFPageObj_HasTransparency(FPDF_PAGEOBJECT pageObject) {
   if (pPageObj->IsForm()) {
     const CPDF_Form* pForm = pPageObj->AsForm()->form();
     if (pForm) {
-      int trans = pForm->m_iTransparency;
-      if ((trans & PDFTRANS_ISOLATED) || (trans & PDFTRANS_GROUP))
+      const CPDF_Transparency& trans = pForm->GetTransparency();
+      if (trans.IsGroup() || trans.IsIsolated())
         return true;
     }
   }
@@ -388,7 +488,7 @@ FPDF_EXPORT void FPDF_CALLCONV FPDFPage_SetRotation(FPDF_PAGE page,
     return;
 
   rotate %= 4;
-  pPage->m_pFormDict->SetNewFor<CPDF_Number>("Rotate", rotate * 90);
+  pPage->GetFormDict()->SetNewFor<CPDF_Number>("Rotate", rotate * 90);
 }
 
 FPDF_BOOL FPDFPageObj_SetFillColor(FPDF_PAGEOBJECT page_object,
@@ -399,12 +499,30 @@ FPDF_BOOL FPDFPageObj_SetFillColor(FPDF_PAGEOBJECT page_object,
   if (!page_object || R > 255 || G > 255 || B > 255 || A > 255)
     return false;
 
-  float rgb[3] = {R / 255.f, G / 255.f, B / 255.f};
+  std::vector<float> rgb = {R / 255.f, G / 255.f, B / 255.f};
   auto* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
   pPageObj->m_GeneralState.SetFillAlpha(A / 255.f);
   pPageObj->m_ColorState.SetFillColor(
-      CPDF_ColorSpace::GetStockCS(PDFCS_DEVICERGB), rgb, 3);
+      CPDF_ColorSpace::GetStockCS(PDFCS_DEVICERGB), rgb);
   pPageObj->SetDirty(true);
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObj_GetFillColor(FPDF_PAGEOBJECT page_object,
+                         unsigned int* R,
+                         unsigned int* G,
+                         unsigned int* B,
+                         unsigned int* A) {
+  auto* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
+  if (!pPageObj || !R || !G || !B || !A)
+    return false;
+
+  FX_COLORREF fillColor = pPageObj->m_ColorState.GetFillColorRef();
+  *R = FXSYS_GetRValue(fillColor);
+  *G = FXSYS_GetGValue(fillColor);
+  *B = FXSYS_GetBValue(fillColor);
+  *A = GetUnsignedAlpha(pPageObj->m_GeneralState.GetFillAlpha());
   return true;
 }
 
@@ -423,5 +541,96 @@ FPDFPageObj_GetBounds(FPDF_PAGEOBJECT pageObject,
   *bottom = bbox.bottom;
   *right = bbox.right;
   *top = bbox.top;
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObj_SetStrokeColor(FPDF_PAGEOBJECT page_object,
+                           unsigned int R,
+                           unsigned int G,
+                           unsigned int B,
+                           unsigned int A) {
+  auto* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
+  if (!pPageObj || R > 255 || G > 255 || B > 255 || A > 255)
+    return false;
+
+  std::vector<float> rgb = {R / 255.f, G / 255.f, B / 255.f};
+  pPageObj->m_GeneralState.SetStrokeAlpha(A / 255.f);
+  pPageObj->m_ColorState.SetStrokeColor(
+      CPDF_ColorSpace::GetStockCS(PDFCS_DEVICERGB), rgb);
+  pPageObj->SetDirty(true);
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObj_GetStrokeColor(FPDF_PAGEOBJECT page_object,
+                           unsigned int* R,
+                           unsigned int* G,
+                           unsigned int* B,
+                           unsigned int* A) {
+  auto* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
+  if (!pPageObj || !R || !G || !B || !A)
+    return false;
+
+  FX_COLORREF strokeColor = pPageObj->m_ColorState.GetStrokeColorRef();
+  *R = FXSYS_GetRValue(strokeColor);
+  *G = FXSYS_GetGValue(strokeColor);
+  *B = FXSYS_GetBValue(strokeColor);
+  *A = GetUnsignedAlpha(pPageObj->m_GeneralState.GetStrokeAlpha());
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObj_SetStrokeWidth(FPDF_PAGEOBJECT page_object, float width) {
+  auto* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
+  if (!pPageObj || width < 0.0f)
+    return false;
+
+  pPageObj->m_GraphState.SetLineWidth(width);
+  pPageObj->SetDirty(true);
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObj_GetStrokeWidth(FPDF_PAGEOBJECT page_object, float* width) {
+  auto* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
+  if (!pPageObj || !width)
+    return false;
+
+  *width = pPageObj->m_GraphState.GetLineWidth();
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObj_SetLineJoin(FPDF_PAGEOBJECT page_object, int line_join) {
+  if (!page_object)
+    return false;
+  if (line_join <
+          static_cast<int>(CFX_GraphStateData::LineJoin::LineJoinMiter) ||
+      line_join >
+          static_cast<int>(CFX_GraphStateData::LineJoin::LineJoinBevel)) {
+    return false;
+  }
+  auto* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
+  CFX_GraphStateData::LineJoin lineJoin =
+      static_cast<CFX_GraphStateData::LineJoin>(line_join);
+  pPageObj->m_GraphState.SetLineJoin(lineJoin);
+  pPageObj->SetDirty(true);
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObj_SetLineCap(FPDF_PAGEOBJECT page_object, int line_cap) {
+  if (!page_object)
+    return false;
+  if (line_cap < static_cast<int>(CFX_GraphStateData::LineCap::LineCapButt) ||
+      line_cap > static_cast<int>(CFX_GraphStateData::LineCap::LineCapSquare)) {
+    return false;
+  }
+  auto* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
+  CFX_GraphStateData::LineCap lineCap =
+      static_cast<CFX_GraphStateData::LineCap>(line_cap);
+  pPageObj->m_GraphState.SetLineCap(lineCap);
+  pPageObj->SetDirty(true);
   return true;
 }

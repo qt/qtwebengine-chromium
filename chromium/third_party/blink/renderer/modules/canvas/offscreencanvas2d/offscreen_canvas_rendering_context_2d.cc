@@ -14,6 +14,7 @@
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
 #include "third_party/blink/renderer/core/workers/worker_settings.h"
+#include "third_party/blink/renderer/platform/fonts/text_run_paint_info.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_types.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_canvas.h"
@@ -31,6 +32,7 @@ OffscreenCanvasRenderingContext2D::OffscreenCanvasRenderingContext2D(
     OffscreenCanvas* canvas,
     const CanvasContextCreationAttributesCore& attrs)
     : CanvasRenderingContext(canvas, attrs) {
+  Host()->RegisterContextToDispatch(this);
   ExecutionContext* execution_context = canvas->GetTopExecutionContext();
   if (execution_context->IsDocument()) {
     Settings* settings = ToDocument(execution_context)->GetSettings();
@@ -50,15 +52,10 @@ void OffscreenCanvasRenderingContext2D::Trace(blink::Visitor* visitor) {
   BaseRenderingContext2D::Trace(visitor);
 }
 
-ScriptPromise OffscreenCanvasRenderingContext2D::commit(
-    ScriptState* script_state,
-    ExceptionState& exception_state) {
-  WebFeature feature = WebFeature::kOffscreenCanvasCommit2D;
-  UseCounter::Count(ExecutionContext::From(script_state), feature);
+void OffscreenCanvasRenderingContext2D::commit() {
   SkIRect damage_rect(dirty_rect_for_commit_);
   dirty_rect_for_commit_.setEmpty();
-  return Host()->Commit(TransferToStaticBitmapImage(), damage_rect,
-                        script_state, exception_state);
+  Host()->Commit(TransferToStaticBitmapImage(), damage_rect);
 }
 
 // BaseRenderingContext2D implementation
@@ -119,6 +116,15 @@ OffscreenCanvasRenderingContext2D::TransferToStaticBitmapImage() {
   return image;
 }
 
+void OffscreenCanvasRenderingContext2D::PushFrame() {
+  if (dirty_rect_for_commit_.isEmpty())
+    return;
+
+  SkIRect damage_rect(dirty_rect_for_commit_);
+  Host()->PushFrame(TransferToStaticBitmapImage(), damage_rect);
+  dirty_rect_for_commit_.setEmpty();
+}
+
 ImageBitmap* OffscreenCanvasRenderingContext2D::TransferToImageBitmap(
     ScriptState* script_state) {
   WebFeature feature = WebFeature::kOffscreenCanvasTransferToImageBitmap2D;
@@ -129,7 +135,7 @@ ImageBitmap* OffscreenCanvasRenderingContext2D::TransferToImageBitmap(
   if (image->IsTextureBacked()) {
     // Before discarding the image resource, we need to flush pending render ops
     // to fully resolve the snapshot.
-    image->PaintImageForCurrentFrame().GetSkImage()->getTextureHandle(
+    image->PaintImageForCurrentFrame().GetSkImage()->getBackendTexture(
         true);  // Flush pending ops.
   }
   Host()->DiscardResourceProvider();  // "Transfer" means no retained buffer.
@@ -172,8 +178,14 @@ PaintCanvas* OffscreenCanvasRenderingContext2D::ExistingDrawingCanvas() const {
 void OffscreenCanvasRenderingContext2D::DisableDeferral(DisableDeferralReason) {
 }
 
+void OffscreenCanvasRenderingContext2D::DidDraw() {
+  Host()->DidDraw();
+  dirty_rect_for_commit_.set(0, 0, Width(), Height());
+}
+
 void OffscreenCanvasRenderingContext2D::DidDraw(const SkIRect& dirty_rect) {
   dirty_rect_for_commit_.join(dirty_rect);
+  Host()->DidDraw(SkRect::Make(dirty_rect_for_commit_));
 }
 
 bool OffscreenCanvasRenderingContext2D::StateHasFilter() {

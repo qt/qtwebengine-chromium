@@ -15,11 +15,6 @@ namespace content {
 
 namespace background_fetch {
 
-std::string RequestKey(const std::string& unique_id, int request_index) {
-  // Allows looking up a request by registration id and index within that.
-  return RequestKeyPrefix(unique_id) + base::IntToString(request_index);
-}
-
 CreateMetadataTask::CreateMetadataTask(
     BackgroundFetchDataManager* data_manager,
     const BackgroundFetchRegistrationId& registration_id,
@@ -90,7 +85,7 @@ void CreateMetadataTask::InitializeMetadataProto() {
   metadata_proto_->set_origin(registration_id_.origin().Serialize());
   metadata_proto_->set_creation_microseconds_since_unix_epoch(
       (base::Time::Now() - base::Time::UnixEpoch()).InMicroseconds());
-  metadata_proto_->set_ui_title(options_.title);
+  metadata_proto_->set_num_fetches(requests_.size());
 }
 
 void CreateMetadataTask::StoreMetadata() {
@@ -113,17 +108,16 @@ void CreateMetadataTask::StoreMetadata() {
       registration_id_.unique_id());
   entries.emplace_back(RegistrationKey(registration_id_.unique_id()),
                        std::move(serialized_metadata_proto));
+  entries.emplace_back(TitleKey(registration_id_.unique_id()), options_.title);
 
   // Signed integers are used for request indexes to avoid unsigned gotchas.
   for (int i = 0; i < base::checked_cast<int>(requests_.size()); i++) {
-    // TODO(crbug.com/757760): Serialize actual values for these entries.
-    entries.emplace_back(RequestKey(registration_id_.unique_id(), i),
-                         "TODO: Serialize FetchAPIRequest as value");
-    entries.emplace_back(
-        PendingRequestKey(
-            metadata_proto_->creation_microseconds_since_unix_epoch(),
-            registration_id_.unique_id(), i),
-        std::string());
+    proto::BackgroundFetchPendingRequest pending_request_proto;
+    pending_request_proto.set_unique_id(registration_id_.unique_id());
+    pending_request_proto.set_request_index(i);
+    pending_request_proto.set_serialized_request(requests_[i].Serialize());
+    entries.emplace_back(PendingRequestKey(registration_id_.unique_id(), i),
+                         pending_request_proto.SerializeAsString());
   }
 
   service_worker_context()->StoreRegistrationUserData(

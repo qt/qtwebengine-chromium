@@ -97,13 +97,10 @@ bool InputMethodWin::OnUntranslatedIMEMessage(
 }
 
 ui::EventDispatchDetails InputMethodWin::DispatchKeyEvent(ui::KeyEvent* event) {
-  if (!event->HasNativeEvent())
-    return DispatchFabricatedKeyEvent(event);
-
-  const PlatformEvent& native_key_event = event->native_event();
-  BOOL handled = FALSE;
+  MSG native_key_event = MSGFromKeyEvent(event);
   if (native_key_event.message == WM_CHAR) {
     auto ref = weak_ptr_factory_.GetWeakPtr();
+    BOOL handled = FALSE;
     OnChar(native_key_event.hwnd, native_key_event.message,
            native_key_event.wParam, native_key_event.lParam, native_key_event,
            &handled);
@@ -140,10 +137,8 @@ ui::EventDispatchDetails InputMethodWin::DispatchKeyEvent(ui::KeyEvent* event) {
   // Handles ctrl-shift key to change text direction and layout alignment.
   if (ui::IMM32Manager::IsRTLKeyboardLayoutInstalled() &&
       !IsTextInputTypeNone()) {
-    // TODO: shouldn't need to generate a KeyEvent here.
-    const ui::KeyEvent key(native_key_event);
-    ui::KeyboardCode code = key.key_code();
-    if (key.type() == ui::ET_KEY_PRESSED) {
+    ui::KeyboardCode code = event->key_code();
+    if (event->type() == ui::ET_KEY_PRESSED) {
       if (code == ui::VKEY_SHIFT) {
         base::i18n::TextDirection dir;
         if (ui::IMM32Manager::IsCtrlShiftPressed(&dir))
@@ -151,7 +146,7 @@ ui::EventDispatchDetails InputMethodWin::DispatchKeyEvent(ui::KeyEvent* event) {
       } else if (code != ui::VKEY_CONTROL) {
         pending_requested_direction_ = base::i18n::UNKNOWN_DIRECTION;
       }
-    } else if (key.type() == ui::ET_KEY_RELEASED &&
+    } else if (event->type() == ui::ET_KEY_RELEASED &&
                (code == ui::VKEY_SHIFT || code == ui::VKEY_CONTROL) &&
                pending_requested_direction_ != base::i18n::UNKNOWN_DIRECTION) {
       GetTextInputClient()->ChangeTextDirectionAndLayoutAlignment(
@@ -453,21 +448,6 @@ void InputMethodWin::RefreshInputLanguage() {
   }
 }
 
-ui::EventDispatchDetails InputMethodWin::DispatchFabricatedKeyEvent(
-    ui::KeyEvent* event) {
-  // The key event if from calling input.ime.sendKeyEvent or test.
-  ui::EventDispatchDetails details = DispatchKeyEventPostIME(event);
-  if (details.dispatcher_destroyed || details.target_destroyed ||
-      event->stopped_propagation()) {
-    return details;
-  }
-
-  if ((event->is_char() || event->GetDomKey().IsCharacter()) &&
-      event->type() == ui::ET_KEY_PRESSED && GetTextInputClient())
-    GetTextInputClient()->InsertChar(*event);
-  return details;
-}
-
 void InputMethodWin::ConfirmCompositionText() {
   if (composing_window_handle_)
     imm32_manager_.CleanupComposition(composing_window_handle_);
@@ -514,7 +494,8 @@ void InputMethodWin::UpdateIMEState() {
   const TextInputType old_text_input_type =
       ui::IMEBridge::Get()->GetCurrentInputContext().type;
   ui::IMEEngineHandlerInterface::InputContext context(
-      GetTextInputType(), GetTextInputMode(), GetTextInputFlags());
+      GetTextInputType(), GetTextInputMode(), GetTextInputFlags(),
+      ui::TextInputClient::FOCUS_REASON_OTHER, GetClientShouldDoLearning());
   ui::IMEBridge::Get()->SetCurrentInputContext(context);
 
   ui::IMEEngineHandlerInterface* engine = GetEngine();

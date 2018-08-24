@@ -8,55 +8,69 @@
 #include <memory>
 #include <utility>
 
+#include "base/optional.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_node.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_physical_line_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/list/ng_unpositioned_list_marker.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_block_child_iterator.h"
-#include "third_party/blink/renderer/core/layout/ng/ng_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_constraint_space.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_constraint_space_builder.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_floats_utils.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_fragment_builder.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_fragmentation_utils.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_layout_result.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_length_utils.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_out_of_flow_layout_part.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_physical_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_positioned_float.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_space_utils.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_unpositioned_float.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 
 namespace blink {
 namespace {
 
-// Returns if a child may be affected by its clear property. I.e. it will
-// actually clear a float.
-bool ClearanceMayAffectLayout(
-    const NGExclusionSpace& exclusion_space,
-    const Vector<scoped_refptr<NGUnpositionedFloat>>& unpositioned_floats,
-    const ComputedStyle& child_style) {
-  EClear clear = child_style.Clear();
-  bool should_clear_left = (clear == EClear::kBoth || clear == EClear::kLeft);
-  bool should_clear_right = (clear == EClear::kBoth || clear == EClear::kRight);
+// Return true if a child is to be cleared past adjoining floats. These are
+// floats that would otherwise (if 'clear' were 'none') be pulled down by the
+// BFC offset of the child. If the child is to clear floats, though, we
+// obviously need separate the child from the floats and move it past them,
+// since that's what clearance is all about. This means that if we have any such
+// floats to clear, we know for sure that we get clearance, even before layout.
+inline bool HasClearancePastAdjoiningFloats(NGFloatTypes adjoining_floats,
+                                            const ComputedStyle& child_style) {
+  return ToFloatTypes(child_style.Clear()) & adjoining_floats;
+}
 
-  if (exclusion_space.HasLeftFloat() && should_clear_left)
+// Adjust BFC block offset for clearance, if applicable. Return true of
+// clearance was applied.
+//
+// Clearance applies either when the BFC block offset calculated simply isn't
+// past all relevant floats, *or* when we have already determined that we're
+// directly preceded by clearance.
+//
+// The latter is the case when we need to force ourselves past floats that would
+// otherwise be adjoining, were it not for the predetermined clearance.
+// Clearance inhibits margin collapsing and acts as spacing before the
+// block-start margin of the child. It needs to be exactly what takes the
+// block-start border edge of the cleared block adjacent to the block-end outer
+// edge of the "bottommost" relevant float.
+//
+// We cannot reliably calculate the actual clearance amount at this point,
+// because 1) this block right here may actually be a descendant of the block
+// that is to be cleared, and 2) we may not yet have separated the margin before
+// and after the clearance. None of this matters, though, because we know where
+// to place this block if clearance applies: exactly at the ConstraintSpace's
+// ClearanceOffset().
+bool ApplyClearance(const NGConstraintSpace& constraint_space,
+                    LayoutUnit* bfc_block_offset) {
+  if (constraint_space.HasClearanceOffset() &&
+      (*bfc_block_offset < constraint_space.ClearanceOffset() ||
+       constraint_space.ShouldForceClearance())) {
+    *bfc_block_offset = constraint_space.ClearanceOffset();
     return true;
-
-  if (exclusion_space.HasRightFloat() && should_clear_right)
-    return true;
-
-  auto should_clear_pred =
-      [&](const scoped_refptr<const NGUnpositionedFloat>& unpositioned_float) {
-        return (unpositioned_float->IsLeft() && should_clear_left) ||
-               (unpositioned_float->IsRight() && should_clear_right);
-      };
-
-  if (std::any_of(unpositioned_floats.begin(), unpositioned_floats.end(),
-                  should_clear_pred))
-    return true;
-
+  }
   return false;
 }
 
@@ -112,7 +126,11 @@ NGBlockLayoutAlgorithm::NGBlockLayoutAlgorithm(NGBlockNode node,
       is_resuming_(break_token && !break_token->IsBreakBefore()),
       exclusion_space_(new NGExclusionSpace(space.ExclusionSpace())) {}
 
-Optional<MinMaxSize> NGBlockLayoutAlgorithm::ComputeMinMaxSize(
+// Define the destructor here, so that we can forward-declare more in the
+// header.
+NGBlockLayoutAlgorithm::~NGBlockLayoutAlgorithm() = default;
+
+base::Optional<MinMaxSize> NGBlockLayoutAlgorithm::ComputeMinMaxSize(
     const MinMaxSizeInput& input) const {
   MinMaxSize sizes;
 
@@ -164,14 +182,11 @@ Optional<MinMaxSize> NGBlockLayoutAlgorithm::ComputeMinMaxSize(
       // an anonymous box that contains all line boxes.
       // |NextSibling| returns the next block sibling, or nullptr, skipping all
       // following inline siblings and descendants.
-      child_sizes = child.ComputeMinMaxSize(child_input);
-    } else {
-      Optional<MinMaxSize> child_minmax;
-      if (NeedMinMaxSizeForContentContribution(child_style))
-        child_minmax = child.ComputeMinMaxSize(child_input);
-
       child_sizes =
-          ComputeMinAndMaxContentContribution(child_style, child_minmax);
+          child.ComputeMinMaxSize(Style().GetWritingMode(), child_input);
+    } else {
+      child_sizes = ComputeMinAndMaxContentContribution(
+          Style().GetWritingMode(), child, child_input);
     }
 
     // Determine the max inline contribution of the child.
@@ -244,7 +259,7 @@ NGLogicalOffset NGBlockLayoutAlgorithm::CalculateLogicalOffset(
     NGLayoutInputNode child,
     const NGFragment& fragment,
     const NGBoxStrut& child_margins,
-    const WTF::Optional<NGBfcOffset>& known_fragment_offset) {
+    const base::Optional<NGBfcOffset>& known_fragment_offset) {
   if (known_fragment_offset) {
     return LogicalFromBfcOffsets(
         fragment, known_fragment_offset.value(), ContainerBfcOffset(),
@@ -257,7 +272,7 @@ NGLogicalOffset NGBlockLayoutAlgorithm::CalculateLogicalOffset(
   if (child.IsInline()) {
     LayoutUnit offset =
         LineOffsetForTextAlign(Style().GetTextAlign(), Style().Direction(),
-                               child_available_size_.inline_size);
+                               child_available_size_.inline_size, LayoutUnit());
     if (IsRtl(Style().Direction()))
       offset = child_available_size_.inline_size - offset;
     inline_offset += offset;
@@ -271,7 +286,7 @@ NGLogicalOffset NGBlockLayoutAlgorithm::CalculateLogicalOffset(
 }
 
 scoped_refptr<NGLayoutResult> NGBlockLayoutAlgorithm::Layout() {
-  WTF::Optional<MinMaxSize> min_max_size;
+  base::Optional<MinMaxSize> min_max_size;
   if (NeedMinMaxSize(ConstraintSpace(), Style())) {
     MinMaxSizeInput zero_input;
     min_max_size = ComputeMinMaxSize(zero_input);
@@ -293,47 +308,79 @@ scoped_refptr<NGLayoutResult> NGBlockLayoutAlgorithm::Layout() {
 
   // Anonymous constraint spaces are auto-sized. Don't let that affect
   // block-axis percentage resolution.
-  if (ConstraintSpace().IsAnonymous())
+  if (ConstraintSpace().IsAnonymous() || Node().IsAnonymous())
     child_percentage_size_ = ConstraintSpace().PercentageResolutionSize();
   else
     child_percentage_size_ = adjusted_size;
+  if (ConstraintSpace().IsFixedSizeBlock() &&
+      !ConstraintSpace().FixedSizeBlockIsDefinite())
+    child_percentage_size_.block_size = NGSizeIndefinite;
 
   container_builder_.SetInlineSize(size.inline_size);
 
-  // If we have a list of unpositioned floats as input to this layout, we'll
-  // need to abort once our BFC offset is resolved. Additionally the
-  // FloatsBfcOffset() must not be present in this case.
-  unpositioned_floats_ = ConstraintSpace().UnpositionedFloats();
-  abort_when_bfc_resolved_ = !unpositioned_floats_.IsEmpty();
-  if (abort_when_bfc_resolved_)
-    DCHECK(!ConstraintSpace().FloatsBfcOffset());
+  if (NGFloatTypes float_types = ConstraintSpace().AdjoiningFloatTypes()) {
+    DCHECK(!ConstraintSpace().IsNewFormattingContext());
+    DCHECK(!container_builder_.BfcOffset());
+
+    // If there were preceding adjoining floats, they will be affected when the
+    // BFC offset gets resolved or updated. We then need to roll back and
+    // re-layout those floats with the new BFC offset, once the BFC offset is
+    // updated.
+    abort_when_bfc_offset_updated_ = true;
+
+    container_builder_.AddAdjoiningFloatTypes(float_types);
+  }
 
   // If we are resuming from a break token our start border and padding is
   // within a previous fragment.
-  intrinsic_block_size_ =
+  LayoutUnit content_edge =
       is_resuming_ ? LayoutUnit() : border_scrollbar_padding_.block_start;
 
-  NGMarginStrut input_margin_strut = ConstraintSpace().MarginStrut();
+  NGPreviousInflowPosition previous_inflow_position = {
+      ConstraintSpace().BfcOffset().block_offset, LayoutUnit(),
+      ConstraintSpace().MarginStrut(),
+      /* empty_block_affected_by_clearance */ false};
 
-  LayoutUnit input_bfc_block_offset =
-      ConstraintSpace().BfcOffset().block_offset;
-
-  // Margins collapsing:
-  //   Do not collapse margins between parent and its child if there is
-  //   border/padding between them.
-  if (border_scrollbar_padding_.block_start) {
-    input_bfc_block_offset += input_margin_strut.Sum();
-    bool updated = MaybeUpdateFragmentBfcOffset(input_bfc_block_offset);
-
-    if (updated && abort_when_bfc_resolved_) {
-      container_builder_.SwapUnpositionedFloats(&unpositioned_floats_);
+  // Margins collapsing: Do not collapse margins between parent and its child if
+  // there is border/padding between them. Then we can and must resolve the BFC
+  // offset now. Also, if this is a new formatting context, or if we're resuming
+  // layout from a break token, we need to resolve the BFC offset now. Margin
+  // struts cannot pass from one fragment to another if they are generated by
+  // the same block; they must be dealt with at the first fragment.
+  if (border_scrollbar_padding_.block_start || is_resuming_ ||
+      ConstraintSpace().IsNewFormattingContext()) {
+    if (!ResolveBfcOffset(&previous_inflow_position)) {
+      // There should be no preceding content that depends on the BFC offset of
+      // a new formatting context block, and likewise when resuming from a break
+      // token.
+      DCHECK(!ConstraintSpace().IsNewFormattingContext());
+      DCHECK(!is_resuming_);
       return container_builder_.Abort(NGLayoutResult::kBfcOffsetResolved);
     }
-
-    // We reset the block offset here as it may have been effected by clearance.
-    input_bfc_block_offset = ContainerBfcOffset().block_offset;
-    input_margin_strut = NGMarginStrut();
+    // Move to the content edge. This is where the first child should be placed.
+    previous_inflow_position.bfc_block_offset += content_edge;
+    previous_inflow_position.logical_block_offset = content_edge;
   }
+
+#if DCHECK_IS_ON()
+  // If this is a new formatting context, we should definitely be at the origin
+  // here. If we're resuming from a break token (for a block that doesn't
+  // establish a new formatting context), that may not be the case,
+  // though. There may e.g. be clearance involved, or inline-start margins.
+  if (ConstraintSpace().IsNewFormattingContext())
+    DCHECK_EQ(container_builder_.BfcOffset().value(), NGBfcOffset());
+  // If this is a new formatting context, or if we're resuming from a break
+  // token, no margin strut must be lingering around at this point.
+  if (ConstraintSpace().IsNewFormattingContext() || is_resuming_)
+    DCHECK(ConstraintSpace().MarginStrut().IsEmpty());
+
+  if (!container_builder_.BfcOffset()) {
+    // New formatting contexts, and where we have an empty block affected by
+    // clearance should already have their BFC offset resolved.
+    DCHECK(!previous_inflow_position.empty_block_affected_by_clearance);
+    DCHECK(!ConstraintSpace().IsNewFormattingContext());
+  }
+#endif
 
   // If this node is a quirky container, (we are in quirks mode and either a
   // table cell or body), we set our margin strut to a mode where it only
@@ -346,32 +393,10 @@ scoped_refptr<NGLayoutResult> NGBlockLayoutAlgorithm::Layout() {
   // In the above example <p>'s & <h1>'s margins are ignored as they are
   // quirky, and we only consider <div>'s 10px margin.
   if (node_.IsQuirkyContainer())
-    input_margin_strut.is_quirky_container_start = true;
+    previous_inflow_position.margin_strut.is_quirky_container_start = true;
 
-  // If a new formatting context hits the margin collapsing if-branch above
-  // then the BFC offset is still {} as the margin strut from the constraint
-  // space must also be empty.
-  // If we are resuming layout from a break token the same rule applies. Margin
-  // struts cannot pass through break tokens (unless it's a break token before
-  // the first fragment (the one we're about to create)).
-  if (ConstraintSpace().IsNewFormattingContext() || is_resuming_) {
-    MaybeUpdateFragmentBfcOffset(input_bfc_block_offset);
-    DCHECK(input_margin_strut.IsEmpty());
-#if DCHECK_IS_ON()
-    // If this is a new formatting context, we should definitely be at the
-    // origin here. If we're resuming at a fragmented block (that doesn't
-    // establish a new formatting context), that may not be the case,
-    // though. There may e.g. be clearance involved, or inline-start margins.
-    if (ConstraintSpace().IsNewFormattingContext())
-      DCHECK_EQ(container_builder_.BfcOffset().value(), NGBfcOffset());
-#endif
-  }
+  intrinsic_block_size_ = content_edge;
 
-  input_bfc_block_offset += intrinsic_block_size_;
-
-  NGPreviousInflowPosition previous_inflow_position = {
-      input_bfc_block_offset, intrinsic_block_size_, input_margin_strut,
-      /* empty_block_affected_by_clearance */ false};
   scoped_refptr<NGBreakToken> previous_inline_break_token;
 
   NGBlockChildIterator child_iterator(Node().FirstChild(), BreakToken());
@@ -408,7 +433,6 @@ scoped_refptr<NGLayoutResult> NGBlockLayoutAlgorithm::Layout() {
 
       if (!success) {
         // We need to abort the layout, as our BFC offset was resolved.
-        container_builder_.SwapUnpositionedFloats(&unpositioned_floats_);
         return container_builder_.Abort(NGLayoutResult::kBfcOffsetResolved);
       }
       if (container_builder_.DidBreak() && IsFragmentainerOutOfSpace())
@@ -418,31 +442,14 @@ scoped_refptr<NGLayoutResult> NGBlockLayoutAlgorithm::Layout() {
   }
 
   NGMarginStrut end_margin_strut = previous_inflow_position.margin_strut;
-  LayoutUnit end_bfc_block_offset = previous_inflow_position.bfc_block_offset;
 
   // If the current layout is a new formatting context, we need to encapsulate
   // all of our floats.
   if (ConstraintSpace().IsNewFormattingContext()) {
-    // We can use the BFC coordinates, as we are a new formatting context.
-    DCHECK_EQ(container_builder_.BfcOffset().value(), NGBfcOffset());
-
-    WTF::Optional<LayoutUnit> float_end_offset =
-        exclusion_space_->ClearanceOffset(EClear::kBoth);
-
-    // We only update the size of this fragment if we need to grow to
-    // encapsulate the floats.
-    if (float_end_offset && float_end_offset.value() > end_bfc_block_offset) {
-      end_margin_strut = NGMarginStrut();
-      end_bfc_block_offset = float_end_offset.value();
-      intrinsic_block_size_ =
-          std::max(intrinsic_block_size_, float_end_offset.value());
-    }
+    intrinsic_block_size_ =
+        std::max(intrinsic_block_size_,
+                 exclusion_space_->ClearanceOffset(EClear::kBoth));
   }
-
-  // There are still a couple of opportunities to find something solid for this
-  // block to hang on to, if we haven't already been able to do so. Keep track
-  // of this, so that we can abort layout if necessary.
-  bool bfc_updated = false;
 
   // The end margin strut of an in-flow fragment contributes to the size of the
   // current fragment if:
@@ -462,8 +469,6 @@ scoped_refptr<NGLayoutResult> NGBlockLayoutAlgorithm::Layout() {
     LayoutUnit margin_strut_sum = node_.IsQuirkyContainer()
                                       ? end_margin_strut.QuirkyContainerSum()
                                       : end_margin_strut.Sum();
-    end_bfc_block_offset += margin_strut_sum;
-
     if (!container_builder_.BfcOffset()) {
       // If we have collapsed through the block start and all children (if any),
       // now is the time to determine the BFC offset, because finally we have
@@ -471,8 +476,9 @@ scoped_refptr<NGLayoutResult> NGBlockLayoutAlgorithm::Layout() {
       // for instance). If we're a new formatting context, though, we shouldn't
       // be here, because then the offset should already have been determined.
       DCHECK(!ConstraintSpace().IsNewFormattingContext());
-      bfc_updated = MaybeUpdateFragmentBfcOffset(end_bfc_block_offset);
-      DCHECK(bfc_updated);
+      if (!ResolveBfcOffset(&previous_inflow_position))
+        return container_builder_.Abort(NGLayoutResult::kBfcOffsetResolved);
+      DCHECK(container_builder_.BfcOffset());
     } else {
       // The trailing margin strut will be part of our intrinsic block size, but
       // only if there is something that separates the end margin strut from the
@@ -503,25 +509,12 @@ scoped_refptr<NGLayoutResult> NGBlockLayoutAlgorithm::Layout() {
   // have a break token, it means that we know the blocks' position even if
   // they're empty; it will be at the very start of the fragmentainer.
   if (!container_builder_.BfcOffset() && (size.block_size || BreakToken())) {
-    end_bfc_block_offset += end_margin_strut.Sum();
-    bfc_updated = MaybeUpdateFragmentBfcOffset(end_bfc_block_offset);
-    DCHECK(bfc_updated);
-  }
-
-  if (bfc_updated && abort_when_bfc_resolved_) {
-    // New formatting contexts, and where we have an empty block affected by
-    // clearance should already have their BFC offset resolved, and shouldn't
-    // enter this branch.
-    DCHECK(!previous_inflow_position.empty_block_affected_by_clearance);
-    DCHECK(!ConstraintSpace().IsNewFormattingContext());
-
-    container_builder_.SwapUnpositionedFloats(&unpositioned_floats_);
-    return container_builder_.Abort(NGLayoutResult::kBfcOffsetResolved);
+    if (!ResolveBfcOffset(&previous_inflow_position))
+      return container_builder_.Abort(NGLayoutResult::kBfcOffsetResolved);
+    DCHECK(container_builder_.BfcOffset());
   }
 
   if (container_builder_.BfcOffset()) {
-    PositionPendingFloats(end_bfc_block_offset);
-
     // Do not collapse margins between the last in-flow child and bottom margin
     // of its parent if the parent has height != auto.
     if (!Style().LogicalHeight().IsAuto()) {
@@ -556,17 +549,23 @@ scoped_refptr<NGLayoutResult> NGBlockLayoutAlgorithm::Layout() {
         .Run();
   }
 
-  // If we have any unpositioned floats at this stage, need to tell our parent
-  // about this, so that we get relayout with a forced BFC offset.
+#if DCHECK_IS_ON()
+  // If we have any unpositioned floats at this stage, our parent will pick up
+  // this by examining adjoining float types returned, so that we get relayout
+  // with a forced BFC offset once it's known.
   if (!unpositioned_floats_.IsEmpty()) {
     DCHECK(!container_builder_.BfcOffset());
-    container_builder_.SwapUnpositionedFloats(&unpositioned_floats_);
+    DCHECK(container_builder_.AdjoiningFloatTypes());
   }
+#endif
 
   PropagateBaselinesFromChildren();
 
   DCHECK(exclusion_space_);
   container_builder_.SetExclusionSpace(std::move(exclusion_space_));
+
+  if (ConstraintSpace().UseFirstLineStyle())
+    container_builder_.SetStyleVariant(NGStyleVariant::kFirstLine);
 
   return container_builder_.ToBoxFragment();
 }
@@ -603,7 +602,8 @@ void NGBlockLayoutAlgorithm::HandleFloat(
                                   origin_inline_offset,
                                   ConstraintSpace().BfcOffset().line_offset,
                                   margins, child, child_break_token);
-  unpositioned_floats_.push_back(std::move(unpositioned_float));
+  AddUnpositionedFloat(&unpositioned_floats_, &container_builder_,
+                       unpositioned_float);
 
   // If there is a break token for a float we must be resuming layout, we must
   // always know our position in the BFC.
@@ -636,17 +636,71 @@ bool NGBlockLayoutAlgorithm::HandleNewFormattingContext(
 
   const ComputedStyle& child_style = child.Style();
   const TextDirection direction = ConstraintSpace().Direction();
+  bool has_clearance_past_adjoining_floats = HasClearancePastAdjoiningFloats(
+      container_builder_.AdjoiningFloatTypes(), child_style);
   NGInflowChildData child_data =
-      ComputeChildData(*previous_inflow_position, child, child_break_token);
+      ComputeChildData(*previous_inflow_position, child, child_break_token,
+                       has_clearance_past_adjoining_floats);
 
+  // If the child has a block-start margin, and the BFC offset is still
+  // unresolved, and we have preceding adjoining floats, things get complicated
+  // here. Depending on whether the child fits beside the floats, the margin may
+  // or may not be adjoining with the current margin strut. This affects the
+  // position of the preceding adjoining floats. We may have to resolve the BFC
+  // offset once with the child's margin tentatively adjoining, then realize
+  // that the child isn't going to fit beside the floats at the current
+  // position, and therefore re-resolve the BFC offset with the child's margin
+  // non-adjoining. This is akin to clearance.
   NGMarginStrut adjoining_margin_strut(previous_inflow_position->margin_strut);
   adjoining_margin_strut.Append(child_data.margins.block_start,
                                 child_style.HasMarginBeforeQuirk());
-
-  LayoutUnit initial_child_bfc_offset_estimate =
+  LayoutUnit adjoining_bfc_offset_estimate =
       child_data.bfc_offset_estimate.block_offset +
       adjoining_margin_strut.Sum();
-  LayoutUnit child_bfc_offset_estimate = initial_child_bfc_offset_estimate;
+  LayoutUnit non_adjoining_bfc_offset_estimate =
+      child_data.bfc_offset_estimate.block_offset +
+      previous_inflow_position->margin_strut.Sum();
+  LayoutUnit child_bfc_offset_estimate = adjoining_bfc_offset_estimate;
+  bool bfc_offset_already_resolved = false;
+  bool child_determined_bfc_offset = false;
+  bool child_margin_got_separated = false;
+  bool had_pending_floats = false;
+
+  if (!container_builder_.BfcOffset()) {
+    had_pending_floats = !unpositioned_floats_.IsEmpty();
+
+    if (ConstraintSpace().FloatsBfcOffset()) {
+      // This is not the first time we're here. We already have a suggested BFC
+      // offset.
+      bfc_offset_already_resolved = true;
+      NGBfcOffset bfc_offset = *ConstraintSpace().FloatsBfcOffset();
+      child_bfc_offset_estimate = bfc_offset.block_offset;
+      // We require that the BFC offset be the one we'd get with either margins
+      // adjoining or margins separated. Anything else is a bug.
+      DCHECK(bfc_offset.block_offset == adjoining_bfc_offset_estimate ||
+             bfc_offset.block_offset == non_adjoining_bfc_offset_estimate);
+      // Figure out if the child margin has already got separated from the
+      // margin strut or not.
+      child_margin_got_separated =
+          bfc_offset.block_offset != adjoining_bfc_offset_estimate;
+    } else if (has_clearance_past_adjoining_floats) {
+      child_bfc_offset_estimate = previous_inflow_position->NextBorderEdge();
+      child_margin_got_separated = true;
+    }
+
+    // The BFC offset of this container gets resolved because of this child.
+    child_determined_bfc_offset = true;
+    if (!ResolveBfcOffset(previous_inflow_position,
+                          child_bfc_offset_estimate)) {
+      // If we need to abort here, it means that we had preceding unpositioned
+      // floats. This is only expected if we're here for the first time.
+      DCHECK(!bfc_offset_already_resolved);
+      return false;
+    }
+
+    // We reset the block offset here as it may have been affected by clearance.
+    child_bfc_offset_estimate = ContainerBfcOffset().block_offset;
+  }
 
   // If the child has a non-zero block-start margin, our initial estimate will
   // be that any pending floats will be flush (block-start-wise) with this
@@ -659,7 +713,9 @@ bool NGBlockLayoutAlgorithm::HandleNewFormattingContext(
   // ignore this margin, which may cause them to end up at completely different
   // positions than initially estimated. In other words, we'll need another
   // layout pass if this happens.
-  bool abort_if_cleared = child_data.margins.block_start != LayoutUnit();
+  bool abort_if_cleared = child_data.margins.block_start != LayoutUnit() &&
+                          !child_margin_got_separated &&
+                          child_determined_bfc_offset;
   NGLayoutOpportunity opportunity;
   scoped_refptr<NGLayoutResult> layout_result;
   std::tie(layout_result, opportunity) =
@@ -669,38 +725,42 @@ bool NGBlockLayoutAlgorithm::HandleNewFormattingContext(
   if (!layout_result) {
     DCHECK(abort_if_cleared);
     // Layout got aborted, because the child got pushed down by floats, and we
-    // had pending floats that we tentatively positioned incorrectly, due to a
-    // margin that shouldn't have affected them. Try again without the child's
-    // margin. This re-layout *must* produce a fragment and opportunity which
-    // fits within the exclusion space.
+    // may have had pending floats that we tentatively positioned incorrectly
+    // (since the child's margin shouldn't have affected them). Try again
+    // without the child's margin. So, we need another layout pass. Figure out
+    // if we can do it right away from here, or if we have to roll back and
+    // reposition floats first.
+    if (child_determined_bfc_offset) {
+      // The BFC offset was calculated when we got to this child, with the
+      // child's margin adjoining. Since that turned out to be wrong, re-resolve
+      // the BFC offset without the child's margin.
+      LayoutUnit old_offset = container_builder_.BfcOffset()->block_offset;
+      container_builder_.ResetBfcOffset();
+      ResolveBfcOffset(previous_inflow_position,
+                       non_adjoining_bfc_offset_estimate);
+      if ((bfc_offset_already_resolved || had_pending_floats) &&
+          old_offset != container_builder_.BfcOffset()->block_offset) {
+        // The first BFC offset resolution turned out to be wrong, and we
+        // positioned preceding adjacent floats based on that. Now we have to
+        // roll back and position them at the correct offset. The only expected
+        // incorrect estimate is with the child's margin adjoining. Any other
+        // incorrect estimate will result in failed layout.
+        DCHECK_EQ(old_offset, adjoining_bfc_offset_estimate);
+        return false;
+      }
+    }
+
     DCHECK_GT(opportunity.rect.start_offset.block_offset,
               child_bfc_offset_estimate);
-    NGMarginStrut non_adjoining_margin_strut(
-        previous_inflow_position->margin_strut);
-    child_bfc_offset_estimate = child_data.bfc_offset_estimate.block_offset +
-                                non_adjoining_margin_strut.Sum();
+    child_bfc_offset_estimate = non_adjoining_bfc_offset_estimate;
+    child_margin_got_separated = true;
 
-    // Make sure that we don't move below the previously found layout
-    // opportunity. This could otherwise happen if the child has negative
-    // margins.
-    child_bfc_offset_estimate = std::min(
-        child_bfc_offset_estimate, opportunity.rect.start_offset.block_offset);
-
+    // We can re-layout the child right away. This re-layout *must* produce a
+    // fragment and opportunity which fits within the exclusion space.
     std::tie(layout_result, opportunity) = LayoutNewFormattingContext(
         child, child_break_token, child_data, child_bfc_offset_estimate,
         /* abort_if_cleared */ false);
   }
-  DCHECK(layout_result->PhysicalFragment());
-
-  // We now know the childs BFC offset, try and update our own if needed.
-  bool updated = MaybeUpdateFragmentBfcOffset(child_bfc_offset_estimate);
-
-  if (updated && abort_when_bfc_resolved_)
-    return false;
-
-  // Position any pending floats if we've just updated our BFC offset.
-  PositionPendingFloats(child_bfc_offset_estimate);
-
   DCHECK(layout_result->PhysicalFragment());
   const auto& physical_fragment = *layout_result->PhysicalFragment();
   NGFragment fragment(ConstraintSpace().GetWritingMode(), physical_fragment);
@@ -720,8 +780,9 @@ bool NGBlockLayoutAlgorithm::HandleNewFormattingContext(
 
   if (ConstraintSpace().HasBlockFragmentation()) {
     bool is_pushed_by_floats =
-        layout_result->IsPushedByFloats() ||
-        child_bfc_offset.block_offset > initial_child_bfc_offset_estimate;
+        child_margin_got_separated ||
+        child_bfc_offset.block_offset > child_bfc_offset_estimate ||
+        layout_result->IsPushedByFloats();
     if (BreakBeforeChild(child, *layout_result, logical_offset.block_offset,
                          is_pushed_by_floats))
       return true;
@@ -758,28 +819,18 @@ NGBlockLayoutAlgorithm::LayoutNewFormattingContext(
   const TextDirection direction = ConstraintSpace().Direction();
   const WritingMode writing_mode = ConstraintSpace().GetWritingMode();
 
-  // Position all the pending floats into a temporary exclusion space. This
-  // *doesn't* place them into our output exclusion space yet, as we don't know
-  // where the child will be positioned, and hence what *out* BFC offset is.
-  // If we already know our BFC offset, this won't have any affect.
-  NGExclusionSpace tmp_exclusion_space(*exclusion_space_);
-  PositionFloats(child_origin_block_offset, child_origin_block_offset,
-                 unpositioned_floats_, ConstraintSpace(), &tmp_exclusion_space);
-
   LayoutUnit child_bfc_line_offset =
       ConstraintSpace().BfcOffset().line_offset +
       border_scrollbar_padding_.LineLeft(direction) +
       child_data.margins.LineLeft(direction);
 
   // The origin offset is where we should start looking for layout
-  // opportunities. It needs to be adjusted by the child's clearance, in
-  // addition to the parent's (if we don't know our BFC offset yet).
+  // opportunities. It needs to be adjusted by the child's clearance.
   NGBfcOffset origin_offset = {child_bfc_line_offset,
                                child_origin_block_offset};
-  AdjustToClearance(tmp_exclusion_space.ClearanceOffset(child.Style().Clear()),
+  AdjustToClearance(exclusion_space_->ClearanceOffset(child.Style().Clear()),
                     &origin_offset);
-  if (!container_builder_.BfcOffset())
-    AdjustToClearance(ConstraintSpace().ClearanceOffset(), &origin_offset);
+  DCHECK(container_builder_.BfcOffset());
 
   // Before we lay out, figure out how much inline space we have available at
   // the start block offset estimate (the child is not allowed to overlap with
@@ -793,7 +844,7 @@ NGBlockLayoutAlgorithm::LayoutNewFormattingContext(
   LayoutUnit inline_margin = child_data.margins.InlineSum();
   LayoutUnit inline_size =
       (child_available_size_.inline_size - inline_margin).ClampNegativeToZero();
-  NGLayoutOpportunity opportunity = tmp_exclusion_space.FindLayoutOpportunity(
+  NGLayoutOpportunity opportunity = exclusion_space_->FindLayoutOpportunity(
       origin_offset, inline_size, NGLogicalSize());
 
   scoped_refptr<NGLayoutResult> layout_result;
@@ -807,7 +858,8 @@ NGBlockLayoutAlgorithm::LayoutNewFormattingContext(
     if (abort_if_cleared &&
         origin_offset.block_offset < opportunity.rect.BlockStartOffset()) {
       // Abort if we got pushed downwards. We need to adjust
-      // child_origin_block_offset and try again.
+      // child_origin_block_offset, reposition any floats affected by that, and
+      // try again.
       layout_result = nullptr;
       break;
     }
@@ -829,7 +881,7 @@ NGBlockLayoutAlgorithm::LayoutNewFormattingContext(
     // Now find a layout opportunity where the fragment is actually going to
     // fit.
     NGFragment fragment(writing_mode, *layout_result->PhysicalFragment());
-    opportunity = tmp_exclusion_space.FindLayoutOpportunity(
+    opportunity = exclusion_space_->FindLayoutOpportunity(
         origin_offset, inline_size, fragment.Size());
   } while (origin_offset.block_offset < opportunity.rect.BlockStartOffset());
 
@@ -849,102 +901,53 @@ bool NGBlockLayoutAlgorithm::HandleInflow(
   bool is_non_empty_inline =
       child.IsInline() && !ToNGInlineNode(child).IsEmptyInline();
 
-  // TODO(ikilpatrick): We may only want to position pending floats if there is
-  // something that we *might* clear in the unpositioned list. E.g. we may
-  // clear an already placed left float, but the unpositioned list may only have
-  // right floats.
-  bool should_position_pending_floats =
+  bool has_clearance_past_adjoining_floats =
       child.IsBlock() &&
-      ClearanceMayAffectLayout(*exclusion_space_, unpositioned_floats_,
-                               child.Style());
+      HasClearancePastAdjoiningFloats(container_builder_.AdjoiningFloatTypes(),
+                                      child.Style());
 
-  // There are two conditions where we need to position our pending floats:
-  //  1. If the child will be affected by clearance.
+  // If we can separate the previous margin strut from what is to follow, do
+  // that. Then we're able to resolve *our* BFC offset and position any pending
+  // floats. There are two situations where this is necessary:
+  //  1. If the child is to be cleared by adjoining floats.
   //  2. If the child is a non-empty inline.
-  // This collapses the previous margin strut, and optionally resolves *our*
-  // BFC offset.
-  if (should_position_pending_floats || is_non_empty_inline) {
-    LayoutUnit origin_point_block_offset =
-        previous_inflow_position->bfc_block_offset +
-        previous_inflow_position->margin_strut.Sum();
-    bool updated = MaybeUpdateFragmentBfcOffset(origin_point_block_offset);
-
-    if (updated && abort_when_bfc_resolved_)
+  if (has_clearance_past_adjoining_floats || is_non_empty_inline) {
+    if (!ResolveBfcOffset(previous_inflow_position))
       return false;
-
-    // If our BFC offset was updated we may have been affected by clearance
-    // ourselves. We need to adjust the origin point to accomodate this.
-    if (updated)
-      origin_point_block_offset =
-          std::max(origin_point_block_offset,
-                   ConstraintSpace().ClearanceOffset().value_or(LayoutUnit()));
-
-    bool positioned_direct_child_floats = !unpositioned_floats_.IsEmpty();
-
-    PositionPendingFloats(origin_point_block_offset);
-
-    // If we positioned float which are direct children, or the child is a
-    // non-empty inline, we need to artificially "reset" the previous inflow
-    // position, e.g. we clear the margin strut, and set the offset to our
-    // block-start border edge.
-    //
-    // This behaviour is similar to if we had block-start border or padding.
-    if ((positioned_direct_child_floats && updated) || is_non_empty_inline) {
-      // We must have no border/scrollbar/padding here otherwise our BFC offset
-      // would already be resolved.
-      if (!is_non_empty_inline)
-        DCHECK_EQ(border_scrollbar_padding_.block_start, LayoutUnit());
-
-      previous_inflow_position->bfc_block_offset = origin_point_block_offset;
-      previous_inflow_position->margin_strut = NGMarginStrut();
-      previous_inflow_position->logical_block_offset = LayoutUnit();
-    }
   }
 
   // Perform layout on the child.
   NGInflowChildData child_data =
-      ComputeChildData(*previous_inflow_position, child, child_break_token);
+      ComputeChildData(*previous_inflow_position, child, child_break_token,
+                       has_clearance_past_adjoining_floats);
   scoped_refptr<NGConstraintSpace> child_space =
       CreateConstraintSpaceForChild(child, child_data, child_available_size_);
   scoped_refptr<NGLayoutResult> layout_result =
       child.Layout(*child_space, child_break_token);
 
+  base::Optional<NGBfcOffset> child_bfc_offset = layout_result->BfcOffset();
+  // TODO(layout-dev): A more optimal version of this is to set
+  // relayout_child_when_bfc_resolved only if the child tree itself _added_ any
+  // floats that it failed to position. Currently, we risk relaying out the
+  // parent block for no reason, because we're not able to make this
+  // distinction.
+  bool relayout_child_when_bfc_resolved =
+      layout_result->AdjoiningFloatTypes() && !child_bfc_offset &&
+      !child_space->FloatsBfcOffset();
   bool is_empty_block = IsEmptyBlock(child, *layout_result);
-
-  // If we don't know our BFC offset yet, we need to copy the list of
-  // unpositioned floats from the child's layout result.
-  //
-  // If the child had any unpositioned floats, we need to abort our layout if
-  // we resolve our BFC offset.
-  //
-  // If we are a new formatting context, the child will get re-laid out once it
-  // has been positioned.
-  //
-  // TODO(ikilpatrick): a more optimal version of this is to set
-  // abort_when_bfc_resolved_, if the child tree _added_ any floats.
-  if (!container_builder_.BfcOffset()) {
-    unpositioned_floats_ = layout_result->UnpositionedFloats();
-    abort_when_bfc_resolved_ |= !layout_result->UnpositionedFloats().IsEmpty();
-    if (child_space->FloatsBfcOffset())
-      DCHECK(layout_result->UnpositionedFloats().IsEmpty());
-    // If our BFC offset is unknown, and the child got pushed down by floats, so
-    // will we.
-    if (layout_result->IsPushedByFloats())
-      container_builder_.SetIsPushedByFloats();
-  }
 
   // A child may have aborted its layout if it resolved its BFC offset. If
   // we don't have a BFC offset yet, we need to propagate the abortion up
   // to our parent.
   if (layout_result->Status() == NGLayoutResult::kBfcOffsetResolved &&
       !container_builder_.BfcOffset()) {
-    MaybeUpdateFragmentBfcOffset(
-        layout_result->BfcOffset().value().block_offset);
-
-    // NOTE: Unlike other aborts, we don't try check if we *should* abort with
-    // abort_when_bfc_resolved_, this is simply propagating an abort up to a
-    // node which is able to restart the layout (a node that has resolved its
-    // BFC offset).
+    // There's no need to do anything apart from resolving the BFC offset here,
+    // so make sure that it aborts before trying to position floats or anything
+    // like that, which would just be waste of time. This is simply propagating
+    // an abort up to a node which is able to restart the layout (a node that
+    // has resolved its BFC offset).
+    abort_when_bfc_offset_updated_ = true;
+    ResolveBfcOffset(previous_inflow_position, child_bfc_offset->block_offset);
     return false;
   }
 
@@ -967,22 +970,50 @@ bool NGBlockLayoutAlgorithm::HandleInflow(
   // We try and position the child within the block formatting context. This
   // may cause our BFC offset to be resolved, in which case we should abort our
   // layout if needed.
-  WTF::Optional<NGBfcOffset> child_bfc_offset;
-  if (layout_result->BfcOffset()) {
-    if (!PositionWithBfcOffset(layout_result->BfcOffset().value(),
-                               &child_bfc_offset))
+  bool has_clearance = layout_result->IsPushedByFloats();
+  if (!child_bfc_offset) {
+    if (!has_clearance && child_space->HasClearanceOffset() &&
+        child.Style().Clear() != EClear::kNone) {
+      // This is an empty block child that we collapsed through, so we have to
+      // detect clearance manually. See if the child's hypothetical border edge
+      // is past the relevant floats. If it's not, we need to apply clearance
+      // before it.
+      LayoutUnit child_block_offset_estimate =
+          previous_inflow_position->bfc_block_offset +
+          layout_result->EndMarginStrut().Sum();
+      if (child_block_offset_estimate < child_space->ClearanceOffset() ||
+          child_space->ShouldForceClearance())
+        has_clearance = empty_block_affected_by_clearance = true;
+    }
+  }
+  if (has_clearance) {
+    // The child has clearance. Clearance inhibits margin collapsing and acts as
+    // spacing before the block-start margin of the child. Our BFC offset is
+    // therefore resolvable, and if it hasn't already been resolved, we'll do it
+    // now to separate the child's collapsed margin from this container.
+    if (!ResolveBfcOffset(previous_inflow_position))
       return false;
-  } else {
+  }
+  if (!child_bfc_offset) {
+    DCHECK(is_empty_block);
     // Layout wasn't able to determine the BFC offset of the child. This has to
     // mean that the child is empty (block-size-wise).
-    DCHECK(is_empty_block);
     if (container_builder_.BfcOffset()) {
       // Since we know our own BFC offset, though, we can calculate that of the
       // child as well.
       child_bfc_offset = PositionEmptyChildWithParentBfc(
-          child, *child_space, child_data, *layout_result,
-          &empty_block_affected_by_clearance);
+          child, *child_space, child_data, *layout_result);
     }
+  } else if (!has_clearance) {
+    // We shouldn't have any pending floats here, since an in-flow child found
+    // its BFC offset.
+    DCHECK(unpositioned_floats_.IsEmpty());
+
+    // The child's BFC offset is known, and since there's no clearance, this
+    // container will get the same offset, unless it has already been resolved.
+    if (!ResolveBfcOffset(previous_inflow_position,
+                          child_bfc_offset->block_offset))
+      return false;
   }
 
   // We need to re-layout a child if it was affected by clearance in order to
@@ -1020,7 +1051,7 @@ bool NGBlockLayoutAlgorithm::HandleInflow(
   //  - It has some unpositioned floats.
   //  - It was affected by clearance.
   if ((layout_result->Status() == NGLayoutResult::kBfcOffsetResolved ||
-       !layout_result->UnpositionedFloats().IsEmpty() ||
+       relayout_child_when_bfc_resolved ||
        empty_block_affected_by_clearance_needs_relayout) &&
       child_bfc_offset) {
     scoped_refptr<NGConstraintSpace> new_child_space =
@@ -1028,11 +1059,45 @@ bool NGBlockLayoutAlgorithm::HandleInflow(
                                       child_bfc_offset);
     layout_result = child.Layout(*new_child_space, child_break_token);
 
+    if (layout_result->Status() == NGLayoutResult::kBfcOffsetResolved) {
+      // Even a second layout pass may abort, if the BFC offset initially
+      // calculated turned out to be wrong. This happens when we discover that
+      // an in-flow block-level descendant that establishes a new formatting
+      // context doesn't fit beside the floats at its initial position. Allow
+      // one more pass.
+      child_bfc_offset = layout_result->BfcOffset();
+      DCHECK(child_bfc_offset);
+      new_child_space = CreateConstraintSpaceForChild(
+          child, child_data, child_available_size_, child_bfc_offset);
+      layout_result = child.Layout(*new_child_space, child_break_token);
+    }
+
     DCHECK_EQ(layout_result->Status(), NGLayoutResult::kSuccess);
 
     DCHECK(layout_result->ExclusionSpace());
     exclusion_space_ =
         std::make_unique<NGExclusionSpace>(*layout_result->ExclusionSpace());
+    relayout_child_when_bfc_resolved = false;
+  }
+
+  // If we don't know our BFC offset yet, and the child stumbled into something
+  // that needs it (unable to position floats when the BFC offset is unknown),
+  // we need abort layout once we manage to resolve it, and relayout. Note that
+  // this check is performed after the optional second layout pass above, since
+  // we may have been able to resolve our BFC offset (e.g. due to clearance) and
+  // position any descendant floats in the second pass. In particular, when it
+  // comes to clearance of empty blocks, if we just applied it and resolved the
+  // BFC offset to separate the margins before and after clearance, we cannot
+  // abort and re-layout this block, or clearance would be lost.
+  //
+  // If we are a new formatting context, the child will get re-laid out once it
+  // has been positioned.
+  if (!container_builder_.BfcOffset()) {
+    abort_when_bfc_offset_updated_ |= relayout_child_when_bfc_resolved;
+    // If our BFC offset is unknown, and the child got pushed down by floats,
+    // so will we.
+    if (layout_result->IsPushedByFloats())
+      container_builder_.SetIsPushedByFloats();
   }
 
   // A line-box may have a list of floats which we add as children.
@@ -1073,6 +1138,9 @@ bool NGBlockLayoutAlgorithm::HandleInflow(
     intrinsic_block_size_ =
         std::max(intrinsic_block_size_,
                  logical_offset.block_offset + fragment.BlockSize());
+  } else if (!container_builder_.BfcOffset()) {
+    container_builder_.AddAdjoiningFloatTypes(
+        layout_result->AdjoiningFloatTypes());
   }
 
   container_builder_.AddChild(layout_result, logical_offset);
@@ -1094,7 +1162,8 @@ bool NGBlockLayoutAlgorithm::HandleInflow(
 NGInflowChildData NGBlockLayoutAlgorithm::ComputeChildData(
     const NGPreviousInflowPosition& previous_inflow_position,
     NGLayoutInputNode child,
-    const NGBreakToken* child_break_token) {
+    const NGBreakToken* child_break_token,
+    bool force_clearance) {
   DCHECK(child);
   DCHECK(!child.IsFloating());
 
@@ -1114,14 +1183,14 @@ NGInflowChildData NGBlockLayoutAlgorithm::ComputeChildData(
           margins.LineLeft(ConstraintSpace().Direction()),
       previous_inflow_position.bfc_block_offset};
 
-  return {child_bfc_offset, margin_strut, margins};
+  return {child_bfc_offset, margin_strut, margins, force_clearance};
 }
 
 NGPreviousInflowPosition NGBlockLayoutAlgorithm::ComputeInflowPosition(
     const NGPreviousInflowPosition& previous_inflow_position,
     const NGLayoutInputNode child,
     const NGInflowChildData& child_data,
-    const WTF::Optional<NGBfcOffset>& child_bfc_offset,
+    const base::Optional<NGBfcOffset>& child_bfc_offset,
     const NGLogicalOffset& logical_offset,
     const NGLayoutResult& layout_result,
     const NGFragment& fragment,
@@ -1133,6 +1202,10 @@ NGPreviousInflowPosition NGBlockLayoutAlgorithm::ComputeInflowPosition(
 
   bool is_empty_block = IsEmptyBlock(child, layout_result);
   if (is_empty_block) {
+    // The default behaviour for empty blocks is they just pass through the
+    // previous inflow position.
+    child_end_bfc_block_offset = previous_inflow_position.bfc_block_offset;
+
     if (empty_block_affected_by_clearance) {
       // If an empty block was affected by clearance (that is it got pushed
       // down past a float), we need to do something slightly bizarre.
@@ -1144,17 +1217,45 @@ NGPreviousInflowPosition NGBlockLayoutAlgorithm::ComputeInflowPosition(
       // Another way of thinking about this is that when you *add* back the
       // margin strut, you end up with the same position as you started with.
       //
-      // This behaviour isn't known to be in any CSS specification.
-      child_end_bfc_block_offset = child_bfc_offset.value().block_offset -
-                                   layout_result.EndMarginStrut().Sum();
-      logical_block_offset =
-          logical_offset.block_offset - layout_result.EndMarginStrut().Sum();
-    } else {
-      // The default behaviour for empty blocks is they just pass through the
-      // previous inflow position.
-      child_end_bfc_block_offset = previous_inflow_position.bfc_block_offset;
-      logical_block_offset = previous_inflow_position.logical_block_offset;
+      // This is essentially what the spec refers to as clearance [1], and,
+      // while we normally don't have to calculate it directly, in the case of
+      // an empty cleared child like here, we actually have to.
+      //
+      // We have to calculate clearance for empty cleared children, because we
+      // need the margin that's between the clearance and this block to collapse
+      // correctly with subsequent content. This is something that needs to take
+      // place after the margin strut preceding and following the clearance have
+      // been separated. Clearance may be positive, negative or zero, depending
+      // on what it takes to (hypothetically) place this child just below the
+      // last relevant float. Since the margins before and after the clearance
+      // have been separated, we may have to pull the child back, and that's an
+      // example of negative clearance.
+      //
+      // (In the other case, when a cleared child is non-empty (i.e. when we
+      // don't end up here), we don't need to explicitly calculate clearance,
+      // because then we just place its border edge where it should be and we're
+      // done with it.)
+      //
+      // [1] https://www.w3.org/TR/CSS22/visuren.html#flow-control
+
+      // First move past the margin that is to precede the clearance. It will
+      // not participate in any subsequent margin collapsing.
+      LayoutUnit margin_before_clearance =
+          previous_inflow_position.margin_strut.Sum();
+      child_end_bfc_block_offset += margin_before_clearance;
+
+      // Calculate and apply actual clearance.
+      LayoutUnit clearance = child_bfc_offset.value().block_offset -
+                             layout_result.EndMarginStrut().Sum() -
+                             previous_inflow_position.NextBorderEdge();
+      child_end_bfc_block_offset += clearance;
     }
+
+    // The logical block offset needs to go through exactly the same change as
+    // the BFC block offset here.
+    logical_block_offset = previous_inflow_position.logical_block_offset +
+                           child_end_bfc_block_offset -
+                           previous_inflow_position.bfc_block_offset;
 
     if (!container_builder_.BfcOffset()) {
       DCHECK_EQ(child_end_bfc_block_offset,
@@ -1190,27 +1291,11 @@ NGPreviousInflowPosition NGBlockLayoutAlgorithm::ComputeInflowPosition(
           empty_or_sibling_empty_affected_by_clearance};
 }
 
-bool NGBlockLayoutAlgorithm::PositionWithBfcOffset(
-    const NGBfcOffset& bfc_offset,
-    WTF::Optional<NGBfcOffset>* child_bfc_offset) {
-  LayoutUnit bfc_block_offset = bfc_offset.block_offset;
-  bool updated = MaybeUpdateFragmentBfcOffset(bfc_block_offset);
-
-  if (updated && abort_when_bfc_resolved_)
-    return false;
-
-  PositionPendingFloats(bfc_block_offset);
-
-  *child_bfc_offset = bfc_offset;
-  return true;
-}
-
 NGBfcOffset NGBlockLayoutAlgorithm::PositionEmptyChildWithParentBfc(
     const NGLayoutInputNode& child,
     const NGConstraintSpace& child_space,
     const NGInflowChildData& child_data,
-    const NGLayoutResult& layout_result,
-    bool* has_clearance) const {
+    const NGLayoutResult& layout_result) const {
   DCHECK(IsEmptyBlock(child, layout_result));
 
   // The child must be an in-flow zero-block-size fragment, use its end margin
@@ -1225,11 +1310,10 @@ NGBfcOffset NGBlockLayoutAlgorithm::PositionEmptyChildWithParentBfc(
   if (child.IsInline()) {
     child_bfc_offset.line_offset +=
         LineOffsetForTextAlign(Style().GetTextAlign(), Style().Direction(),
-                               child_available_size_.inline_size);
+                               child_available_size_.inline_size, LayoutUnit());
   }
 
-  *has_clearance =
-      AdjustToClearance(child_space.ClearanceOffset(), &child_bfc_offset);
+  ApplyClearance(child_space, &child_bfc_offset.block_offset);
 
   return child_bfc_offset;
 }
@@ -1551,12 +1635,12 @@ NGBoxStrut NGBlockLayoutAlgorithm::CalculateMargins(
   // TODO(ikilpatrick): Move the auto margins calculation for different writing
   // modes to post-layout.
   if (!child.IsFloating() && !child.CreatesNewFormattingContext()) {
-    WTF::Optional<MinMaxSize> sizes;
+    base::Optional<MinMaxSize> sizes;
     if (NeedMinMaxSize(*space, child_style)) {
       // We only want to guess the child's size here, so preceding floats are of
       // no interest.
       MinMaxSizeInput zero_input;
-      sizes = child.ComputeMinMaxSize(zero_input);
+      sizes = child.ComputeMinMaxSize(child_style.GetWritingMode(), zero_input);
     }
 
     LayoutUnit child_inline_size =
@@ -1575,7 +1659,7 @@ NGBlockLayoutAlgorithm::CreateConstraintSpaceForChild(
     const NGLayoutInputNode child,
     const NGInflowChildData& child_data,
     const NGLogicalSize child_available_size,
-    const WTF::Optional<NGBfcOffset> floats_bfc_offset) {
+    const base::Optional<NGBfcOffset> floats_bfc_offset) {
   NGConstraintSpaceBuilder space_builder(ConstraintSpace());
 
   NGLogicalSize available_size(child_available_size);
@@ -1600,8 +1684,11 @@ NGBlockLayoutAlgorithm::CreateConstraintSpaceForChild(
       .SetBfcOffset(child_data.bfc_offset_estimate)
       .SetMarginStrut(child_data.margin_strut);
 
-  if (!is_new_fc)
+  if (!is_new_fc) {
     space_builder.SetExclusionSpace(*exclusion_space_);
+    space_builder.SetAdjoiningFloatTypes(
+        container_builder_.AdjoiningFloatTypes());
+  }
 
   if (!container_builder_.BfcOffset() && ConstraintSpace().FloatsBfcOffset()) {
     space_builder.SetFloatsBfcOffset(
@@ -1612,26 +1699,17 @@ NGBlockLayoutAlgorithm::CreateConstraintSpaceForChild(
   if (floats_bfc_offset)
     space_builder.SetFloatsBfcOffset(floats_bfc_offset);
 
-  if (!is_new_fc && !floats_bfc_offset) {
-    space_builder.SetUnpositionedFloats(unpositioned_floats_);
-  }
-
   WritingMode writing_mode;
-  Optional<LayoutUnit> clearance_offset;
-  if (!constraint_space_.IsNewFormattingContext())
-    clearance_offset = ConstraintSpace().ClearanceOffset();
+  LayoutUnit clearance_offset = constraint_space_.IsNewFormattingContext()
+                                    ? LayoutUnit::Min()
+                                    : ConstraintSpace().ClearanceOffset();
   if (child.IsInline()) {
     writing_mode = Style().GetWritingMode();
   } else {
     const ComputedStyle& child_style = child.Style();
     LayoutUnit child_clearance_offset =
         exclusion_space_->ClearanceOffset(child_style.Clear());
-    if (clearance_offset) {
-      clearance_offset =
-          std::max(clearance_offset.value(), child_clearance_offset);
-    } else {
-      clearance_offset = child_clearance_offset;
-    }
+    clearance_offset = std::max(clearance_offset, child_clearance_offset);
     space_builder.SetIsShrinkToFit(ShouldShrinkToFit(Style(), child_style));
     space_builder.SetTextDirection(child_style.Direction());
     writing_mode = child_style.GetWritingMode();
@@ -1639,13 +1717,12 @@ NGBlockLayoutAlgorithm::CreateConstraintSpaceForChild(
     // PositionListMarker() requires a first line baseline.
     if (container_builder_.UnpositionedListMarker()) {
       space_builder.AddBaselineRequest(
-          {NGBaselineAlgorithmType::kFirstLine,
-           IsHorizontalWritingMode(constraint_space_.GetWritingMode())
-               ? kAlphabeticBaseline
-               : kIdeographicBaseline});
+          {NGBaselineAlgorithmType::kFirstLine, Style().GetFontBaseline()});
     }
   }
   space_builder.SetClearanceOffset(clearance_offset);
+  if (child_data.force_clearance)
+    space_builder.SetShouldForceClearance();
 
   LayoutUnit space_available;
   if (ConstraintSpace().HasBlockFragmentation()) {
@@ -1668,7 +1745,6 @@ NGBlockLayoutAlgorithm::CreateConstraintSpaceForChild(
   space_builder.SetFragmentainerSpaceAtBfcStart(space_available);
   space_builder.SetFragmentationType(
       ConstraintSpace().BlockFragmentationType());
-
   return space_builder.ToConstraintSpace(writing_mode);
 }
 
@@ -1734,18 +1810,57 @@ void NGBlockLayoutAlgorithm::PropagateBaselinesFromChildren() {
   }
 }
 
-bool NGBlockLayoutAlgorithm::MaybeUpdateFragmentBfcOffset(
+bool NGBlockLayoutAlgorithm::ResolveBfcOffset(
+    NGPreviousInflowPosition* previous_inflow_position,
     LayoutUnit bfc_block_offset) {
-  if (container_builder_.BfcOffset())
-    return false;
+  if (container_builder_.BfcOffset()) {
+    DCHECK(unpositioned_floats_.IsEmpty());
+    return true;
+  }
 
   NGBfcOffset bfc_offset(ConstraintSpace().BfcOffset().line_offset,
                          bfc_block_offset);
-  if (AdjustToClearance(ConstraintSpace().ClearanceOffset(), &bfc_offset))
+  if (ApplyClearance(ConstraintSpace(), &bfc_offset.block_offset))
     container_builder_.SetIsPushedByFloats();
   container_builder_.SetBfcOffset(bfc_offset);
+  container_builder_.ResetAdjoiningFloatTypes();
+
+  if (NeedsAbortOnBfcOffsetChange())
+    return false;
+
+  // If our BFC offset was updated, we may have been affected by clearance
+  // ourselves. We need to adjust the origin point to accomodate this.
+  bfc_block_offset = bfc_offset.block_offset;
+
+  PositionPendingFloats(bfc_block_offset);
+
+  // Reset the previous inflow position. Clear the margin strut and set the
+  // offset to our block-start border edge.
+  //
+  // We'll now end up at the block-start border edge. If the BFC offset was
+  // resolved due to a block-start border or padding, that must be added by the
+  // caller, for subsequent layout to continue at the right position. Whether we
+  // need to add border+padding or not isn't something we should determine here,
+  // so it must be dealt with as part of initializing the layout algorithm.
+  previous_inflow_position->bfc_block_offset = bfc_block_offset;
+  previous_inflow_position->logical_block_offset = LayoutUnit();
+  previous_inflow_position->margin_strut = NGMarginStrut();
 
   return true;
+}
+
+bool NGBlockLayoutAlgorithm::NeedsAbortOnBfcOffsetChange() const {
+  DCHECK(container_builder_.BfcOffset());
+  if (!abort_when_bfc_offset_updated_)
+    return false;
+  // If no previous BFC offset was set, we need to abort.
+  if (!ConstraintSpace().FloatsBfcOffset())
+    return true;
+  // If the previous BFC offset matches the new one, we can continue. Otherwise,
+  // we need to abort.
+  LayoutUnit old_bfc_block_offset =
+      ConstraintSpace().FloatsBfcOffset()->block_offset;
+  return container_builder_.BfcOffset()->block_offset != old_bfc_block_offset;
 }
 
 void NGBlockLayoutAlgorithm::PositionPendingFloats(
@@ -1860,8 +1975,9 @@ void NGBlockLayoutAlgorithm::PositionOrPropagateListMarker(
       return;
     container_builder_.SetUnpositionedListMarker(NGUnpositionedListMarker());
   }
-  if (list_marker.AddToBox(constraint_space_, *layout_result.PhysicalFragment(),
-                           content_offset, &container_builder_))
+  if (list_marker.AddToBox(constraint_space_, Style().GetFontBaseline(),
+                           *layout_result.PhysicalFragment(), content_offset,
+                           &container_builder_))
     return;
 
   // If the list marker could not be positioned against this child because it
@@ -1877,7 +1993,7 @@ void NGBlockLayoutAlgorithm::PositionListMarkerWithoutLineBoxes() {
   // Position the list marker without aligning to line boxes.
   LayoutUnit marker_block_size =
       container_builder_.UnpositionedListMarker().AddToBoxWithoutLineBoxes(
-          constraint_space_, &container_builder_);
+          constraint_space_, Style().GetFontBaseline(), &container_builder_);
   container_builder_.SetUnpositionedListMarker(NGUnpositionedListMarker());
 
   // Whether the list marker should affect the block size or not is not

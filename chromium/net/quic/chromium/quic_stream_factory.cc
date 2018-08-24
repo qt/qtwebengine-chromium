@@ -45,19 +45,19 @@
 #include "net/quic/chromium/quic_crypto_client_stream_factory.h"
 #include "net/quic/chromium/quic_http_stream.h"
 #include "net/quic/chromium/quic_server_info.h"
-#include "net/quic/core/crypto/proof_verifier.h"
-#include "net/quic/core/crypto/quic_random.h"
-#include "net/quic/core/quic_client_promised_info.h"
-#include "net/quic/core/quic_connection.h"
-#include "net/quic/core/tls_client_handshaker.h"
-#include "net/quic/platform/api/quic_clock.h"
-#include "net/quic/platform/api/quic_flags.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/next_proto.h"
 #include "net/socket/socket_performance_watcher.h"
 #include "net/socket/socket_performance_watcher_factory.h"
 #include "net/socket/udp_client_socket.h"
 #include "net/ssl/token_binding.h"
+#include "net/third_party/quic/core/crypto/proof_verifier.h"
+#include "net/third_party/quic/core/crypto/quic_random.h"
+#include "net/third_party/quic/core/quic_client_promised_info.h"
+#include "net/third_party/quic/core/quic_connection.h"
+#include "net/third_party/quic/core/tls_client_handshaker.h"
+#include "net/third_party/quic/platform/api/quic_clock.h"
+#include "net/third_party/quic/platform/api/quic_flags.h"
 #include "third_party/boringssl/src/include/openssl/aead.h"
 #include "url/gurl.h"
 #include "url/url_constants.h"
@@ -728,7 +728,6 @@ QuicStreamFactory::QuicStreamFactory(
     int reduced_ping_timeout_seconds,
     int max_time_before_crypto_handshake_seconds,
     int max_idle_time_before_crypto_handshake_seconds,
-    bool connect_using_default_network,
     bool migrate_sessions_on_network_change,
     bool migrate_sessions_early,
     bool migrate_sessions_on_network_change_v2,
@@ -742,6 +741,7 @@ QuicStreamFactory::QuicStreamFactory(
     const QuicTagVector& connection_options,
     const QuicTagVector& client_connection_options,
     bool enable_token_binding,
+    bool enable_channel_id,
     bool enable_socket_recv_optimization)
     : require_confirmation_(true),
       net_log_(net_log),
@@ -778,15 +778,13 @@ QuicStreamFactory::QuicStreamFactory(
       yield_after_packets_(kQuicYieldAfterPacketsRead),
       yield_after_duration_(QuicTime::Delta::FromMilliseconds(
           kQuicYieldAfterDurationMilliseconds)),
-      connect_using_default_network_(
-          connect_using_default_network &&
-          NetworkChangeNotifier::AreNetworkHandlesSupported()),
       close_sessions_on_ip_change_(close_sessions_on_ip_change),
       migrate_sessions_on_network_change_v2_(
           migrate_sessions_on_network_change_v2 &&
           NetworkChangeNotifier::AreNetworkHandlesSupported()),
       migrate_sessions_early_v2_(migrate_sessions_early_v2 &&
                                  migrate_sessions_on_network_change_v2_),
+      default_network_(NetworkChangeNotifier::kInvalidNetworkHandle),
       max_time_on_non_default_network_(max_time_on_non_default_network),
       max_migrations_to_non_default_network_on_path_degrading_(
           max_migrations_to_non_default_network_on_path_degrading),
@@ -819,7 +817,7 @@ QuicStreamFactory::QuicStreamFactory(
   crypto_config_.AddCanonicalSuffix(".googleusercontent.com");
   // TODO(rtenneti): http://crbug.com/487355. Temporary fix for b/20760730 until
   // channel_id_service is supported in cronet.
-  if (channel_id_service) {
+  if (enable_channel_id && channel_id_service) {
     crypto_config_.SetChannelIDSource(
         new ChannelIDSourceChromium(channel_id_service));
   }
@@ -1287,6 +1285,7 @@ void QuicStreamFactory::OnNetworkMadeDefault(NetworkHandle network) {
       !migrate_sessions_on_network_change_v2_)
     return;
   DCHECK_NE(NetworkChangeNotifier::kInvalidNetworkHandle, network);
+  default_network_ = network;
   ScopedConnectionMigrationEventLog scoped_event_log(net_log_,
                                                      "OnNetworkMadeDefault");
 
@@ -1401,8 +1400,6 @@ int QuicStreamFactory::ConfigureSocket(DatagramClientSocket* socket,
     } else {
       rv = socket->ConnectUsingNetwork(network, addr);
     }
-  } else if (connect_using_default_network_) {
-    rv = socket->ConnectUsingDefaultNetwork(addr);
   } else {
     rv = socket->Connect(addr);
   }
@@ -1473,6 +1470,18 @@ int QuicStreamFactory::CreateSession(const QuicSessionAliasKey& key,
                            key.session_key().socket_tag());
   if (rv != OK)
     return rv;
+
+  if (migrate_sessions_on_network_change_v2_) {
+    if (default_network_ == NetworkChangeNotifier::kInvalidNetworkHandle) {
+      // QuicStreamFactory may miss the default network signal before its
+      // creation, update |default_network_| when the first socket is bound
+      // to the default network.
+      default_network_ = socket->GetBoundNetwork();
+    } else {
+      UMA_HISTOGRAM_BOOLEAN("Net.QuicStreamFactory.DefaultNetworkMatch",
+                            default_network_ == socket->GetBoundNetwork());
+    }
+  }
 
   if (!helper_.get()) {
     helper_.reset(new QuicChromiumConnectionHelper(clock_, random_generator_));
@@ -1712,11 +1721,10 @@ void QuicStreamFactory::ProcessGoingAwaySession(
   HistogramBrokenAlternateProtocolLocation(
       BROKEN_ALTERNATE_PROTOCOL_LOCATION_QUIC_STREAM_FACTORY);
 
-  // Since the session was active, there's no longer an
-  // HttpStreamFactoryImpl::Job running which can mark it broken, unless the TCP
-  // job also fails. So to avoid not using QUIC when we otherwise could, we mark
-  // it as recently broken, which means that 0-RTT will be disabled but we'll
-  // still race.
+  // Since the session was active, there's no longer an HttpStreamFactory::Job
+  // running which can mark it broken, unless the TCP job also fails. So to
+  // avoid not using QUIC when we otherwise could, we mark it as recently
+  // broken, which means that 0-RTT will be disabled but we'll still race.
   http_server_properties_->MarkAlternativeServiceRecentlyBroken(
       alternative_service);
 }

@@ -17,9 +17,11 @@
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/bookmarks/common/bookmark_pref_names.h"
 #include "components/browsing_data/core/pref_names.h"
+#include "components/component_updater/pref_names.h"
 #include "components/content_settings/core/common/pref_names.h"
 #include "components/drive/drive_pref_names.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
+#include "components/payments/core/payment_prefs.h"
 #include "components/prefs/pref_service.h"
 #include "components/proxy_config/proxy_config_pref_names.h"
 #include "components/safe_browsing/common/safe_browsing_prefs.h"
@@ -37,6 +39,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "ash/public/cpp/ash_pref_names.h"  // nogncheck
+#include "chrome/browser/chromeos/crostini/crostini_pref_names.h"
 #include "chrome/browser/chromeos/ownership/owner_settings_service_chromeos.h"
 #include "chrome/browser/chromeos/ownership/owner_settings_service_chromeos_factory.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
@@ -80,6 +83,11 @@ bool IsSettingReadOnly(const std::string& pref_name) {
   if (pref_name == ash::prefs::kEnableAutoScreenLock)
     return true;
 #endif
+#if defined(OS_WIN)
+  // Don't allow user to change sw_reporter preferences.
+  if (pref_name == prefs::kSwReporterEnabled)
+    return true;
+#endif
   return false;
 }
 
@@ -109,6 +117,8 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
   (*s_whitelist)[autofill::prefs::kAutofillEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[autofill::prefs::kAutofillCreditCardEnabled] =
+      settings_api::PrefType::PREF_TYPE_BOOLEAN;
+  (*s_whitelist)[payments::kCanMakePaymentEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[bookmarks::prefs::kShowBookmarkBar] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
@@ -204,6 +214,8 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
 #if defined(OS_CHROMEOS)
   (*s_whitelist)[::prefs::kLanguageImeMenuActivated] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
+  (*s_whitelist)[::prefs::kAllowedLocales] =
+      settings_api::PrefType::PREF_TYPE_LIST;
 #endif
 
   // Search page.
@@ -285,6 +297,8 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[ash::prefs::kShouldAlwaysShowAccessibilityMenu] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
+  (*s_whitelist)[ash::prefs::kAccessibilityDictationEnabled] =
+      settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[ash::prefs::kAccessibilityFocusHighlightEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[ash::prefs::kAccessibilityHighContrastEnabled] =
@@ -306,6 +320,20 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
   (*s_whitelist)[ash::prefs::kAccessibilityVirtualKeyboardEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[ash::prefs::kAccessibilityMonoAudioEnabled] =
+      settings_api::PrefType::PREF_TYPE_BOOLEAN;
+
+  // Text to Speech.
+  (*s_whitelist)[::prefs::kTextToSpeechLangToVoiceName] =
+      settings_api::PrefType::PREF_TYPE_DICTIONARY;
+  (*s_whitelist)[::prefs::kTextToSpeechRate] =
+      settings_api::PrefType::PREF_TYPE_NUMBER;
+  (*s_whitelist)[::prefs::kTextToSpeechPitch] =
+      settings_api::PrefType::PREF_TYPE_NUMBER;
+  (*s_whitelist)[::prefs::kTextToSpeechVolume] =
+      settings_api::PrefType::PREF_TYPE_NUMBER;
+
+  // Crostini
+  (*s_whitelist)[crostini::prefs::kCrostiniEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
 
   // Android Apps.
@@ -428,6 +456,10 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
   (*s_whitelist)[arc::prefs::kSmsConnectEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
 
+  // Native Printing settings.
+  (*s_whitelist)[::prefs::kUserNativePrintersAllowed] =
+      settings_api::PrefType::PREF_TYPE_BOOLEAN;
+
 #else
   (*s_whitelist)[::prefs::kAcceptLanguages] =
       settings_api::PrefType::PREF_TYPE_STRING;
@@ -463,6 +495,12 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
   // Media Remoting settings.
   (*s_whitelist)[::prefs::kMediaRouterMediaRemotingEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
+
+#if defined(OS_WIN)
+  // SwReporter settings.
+  (*s_whitelist)[::prefs::kSwReporterEnabled] =
+      settings_api::PrefType::PREF_TYPE_BOOLEAN;
+#endif
 
   return *s_whitelist;
 }

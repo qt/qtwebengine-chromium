@@ -766,4 +766,54 @@ SelectionAdjuster::AdjustSelectionToAvoidCrossingEditingBoundaries(
   return EditingBoundaryAdjuster::AdjustSelection(selection);
 }
 
+class SelectionTypeAdjuster final {
+  STATIC_ONLY(SelectionTypeAdjuster);
+
+ public:
+  template <typename Strategy>
+  static SelectionTemplate<Strategy> AdjustSelection(
+      const SelectionTemplate<Strategy>& selection) {
+    if (selection.IsNone())
+      return selection;
+    const EphemeralRangeTemplate<Strategy>& range = selection.ComputeRange();
+    DCHECK(!NeedsLayoutTreeUpdate(range.StartPosition())) << range;
+    if (range.IsCollapsed() ||
+        // TODO(editing-dev): Consider this canonicalization is really needed.
+        MostBackwardCaretPosition(range.StartPosition()) ==
+            MostBackwardCaretPosition(range.EndPosition())) {
+      return typename SelectionTemplate<Strategy>::Builder()
+          .Collapse(PositionWithAffinityTemplate<Strategy>(
+              range.StartPosition(), selection.Affinity()))
+          .Build();
+    }
+    // "Constrain" the selection to be the smallest equivalent range of
+    // nodes. This is a somewhat arbitrary choice, but experience shows that
+    // it is useful to make to make the selection "canonical" (if only for
+    // purposes of comparing selections). This is an ideal point of the code
+    // to do this operation, since all selection changes that result in a
+    // RANGE come through here before anyone uses it.
+    // TODO(editing-dev): Consider this canonicalization is really needed.
+    const EphemeralRangeTemplate<Strategy> minimal_range(
+        MostForwardCaretPosition(range.StartPosition()),
+        MostBackwardCaretPosition(range.EndPosition()));
+    if (selection.IsBaseFirst()) {
+      return typename SelectionTemplate<Strategy>::Builder()
+          .SetAsForwardSelection(minimal_range)
+          .Build();
+    }
+    return typename SelectionTemplate<Strategy>::Builder()
+        .SetAsBackwardSelection(minimal_range)
+        .Build();
+  }
+};
+
+SelectionInDOMTree SelectionAdjuster::AdjustSelectionType(
+    const SelectionInDOMTree& selection) {
+  return SelectionTypeAdjuster::AdjustSelection(selection);
+}
+SelectionInFlatTree SelectionAdjuster::AdjustSelectionType(
+    const SelectionInFlatTree& selection) {
+  return SelectionTypeAdjuster::AdjustSelection(selection);
+}
+
 }  // namespace blink

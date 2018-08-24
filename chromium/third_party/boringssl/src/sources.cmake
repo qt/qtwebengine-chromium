@@ -39,6 +39,10 @@ set(
   crypto/cipher_extra/test/nist_cavp/tdes_cbc.txt
   crypto/cipher_extra/test/nist_cavp/tdes_ecb.txt
   crypto/curve25519/ed25519_tests.txt
+  crypto/cmac/cavp_3des_cmac_tests.txt
+  crypto/cmac/cavp_aes128_cmac_tests.txt
+  crypto/cmac/cavp_aes192_cmac_tests.txt
+  crypto/cmac/cavp_aes256_cmac_tests.txt
   crypto/ecdh/ecdh_tests.txt
   crypto/evp/evp_tests.txt
   crypto/evp/scrypt_tests.txt
@@ -59,4 +63,21 @@ set(
   crypto/x509/some_names1.pem
   crypto/x509/some_names2.pem
   crypto/x509/some_names3.pem
+  third_party/wycheproof_testvectors/aes_cbc_pkcs5_test.txt
+  third_party/wycheproof_testvectors/aes_cmac_test.txt
+  third_party/wycheproof_testvectors/aes_gcm_siv_test.txt
+  third_party/wycheproof_testvectors/aes_gcm_test.txt
+  third_party/wycheproof_testvectors/chacha20_poly1305_test.txt
+  third_party/wycheproof_testvectors/dsa_test.txt
+  third_party/wycheproof_testvectors/ecdh_test.txt
+  third_party/wycheproof_testvectors/ecdsa_secp224r1_sha224_test.txt
+  third_party/wycheproof_testvectors/ecdsa_secp224r1_sha256_test.txt
+  third_party/wycheproof_testvectors/ecdsa_secp256r1_sha256_test.txt
+  third_party/wycheproof_testvectors/ecdsa_secp384r1_sha384_test.txt
+  third_party/wycheproof_testvectors/ecdsa_secp384r1_sha512_test.txt
+  third_party/wycheproof_testvectors/ecdsa_secp521r1_sha512_test.txt
+  third_party/wycheproof_testvectors/eddsa_test.txt
+  third_party/wycheproof_testvectors/kw_test.txt
+  third_party/wycheproof_testvectors/rsa_signature_test.txt
+  third_party/wycheproof_testvectors/x25519_test.txt
 )

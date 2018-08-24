@@ -328,34 +328,6 @@ void GLES2Implementation::CompileShader(GLuint shader) {
   CheckGLError();
 }
 
-void GLES2Implementation::CopyBufferSubData(GLenum readtarget,
-                                            GLenum writetarget,
-                                            GLintptr readoffset,
-                                            GLintptr writeoffset,
-                                            GLsizeiptr size) {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glCopyBufferSubData("
-                     << GLES2Util::GetStringBufferTarget(readtarget) << ", "
-                     << GLES2Util::GetStringBufferTarget(writetarget) << ", "
-                     << readoffset << ", " << writeoffset << ", " << size
-                     << ")");
-  if (readoffset < 0) {
-    SetGLError(GL_INVALID_VALUE, "glCopyBufferSubData", "readoffset < 0");
-    return;
-  }
-  if (writeoffset < 0) {
-    SetGLError(GL_INVALID_VALUE, "glCopyBufferSubData", "writeoffset < 0");
-    return;
-  }
-  if (size < 0) {
-    SetGLError(GL_INVALID_VALUE, "glCopyBufferSubData", "size < 0");
-    return;
-  }
-  helper_->CopyBufferSubData(readtarget, writetarget, readoffset, writeoffset,
-                             size);
-  CheckGLError();
-}
-
 void GLES2Implementation::CopyTexImage2D(GLenum target,
                                          GLint level,
                                          GLenum internalformat,
@@ -3312,7 +3284,8 @@ void GLES2Implementation::ScheduleOverlayPlaneCHROMIUM(
     GLfloat uv_y,
     GLfloat uv_width,
     GLfloat uv_height,
-    GLboolean enable_blend) {
+    GLboolean enable_blend,
+    GLuint gpu_fence_id) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG(
       "[" << GetLogPrefix() << "] glScheduleOverlayPlaneCHROMIUM("
@@ -3320,11 +3293,12 @@ void GLES2Implementation::ScheduleOverlayPlaneCHROMIUM(
           << ", " << overlay_texture_id << ", " << bounds_x << ", " << bounds_y
           << ", " << bounds_width << ", " << bounds_height << ", " << uv_x
           << ", " << uv_y << ", " << uv_width << ", " << uv_height << ", "
-          << GLES2Util::GetStringBool(enable_blend) << ")");
-  helper_->ScheduleOverlayPlaneCHROMIUM(plane_z_order, plane_transform,
-                                        overlay_texture_id, bounds_x, bounds_y,
-                                        bounds_width, bounds_height, uv_x, uv_y,
-                                        uv_width, uv_height, enable_blend);
+          << GLES2Util::GetStringBool(enable_blend) << ", " << gpu_fence_id
+          << ")");
+  helper_->ScheduleOverlayPlaneCHROMIUM(
+      plane_z_order, plane_transform, overlay_texture_id, bounds_x, bounds_y,
+      bounds_width, bounds_height, uv_x, uv_y, uv_width, uv_height,
+      enable_blend, gpu_fence_id);
   CheckGLError();
 }
 
@@ -3573,33 +3547,6 @@ void GLES2Implementation::SetEnableDCLayersCHROMIUM(GLboolean enabled) {
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glSetEnableDCLayersCHROMIUM("
                      << GLES2Util::GetStringBool(enabled) << ")");
   helper_->SetEnableDCLayersCHROMIUM(enabled);
-  CheckGLError();
-}
-
-void GLES2Implementation::BeginRasterCHROMIUM(
-    GLuint texture_id,
-    GLuint sk_color,
-    GLuint msaa_sample_count,
-    GLboolean can_use_lcd_text,
-    GLint color_type,
-    GLuint color_space_transfer_cache_id) {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG(
-      "[" << GetLogPrefix() << "] glBeginRasterCHROMIUM(" << texture_id << ", "
-          << sk_color << ", " << msaa_sample_count << ", "
-          << GLES2Util::GetStringBool(can_use_lcd_text) << ", " << color_type
-          << ", " << color_space_transfer_cache_id << ")");
-  helper_->BeginRasterCHROMIUM(texture_id, sk_color, msaa_sample_count,
-                               can_use_lcd_text, color_type,
-                               color_space_transfer_cache_id);
-  CheckGLError();
-}
-
-void GLES2Implementation::EndRasterCHROMIUM() {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glEndRasterCHROMIUM("
-                     << ")");
-  helper_->EndRasterCHROMIUM();
   CheckGLError();
 }
 

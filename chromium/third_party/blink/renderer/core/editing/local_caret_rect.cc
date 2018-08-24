@@ -45,56 +45,6 @@ namespace blink {
 
 namespace {
 
-// Returns true if |layout_object| and |offset| points after line end.
-template <typename Strategy>
-bool NeedsLineEndAdjustment(
-    const PositionWithAffinityTemplate<Strategy>& adjusted) {
-  const PositionTemplate<Strategy>& position = adjusted.GetPosition();
-  const LayoutObject& layout_object = *position.AnchorNode()->GetLayoutObject();
-  if (!layout_object.IsText())
-    return false;
-  const LayoutText& layout_text = ToLayoutText(layout_object);
-  if (layout_text.IsBR())
-    return position.IsAfterAnchor();
-  // For normal text nodes.
-  if (!layout_text.Style()->PreserveNewline())
-    return false;
-  if (!layout_text.TextLength() ||
-      layout_text.CharacterAt(layout_text.TextLength() - 1) != '\n')
-    return false;
-  if (position.IsAfterAnchor())
-    return true;
-  return position.IsOffsetInAnchor() &&
-         position.OffsetInContainerNode() ==
-             static_cast<int>(layout_text.TextLength());
-}
-
-// Returns the first InlineBoxPosition at next line of last InlineBoxPosition
-// in |layout_object| if it exists to avoid making InlineBoxPosition at end of
-// line.
-template <typename Strategy>
-InlineBoxPosition NextLinePositionOf(
-    const PositionWithAffinityTemplate<Strategy>& adjusted) {
-  const PositionTemplate<Strategy>& position = adjusted.GetPosition();
-  const LayoutText& layout_text =
-      ToLayoutTextOrDie(*position.AnchorNode()->GetLayoutObject());
-  InlineTextBox* const last = layout_text.LastTextBox();
-  if (!last)
-    return InlineBoxPosition();
-  const RootInlineBox& root = last->Root();
-  for (const RootInlineBox* runner = root.NextRootBox(); runner;
-       runner = runner->NextRootBox()) {
-    InlineBox* const inline_box = runner->FirstLeafChild();
-    if (!inline_box)
-      continue;
-
-    return AdjustInlineBoxPositionForTextDirection(
-        inline_box, inline_box->CaretMinOffset(),
-        layout_text.Style()->GetUnicodeBidi());
-  }
-  return InlineBoxPosition();
-}
-
 template <typename Strategy>
 LocalCaretRect LocalCaretRectOfPositionTemplate(
     const PositionWithAffinityTemplate<Strategy>& position,
@@ -110,9 +60,8 @@ LocalCaretRect LocalCaretRectOfPositionTemplate(
       ComputeInlineAdjustedPosition(position);
 
   if (adjusted.IsNotNull()) {
-    if (const LayoutBlockFlow* context =
-            NGInlineFormattingContextOf(adjusted.GetPosition()))
-      return ComputeNGLocalCaretRect(*context, adjusted);
+    if (NGInlineFormattingContextOf(adjusted.GetPosition()))
+      return ComputeNGLocalCaretRect(adjusted);
 
     // TODO(editing-dev): This DCHECK is for ensuring the correctness of
     // breaking |ComputeInlineBoxPosition| into |ComputeInlineAdjustedPosition|
@@ -123,9 +72,7 @@ LocalCaretRect LocalCaretRectOfPositionTemplate(
     DCHECK_EQ(PrimaryDirectionOf(*position.AnchorNode()),
               PrimaryDirectionOf(*adjusted.AnchorNode()));
     const InlineBoxPosition& box_position =
-        NeedsLineEndAdjustment(adjusted)
-            ? NextLinePositionOf(adjusted)
-            : ComputeInlineBoxPositionForInlineAdjustedPosition(adjusted);
+        ComputeInlineBoxPositionForInlineAdjustedPosition(adjusted);
 
     if (box_position.inline_box) {
       const LayoutObject* box_layout_object =
@@ -162,12 +109,11 @@ LocalCaretRect LocalSelectionRectOfPositionTemplate(
   if (adjusted.IsNull())
     return LocalCaretRect();
 
-  if (const LayoutBlockFlow* context =
-          NGInlineFormattingContextOf(adjusted.GetPosition())) {
+  if (NGInlineFormattingContextOf(adjusted.GetPosition())) {
     // TODO(editing-dev): Use selection height instead of caret height, or
     // decide if we need to keep the distinction between caret height and
     // selection height in NG.
-    return ComputeNGLocalCaretRect(*context, adjusted);
+    return ComputeNGLocalCaretRect(adjusted);
   }
 
   // TODO(editing-dev): This DCHECK is for ensuring the correctness of

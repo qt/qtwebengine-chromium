@@ -6,7 +6,7 @@
 
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 
-namespace ntp_snippets {
+namespace contextual_suggestions {
 
 ContextualSuggestionsFetcherImpl::ContextualSuggestionsFetcherImpl(
     const scoped_refptr<network::SharedURLLoaderFactory>& loader_factory,
@@ -35,13 +35,12 @@ void ContextualSuggestionsFetcherImpl::FetchContextualSuggestionsClusters(
 void ContextualSuggestionsFetcherImpl::FetchFinished(
     ContextualSuggestionsFetch* fetch,
     FetchClustersCallback callback,
-    std::string peek_text,
-    std::vector<Cluster> clusters) {
+    ContextualSuggestionsResult result) {
   auto fetch_iterator = pending_requests_.find(fetch);
   CHECK(fetch_iterator != pending_requests_.end());
   pending_requests_.erase(fetch_iterator);
 
-  std::move(callback).Run(peek_text, std::move(clusters));
+  std::move(callback).Run(std::move(result));
 }
 
-}  // namespace ntp_snippets
+}  // namespace contextual_suggestions

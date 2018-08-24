@@ -37,9 +37,7 @@
 #include "base/trace_event/memory_dump_manager.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
-#include "third_party/blink/public/common/origin_trials/trial_policy.h"
 #include "third_party/blink/public/platform/interface_provider.h"
-#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_cache_storage.h"
 #include "third_party/blink/public/platform/modules/webmidi/web_midi_accessor.h"
 #include "third_party/blink/public/platform/web_canvas_capture_handler.h"
 #include "third_party/blink/public/platform/web_gesture_curve.h"
@@ -50,11 +48,9 @@
 #include "third_party/blink/public/platform/web_prerendering_support.h"
 #include "third_party/blink/public/platform/web_rtc_certificate_generator.h"
 #include "third_party/blink/public/platform/web_rtc_peer_connection_handler.h"
-#include "third_party/blink/public/platform/web_socket_handshake_throttle.h"
 #include "third_party/blink/public/platform/web_storage_namespace.h"
 #include "third_party/blink/public/platform/web_thread.h"
-#include "third_party/blink/public/platform/web_trial_token_validator.h"
-#include "third_party/blink/renderer/platform/exported/web_clipboard_impl.h"
+#include "third_party/blink/public/platform/websocket_handshake_throttle.h"
 #include "third_party/blink/renderer/platform/font_family_names.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache_memory_dump_provider.h"
 #include "third_party/blink/renderer/platform/heap/blink_gc_memory_dump_provider.h"
@@ -205,11 +201,6 @@ std::unique_ptr<WebStorageNamespace> Platform::CreateSessionStorageNamespace(
   return nullptr;
 }
 
-std::unique_ptr<WebServiceWorkerCacheStorage> Platform::CreateCacheStorage(
-    service_manager::InterfaceProvider* mojo_provider) {
-  return nullptr;
-}
-
 std::unique_ptr<WebThread> Platform::CreateThread(
     const WebThreadCreationParams& params) {
   return nullptr;
@@ -223,7 +214,6 @@ std::unique_ptr<WebGraphicsContext3DProvider>
 Platform::CreateOffscreenGraphicsContext3DProvider(
     const Platform::ContextAttributes&,
     const WebURL& top_document_url,
-    WebGraphicsContext3DProvider* share_context,
     Platform::GraphicsInfo*) {
   return nullptr;
 };
@@ -277,16 +267,6 @@ Platform::CreateWebSocketHandshakeThrottle() {
 std::unique_ptr<WebImageCaptureFrameGrabber>
 Platform::CreateImageCaptureFrameGrabber() {
   return nullptr;
-}
-
-std::unique_ptr<WebTrialTokenValidator> Platform::CreateTrialTokenValidator() {
-  return nullptr;
-}
-
-// TODO(slangley): Remove this once we can get pepper to use mojo directly.
-WebClipboard* Platform::Clipboard() {
-  DEFINE_STATIC_LOCAL(WebClipboardImpl, clipboard, ());
-  return &clipboard;
 }
 
 }  // namespace blink

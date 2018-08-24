@@ -8,6 +8,8 @@
 #include "base/test/mock_callback.h"
 #include "base/test/scoped_task_environment.h"
 #include "components/mirroring/service/fake_video_capture_host.h"
+#include "media/base/video_frame.h"
+#include "media/base/video_frame_metadata.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -26,8 +28,7 @@ media::mojom::VideoFrameInfoPtr GetVideoFrameInfo(const gfx::Size& size) {
                         base::TimeTicks());
   return media::mojom::VideoFrameInfo::New(
       base::TimeDelta(), metadata.GetInternalValues().Clone(),
-      media::PIXEL_FORMAT_I420, media::VideoPixelStorage::CPU, size,
-      gfx::Rect(size));
+      media::PIXEL_FORMAT_I420, size, gfx::Rect(size));
 }
 
 }  // namespace
@@ -38,7 +39,8 @@ class VideoCaptureClientTest : public ::testing::Test {
     media::mojom::VideoCaptureHostPtr host;
     host_impl_ =
         std::make_unique<FakeVideoCaptureHost>(mojo::MakeRequest(&host));
-    client_ = std::make_unique<VideoCaptureClient>(std::move(host));
+    client_ = std::make_unique<VideoCaptureClient>(media::VideoCaptureParams(),
+                                                   std::move(host));
   }
 
   ~VideoCaptureClientTest() override {
@@ -79,7 +81,12 @@ TEST_F(VideoCaptureClientTest, Basic) {
     run_loop.Run();
   }
   scoped_task_environment_.RunUntilIdle();
-  client_->OnBufferCreated(0, mojo::SharedBufferHandle::Create(100000));
+
+  media::mojom::VideoBufferHandlePtr buffer_handle =
+      media::mojom::VideoBufferHandle::New();
+  buffer_handle->set_shared_buffer_handle(
+      mojo::SharedBufferHandle::Create(100000));
+  client_->OnNewBuffer(0, std::move(buffer_handle));
   scoped_task_environment_.RunUntilIdle();
   {
     base::RunLoop run_loop;

@@ -7,13 +7,16 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/feature_list.h"
 #include "build/build_config.h"
 #include "gpu/ipc/service/gpu_channel.h"
 #include "media/base/audio_decoder.h"
 #include "media/base/cdm_factory.h"
+#include "media/base/media_switches.h"
 #include "media/base/video_decoder.h"
 #include "media/gpu/buildflags.h"
 #include "media/gpu/ipc/service/media_gpu_channel_manager.h"
+#include "media/gpu/ipc/service/vda_video_decoder.h"
 
 #if defined(OS_ANDROID)
 #include "base/memory/ptr_util.h"
@@ -61,7 +64,7 @@ std::unique_ptr<MediaDrmStorage> CreateMediaDrmStorage(
 }
 #endif  // defined(OS_ANDROID)
 
-#if defined(OS_ANDROID) || defined(OS_WIN)
+#if defined(OS_ANDROID) || defined(OS_MACOSX) || defined(OS_WIN)
 gpu::CommandBufferStub* GetCommandBufferStub(
     base::WeakPtr<MediaGpuChannelManager> media_gpu_channel_manager,
     base::UnguessableToken channel_token,
@@ -82,11 +85,13 @@ gpu::CommandBufferStub* GetCommandBufferStub(
 
 GpuMojoMediaClient::GpuMojoMediaClient(
     const gpu::GpuPreferences& gpu_preferences,
+    const gpu::GpuDriverBugWorkarounds& gpu_workarounds,
     scoped_refptr<base::SingleThreadTaskRunner> gpu_task_runner,
     base::WeakPtr<MediaGpuChannelManager> media_gpu_channel_manager,
     AndroidOverlayMojoFactoryCB android_overlay_factory_cb,
     CdmProxyFactoryCB cdm_proxy_factory_cb)
     : gpu_preferences_(gpu_preferences),
+      gpu_workarounds_(gpu_workarounds),
       gpu_task_runner_(std::move(gpu_task_runner)),
       media_gpu_channel_manager_(std::move(media_gpu_channel_manager)),
       android_overlay_factory_cb_(std::move(android_overlay_factory_cb)),
@@ -109,7 +114,8 @@ std::unique_ptr<VideoDecoder> GpuMojoMediaClient::CreateVideoDecoder(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
     MediaLog* media_log,
     mojom::CommandBufferIdPtr command_buffer_id,
-    RequestOverlayInfoCB request_overlay_info_cb) {
+    RequestOverlayInfoCB request_overlay_info_cb,
+    const gfx::ColorSpace& target_color_space) {
   // Both MCVD and D3D11 VideoDecoders need a command buffer.
   if (!command_buffer_id)
     return nullptr;
@@ -126,9 +132,19 @@ std::unique_ptr<VideoDecoder> GpuMojoMediaClient::CreateVideoDecoder(
       android_overlay_factory_cb_, std::move(request_overlay_info_cb),
       std::make_unique<VideoFrameFactoryImpl>(gpu_task_runner_,
                                               std::move(get_stub_cb)));
-#elif defined(OS_WIN)
-  return std::make_unique<D3D11VideoDecoder>(
-      gpu_task_runner_,
+#elif defined(OS_MACOSX) || defined(OS_WIN)
+#if defined(OS_WIN)
+  if (base::FeatureList::IsEnabled(kD3D11VideoDecoder)) {
+    return D3D11VideoDecoder::Create(
+        gpu_task_runner_, gpu_preferences_, gpu_workarounds_,
+        base::BindRepeating(&GetCommandBufferStub, media_gpu_channel_manager_,
+                            command_buffer_id->channel_token,
+                            command_buffer_id->route_id));
+  }
+#endif  // defined(OS_WIN)
+  return VdaVideoDecoder::Create(
+      task_runner, gpu_task_runner_, media_log, target_color_space,
+      gpu_preferences_, gpu_workarounds_,
       base::BindRepeating(&GetCommandBufferStub, media_gpu_channel_manager_,
                           command_buffer_id->channel_token,
                           command_buffer_id->route_id));

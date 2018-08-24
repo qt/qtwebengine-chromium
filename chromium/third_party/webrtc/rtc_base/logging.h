@@ -55,9 +55,9 @@
 #include <CoreServices/CoreServices.h>
 #endif
 
-#include "rtc_base/basictypes.h"
 #include "rtc_base/constructormagic.h"
 #include "rtc_base/deprecation.h"
+#include "rtc_base/system/no_inline.h"
 #include "rtc_base/thread_annotations.h"
 
 #if !defined(NDEBUG) || defined(DLOG_ALWAYS_ON)
@@ -116,16 +116,30 @@ class LogSink {
  public:
   LogSink() {}
   virtual ~LogSink() {}
+  virtual void OnLogMessage(const std::string& msg,
+                            LoggingSeverity severity,
+                            const char* tag);
   virtual void OnLogMessage(const std::string& message) = 0;
 };
 
 class LogMessage {
  public:
+  LogMessage(const char* file, int line, LoggingSeverity sev);
+
+  // Same as the above, but using a compile-time constant for the logging
+  // severity. This saves space at the call site, since passing an empty struct
+  // is generally the same as not passing an argument at all.
+  template <LoggingSeverity S>
+  RTC_NO_INLINE LogMessage(const char* file,
+                           int line,
+                           std::integral_constant<LoggingSeverity, S>)
+      : LogMessage(file, line, S) {}
+
   LogMessage(const char* file,
              int line,
              LoggingSeverity sev,
-             LogErrorContext err_ctx = ERRCTX_NONE,
-             int err = 0);
+             LogErrorContext err_ctx,
+             int err);
 
 #if defined(WEBRTC_ANDROID)
   LogMessage(const char* file, int line, LoggingSeverity sev, const char* tag);
@@ -141,6 +155,16 @@ class LogMessage {
   ~LogMessage();
 
   static bool Loggable(LoggingSeverity sev);
+
+  // Same as the above, but using a template argument instead of a function
+  // argument. (When the logging severity is statically known, passing it as a
+  // template argument instead of as a function argument saves space at the
+  // call site.)
+  template <LoggingSeverity S>
+  RTC_NO_INLINE static bool Loggable() {
+    return Loggable(S);
+  }
+
   std::ostream& stream();
 
   // Returns the time at which this function was called for the first time.
@@ -221,7 +245,7 @@ class LogMessage {
   LoggingSeverity severity_;
 
 #if defined(WEBRTC_ANDROID)
-  // The Android debug output tag.
+  // The default Android debug output tag.
   const char* tag_ = "libjingle";
 #endif
 
@@ -267,9 +291,13 @@ class LogMessageVoidify {
     ? (void) 0 \
     : rtc::LogMessageVoidify() &
 
-#define RTC_LOG(sev) \
-  RTC_LOG_SEVERITY_PRECONDITION(rtc::sev) \
-    rtc::LogMessage(__FILE__, __LINE__, rtc::sev).stream()
+#define RTC_LOG_SEVERITY_PRECONDITION_C(sev) \
+  !(rtc::LogMessage::Loggable<rtc::sev>()) ? (void)0 : rtc::LogMessageVoidify()&
+#define RTC_LOG(sev)                                                        \
+  RTC_LOG_SEVERITY_PRECONDITION_C(sev)                                      \
+  rtc::LogMessage(__FILE__, __LINE__,                                       \
+                  std::integral_constant<rtc::LoggingSeverity, rtc::sev>()) \
+      .stream()
 
 // The _V version is for when a variable is passed in.  It doesn't do the
 // namespace concatenation.
@@ -296,11 +324,11 @@ inline bool LogCheckLevel(LoggingSeverity sev) {
   return (LogMessage::GetMinLogSeverity() <= sev);
 }
 
-#define RTC_LOG_E(sev, ctx, err, ...) \
-  RTC_LOG_SEVERITY_PRECONDITION(rtc::sev) \
-    rtc::LogMessage(__FILE__, __LINE__, rtc::sev, \
-                    rtc::ERRCTX_ ## ctx, err , ##__VA_ARGS__)   \
-        .stream()
+#define RTC_LOG_E(sev, ctx, err, ...)                                   \
+  RTC_LOG_SEVERITY_PRECONDITION_C(sev)                                  \
+  rtc::LogMessage(__FILE__, __LINE__, rtc::sev, rtc::ERRCTX_##ctx, err, \
+                  ##__VA_ARGS__)                                        \
+      .stream()
 
 #define RTC_LOG_T(sev) RTC_LOG(sev) << this << ": "
 

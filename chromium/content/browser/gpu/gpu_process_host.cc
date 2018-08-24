@@ -51,7 +51,6 @@
 #include "content/public/common/connection_filter.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/common/mojo_channel_switches.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "content/public/common/service_manager_connection.h"
@@ -117,11 +116,64 @@ int GpuProcessHost::display_compositor_recent_crash_count_ = 0;
 
 namespace {
 
+// This matches base::TerminationStatus.
+// These values are persisted to logs. Entries (except MAX_ENUM) should not be
+// renumbered and numeric values should never be reused. Should also avoid
+// OS-defines in this enum to keep the values consistent on all platforms.
+enum class GpuTerminationStatus {
+  NORMAL_TERMINATION = 0,
+  ABNORMAL_TERMINATION = 1,
+  PROCESS_WAS_KILLED = 2,
+  PROCESS_CRASHED = 3,
+  STILL_RUNNING = 4,
+  PROCESS_WAS_KILLED_BY_OOM = 5,
+  OOM_PROTECTED = 6,
+  LAUNCH_FAILED = 7,
+  OOM = 8,
+  MAX_ENUM = 9,
+};
+
+GpuTerminationStatus ConvertToGpuTerminationStatus(
+    base::TerminationStatus status) {
+  switch (status) {
+    case base::TERMINATION_STATUS_NORMAL_TERMINATION:
+      return GpuTerminationStatus::NORMAL_TERMINATION;
+    case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
+      return GpuTerminationStatus::ABNORMAL_TERMINATION;
+    case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
+      return GpuTerminationStatus::PROCESS_WAS_KILLED;
+    case base::TERMINATION_STATUS_PROCESS_CRASHED:
+      return GpuTerminationStatus::PROCESS_CRASHED;
+    case base::TERMINATION_STATUS_STILL_RUNNING:
+      return GpuTerminationStatus::STILL_RUNNING;
+#if defined(OS_CHROMEOS)
+    case base::TERMINATION_STATUS_PROCESS_WAS_KILLED_BY_OOM:
+      return GpuTerminationStatus::PROCESS_WAS_KILLED_BY_OOM;
+#endif
+#if defined(OS_ANDROID)
+    case base::TERMINATION_STATUS_OOM_PROTECTED:
+      return GpuTerminationStatus::OOM_PROTECTED;
+#endif
+    case base::TERMINATION_STATUS_LAUNCH_FAILED:
+      return GpuTerminationStatus::LAUNCH_FAILED;
+    case base::TERMINATION_STATUS_OOM:
+      return GpuTerminationStatus::OOM;
+    case base::TERMINATION_STATUS_MAX_ENUM:
+      NOTREACHED();
+      return GpuTerminationStatus::MAX_ENUM;
+      // Do not add default.
+  }
+  NOTREACHED();
+  return GpuTerminationStatus::ABNORMAL_TERMINATION;
+}
+
 // Command-line switches to propagate to the GPU process.
 static const char* const kSwitchNames[] = {
     service_manager::switches::kDisableSeccompFilterSandbox,
     service_manager::switches::kGpuSandboxAllowSysVShm,
     service_manager::switches::kGpuSandboxFailuresFatal,
+    service_manager::switches::kDisableGpuSandbox,
+    service_manager::switches::kNoSandbox,
 #if defined(OS_WIN)
     service_manager::switches::kAddGpuAppContainerCaps,
     service_manager::switches::kDisableGpuAppContainer,
@@ -130,18 +182,14 @@ static const char* const kSwitchNames[] = {
 #endif  // defined(OS_WIN)
     switches::kDisableBreakpad,
     switches::kDisableGpuRasterization,
-    switches::kDisableGpuSandbox,
     switches::kDisableGLExtensions,
     switches::kDisableLogging,
     switches::kDisableShaderNameHashing,
-#if BUILDFLAG(ENABLE_WEBRTC)
     switches::kDisableWebRtcHWEncoding,
-#endif
 #if defined(OS_WIN)
     switches::kEnableAcceleratedVpxDecode,
 #endif
     switches::kEnableGpuRasterization,
-    switches::kEnableHeapProfiling,
     switches::kEnableLogging,
     switches::kEnableOOPRasterization,
     switches::kEnableVizDevTools,
@@ -149,7 +197,6 @@ static const char* const kSwitchNames[] = {
     switches::kLoggingLevel,
     switches::kEnableLowEndDeviceMode,
     switches::kDisableLowEndDeviceMode,
-    switches::kNoSandbox,
     switches::kRunAllCompositorStagesBeforeDraw,
     switches::kTestGLLib,
     switches::kTraceToConsole,
@@ -158,10 +205,10 @@ static const char* const kSwitchNames[] = {
     switches::kV,
     switches::kVModule,
 #if defined(OS_MACOSX)
+    service_manager::switches::kEnableSandboxLogging,
     switches::kDisableAVFoundationOverlays,
     switches::kDisableMacOverlays,
     switches::kDisableRemoteCoreAnimation,
-    switches::kEnableSandboxLogging,
     switches::kShowMacOverlayBorders,
 #endif
 #if defined(USE_OZONE)
@@ -343,7 +390,7 @@ class GpuSandboxedProcessLauncherDelegate
 
   service_manager::SandboxType GetSandboxType() override {
 #if defined(OS_WIN)
-    if (cmd_line_.HasSwitch(switches::kDisableGpuSandbox)) {
+    if (cmd_line_.HasSwitch(service_manager::switches::kDisableGpuSandbox)) {
       DVLOG(1) << "GPU sandbox is disabled";
       return service_manager::SANDBOX_TYPE_NO_SANDBOX;
     }
@@ -395,7 +442,7 @@ void BindDiscardableMemoryRequestOnUI(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
 #if defined(USE_AURA)
-  if (features::IsMusEnabled()) {
+  if (features::IsMashEnabled()) {
     ServiceManagerConnection::GetForProcess()->GetConnector()->BindInterface(
         ui::mojom::kServiceName, std::move(request));
     return;
@@ -532,6 +579,16 @@ void GpuProcessHost::CallOnIO(
 void GpuProcessHost::BindInterface(
     const std::string& interface_name,
     mojo::ScopedMessagePipeHandle interface_pipe) {
+  if (interface_name ==
+      discardable_memory::mojom::DiscardableSharedMemoryManager::Name_) {
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::BindOnce(
+            &BindDiscardableMemoryRequestOnUI,
+            discardable_memory::mojom::DiscardableSharedMemoryManagerRequest(
+                std::move(interface_pipe))));
+    return;
+  }
   process_->child_connection()->BindInterface(interface_name,
                                               std::move(interface_pipe));
 }
@@ -631,23 +688,22 @@ GpuProcessHost::~GpuProcessHost() {
   std::string message;
   bool block_offscreen_contexts = true;
   if (!in_process_ && process_launched_) {
-    int exit_code;
-    base::TerminationStatus status = process_->GetTerminationStatus(
-        false /* known_dead */, &exit_code);
-    UMA_HISTOGRAM_ENUMERATION("GPU.GPUProcessTerminationStatus",
-                              status,
-                              base::TERMINATION_STATUS_MAX_ENUM);
+    ChildProcessTerminationInfo info =
+        process_->GetTerminationInfo(false /* known_dead */);
+    UMA_HISTOGRAM_ENUMERATION("GPU.GPUProcessTerminationStatus2",
+                              ConvertToGpuTerminationStatus(info.status),
+                              GpuTerminationStatus::MAX_ENUM);
 
-    if (status == base::TERMINATION_STATUS_NORMAL_TERMINATION ||
-        status == base::TERMINATION_STATUS_ABNORMAL_TERMINATION ||
-        status == base::TERMINATION_STATUS_PROCESS_CRASHED) {
+    if (info.status == base::TERMINATION_STATUS_NORMAL_TERMINATION ||
+        info.status == base::TERMINATION_STATUS_ABNORMAL_TERMINATION ||
+        info.status == base::TERMINATION_STATUS_PROCESS_CRASHED) {
       // Windows always returns PROCESS_CRASHED on abnormal termination, as it
       // doesn't have a way to distinguish the two.
       base::UmaHistogramSparse("GPU.GPUProcessExitCode",
-                               std::max(0, std::min(100, exit_code)));
+                               std::max(0, std::min(100, info.exit_code)));
     }
 
-    switch (status) {
+    switch (info.status) {
       case base::TERMINATION_STATUS_NORMAL_TERMINATION:
         // Don't block offscreen contexts (and force page reload for webgl)
         // if this was an intentional shutdown or the OOM killer on Android
@@ -660,9 +716,8 @@ GpuProcessHost::~GpuProcessHost() {
         message = "The GPU process exited normally. Everything is okay.";
         break;
       case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
-        message = base::StringPrintf(
-            "The GPU process exited with code %d.",
-            exit_code);
+        message = base::StringPrintf("The GPU process exited with code %d.",
+                                     info.exit_code);
         break;
       case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
         message = "You killed the GPU process! Why?";
@@ -1025,13 +1080,18 @@ void GpuProcessHost::OnProcessCrashed(int exit_code) {
   }
   SendOutstandingReplies(EstablishChannelStatus::GPU_HOST_INVALID);
   RecordProcessCrash();
-  GpuDataManagerImpl::GetInstance()->ProcessCrashed(
-      process_->GetTerminationStatus(true /* known_dead */, nullptr));
+
+  ChildProcessTerminationInfo info =
+      process_->GetTerminationInfo(true /* known_dead */);
+  GpuDataManagerImpl::GetInstance()->ProcessCrashed(info.status);
 }
 
 void GpuProcessHost::DidInitialize(
     const gpu::GPUInfo& gpu_info,
-    const gpu::GpuFeatureInfo& gpu_feature_info) {
+    const gpu::GpuFeatureInfo& gpu_feature_info,
+    const base::Optional<gpu::GPUInfo>& gpu_info_for_hardware_gpu,
+    const base::Optional<gpu::GpuFeatureInfo>&
+        gpu_feature_info_for_hardware_gpu) {
   UMA_HISTOGRAM_BOOLEAN("GPU.GPUProcessInitialized", true);
   status_ = SUCCESS;
 
@@ -1047,8 +1107,9 @@ void GpuProcessHost::DidInitialize(
   GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
   // Update GpuFeatureInfo first, because UpdateGpuInfo() will notify all
   // listeners.
-  gpu_data_manager->UpdateGpuFeatureInfo(gpu_feature_info);
-  gpu_data_manager->UpdateGpuInfo(gpu_info);
+  gpu_data_manager->UpdateGpuFeatureInfo(gpu_feature_info,
+                                         gpu_feature_info_for_hardware_gpu);
+  gpu_data_manager->UpdateGpuInfo(gpu_info, gpu_info_for_hardware_gpu);
   RunRequestGPUInfoCallbacks(gpu_data_manager->GetGPUInfo());
 }
 
@@ -1233,7 +1294,7 @@ bool GpuProcessHost::LaunchGpuProcess() {
 #endif  // defined(OS_WIN)
 
   if (kind_ == GPU_PROCESS_KIND_UNSANDBOXED)
-    cmd_line->AppendSwitch(switches::kDisableGpuSandbox);
+    cmd_line->AppendSwitch(service_manager::switches::kDisableGpuSandbox);
 
   // TODO(penghuang): Replace all GPU related switches with GpuPreferences.
   // https://crbug.com/590825
@@ -1244,6 +1305,9 @@ bool GpuProcessHost::LaunchGpuProcess() {
   cmd_line->CopySwitchesFrom(
       browser_command_line, switches::kGLSwitchesCopiedFromGpuProcessHost,
       switches::kGLSwitchesCopiedFromGpuProcessHostNumSwitches);
+
+  if (browser_command_line.HasSwitch(switches::kDisableFrameRateLimit))
+    cmd_line->AppendSwitch(switches::kDisableGpuVsync);
 
   std::vector<const char*> gpu_workarounds;
   gpu::GpuDriverBugList::AppendAllWorkarounds(&gpu_workarounds);

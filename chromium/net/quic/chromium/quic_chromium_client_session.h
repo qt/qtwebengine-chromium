@@ -34,16 +34,16 @@
 #include "net/quic/chromium/quic_connection_logger.h"
 #include "net/quic/chromium/quic_connectivity_probing_manager.h"
 #include "net/quic/chromium/quic_session_key.h"
-#include "net/quic/core/quic_client_push_promise_index.h"
-#include "net/quic/core/quic_crypto_client_stream.h"
-#include "net/quic/core/quic_packets.h"
-#include "net/quic/core/quic_server_id.h"
-#include "net/quic/core/quic_spdy_client_session_base.h"
-#include "net/quic/core/quic_time.h"
 #include "net/socket/socket_performance_watcher.h"
-#include "net/spdy/chromium/http2_priority_dependencies.h"
-#include "net/spdy/chromium/multiplexed_session.h"
-#include "net/spdy/chromium/server_push_delegate.h"
+#include "net/spdy/http2_priority_dependencies.h"
+#include "net/spdy/multiplexed_session.h"
+#include "net/spdy/server_push_delegate.h"
+#include "net/third_party/quic/core/quic_client_push_promise_index.h"
+#include "net/third_party/quic/core/quic_crypto_client_stream.h"
+#include "net/third_party/quic/core/quic_packets.h"
+#include "net/third_party/quic/core/quic_server_id.h"
+#include "net/third_party/quic/core/quic_spdy_client_session_base.h"
+#include "net/third_party/quic/core/quic_time.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 
 namespace net {
@@ -153,7 +153,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
     // returned, then |push_stream_| will be updated with the promised
     // stream.  If ERR_IO_PENDING is returned, then when the rendezvous is
     // eventually completed |callback| will be called.
-    int RendezvousWithPromised(const SpdyHeaderBlock& headers,
+    int RendezvousWithPromised(const spdy::SpdyHeaderBlock& headers,
                                const CompletionCallback& callback);
 
     // Starts a request to create a stream.  If OK is returned, then
@@ -226,9 +226,9 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
     }
 
     // QuicClientPushPromiseIndex::Delegate implementation
-    bool CheckVary(const SpdyHeaderBlock& client_request,
-                   const SpdyHeaderBlock& promise_request,
-                   const SpdyHeaderBlock& promise_response) override;
+    bool CheckVary(const spdy::SpdyHeaderBlock& client_request,
+                   const spdy::SpdyHeaderBlock& promise_request,
+                   const spdy::SpdyHeaderBlock& promise_response) override;
     void OnRendezvousResult(QuicSpdyStream* stream) override;
 
     // Returns true if the session's connection has sent or received any bytes.
@@ -449,15 +449,14 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
 
   // QuicSpdySession methods:
   size_t WriteHeaders(QuicStreamId id,
-                      SpdyHeaderBlock headers,
+                      spdy::SpdyHeaderBlock headers,
                       bool fin,
-                      SpdyPriority priority,
+                      spdy::SpdyPriority priority,
                       QuicReferenceCountedPointer<QuicAckListenerInterface>
                           ack_listener) override;
-  void OnHeadersHeadOfLineBlocking(QuicTime::Delta delta) override;
   void UnregisterStreamPriority(QuicStreamId id, bool is_static) override;
   void UpdateStreamPriority(QuicStreamId id,
-                            SpdyPriority new_priority) override;
+                            spdy::SpdyPriority new_priority) override;
 
   // QuicSession methods:
   void OnStreamFrame(const QuicStreamFrame& frame) override;
@@ -642,7 +641,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
 
   bool HandlePromised(QuicStreamId associated_id,
                       QuicStreamId promised_id,
-                      const SpdyHeaderBlock& headers) override;
+                      const spdy::SpdyHeaderBlock& headers) override;
 
   void DeletePromised(QuicClientPromisedInfo* promised) override;
 
@@ -718,6 +717,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
   void LogMetricsOnNetworkMadeDefault();
   void LogConnectionMigrationResultToHistogram(
       QuicConnectionMigrationStatus status);
+  void LogHandshakeStatusOnConnectionMigrationSignal() const;
   void HistogramAndLogMigrationFailure(const NetLogWithSource& net_log,
                                        QuicConnectionMigrationStatus status,
                                        QuicConnectionId connection_id,
@@ -808,7 +808,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
   bool migration_pending_;  // True while migration is underway.
 
   // If true, client headers will include HTTP/2 stream dependency info derived
-  // from SpdyPriority.
+  // from spdy::SpdyPriority.
   bool headers_include_h2_stream_dependency_;
   Http2PriorityDependencies priority_dependency_state_;
 

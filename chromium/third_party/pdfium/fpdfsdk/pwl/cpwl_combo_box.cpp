@@ -88,7 +88,7 @@ bool CPWL_CBListBox::IsChar(uint16_t nChar, uint32_t nFlag) const {
 }
 
 bool CPWL_CBListBox::OnCharNotify(uint16_t nChar, uint32_t nFlag) {
-  if (CPWL_ComboBox* pComboBox = (CPWL_ComboBox*)GetParentWindow())
+  if (auto* pComboBox = static_cast<CPWL_ComboBox*>(GetParentWindow()))
     pComboBox->SetSelectText();
 
   return OnNotifySelectionChanged(true, nFlag);
@@ -99,7 +99,6 @@ void CPWL_CBButton::DrawThisAppearance(CFX_RenderDevice* pDevice,
   CPWL_Wnd::DrawThisAppearance(pDevice, mtUser2Device);
 
   CFX_FloatRect rectWnd = CPWL_Wnd::GetWindowRect();
-
   if (!IsVisible() || rectWnd.IsEmpty())
     return;
 
@@ -196,11 +195,24 @@ void CPWL_ComboBox::ReplaceSelection(const WideString& text) {
     m_pEdit->ReplaceSelection(text);
 }
 
-WideString CPWL_ComboBox::GetText() const {
-  if (m_pEdit) {
-    return m_pEdit->GetText();
-  }
-  return WideString();
+bool CPWL_ComboBox::CanUndo() {
+  return m_pEdit && m_pEdit->CanUndo();
+}
+
+bool CPWL_ComboBox::CanRedo() {
+  return m_pEdit && m_pEdit->CanRedo();
+}
+
+bool CPWL_ComboBox::Undo() {
+  return m_pEdit && m_pEdit->Undo();
+}
+
+bool CPWL_ComboBox::Redo() {
+  return m_pEdit && m_pEdit->Redo();
+}
+
+WideString CPWL_ComboBox::GetText() {
+  return m_pEdit ? m_pEdit->GetText() : WideString();
 }
 
 void CPWL_ComboBox::SetText(const WideString& text) {

@@ -3,7 +3,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""//testing/scripts wrapper for the network traffic annotations checks."""
+"""//testing/scripts wrapper for the network traffic annotations checks.
+This script is used to run check_annotations.py on the trybots to ensure that
+all network traffic annotations have correct syntax and semantics, and all
+functions requiring annotations have one."""
 
 import json
 import os
@@ -32,8 +35,7 @@ def main_run(args):
 
 
 def main_compile_targets(args):
-  json.dump(['chrome', 'remoting/host:host', 'remoting/client:client'],
-            args.output)
+  json.dump(['gn_all'], args.output)
 
 
 if __name__ == '__main__':

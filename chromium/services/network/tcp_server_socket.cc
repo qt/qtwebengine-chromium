@@ -41,11 +41,11 @@ int TCPServerSocket::Listen(const net::IPEndPoint& local_addr,
   backlog_ = backlog;
   int net_error = socket_->Listen(local_addr, backlog);
   if (net_error == net::OK)
-    socket_->GetLocalAddress(local_addr_out);
+    net_error = socket_->GetLocalAddress(local_addr_out);
   return net_error;
 }
 
-void TCPServerSocket::Accept(mojom::TCPConnectedSocketObserverPtr observer,
+void TCPServerSocket::Accept(mojom::SocketObserverPtr observer,
                              AcceptCallback callback) {
   if (pending_accepts_queue_.size() >= static_cast<size_t>(backlog_)) {
     std::move(callback).Run(net::ERR_INSUFFICIENT_RESOURCES, base::nullopt,
@@ -60,14 +60,25 @@ void TCPServerSocket::Accept(mojom::TCPConnectedSocketObserverPtr observer,
     ProcessNextAccept();
 }
 
+void TCPServerSocket::GetLocalAddress(GetLocalAddressCallback callback) {
+  DCHECK(socket_);
+
+  net::IPEndPoint local_addr;
+  int result = socket_->GetLocalAddress(&local_addr);
+  if (result != net::OK) {
+    std::move(callback).Run(result, base::nullopt);
+    return;
+  }
+  std::move(callback).Run(result, local_addr);
+}
+
 void TCPServerSocket::SetSocketForTest(
     std::unique_ptr<net::ServerSocket> socket) {
   socket_ = std::move(socket);
 }
 
-TCPServerSocket::PendingAccept::PendingAccept(
-    AcceptCallback callback,
-    mojom::TCPConnectedSocketObserverPtr observer)
+TCPServerSocket::PendingAccept::PendingAccept(AcceptCallback callback,
+                                              mojom::SocketObserverPtr observer)
     : callback(std::move(callback)), observer(std::move(observer)) {}
 
 TCPServerSocket::PendingAccept::~PendingAccept() {}

@@ -12,7 +12,6 @@
 #include <utility>
 
 #include "media/base/fakemediaengine.h"
-#include "media/base/fakevideocapturer.h"
 #include "media/base/testutils.h"
 #include "media/engine/fakewebrtccall.h"
 #include "p2p/base/fakedtlstransport.h"
@@ -55,12 +54,8 @@ class ChannelManagerTest : public testing::Test {
   std::unique_ptr<webrtc::RtpTransportInternal> CreateDtlsSrtpTransport() {
     rtp_dtls_transport_ = rtc::MakeUnique<FakeDtlsTransport>(
         "fake_dtls_transport", cricket::ICE_CANDIDATE_COMPONENT_RTP);
-    auto rtp_transport =
-        rtc::MakeUnique<webrtc::RtpTransport>(/*rtcp_mux_required=*/true);
-    auto srtp_transport =
-        rtc::MakeUnique<webrtc::SrtpTransport>(std::move(rtp_transport));
     auto dtls_srtp_transport =
-        rtc::MakeUnique<webrtc::DtlsSrtpTransport>(std::move(srtp_transport));
+        rtc::MakeUnique<webrtc::DtlsSrtpTransport>(/*rtcp_mux_required=*/true);
     dtls_srtp_transport->SetDtlsTransports(rtp_dtls_transport_.get(),
                                            /*rtcp_dtls_transport=*/nullptr);
     return dtls_srtp_transport;

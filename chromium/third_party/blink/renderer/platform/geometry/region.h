@@ -26,12 +26,23 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GEOMETRY_REGION_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GEOMETRY_REGION_H_
 
+#include "cc/base/region.h"
 #include "third_party/blink/renderer/platform/geometry/int_rect.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
+namespace cc {
+class Region;
+}
+
 namespace blink {
+
+// A region class based on the paper "Scanline Coherent Shape Algebra"
+// by Jonathan E. Steinhart from the book "Graphics Gems II".
+//
+// This implementation uses two vectors instead of linked list, and
+// also compresses regions when possible.
 
 class PLATFORM_EXPORT Region {
   DISALLOW_NEW();
@@ -60,6 +71,8 @@ class PLATFORM_EXPORT Region {
   // Returns true if the query region intersects any part of this region.
   bool Intersects(const Region&) const;
 
+  double Area() const;
+
 #ifndef NDEBUG
   void Dump() const;
 #endif
@@ -72,6 +85,13 @@ class PLATFORM_EXPORT Region {
     int y;
     size_t segment_index;
   };
+
+  // Shape composed of non-overlapping rectangles implied by segments [x, max_x)
+  // within spans [y, max_y).
+  //
+  // Segment iteration returns x and max_x for each segment in a span, in order.
+  // Span iteration returns y via the Span object; spans are adjacent, so max_y
+  // is the next Span's y value. (The last Span contains no segments.)
 
   class Shape {
     DISALLOW_NEW();
@@ -128,7 +148,10 @@ class PLATFORM_EXPORT Region {
 
     bool CanCoalesce(SegmentIterator begin, SegmentIterator end);
 
+    // Stores all segments for all spans, in order.  Each Span's segment_index
+    // identifies the start of its segments within this vector.
     Vector<int, 32> segments_;
+
     Vector<Span, 16> spans_;
 
     friend bool operator==(const Shape&, const Shape&);
@@ -161,6 +184,15 @@ static inline Region Translate(const Region& region, const IntSize& offset) {
   result.Translate(offset);
 
   return result;
+}
+
+// Creates a cc::Region with the same data as |region|.
+static inline cc::Region RegionToCCRegion(const Region& in_region) {
+  Vector<IntRect> rects = in_region.Rects();
+  cc::Region out_region;
+  for (const IntRect& r : rects)
+    out_region.Union(gfx::Rect(r.X(), r.Y(), r.Width(), r.Height()));
+  return out_region;
 }
 
 inline bool operator==(const Region& a, const Region& b) {

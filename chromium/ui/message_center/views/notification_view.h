@@ -33,8 +33,6 @@ class ProportionalImageView;
 class MESSAGE_CENTER_EXPORT NotificationView : public MessageView,
                                                public views::ButtonListener {
  public:
-  static const char kMessageViewSubClassName[];
-
   explicit NotificationView(const Notification& notification);
   ~NotificationView() override;
 
@@ -52,7 +50,6 @@ class MESSAGE_CENTER_EXPORT NotificationView : public MessageView,
   void ButtonPressed(views::Button* sender, const ui::Event& event) override;
   void UpdateControlButtonsVisibility() override;
   NotificationControlButtonsView* GetControlButtonsView() const override;
-  const char* GetMessageViewSubClassName() const final;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(NotificationViewTest, CreateOrUpdateTest);

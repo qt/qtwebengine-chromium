@@ -14,11 +14,11 @@
 #include "build/build_config.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/result_codes.h"
-#include "content/public/common/zygote_buildflags.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/edk/embedder/outgoing_broker_client_invitation.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "services/catalog/public/cpp/manifest_parsing_util.h"
+#include "services/service_manager/zygote/common/zygote_buildflags.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/scoped_java_ref.h"
@@ -35,7 +35,7 @@
 #endif
 
 #if BUILDFLAG(USE_ZYGOTE_HANDLE)
-#include "content/public/common/zygote_handle.h"
+#include "services/service_manager/zygote/common/zygote_handle.h"  // nogncheck
 #endif
 
 namespace base {
@@ -47,14 +47,15 @@ namespace content {
 class ChildProcessLauncher;
 class SandboxedProcessLauncherDelegate;
 struct ChildProcessLauncherPriority;
+struct ChildProcessTerminationInfo;
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
 class PosixFileDescriptorInfo;
 #endif
 
 namespace internal {
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
 using FileMappedForLaunch = PosixFileDescriptorInfo;
 #else
 using FileMappedForLaunch = base::HandlesToInheritVector;
@@ -78,7 +79,7 @@ class ChildProcessLauncherHelper :
     base::Process process;
 
 #if BUILDFLAG(USE_ZYGOTE_HANDLE)
-    ZygoteHandle zygote = nullptr;
+    service_manager::ZygoteHandle zygote = nullptr;
 #endif  // BUILDFLAG(USE_ZYGOTE_HANDLE)
   };
 
@@ -103,7 +104,8 @@ class ChildProcessLauncherHelper :
 
   // Called in to give implementors a chance at creating a server pipe.
   // Platform specific.
-  mojo::edk::ScopedPlatformHandle PrepareMojoPipeHandlesOnClientThread();
+  mojo::edk::ScopedInternalPlatformHandle
+  PrepareMojoPipeHandlesOnClientThread();
 
   // Returns the list of files that should be mapped in the child process.
   // Platform specific.
@@ -146,12 +148,10 @@ class ChildProcessLauncherHelper :
 
   int client_thread_id() const { return client_thread_id_; }
 
-  // Returns the termination status and sets |exit_code| if non null.
-  // See ChildProcessLauncher::GetChildTerminationStatus for more info.
-  base::TerminationStatus GetTerminationStatus(
+  // See ChildProcessLauncher::GetChildTerminationInfo for more info.
+  ChildProcessTerminationInfo GetTerminationInfo(
       const ChildProcessLauncherHelper::Process& process,
-      bool known_dead,
-      int* exit_code);
+      bool known_dead);
 
   // Terminates |process|.
   // Returns true if the process was stopped, false if the process had not been
@@ -180,7 +180,6 @@ class ChildProcessLauncherHelper :
   void OnChildProcessStarted(JNIEnv* env,
                              const base::android::JavaParamRef<jobject>& obj,
                              jint handle);
-  static size_t GetNumberOfRendererSlots();
 #endif  // OS_ANDROID
 
  private:
@@ -190,7 +189,7 @@ class ChildProcessLauncherHelper :
 
   void LaunchOnLauncherThread();
 
-  const mojo::edk::PlatformHandle& mojo_client_handle() const {
+  const mojo::edk::InternalPlatformHandle& mojo_client_handle() const {
     return mojo_client_handle_.get();
   }
   base::CommandLine* command_line() { return command_line_.get(); }
@@ -213,8 +212,8 @@ class ChildProcessLauncherHelper :
   std::unique_ptr<base::CommandLine> command_line_;
   std::unique_ptr<SandboxedProcessLauncherDelegate> delegate_;
   base::WeakPtr<ChildProcessLauncher> child_process_launcher_;
-  mojo::edk::ScopedPlatformHandle mojo_client_handle_;
-  mojo::edk::ScopedPlatformHandle mojo_server_handle_;
+  mojo::edk::ScopedInternalPlatformHandle mojo_client_handle_;
+  mojo::edk::ScopedInternalPlatformHandle mojo_server_handle_;
   bool terminate_on_shutdown_;
   std::unique_ptr<mojo::edk::OutgoingBrokerClientInvitation>
       broker_client_invitation_;

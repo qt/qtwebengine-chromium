@@ -66,9 +66,22 @@ enum class DtxStatus {
   ENABLED,
 };
 
+// Based on the spec in
+// https://w3c.github.io/webrtc-pc/#idl-def-rtcdegradationpreference.
+// These options are enforced on a best-effort basis. For instance, all of
+// these options may suffer some frame drops in order to avoid queuing.
+// TODO(sprang): Look into possibility of more strictly enforcing the
+// maintain-framerate option.
+// TODO(deadbeef): Default to "balanced", as the spec indicates?
 enum class DegradationPreference {
+  // Don't take any actions based on over-utilization signals. Not part of the
+  // web API.
+  DISABLED,
+  // On over-use, request lower frame rate, possibly causing frame drops.
   MAINTAIN_FRAMERATE,
+  // On over-use, request lower resolution, possibly causing down-scaling.
   MAINTAIN_RESOLUTION,
+  // Try to strike a "pleasing" balance between frame rate or resolution.
   BALANCED,
 };
 
@@ -409,11 +422,11 @@ struct RtpEncodingParameters {
 
   // For video, scale the resolution down by this factor.
   // TODO(deadbeef): Not implemented.
-  double scale_resolution_down_by = 1.0;
+  rtc::Optional<double> scale_resolution_down_by;
 
   // Scale the framerate down by this factor.
   // TODO(deadbeef): Not implemented.
-  double scale_framerate_down_by = 1.0;
+  rtc::Optional<double> scale_framerate_down_by;
 
   // For an RtpSender, set to true to cause this encoding to be encoded and
   // sent, and false for it not to be encoded and sent. This allows control
@@ -498,8 +511,6 @@ struct RtpCodecParameters {
   // Contrary to ORTC, these parameters are named using all lowercase strings.
   // This helps make the mapping to SDP simpler, if an application is using
   // SDP. Boolean values are represented by the string "1".
-  //
-  // TODO(deadbeef): Not implemented with PeerConnection senders/receivers.
   std::unordered_map<std::string, std::string> parameters;
 
   bool operator==(const RtpCodecParameters& o) const {
@@ -546,7 +557,6 @@ struct RtpParameters {
   // Used when calling getParameters/setParameters with a PeerConnection
   // RtpSender, to ensure that outdated parameters are not unintentionally
   // applied successfully.
-  // TODO(deadbeef): Not implemented.
   std::string transaction_id;
 
   // Value to use for MID RTP header extension.

@@ -31,8 +31,11 @@
 #include "third_party/blink/renderer/platform/geometry/int_size.h"
 #include "third_party/blink/renderer/platform/geometry/layout_size.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
+#include "third_party/blink/renderer/platform/wtf/text/text_stream.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/skia/include/core/SkSize.h"
+#include "ui/gfx/geometry/size_f.h"
+#include "ui/gfx/geometry/vector2d_f.h"
 
 namespace blink {
 
@@ -58,12 +61,27 @@ FloatSize::operator SkSize() const {
   return SkSize::Make(width_, height_);
 }
 
+FloatSize::operator gfx::SizeF() const {
+  return gfx::SizeF(width_, height_);
+}
+
+FloatSize::operator gfx::Vector2dF() const {
+  return gfx::Vector2dF(width_, height_);
+}
+
 std::ostream& operator<<(std::ostream& ostream, const FloatSize& size) {
   return ostream << size.ToString();
 }
 
 String FloatSize::ToString() const {
   return String::Format("%lgx%lg", Width(), Height());
+}
+
+WTF::TextStream& operator<<(WTF::TextStream& ts, const FloatSize& s) {
+  ts << "width=" << WTF::TextStream::FormatNumberRespectingIntegers(s.Width());
+  ts << " height="
+     << WTF::TextStream::FormatNumberRespectingIntegers(s.Height());
+  return ts;
 }
 
 }  // namespace blink

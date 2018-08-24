@@ -34,13 +34,16 @@
 
 #include <stdint.h>
 
-namespace blink {
-namespace scheduler {
+namespace base {
+namespace sequence_manager {
 class TaskTimeObserver;
 }
+}  // namespace base
+
+namespace blink {
 
 class FrameScheduler;
-class WebScheduler;
+class ThreadScheduler;
 
 // Always an integer value.
 typedef uintptr_t PlatformThreadId;
@@ -103,11 +106,12 @@ class BLINK_PLATFORM_EXPORT WebThread {
   // NOTE: TaskTimeObserver implementation should be extremely fast!
   // This API is performance sensitive. Use only if you have a compelling
   // reason.
-  virtual void AddTaskTimeObserver(scheduler::TaskTimeObserver*) {}
-  virtual void RemoveTaskTimeObserver(scheduler::TaskTimeObserver*) {}
+  virtual void AddTaskTimeObserver(base::sequence_manager::TaskTimeObserver*) {}
+  virtual void RemoveTaskTimeObserver(
+      base::sequence_manager::TaskTimeObserver*) {}
 
   // Returns the scheduler associated with the thread.
-  virtual WebScheduler* Scheduler() const = 0;
+  virtual ThreadScheduler* Scheduler() const = 0;
 
   virtual ~WebThread() = default;
 };

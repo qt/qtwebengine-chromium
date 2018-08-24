@@ -9,10 +9,10 @@
 #include "third_party/blink/public/web/web_context_menu_data.h"
 #include "third_party/blink/renderer/core/frame/frame_test_helpers.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
+#include "third_party/blink/renderer/core/geometry/dom_rect.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/input/context_menu_allowed_scope.h"
 #include "third_party/blink/renderer/core/page/context_menu_controller.h"
-#include "third_party/blink/renderer/platform/context_menu.h"
 #include "third_party/blink/renderer/platform/testing/empty_web_media_player.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 
@@ -38,7 +38,7 @@ class TestWebFrameClientImpl : public FrameTestHelpers::TestWebFrameClient {
                                     WebMediaPlayerEncryptedMediaClient*,
                                     WebContentDecryptionModule*,
                                     const WebString& sink_id,
-                                    WebLayerTreeView*) {
+                                    WebLayerTreeView*) override {
     return new MockWebMediaPlayerForContextMenu();
   }
 
@@ -54,7 +54,7 @@ class TestWebFrameClientImpl : public FrameTestHelpers::TestWebFrameClient {
 
 class ContextMenuControllerTest : public testing::Test {
  public:
-  void SetUp() {
+  void SetUp() override {
     web_view_helper_.Initialize(&web_frame_client_);
 
     WebLocalFrameImpl* local_main_frame = web_view_helper_.LocalMainFrame();
@@ -62,12 +62,11 @@ class ContextMenuControllerTest : public testing::Test {
     local_main_frame->ViewImpl()->UpdateAllLifecyclePhases();
   }
 
-  bool ShowContextMenu(const ContextMenu* context_menu,
-                       WebMenuSourceType source) {
+  bool ShowContextMenu(const LayoutPoint& location, WebMenuSourceType source) {
     return web_view_helper_.GetWebView()
         ->GetPage()
         ->GetContextMenuController()
-        .ShowContextMenu(context_menu, source);
+        .ShowContextMenu(GetDocument()->GetFrame(), location, source);
   }
 
   Document* GetDocument() {
@@ -81,6 +80,11 @@ class ContextMenuControllerTest : public testing::Test {
     return web_frame_client_;
   }
 
+  void SetReadyState(HTMLVideoElement* video,
+                     HTMLMediaElement::ReadyState state) {
+    video->SetReadyState(state);
+  }
+
  private:
   TestWebFrameClientImpl web_frame_client_;
   FrameTestHelpers::WebViewHelper web_view_helper_;
@@ -89,7 +93,6 @@ class ContextMenuControllerTest : public testing::Test {
 TEST_F(ContextMenuControllerTest, VideoNotLoaded) {
   ContextMenuAllowedScope context_menu_allowed_scope;
   HitTestResult hit_test_result;
-  ContextMenu context_menu;
   const char video_url[] = "https://example.com/foo.webm";
 
   // Make sure Picture-in-Picture is enabled.
@@ -100,18 +103,18 @@ TEST_F(ContextMenuControllerTest, VideoNotLoaded) {
   video->SetSrc(video_url);
   GetDocument()->body()->AppendChild(video);
   test::RunPendingTasks();
+  SetReadyState(video.Get(), HTMLMediaElement::kHaveNothing);
+  test::RunPendingTasks();
 
   EXPECT_CALL(*static_cast<MockWebMediaPlayerForContextMenu*>(
                   video->GetWebMediaPlayer()),
               HasVideo())
       .WillRepeatedly(Return(false));
 
-  // Simulate a hit test result.
-  hit_test_result.SetInnerNode(video);
-  GetPage()->GetContextMenuController().SetHitTestResultForTests(
-      hit_test_result);
-
-  EXPECT_TRUE(ShowContextMenu(&context_menu, kMenuSourceMouse));
+  DOMRect* rect = video->getBoundingClientRect();
+  LayoutPoint location((rect->left() + rect->right()) / 2,
+                       (rect->top() + rect->bottom()) / 2);
+  EXPECT_TRUE(ShowContextMenu(location, kMenuSourceMouse));
 
   // Context menu info are sent to the WebFrameClient.
   WebContextMenuData context_menu_data =
@@ -147,7 +150,6 @@ TEST_F(ContextMenuControllerTest, PictureInPictureEnabledVideoLoaded) {
 
   ContextMenuAllowedScope context_menu_allowed_scope;
   HitTestResult hit_test_result;
-  ContextMenu context_menu;
   const char video_url[] = "https://example.com/foo.webm";
 
   // Setup video element.
@@ -155,18 +157,18 @@ TEST_F(ContextMenuControllerTest, PictureInPictureEnabledVideoLoaded) {
   video->SetSrc(video_url);
   GetDocument()->body()->AppendChild(video);
   test::RunPendingTasks();
+  SetReadyState(video.Get(), HTMLMediaElement::kHaveMetadata);
+  test::RunPendingTasks();
 
   EXPECT_CALL(*static_cast<MockWebMediaPlayerForContextMenu*>(
                   video->GetWebMediaPlayer()),
               HasVideo())
       .WillRepeatedly(Return(true));
 
-  // Simulate a hit test result.
-  hit_test_result.SetInnerNode(video);
-  GetPage()->GetContextMenuController().SetHitTestResultForTests(
-      hit_test_result);
-
-  EXPECT_TRUE(ShowContextMenu(&context_menu, kMenuSourceMouse));
+  DOMRect* rect = video->getBoundingClientRect();
+  LayoutPoint location((rect->left() + rect->right()) / 2,
+                       (rect->top() + rect->bottom()) / 2);
+  EXPECT_TRUE(ShowContextMenu(location, kMenuSourceMouse));
 
   // Context menu info are sent to the WebFrameClient.
   WebContextMenuData context_menu_data =
@@ -197,12 +199,11 @@ TEST_F(ContextMenuControllerTest, PictureInPictureEnabledVideoLoaded) {
 }
 
 TEST_F(ContextMenuControllerTest, PictureInPictureDisabledVideoLoaded) {
-  // Make sure Picture-in-Picture is enabled.
+  // Make sure Picture-in-Picture is disabled.
   GetDocument()->GetSettings()->SetPictureInPictureEnabled(false);
 
   ContextMenuAllowedScope context_menu_allowed_scope;
   HitTestResult hit_test_result;
-  ContextMenu context_menu;
   const char video_url[] = "https://example.com/foo.webm";
 
   // Setup video element.
@@ -210,18 +211,18 @@ TEST_F(ContextMenuControllerTest, PictureInPictureDisabledVideoLoaded) {
   video->SetSrc(video_url);
   GetDocument()->body()->AppendChild(video);
   test::RunPendingTasks();
+  SetReadyState(video.Get(), HTMLMediaElement::kHaveMetadata);
+  test::RunPendingTasks();
 
   EXPECT_CALL(*static_cast<MockWebMediaPlayerForContextMenu*>(
                   video->GetWebMediaPlayer()),
               HasVideo())
       .WillRepeatedly(Return(true));
 
-  // Simulate a hit test result.
-  hit_test_result.SetInnerNode(video);
-  GetPage()->GetContextMenuController().SetHitTestResultForTests(
-      hit_test_result);
-
-  EXPECT_TRUE(ShowContextMenu(&context_menu, kMenuSourceMouse));
+  DOMRect* rect = video->getBoundingClientRect();
+  LayoutPoint location((rect->left() + rect->right()) / 2,
+                       (rect->top() + rect->bottom()) / 2);
+  EXPECT_TRUE(ShowContextMenu(location, kMenuSourceMouse));
 
   // Context menu info are sent to the WebFrameClient.
   WebContextMenuData context_menu_data =

@@ -166,7 +166,7 @@ void CommonSubprocessInit() {
   MSG msg;
   PeekMessage(&msg, NULL, 0, 0, PM_REMOVE);
 #endif
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#if defined(OS_POSIX) && !defined(OS_ANDROID)
   // Various things break when you're using a locale where the decimal
   // separator isn't a period.  See e.g. bugs 22782 and 39964.  For
   // all processes except the browser process (where we call system
@@ -449,6 +449,13 @@ int Main(const MainParams& params) {
     case ProcessType::kEmbedder:
       if (delegate->IsEmbedderSubprocess())
         CommonSubprocessInit();
+      else {
+        // TODO(https://crbug.com/729596): Use this task runner to start
+        // ServiceManager.
+        scoped_refptr<base::SingleThreadTaskRunner> task_runner =
+            delegate->GetServiceManagerTaskRunnerForEmbedderProcess();
+      }
+
       exit_code = delegate->RunEmbedderProcess();
       break;
   }

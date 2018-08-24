@@ -342,7 +342,7 @@ _BANNED_CPP_FUNCTIONS = (
       ),
     ),
     (
-      'base::SequenceChecker',
+      r'/base::SequenceChecker\b',
       (
         'Consider using SEQUENCE_CHECKER macros instead of the class directly.',
       ),
@@ -350,7 +350,7 @@ _BANNED_CPP_FUNCTIONS = (
       (),
     ),
     (
-      'base::ThreadChecker',
+      r'/base::ThreadChecker\b',
       (
         'Consider using THREAD_CHECKER macros instead of the class directly.',
       ),
@@ -402,7 +402,8 @@ _BANNED_CPP_FUNCTIONS = (
       'leveldb::NewMemEnv',
       (
         'Instead of leveldb::NewMemEnv() use leveldb_chrome::NewMemEnv() from',
-        'third_party/leveldatabase/leveldb_chrome.h.',
+        'third_party/leveldatabase/leveldb_chrome.h. It exposes environments',
+        "to Chrome's tracing, making their memory usage visible.",
       ),
       True,
       (
@@ -410,29 +411,24 @@ _BANNED_CPP_FUNCTIONS = (
       ),
     ),
     (
-      'MessageLoop::QuitWhenIdleClosure',
-      (
-        'MessageLoop::QuitWhenIdleClosure is deprecated. Please use a',
-        'QuitWhenIdleClosure obtained from a specific RunLoop instance.',
-      ),
-      False,
-      (),
-    ),
-    (
       'RunLoop::QuitCurrent',
       (
         'Please migrate away from RunLoop::QuitCurrent*() methods. Use member',
         'methods of a specific RunLoop instance instead.',
       ),
-      True,
+      False,
       (),
     ),
     (
       'base::ScopedMockTimeMessageLoopTaskRunner',
       (
-        'ScopedMockTimeMessageLoopTaskRunner is deprecated.',
+        'ScopedMockTimeMessageLoopTaskRunner is deprecated. Prefer',
+        'ScopedTaskEnvironment::MainThreadType::MOCK_TIME. There are still a',
+        'few cases that may require a ScopedMockTimeMessageLoopTaskRunner',
+        '(i.e. mocking the main MessageLoopForUI in browser_tests), but check',
+        'with gab@ first if you think you need it)',
       ),
-      True,
+      False,
       (),
     ),
     (
@@ -563,6 +559,24 @@ _BANNED_CPP_FUNCTIONS = (
         r'.*[\\\/]tools[\\\/].*\.(cc|h)$',
       ),
     ),
+    (
+      r'/\barraysize\b',
+      (
+          "arraysize is deprecated, please use base::size(array) instead ",
+          "(https://crbug.com/837308). ",
+      ),
+      False,
+      (),
+    ),
+    (
+      r'std::random_shuffle',
+      (
+        'std::random_shuffle is deprecated in C++14, and removed in C++17. Use',
+        'base::RandomShuffle instead.'
+      ),
+      True,
+      (),
+    ),
 )
 
 
@@ -573,7 +587,9 @@ _IPC_ENUM_TRAITS_DEPRECATED = (
 
 _JAVA_MULTIPLE_DEFINITION_EXCLUDED_PATHS = [
     r".*[\\\/]BuildHooksAndroidImpl\.java",
+    r".*[\\\/]ClassRegisterImpl\.java",
     r".*[\\\/]LicenseContentProvider\.java",
+    r".*[\\\/]PlatformServiceBridgeImpl.java",
 ]
 
 # These paths contain test data and other known invalid JSON files.
@@ -582,6 +598,7 @@ _KNOWN_INVALID_JSON_FILE_PATTERNS = [
     r'^components[\\\/]policy[\\\/]resources[\\\/]policy_templates\.json$',
     r'^third_party[\\\/]protobuf[\\\/]',
     r'^third_party[\\\/]WebKit[\\\/]LayoutTests[\\\/]external[\\\/]wpt[\\\/]',
+    r'^third_party[\\\/]blink[\\\/]renderer[\\\/]devtools[\\\/]protocol\.json$',
 ]
 
 
@@ -611,6 +628,7 @@ _VALID_OS_MACROS = (
 
 
 _ANDROID_SPECIFIC_PYDEPS_FILES = [
+    'build/android/resource_sizes.pydeps',
     'build/android/test_runner.pydeps',
     'build/android/test_wrapper/logdog_wrapper.pydeps',
     'build/secondary/third_party/android_platform/'
@@ -621,6 +639,7 @@ _ANDROID_SPECIFIC_PYDEPS_FILES = [
 
 _GENERIC_PYDEPS_FILES = [
     'chrome/test/chromedriver/test/run_py_tests.pydeps',
+    'tools/binary_size/supersize.pydeps',
 ]
 
 
@@ -1951,8 +1970,10 @@ def _CheckIpcOwners(input_api, output_api):
       files.extend(['  %s' % f.LocalPath() for f in entry['files']])
     if missing_lines:
       errors.append(
-          '%s needs the following lines added:\n\n%s\n\nfor files:\n%s' %
-          (owners_file, '\n'.join(missing_lines), '\n'.join(files)))
+          'Because of the presence of files:\n%s\n\n'
+          '%s needs the following %d lines added:\n\n%s' %
+          ('\n'.join(files), owners_file, len(missing_lines),
+           '\n'.join(missing_lines)))
 
   results = []
   if errors:
@@ -2823,9 +2844,14 @@ def _CommonChecks(input_api, output_api):
     path, name = input_api.os_path.split(f.LocalPath())
     if name == 'PRESUBMIT.py':
       full_path = input_api.os_path.join(input_api.PresubmitLocalPath(), path)
-      results.extend(input_api.canned_checks.RunUnitTestsInDirectory(
-          input_api, output_api, full_path,
-          whitelist=[r'^PRESUBMIT_test\.py$']))
+      test_file = input_api.os_path.join(path, 'PRESUBMIT_test.py')
+      if f.Action() != 'D' and input_api.os_path.exists(test_file):
+        # The PRESUBMIT.py file (and the directory containing it) might
+        # have been affected by being moved or removed, so only try to
+        # run the tests if they still exist.
+        results.extend(input_api.canned_checks.RunUnitTestsInDirectory(
+            input_api, output_api, full_path,
+            whitelist=[r'^PRESUBMIT_test\.py$']))
   return results
 
 
@@ -3035,14 +3061,13 @@ def _CheckForIncludeGuards(input_api, output_api):
 
     expected_guard = replace_special_with_underscore(
       file_with_path.upper() + '_')
-    expected_guard_if_blink = base_file_name + '_h'
 
     # For "path/elem/file_name.h" we should really only accept
-    # PATH_ELEM_FILE_NAME_H_ per coding style or, if Blink,
-    # file_name_h.  Unfortunately there are too many (1000+) files
-    # with slight deviations from the coding style. Since the most
-    # important part is that the include guard is there, and that it's
-    # unique, not the name, this check is forgiving for existing files.
+    # PATH_ELEM_FILE_NAME_H_ per coding style.  Unfortunately there
+    # are too many (1000+) files with slight deviations from the
+    # coding style. The most important part is that the include guard
+    # is there, and that it's unique, not the name so this check is
+    # forgiving for existing files.
     #
     # As code becomes more uniform, this could be made stricter.
 
@@ -3050,7 +3075,7 @@ def _CheckForIncludeGuards(input_api, output_api):
       # Anything with the right suffix (maybe with an extra _).
       r'\w+_H__?',
 
-      # To cover include guards with Blink style.
+      # To cover include guards with old Blink style.
       r'\w+_h',
 
       # Anything including the uppercase name of the file.
@@ -3072,22 +3097,22 @@ def _CheckForIncludeGuards(input_api, output_api):
           guard_name = match.group(1)
           guard_line_number = line_number
 
-          # We allow existing files to use slightly wrong include
-          # guards, but new files should get it right.
-          if not f.OldContents():
-            is_in_blink = file_with_path.startswith(input_api.os_path.join(
-              'third_party', 'WebKit'))
-            if not (guard_name == expected_guard or
-                    is_in_blink and guard_name == expected_guard_if_blink):
-              if is_in_blink:
-                expected_text = "%s or %s" % (expected_guard,
-                                              expected_guard_if_blink)
-              else:
-                expected_text = expected_guard
+          # We allow existing files to use include guards whose names
+          # don't match the chromium style guide, but new files
+          # (outside third_party) should get it right. The only part
+          # of third_party we check is blink.
+          should_check_strict_guard_name = (
+            not f.OldContents() and
+            (not file_with_path.startswith('third_party') or
+                file_with_path.startswith(
+                  input_api.os_path.join('third_party', 'blink'))))
+
+          if should_check_strict_guard_name:
+            if guard_name != expected_guard:
               errors.append(output_api.PresubmitPromptWarning(
                 'Header using the wrong include guard name %s' % guard_name,
                 ['%s:%d' % (f.LocalPath(), line_number + 1)],
-                'Expected: %r\nFound: %r' % (expected_text, guard_name)))
+                'Expected: %r\nFound: %r' % (expected_guard, guard_name)))
       else:
         # The line after #ifndef should have a #define of the same name.
         if line_number == guard_line_number + 1:

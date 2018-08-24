@@ -9,6 +9,7 @@
 
 namespace blink {
 
+struct NGCaretPosition;
 class LayoutBlockFlow;
 struct LocalCaretRect;
 
@@ -18,8 +19,12 @@ struct LocalCaretRect;
 
 const LayoutBlockFlow* NGInlineFormattingContextOf(const PositionInFlatTree&);
 
-LocalCaretRect ComputeNGLocalCaretRect(const LayoutBlockFlow&,
-                                       const PositionInFlatTreeWithAffinity&);
+NGCaretPosition ComputeNGCaretPosition(const PositionInFlatTreeWithAffinity&);
+
+LocalCaretRect ComputeNGLocalCaretRect(const PositionInFlatTreeWithAffinity&);
+
+bool InSameNGLineBox(const PositionInFlatTreeWithAffinity&,
+                     const PositionInFlatTreeWithAffinity&);
 
 }  // namespace blink
 

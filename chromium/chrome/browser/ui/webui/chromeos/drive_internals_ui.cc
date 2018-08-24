@@ -138,6 +138,7 @@ std::string FormatEntry(const base::FilePath& path,
   StringAppendF(&out, "  shared: %s\n", entry.shared() ? "true" : "false");
   StringAppendF(&out, "  shared_with_me: %s\n",
                 entry.shared_with_me() ? "true" : "false");
+  StringAppendF(&out, "  alternate_url: %s\n", entry.alternate_url().c_str());
 
   const drive::PlatformFileInfoProto& file_info = entry.file_info();
   StringAppendF(&out, "  file_info\n");
@@ -167,8 +168,6 @@ std::string FormatEntry(const base::FilePath& path,
   if (entry.has_file_specific_info()) {
     const drive::FileSpecificInfo& file_specific_info =
         entry.file_specific_info();
-    StringAppendF(&out, "    alternate_url: %s\n",
-                  file_specific_info.alternate_url().c_str());
     StringAppendF(&out, "    content_mime_type: %s\n",
                   file_specific_info.content_mime_type().c_str());
     StringAppendF(&out, "    file_md5: %s\n",
@@ -556,8 +555,8 @@ void DriveInternalsWebUIHandler::OnGetFilesystemMetadataForLocal(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   base::DictionaryValue local_metadata;
-  local_metadata.SetDouble("account-largest-changestamp-local",
-                           metadata.largest_changestamp);
+  local_metadata.SetString("account-start-page-token-local",
+                           metadata.start_page_token);
   local_metadata.SetBoolean("account-metadata-refreshing", metadata.refreshing);
   web_ui()->CallJavascriptFunctionUnsafe("updateLocalMetadata", local_metadata);
 }
@@ -712,7 +711,7 @@ void DriveInternalsWebUIHandler::UpdateLocalStorageUsageSection() {
 
   // Propagate the amount of local free space in bytes.
   base::FilePath home_path;
-  if (PathService::Get(base::DIR_HOME, &home_path)) {
+  if (base::PathService::Get(base::DIR_HOME, &home_path)) {
     base::DictionaryValue* local_storage_summary = new base::DictionaryValue;
     base::PostTaskWithTraitsAndReply(
         FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},

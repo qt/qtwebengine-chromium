@@ -60,7 +60,7 @@ class BitmapImageTest : public testing::Test {
     FakeImageObserver()
         : last_decoded_size_(0), last_decoded_size_changed_delta_(0) {}
 
-    virtual void DecodedSizeChangedTo(const Image*, size_t new_size) {
+    void DecodedSizeChangedTo(const Image*, size_t new_size) override {
       last_decoded_size_changed_delta_ =
           SafeCast<int>(new_size) - SafeCast<int>(last_decoded_size_);
       last_decoded_size_ = new_size;
@@ -71,7 +71,7 @@ class BitmapImageTest : public testing::Test {
     }
     void AsyncLoadCompleted(const Image*) override { NOTREACHED(); }
 
-    virtual void ChangedInRect(const Image*, const IntRect&) {}
+    void ChangedInRect(const Image*, const IntRect&) override {}
 
     size_t last_decoded_size_;
     int last_decoded_size_changed_delta_;
@@ -479,6 +479,14 @@ TEST_F(BitmapImageTest, APNGDecoder18) {
   auto actual_bitmap = GenerateBitmap(12u);
   auto expected_bitmap =
       GenerateBitmapForImage("/images/resources/apng18-ref.png");
+  VerifyBitmap(actual_bitmap, expected_bitmap);
+}
+
+TEST_F(BitmapImageTest, APNGDecoder19) {
+  LoadImage("/images/resources/apng19.png");
+  auto actual_bitmap = GenerateBitmap(12u);
+  auto expected_bitmap =
+      GenerateBitmapForImage("/images/resources/apng19-ref.png");
   VerifyBitmap(actual_bitmap, expected_bitmap);
 }
 

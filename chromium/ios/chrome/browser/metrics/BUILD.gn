@@ -176,6 +176,7 @@ source_set("eg_tests") {
     "//ios/chrome/browser/ui/authentication:eg_test_support",
     "//ios/chrome/browser/ui/settings",
     "//ios/chrome/browser/ui/tab_switcher:egtest_support",
+    "//ios/chrome/browser/ui/tab_switcher:modes",
     "//ios/chrome/browser/ui/toolbar/buttons",
     "//ios/chrome/browser/ui/toolbar/legacy",
     "//ios/chrome/browser/ui/toolbar/public",
@@ -220,13 +221,33 @@ source_set("test_support") {
   ]
   deps = [
     "//base",
+    "//ios/chrome/app:app_internal",
     "//ios/chrome/app/strings",
+    "//ios/chrome/browser/tabs",
     "//ios/chrome/browser/ui",
+    "//ios/chrome/browser/ui/main",
+    "//ios/chrome/browser/ui/tab_grid:egtest_support",
+    "//ios/chrome/browser/ui/tab_switcher:egtest_support",
+    "//ios/chrome/browser/ui/tab_switcher:modes",
     "//ios/chrome/browser/ui/tools_menu/public",
+    "//ios/chrome/browser/web_state_list",
     "//ios/chrome/test/app:test_support",
     "//ios/chrome/test/earl_grey:test_support",
     "//ios/testing:ios_test_support",
     "//ui/base",
   ]
   configs += [ "//build/config/compiler:enable_arc" ]
+}
+
+import("//components/metrics/generate_expired_histograms_array.gni")
+
+generate_expired_histograms_array("expired_histograms_array") {
+  inputs = [
+    "//tools/metrics/histograms/histograms.xml",
+    "//tools/metrics/histograms/enums.xml",
+  ]
+  namespace = ""
+  header_filename = "ios_expired_histograms_array.h"
+  major_branch_date_filepath = "//chrome/MAJOR_BRANCH_DATE"
+  milestone_filepath = "//chrome/VERSION"
 }

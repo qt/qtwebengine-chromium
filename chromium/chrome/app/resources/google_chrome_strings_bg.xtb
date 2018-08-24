@@ -14,6 +14,7 @@
 <translation id="127345590676626841">Chrome се актуализира автоматично, така че винаги да имате най-новата версия. Когато това изтегляне завърши, браузърът ще се рестартира и ще можете да започнете работа.</translation>
 <translation id="1302523850133262269">Моля, изчакайте, докато Chrome инсталира най-новите системни актуализации.</translation>
 <translation id="137466361146087520">Google Chrome бета</translation>
+<translation id="1388971155537343688">Chrome се стартира</translation>
 <translation id="1393853151966637042">Получаване на помощ за използването на Chrome</translation>
 <translation id="1399397803214730675">На този компютър вече има по-нова версия на Google Chrome. Ако софтуерът не работи, моля, деинсталирайте Google Chrome и опитайте отново.</translation>
 <translation id="1434626383986940139">Приложения в ранната версия на Chrome</translation>
@@ -72,7 +73,6 @@
 <translation id="2664962310688259219">Лицензи за отворен код за Chrome OS</translation>
 <translation id="2665296953892887393">Помогнете ни да подобрим Google Chrome, като ни изпращате <ph name="UMA_LINK" /> му и сигнали за сривове</translation>
 <translation id="2689103672227170538">Това разширение промени страницата, която се показва при стартиране на Chrome.</translation>
-<translation id="2705403826523567092">Влезте в профила си, за да сърфирате персонализирано и активността ви да се синхронизира на всички устройства</translation>
 <translation id="2765403129283291972">Chrome се нуждае от разрешение за достъп до микрофона ви за този сайт</translation>
 <translation id="2770231113462710648">Промяна на браузъра по подразбиране с/ъс:</translation>
 <translation id="2799223571221894425">Стартиране отново</translation>
@@ -172,6 +172,7 @@
 <translation id="573759479754913123">Всичко за Chrome OS</translation>
 <translation id="5774845247549698882">Chrome OS се показва на този език</translation>
 <translation id="5795887333006832406"><ph name="PAGE_TITLE" /> – Google Chrome Canary</translation>
+<translation id="5804318322022881572">Chrome не можа да се стартира. Опитайте отново.</translation>
 <translation id="5855036575689098185">Софтуерът, изпълняван на компютъра ви, е несъвместим с Google Chrome.</translation>
 <translation id="5877064549588274448">Каналът бе променен. Рестартирайте устройството си, за да се приложат промените.</translation>
 <translation id="5895138241574237353">Рестартиране</translation>
@@ -179,6 +180,7 @@
 <translation id="5940385492829620908">Тук ще намерите посещаваните от вас места в мрежата, отметките и другите си неща в Chrome.</translation>
 <translation id="5941830788786076944">Искам Google Chrome да бъде браузърът по подразбиране</translation>
 <translation id="6014844626092547096">Вече влязохте в Chrome! Синхронизирането е деактивирано от администратора ви.</translation>
+<translation id="6040143037577758943">Затваряне</translation>
 <translation id="6070348360322141662">За повишаване на сигурността Google Chrome ще шифрова данните ви</translation>
 <translation id="6113794647360055231">Chrome се подобри</translation>
 <translation id="6169866489629082767"><ph name="PAGE_TITLE" /> - Google Chrome</translation>
@@ -225,6 +227,7 @@
 <translation id="7589360514048265910">Занапред този компютър няма да получава актуализации на Google Chrome, защото Mac OS X 10.9 вече не се поддържа.</translation>
 <translation id="7592736734348559088">Google Chrome не можа да синхронизира данните ви, защото потребителското име и паролата за вход в профила ви не са актуални.</translation>
 <translation id="7626032353295482388">Добре дошли в Chrome</translation>
+<translation id="7651907282515937834">Лого на Chrome Enterprise</translation>
 <translation id="7747138024166251722">Инсталационната програма не можа да създаде временна директория. Моля, проверете дали има свободно дисково пространство и разрешение за инсталиране на софтуер.</translation>
 <translation id="7756122083761163394">Данните за сърфирането на този човек ще се изтрият от устройството. За да ги възстановите, влезте в Chrome като $2.</translation>
 <translation id="7761834446675418963">Кликнете върху името си, за да отворите Chrome и да започнете да сърфирате.</translation>

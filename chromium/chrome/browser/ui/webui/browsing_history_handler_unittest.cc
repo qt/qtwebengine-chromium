@@ -30,7 +30,6 @@
 #include "components/sync/base/model_type.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_web_ui.h"
 #include "net/http/http_status_code.h"
@@ -116,8 +115,8 @@ class BrowsingHistoryHandlerTest : public ::testing::Test {
     web_history_service_ = static_cast<history::FakeWebHistoryService*>(
         WebHistoryServiceFactory::GetForProfile(profile_.get()));
 
-    web_contents_.reset(content::WebContents::Create(
-        content::WebContents::CreateParams(profile_.get())));
+    web_contents_ = content::WebContents::Create(
+        content::WebContents::CreateParams(profile_.get()));
     web_ui_.reset(new content::TestWebUI);
     web_ui_->set_web_contents(web_contents_.get());
   }
@@ -152,10 +151,6 @@ class BrowsingHistoryHandlerTest : public ::testing::Test {
     service->SetupFakeResponse(true /* success */, net::HTTP_OK);
     return std::move(service);
   }
-
-  // TODO(lukasza): https://crbug.com/832100: Move the factory into
-  // TestingProfile, so individual tests don't need to worry about it.
-  content::ScopedMockRenderProcessHostFactory test_process_factory_;
 
   content::TestBrowserThreadBundle thread_bundle_;
   std::unique_ptr<TestingProfile> profile_;

@@ -30,6 +30,7 @@
 #include <memory>
 
 #include "base/macros.h"
+#include "base/optional.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/synchronous_mutation_observer.h"
 #include "third_party/blink/renderer/core/editing/forward.h"
@@ -38,7 +39,6 @@
 #include "third_party/blink/renderer/platform/geometry/layout_rect.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_alignment.h"
-#include "third_party/blink/renderer/platform/wtf/optional.h"
 
 namespace blink {
 
@@ -49,12 +49,13 @@ class LocalFrame;
 class FrameCaret;
 class GranularityStrategy;
 class GraphicsContext;
-class NGPhysicalTextFragment;
+class NGPaintFragment;
 class Range;
 class SelectionEditor;
 class LayoutSelection;
 enum class SelectionModifyAlteration;
 enum class SelectionModifyDirection;
+enum class SelectionState;
 class TextIteratorBehavior;
 struct PaintInvalidatorContext;
 
@@ -63,6 +64,35 @@ enum RevealExtentOption { kRevealExtent, kDoNotRevealExtent };
 enum class CaretVisibility;
 
 enum class HandleVisibility { kNotVisible, kVisible };
+
+enum class SelectLineBreak { kNotSelected, kSelected };
+
+// This is return type of ComputeLayoutSelectionStatus(paintfragment).
+// This structure represents how the fragment is selected.
+// |start|, |end| : Selection start/end offset. This offset is based on
+//   the text of NGInlineNode of a parent block thus
+//   |fragemnt.StartOffset <= start <= end <= fragment.EndOffset|.
+// |start| == |end| means this fragment is not selected.
+// |line_break| : This value represents If this fragment is selected and
+// selection wraps line break.
+struct LayoutSelectionStatus {
+  STACK_ALLOCATED();
+
+  LayoutSelectionStatus(unsigned passed_start,
+                        unsigned passed_end,
+                        SelectLineBreak passed_line_break)
+      : start(passed_start), end(passed_end), line_break(passed_line_break) {
+    DCHECK_LE(start, end);
+  }
+  bool operator==(const LayoutSelectionStatus& other) const {
+    return start == other.start && end == other.end &&
+           line_break == other.line_break;
+  }
+
+  unsigned start;
+  unsigned end;
+  SelectLineBreak line_break;
+};
 
 class CORE_EXPORT FrameSelection final
     : public GarbageCollectedFinalized<FrameSelection>,
@@ -217,13 +247,13 @@ class CORE_EXPORT FrameSelection final
 
   FrameCaret& FrameCaretForTesting() const { return *frame_caret_; }
 
-  WTF::Optional<unsigned> LayoutSelectionStart() const;
-  WTF::Optional<unsigned> LayoutSelectionEnd() const;
+  base::Optional<unsigned> LayoutSelectionStart() const;
+  base::Optional<unsigned> LayoutSelectionEnd() const;
   void ClearLayoutSelection();
-  std::pair<unsigned, unsigned> LayoutSelectionStartEndForNG(
-      const NGPhysicalTextFragment&) const;
+  LayoutSelectionStatus ComputeLayoutSelectionStatus(
+      const NGPaintFragment&) const;
 
-  void Trace(blink::Visitor*);
+  void Trace(blink::Visitor*) override;
 
  private:
   friend class CaretDisplayItemClientTest;
