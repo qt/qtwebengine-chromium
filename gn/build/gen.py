@@ -87,8 +87,8 @@ def main(argv):
                     help='Enable the use of LTO')
   parser.add_option('--use-icf', action='store_true',
                     help='Enable the use of Identical Code Folding')
-  parser.add_option('--no-sysroot', action='store_true',
-                    help='(Linux only) Do not build with the Debian sysroot.')
+  parser.add_option('--sysroot', action='store_true',
+                    help='(Linux only) Build with a Debian sysroot.')
   parser.add_option('--no-last-commit-position', action='store_true',
                     help='Do not generate last_commit_position.h.')
   parser.add_option('--out-path',
@@ -105,7 +105,7 @@ def main(argv):
     host = platform
 
   linux_sysroot = None
-  if platform.is_linux() and not options.no_sysroot:
+  if platform.is_linux() and options.sysroot:
     linux_sysroot = UpdateLinuxSysroot()
 
   out_dir = options.out_path or os.path.join(REPO_ROOT, 'out')
@@ -310,8 +310,8 @@ def WriteGNNinja(path, platform, host, options, linux_sysroot):
     ld = os.environ.get('LD', 'g++')
     ar = os.environ.get('AR', 'ar -X64')
   else:
-    cc = os.environ.get('CC', 'clang')
-    cxx = os.environ.get('CXX', 'clang++')
+    cc = os.environ.get('CC', 'cc')
+    cxx = os.environ.get('CXX', 'c++')
     ld = cxx
     ar = os.environ.get('AR', 'ar')
 
